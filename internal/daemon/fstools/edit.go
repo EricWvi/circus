@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/textutil"
 )
 
 // Edit is a stateless file-editing tool.
@@ -28,6 +29,8 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 	if err != nil {
 		return nil, err
 	}
+	unlock := lockPath(path)
+	defer unlock()
 	if rejection, err := symlinkRejection(path); err != nil {
 		return toolError(err.Error()), nil
 	} else if rejection != nil {
@@ -44,6 +47,7 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 	}
 	modified := changed(r.ExpectedSha256, data)
 	old, replacement := r.GetOldString(), r.GetNewString()
+	shownOld := textutil.NodeUTF8([]byte(old))
 	if strings.Contains(string(data), "\r\n") {
 		// Inferred: for multiline edits in a CRLF file, normalize only the
 		// supplied strings to CRLF; bytes outside the replacement stay intact.
@@ -66,10 +70,10 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 			if modified {
 				return toolError(modifiedError), nil
 			}
-			return toolError("String to replace not found in file.\nString: " + r.GetOldString()), nil
+			return toolError("String to replace not found in file.\nString: " + shownOld), nil
 		}
 		if count > 1 && !r.GetReplaceAll() {
-			return toolError(fmt.Sprintf("Found %d matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: %s", count, r.GetOldString())), nil
+			return toolError(fmt.Sprintf("Found %d matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: %s", count, shownOld)), nil
 		}
 	}
 	if err := writeFile(ctx, path, []byte(content), info); err != nil {

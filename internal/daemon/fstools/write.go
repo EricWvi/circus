@@ -24,6 +24,8 @@ func (*Write) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Dev
 	if err != nil {
 		return nil, err
 	}
+	unlock := lockPath(path)
+	defer unlock()
 	if rejection, err := symlinkRejection(path); err != nil {
 		return toolError(err.Error()), nil
 	} else if rejection != nil {

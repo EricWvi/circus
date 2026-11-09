@@ -16,8 +16,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestNewFilePrivateUmask(t *testing.T) {
-	// Umask is process-wide; no file-writing tests in this package run in parallel.
+func TestNewFileModesIgnoreUmask(t *testing.T) {
+	// Native uses 0644 files and 0755 directories even under a private umask.
 	original := syscall.Umask(0o077)
 	defer syscall.Umask(original)
 	for _, tool := range []string{"Write", "Edit"} {
@@ -33,9 +33,9 @@ func TestNewFilePrivateUmask(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				want := os.FileMode(0o600)
+				want := os.FileMode(0o644)
 				if info.IsDir() {
-					want = 0o700
+					want = 0o755
 				}
 				if info.Mode().Perm() != want {
 					t.Errorf("%s mode: got %#o, want %#o", path, info.Mode().Perm(), want)
