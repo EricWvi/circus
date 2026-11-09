@@ -680,7 +680,10 @@ type BashRequest struct {
 	// Whether to run the command as a background job.
 	RunInBackground bool `protobuf:"varint,3,opt,name=run_in_background,json=runInBackground,proto3" json:"run_in_background,omitempty"`
 	// Informational description with no execution semantics.
-	Description   string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Description string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	// Directories inside which a cd persists; the first is the start folder the shell
+	// returns to otherwise. Empty means cwd itself is the only working directory.
+	WorkingDirs   []string `protobuf:"bytes,5,rep,name=working_dirs,json=workingDirs,proto3" json:"working_dirs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -741,6 +744,13 @@ func (x *BashRequest) GetDescription() string {
 		return x.Description
 	}
 	return ""
+}
+
+func (x *BashRequest) GetWorkingDirs() []string {
+	if x != nil {
+		return x.WorkingDirs
+	}
+	return nil
 }
 
 // BashResult records the shell command outcome and output location.
@@ -1626,12 +1636,13 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"ImageBlock\x12\x1d\n" +
 	"\n" +
 	"media_type\x18\x01 \x01(\tR\tmediaType\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\"\x87\x01\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"\xaa\x01\n" +
 	"\vBashRequest\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12\x10\n" +
 	"\x03cwd\x18\x02 \x01(\tR\x03cwd\x12*\n" +
 	"\x11run_in_background\x18\x03 \x01(\bR\x0frunInBackground\x12 \n" +
-	"\vdescription\x18\x04 \x01(\tR\vdescription\"\xdd\x01\n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12!\n" +
+	"\fworking_dirs\x18\x05 \x03(\tR\vworkingDirs\"\xdd\x01\n" +
 	"\n" +
 	"BashResult\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x10\n" +

@@ -174,6 +174,50 @@ func TestJobManagerImmediateExitAndWaitError(t *testing.T) {
 	}
 }
 
+func TestJobManagerLaunchDoesNotBlockLookups(t *testing.T) {
+	m := newJobs(t, daemon.JobOptions{NewID: func() string { return "job" }})
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	started := make(chan error, 1)
+	go func() {
+		_, err := m.Start("session", "echo hi", func(string) (daemon.Job, string, error) {
+			close(entered)
+			<-release
+			return newFakeJob(), "/output", nil
+		})
+		started <- err
+	}()
+	receive(t, entered)
+
+	type lookupResult struct {
+		found bool
+		infos []daemon.JobInfo
+	}
+	lookups := make(chan lookupResult, 1)
+	go func() {
+		_, found := m.Get("job")
+		lookups <- lookupResult{found: found, infos: m.List("session")}
+	}()
+	select {
+	case result := <-lookups:
+		if result.found || len(result.infos) != 0 {
+			t.Fatalf("reserved job was visible: %+v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("lookups blocked while launch was running")
+	}
+
+	unblock()
+	if err := receive(t, started); err != nil {
+		t.Fatal(err)
+	}
+	if info, ok := m.Get("job"); !ok || info.Command != "echo hi" {
+		t.Fatalf("started job: %+v, %v", info, ok)
+	}
+}
+
 type slowStopJob struct {
 	stopStarted chan struct{}
 	release     chan struct{}

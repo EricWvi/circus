@@ -166,7 +166,7 @@ func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
 	}
 	out.Reset()
 	unavailableInput := "{\"callId\":\"c2\",\"taskStop\":{\"jobId\":\"unavailable\"}}\n"
-	if err := daemonCommand([]string{"call", "-wait=false"}, strings.NewReader(unavailableInput), &out, &errOut); err != nil {
+	if err := daemonCall(strings.NewReader(unavailableInput), &out, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if s := decodeStatus(t, strings.TrimSpace(out.String())); s.State != circusv1.CallStatus_STATE_COMPLETED || !s.Result.GetOutput().GetIsError() || len(s.Result.GetOutput().GetContent()) != 1 || s.Result.Output.Content[0].GetText() != `Error: tool "task_stop" is not available on this device` {

@@ -90,6 +90,9 @@ message BashRequest {
   bool run_in_background = 3;
   // Informational description with no execution semantics.
   string description = 4;
+  // Directories inside which a cd persists; the first is the start folder the shell
+  // returns to otherwise. Empty means cwd itself is the only working directory.
+  repeated string working_dirs = 5;
 }
 
 // BashResult records the shell command outcome and output location.

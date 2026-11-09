@@ -25,6 +25,7 @@ type Job interface {
 // JobInfo is a snapshot of a job's execution state.
 type JobInfo struct {
 	ID, SessionID, OutputPath string
+	Command                   string
 	State                     circusv1.JobEvent_State
 	ExitCode                  int32
 	Started, Ended            time.Time
@@ -52,6 +53,7 @@ type JobManager struct {
 	mu        sync.Mutex
 	opts      JobOptions
 	jobs      map[string]*jobRecord
+	reserved  map[string]struct{}
 	closed    bool
 	stopSweep chan struct{}
 	stopped   chan struct{}
@@ -71,6 +73,7 @@ func NewJobManager(opts JobOptions) *JobManager {
 	m := &JobManager{
 		opts:      opts,
 		jobs:      make(map[string]*jobRecord),
+		reserved:  make(map[string]struct{}),
 		stopSweep: make(chan struct{}),
 		stopped:   make(chan struct{}),
 	}
@@ -116,15 +119,16 @@ func (m *JobManager) emit(info JobInfo) {
 }
 
 func (m *JobManager) Add(sessionID, outputPath string, job Job) (JobInfo, error) {
+	return m.Start(sessionID, "", func(string) (Job, string, error) { return job, outputPath, nil })
+}
+
+// Start allocates a job ID before launching, so output can use that ID.
+func (m *JobManager) Start(sessionID, command string, launch func(id string) (Job, string, error)) (JobInfo, error) {
 	m.mu.Lock()
 	m.expireLocked()
 	if m.closed {
 		m.mu.Unlock()
 		return JobInfo{}, ErrShutdown
-	}
-	if job == nil {
-		m.mu.Unlock()
-		return JobInfo{}, errors.New("nil job")
 	}
 	id := m.opts.NewID()
 	if id == "" {
@@ -135,7 +139,31 @@ func (m *JobManager) Add(sessionID, outputPath string, job Job) (JobInfo, error)
 		m.mu.Unlock()
 		return JobInfo{}, fmt.Errorf("duplicate job ID %q", id)
 	}
-	info := JobInfo{ID: id, SessionID: sessionID, OutputPath: outputPath, State: circusv1.JobEvent_STATE_RUNNING, Started: m.opts.Clock.Now()}
+	if _, exists := m.reserved[id]; exists {
+		m.mu.Unlock()
+		return JobInfo{}, fmt.Errorf("duplicate job ID %q", id)
+	}
+	m.reserved[id] = struct{}{}
+	m.mu.Unlock()
+
+	job, outputPath, err := launch(id)
+
+	m.mu.Lock()
+	delete(m.reserved, id)
+	if err != nil {
+		m.mu.Unlock()
+		return JobInfo{}, err
+	}
+	if job == nil {
+		m.mu.Unlock()
+		return JobInfo{}, errors.New("nil job")
+	}
+	if m.closed {
+		m.mu.Unlock()
+		_ = job.Stop()
+		return JobInfo{}, ErrShutdown
+	}
+	info := JobInfo{ID: id, SessionID: sessionID, Command: command, OutputPath: outputPath, State: circusv1.JobEvent_STATE_RUNNING, Started: m.opts.Clock.Now()}
 	r := &jobRecord{info: info, job: job}
 	m.jobs[id] = r
 	m.wg.Add(1)
@@ -144,6 +172,25 @@ func (m *JobManager) Add(sessionID, outputPath string, job Job) (JobInfo, error)
 	m.emit(info)
 	go m.watch(r)
 	return info, nil
+}
+
+// StopOwned checks ownership while holding the same lock as lookup and expiry.
+func (m *JobManager) StopOwned(sessionID, id string) (JobInfo, error) {
+	m.mu.Lock()
+	m.expireLocked()
+	r := m.jobs[id]
+	if r == nil || r.info.SessionID != sessionID {
+		m.mu.Unlock()
+		return JobInfo{}, ErrJobNotFound
+	}
+	if r.info.State != circusv1.JobEvent_STATE_RUNNING {
+		info := r.info
+		m.mu.Unlock()
+		return info, nil
+	}
+	r.stopRequested = true
+	m.mu.Unlock()
+	return m.stop(r)
 }
 
 func (m *JobManager) watch(r *jobRecord) {
