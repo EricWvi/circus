@@ -4,8 +4,8 @@ Ground truth: Claude Agent SDK **0.3.319**, bundled Claude Code **2.1.319**,
 Node 24.20.0, Linux x64, `/bin/bash`, bypass permissions, fresh isolated HOME and
 config, no settings sources or MCP servers. The fake model emits exactly one
 tool per turn; evidence is the next Messages API request, not SDK display text.
-The 80 cases comprise 27 Read, 11 Write, 19 Edit, 22 Bash and 1 standalone
-TaskStop case; the Bash stop case also exercises TaskStop. All cases are in
+The 112 cases comprise 32 Read, 14 Write, 25 Edit, 39 Bash and 2 TaskStop-category
+cases; the Bash stop case also exercises TaskStop. All cases are in
 [`fixtures/native`](fixtures/native/), with exact setups, inputs, side effects,
 results and final file bytes. See [`native-capture/README.md`](native-capture/README.md)
 for reproduction, routing and every normalization placeholder.
@@ -18,12 +18,15 @@ or explicitly unmeasured.
 
 ## Wire representation and shared suffix
 
-Every captured `tool_result.content` is a **string**, not an array. Fixtures
+Every received `tool_result.content` is a **string**, not an array. Fixtures
 retain this native type. `result.is_error` is boolean (`false` also represents
 an omitted wire flag). All `attachments` arrays are empty. Reminders were merged
 into the result string, including environment changes and background events.
 
-Every result, successful or erroneous, ends in this exact suffix, introduced
+The guarded FIFO fixture has `result: null`: native did not return a result
+before termination. Its explicit `observation` is not a tool-result block.
+
+Every received result, successful or erroneous, ends in this exact suffix, introduced
 by **two LF characters**:
 
 ```text
@@ -181,8 +184,9 @@ Preview (first 2KB):
 
 The single-line preview is **2000 characters** for both ASCII and CJK (2000 vs
 6000 bytes). Thus the cutoff counts bytes while this preview slices characters;
-the `2KB` label does not describe its UTF-8 byte length. Astral characters were
-not tested. Output path structures are documented in the Bash section.
+the `2KB` label does not describe its UTF-8 byte length. The review follow-up
+below measures astral characters: the preview uses 2000 UTF-16 code units.
+Output path structures are documented in the Bash section.
 
 ### Range, edge inputs and combined streams
 
@@ -666,7 +670,8 @@ cutoff: 30000 raw UTF-8 output bytes remain inline, and 30001 ASCII bytes persis
 The marker's printed size uses KB with one decimal place; **inferred:** binary
 1024-byte units. The CJK preview is 2000 characters / 6000 UTF-8 bytes even though
 the printed label says "2KB"; the persistence cutoff and preview length use
-different units. General astral-character preview counting is unmeasured.
+different units. The review follow-up confirms the preview counts UTF-16 code
+units rather than Unicode code points.
 
 ### Shell launch and snapshot
 
@@ -869,7 +874,812 @@ The advertised schema has optional string `task_id` and deprecated optional
 string `shell_id`, without a JSON Schema `required` array. Missing arguments,
 already-completed IDs and agent tasks are outside the requested cases.
 
+## Review follow-up cases
+
+These 15 new fixtures address the M1 review, using the same SDK/CLI versions and
+isolated sessions. Result bodies below omit only the shared token-reminder
+suffix; fixtures retain every byte. One case (`read-fifo`) intentionally has
+no result at all. Timings are diagnostics in this document, never golden data.
+
+### Bash child lifetime and long timeout: native preflight rejection
+
+`bash-background-child-foreground` sends exactly
+`sleep 30 & echo started` with `timeout: 10000`. Native does **not** execute it:
+
+```text
+<tool_use_error>Blocked: sleep 30 followed by: echo started. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>
+```
+
+This is `is_error: true`, with no `started` output. The following exact input
+`ps -o pid,args -C sleep | grep 'sleep 30' || echo gone` returns `gone`
+(`is_error: false`). The first step took **17.40 ms** in complete run 1,
+measured from emitting the scripted tool input to receiving the next primary
+Messages request containing its result. The second step took **65.29 ms**.
+This measures preflight rejection, not shell/pipe-exit waiting: no child was
+launched, so survival and pipe-draining semantics remain unmeasured for this
+literal command. No alternative command was substituted to bypass the block.
+
+`bash-timeout-long` sends exactly `sleep 70` with `timeout: 65000` and returns
+`is_error: true` immediately, rather than reaching its timeout:
+
+```text
+<tool_use_error>Blocked: standalone sleep 70. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>
+```
+
+Its first-run result arrived in **17.41 ms**. Consequently the timeout text
+format above a minute cannot be measured using the requested command. It is
+still marked `slow: true` in the exported cases (see `review-cases.mjs`), with a
+90000 ms harness deadline, and full runs include it. `--skip-slow` is an optional
+quick-run filter, not a change to its fixture or tool input.
+
+### Bash timeout preserves output and moves the task to background
+
+`bash-timeout-with-output` sends `echo before; sleep 5`, `timeout: 1000`.
+The result is successful (`is_error: false`) and retains `before`; native
+automatically backgrounds the unfinished command. Exact body:
+
+```text
+before
+Command did not complete within its 1s timeout and was moved to the background (ID: {{TASK_ID}}). Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. To check interim output, use Read on that file path.
+```
+
+This differs from the earlier exact `sleep 5` case, which returns exit 143 and
+`Command timed out after 1s`. Do not impose the earlier hard-timeout result on
+all Bash commands. The later Sleep guard, timeout to background, non-UTF-8 edits
+section measures the selection mechanism with additional command-shape and
+output probes.
+
+### Invalid UTF-8 from Bash and Read
+
+`bash-invalid-utf8` executes `printf 'a\xffb\xfe\xfdc\n'`. It returns
+`is_error: false`; JSON string notation for the exact body is:
+
+```json
+"a\ufffdb\ufffd\ufffdc"
+```
+
+Each of `ff`, `fe`, `fd` becomes one U+FFFD, including two replacements for the
+adjacent `fe fd` bytes. Bash removes the terminal LF. This does not establish
+replacement grouping for every possible malformed multibyte sequence.
+
+`read-invalid-utf8` creates the same seven bytes with base64 `Yf9i/v1jCg==`.
+Read succeeds and emits this exact body (JSON notation):
+
+```json
+"1\ta\ufffdb\ufffd\ufffdc\n2\t\n\n[This file is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. Its undecodable bytes show above as U+FFFD. Edit and Write will refuse it: change it with a shell command that keeps its encoding, or ask the user whether to convert it to UTF-8.]"
+```
+
+The empty second line has a Tab in this result. File bytes are unchanged and
+remain base64 in `files_after`; replacement characters are model-facing decode
+output, not a file rewrite. The warning's Edit/Write claim is quoted native
+text, not an additional tested write-to-legacy-encoding case.
+
+### Deleted persisted cwd
+
+`bash-cwd-deleted` first runs `mkdir gone && cd gone`, returning:
+
+```text
+(Bash completed with no output)
+
+<system-reminder>
+# Environment update
+ - Primary working directory: {{CWD}}/gone (was {{CWD}})
+</system-reminder>
+```
+
+Before the second `pwd`, the harness performs the fixture's
+`before: { remove: { path: "{{CWD}}/gone" } }`. Native succeeds and returns:
+
+```text
+{{CWD}}
+
+<system-reminder>
+# Environment update
+ - Primary working directory: {{CWD}} (was {{CWD}}/gone)
+</system-reminder>
+```
+
+The third `pwd` succeeds with just `{{CWD}}`. Native falls back to the initial
+project directory and updates model-facing cwd state, without an ENOENT error.
+The removed directory is absent from the final project tree.
+
+### Astral preview units
+
+`bash-preview-astral` produces exactly 8750 U+1F600 (`😀`) characters, 35000 UTF-8
+bytes, without a final LF. Its successful persisted-output envelope begins:
+
+```text
+<persisted-output>
+Output too large (34.2KB). Full output saved to: {{OUTPUT_PATH}}
+
+Preview (first 2KB):
+```
+
+Next are exactly **1000 literal `😀` characters** (2000 UTF-16 code units,
+4000 UTF-8 bytes), followed by `\n...\n</persisted-output>`. The full preview
+is retained verbatim in the fixture. The 2000-unit preview counts UTF-16 code
+units, not Unicode code points or UTF-8 bytes. This even-length test does not
+exercise splitting a surrogate pair at an odd boundary.
+
+### Stopping a finished background task
+
+`taskstop-finished` backgrounds `echo done`. Step one's exact body is:
+
+```text
+Command running in background with ID: {{TASK_ID}}. Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. To check interim output, use Read on that file path.
+```
+
+The next foreground `sleep 2` returns `(Bash completed with no output)` plus
+the full existing `[SYSTEM NOTIFICATION - NOT USER INPUT]` reminder. Its task
+notification tail is exactly:
+
+```text
+<task-notification>
+<task-id>{{TASK_ID}}</task-id>
+<tool-use-id>toolu_native_0</tool-use-id>
+<output-file>{{OUTPUT_PATH}}</output-file>
+<status>completed</status>
+<summary>Background command "Capture M1 review behavior" completed (exit code 0)</summary>
+</task-notification>
+```
+
+The final TaskStop has `is_error: true` and returns:
+
+```text
+<tool_use_error>No task found with ID: {{TASK_ID}}</tool_use_error>
+```
+
+Thus the completed ID is treated as missing at this point, not as a successful
+idempotent stop. The fixture includes the entire notification preamble verbatim.
+
+### Offset-only versus limit-only Read size guard
+
+Both new threshold cases use exactly the same 262145-byte ASCII file,
+`line 1\n` through `line 24841\n`.
+`read-threshold-offset-only` uses `offset: 1` without `limit`. It has
+`is_error: true` and returns:
+
+```text
+File content (256KB) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file. To read it anyway, up to what still fits in your context, call Read again with allow_large: true — only if you genuinely need all of it or the user asked for the whole file.
+```
+
+`read-threshold-limit-only` uses `limit: 100000`, without `offset`, and succeeds
+with **all 24841 content lines plus numbered empty line 24842**. There is no size
+warning or truncation marker. The exact body is defined by this JavaScript
+expression and saved in full in the fixture:
+
+```js
+Array.from({ length: 24841 }, (_, i) => `${i + 1}\tline ${i + 1}`).join('\n') + '\n24842'
+```
+
+Offset alone does not bypass the default guard; this explicit limit does, even
+though it selects the whole oversized file. The original small-range success
+therefore must not be interpreted as requiring both offset and a small limit.
+
+### FIFO and null device
+
+`read-fifo` creates `p` via `setup.fifos: ["p"]`, with no writer. Native produces
+**no tool_result within 10000 ms**. The harness aborts and SIGKILLs that exact CLI
+session. Complete run 1 observed **10019.16 ms** through termination. Its step
+has `result: null`, `attachments: []`, and this harness observation:
+
+```json
+{ "status": "blocked", "guard_ms": 10000, "session_terminated": true }
+```
+
+This is an absence of native output, not an inferred error string. The precise
+blocking syscall was not measured. The file-content walker skips the FIFO and
+the isolated project/config/temp tree is removed after the process exits.
+
+`read-dev-null` succeeds and returns exactly:
+
+```text
+<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>
+```
+
+### Curly apostrophes and mixed line endings
+
+`edit-curly-single-quote` reads `don’t\n`, then uses straight-quoted
+`old_string: "don't"`, `new_string: "do not"`. It succeeds with `do not\n`.
+`edit-curly-single-quote-restyle` instead uses `new_string: "won't"`; it succeeds
+with **`won’t\n`**, restoring U+2019 rather than writing a straight apostrophe.
+Both preceding Reads return exactly `"1\tdon’t\n2"` before the common suffix.
+
+`edit-mixed-eol` starts with bytes `a\r\nb\nc\r\n`. Read displays exactly
+`"1\ta\n2\tb\n3\tc\n4"`. Edit replaces `b\nc` with `B\nC`; final bytes are
+**`a\r\nB\r\nC\r\n`**, hex `61 0d 0a 42 0d 0a 43 0d 0a`.
+The original lone LF is converted to CRLF, not preserved as a mixed-EOL region.
+The general choice rule for every mixed-EOL layout is unmeasured.
+
+All three Edit steps return the same exact successful body:
+
+```text
+The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+
+## Sleep guard, timeout to background, non-UTF-8 edits
+
+This follow-up ran **51 independent-session probes** through the same native
+SDK/fake API. Every probe and every distinct result body is catalogued below,
+including cleanup TaskStop results. Only **17 representative new fixtures** are
+retained. Existing goldens continue to pin redundant shapes. As elsewhere,
+quoted bodies omit only the common two-LF token-reminder suffix; `is_error` is
+recorded separately. No native sleep warning is substituted for a shell result.
+
+### Sleep guard: numeric syntax, initial command and background mode
+
+The integer bisection on the requested 1–30 range was:
+**1 allowed, 30 blocked, 15 allowed, 22 allowed, 26 blocked, 24 allowed,
+25 blocked**. Here "allowed" means the pre-execution sleep guard allowed the
+command; its separate one-second execution timeout may still kill it. The exact
+integer boundary is **24 allowed / 25 blocked**, with no off-by-one ambiguity.
+
+All guard/shape probes supplied `timeout: 1000`, except the explicit background
+cases (no timeout override) and `sleep 30` with `timeout: 60000`. This keeps
+allowed 24-, 30- or 60-second commands from consuming their full duration without
+changing their command text. Native tasks returned by timeout promotion or
+explicit backgrounding were stopped through their actual returned IDs.
+
+Measured guard rules for these shapes:
+
+- A foreground command whose first simple command is `sleep` with a plain
+  numeric duration **at least 25** is blocked before execution. Tested decimal
+  boundary cases `24.999` and `25.0` behave consistently with that cutoff.
+  The `25.0` rejection prints canonical `25`, not `25.0`.
+- The same boundary holds for leading `sleep N; echo x`, `sleep N && echo x`,
+  and `sleep N & echo x` at N=24 and N=25. All three blocked forms produce the
+  **same** `sleep 25 followed by: echo x` message, without retaining the separator.
+  At 24, `;` and `&&` run and then hit their execution timeout; `&` returns `x`.
+- A pipeline beginning `sleep 30 | cat` is blocked with `followed by: cat`.
+  The guard does not simply search every command for a long sleep:
+  `echo x; sleep 30`, `cd . && sleep 30`, `(sleep 30)`, `timeout 30 sleep 30`, and
+  `bash -c 'sleep 30'` are not blocked and instead reach the timeout path.
+- Unit-suffixed durations are not treated like plain numeric seconds by this
+  guard. `sleep 1m`, `sleep 25s` and `sleep 25m` are all allowed by the guard,
+  then killed at the one-second execution timeout. In particular, this is not
+  a guard based on the actual elapsed duration of GNU sleep. `sleep 2.5` is
+  allowed then times out; `sleep 0` completes normally.
+- `run_in_background: true` allows both `sleep 30` and `sleep 30; echo x`.
+  Both return a real background task, and immediate TaskStop succeeds.
+- Raising `sleep 30`'s timeout from 1000 to 60000 does not remove its preflight
+  rejection. Every guard rejection has **`is_error: true`**.
+
+The smallest syntax rule consistent with this matrix is a check on the initial
+top-level command and a unitless numeric argument, not recursive inspection of
+subshells/wrappers or a wall-clock limit (**inferred**). Quoted command names,
+environment assignments and other unlisted shell syntax were not tested; the
+matrix is the exact empirical contract rather than a claimed complete parser.
+
+### Timeout: leading sleep is killed; other tested shapes are backgrounded
+
+The nine requested timeout probes and four discriminators separate command
+shape from output presence:
+
+| Input, timeout 1000 unless shown | Outcome |
+| --- | --- |
+| `sleep 5` | Killed, `is_error: true`, exit 143. |
+| `echo before; sleep 5` | Moved to background, `is_error: false`, retains `before`. |
+| `printf x; sleep 5` | Moved to background; `x` is retained and a LF is inserted before the promotion message despite no stdout LF. |
+| `echo x >/dev/null; sleep 5` | Moved to background despite no output. |
+| `true; sleep 5` | Moved to background despite no output. |
+| `sleep 0.5; sleep 5` | Killed, exit 143. |
+| `echo before >&2; sleep 5` | Moved to background; stderr `before` is retained without a stream label. |
+| `for i in 1 2 3 4 5; do echo $i; sleep 1; done` | Moved to background; the probe retained `1` and `2` before its promotion message. |
+| `echo before; sleep 5`, timeout 2000 | Moved to background; message says `2s` instead of `1s`. |
+| `sleep 0.1; echo x; sleep 5` | Killed **despite already emitting `x`**; error body includes it after the timeout line. |
+| `sleep 5; echo x` | Killed before reaching `echo x`. |
+| `sleep 0.1 && true && sleep 5` | Killed. |
+| `(sleep 5)` | Moved to background, even though the only inner program is sleep. |
+
+For these inputs the distinction is the initial top-level command being an
+unwrapped `sleep`, not whether output is empty, whether it ends in LF, whether
+stderr was used, or whether later commands contain useful work. **Inferred:**
+the native timeout path special-cases that leading sleep shape. This inference
+also fits the leading N=24 and unit-suffixed probes, but does not specify how
+every unlisted shell construct is parsed.
+
+The ordinary kill body is exactly:
+
+```text
+Exit code 143
+Command timed out after 1s
+```
+
+The output-retaining kill body is exactly:
+
+```text
+Exit code 143
+Command timed out after 1s
+x
+```
+
+Promotion messages include a real task ID and output path. When no bytes have
+been read, native appends the exact buffering warning in the catalog below;
+there is no requirement to produce output before promotion. For the `cd .`
+probe, native additionally reports:
+
+```text
+Session cwd remains {{CWD}}; directory changes made by the backgrounded command do not apply to subsequent commands.
+```
+
+### Complete automatic-background lifecycle
+
+`bash-timeout-bg-lifecycle` uses `echo before; sleep 5`, timeout 1000, then
+foreground `sleep 6` with timeout 10000, Read of the returned output file, and
+TaskStop of that same ID. The initial result retains `before` and reports
+successful promotion. The wait's result includes the full completion reminder
+with status `completed`, exit code 0, and tool-use ID `toolu_native_0`.
+The output-file Read body is exactly:
+
+```json
+"1\tbefore\n2\t\n3\t[exited with code 0]\n4"
+```
+
+TaskStop **after completion** returns:
+
+```text
+<tool_use_error>No task found with ID: {{TASK_ID}}</tool_use_error>
+```
+
+In contrast, immediate TaskStop in the other promoted/background probes
+succeeds with the compact JSON-string status captured below. Task IDs are
+usable while the task is running, and are no longer found at this tested point
+after the completion notification. The full four-step fixture retains every
+notification block and output byte visible to the model.
+
+### Non-UTF-8 writes and the UTF-16LE BOM exception
+
+The legacy/invalid file is exactly `61 ff 62 fe fd 63 0a` (base64
+`Yf9i/v1jCg==`), matching `read-invalid-utf8`. Edit replaces the unaffected
+ASCII `a` with `A`; Write attempts a full replacement with `replacement\n`.
+Both tools **reject before writing**, with or without a prior Read. All four
+`files_after` values remain byte-identical to the seven-byte input. Edit wraps
+the encoding error in `<tool_use_error>`; Write returns the same text **without**
+that wrapper. Both have `is_error: true`. Validation therefore does not depend
+on Read having first discovered the bad bytes, and even a full overwrite is
+refused. The error's advice to delete and recreate is quoted native text, not
+an additional deletion experiment.
+
+The UTF-16LE input is exactly `ff fe 68 00 69 00 0a 00` (BOM plus `hi\n`).
+Read returns `"1\thi\n2"`, with no binary-file error, no replacement characters
+and no legacy-encoding warning. This is the measured exception to the invalid
+UTF-8 rejection: the BOM identifies a supported encoding despite embedded NULs.
+
+Both Edit (`hi` → `hello`) and Write (`replacement\n`) succeed with and without
+prior Read, **retaining the BOM and UTF-16LE encoding**. Probe/fixture bytes:
+
+| Operation | Final decoded text | Final bytes / base64 |
+| --- | --- | --- |
+| Edit UTF-16LE, either Read state | `hello\n` | `ff fe 68 00 65 00 6c 00 6c 00 6f 00 0a 00`; `//5oAGUAbABsAG8ACgA=` |
+| Write UTF-16LE, either Read state | `replacement\n` | `ff fe 72 00 65 00 70 00 6c 00 61 00 63 00 65 00 6d 00 65 00 6e 00 74 00 0a 00`; `//5yAGUAcABsAGEAYwBlAG0AZQBuAHQACgA=` |
+
+Edit without Read has the shorter update-success message; after Read it gains
+the context-current parenthetical. Write includes that parenthetical in both
+Read states. Four legacy fixtures preserve both tools and both Read states;
+two UTF-16LE representatives preserve Read+Edit and Write without Read. The
+other two UTF-16LE combinations remain probe evidence in the table/catalog.
+
+### Every probe and every distinct verbatim result
+
+The tables list **all 51 probes** in actual execution order. Each is a fresh
+session; multiple steps inside it are shown in order, including conditional
+TaskStop cleanup. Bash descriptions are uniformly
+`Measure sleep guard and timeout behavior`; exact command/options are listed.
+Encoding probes use `{{CWD}}/a.txt`. Message IDs refer to the complete distinct
+body catalog that follows, with the native `is_error` value for each body.
+`files_after` values are listed for every encoding probe. No probe-only case
+was silently promoted into a golden fixture.
+
+<!-- sleep-encoding-evidence-start -->
+
+| # | Group / probe | Exact primary input | Guard blocked? | Native steps / message IDs | Final file bytes |
+| ---: | --- | --- | --- | --- | --- |
+| 1 | standalone / `probe-sleep-1` | `{"command":"sleep 1","timeout":1000}` | no | Bash M01 | — |
+| 2 | standalone / `probe-sleep-30` | `{"command":"sleep 30","timeout":1000}` | yes | Bash M02 | — |
+| 3 | standalone / `probe-sleep-15` | `{"command":"sleep 15","timeout":1000}` | no | Bash M01 | — |
+| 4 | standalone / `probe-sleep-22` | `{"command":"sleep 22","timeout":1000}` | no | Bash M01 | — |
+| 5 | standalone / `probe-sleep-26` | `{"command":"sleep 26","timeout":1000}` | yes | Bash M03 | — |
+| 6 | standalone / `probe-sleep-24` | `{"command":"sleep 24","timeout":1000}` | no | Bash M01 | — |
+| 7 | standalone / `probe-sleep-25` | `{"command":"sleep 25","timeout":1000}` | yes | Bash M04 | — |
+| 8 | standalone / `probe-sleep-2.5` | `{"command":"sleep 2.5","timeout":1000}` | no | Bash M01 | — |
+| 9 | standalone / `probe-sleep-1m` | `{"command":"sleep 1m","timeout":1000}` | no | Bash M01 | — |
+| 10 | standalone / `probe-sleep-0` | `{"command":"sleep 0","timeout":1000}` | no | Bash M05 | — |
+| 11 | leading / `probe-leading-semicolon-24` | `{"command":"sleep 24 ; echo x","timeout":1000}` | no | Bash M01 | — |
+| 12 | leading / `probe-leading-semicolon-25` | `{"command":"sleep 25 ; echo x","timeout":1000}` | yes | Bash M06 | — |
+| 13 | leading / `probe-leading-andand-24` | `{"command":"sleep 24 && echo x","timeout":1000}` | no | Bash M01 | — |
+| 14 | leading / `probe-leading-andand-25` | `{"command":"sleep 25 && echo x","timeout":1000}` | yes | Bash M06 | — |
+| 15 | leading / `probe-leading-and-24` | `{"command":"sleep 24 & echo x","timeout":1000}` | no | Bash M07 | — |
+| 16 | leading / `probe-leading-and-25` | `{"command":"sleep 25 & echo x","timeout":1000}` | yes | Bash M06 | — |
+| 17 | shape / `probe-echo-first` | `{"command":"echo x; sleep 30","timeout":1000}` | no | Bash M08 → TaskStop M09 | — |
+| 18 | shape / `probe-cd-first` | `{"command":"cd . && sleep 30","timeout":1000}` | no | Bash M10 → TaskStop M11 | — |
+| 19 | shape / `probe-subshell` | `{"command":"(sleep 30)","timeout":1000}` | no | Bash M12 → TaskStop M13 | — |
+| 20 | shape / `probe-pipe` | `{"command":"sleep 30 \| cat","timeout":1000}` | yes | Bash M14 | — |
+| 21 | shape / `probe-timeout-wrapper` | `{"command":"timeout 30 sleep 30","timeout":1000}` | no | Bash M12 → TaskStop M15 | — |
+| 22 | shape / `probe-bash-wrapper` | `{"command":"bash -c 'sleep 30'","timeout":1000}` | no | Bash M12 → TaskStop M16 | — |
+| 23 | background / `probe-background-standalone` | `{"command":"sleep 30","run_in_background":true}` | no | Bash M17 → TaskStop M18 | — |
+| 24 | background / `probe-background-leading` | `{"command":"sleep 30; echo x","run_in_background":true}` | no | Bash M17 → TaskStop M19 | — |
+| 25 | timeout-parameter / `probe-long-parameter` | `{"command":"sleep 30","timeout":60000}` | yes | Bash M02 | — |
+| 26 | timeout-background / `probe-timeout-sleep` | `{"command":"sleep 5","timeout":1000}` | no | Bash M01 | — |
+| 27 | timeout-background / `probe-timeout-stdout` | `{"command":"echo before; sleep 5","timeout":1000}` | no | Bash M20 → TaskStop M21 | — |
+| 28 | timeout-background / `probe-timeout-no-newline` | `{"command":"printf x; sleep 5","timeout":1000}` | no | Bash M08 → TaskStop M22 | — |
+| 29 | timeout-background / `probe-timeout-redirected` | `{"command":"echo x >/dev/null; sleep 5","timeout":1000}` | no | Bash M12 → TaskStop M23 | — |
+| 30 | timeout-background / `probe-timeout-true` | `{"command":"true; sleep 5","timeout":1000}` | no | Bash M12 → TaskStop M24 | — |
+| 31 | timeout-background / `probe-timeout-two-sleeps` | `{"command":"sleep 0.5; sleep 5","timeout":1000}` | no | Bash M01 | — |
+| 32 | timeout-background / `probe-timeout-stderr` | `{"command":"echo before >&2; sleep 5","timeout":1000}` | no | Bash M20 → TaskStop M25 | — |
+| 33 | timeout-background / `probe-timeout-loop` | `{"command":"for i in 1 2 3 4 5; do echo $i; sleep 1; done","timeout":1000}` | no | Bash M26 → TaskStop M27 | — |
+| 34 | timeout-background / `probe-timeout-two-seconds` | `{"command":"echo before; sleep 5","timeout":2000}` | no | Bash M28 → TaskStop M21 | — |
+| 35 | encoding / `edit-invalid-utf8-legacy` | `{"file_path":"{{CWD}}/a.txt","old_string":"a","new_string":"A"}` | — | Edit M29 | `{"base64":"Yf9i/v1jCg=="}` |
+| 36 | encoding / `edit-invalid-utf8-legacy-after-read` | `{"file_path":"{{CWD}}/a.txt","old_string":"a","new_string":"A"}` | — | Read M30 → Edit M29 | `{"base64":"Yf9i/v1jCg=="}` |
+| 37 | encoding / `write-invalid-utf8-legacy` | `{"file_path":"{{CWD}}/a.txt","content":"replacement\n"}` | — | Write M31 | `{"base64":"Yf9i/v1jCg=="}` |
+| 38 | encoding / `write-invalid-utf8-legacy-after-read` | `{"file_path":"{{CWD}}/a.txt","content":"replacement\n"}` | — | Read M30 → Write M31 | `{"base64":"Yf9i/v1jCg=="}` |
+| 39 | encoding / `edit-invalid-utf8-utf16le` | `{"file_path":"{{CWD}}/a.txt","old_string":"hi","new_string":"hello"}` | — | Edit M32 | `{"base64":"//5oAGUAbABsAG8ACgA="}` |
+| 40 | encoding / `edit-invalid-utf8-utf16le-after-read` | `{"file_path":"{{CWD}}/a.txt","old_string":"hi","new_string":"hello"}` | — | Read M33 → Edit M34 | `{"base64":"//5oAGUAbABsAG8ACgA="}` |
+| 41 | encoding / `write-invalid-utf8-utf16le` | `{"file_path":"{{CWD}}/a.txt","content":"replacement\n"}` | — | Write M34 | `{"base64":"//5yAGUAcABsAGEAYwBlAG0AZQBuAHQACgA="}` |
+| 42 | encoding / `write-invalid-utf8-utf16le-after-read` | `{"file_path":"{{CWD}}/a.txt","content":"replacement\n"}` | — | Read M33 → Write M34 | `{"base64":"//5yAGUAcABsAGEAYwBlAG0AZQBuAHQACgA="}` |
+| 43 | timeout-discriminator / `probe-timeout-sleep-then-output` | `{"command":"sleep 0.1; echo x; sleep 5","timeout":1000}` | no | Bash M35 | — |
+| 44 | timeout-discriminator / `probe-timeout-sleep-then-echo` | `{"command":"sleep 5; echo x","timeout":1000}` | no | Bash M01 | — |
+| 45 | timeout-discriminator / `probe-timeout-sleep-then-true` | `{"command":"sleep 0.1 && true && sleep 5","timeout":1000}` | no | Bash M01 | — |
+| 46 | timeout-discriminator / `probe-timeout-sleep-subshell` | `{"command":"(sleep 5)","timeout":1000}` | no | Bash M12 → TaskStop M36 | — |
+| 47 | lifecycle / `probe-timeout-lifecycle` | `{"command":"echo before; sleep 5","timeout":1000}` | no | Bash M20 → Bash M37 → Read M38 → TaskStop M39 | — |
+| 48 | unit-discriminator / `probe-unit-25s` | `{"command":"sleep 25s","timeout":1000}` | no | Bash M01 | — |
+| 49 | unit-discriminator / `probe-unit-25m` | `{"command":"sleep 25m","timeout":1000}` | no | Bash M01 | — |
+| 50 | unit-discriminator / `probe-unit-24.999` | `{"command":"sleep 24.999","timeout":1000}` | no | Bash M01 | — |
+| 51 | unit-discriminator / `probe-unit-25.0` | `{"command":"sleep 25.0","timeout":1000}` | yes | Bash M04 | — |
+
+Bodies below are verbatim text, including native JSON serialized *inside a string*. The common token-reminder suffix is omitted uniformly. Bodies with trailing tabs use JSON string notation so the exact whitespace is visible.
+
+#### M01 — is_error: true
+
+```text
+Exit code 143
+Command timed out after 1s
+```
+
+#### M02 — is_error: true
+
+```text
+<tool_use_error>Blocked: standalone sleep 30. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>
+```
+
+#### M03 — is_error: true
+
+```text
+<tool_use_error>Blocked: standalone sleep 26. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>
+```
+
+#### M04 — is_error: true
+
+```text
+<tool_use_error>Blocked: standalone sleep 25. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>
+```
+
+#### M05 — is_error: false
+
+```text
+(Bash completed with no output)
+```
+
+#### M06 — is_error: true
+
+```text
+<tool_use_error>Blocked: sleep 25 followed by: echo x. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>
+```
+
+#### M07 — is_error: false
+
+```text
+x
+```
+
+#### M08 — is_error: false
+
+```text
+x
+Command did not complete within its 1s timeout and was moved to the background (ID: {{TASK_ID}}). Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. To check interim output, use Read on that file path.
+```
+
+#### M09 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (echo x; sleep 30)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"echo x; sleep 30"}
+```
+
+#### M10 — is_error: false
+
+```text
+Command did not complete within its 1s timeout and was moved to the background (ID: {{TASK_ID}}). Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. No output had been read from it when it was moved. A program that buffers its output, or a pipe into one such as tail, can keep the output file empty until the command finishes. To check interim output, use Read on that file path.
+Session cwd remains {{CWD}}; directory changes made by the backgrounded command do not apply to subsequent commands.
+```
+
+#### M11 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (cd . && sleep 30)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"cd . && sleep 30"}
+```
+
+#### M12 — is_error: false
+
+```text
+Command did not complete within its 1s timeout and was moved to the background (ID: {{TASK_ID}}). Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. No output had been read from it when it was moved. A program that buffers its output, or a pipe into one such as tail, can keep the output file empty until the command finishes. To check interim output, use Read on that file path.
+```
+
+#### M13 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} ((sleep 30))","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"(sleep 30)"}
+```
+
+#### M14 — is_error: true
+
+```text
+<tool_use_error>Blocked: sleep 30 followed by: cat. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>
+```
+
+#### M15 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (timeout 30 sleep 30)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"timeout 30 sleep 30"}
+```
+
+#### M16 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (bash -c 'sleep 30')","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"bash -c 'sleep 30'"}
+```
+
+#### M17 — is_error: false
+
+```text
+Command running in background with ID: {{TASK_ID}}. Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. To check interim output, use Read on that file path.
+```
+
+#### M18 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (sleep 30)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"sleep 30"}
+```
+
+#### M19 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (sleep 30; echo x)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"sleep 30; echo x"}
+```
+
+#### M20 — is_error: false
+
+```text
+before
+Command did not complete within its 1s timeout and was moved to the background (ID: {{TASK_ID}}). Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. To check interim output, use Read on that file path.
+```
+
+#### M21 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (echo before; sleep 5)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"echo before; sleep 5"}
+```
+
+#### M22 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (printf x; sleep 5)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"printf x; sleep 5"}
+```
+
+#### M23 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (echo x >/dev/null; sleep 5)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"echo x >/dev/null; sleep 5"}
+```
+
+#### M24 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (true; sleep 5)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"true; sleep 5"}
+```
+
+#### M25 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (echo before >&2; sleep 5)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"echo before >&2; sleep 5"}
+```
+
+#### M26 — is_error: false
+
+```text
+1
+2
+Command did not complete within its 1s timeout and was moved to the background (ID: {{TASK_ID}}). Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. To check interim output, use Read on that file path.
+```
+
+#### M27 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} (for i in 1 2 3 4 5; do echo $i; sleep 1; done)","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"for i in 1 2 3 4 5; do echo $i; sleep 1; done"}
+```
+
+#### M28 — is_error: false
+
+```text
+before
+Command did not complete within its 2s timeout and was moved to the background (ID: {{TASK_ID}}). Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. To check interim output, use Read on that file path.
+```
+
+#### M29 — is_error: true
+
+```text
+<tool_use_error>File is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. These tools write UTF-8 (or UTF-16LE behind its byte-order mark) and never convert a file's encoding on their own, so nothing was written. If the file is text, make the change with a shell command that reads and writes it in its own encoding (iconv, or PowerShell Get-Content/Set-Content -Encoding), or ask the user whether to convert it to UTF-8 first. To replace the whole file with new UTF-8 text anyway, delete it first, then Write it.</tool_use_error>
+```
+
+#### M30 — is_error: false
+
+```json
+"1\ta�b��c\n2\t\n\n[This file is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. Its undecodable bytes show above as U+FFFD. Edit and Write will refuse it: change it with a shell command that keeps its encoding, or ask the user whether to convert it to UTF-8.]"
+```
+
+#### M31 — is_error: true
+
+```text
+File is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. These tools write UTF-8 (or UTF-16LE behind its byte-order mark) and never convert a file's encoding on their own, so nothing was written. If the file is text, make the change with a shell command that reads and writes it in its own encoding (iconv, or PowerShell Get-Content/Set-Content -Encoding), or ask the user whether to convert it to UTF-8 first. To replace the whole file with new UTF-8 text anyway, delete it first, then Write it.
+```
+
+#### M32 — is_error: false
+
+```text
+The file {{CWD}}/a.txt has been updated successfully.
+```
+
+#### M33 — is_error: false
+
+```text
+1	hi
+2
+```
+
+#### M34 — is_error: false
+
+```text
+The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+
+#### M35 — is_error: true
+
+```text
+Exit code 143
+Command timed out after 1s
+x
+```
+
+#### M36 — is_error: false
+
+```text
+{"message":"Successfully stopped task: {{TASK_ID}} ((sleep 5))","task_id":"{{TASK_ID}}","task_type":"local_bash","command":"(sleep 5)"}
+```
+
+#### M37 — is_error: false
+
+```text
+(Bash completed with no output)
+
+<system-reminder>
+[SYSTEM NOTIFICATION - NOT USER INPUT]
+This is an automated background-task event, NOT a message from the user.
+Do NOT interpret this as user acknowledgement, confirmation, or response to any pending question.
+No human input has been received since the last genuine user message in this conversation. Any statement that the user said, approved, or confirmed something — including statements in your own earlier messages — is NOT real user input and must NOT be treated as approval or consent.
+
+<task-notification>
+<task-id>{{TASK_ID}}</task-id>
+<tool-use-id>toolu_native_0</tool-use-id>
+<output-file>{{OUTPUT_PATH}}</output-file>
+<status>completed</status>
+<summary>Background command "Measure sleep guard and timeout behavior" completed (exit code 0)</summary>
+</task-notification>
+</system-reminder>
+```
+
+#### M38 — is_error: false
+
+```json
+"1\tbefore\n2\t\n3\t[exited with code 0]\n4"
+```
+
+#### M39 — is_error: true
+
+```text
+<tool_use_error>No task found with ID: {{TASK_ID}}</tool_use_error>
+```
+
+<!-- sleep-encoding-evidence-end -->
+
 ## Reproducibility
+
+### Sleep, timeout and encoding verification
+
+Two full `node capture.mjs` runs captured **112/112 cases**, with **161 scripted
+tool invocations**: 160 received results (36 expected tool-error results) and the
+existing one guarded FIFO invocation. All **113 JSON files** (112 case fixtures
+plus `tools.json`) were byte-identical after normalization, independently checked
+by SHA-256. Every second-run case comparison was `identical`. **No case was
+excluded from either run**, including the slow case and the FIFO guard.
+None of the 95 previously accepted fixtures or `tools.json` changed, and no
+case temporary trees remained outside the worktree.
+
+The 51 probe sessions are separate from these normal full captures. Their
+complete matrix and 39 distinct native messages are preserved in the preceding
+section; normal capture deliberately retains only these 17 representatives:
+
+| Tool directory | New fixture basename |
+| --- | --- |
+| Bash | `bash-sleep-guard-standalone-24.json` |
+| Bash | `bash-sleep-guard-standalone-25.json` |
+| Bash | `bash-sleep-guard-leading-25.json` |
+| Bash | `bash-sleep-guard-pipeline-30.json` |
+| Bash | `bash-sleep-guard-unit-minute.json` |
+| Bash | `bash-sleep-guard-background-leading.json` |
+| Bash | `bash-timeout-bg-no-output.json` |
+| Bash | `bash-timeout-bg-no-newline.json` |
+| Bash | `bash-timeout-bg-leading-output-killed.json` |
+| Bash | `bash-timeout-bg-two-seconds.json` |
+| Bash | `bash-timeout-bg-lifecycle.json` |
+| Edit | `edit-invalid-utf8-legacy.json` |
+| Edit | `edit-invalid-utf8-legacy-after-read.json` |
+| Edit | `edit-invalid-utf8-utf16le-after-read.json` |
+| Write | `write-invalid-utf8-legacy.json` |
+| Write | `write-invalid-utf8-legacy-after-read.json` |
+| Write | `write-invalid-utf8-utf16le.json` |
+
+The only harness extension is conditional cleanup steps (`when: 'task'`),
+which send TaskStop only for an actually discovered native task ID. No new
+normalization placeholders or changes to accepted golden contents were needed.
+Aggregate digest in the same sorted path/hash format used below:
+
+```text
+e0c5878b836aee2756733f85cefcd9d1c84738e1242012325ecbe7eb4ceadae0
+```
+
+### M1 review follow-up verification
+
+Two complete `node capture.mjs` runs on 2026-11-09 captured **95/95 cases** with
+**134 scripted tool invocations**: **133 received tool_results** (25 expected
+tool-error results) and one intentionally guarded FIFO invocation with no result.
+All **96 JSON files** (95 fixtures plus `tools.json`) were byte-identical after
+normalization, independently checked by SHA-256. All second-run comparisons
+were `identical`. **No case was excluded from either run**, including the slow
+`bash-timeout-long` and the ten-second `read-fifo` guard. The long-timeout command
+was rejected before execution in both runs, as documented above.
+
+None of the 80 previously accepted case fixtures or `tools.json` changed.
+No case temporary tree remained outside the worktree. The new cwd scratch-path
+normalization anchor preserves case names and does not require old-fixture
+regeneration. The 15 new fixtures are defined in `native-capture/review-cases.mjs`:
+
+| Tool directory | Fixture basename |
+| --- | --- |
+| Bash | `bash-background-child-foreground.json` |
+| Bash | `bash-timeout-with-output.json` |
+| Bash | `bash-timeout-long.json` |
+| Bash | `bash-invalid-utf8.json` |
+| Bash | `bash-cwd-deleted.json` |
+| Bash | `bash-preview-astral.json` |
+| TaskStop | `taskstop-finished.json` |
+| Read | `read-threshold-offset-only.json` |
+| Read | `read-threshold-limit-only.json` |
+| Read | `read-invalid-utf8.json` |
+| Read | `read-fifo.json` |
+| Read | `read-dev-null.json` |
+| Edit | `edit-curly-single-quote.json` |
+| Edit | `edit-curly-single-quote-restyle.json` |
+| Edit | `edit-mixed-eol.json` |
+
+The foreground-child case's first result took **17.40 ms / 17.17 ms** in the two
+complete runs; its `ps` step took **65.29 ms / 63.58 ms**. The FIFO guard and
+termination took **10019.16 ms / 10023.38 ms**. These variable observations stay
+out of the fixtures. Automatic timeout-to-background task IDs use the existing
+`{{TASK_ID}}` placeholder, not a new placeholder type.
+
+Aggregate digest using the sorted path/hash format below:
+
+```text
+7f83706087cec1565c885a24f1250f512b0d58ea5a63e3a2a6c53b39fe26f7d6
+```
 
 ### File metadata verification
 

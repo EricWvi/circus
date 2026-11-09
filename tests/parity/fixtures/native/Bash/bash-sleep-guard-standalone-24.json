@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-sleep-guard-standalone-24",
+  "description": "Measure native Bash: sleep 24.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "sleep 24",
+        "description": "Measure sleep guard and timeout behavior",
+        "timeout": 1000
+      },
+      "result": {
+        "is_error": true,
+        "content": "Exit code 143\nCommand timed out after 1s\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

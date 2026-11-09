@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-invalid-utf8",
+  "description": "Decode invalid UTF-8 bytes from Bash output.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "printf 'a\\xffb\\xfe\\xfdc\\n'",
+        "description": "Capture M1 review behavior"
+      },
+      "result": {
+        "is_error": false,
+        "content": "a�b��c\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

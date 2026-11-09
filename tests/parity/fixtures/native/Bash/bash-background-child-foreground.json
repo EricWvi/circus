@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-background-child-foreground",
+  "description": "Measure foreground shell exit with a background child retaining output pipes.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "sleep 30 & echo started",
+        "description": "Capture M1 review behavior",
+        "timeout": 10000
+      },
+      "result": {
+        "is_error": true,
+        "content": "<tool_use_error>Blocked: sleep 30 followed by: echo started. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "ps -o pid,args -C sleep | grep 'sleep 30' || echo gone",
+        "description": "Capture M1 review behavior"
+      },
+      "result": {
+        "is_error": false,
+        "content": "gone\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

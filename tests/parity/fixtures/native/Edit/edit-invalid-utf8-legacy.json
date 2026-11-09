@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-invalid-utf8-legacy",
+  "description": "Edit legacy bytes without a prior Read.",
+  "setup": {
+    "files": {
+      "a.txt": {
+        "base64": "Yf9i/v1jCg=="
+      }
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "a",
+        "new_string": "A"
+      },
+      "result": {
+        "is_error": true,
+        "content": "<tool_use_error>File is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. These tools write UTF-8 (or UTF-16LE behind its byte-order mark) and never convert a file's encoding on their own, so nothing was written. If the file is text, make the change with a shell command that reads and writes it in its own encoding (iconv, or PowerShell Get-Content/Set-Content -Encoding), or ask the user whether to convert it to UTF-8 first. To replace the whole file with new UTF-8 text anyway, delete it first, then Write it.</tool_use_error>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": {
+      "base64": "Yf9i/v1jCg=="
+    }
+  }
+}

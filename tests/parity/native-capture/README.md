@@ -13,9 +13,13 @@ Use Node 24 on Linux with `/bin/bash` and the standard commands used in
 npm ci --no-audit --no-fund --cache .tmp/npm-cache
 node capture.mjs
 node capture.mjs --case 'read-*'
+node capture.mjs --skip-slow
 node capture.mjs --case bash-background --case bash-background-stop
 node measure-thresholds.mjs
 node measure-thresholds.mjs read-cjk-lines bash-cjk
+node measure-sleep-encoding.mjs
+node measure-sleep-encoding.mjs --supplement
+node measure-sleep-encoding.mjs --units
 ```
 
 The SDK is pinned to `0.3.319`; the captured bundled CLI is `2.1.319`.
@@ -52,6 +56,11 @@ not evidence that a failed current capture succeeded; inspect the exit status
 and `.tmp/last-run.json`. Successful cases print `new`, `changed` or `identical`
 against the previously saved fixture, plus SHA-256 hashes in that run report.
 
+The full run includes cases marked `slow: true`; `--skip-slow` omits them.
+`bash-timeout-long` is marked slow and has `deadline_ms: 90000`, allowing its
+65000 ms tool timeout even though native currently rejects its leading sleep
+before execution. Ordinary sessions retain the 60000 ms harness deadline.
+
 ## Routing and evidence
 
 `fake-api.mjs` adapts the phase0/a prototype. It accepts
@@ -85,6 +94,22 @@ are named, results for other families are preserved. The complete measured probe
 lists are published in the behavior document. Only the two boundary definitions
 per family in `threshold-cases.mjs` are included in a normal capture, alongside
 the requested range, edge-input, combined-stream and many-line cases.
+
+`measure-sleep-encoding.mjs` likewise uses fresh native sessions without saving
+probe fixtures. The base command runs 42 bisection, shell-shape, timeout and
+encoding probes. `--supplement` appends four timeout discriminators and a full
+background lifecycle; `--units` appends four duration-syntax probes. Run these
+commands once in the order above to reproduce the 51-row report at ignored
+`.tmp/sleep-encoding-probes.json`. All outcomes and distinct messages are copied
+into the behavior document. `sleep-encoding-cases.mjs` retains only 17
+representative fixtures, reusing the earlier golden cases for redundant shapes.
+
+`when: 'task'` is an optional step condition: TaskStop cleanup runs only when an
+actual task ID was discovered in a preceding native result. It records a real
+model-facing TaskStop step if executed; otherwise it emits no tool call. This
+stops native-managed background tasks without inventing task IDs or adding
+failed cleanup calls to blocked cases. A shell's own `&` child does not provide
+a native task ID and is not mislabeled as a managed task.
 
 The native wire format in this version uses **string** `tool_result.content` for
 all these cases. Fixtures retain that type verbatim instead of inventing an
@@ -152,6 +177,9 @@ To add a case, add one plain-data definition to `cases.mjs`: `id`, `description`
 `setup.files`, `setup.dirs` and `steps`. File contents are strings or
 `{ "base64": "..." }`. Each step has `tool` and exact `input`; an external change
 uses `before: { write: { path, content } }`. Multi-step cases use one session.
+Deleting the persisted working directory uses
+`before: { remove: { path: "{{CWD}}/gone" } }`; the harness removes that path
+recursively immediately before sending the associated tool input.
 All Bash inputs include `description`. The shell-info snapshot step alone is
 conditional (`when: 'snapshot'`) because it must only read a path actually
 returned by native Bash; skipping it is recorded in fixture `notes`.
@@ -220,3 +248,49 @@ capture rather than being mislabeled.
 symlinks. A kept link is described by `fs_after`; its target's contents appear
 under the target's own regular filename. Fixtures without `observe_fs` retain
 their original format, and all accepted existing fixtures remain unchanged.
+
+## FIFO guards and elapsed-time observations
+
+`setup.fifos: ["p"]` creates named pipes relative to `{{CWD}}`, after regular
+files/links and before explicit modes. It invokes `/usr/bin/mkfifo` directly,
+without a shell, under the same explicit 022 umask. The project file-content
+walker skips FIFOs and never reads them. They are not an additional supported
+`fs_after.type`; the FIFO case does not request metadata observations.
+
+A step may specify `guard_ms`. The timer starts just before its `tool_use` is
+sent and is cleared when the next primary request supplies the corresponding
+result. For this case only, the SDK's spawn callback tracks the exact CLI child
+using the same command, arguments, cwd, isolated environment and pipe stdio.
+If the guard expires, the harness aborts the query and sends SIGKILL to that
+specific child. It closes the SDK/fake API and removes the isolated case tree.
+Unrelated processes are never signaled. An ordinary failed or missing result
+without a declared expired guard still fails capture.
+
+`read-fifo` intentionally has no writer. If it blocks, its one step records:
+
+```json
+{
+  "tool": "Read",
+  "input": { "file_path": "{{CWD}}/p" },
+  "result": null,
+  "attachments": [],
+  "observation": { "status": "blocked", "guard_ms": 10000, "session_terminated": true }
+}
+```
+
+This is a harness observation of **no native tool_result**, not fabricated
+native content or an API error. The fixture also records a fixed explanatory
+note. If a future native version returns before the guard, its real result is
+captured normally instead. The intentional blocked observation counts as a
+captured case; it does not require a final model answer after the killed session.
+
+Every step's elapsed interval is written only to ignored
+`.tmp/<case>-timings.json`, measured from sending the scripted tool input to
+receipt of the next primary request carrying its result. For a blocked step,
+the interval ends after termination. Variable timing values are excluded from
+fixtures; measured foreground-child timings are quoted in the behavior doc.
+
+Task-ID normalization also recognizes automatic timeout-to-background messages.
+Scratch `cwd-*` normalization matches path components only, so the literal case
+name `bash-cwd-deleted` is preserved. These extensions do not change any of the
+80 previously accepted fixtures.

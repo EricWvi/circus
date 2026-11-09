@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { cases } from './cases.mjs';
 import { startFakeApi } from './fake-api.mjs';
 
@@ -38,6 +40,11 @@ export async function capture(definition, { persist = true } = {}) {
   let fake;
   let sdk;
   let timer;
+  let guardTimer;
+  let guardExpired = false;
+  let guardedChild;
+  let sentAt;
+  const timings = [];
   let stderr = '';
   const abortController = new AbortController();
   // Children inherit the process umask. Captures run sequentially so setup and
@@ -50,7 +57,7 @@ export async function capture(definition, { persist = true } = {}) {
 
   function discover(content) {
     const text = typeof content === 'string' ? content : JSON.stringify(content);
-    const task = text.match(/(?:running in background with ID:|task_id["\\:\s]+|task-id>)\s*([a-z0-9_-]+)/i);
+    const task = text.match(/(?:running in background with ID:|moved to the background \(ID:|task_id["\\:\s]+|task-id>)\s*([a-z0-9_-]+)/i);
     if (task) values.TASK_ID = task[1];
     const output = text.match(/(?:Output is being written to:|Full output saved to:|output_file["\\:\s]+)\s*([^\s"\\<>]+)/i)
       || text.match(/(\/[^\s"\\<>]*\/tasks\/[a-z0-9_-]+\.output)/i);
@@ -75,7 +82,7 @@ export async function capture(definition, { persist = true } = {}) {
     text = text.replace(/127\.0\.0\.1:\d+/g, '127.0.0.1:{{PORT}}');
     text = text.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '{{SESSION_ID}}');
     text = text.replace(/snapshot-bash-\d+-[a-z0-9]+\.sh/g, 'snapshot-bash-{{TIME}}-{{ID}}.sh');
-    text = text.replace(/cwd-[a-z0-9-]+/g, 'cwd-{{ID}}');
+    text = text.replace(/\/cwd-[a-z0-9-]+/g, '/cwd-{{ID}}');
     text = text.replace(/(?<=\/tool-results\/)[^\s/"'<>]+/g, '{{ID}}.txt');
     text = text.replace(/(?<=\/tasks\/)[a-z0-9_-]+(?=\.output)/g, '{{TASK_ID}}');
     text = text.replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g, '{{TIME}}');
@@ -107,6 +114,11 @@ export async function capture(definition, { persist = true } = {}) {
       await mkdir(resolve(full, '..'), { recursive: true });
       await link(join(cwd, existingPath), full);
     }
+    for (const path of definition.setup.fifos ?? []) {
+      const full = join(cwd, path);
+      await mkdir(resolve(full, '..'), { recursive: true });
+      await promisify(execFile)('/usr/bin/mkfifo', [full], { env: { PATH: '/usr/bin:/bin' } });
+    }
     for (const [path, mode] of Object.entries(definition.setup.modes ?? {})) {
       if (!/^[0-7]{4}$/.test(mode)) throw new Error(`Invalid setup mode for ${path}: ${mode}`);
       await chmod(join(cwd, path), Number.parseInt(mode, 8));
@@ -120,6 +132,8 @@ export async function capture(definition, { persist = true } = {}) {
     fake = await startFakeApi({ marker, model, onError: () => abortController.abort(), onTurn: async body => {
       tools ??= body.tools;
       if (pending) {
+        clearTimeout(guardTimer);
+        timings.push({ step: steps.length + 1, tool: pending.tool, elapsed_ms: performance.now() - sentAt });
         const containing = body.messages.filter(m => m.role === 'user' && Array.isArray(m.content) &&
           m.content.some(b => b.type === 'tool_result' && b.tool_use_id === pending.id));
         if (containing.length !== 1) throw new Error(`Expected exactly one user message for ${pending.id}`);
@@ -136,6 +150,7 @@ export async function capture(definition, { persist = true } = {}) {
       }
       while (index < definition.steps.length) {
         const step = definition.steps[index++];
+        if (step.when === 'task' && !values.TASK_ID) continue;
         if (step.resolve_snapshot && !values.SNAPSHOT_PATH) {
           const dir = join(config, 'shell-snapshots');
           const names = (await readdir(dir)).filter(name => name.endsWith('.sh'));
@@ -156,7 +171,18 @@ export async function capture(definition, { persist = true } = {}) {
             throw new Error('External modification did not change mtime');
           }
         }
+        if (expanded.before?.remove) {
+          await rm(expanded.before.remove.path, { recursive: true });
+        }
         pending = { ...expanded, id: `toolu_native_${steps.length}` };
+        sentAt = performance.now();
+        if (expanded.guard_ms) guardTimer = setTimeout(() => {
+          guardExpired = true;
+          abortController.abort();
+          // The FIFO case intentionally allows a blocked native open/read.
+          // Kill only this query's child, never an unrelated process.
+          guardedChild?.kill('SIGKILL');
+        }, expanded.guard_ms);
         return pending;
       }
       return { text: 'Native capture complete.' };
@@ -170,26 +196,44 @@ export async function capture(definition, { persist = true } = {}) {
       ANTHROPIC_BASE_URL: fake.url, ANTHROPIC_API_KEY: 'sk-circus-fake-no-network',
       CLAUDE_CONFIG_DIR: config, DISABLE_TELEMETRY: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     };
-    timer = setTimeout(() => abortController.abort(), 60000);
+    timer = setTimeout(() => abortController.abort(), definition.deadline_ms ?? 60000);
     sdk = query({ prompt: `${marker}: Execute the supplied tool script and finish.`, options: {
       cwd, env, model, tools: toolNames, settingSources: [], mcpServers: {}, strictMcpConfig: true,
       permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true, abortController,
+      ...(definition.steps.some(step => step.guard_ms) ? { spawnClaudeCodeProcess: options => {
+        guardedChild = spawn(options.command, options.args, {
+          cwd: options.cwd, env: options.env, signal: options.signal, stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        guardedChild.stderr.on('data', chunk => { stderr += chunk.toString(); });
+        return guardedChild;
+      } } : {}),
       stderr: chunk => { stderr += chunk; },
     } });
     let final;
-    for await (const message of sdk) {
-      if (message.type === 'system' && message.subtype === 'init') {
-        version = message.claude_code_version;
-        session = message.session_id;
-        if (message.apiKeySource !== 'ANTHROPIC_API_KEY') throw new Error('Unexpected authentication source');
-        if (toolNames.some(t => !message.tools.includes(t))) throw new Error('A required native tool was not enabled');
+    try {
+      for await (const message of sdk) {
+        if (message.type === 'system' && message.subtype === 'init') {
+          version = message.claude_code_version;
+          session = message.session_id;
+          if (message.apiKeySource !== 'ANTHROPIC_API_KEY') throw new Error('Unexpected authentication source');
+          if (toolNames.some(t => !message.tools.includes(t))) throw new Error('A required native tool was not enabled');
+        }
+        if (message.type === 'result') final = message;
       }
-      if (message.type === 'result') final = message;
-    }
+    } catch (error) { if (!guardExpired) throw error; }
     fake.check();
-    if (final?.subtype !== 'success' || final.result !== 'Native capture complete.' || pending || !steps.length) {
+    if (guardExpired && pending) {
+      timings.push({ step: steps.length + 1, tool: pending.tool, elapsed_ms: performance.now() - sentAt, blocked: true });
+      steps.push({ tool: pending.tool, input: pending.input,
+        ...(pending.before ? { before: pending.before } : {}), result: null, attachments: [],
+        observation: { status: 'blocked', guard_ms: pending.guard_ms, session_terminated: true },
+      });
+      pending = null;
+      notes.push('No tool_result arrived before the per-step harness guard; the isolated CLI session was killed.');
+    } else if (final?.subtype !== 'success' || final.result !== 'Native capture complete.' || pending || !steps.length) {
       throw new Error(`Incomplete capture (${final?.subtype ?? 'no final result'})`);
     }
+    await writeFile(join(root, '.tmp', `${definition.id}-timings.json`), json(timings));
     if (!version || !tools) throw new Error('Missing CLI version or tool schemas');
     const filesAfter = {};
     async function walk(dir) {
@@ -264,6 +308,7 @@ export async function capture(definition, { persist = true } = {}) {
     throw error;
   } finally {
     clearTimeout(timer);
+    clearTimeout(guardTimer);
     try {
       // Query.close() starts asynchronous teardown but returns void. Returning
       // the generator awaits SDK teardown before deleting files it may flush.
@@ -281,11 +326,12 @@ export async function capture(definition, { persist = true } = {}) {
 
 async function main() {
   const args = process.argv.slice(2);
-  if (args.some((arg, i) => arg !== '--case' && args[i - 1] !== '--case') || args.at(-1) === '--case') {
-    throw new Error('Usage: node capture.mjs [--case <glob>]');
+  if (args.some((arg, i) => !['--case', '--skip-slow'].includes(arg) && args[i - 1] !== '--case') || args.at(-1) === '--case') {
+    throw new Error('Usage: node capture.mjs [--case <glob>] [--skip-slow]');
   }
   const patterns = args.filter((_, i) => args[i - 1] === '--case');
-  const selected = cases.filter(c => !patterns.length || patterns.some(p => glob(p).test(c.id)));
+  const selected = cases.filter(c => (!args.includes('--skip-slow') || !c.slow) &&
+    (!patterns.length || patterns.some(p => glob(p).test(c.id))));
   if (!selected.length) throw new Error('No matching cases');
   await mkdir(fixtures, { recursive: true });
   const results = [];

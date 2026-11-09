@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-fifo",
+  "description": "Read an unwritten FIFO with a ten-second harness guard.",
+  "setup": {
+    "files": {},
+    "dirs": [],
+    "fifos": [
+      "p"
+    ]
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/p"
+      },
+      "result": null,
+      "attachments": [],
+      "observation": {
+        "status": "blocked",
+        "guard_ms": 10000,
+        "session_terminated": true
+      }
+    }
+  ],
+  "files_after": {},
+  "notes": [
+    "No tool_result arrived before the per-step harness guard; the isolated CLI session was killed."
+  ]
+}

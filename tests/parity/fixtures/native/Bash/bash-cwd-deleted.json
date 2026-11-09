@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-cwd-deleted",
+  "description": "Remove the persisted shell working directory before subsequent commands.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "mkdir gone && cd gone",
+        "description": "Capture M1 review behavior"
+      },
+      "result": {
+        "is_error": false,
+        "content": "(Bash completed with no output)\n\n<system-reminder>\n# Environment update\n - Primary working directory: {{CWD}}/gone (was {{CWD}})\n</system-reminder>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "pwd",
+        "description": "Capture M1 review behavior"
+      },
+      "before": {
+        "remove": {
+          "path": "{{CWD}}/gone"
+        }
+      },
+      "result": {
+        "is_error": false,
+        "content": "{{CWD}}\n\n<system-reminder>\n# Environment update\n - Primary working directory: {{CWD}} (was {{CWD}}/gone)\n</system-reminder>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "pwd",
+        "description": "Capture M1 review behavior"
+      },
+      "result": {
+        "is_error": false,
+        "content": "{{CWD}}\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

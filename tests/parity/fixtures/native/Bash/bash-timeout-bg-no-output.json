@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-timeout-bg-no-output",
+  "description": "Measure native Bash: true; sleep 5.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "true; sleep 5",
+        "description": "Measure sleep guard and timeout behavior",
+        "timeout": 1000
+      },
+      "result": {
+        "is_error": false,
+        "content": "Command did not complete within its 1s timeout and was moved to the background (ID: {{TASK_ID}}). Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. No output had been read from it when it was moved. A program that buffers its output, or a pipe into one such as tail, can keep the output file empty until the command finishes. To check interim output, use Read on that file path.\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "TaskStop",
+      "input": {
+        "task_id": "{{TASK_ID}}"
+      },
+      "result": {
+        "is_error": false,
+        "content": "{\"message\":\"Successfully stopped task: {{TASK_ID}} (true; sleep 5)\",\"task_id\":\"{{TASK_ID}}\",\"task_type\":\"local_bash\",\"command\":\"true; sleep 5\"}\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

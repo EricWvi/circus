@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-sleep-guard-background-leading",
+  "description": "Measure native Bash: sleep 30; echo x.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "sleep 30; echo x",
+        "description": "Measure sleep guard and timeout behavior",
+        "run_in_background": true
+      },
+      "result": {
+        "is_error": false,
+        "content": "Command running in background with ID: {{TASK_ID}}. Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. To check interim output, use Read on that file path.\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "TaskStop",
+      "input": {
+        "task_id": "{{TASK_ID}}"
+      },
+      "result": {
+        "is_error": false,
+        "content": "{\"message\":\"Successfully stopped task: {{TASK_ID}} (sleep 30; echo x)\",\"task_id\":\"{{TASK_ID}}\",\"task_type\":\"local_bash\",\"command\":\"sleep 30; echo x\"}\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}
