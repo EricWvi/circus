@@ -1,0 +1,159 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/daemon"
+	"google.golang.org/protobuf/encoding/protojson"
+)
+
+type harnessTool struct {
+	run func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error)
+}
+
+func (h harnessTool) Name() string { return "read" }
+func (h harnessTool) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+	return h.run(ctx, call)
+}
+
+func await[T any](t *testing.T, ch <-chan T) T {
+	t.Helper()
+	select {
+	case value := <-ch:
+		return value
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out")
+		var zero T
+		return zero
+	}
+}
+
+func decodeStatus(t *testing.T, line string) *circusv1.CallStatus {
+	t.Helper()
+	s := new(circusv1.CallStatus)
+	if err := protojson.Unmarshal([]byte(line), s); err != nil {
+		t.Fatalf("invalid output %q: %v", line, err)
+	}
+	return s
+}
+
+func TestDaemonCallStreamsInCompletionOrder(t *testing.T) {
+	input := strings.NewReader("{\"callId\":\"slow\",\"read\":{\"path\":\"/a\"}}\n{\"callId\":\"fast\",\"read\":{\"path\":\"/b\"}}\n")
+	release := make(chan struct{})
+	started := make(chan string, 2)
+	tool := harnessTool{run: func(_ context.Context, call *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+		started <- call.CallId
+		if call.CallId == "slow" {
+			<-release
+		}
+		return &circusv1.DeviceResult{Output: &circusv1.ToolOutput{}}, nil
+	}}
+	reader, writer := io.Pipe()
+	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
+	finished := make(chan error, 1)
+	go func() { finished <- daemonCall(input, writer, []daemon.Tool{tool}, true); _ = writer.Close() }()
+	lines := make(chan string, 2)
+	go func() {
+		scanner := bufio.NewScanner(reader)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+		close(lines)
+	}()
+	await(t, started)
+	await(t, started)
+	first := decodeStatus(t, await(t, lines))
+	if first.CallId != "fast" || first.State != circusv1.CallStatus_STATE_COMPLETED || first.Result.CallId != "fast" {
+		t.Fatalf("first output: %v", first)
+	}
+	close(release)
+	second := decodeStatus(t, await(t, lines))
+	if second.CallId != "slow" || second.State != circusv1.CallStatus_STATE_COMPLETED || second.Result.CallId != "slow" {
+		t.Fatalf("second output: %v", second)
+	}
+	if err := await(t, finished); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := <-lines; ok {
+		t.Fatal("extra output")
+	}
+}
+
+func TestDaemonCallRetriesAndImmediateStatus(t *testing.T) {
+	input := "{\"callId\":\"same\",\"read\":{}}\n{\"callId\":\"same\",\"read\":{}}\n"
+	for _, wait := range []bool{true, false} {
+		var runs atomic.Int32
+		tool := harnessTool{run: func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+			runs.Add(1)
+			if !wait {
+				<-ctx.Done()
+			}
+			return &circusv1.DeviceResult{}, nil
+		}}
+		var out bytes.Buffer
+		if err := daemonCall(strings.NewReader(input), &out, []daemon.Tool{tool}, wait); err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+		if len(lines) != 2 {
+			t.Fatalf("output: %s", out.String())
+		}
+		state := circusv1.CallStatus_STATE_RUNNING
+		if wait {
+			state = circusv1.CallStatus_STATE_COMPLETED
+		}
+		for _, line := range lines {
+			if s := decodeStatus(t, line); s.State != state {
+				t.Fatalf("wait %v: %v", wait, s)
+			}
+		}
+		if runs.Load() != 1 {
+			t.Fatalf("wait %v ran %d times", wait, runs.Load())
+		}
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("stdout failed") }
+
+func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
+	input := "{\"callId\":\"c1\",\"read\":{\"path\":\"/x\"}}\n"
+	var out, errOut bytes.Buffer
+	if err := daemonCommand([]string{"call"}, strings.NewReader(input), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	s := decodeStatus(t, strings.TrimSpace(out.String()))
+	if s.State != circusv1.CallStatus_STATE_COMPLETED || !s.Result.Output.IsError || s.Result.Output.Content[0].GetText() != `Error: tool "read" is not available on this device` {
+		t.Fatalf("default registry: %v", s)
+	}
+	out.Reset()
+	if err := daemonCommand([]string{"call", "-wait=false"}, strings.NewReader(input), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if s := decodeStatus(t, strings.TrimSpace(out.String())); s.State != circusv1.CallStatus_STATE_COMPLETED {
+		t.Fatalf("immediate unknown tool: %v", s)
+	}
+	for _, args := range [][]string{nil, {"unknown"}, {"call", "extra"}, {"call", "-unknown"}} {
+		if err := daemonCommand(args, strings.NewReader(""), &out, &errOut); err == nil {
+			t.Fatalf("invalid args: %v", args)
+		}
+	}
+	for _, badInput := range []string{"not json\n", "{}\n"} {
+		if err := daemonCommand([]string{"call"}, strings.NewReader(badInput), &out, &errOut); err == nil {
+			t.Fatalf("invalid input: %s", badInput)
+		}
+	}
+	if err := daemonCommand([]string{"call"}, strings.NewReader(input), failingWriter{}, &errOut); err == nil || err.Error() != "stdout failed" {
+		t.Fatalf("stdout error: %v", err)
+	}
+}

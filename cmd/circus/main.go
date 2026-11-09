@@ -8,16 +8,19 @@ import (
 var version = "dev"
 
 func main() {
-	if len(os.Args) != 2 {
+	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: circus <version|daemon>")
 		os.Exit(1)
 	}
+
 	switch os.Args[1] {
 	case "version":
 		fmt.Println(version)
 	case "daemon":
-		fmt.Fprintln(os.Stderr, "not implemented yet")
-		os.Exit(1)
+		if err := daemonCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintln(os.Stderr, "usage: circus <version|daemon>")
 		os.Exit(1)

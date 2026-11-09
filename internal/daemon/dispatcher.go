@@ -1,0 +1,382 @@
+package daemon
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"runtime/debug"
+	"sync"
+	"time"
+
+	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"google.golang.org/protobuf/proto"
+)
+
+var (
+	// ErrCallExpired rejects a retry whose result expired but tombstone remains.
+	ErrCallExpired = errors.New("call result has expired")
+	// ErrShutdown rejects new work after shutdown begins.
+	ErrShutdown = errors.New("daemon is shut down")
+)
+
+// Options configures a Dispatcher. Nonpositive durations use their defaults.
+type Options struct {
+	Tools          []Tool
+	DefaultTimeout time.Duration
+	MaxTimeout     time.Duration
+	ResultTTL      time.Duration
+	TombstoneTTL   time.Duration
+	Clock          Clock
+	// OnResult runs asynchronously in completion order, after result storage.
+	// It must return promptly; Shutdown waits for queued callbacks.
+	OnResult func(*circusv1.DeviceResult)
+}
+
+type callRecord struct {
+	cancel    func(error)
+	done      chan struct{}
+	result    *circusv1.DeviceResult
+	completed time.Time
+}
+
+// Dispatcher owns call execution, deduplication, and in-memory result retention.
+type Dispatcher struct {
+	mu             sync.Mutex
+	opts           Options
+	tools          map[string]Tool
+	calls          map[string]*callRecord
+	closed         bool
+	stopSweep      chan struct{}
+	stopped        chan struct{}
+	wg             sync.WaitGroup
+	callbackQueue  []*circusv1.DeviceResult
+	callbackWake   chan struct{}
+	callbackClosed bool
+	callbackDone   chan struct{}
+}
+
+// NewDispatcher builds a tool registry and starts retention sweeping.
+func NewDispatcher(opts Options) (*Dispatcher, error) {
+	if opts.DefaultTimeout <= 0 {
+		opts.DefaultTimeout = 2 * time.Minute
+	}
+	if opts.MaxTimeout <= 0 {
+		opts.MaxTimeout = 10 * time.Minute
+	}
+	if opts.ResultTTL <= 0 {
+		opts.ResultTTL = 30 * time.Minute
+	}
+	if opts.TombstoneTTL <= 0 {
+		opts.TombstoneTTL = 24 * time.Hour
+	}
+	if opts.Clock == nil {
+		opts.Clock = realClock{}
+	}
+	d := &Dispatcher{
+		opts:         opts,
+		tools:        make(map[string]Tool),
+		calls:        make(map[string]*callRecord),
+		stopSweep:    make(chan struct{}),
+		stopped:      make(chan struct{}),
+		callbackWake: make(chan struct{}, 1),
+		callbackDone: make(chan struct{}),
+	}
+	for _, tool := range opts.Tools {
+		if tool == nil {
+			return nil, errors.New("nil tool")
+		}
+		name := tool.Name()
+		if _, ok := d.tools[name]; ok {
+			return nil, fmt.Errorf("duplicate tool name %q", name)
+		}
+		d.tools[name] = tool
+	}
+	tick := opts.Clock.After(time.Minute)
+	go d.sweep(tick)
+	go d.deliverResults()
+	return d, nil
+}
+
+func (d *Dispatcher) sweep(tick <-chan time.Time) {
+	for {
+		select {
+		case <-d.stopSweep:
+			return
+		case <-tick:
+			d.mu.Lock()
+			d.expireLocked()
+			d.mu.Unlock()
+			tick = d.opts.Clock.After(time.Minute)
+		}
+	}
+}
+
+func (d *Dispatcher) expireLocked() {
+	now := d.opts.Clock.Now()
+	for id, call := range d.calls {
+		if call.cancel != nil {
+			continue
+		}
+		age := now.Sub(call.completed)
+		if age >= d.opts.ResultTTL {
+			call.result = nil
+		}
+		if call.result == nil && age >= d.opts.TombstoneTTL {
+			delete(d.calls, id)
+		}
+	}
+}
+
+func status(id string, call *callRecord) *circusv1.CallStatus {
+	s := &circusv1.CallStatus{CallId: id, State: circusv1.CallStatus_STATE_LOST}
+	if call != nil {
+		if call.cancel != nil {
+			s.State = circusv1.CallStatus_STATE_RUNNING
+		} else if call.result != nil {
+			s.State = circusv1.CallStatus_STATE_COMPLETED
+			s.Result = proto.Clone(call.result).(*circusv1.DeviceResult)
+		}
+	}
+	return s
+}
+
+// Submit snapshots and executes a call independently of its submitter.
+// Running and retained IDs return their existing state without executing again.
+func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, error) {
+	d.mu.Lock()
+	d.expireLocked()
+	defer d.mu.Unlock()
+	if d.closed {
+		return nil, ErrShutdown
+	}
+	if call == nil || call.GetCallId() == "" {
+		return nil, errors.New("call_id is required")
+	}
+	msg := call.ProtoReflect()
+	field := msg.WhichOneof(msg.Descriptor().Oneofs().ByName("tool"))
+	if field == nil {
+		return nil, errors.New("tool is required")
+	}
+	if existing := d.calls[call.CallId]; existing != nil {
+		if existing.cancel == nil && existing.result == nil {
+			return nil, ErrCallExpired
+		}
+		return status(call.CallId, existing), nil
+	}
+	if d.tools[string(field.Name())] == nil {
+		notify := errorResult(fmt.Sprintf("tool %q is not available on this device", field.Name()))
+		notify.CallId = call.CallId
+		r := &callRecord{result: notify, completed: d.opts.Clock.Now(), done: make(chan struct{})}
+		close(r.done)
+		d.calls[call.CallId] = r
+		d.queueResultLocked(notify)
+		return status(call.CallId, r), nil
+	}
+	call = proto.Clone(call).(*circusv1.DeviceCall)
+	timeout := time.Duration(call.TimeoutMs) * time.Millisecond
+	if timeout == 0 {
+		timeout = d.opts.DefaultTimeout
+	}
+	if timeout > d.opts.MaxTimeout {
+		timeout = d.opts.MaxTimeout
+	}
+	ctx := &deadlineContext{deadline: d.opts.Clock.Now().Add(timeout), done: make(chan struct{})}
+	r := &callRecord{cancel: ctx.cancel, done: make(chan struct{})}
+	d.calls[call.CallId] = r
+	deadline := d.opts.Clock.After(timeout)
+	fallback := d.opts.Clock.After(timeout + 5*time.Second)
+	d.wg.Add(1)
+	go d.execute(ctx, call, r, string(field.Name()), deadline, fallback)
+	return status(call.CallId, r), nil
+}
+
+// deadlineContext uses Clock for cancellation instead of wall-clock timers.
+// It implements Context directly so derived contexts inherit DeadlineExceeded.
+type deadlineContext struct {
+	deadline time.Time
+	done     chan struct{}
+	mu       sync.Mutex
+	err      error
+}
+
+func (c *deadlineContext) Deadline() (time.Time, bool) { return c.deadline, true }
+func (c *deadlineContext) Done() <-chan struct{}       { return c.done }
+func (c *deadlineContext) Value(any) any               { return nil }
+func (c *deadlineContext) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+func (c *deadlineContext) cancel(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.err == nil {
+		c.err = err
+		close(c.done)
+	}
+}
+
+func errorResult(message string) *circusv1.DeviceResult {
+	return &circusv1.DeviceResult{Output: &circusv1.ToolOutput{IsError: true, Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: "Error: " + message}}}}}
+}
+
+func runTool(ctx context.Context, tool Tool, call *circusv1.DeviceCall) (result *circusv1.DeviceResult) {
+	defer func() {
+		if value := recover(); value != nil {
+			slog.Error("tool panicked", "tool", tool.Name(), "panic", value, "stack", string(debug.Stack()))
+			result = errorResult(fmt.Sprint(value))
+		}
+	}()
+	result, err := tool.Run(ctx, call)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+	if result == nil {
+		return errorResult("tool returned no result")
+	}
+	return result
+}
+
+func (d *Dispatcher) execute(ctx *deadlineContext, call *circusv1.DeviceCall, r *callRecord, name string, deadline, fallback <-chan time.Time) {
+	defer d.wg.Done()
+	tool := d.tools[name]
+	id := call.CallId
+	returned := make(chan *circusv1.DeviceResult, 1)
+	go func() { returned <- runTool(ctx, tool, call) }()
+	for {
+		select {
+		case result := <-returned:
+			d.complete(id, r, result)
+			return
+		case <-deadline:
+			r.cancel(context.DeadlineExceeded)
+			deadline = nil
+		case <-fallback:
+			// Also cancel when a fake clock advances past both timers at once.
+			r.cancel(context.DeadlineExceeded)
+			d.complete(id, r, errorResult("tool did not stop after its timeout"))
+			return
+		}
+	}
+}
+
+func (d *Dispatcher) complete(id string, r *callRecord, result *circusv1.DeviceResult) {
+	result = proto.Clone(result).(*circusv1.DeviceResult)
+	result.CallId = id
+	d.mu.Lock()
+	r.cancel(context.Canceled)
+	r.cancel = nil
+	r.result = result
+	r.completed = d.opts.Clock.Now()
+	close(r.done)
+	d.queueResultLocked(result)
+	d.mu.Unlock()
+}
+
+// Queue under the state lock so callbacks follow the order results were stored.
+func (d *Dispatcher) queueResultLocked(result *circusv1.DeviceResult) {
+	if d.opts.OnResult == nil {
+		return
+	}
+	d.callbackQueue = append(d.callbackQueue, result)
+	select {
+	case d.callbackWake <- struct{}{}:
+	default:
+	}
+}
+
+func (d *Dispatcher) deliverResults() {
+	defer close(d.callbackDone)
+	for {
+		d.mu.Lock()
+		if len(d.callbackQueue) == 0 {
+			closed := d.callbackClosed
+			d.mu.Unlock()
+			if closed {
+				return
+			}
+			<-d.callbackWake
+			continue
+		}
+		result := d.callbackQueue[0]
+		d.callbackQueue[0] = nil
+		d.callbackQueue = d.callbackQueue[1:]
+		d.mu.Unlock()
+		d.opts.OnResult(proto.Clone(result).(*circusv1.DeviceResult))
+	}
+}
+
+// Query returns a snapshot, reporting lost for unknown or expired results.
+func (d *Dispatcher) Query(callID string) *circusv1.CallStatus {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.expireLocked()
+	return status(callID, d.calls[callID])
+}
+
+// Wait waits for completion; cancelling ctx leaves the call running.
+func (d *Dispatcher) Wait(ctx context.Context, callID string) (*circusv1.CallStatus, error) {
+	d.mu.Lock()
+	d.expireLocked()
+	r := d.calls[callID]
+	if r == nil || r.cancel == nil {
+		s := status(callID, r)
+		d.mu.Unlock()
+		return s, nil
+	}
+	d.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-r.done:
+		return d.Query(callID), nil
+	}
+}
+
+// Cancel requests interruption and reports whether the call is still running.
+func (d *Dispatcher) Cancel(callID string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.expireLocked()
+	if r := d.calls[callID]; r != nil && r.cancel != nil {
+		r.cancel(context.Canceled)
+		return true
+	}
+	return false
+}
+
+// Shutdown rejects new calls, cancels running calls, and drains callbacks.
+// If ctx expires, shutdown continues and may be waited on again.
+func (d *Dispatcher) Shutdown(ctx context.Context) error {
+	d.mu.Lock()
+	d.expireLocked()
+	if !d.closed {
+		d.closed = true
+		close(d.stopSweep)
+		for _, r := range d.calls {
+			if r.cancel != nil {
+				r.cancel(context.Canceled)
+			}
+		}
+		go func() {
+			d.wg.Wait()
+			d.mu.Lock()
+			d.callbackClosed = true
+			select {
+			case d.callbackWake <- struct{}{}:
+			default:
+			}
+			d.mu.Unlock()
+			<-d.callbackDone
+			close(d.stopped)
+		}()
+	}
+	d.mu.Unlock()
+	select {
+	case <-d.stopped:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
