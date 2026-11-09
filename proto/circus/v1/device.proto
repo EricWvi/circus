@@ -15,7 +15,7 @@ message DeviceCall {
   string session_id = 2;
   // SDK subagent ID, or an empty string for the main thread.
   string agent_id = 3;
-  // Locally enforced timeout in milliseconds; zero uses the tool default.
+  // Locally enforced timeout in milliseconds; zero uses the daemon default.
   uint32 timeout_ms = 4;
   // Tool invocation to execute.
   oneof tool {
@@ -118,6 +118,8 @@ message ReadRequest {
   uint32 offset = 2;
   // Maximum lines to return; zero uses the default cap.
   uint32 limit = 3;
+  // Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+  string cwd = 4;
 }
 
 // ReadResult records metadata for the whole file that was read.
@@ -138,6 +140,8 @@ message WriteRequest {
   string content = 2;
   // Hash observed at the last read; absent means never read in this session.
   optional string expected_sha256 = 3;
+  // Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+  string cwd = 4;
 }
 
 // WriteResult records the written file's hash and creation status.
@@ -160,6 +164,8 @@ message EditRequest {
   bool replace_all = 4;
   // Hash observed at the last read; absent means never read in this session.
   optional string expected_sha256 = 5;
+  // Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+  string cwd = 6;
 }
 
 // EditResult records the edited file's hash and intervening modification status.
@@ -168,6 +174,8 @@ message EditResult {
   string sha256 = 1;
   // Whether the file had changed since the session last read it.
   bool modified_since_read = 2;
+  // Edit created a new file from an empty old_string.
+  bool created = 3;
 }
 
 // TaskStopRequest asks the daemon to stop a background job.

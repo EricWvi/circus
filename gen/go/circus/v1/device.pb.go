@@ -152,7 +152,7 @@ type DeviceCall struct {
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// SDK subagent ID, or an empty string for the main thread.
 	AgentId string `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	// Locally enforced timeout in milliseconds; zero uses the tool default.
+	// Locally enforced timeout in milliseconds; zero uses the daemon default.
 	TimeoutMs uint32 `protobuf:"varint,4,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	// Tool invocation to execute.
 	//
@@ -851,7 +851,9 @@ type ReadRequest struct {
 	// Starting line: zero means the start; otherwise uses native tool 1-based lines.
 	Offset uint32 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
 	// Maximum lines to return; zero uses the default cap.
-	Limit         uint32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Limit uint32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+	Cwd           string `protobuf:"bytes,4,opt,name=cwd,proto3" json:"cwd,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -905,6 +907,13 @@ func (x *ReadRequest) GetLimit() uint32 {
 		return x.Limit
 	}
 	return 0
+}
+
+func (x *ReadRequest) GetCwd() string {
+	if x != nil {
+		return x.Cwd
+	}
+	return ""
 }
 
 // ReadResult records metadata for the whole file that was read.
@@ -980,8 +989,10 @@ type WriteRequest struct {
 	Content string `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
 	// Hash observed at the last read; absent means never read in this session.
 	ExpectedSha256 *string `protobuf:"bytes,3,opt,name=expected_sha256,json=expectedSha256,proto3,oneof" json:"expected_sha256,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+	Cwd           string `protobuf:"bytes,4,opt,name=cwd,proto3" json:"cwd,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WriteRequest) Reset() {
@@ -1031,6 +1042,13 @@ func (x *WriteRequest) GetContent() string {
 func (x *WriteRequest) GetExpectedSha256() string {
 	if x != nil && x.ExpectedSha256 != nil {
 		return *x.ExpectedSha256
+	}
+	return ""
+}
+
+func (x *WriteRequest) GetCwd() string {
+	if x != nil {
+		return x.Cwd
 	}
 	return ""
 }
@@ -1103,8 +1121,10 @@ type EditRequest struct {
 	ReplaceAll bool `protobuf:"varint,4,opt,name=replace_all,json=replaceAll,proto3" json:"replace_all,omitempty"`
 	// Hash observed at the last read; absent means never read in this session.
 	ExpectedSha256 *string `protobuf:"bytes,5,opt,name=expected_sha256,json=expectedSha256,proto3,oneof" json:"expected_sha256,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+	Cwd           string `protobuf:"bytes,6,opt,name=cwd,proto3" json:"cwd,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EditRequest) Reset() {
@@ -1172,6 +1192,13 @@ func (x *EditRequest) GetExpectedSha256() string {
 	return ""
 }
 
+func (x *EditRequest) GetCwd() string {
+	if x != nil {
+		return x.Cwd
+	}
+	return ""
+}
+
 // EditResult records the edited file's hash and intervening modification status.
 type EditResult struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1179,8 +1206,10 @@ type EditResult struct {
 	Sha256 string `protobuf:"bytes,1,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	// Whether the file had changed since the session last read it.
 	ModifiedSinceRead bool `protobuf:"varint,2,opt,name=modified_since_read,json=modifiedSinceRead,proto3" json:"modified_since_read,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Edit created a new file from an empty old_string.
+	Created       bool `protobuf:"varint,3,opt,name=created,proto3" json:"created,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EditResult) Reset() {
@@ -1223,6 +1252,13 @@ func (x *EditResult) GetSha256() string {
 func (x *EditResult) GetModifiedSinceRead() bool {
 	if x != nil {
 		return x.ModifiedSinceRead
+	}
+	return false
+}
+
+func (x *EditResult) GetCreated() bool {
+	if x != nil {
+		return x.Created
 	}
 	return false
 }
@@ -1605,25 +1641,27 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"\x10output_truncated\x18\x05 \x01(\bR\x0foutputTruncated\x12\x1f\n" +
 	"\voutput_path\x18\x06 \x01(\tR\n" +
 	"outputPath\x12\x15\n" +
-	"\x06job_id\x18\a \x01(\tR\x05jobId\"O\n" +
+	"\x06job_id\x18\a \x01(\tR\x05jobId\"a\n" +
 	"\vReadRequest\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\rR\x06offset\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\rR\x05limit\"i\n" +
+	"\x05limit\x18\x03 \x01(\rR\x05limit\x12\x10\n" +
+	"\x03cwd\x18\x04 \x01(\tR\x03cwd\"i\n" +
 	"\n" +
 	"ReadResult\x12\x16\n" +
 	"\x06sha256\x18\x01 \x01(\tR\x06sha256\x12\"\n" +
 	"\rmtime_unix_ms\x18\x02 \x01(\x03R\vmtimeUnixMs\x12\x1f\n" +
 	"\vtotal_lines\x18\x03 \x01(\rR\n" +
-	"totalLines\"~\n" +
+	"totalLines\"\x90\x01\n" +
 	"\fWriteRequest\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\x12,\n" +
-	"\x0fexpected_sha256\x18\x03 \x01(\tH\x00R\x0eexpectedSha256\x88\x01\x01B\x12\n" +
+	"\x0fexpected_sha256\x18\x03 \x01(\tH\x00R\x0eexpectedSha256\x88\x01\x01\x12\x10\n" +
+	"\x03cwd\x18\x04 \x01(\tR\x03cwdB\x12\n" +
 	"\x10_expected_sha256\"?\n" +
 	"\vWriteResult\x12\x16\n" +
 	"\x06sha256\x18\x01 \x01(\tR\x06sha256\x12\x18\n" +
-	"\acreated\x18\x02 \x01(\bR\acreated\"\xc2\x01\n" +
+	"\acreated\x18\x02 \x01(\bR\acreated\"\xd4\x01\n" +
 	"\vEditRequest\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1d\n" +
 	"\n" +
@@ -1632,12 +1670,14 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"new_string\x18\x03 \x01(\tR\tnewString\x12\x1f\n" +
 	"\vreplace_all\x18\x04 \x01(\bR\n" +
 	"replaceAll\x12,\n" +
-	"\x0fexpected_sha256\x18\x05 \x01(\tH\x00R\x0eexpectedSha256\x88\x01\x01B\x12\n" +
-	"\x10_expected_sha256\"T\n" +
+	"\x0fexpected_sha256\x18\x05 \x01(\tH\x00R\x0eexpectedSha256\x88\x01\x01\x12\x10\n" +
+	"\x03cwd\x18\x06 \x01(\tR\x03cwdB\x12\n" +
+	"\x10_expected_sha256\"n\n" +
 	"\n" +
 	"EditResult\x12\x16\n" +
 	"\x06sha256\x18\x01 \x01(\tR\x06sha256\x12.\n" +
-	"\x13modified_since_read\x18\x02 \x01(\bR\x11modifiedSinceRead\"(\n" +
+	"\x13modified_since_read\x18\x02 \x01(\bR\x11modifiedSinceRead\x12\x18\n" +
+	"\acreated\x18\x03 \x01(\bR\acreated\"(\n" +
 	"\x0fTaskStopRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\x10\n" +
 	"\x0eTaskStopResult\"$\n" +

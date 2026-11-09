@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -127,20 +129,47 @@ type failingWriter struct{}
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("stdout failed") }
 
 func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
-	input := "{\"callId\":\"c1\",\"read\":{\"path\":\"/x\"}}\n"
+	if err := os.MkdirAll(".tmp", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp(".tmp", "daemon-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	path, err := filepath.Abs(filepath.Join(dir, "read.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("alpha\nbeta\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	call, err := protojson.Marshal(&circusv1.DeviceCall{
+		CallId: "c1",
+		Tool:   &circusv1.DeviceCall_Read{Read: &circusv1.ReadRequest{Path: path}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := string(call) + "\n"
 	var out, errOut bytes.Buffer
 	if err := daemonCommand([]string{"call"}, strings.NewReader(input), &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	s := decodeStatus(t, strings.TrimSpace(out.String()))
-	if s.State != circusv1.CallStatus_STATE_COMPLETED || !s.Result.Output.IsError || s.Result.Output.Content[0].GetText() != `Error: tool "read" is not available on this device` {
+	if s.State != circusv1.CallStatus_STATE_COMPLETED || s.Result.GetOutput().GetIsError() || len(s.Result.GetOutput().GetContent()) != 1 || s.Result.Output.Content[0].GetText() != "1\talpha\n2\tbeta\n3" {
 		t.Fatalf("default registry: %v", s)
 	}
 	out.Reset()
-	if err := daemonCommand([]string{"call", "-wait=false"}, strings.NewReader(input), &out, &errOut); err != nil {
+	unavailableInput := "{\"callId\":\"c2\",\"taskStop\":{\"jobId\":\"unavailable\"}}\n"
+	if err := daemonCommand([]string{"call", "-wait=false"}, strings.NewReader(unavailableInput), &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	if s := decodeStatus(t, strings.TrimSpace(out.String())); s.State != circusv1.CallStatus_STATE_COMPLETED {
+	if s := decodeStatus(t, strings.TrimSpace(out.String())); s.State != circusv1.CallStatus_STATE_COMPLETED || !s.Result.GetOutput().GetIsError() || len(s.Result.GetOutput().GetContent()) != 1 || s.Result.Output.Content[0].GetText() != `Error: tool "task_stop" is not available on this device` {
 		t.Fatalf("immediate unknown tool: %v", s)
 	}
 	for _, args := range [][]string{nil, {"unknown"}, {"call", "extra"}, {"call", "-unknown"}} {
