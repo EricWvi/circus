@@ -11,6 +11,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon"
+	"github.com/EricWvi/circus/internal/daemon/jobs"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -30,7 +31,7 @@ func daemonCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 	if flags.NArg() != 0 {
 		return errors.New("usage: circus daemon call [-wait=true]")
 	}
-	jobs := daemon.NewJobManager(daemon.JobOptions{})
+	jobs := jobs.NewManager(jobs.Options{})
 	defer func() { _ = jobs.Shutdown(context.Background()) }()
 	return daemonCall(in, out, daemon.DefaultTools(jobs), *wait)
 }

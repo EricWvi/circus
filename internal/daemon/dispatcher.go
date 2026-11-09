@@ -11,6 +11,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/textutil"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -245,7 +246,7 @@ func (c *deadlineContext) cancel(err error) {
 }
 
 func errorResult(message string) *circusv1.DeviceResult {
-	return &circusv1.DeviceResult{Output: &circusv1.ToolOutput{IsError: true, Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: "Error: " + message}}}}}
+	return &circusv1.DeviceResult{Output: &circusv1.ToolOutput{IsError: true, Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: "Error: " + textutil.NodeUTF8([]byte(message))}}}}}
 }
 
 func runTool(ctx context.Context, tool Tool, call *circusv1.DeviceCall) (result *circusv1.DeviceResult) {

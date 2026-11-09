@@ -156,6 +156,9 @@ type DeviceCall struct {
 	AgentId string `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	// Locally enforced timeout in milliseconds; zero uses the daemon default of
 	// two minutes, and requests above the ten-minute maximum are clamped to it.
+	// Explicit background Bash uses this as its lifetime (default 30 minutes,
+	// maximum two hours). Foreground Bash can move to background at its deadline;
+	// its remaining background lifetime then defaults to 30 minutes (max two hours).
 	TimeoutMs uint32 `protobuf:"varint,4,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	// Tool invocation to execute.
 	//
@@ -679,7 +682,8 @@ type BashRequest struct {
 	// Shell command to execute.
 	Command string `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
 	// Absolute working directory tracked by the worker per session, agent, and
-	// device. Empty runs the command in the daemon process's working directory.
+	// device. Required and absolute. A deleted directory falls back to working_dirs[0];
+	// a missing start folder is an error.
 	Cwd string `protobuf:"bytes,2,opt,name=cwd,proto3" json:"cwd,omitempty"`
 	// Whether to run the command as a background job; its lifetime then uses
 	// timeout_ms, defaulting to 30 minutes and capped at two hours.
@@ -773,7 +777,7 @@ type BashResult struct {
 	OutputTruncated bool `protobuf:"varint,5,opt,name=output_truncated,json=outputTruncated,proto3" json:"output_truncated,omitempty"`
 	// Full output file on the device when truncated or backgrounded.
 	OutputPath string `protobuf:"bytes,6,opt,name=output_path,json=outputPath,proto3" json:"output_path,omitempty"`
-	// Background job ID, set when run_in_background is true.
+	// Background job ID, set for explicit background runs and timeout promotion.
 	JobId         string `protobuf:"bytes,7,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

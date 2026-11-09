@@ -48,6 +48,9 @@ export type DeviceCall = Message<"circus.v1.DeviceCall"> & {
   /**
    * Locally enforced timeout in milliseconds; zero uses the daemon default of
    * two minutes, and requests above the ten-minute maximum are clamped to it.
+   * Explicit background Bash uses this as its lifetime (default 30 minutes,
+   * maximum two hours). Foreground Bash can move to background at its deadline;
+   * its remaining background lifetime then defaults to 30 minutes (max two hours).
    *
    * @generated from field: uint32 timeout_ms = 4;
    */
@@ -291,7 +294,8 @@ export type BashRequest = Message<"circus.v1.BashRequest"> & {
 
   /**
    * Absolute working directory tracked by the worker per session, agent, and
-   * device. Empty runs the command in the daemon process's working directory.
+   * device. Required and absolute. A deleted directory falls back to working_dirs[0];
+   * a missing start folder is an error.
    *
    * @generated from field: string cwd = 2;
    */
@@ -377,7 +381,7 @@ export type BashResult = Message<"circus.v1.BashResult"> & {
   outputPath: string;
 
   /**
-   * Background job ID, set when run_in_background is true.
+   * Background job ID, set for explicit background runs and timeout promotion.
    *
    * @generated from field: string job_id = 7;
    */

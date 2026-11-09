@@ -4,17 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/daemon/jobs"
+	"github.com/EricWvi/circus/internal/textutil"
 )
 
 // TaskStop stops a background Bash job owned by the calling session.
-type TaskStop struct{ jobs Jobs }
+type TaskStop struct{ jobs *jobs.Manager }
 
 // NewTaskStop returns a session-scoped background job stop tool.
-func NewTaskStop(jobs Jobs) *TaskStop { return &TaskStop{jobs: jobs} }
+func NewTaskStop(jobs *jobs.Manager) *TaskStop { return &TaskStop{jobs: jobs} }
 
 // Name returns the device call tool name.
 func (*TaskStop) Name() string { return "task_stop" }
@@ -26,7 +29,11 @@ func (t *TaskStop) Run(_ context.Context, call *circusv1.DeviceCall) (*circusv1.
 	var found bool
 	var err error
 	if t.jobs != nil {
-		command, found, err = t.jobs.StopBash(call.SessionId, id)
+		info, stopErr := t.jobs.StopOwned(call.SessionId, id)
+		command, found, err = info.Command, stopErr == nil, stopErr
+		if errors.Is(err, jobs.ErrNotFound) {
+			err = nil
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -34,7 +41,7 @@ func (t *TaskStop) Run(_ context.Context, call *circusv1.DeviceCall) (*circusv1.
 	r := result("", !found, nil)
 	r.Detail = &circusv1.DeviceResult_TaskStop{TaskStop: &circusv1.TaskStopResult{}}
 	if !found {
-		r.Output.Content[0].Block = &circusv1.ContentBlock_Text{Text: fmt.Sprintf("<tool_use_error>No task found with ID: %s</tool_use_error>", id)}
+		r.Output.Content[0].Block = &circusv1.ContentBlock_Text{Text: textutil.NodeUTF8([]byte(fmt.Sprintf("<tool_use_error>No task found with ID: %s</tool_use_error>", id)))}
 		return r, nil
 	}
 	var body bytes.Buffer
@@ -49,6 +56,6 @@ func (t *TaskStop) Run(_ context.Context, call *circusv1.DeviceCall) (*circusv1.
 	if err != nil {
 		return nil, err
 	}
-	r.Output.Content[0].Block = &circusv1.ContentBlock_Text{Text: strings.TrimSuffix(body.String(), "\n")}
+	r.Output.Content[0].Block = &circusv1.ContentBlock_Text{Text: textutil.NodeUTF8([]byte(strings.TrimSuffix(body.String(), "\n")))}
 	return r, nil
 }

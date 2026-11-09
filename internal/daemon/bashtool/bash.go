@@ -1,7 +1,6 @@
 package bashtool
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -16,36 +15,25 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/daemon/jobs"
+	"github.com/EricWvi/circus/internal/textutil"
+	"google.golang.org/protobuf/proto"
 )
-
-// Job is a process whose lifetime is owned by the daemon's job manager.
-type Job interface {
-	Wait() (int, error)
-	Stop() error
-}
-
-// Jobs is the small job-manager boundary needed by Bash and TaskStop.
-// StartBash allocates the ID before launch and remembers the original command.
-// StopBash checks session ownership atomically before requesting termination.
-type Jobs interface {
-	StartBash(sessionID, command string, launch func(id string) (Job, string, error)) (id, outputPath string, err error)
-	StopBash(sessionID, id string) (command string, found bool, err error)
-}
 
 // Bash executes native-compatible bash calls without retaining session cwd.
 type Bash struct {
-	jobs        Jobs
+	jobs        *jobs.Manager
 	environment *environment
 }
 
 // NewBash uses one lazy process-wide environment snapshot. Supplying Options
 // creates an isolated snapshot instead, without reading the real user's files.
-func NewBash(jobs Jobs, options ...Options) *Bash {
+func NewBash(manager *jobs.Manager, options ...Options) *Bash {
 	env := processEnvironment
 	if len(options) > 0 {
 		env = &environment{options: options[0]}
 	}
-	return &Bash{jobs: jobs, environment: env}
+	return &Bash{jobs: manager, environment: env}
 }
 
 // Name returns the device call tool name.
@@ -53,7 +41,7 @@ func (*Bash) Name() string { return "bash" }
 
 func result(body string, failed bool, detail *circusv1.BashResult) *circusv1.DeviceResult {
 	return &circusv1.DeviceResult{
-		Output: &circusv1.ToolOutput{IsError: failed, Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: body}}}},
+		Output: &circusv1.ToolOutput{IsError: failed, Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: textutil.NodeUTF8([]byte(body))}}}},
 		Detail: &circusv1.DeviceResult_Bash{Bash: detail},
 	}
 }
@@ -70,27 +58,11 @@ func component(s string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(s))
 }
 
-func (b *Bash) outputDir(sessionID, kind string) (string, error) {
-	tmp := b.environment.options.TempDir
-	if tmp == "" {
-		tmp = os.TempDir()
-	}
-	root := filepath.Join(tmp, fmt.Sprintf("circus-%d", os.Getuid()))
-	session := filepath.Join(root, component(sessionID))
-	dir := filepath.Join(session, kind)
-	for _, p := range []string{root, session, dir} {
-		if err := privateDir(p); err != nil {
-			return "", err
-		}
-	}
-	return dir, nil
-}
-
 func command(request *circusv1.BashRequest, snapshot, cwdFile string, env []string) *exec.Cmd {
-	wrapper := "source " + quote(snapshot) + " 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && eval " + quote(request.Command) + " < /dev/null && pwd -P >| " + quote(cwdFile)
+	wrapper := "source " + quote(snapshot) + " 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'which'; \\builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval " + quote(request.Command) + " < /dev/null && pwd -P >| " + quote(cwdFile)
 	cmd := exec.Command("/bin/bash", "-c", wrapper)
 	cmd.Dir, cmd.Env = request.Cwd, env
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return cmd
 }
 
@@ -99,6 +71,29 @@ func (b *Bash) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.De
 	req := call.GetBash()
 	if req == nil {
 		return nil, errors.New("bash request is required")
+	}
+	// Inferred: the daemon requires cwd, although native always supplies one.
+	if req.Cwd == "" {
+		return nil, errors.New("cwd is required")
+	}
+	if !filepath.IsAbs(req.Cwd) {
+		return nil, errors.New("cwd must be absolute")
+	}
+	// Work on a copy: a deleted session cwd falls back to the initial directory.
+	req = proto.Clone(req).(*circusv1.BashRequest)
+	if _, err := os.Stat(req.Cwd); os.IsNotExist(err) {
+		req.Cwd = startFolder(req)
+	}
+	if info, err := os.Stat(req.Cwd); err != nil {
+		return nil, err
+	} else if !info.IsDir() {
+		return nil, errors.New("cwd is not a directory")
+	}
+	if !filepath.IsAbs(req.Cwd) {
+		return nil, errors.New("start folder must be absolute")
+	}
+	if blocked := sleepGuard(req.Command, req.RunInBackground); blocked != "" {
+		return result(blocked, true, &circusv1.BashResult{Cwd: req.Cwd}), nil
 	}
 	started := time.Now()
 	duration := time.Duration(0)
@@ -118,6 +113,7 @@ func (b *Bash) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.De
 		}
 		return nil, err
 	}
+	defer b.environment.releaseSnapshot(snapshot)
 	cwdFile, err := os.CreateTemp(filepath.Dir(snapshot), "cwd-")
 	if err != nil {
 		return nil, err
@@ -127,56 +123,89 @@ func (b *Bash) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.De
 	if req.RunInBackground {
 		return b.background(call, req, snapshot, cwdPath, env)
 	}
-	defer func() { _ = os.Remove(cwdPath) }()
-	cmd := command(req, snapshot, cwdPath, env)
-	reader, writer, err := os.Pipe()
+	owned := false
+	defer func() {
+		if !owned {
+			_ = os.Remove(cwdPath)
+		}
+	}()
+	out, err := b.outputFile(call.SessionId, "tool-results", component(call.CallId)+"-*.txt")
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = reader.Close() }()
-	cmd.Stdout, cmd.Stderr = writer, writer
-	if err = cmd.Start(); err != nil {
-		_ = writer.Close()
-		return nil, err
-	}
-	_ = writer.Close()
-	var output bytes.Buffer
-	copied := make(chan error, 1)
-	go func() { _, err := io.Copy(&output, reader); copied <- err }()
-	code, waitErr := waitProcess(ctx, cmd)
-	// Descendants can keep the pipe open after the shell exits. Keep observing
-	// cancellation until the shared pipe is drained, then join its only reader.
-	select {
-	case err = <-copied:
-	case <-ctx.Done():
-		if !errors.Is(waitErr, context.Canceled) && !errors.Is(waitErr, context.DeadlineExceeded) {
-			terminateGroup(cmd.Process.Pid)
+	defer func() {
+		if !owned {
+			_ = out.Close()
+			b.environment.releaseOutput(out.Name())
 		}
-		_ = reader.Close()
-		err = <-copied
-		waitErr = ctx.Err()
-		code = 143
-	}
-	if err != nil && ctx.Err() == nil {
+	}()
+	cmd := command(req, snapshot, cwdPath, env)
+	cmd.Stdout, cmd.Stderr = out, out
+	if err := cmd.Start(); err != nil {
+		_ = os.Remove(out.Name())
 		return nil, err
 	}
-	detail := &circusv1.BashResult{ExitCode: int32(code), Cwd: startFolder(req)}
-	body, err := b.formatOutput(call, output.Bytes(), detail)
+	// Inferred: only wait for the shell. Children launched with & remain in its
+	// session and may keep writing the file after the foreground call returns.
+	waited := startWait(cmd)
+	var outcome processOutcome
+	select {
+	case outcome = <-waited:
+	case <-ctx.Done():
+		select {
+		case outcome = <-waited:
+		default:
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) && !killOnTimeout(req.Command) {
+				if b.jobs == nil {
+					_ = stopProcess(cmd, waited)
+					return nil, errors.New("background job manager is unavailable")
+				}
+				detail := &circusv1.BashResult{Cwd: req.Cwd}
+				body, formatErr := formatOutput(out, detail, false)
+				if formatErr != nil {
+					_ = stopProcess(cmd, waited)
+					return nil, formatErr
+				}
+				// Inferred: promotion starts a fresh remaining background lifetime,
+				// default 30 minutes, capped at two hours (independent of foreground timeout).
+				stat, statErr := out.Stat()
+				if statErr != nil {
+					_ = stopProcess(cmd, waited)
+					return nil, statErr
+				}
+				info, startErr := b.adopt(call, req, cmd, waited, out, cwdPath, backgroundLifetime(0))
+				if startErr != nil {
+					return nil, startErr
+				}
+				owned = true
+				detail.JobId, detail.OutputPath = info.ID, info.OutputPath
+				message := promotionMessage(duration, info.ID, info.OutputPath, stat.Size() == 0)
+				if strings.HasPrefix(strings.TrimSpace(req.Command), "cd ") {
+					message = appendLine(message, "Session cwd remains "+req.Cwd+"; directory changes made by the backgrounded command do not apply to subsequent commands.")
+				}
+				return result(appendLine(body, message), false, detail), nil
+			}
+			outcome = stopProcess(cmd, waited)
+			outcome.code, outcome.err = 143, ctx.Err()
+		}
+	}
+	detail := &circusv1.BashResult{ExitCode: int32(outcome.code), Cwd: startFolder(req)}
+	body, err := formatOutput(out, detail, true)
 	if err != nil {
 		return nil, err
 	}
 	switch {
-	case errors.Is(waitErr, context.DeadlineExceeded):
+	case errors.Is(outcome.err, context.DeadlineExceeded):
 		detail.TimedOut = true
-		body = "Command timed out after " + timeoutText(duration)
-	case errors.Is(waitErr, context.Canceled):
+		body = appendLine("Command timed out after "+timeoutText(duration), body)
+	case errors.Is(outcome.err, context.Canceled):
 		detail.Interrupted = true
 		// Inferred: cancellation preserves collected output and appends this line.
 		body = appendLine(body, "Command was interrupted")
 	default:
-		if code == 0 {
+		if outcome.code == 0 {
 			if cwd, err := os.ReadFile(cwdPath); err == nil && len(cwd) > 0 {
-				next := strings.TrimSuffix(string(cwd), "\n")
+				next := strings.TrimSuffix(textutil.NodeUTF8(cwd), "\n")
 				if allowedCwd(next, req) {
 					detail.Cwd = next
 				} else {
@@ -185,33 +214,51 @@ func (b *Bash) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.De
 			}
 		}
 	}
-	if code != 0 && !detail.Interrupted {
-		body = appendLine(fmt.Sprintf("Exit code %d", code), body)
+	if outcome.code != 0 && !detail.Interrupted {
+		body = appendLine(fmt.Sprintf("Exit code %d", outcome.code), body)
 	}
 	if body == "" {
 		body = "(Bash completed with no output)"
 	}
-	return result(body, code != 0, detail), nil
+	return result(body, outcome.code != 0, detail), nil
 }
 
-func (b *Bash) formatOutput(call *circusv1.DeviceCall, raw []byte, detail *circusv1.BashResult) (string, error) {
-	if len(raw) <= 30000 {
-		return strings.TrimRight(string(raw), "\n"), nil
+func formatOutput(out *os.File, detail *circusv1.BashResult, removeInline bool) (string, error) {
+	// Read a bounded prefix even if descendants are still writing the file.
+	raw := make([]byte, 30001)
+	n, err := out.ReadAt(raw, 0)
+	if err != nil && err != io.EOF {
+		return "", err
 	}
-	dir, err := b.outputDir(call.SessionId, "tool-results")
+	raw = raw[:n]
+	stat, err := out.Stat()
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, component(call.CallId)+".txt")
-	if err := os.WriteFile(path, raw, 0600); err != nil {
-		return "", err
+	if len(raw) <= 30000 && stat.Size() <= 30000 {
+		if removeInline {
+			if err := os.Remove(out.Name()); err != nil {
+				return "", err
+			}
+		}
+		return strings.TrimRight(textutil.NodeUTF8(raw), "\n"), nil
 	}
-	preview := []rune(string(raw))
-	if len(preview) > 2000 {
-		preview = preview[:2000]
+	preview := textutil.NodeUTF8(raw)
+	units, end := 0, 0
+	for i, r := range preview {
+		width := 1
+		if r > 0xffff {
+			width = 2
+		}
+		if units+width > 2000 {
+			end = i
+			break
+		}
+		units += width
+		end = i + len(string(r))
 	}
-	detail.OutputTruncated, detail.OutputPath = true, path
-	return fmt.Sprintf("<persisted-output>\nOutput too large (%.1fKB). Full output saved to: %s\n\nPreview (first 2KB):\n%s\n...\n</persisted-output>", float64(len(raw))/1024, path, strings.TrimRight(string(preview), "\n")), nil
+	detail.OutputTruncated, detail.OutputPath = true, out.Name()
+	return fmt.Sprintf("<persisted-output>\nOutput too large (%.1fKB). Full output saved to: %s\n\nPreview (first 2KB):\n%s\n...\n</persisted-output>", float64(stat.Size())/1024, out.Name(), strings.TrimRight(preview[:end], "\n")), nil
 }
 
 func appendLine(body, line string) string {
@@ -269,55 +316,98 @@ type backgroundJob struct {
 func (j *backgroundJob) Wait() (int, error) { <-j.done; return j.code, j.err }
 func (j *backgroundJob) Stop() error        { j.once.Do(j.cancel); <-j.done; return nil }
 
+func (b *Bash) adopt(call *circusv1.DeviceCall, req *circusv1.BashRequest, cmd *exec.Cmd, waited <-chan processOutcome, out *os.File, cwdPath string, lifetime time.Duration) (jobs.Info, error) {
+	// Once the launch callback runs, the background job owns the sole Wait
+	// channel, even if concurrent manager shutdown rejects its registration.
+	transferred := false
+	info, err := b.jobs.Start(call.SessionId, req.Command, func(string) (jobs.Job, string, error) {
+		transferred = true
+		return b.newBackground(cmd, waited, out, cwdPath, lifetime), out.Name(), nil
+	})
+	if err != nil && !transferred {
+		_ = stopProcess(cmd, waited)
+	}
+	return info, err
+}
+
 func (b *Bash) background(call *circusv1.DeviceCall, req *circusv1.BashRequest, snapshot, cwdPath string, env []string) (*circusv1.DeviceResult, error) {
 	if b.jobs == nil {
 		_ = os.Remove(cwdPath)
 		return nil, errors.New("background job manager is unavailable")
 	}
-	id, path, err := b.jobs.StartBash(call.SessionId, req.Command, func(id string) (Job, string, error) {
-		dir, err := b.outputDir(call.SessionId, "tasks")
-		if err != nil {
-			return nil, "", err
-		}
-		path := filepath.Join(dir, id+".output")
-		out, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	info, err := b.jobs.Start(call.SessionId, req.Command, func(id string) (jobs.Job, string, error) {
+		out, err := b.outputFile(call.SessionId, "tasks", id+"-*.output")
 		if err != nil {
 			return nil, "", err
 		}
 		cmd := command(req, snapshot, cwdPath, env)
 		cmd.Stdout, cmd.Stderr = out, out
-		if err = cmd.Start(); err != nil {
+		if err := cmd.Start(); err != nil {
 			_ = out.Close()
+			_ = os.Remove(out.Name())
+			b.environment.releaseOutput(out.Name())
 			return nil, "", err
 		}
-		lifetime := time.Duration(call.TimeoutMs) * time.Millisecond
-		if lifetime == 0 {
-			lifetime = 30 * time.Minute
-		}
-		if lifetime > 2*time.Hour {
-			lifetime = 2 * time.Hour
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), lifetime)
-		job := &backgroundJob{done: make(chan struct{}), cancel: cancel}
-		go func() {
-			defer close(job.done)
-			defer cancel()
-			defer func() { _ = os.Remove(cwdPath) }()
-			code, err := waitProcess(ctx, cmd)
-			job.code = code
-			_, writeErr := fmt.Fprintf(out, "\n[exited with code %d]\n", code)
-			closeErr := out.Close()
-			if err != nil && cmd.ProcessState == nil {
-				job.err = err
-			}
-			job.err = errors.Join(job.err, writeErr, closeErr)
-		}()
-		return job, path, nil
+		lifetime := backgroundLifetime(time.Duration(call.TimeoutMs) * time.Millisecond)
+		return b.newBackground(cmd, startWait(cmd), out, cwdPath, lifetime), out.Name(), nil
 	})
 	if err != nil {
 		_ = os.Remove(cwdPath)
 		return nil, err
 	}
-	body := fmt.Sprintf("Command running in background with ID: %s. Output is being written to: %s. You will be notified when it completes. To check interim output, use Read on that file path.", id, path)
-	return result(body, false, &circusv1.BashResult{Cwd: req.Cwd, JobId: id, OutputPath: path}), nil
+	body := fmt.Sprintf("Command running in background with ID: %s. Output is being written to: %s. You will be notified when it completes. To check interim output, use Read on that file path.", info.ID, info.OutputPath)
+	return result(body, false, &circusv1.BashResult{Cwd: req.Cwd, JobId: info.ID, OutputPath: info.OutputPath}), nil
+}
+
+func promotionMessage(duration time.Duration, id, path string, empty bool) string {
+	body := fmt.Sprintf("Command did not complete within its %s timeout and was moved to the background (ID: %s). Output is being written to: %s. You will be notified when it completes. If it is still running after 30m in the background, it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop.", timeoutText(duration), id, path)
+	if empty {
+		body += " No output had been read from it when it was moved. A program that buffers its output, or a pipe into one such as tail, can keep the output file empty until the command finishes."
+	}
+	return body + " To check interim output, use Read on that file path."
+}
+
+func (b *Bash) newBackground(cmd *exec.Cmd, waited <-chan processOutcome, out *os.File, cwdPath string, lifetime time.Duration) *backgroundJob {
+	b.environment.retainSnapshot(filepath.Dir(cwdPath))
+	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
+	job := &backgroundJob{done: make(chan struct{}), cancel: cancel}
+	go func() {
+		defer close(job.done)
+		defer cancel()
+		defer func() {
+			_ = os.Remove(cwdPath)
+			b.environment.releaseOutput(out.Name())
+			b.environment.releaseSnapshot(filepath.Join(filepath.Dir(cwdPath), "snapshot.sh"))
+		}()
+		var outcome processOutcome
+		select {
+		case outcome = <-waited:
+		case <-ctx.Done():
+			outcome = stopProcess(cmd, waited)
+			// Lifetime expiry is a kill even when a TERM trap exits with another code.
+			// A natural exit already observed before termination keeps its real state.
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) && outcome.terminationRequested {
+				outcome.err = errors.Join(outcome.err, jobs.ErrKilled)
+			}
+		}
+		job.code, job.err = outcome.code, outcome.err
+		// Normal shell exit errors are represented by the exit code, not Wait errors.
+		var exitErr *exec.ExitError
+		if errors.As(job.err, &exitErr) && !errors.Is(job.err, jobs.ErrKilled) {
+			job.err = nil
+		}
+		_, writeErr := fmt.Fprintf(out, "\n[exited with code %d]\n", job.code)
+		job.err = errors.Join(job.err, writeErr, out.Close())
+	}()
+	return job
+}
+
+func backgroundLifetime(requested time.Duration) time.Duration {
+	if requested <= 0 {
+		return 30 * time.Minute
+	}
+	if requested > 2*time.Hour {
+		return 2 * time.Hour
+	}
+	return requested
 }

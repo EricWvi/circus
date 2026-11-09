@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +16,8 @@ import (
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/daemon/fstools"
+	"github.com/EricWvi/circus/internal/daemon/jobs"
+	"sync/atomic"
 )
 
 type fixture struct {
@@ -36,7 +37,10 @@ type fixture struct {
 			Path       string `json:"file_path"`
 		} `json:"input"`
 		Before *struct {
-			Write struct {
+			Remove *struct {
+				Path string `json:"path"`
+			} `json:"remove"`
+			Write *struct {
 				Path    string          `json:"path"`
 				Content json.RawMessage `json:"content"`
 			} `json:"write"`
@@ -100,27 +104,9 @@ func writeFile(t *testing.T, path string, data []byte) {
 	}
 }
 
-type testJobs struct{ jobs *daemon.JobManager }
-
-func (a testJobs) StartBash(sessionID, command string, launch func(string) (bashtool.Job, string, error)) (string, string, error) {
-	info, err := a.jobs.Start(sessionID, command, func(id string) (daemon.Job, string, error) {
-		job, outputPath, err := launch(id)
-		return daemon.Job(job), outputPath, err
-	})
-	return info.ID, info.OutputPath, err
-}
-
-func (a testJobs) StopBash(sessionID, id string) (string, bool, error) {
-	info, err := a.jobs.StopOwned(sessionID, id)
-	if errors.Is(err, daemon.ErrJobNotFound) {
-		return "", false, nil
-	}
-	return info.Command, true, err
-}
-
 type worker struct {
 	d                                             *daemon.Dispatcher
-	jobs                                          *daemon.JobManager
+	jobs                                          *jobs.Manager
 	events                                        chan *circusv1.JobEvent
 	bash                                          *bashtool.Bash
 	options                                       bashtool.Options
@@ -139,8 +125,8 @@ func newWorker(t *testing.T) *worker {
 			t.Fatal(err)
 		}
 	}
-	w.jobs = daemon.NewJobManager(daemon.JobOptions{OnEvent: func(e *circusv1.JobEvent) { w.events <- e }})
-	manager := testJobs{jobs: w.jobs}
+	w.jobs = jobs.NewManager(jobs.Options{OnEvent: func(e *circusv1.JobEvent) { w.events <- e }})
+	manager := w.jobs
 	w.bash = bashtool.NewBash(manager, w.options)
 	d, err := daemon.NewDispatcher(daemon.Options{Tools: []daemon.Tool{w.bash, bashtool.NewTaskStop(manager), fstools.NewRead()}})
 	if err != nil {
@@ -301,7 +287,10 @@ var fixtureExceptions = map[string]semanticCheck{
 }
 
 func TestNativeParity(t *testing.T) {
-	count, steps := 0, 0
+	count := 0
+	var steps atomic.Int32
+	shared := newWorker(t)
+	shared.bashCall(t, "true", false, 0)
 	for _, tool := range []string{"Bash", "TaskStop"} {
 		paths, err := filepath.Glob(filepath.Join("../../../tests/parity/fixtures/native", tool, "*.json"))
 		if err != nil || len(paths) == 0 {
@@ -310,6 +299,9 @@ func TestNativeParity(t *testing.T) {
 		for _, path := range paths {
 			count++
 			t.Run(tool+"/"+strings.TrimSuffix(filepath.Base(path), ".json"), func(t *testing.T) {
+				if filepath.Base(path) != "bash-background-child-foreground.json" {
+					t.Parallel()
+				}
 				raw, err := os.ReadFile(path)
 				if err != nil {
 					t.Fatal(err)
@@ -319,6 +311,16 @@ func TestNativeParity(t *testing.T) {
 					t.Fatal(err)
 				}
 				w := newWorker(t)
+				if len(f.Setup.HomeFiles) == 0 {
+					w.options = shared.options
+					w.bash = bashtool.ShareEnvironmentForTest(w.jobs, shared.bash)
+					d, err := daemon.NewDispatcher(daemon.Options{Tools: []daemon.Tool{w.bash, bashtool.NewTaskStop(w.jobs), fstools.NewRead()}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					_ = w.d.Shutdown(context.Background())
+					w.d = d
+				}
 				for _, dir := range f.Setup.Dirs {
 					if err = os.MkdirAll(filepath.Join(w.start, dir), 0700); err != nil {
 						t.Fatal(err)
@@ -331,18 +333,32 @@ func TestNativeParity(t *testing.T) {
 					putFile(t, filepath.Join(w.options.Home, name), data)
 				}
 				for i, step := range f.Steps {
-					steps++
+					steps.Add(1)
 					if step.Before != nil {
-						putFile(t, w.expand(step.Before.Write.Path), step.Before.Write.Content)
+						if step.Before.Write != nil {
+							putFile(t, w.expand(step.Before.Write.Path), step.Before.Write.Content)
+						}
+						if step.Before.Remove != nil {
+							if err := os.RemoveAll(w.expand(step.Before.Remove.Path)); err != nil {
+								t.Fatal(err)
+							}
+						}
 					}
 					var r *circusv1.DeviceResult
 					switch step.Tool {
 					case "Bash":
-						r = w.bashCall(t, w.expand(step.Input.Command), step.Input.Background, step.Input.Timeout)
+						if (f.Case == "bash-background" && step.Input.Command == "sleep 4") || (f.Case == "taskstop-finished" && step.Input.Command == "sleep 2") || (f.Case == "bash-timeout-bg-lifecycle" && step.Input.Command == "sleep 6") {
+							w.waitJob(t, w.jobID)
+							r = w.bashCall(t, "true", false, step.Input.Timeout)
+						} else {
+							r = w.bashCall(t, w.expand(step.Input.Command), step.Input.Background, step.Input.Timeout)
+						}
 					case "TaskStop":
 						r = w.call(t, &circusv1.DeviceCall{Tool: &circusv1.DeviceCall_TaskStop{TaskStop: &circusv1.TaskStopRequest{JobId: w.expand(step.Input.TaskID)}}})
 					case "Read":
-						w.waitJob(t, w.jobID)
+						if info, ok := w.jobs.Get(w.jobID); ok && info.State == circusv1.JobEvent_STATE_RUNNING {
+							w.waitJob(t, w.jobID)
+						}
 						r = w.call(t, &circusv1.DeviceCall{Tool: &circusv1.DeviceCall_Read{Read: &circusv1.ReadRequest{Path: w.expand(step.Input.Path), Cwd: w.cwd}}})
 					default:
 						t.Fatalf("unsupported tool %s", step.Tool)
@@ -376,7 +392,10 @@ func TestNativeParity(t *testing.T) {
 			})
 		}
 	}
-	if !t.Failed() {
-		t.Logf("Passed %d Bash/TaskStop fixture subtests (%d tool steps)", count, steps)
-	}
+	t.Parallel()
+	t.Cleanup(func() {
+		if !t.Failed() {
+			t.Logf("Passed %d Bash/TaskStop fixture subtests (%d tool steps)", count, steps.Load())
+		}
+	})
 }

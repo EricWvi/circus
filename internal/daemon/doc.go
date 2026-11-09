@@ -14,7 +14,7 @@
 // thirty-minute result retention, twenty-four-hour tombstones, and
 // thirty-minute retention of ended background jobs.
 //
-// Tools may register background jobs with a JobManager passed at construction.
+// Tools may register background jobs with jobs.Manager passed at construction.
 // Jobs belong to sessions and emit running followed by exited or killed events.
 // Individual stops, session stops, and shutdown request termination; ended jobs
 // remain queryable until retention expires. Output files belong to the tools.

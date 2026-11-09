@@ -26,31 +26,104 @@ type Options struct {
 }
 
 type environment struct {
-	mu       sync.Mutex
-	options  Options
-	snapshot string
-	env      []string
-	loading  chan struct{}
+	mu          sync.Mutex
+	options     Options
+	snapshot    string
+	env         []string
+	loading     chan struct{}
+	startup     [4]startupStamp
+	initialized bool
+	lastSweep   time.Time
+	active      map[string]bool
+	leases      map[string]int
 }
 
 var processEnvironment = &environment{}
 
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 
+type startupStamp struct {
+	exists bool
+	mtime  time.Time
+}
+
+func (e *environment) home() (string, error) {
+	if e.options.Home != "" {
+		return e.options.Home, nil
+	}
+	return os.UserHomeDir()
+}
+
+func (e *environment) startupFiles() ([4]startupStamp, error) {
+	var stamps [4]startupStamp
+	home, err := e.home()
+	if err != nil {
+		return stamps, err
+	}
+	for i, name := range []string{".bashrc", ".bash_profile", ".bash_login", ".profile"} {
+		info, err := os.Stat(filepath.Join(home, name))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return stamps, err
+		}
+		stamps[i] = startupStamp{true, info.ModTime()}
+	}
+	return stamps, nil
+}
+
+// privateDir refuses symlinks and checks ownership before changing modes.
+// Callers check each directory they own; system ancestors (for example macOS's
+// /var symlink or /tmp) keep their own ownership and permissions.
 func privateDir(path string) error {
-	if err := os.MkdirAll(path, 0700); err != nil {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		parent := filepath.Dir(path)
+		if _, err := os.Stat(parent); os.IsNotExist(err) {
+			if err := privateDir(parent); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+		if err := os.Mkdir(path, 0700); err != nil && !os.IsExist(err) {
+			return err
+		}
+		info, err = os.Lstat(path)
+	}
+	if err != nil {
 		return err
 	}
-	return os.Chmod(path, 0700)
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("unsafe directory %s", path)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Getuid()) {
+		return fmt.Errorf("directory %s is not owned by current uid", path)
+	}
+	if info.Mode().Perm() != 0700 || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
+		return os.Chmod(path, 0700)
+	}
+	return nil
 }
 
 // Concurrent callers share collection, but retain their own cancellation budget.
 func (e *environment) load(ctx context.Context) (string, []string, error) {
 	for {
 		e.mu.Lock()
+		stamps, stampErr := e.startupFiles()
+		if stampErr != nil {
+			e.mu.Unlock()
+			return "", nil, stampErr
+		}
 		if e.snapshot != "" {
-			if _, err := os.Stat(e.snapshot); err == nil {
+			if _, err := os.Stat(e.snapshot); err == nil && stamps == e.startup {
 				path, env := e.snapshot, append([]string(nil), e.env...)
+				if e.leases == nil {
+					e.leases = make(map[string]int)
+				}
+				e.leases[filepath.Dir(path)]++
 				e.mu.Unlock()
 				return path, env, nil
 			}
@@ -69,7 +142,15 @@ func (e *environment) load(ctx context.Context) (string, []string, error) {
 		path, env, err := e.collect(ctx)
 		e.mu.Lock()
 		if err == nil {
-			e.snapshot, e.env = path, env
+			previous := e.snapshot
+			e.snapshot, e.env, e.startup = path, env, stamps
+			if e.leases == nil {
+				e.leases = make(map[string]int)
+			}
+			e.leases[filepath.Dir(path)]++
+			if previous != "" && previous != path && e.leases[filepath.Dir(previous)] == 0 {
+				_ = os.RemoveAll(filepath.Dir(previous))
+			}
 		}
 		close(e.loading)
 		e.loading = nil
@@ -95,8 +176,29 @@ func (e *environment) collect(ctx context.Context) (string, []string, error) {
 		}
 		state = filepath.Join(state, "circus", "daemon")
 	}
+	if e.options.StateDir == "" {
+		if err := privateDir(filepath.Dir(state)); err != nil {
+			return "", nil, err
+		}
+	}
 	if err := privateDir(state); err != nil {
 		return "", nil, err
+	}
+	// Inferred: stale snapshots belong to previous daemon instances. The state
+	// directory is exclusive to this daemon; remove them once before collection.
+	if !e.initialized {
+		entries, err := os.ReadDir(state)
+		if err != nil {
+			return "", nil, err
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "snapshot-") {
+				if err := os.RemoveAll(filepath.Join(state, entry.Name())); err != nil {
+					return "", nil, err
+				}
+			}
+		}
+		e.initialized = true
 	}
 	shell := e.options.Shell
 	if shell == "" {
@@ -167,7 +269,7 @@ printf '%s\n' 'shopt -s expand_aliases'
 		cmd := exec.Command(shell, args...)
 		cmd.Env = clean
 		cmd.Dir = home
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		// A failed interactive collector must not leave files that can make
 		// an early-exiting fallback appear successful.
 		_ = os.Remove(snapshot)
@@ -222,4 +324,23 @@ printf '%s\n' 'shopt -s expand_aliases'
 	}
 	ok = true
 	return snapshot, append([]string(nil), env...), nil
+}
+
+// Keep snapshots used by live shells until they finish sourcing and writing cwd.
+func (e *environment) retainSnapshot(dir string) {
+	e.mu.Lock()
+	e.leases[dir]++
+	e.mu.Unlock()
+}
+func (e *environment) releaseSnapshot(snapshot string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	dir := filepath.Dir(snapshot)
+	e.leases[dir]--
+	if e.leases[dir] == 0 {
+		delete(e.leases, dir)
+		if dir != filepath.Dir(e.snapshot) {
+			_ = os.RemoveAll(dir)
+		}
+	}
 }
