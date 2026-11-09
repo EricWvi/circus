@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/textutil"
@@ -66,10 +67,9 @@ func (*Read) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 		return readFailure(path, cwd, directoryError(path)), nil
 	}
 
-	// Inferred: any supplied offset or positive limit selects the range path;
-	// the full-file guard does not apply, as measured for offset:10, limit:5.
-	full := r.Offset == nil && r.GetLimit() == 0
-	if full && info.Size() > nativeReadSizeLimitBytes {
+	// A positive limit bypasses the raw-byte guard; offset alone does not.
+	guarded := r.GetLimit() == 0
+	if guarded && info.Size() > nativeReadSizeLimitBytes {
 		return output(readSizeError(info.Size()), true), nil
 	}
 	f, err := os.Open(path)
@@ -77,25 +77,52 @@ func (*Read) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 		return readFailure(path, cwd, err), nil
 	}
 	defer f.Close()
-	if !full {
-		return streamReadRange(ctx, f, path, info, r)
-	}
 
-	data, err := io.ReadAll(io.LimitReader(f, nativeReadSizeLimitBytes+1))
+	var data []byte
+	if info.Mode()&os.ModeCharDevice != 0 {
+		data, err = readDevice(ctx, f)
+	} else {
+		ranged := r.Offset != nil || r.GetLimit() > 0
+		if ranged {
+			var prefix [2]byte
+			n, readErr := f.ReadAt(prefix[:], 0)
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				return readFailure(path, cwd, readErr), nil
+			}
+			if !textutil.HasUTF16LEBOM(prefix[:n]) {
+				return streamReadRange(ctx, f, path, info, r)
+			}
+		}
+		var reader io.Reader = f
+		if guarded {
+			reader = io.LimitReader(f, nativeReadSizeLimitBytes+1)
+		}
+		data, err = io.ReadAll(reader)
+	}
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
 		return readFailure(path, cwd, err), nil
 	}
-	if len(data) > nativeReadSizeLimitBytes {
+	if guarded && len(data) > nativeReadSizeLimitBytes {
 		size := info.Size()
 		if int64(len(data)) > size {
 			size = int64(len(data))
 		}
 		return output(readSizeError(size), true), nil
 	}
-	if bytes.ContainsRune(data, 0) {
-		return binaryReadError(path), nil
+	return readComplete(data, info, path, r), nil
+}
+
+const invalidUTF8Notice = "\n\n[This file is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. Its undecodable bytes show above as U+FFFD. Edit and Write will refuse it: change it with a shell command that keeps its encoding, or ask the user whether to convert it to UTF-8.]"
+
+func readComplete(data []byte, info os.FileInfo, path string, r *circusv1.ReadRequest) *circusv1.DeviceResult {
+	decoded := textutil.Decode(data)
+	if decoded.Encoding == textutil.EncodingUTF8 && bytes.ContainsRune(data, 0) {
+		return binaryReadError(path)
 	}
-	lines := strings.Split(strings.ReplaceAll(textutil.NodeUTF8(data), "\r\n", "\n"), "\n")
+	lines := strings.Split(strings.ReplaceAll(decoded.Text, "\r\n", "\n"), "\n")
 	// Inferred: an empty file has zero total lines in structured metadata.
 	total := len(lines)
 	if len(data) == 0 {
@@ -126,18 +153,80 @@ func (*Read) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 				b.WriteByte('\n')
 			}
 			fmt.Fprint(&b, start+i-first)
-			if i != uint64(total-1) || lines[i] != "" {
+			if i != uint64(total-1) || lines[i] != "" || decoded.InvalidUTF8 {
 				b.WriteByte('\t')
 				b.WriteString(lines[i])
 			}
 		}
 		body = b.String()
 	}
+	if decoded.InvalidUTF8 {
+		body += invalidUTF8Notice
+	}
 	result := output(body, false)
 	result.Detail = &circusv1.DeviceResult_Read{Read: &circusv1.ReadResult{
 		Sha256: hash(data), MtimeUnixMs: info.ModTime().UnixMilli(), TotalLines: uint32(total),
 	}}
-	return result, nil
+	return result
+}
+
+func readDevice(ctx context.Context, f *os.File) ([]byte, error) {
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	done := make(chan readResult, 1)
+	go func() {
+		data, err := io.ReadAll(io.LimitReader(f, nativeReadSizeLimitBytes+1))
+		select {
+		case done <- readResult{data: data, err: err}:
+		case <-ctx.Done():
+		}
+	}()
+	select {
+	case result := <-done:
+		return result.data, result.err
+	case <-ctx.Done():
+		_ = f.Close()
+		return nil, ctx.Err()
+	}
+}
+
+// streamingUTF8 validates raw bytes without retaining unrequested content.
+type streamingUTF8 struct {
+	pending []byte
+	invalid bool
+}
+
+func (v *streamingUTF8) Write(p []byte) (int, error) {
+	n := len(p)
+	data := p
+	if len(v.pending) > 0 {
+		data = make([]byte, 0, len(v.pending)+len(p))
+		data = append(data, v.pending...)
+		data = append(data, p...)
+		v.pending = nil
+	}
+	for len(data) > 0 {
+		r, size := utf8.DecodeRune(data)
+		if r == utf8.RuneError && size == 1 {
+			if !utf8.FullRune(data) {
+				v.pending = append(v.pending, data...)
+				break
+			}
+			v.invalid = true
+			data = data[1:]
+			continue
+		}
+		data = data[size:]
+	}
+	return n, nil
+}
+
+func (v *streamingUTF8) finish() {
+	if len(v.pending) > 0 {
+		v.invalid = true
+	}
 }
 
 // streamReadRange hashes and counts the entire file while retaining only the
@@ -158,7 +247,8 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 	}
 
 	hasher := sha256.New()
-	reader := bufio.NewReader(io.TeeReader(f, hasher))
+	validity := &streamingUTF8{}
+	reader := bufio.NewReader(io.TeeReader(f, io.MultiWriter(hasher, validity)))
 	var body strings.Builder
 	var total uint64
 	sawAny, lastNewline := false, false
@@ -222,11 +312,15 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 			break
 		}
 	}
+	validity.finish()
 	if sawAny && lastNewline {
 		index := total
 		total++
 		if selected(index) {
 			appendLine(index, nil, true)
+			if validity.invalid {
+				body.WriteByte('\t')
+			}
 		}
 	}
 
@@ -238,6 +332,9 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 		text = fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", start, total)
 	default:
 		text = body.String()
+	}
+	if validity.invalid {
+		text += invalidUTF8Notice
 	}
 	result := output(text, false)
 	result.Detail = &circusv1.DeviceResult_Read{Read: &circusv1.ReadResult{

@@ -27,7 +27,7 @@ func TestReadInvalidUTF8ProducesSerializableText(t *testing.T) {
 	if _, err := proto.Marshal(result); err != nil {
 		t.Fatalf("result does not marshal as protobuf: %v", err)
 	}
-	compareText(t, "invalid UTF-8 replacement", "1\ta\uFFFD\n2\tb", result.Output.Content[0].GetText())
+	compareText(t, "invalid UTF-8 replacement", "1\ta\uFFFD\n2\tb\n\n[This file is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. Its undecodable bytes show above as U+FFFD. Edit and Write will refuse it: change it with a shell command that keeps its encoding, or ask the user whether to convert it to UTF-8.]", result.Output.Content[0].GetText())
 	wantHash := fmt.Sprintf("%x", sha256.Sum256(raw))
 	if result.GetRead().Sha256 != wantHash {
 		t.Fatalf("Read hash was not computed from raw bytes: got %s, want %s", result.GetRead().Sha256, wantHash)

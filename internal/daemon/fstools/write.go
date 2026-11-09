@@ -6,6 +6,7 @@ import (
 	"os"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/textutil"
 )
 
 // Write is a stateless file-writing tool.
@@ -37,10 +38,14 @@ func (*Write) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Dev
 		// Inferred: uncaptured Write filesystem errors use tool-use-error with OS text.
 		return toolError(err.Error()), nil
 	}
+	decoded := textutil.Decode(data)
+	if decoded.InvalidUTF8 {
+		return output(encodingError, true), nil
+	}
 	if changed(r.ExpectedSha256, data) {
 		return toolError(modifiedError), nil
 	}
-	content := []byte(r.GetContent())
+	content := decoded.Encode(r.GetContent())
 	if err := writeFile(ctx, path, content, info); err != nil {
 		return toolError(err.Error()), nil
 	}

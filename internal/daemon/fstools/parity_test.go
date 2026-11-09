@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -37,6 +38,7 @@ type fixture struct {
 		Symlinks  map[string]string          `json:"symlinks"`
 		Hardlinks map[string]string          `json:"hardlinks"`
 		Modes     map[string]string          `json:"modes"`
+		Fifos     []string                   `json:"fifos"`
 	} `json:"setup"`
 	Steps []struct {
 		Tool   string       `json:"tool"`
@@ -47,7 +49,7 @@ type fixture struct {
 				Content json.RawMessage `json:"content"`
 			} `json:"write"`
 		} `json:"before"`
-		Result struct {
+		Result *struct {
 			IsError bool   `json:"is_error"`
 			Content string `json:"content"`
 		} `json:"result"`
@@ -347,6 +349,11 @@ func TestNativeParity(t *testing.T) {
 				for name, raw := range f.Setup.Files {
 					putFile(t, filepath.Join(cwd, name), fixtureBytes(t, raw))
 				}
+				for _, name := range f.Setup.Fifos {
+					if err := syscall.Mkfifo(filepath.Join(cwd, name), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
 				for name, target := range f.Setup.Symlinks {
 					if err := os.MkdirAll(filepath.Dir(filepath.Join(cwd, name)), 0o777); err != nil {
 						t.Fatal(err)
@@ -374,6 +381,19 @@ func TestNativeParity(t *testing.T) {
 					if step.Before != nil {
 						putFile(t, step.Before.Write.Path, fixtureBytes(t, step.Before.Write.Content))
 					}
+					if step.Result == nil {
+						// Deliberate deviation: native blocks forever on this FIFO;
+						// circus rejects the special file without opening it.
+						if f.Case != "read-fifo" {
+							t.Fatalf("step %d unexpectedly has no native result", i+1)
+						}
+						r := w.call(t, step.Tool, step.Input)
+						if !r.Output.IsError {
+							t.Errorf("step %d should reject the FIFO: %v", i+1, r)
+						}
+						compareText(t, fmt.Sprintf("step %d special-file error", i+1), "<tool_use_error>This tool cannot read special files. The file is a FIFO.</tool_use_error>", r.Output.Content[0].GetText())
+						continue
+					}
 					r := w.call(t, step.Tool, step.Input)
 					if r.Output.IsError != step.Result.IsError {
 						t.Errorf("step %d is_error: expected %v, got %v", i+1, step.Result.IsError, r.Output.IsError)
@@ -389,8 +409,9 @@ func TestNativeParity(t *testing.T) {
 					if err != nil || entry.IsDir() {
 						return err
 					}
-					// files_after records regular files without following symlinks.
-					if entry.Type()&os.ModeSymlink != 0 {
+					// files_after records regular files without following symlinks
+					// or attempting to read special files.
+					if entry.Type()&os.ModeSymlink != 0 || !entry.Type().IsRegular() {
 						return nil
 					}
 					name, err := filepath.Rel(cwd, path)

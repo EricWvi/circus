@@ -45,15 +45,21 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 		// Inferred: uncaptured Edit filesystem errors use tool-use-error with OS text.
 		return toolError(err.Error()), nil
 	}
-	modified := changed(r.ExpectedSha256, data)
-	old, replacement := r.GetOldString(), r.GetNewString()
-	shownOld := textutil.NodeUTF8([]byte(old))
-	if strings.Contains(string(data), "\r\n") {
-		// Inferred: for multiline edits in a CRLF file, normalize only the
-		// supplied strings to CRLF; bytes outside the replacement stay intact.
-		old = strings.ReplaceAll(strings.ReplaceAll(old, "\r\n", "\n"), "\n", "\r\n")
-		replacement = strings.ReplaceAll(strings.ReplaceAll(replacement, "\r\n", "\n"), "\n", "\r\n")
+	decoded := textutil.Decode(data)
+	if decoded.InvalidUTF8 {
+		return toolError(encodingError), nil
 	}
+	modified := changed(r.ExpectedSha256, data)
+	old := strings.ReplaceAll(r.GetOldString(), "\r\n", "\n")
+	replacement := strings.ReplaceAll(r.GetNewString(), "\r\n", "\n")
+	shownOld := textutil.NodeUTF8([]byte(r.GetOldString()))
+	text := strings.ReplaceAll(decoded.Text, "\r\n", "\n")
+	eol := "\n"
+	if i := strings.Index(decoded.Text, "\n"); i > 0 && decoded.Text[i-1] == '\r' {
+		eol = "\r\n"
+	}
+	// Inferred: mixed-EOL files are normalized to LF for matching, then the
+	// complete result uses the file's first line ending.
 	var content string
 	if old == "" {
 		if len(data) != 0 {
@@ -65,7 +71,7 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 		content = replacement
 	} else {
 		var count int
-		content, count = replaceText(string(data), old, replacement)
+		content, count = replaceText(text, old, replacement)
 		if count == 0 {
 			if modified {
 				return toolError(modifiedError), nil
@@ -76,7 +82,11 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 			return toolError(fmt.Sprintf("Found %d matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: %s", count, shownOld)), nil
 		}
 	}
-	if err := writeFile(ctx, path, []byte(content), info); err != nil {
+	if eol == "\r\n" {
+		content = strings.ReplaceAll(content, "\n", eol)
+	}
+	raw := decoded.Encode(content)
+	if err := writeFile(ctx, path, raw, info); err != nil {
 		return toolError(err.Error()), nil
 	}
 	body := fmt.Sprintf("The file %s has been updated successfully.", r.GetPath())
@@ -91,7 +101,7 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 	}
 	result := output(body, false)
 	result.Detail = &circusv1.DeviceResult_Edit{Edit: &circusv1.EditResult{
-		Sha256: hash([]byte(content)), ModifiedSinceRead: modified, Created: created,
+		Sha256: hash(raw), ModifiedSinceRead: modified, Created: created,
 	}}
 	return result, nil
 }
@@ -101,13 +111,17 @@ func replaceText(content, old, replacement string) (string, int) {
 		return strings.ReplaceAll(content, old, replacement), count
 	}
 	// Inferred: quote tolerance is a fallback after literal matching, limited
-	// to straight/curly double quotes; no other fuzzy matching is performed.
+	// to straight/curly double and single quotes; no other fuzzy matching is performed.
 	text, target := []rune(content), []rune(old)
 	normalize := func(r rune) rune {
-		if r == '“' || r == '”' {
+		switch r {
+		case '“', '”':
 			return '"'
+		case '‘', '’':
+			return '\''
+		default:
+			return r
 		}
-		return r
 	}
 	var b strings.Builder
 	count, last := 0, 0
@@ -125,7 +139,8 @@ func replaceText(content, old, replacement string) (string, int) {
 		}
 		b.WriteString(string(text[last:i]))
 		next := replacement
-		if strings.ContainsAny(string(text[i:i+len(target)]), "“”") {
+		matched := string(text[i : i+len(target)])
+		if strings.ContainsAny(matched, "“”") {
 			// Inferred: double quotes in replacement text alternate opening
 			// and closing curly quotes when the matched text uses curly quotes.
 			opening := true
@@ -138,6 +153,16 @@ func replaceText(content, old, replacement string) (string, int) {
 					return '“'
 				}
 				return '”'
+			}, next)
+		}
+		if strings.ContainsAny(matched, "‘’") {
+			// Inferred: straight apostrophes become right single quotation
+			// marks when the matched text uses either curly single quote.
+			next = strings.Map(func(r rune) rune {
+				if r == '\'' {
+					return '’'
+				}
+				return r
 			}, next)
 		}
 		b.WriteString(next)

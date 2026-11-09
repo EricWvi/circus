@@ -16,6 +16,7 @@ import (
 const currentContext = " (file state is current in your context — no need to Read it back)"
 const modifiedContext = " (note: the file had been modified on disk since you last read it — the edit applied cleanly, but the file contains other changes not in your context. Read it before edits that depend on surrounding content.)"
 const modifiedError = "File has been modified since read, either by the user or by a linter. Read it again before attempting to write it."
+const encodingError = "File is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. These tools write UTF-8 (or UTF-16LE behind its byte-order mark) and never convert a file's encoding on their own, so nothing was written. If the file is text, make the change with a shell command that reads and writes it in its own encoding (iconv, or PowerShell Get-Content/Set-Content -Encoding), or ask the user whether to convert it to UTF-8 first. To replace the whole file with new UTF-8 text anyway, delete it first, then Write it."
 
 // Inferred: native rejects special files without opening them; the exact kind
 // names are provisional until the native special-file captures are available.
@@ -145,14 +146,15 @@ func specialFileKind(mode os.FileMode) string {
 	}
 }
 
-// inspectFile stats a path before opening it and admits only regular files and
-// directories. Stat deliberately follows symlinks for Read compatibility.
+// inspectFile stats a path before opening it and admits regular files,
+// directories and character devices. Stat deliberately follows symlinks for
+// Read compatibility. Edit and Write reject character devices in load.
 func inspectFile(path string) (os.FileInfo, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() && !info.IsDir() {
+	if !info.Mode().IsRegular() && !info.IsDir() && info.Mode()&os.ModeCharDevice == 0 {
 		return info, &specialFileError{kind: specialFileKind(info.Mode())}
 	}
 	return info, nil
@@ -261,6 +263,9 @@ func load(path string) ([]byte, os.FileInfo, error) {
 	}
 	if info.IsDir() {
 		return nil, info, directoryError(path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, info, &specialFileError{kind: specialFileKind(info.Mode())}
 	}
 	if info.Size() > wholeFileSizeLimitBytes {
 		return nil, info, fmt.Errorf("%s", wholeFileSizeError)

@@ -1,0 +1,30 @@
+package textutil
+
+import (
+	"bytes"
+	"testing"
+)
+
+func TestDecodeInvalidUTF8AndLiteralReplacement(t *testing.T) {
+	invalid := Decode([]byte{'a', 0xff, 'b', 0xfe, 0xfd, 'c', '\n'})
+	if !invalid.InvalidUTF8 || invalid.Encoding != EncodingUTF8 || invalid.Text != "a\uFFFDb\uFFFD\uFFFDc\n" {
+		t.Fatalf("invalid UTF-8 decode: %#v", invalid)
+	}
+	literal := Decode([]byte("literal \uFFFD\n"))
+	if literal.InvalidUTF8 || literal.Text != "literal \uFFFD\n" {
+		t.Fatalf("literal U+FFFD was treated as invalid: %#v", literal)
+	}
+}
+
+func TestUTF16LERoundTrip(t *testing.T) {
+	raw := []byte{0xff, 0xfe, 'h', 0, 'i', 0, '\n', 0}
+	decoded := Decode(raw)
+	if decoded.InvalidUTF8 || decoded.Encoding != EncodingUTF16LE || decoded.Text != "hi\n" {
+		t.Fatalf("UTF-16LE decode: %#v", decoded)
+	}
+	encoded := decoded.Encode("hello\n")
+	want := []byte{0xff, 0xfe, 'h', 0, 'e', 0, 'l', 0, 'l', 0, 'o', 0, '\n', 0}
+	if !bytes.Equal(encoded, want) {
+		t.Fatalf("UTF-16LE encode: expected %v, got %v", want, encoded)
+	}
+}
