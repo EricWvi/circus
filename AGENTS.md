@@ -2,3 +2,6 @@
 - 脚本所需依赖也放到 .tmp 下，例如 Python venv。
 - 工作区下如果有 memories，先读 memories/AGENTS.md，再按其指引了解与当前项目有关的记忆。
 - 工作区下如果有 specs，先读 specs/AGENTS.md。
+- 代码、注释、提交信息、README 用英文。
+- 设计讨论记录在 drafts/discussion/（软链接，由 drafts 仓库跟踪，不进 circus 提交），从 drafts/discussion/README.md 开始读。Eric 做出决策时，定下的写进 decisions.md，未定的写进 open-questions.md，并在 drafts/preference/ 追加讨论经过。
+- 作为主会话（orchestrator）协调开发、或被 loop 唤醒时，先读 drafts/memory/README.md。
