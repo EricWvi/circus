@@ -848,9 +848,9 @@ type ReadRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Path of the file to read.
 	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	// Starting line: zero means the start; otherwise uses native tool 1-based lines.
-	Offset uint32 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
-	// Maximum lines to return; zero uses the default cap.
+	// Starting line; absent starts at 1, while explicit zero starts at the first line numbered 0.
+	Offset *uint32 `protobuf:"varint,2,opt,name=offset,proto3,oneof" json:"offset,omitempty"`
+	// Maximum lines to return; zero means no line-count limit.
 	Limit uint32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	// Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
 	Cwd           string `protobuf:"bytes,4,opt,name=cwd,proto3" json:"cwd,omitempty"`
@@ -896,8 +896,8 @@ func (x *ReadRequest) GetPath() string {
 }
 
 func (x *ReadRequest) GetOffset() uint32 {
-	if x != nil {
-		return x.Offset
+	if x != nil && x.Offset != nil {
+		return *x.Offset
 	}
 	return 0
 }
@@ -1641,12 +1641,13 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"\x10output_truncated\x18\x05 \x01(\bR\x0foutputTruncated\x12\x1f\n" +
 	"\voutput_path\x18\x06 \x01(\tR\n" +
 	"outputPath\x12\x15\n" +
-	"\x06job_id\x18\a \x01(\tR\x05jobId\"a\n" +
+	"\x06job_id\x18\a \x01(\tR\x05jobId\"q\n" +
 	"\vReadRequest\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\x12\x16\n" +
-	"\x06offset\x18\x02 \x01(\rR\x06offset\x12\x14\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1b\n" +
+	"\x06offset\x18\x02 \x01(\rH\x00R\x06offset\x88\x01\x01\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\rR\x05limit\x12\x10\n" +
-	"\x03cwd\x18\x04 \x01(\tR\x03cwd\"i\n" +
+	"\x03cwd\x18\x04 \x01(\tR\x03cwdB\t\n" +
+	"\a_offset\"i\n" +
 	"\n" +
 	"ReadResult\x12\x16\n" +
 	"\x06sha256\x18\x01 \x01(\tR\x06sha256\x12\"\n" +
@@ -1797,6 +1798,7 @@ func file_circus_v1_device_proto_init() {
 		(*ContentBlock_Text)(nil),
 		(*ContentBlock_Image)(nil),
 	}
+	file_circus_v1_device_proto_msgTypes[7].OneofWrappers = []any{}
 	file_circus_v1_device_proto_msgTypes[9].OneofWrappers = []any{}
 	file_circus_v1_device_proto_msgTypes[11].OneofWrappers = []any{}
 	type x struct{}

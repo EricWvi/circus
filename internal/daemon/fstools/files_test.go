@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func digest(content string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(content))) }
@@ -19,7 +21,7 @@ func TestRelativePathsAndResultMetadata(t *testing.T) {
 	if r.Output.IsError || r.GetWrite() == nil || !r.GetWrite().Created || r.GetWrite().Sha256 != digest(content) {
 		t.Fatalf("write create metadata: %v", r)
 	}
-	r = w.call(t, "Read", fixtureInput{Path: path, Offset: 2, Limit: 1})
+	r = w.call(t, "Read", fixtureInput{Path: path, Offset: proto.Uint32(2), Limit: 1})
 	info, err := os.Stat(filepath.Join(cwd, path))
 	if err != nil {
 		t.Fatal(err)

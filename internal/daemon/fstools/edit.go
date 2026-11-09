@@ -28,7 +28,12 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 	if err != nil {
 		return nil, err
 	}
-	data, _, err := load(path)
+	if rejection, err := symlinkRejection(path); err != nil {
+		return toolError(err.Error()), nil
+	} else if rejection != nil {
+		return rejection, nil
+	}
+	data, info, err := load(path)
 	created := os.IsNotExist(err)
 	if created && r.GetOldString() != "" {
 		return toolError(missing(cwd)), nil
@@ -47,10 +52,12 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 	}
 	var content string
 	if old == "" {
+		if len(data) != 0 {
+			return toolError("Cannot create new file - file already exists."), nil
+		}
 		if modified {
 			return toolError(modifiedError), nil
 		}
-		// TODO(native-threshold): unverified; native may reject this. Pending capture.
 		content = replacement
 	} else {
 		var count int
@@ -65,7 +72,7 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 			return toolError(fmt.Sprintf("Found %d matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: %s", count, r.GetOldString())), nil
 		}
 	}
-	if err := writeFile(ctx, path, []byte(content), created); err != nil {
+	if err := writeFile(ctx, path, []byte(content), info); err != nil {
 		return toolError(err.Error()), nil
 	}
 	body := fmt.Sprintf("The file %s has been updated successfully.", r.GetPath())

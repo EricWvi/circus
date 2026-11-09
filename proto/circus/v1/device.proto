@@ -114,9 +114,9 @@ message BashResult {
 message ReadRequest {
   // Path of the file to read.
   string path = 1;
-  // Starting line: zero means the start; otherwise uses native tool 1-based lines.
-  uint32 offset = 2;
-  // Maximum lines to return; zero uses the default cap.
+  // Starting line; absent starts at 1, while explicit zero starts at the first line numbered 0.
+  optional uint32 offset = 2;
+  // Maximum lines to return; zero means no line-count limit.
   uint32 limit = 3;
   // Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
   string cwd = 4;

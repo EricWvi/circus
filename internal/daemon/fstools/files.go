@@ -2,6 +2,7 @@ package fstools
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -51,36 +52,72 @@ func changed(expected *string, data []byte) bool {
 	return expected != nil && *expected != hash(data)
 }
 
-// writeFile follows existing symlinks and overwrites the target in place, keeping
-// its inode and hard links. Creation is exclusive so an intervening file is not
-// accidentally overwritten.
-func writeFile(ctx context.Context, path string, data []byte, created bool) error {
+// symlinkRejection uses Lstat so dangling links are refused as well.
+func symlinkRejection(path string) (*circusv1.DeviceResult, error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return nil, nil
+	}
+	target, err := os.Readlink(path)
+	if err != nil {
+		return nil, err
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(path), target)
+	}
+	return output(fmt.Sprintf("Refusing to write %s: it is a symbolic link. Write to the link's target path instead: %s.", path, target), true), nil
+}
+
+// writeFile replaces the directory entry with a synced temporary sibling,
+// breaking hard links while preserving existing permission bits. New-file and
+// parent-directory modes use the kernel's umask without changing process state.
+func writeFile(ctx context.Context, path string, data []byte, info os.FileInfo) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	flags, mode := os.O_WRONLY|os.O_TRUNC, os.FileMode(0)
-	if created {
-		// Inferred: Node fs defaults
-		if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
-			return err
-		}
-		flags, mode = os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666
-	} else {
+	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+		return err
+	}
+	var f *os.File
+	for {
+		name := filepath.Join(filepath.Dir(path), ".circus-write-"+rand.Text())
 		var err error
-		path, err = filepath.EvalSymlinks(path)
+		f, err = os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+		if os.IsExist(err) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
+		break
 	}
-	f, err := os.OpenFile(path, flags, mode)
-	if err != nil {
-		return err
-	}
+	defer os.Remove(f.Name())
+	defer f.Close()
 	if _, err := f.Write(data); err != nil {
-		f.Close()
 		return err
 	}
-	return f.Close()
+	if info != nil {
+		mode := info.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
+		if err := f.Chmod(mode); err != nil {
+			return err
+		}
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }
 
 // load reads the bytes and metadata through the same open file.

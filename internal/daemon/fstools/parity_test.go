@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,20 +20,23 @@ import (
 )
 
 type fixtureInput struct {
-	Path       string `json:"file_path"`
-	Content    string `json:"content"`
-	Old        string `json:"old_string"`
-	New        string `json:"new_string"`
-	ReplaceAll bool   `json:"replace_all"`
-	Offset     uint32 `json:"offset"`
-	Limit      uint32 `json:"limit"`
+	Path       string  `json:"file_path"`
+	Content    string  `json:"content"`
+	Old        string  `json:"old_string"`
+	New        string  `json:"new_string"`
+	ReplaceAll bool    `json:"replace_all"`
+	Offset     *uint32 `json:"offset"`
+	Limit      uint32  `json:"limit"`
 }
 
 type fixture struct {
 	Case  string `json:"case"`
 	Setup struct {
-		Files map[string]json.RawMessage `json:"files"`
-		Dirs  []string                   `json:"dirs"`
+		Files     map[string]json.RawMessage `json:"files"`
+		Dirs      []string                   `json:"dirs"`
+		Symlinks  map[string]string          `json:"symlinks"`
+		Hardlinks map[string]string          `json:"hardlinks"`
+		Modes     map[string]string          `json:"modes"`
 	} `json:"setup"`
 	Steps []struct {
 		Tool   string       `json:"tool"`
@@ -48,6 +53,12 @@ type fixture struct {
 		} `json:"result"`
 	} `json:"steps"`
 	FilesAfter map[string]json.RawMessage `json:"files_after"`
+	FSAfter    map[string]struct {
+		Type        string  `json:"type"`
+		LinkTarget  string  `json:"link_target"`
+		Mode        string  `json:"mode"`
+		SameInodeAs *string `json:"same_inode_as"`
+	} `json:"fs_after"`
 }
 
 func repoRoot(t *testing.T) string {
@@ -107,11 +118,113 @@ func fixtureBytes(t *testing.T, raw json.RawMessage) []byte {
 
 func putFile(t *testing.T, path string, data []byte) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, data, 0o666); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func parseMode(t *testing.T, text string) os.FileMode {
+	t.Helper()
+	bits, err := strconv.ParseUint(text, 8, 12)
+	if err != nil || len(text) != 4 {
+		t.Fatalf("invalid fixture mode %q: %v", text, err)
+	}
+	mode := os.FileMode(bits & 0o777)
+	for _, special := range []struct {
+		bit  uint64
+		mode os.FileMode
+	}{{0o4000, os.ModeSetuid}, {0o2000, os.ModeSetgid}, {0o1000, os.ModeSticky}} {
+		if bits&special.bit != 0 {
+			mode |= special.mode
+		}
+	}
+	return mode
+}
+
+func verifyFSAfter(t *testing.T, cwd string, f fixture) {
+	t.Helper()
+	// same_inode_as refers to the first other final path from the setup keys,
+	// including keys not explicitly observed in fs_after.
+	setupPaths := make(map[string]bool)
+	for name := range f.Setup.Files {
+		setupPaths[name] = true
+	}
+	for _, name := range f.Setup.Dirs {
+		setupPaths[name] = true
+	}
+	for name := range f.Setup.Symlinks {
+		setupPaths[name] = true
+	}
+	for name := range f.Setup.Hardlinks {
+		setupPaths[name] = true
+	}
+	for name := range f.Setup.Modes {
+		setupPaths[name] = true
+	}
+	names := make([]string, 0, len(setupPaths))
+	for name := range setupPaths {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	final := make(map[string]os.FileInfo)
+	for _, name := range names {
+		info, err := os.Lstat(filepath.Join(cwd, name))
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		final[name] = info
+	}
+	for name, want := range f.FSAfter {
+		info, err := os.Lstat(filepath.Join(cwd, name))
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		kind := "missing"
+		if err == nil {
+			switch {
+			case info.Mode()&os.ModeSymlink != 0:
+				kind = "symlink"
+			case info.IsDir():
+				kind = "dir"
+			case info.Mode().IsRegular():
+				kind = "file"
+			default:
+				t.Fatalf("unsupported file type at %s: %v", name, info.Mode())
+			}
+		}
+		compareText(t, "fs_after/"+name+" type", want.Type, kind)
+		if info != nil {
+			got := info.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
+			if want.Mode == "" || got != parseMode(t, want.Mode) {
+				t.Errorf("fs_after/%s mode: expected %s, got %v", name, want.Mode, got)
+			}
+		} else if want.Mode != "" {
+			t.Errorf("fs_after/%s: missing file has expected mode %s", name, want.Mode)
+		}
+		if kind == "symlink" {
+			target, err := os.Readlink(filepath.Join(cwd, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			compareText(t, "fs_after/"+name+" link_target", want.LinkTarget, target)
+		}
+		same := ""
+		if info != nil {
+			for _, other := range names {
+				if other != name && final[other] != nil && os.SameFile(info, final[other]) {
+					same = other
+					break
+				}
+			}
+		}
+		expected := ""
+		if want.SameInodeAs != nil {
+			expected = *want.SameInodeAs
+		}
+		compareText(t, "fs_after/"+name+" same_inode_as (empty means null)", expected, same)
 	}
 }
 
@@ -227,12 +340,33 @@ func TestNativeParity(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, dir := range f.Setup.Dirs {
-					if err := os.MkdirAll(filepath.Join(cwd, dir), 0755); err != nil {
+					if err := os.MkdirAll(filepath.Join(cwd, dir), 0o777); err != nil {
 						t.Fatal(err)
 					}
 				}
 				for name, raw := range f.Setup.Files {
 					putFile(t, filepath.Join(cwd, name), fixtureBytes(t, raw))
+				}
+				for name, target := range f.Setup.Symlinks {
+					if err := os.MkdirAll(filepath.Dir(filepath.Join(cwd, name)), 0o777); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(target, filepath.Join(cwd, name)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for name, target := range f.Setup.Hardlinks {
+					if err := os.MkdirAll(filepath.Dir(filepath.Join(cwd, name)), 0o777); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Link(filepath.Join(cwd, target), filepath.Join(cwd, name)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for name, mode := range f.Setup.Modes {
+					if err := os.Chmod(filepath.Join(cwd, name), parseMode(t, mode)); err != nil {
+						t.Fatal(err)
+					}
 				}
 				w := newWorker(t, cwd)
 				for i, step := range f.Steps {
@@ -254,6 +388,10 @@ func TestNativeParity(t *testing.T) {
 				err = filepath.WalkDir(cwd, func(path string, entry fs.DirEntry, err error) error {
 					if err != nil || entry.IsDir() {
 						return err
+					}
+					// files_after records regular files without following symlinks.
+					if entry.Type()&os.ModeSymlink != 0 {
+						return nil
 					}
 					name, err := filepath.Rel(cwd, path)
 					if err != nil {
@@ -281,6 +419,7 @@ func TestNativeParity(t *testing.T) {
 						t.Errorf("missing file after steps: %s", name)
 					}
 				}
+				verifyFSAfter(t, cwd, f)
 			})
 		}
 	}

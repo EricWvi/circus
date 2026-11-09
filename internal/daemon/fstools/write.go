@@ -24,7 +24,12 @@ func (*Write) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Dev
 	if err != nil {
 		return nil, err
 	}
-	data, _, err := load(path)
+	if rejection, err := symlinkRejection(path); err != nil {
+		return toolError(err.Error()), nil
+	} else if rejection != nil {
+		return rejection, nil
+	}
+	data, info, err := load(path)
 	created := os.IsNotExist(err)
 	if err != nil && !created {
 		// Inferred: uncaptured Write filesystem errors use tool-use-error with OS text.
@@ -34,7 +39,7 @@ func (*Write) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Dev
 		return toolError(modifiedError), nil
 	}
 	content := []byte(r.GetContent())
-	if err := writeFile(ctx, path, content, created); err != nil {
+	if err := writeFile(ctx, path, content, info); err != nil {
 		return toolError(err.Error()), nil
 	}
 	body := fmt.Sprintf("The file %s has been updated successfully.%s", r.GetPath(), currentContext)
