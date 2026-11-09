@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-offset-past-end",
+  "description": "Read beyond EOF.",
+  "setup": {
+    "files": {
+      "a.txt": "alpha\nbeta\ngamma\ndelta\nepsilon\n"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "offset": 100
+      },
+      "result": {
+        "is_error": false,
+        "content": "<system-reminder>Warning: the file exists but is shorter than the provided offset (100). The file has 6 lines.</system-reminder>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "alpha\nbeta\ngamma\ndelta\nepsilon\n"
+  }
+}

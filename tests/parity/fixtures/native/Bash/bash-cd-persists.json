@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-cd-persists",
+  "description": "Change into a project subdirectory, then inspect cwd.",
+  "setup": {
+    "files": {},
+    "dirs": [
+      "sub"
+    ]
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "cd sub",
+        "description": "Capture native Bash behavior"
+      },
+      "result": {
+        "is_error": false,
+        "content": "(Bash completed with no output)\n\n<system-reminder>\n# Environment update\n - Primary working directory: {{CWD}}/sub (was {{CWD}})\n</system-reminder>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "pwd",
+        "description": "Capture native Bash behavior"
+      },
+      "result": {
+        "is_error": false,
+        "content": "{{CWD}}/sub\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

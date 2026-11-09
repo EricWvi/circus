@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-binary",
+  "description": "Read a .bin file containing NUL bytes.",
+  "setup": {
+    "files": {
+      "a.bin": {
+        "base64": "AAECAP8K"
+      }
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.bin"
+      },
+      "result": {
+        "is_error": true,
+        "content": "<tool_use_error>This tool cannot read binary files. The file appears to be a binary .bin file. Use a skill for this file type if one is available, or a shell command or script that can read the format.</tool_use_error>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.bin": {
+      "base64": "AAECAP8K"
+    }
+  }
+}

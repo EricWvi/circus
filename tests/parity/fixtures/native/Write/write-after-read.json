@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "write-after-read",
+  "description": "Overwrite a previously read file.",
+  "setup": {
+    "files": {
+      "a.txt": "alpha\nbeta\ngamma\ndelta\nepsilon\n"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\talpha\n2\tbeta\n3\tgamma\n4\tdelta\n5\tepsilon\n6\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "content": "replacement\n"
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "replacement\n"
+  }
+}

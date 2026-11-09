@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-unicode",
+  "description": "Read CJK and emoji.",
+  "setup": {
+    "files": {
+      "a.txt": "你好，世界\nClaude 🐱 🚀\n"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\t你好，世界\n2\tClaude 🐱 🚀\n3\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "你好，世界\nClaude 🐱 🚀\n"
+  }
+}

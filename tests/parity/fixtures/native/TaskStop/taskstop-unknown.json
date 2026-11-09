@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "taskstop-unknown",
+  "description": "Stop a nonexistent task.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "TaskStop",
+      "input": {
+        "task_id": "bogus-task-id"
+      },
+      "result": {
+        "is_error": true,
+        "content": "<tool_use_error>No task found with ID: bogus-task-id</tool_use_error>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

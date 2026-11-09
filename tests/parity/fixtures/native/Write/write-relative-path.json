@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "write-relative-path",
+  "description": "Write a relative path.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "a.txt",
+        "content": "replacement\n"
+      },
+      "result": {
+        "is_error": false,
+        "content": "File created successfully at: a.txt (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "replacement\n"
+  }
+}

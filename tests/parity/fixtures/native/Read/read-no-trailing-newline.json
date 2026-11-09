@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-no-trailing-newline",
+  "description": "Read five lines without a trailing newline.",
+  "setup": {
+    "files": {
+      "a.txt": "alpha\nbeta\ngamma\ndelta\nepsilon"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\talpha\n2\tbeta\n3\tgamma\n4\tdelta\n5\tepsilon\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "alpha\nbeta\ngamma\ndelta\nepsilon"
+  }
+}

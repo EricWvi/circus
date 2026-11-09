@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-env",
+  "description": "Record sorted environment in an isolated, credential-free shell.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "env | sort",
+        "description": "Capture native Bash behavior"
+      },
+      "result": {
+        "is_error": false,
+        "content": "AI_AGENT=claude-code_2-1-319_agent\nANTHROPIC_API_KEY=<redacted>\nANTHROPIC_BASE_URL=http://127.0.0.1:{{PORT}}\nCLAUDECODE=1\nCLAUDE_AGENT_SDK_VERSION=0.3.319\nCLAUDE_CODE_CHILD_SESSION=1\nCLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nCLAUDE_CODE_ENTRYPOINT=sdk-ts\nCLAUDE_CODE_EXECPATH={{CAPTURE_DIR}}/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude\nCLAUDE_CODE_MESSAGING_SOCKET={{TMPDIR}}/cc-socks/{{PID}}.sock\nCLAUDE_CODE_MESSAGING_TOKEN=<redacted>\nCLAUDE_CODE_SESSION_ATTENDED=0\nCLAUDE_CODE_SESSION_ID={{SESSION_ID}}\nCLAUDE_CONFIG_DIR={{CONFIG_DIR}}\nCLAUDE_EFFORT=high\nCLAUDE_PID={{PID}}\nCOREPACK_ENABLE_AUTO_PIN=0\nDISABLE_TELEMETRY=1\nGIT_EDITOR=true\nHOME={{HOME}}\nLANG=C.UTF-8\nLOGNAME=capture\nNoDefaultCurrentDirectoryInExePath=1\nPATH=/usr/local/bin:/usr/bin:/bin\nPWD={{CWD}}\nSHELL=/bin/bash\nSHLVL=1\nTERM=dumb\nTMPDIR={{TMPDIR}}\nUSER=capture\n_=/usr/bin/env\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

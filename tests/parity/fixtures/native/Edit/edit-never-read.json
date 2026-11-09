@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-never-read",
+  "description": "Edit a file without reading it.",
+  "setup": {
+    "files": {
+      "a.txt": "alpha\nbeta\ngamma\ndelta\nepsilon\n"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "beta",
+        "new_string": "BETA"
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully.\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "alpha\nBETA\ngamma\ndelta\nepsilon\n"
+  }
+}

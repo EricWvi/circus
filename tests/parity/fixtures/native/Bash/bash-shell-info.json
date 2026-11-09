@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-shell-info",
+  "description": "Inspect shell flags, wrapper, shopt, aliases and referenced snapshot.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "echo \"$0|$SHELL|$-\"; ps -o pid,ppid,args -p $$; ps -o pid,ppid,args -p $PPID; shopt -p; alias",
+        "description": "Capture native Bash behavior"
+      },
+      "result": {
+        "is_error": false,
+        "content": "/bin/bash|/bin/bash|hBc\n    PID    PPID COMMAND\n{{PID}} {{PID}} /bin/bash -c source {{SNAPSHOT_PATH}} 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unalias -- 'which'; \\builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \\builtin unalias -- 'unsetenv'; \\builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'echo \"$0|$SHELL|$-\"; ps -o pid,ppid,args -p $$; ps -o pid,ppid,args -p $PPID; shopt -p; alias' < /dev/null && pwd -P >| {{TMPDIR}}/claude-{{ID}}-cwd\n    PID    PPID COMMAND\n{{PID}} {{PID}} {{CAPTURE_DIR}}/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude --output-format stream-json --verbose --input-format stream-json --model=claude-sonnet-4-6 --tools=Bash,Read,Write,Edit,TaskStop --setting-sources= --strict-mcp-config --permission-mode=bypassPermissions --allow-dangerously-skip-permissions\nshopt -u array_expand_once\nshopt -u assoc_expand_once\nshopt -u autocd\nshopt -u bash_source_fullpath\nshopt -u cdable_vars\nshopt -u cdspell\nshopt -u checkhash\nshopt -u checkjobs\nshopt -s checkwinsize\nshopt -s cmdhist\nshopt -u compat31\nshopt -u compat32\nshopt -u compat40\nshopt -u compat41\nshopt -u compat42\nshopt -u compat43\nshopt -u compat44\nshopt -s complete_fullquote\nshopt -u direxpand\nshopt -u dirspell\nshopt -u dotglob\nshopt -u execfail\nshopt -s expand_aliases\nshopt -u extdebug\nshopt -u extglob\nshopt -s extquote\nshopt -u failglob\nshopt -s force_fignore\nshopt -s globasciiranges\nshopt -s globskipdots\nshopt -u globstar\nshopt -u gnu_errfmt\nshopt -u histappend\nshopt -u histreedit\nshopt -u histverify\nshopt -s hostcomplete\nshopt -u huponexit\nshopt -u inherit_errexit\nshopt -s interactive_comments\nshopt -u lastpipe\nshopt -u lithist\nshopt -u localvar_inherit\nshopt -u localvar_unset\nshopt -u login_shell\nshopt -u mailwarn\nshopt -u no_empty_cmd_completion\nshopt -u nocaseglob\nshopt -u nocasematch\nshopt -u noexpand_translation\nshopt -u nullglob\nshopt -s patsub_replacement\nshopt -s progcomp\nshopt -u progcomp_alias\nshopt -s promptvars\nshopt -u restricted_shell\nshopt -u shift_verbose\nshopt -s sourcepath\nshopt -u varredir_close\nshopt -u xpg_echo\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "cat \"{{SNAPSHOT_PATH}}\"",
+        "description": "Capture native Bash behavior"
+      },
+      "result": {
+        "is_error": false,
+        "content": "# Snapshot file\n# Unset all aliases to avoid conflicts with functions\nunalias -a 2>/dev/null || true\nshopt -s expand_aliases\n# Check for rg availability\nif ! hash rg 2>/dev/null && ! typeset -f rg >/dev/null 2>&1; then\n  function rg {\n  local _cc_bin=\"${CLAUDE_CODE_EXECPATH:-}\"\n  [[ -x $_cc_bin ]] || _cc_bin={{HOME}}/.local/bin/claude\n  if [[ ! -x $_cc_bin ]]; then command rg ${1+\"$@\"}; return; fi\n  if [[ -n ${ZSH_VERSION:-} ]]; then\n    ARGV0=rg \"$_cc_bin\" ${1+\"$@\"}\n  elif [[ \"$OSTYPE\" == \"msys\" ]] || [[ \"$OSTYPE\" == \"cygwin\" ]] || [[ \"$OSTYPE\" == \"win32\" ]]; then\n    ARGV0=rg \"$_cc_bin\" ${1+\"$@\"}\n  else\n    (exec -a rg \"$_cc_bin\" ${1+\"$@\"})\n  fi\n}\nfi\n# Shadow find/grep with embedded bfs/ugrep\nunalias find 2>/dev/null || true\nunalias grep 2>/dev/null || true\nfunction find {\n  local _cc_bin=\"${CLAUDE_CODE_EXECPATH:-}\"\n  [[ -x $_cc_bin ]] || _cc_bin={{HOME}}/.local/bin/claude\n  if [[ ! -x $_cc_bin ]]; then command find ${1+\"$@\"}; return; fi\n  if [[ -n ${ZSH_VERSION:-} ]]; then\n    ARGV0=bfs \"$_cc_bin\" -S dfs -regextype findutils-default ${1+\"$@\"}\n  elif [[ \"$OSTYPE\" == \"msys\" ]] || [[ \"$OSTYPE\" == \"cygwin\" ]] || [[ \"$OSTYPE\" == \"win32\" ]]; then\n    ARGV0=bfs \"$_cc_bin\" -S dfs -regextype findutils-default ${1+\"$@\"}\n  else\n    (exec -a bfs \"$_cc_bin\" -S dfs -regextype findutils-default ${1+\"$@\"})\n  fi\n}\nfunction grep {\n  local _cc_a\n  for _cc_a in ${1+\"$@\"}; do\n    case \"$_cc_a\" in -*-filter*|-*-pager*|-*-view*|-*-format-open*|-*-config*|---*|-@*|-*-save-config*|-[Zz]*|-[!-]*[Zz]*|--null|--null-data) command grep ${1+\"$@\"}; return ;; esac\n  done\n  local _cc_bin=\"${CLAUDE_CODE_EXECPATH:-}\"\n  [[ -x $_cc_bin ]] || _cc_bin={{HOME}}/.local/bin/claude\n  if [[ ! -x $_cc_bin ]]; then command grep ${1+\"$@\"}; return; fi\n  if [[ -n ${ZSH_VERSION:-} ]]; then\n    ARGV0=ugrep \"$_cc_bin\" -G --ignore-files --hidden -I --exclude-dir=.git --exclude-dir=.svn --exclude-dir=.hg --exclude-dir=.bzr --exclude-dir=.jj --exclude-dir=.sl ${1+\"$@\"}\n  elif [[ \"$OSTYPE\" == \"msys\" ]] || [[ \"$OSTYPE\" == \"cygwin\" ]] || [[ \"$OSTYPE\" == \"win32\" ]]; then\n    ARGV0=ugrep \"$_cc_bin\" -G --ignore-files --hidden -I --exclude-dir=.git --exclude-dir=.svn --exclude-dir=.hg --exclude-dir=.bzr --exclude-dir=.jj --exclude-dir=.sl ${1+\"$@\"}\n  else\n    (exec -a ugrep \"$_cc_bin\" -G --ignore-files --hidden -I --exclude-dir=.git --exclude-dir=.svn --exclude-dir=.hg --exclude-dir=.bzr --exclude-dir=.jj --exclude-dir=.sl ${1+\"$@\"})\n  fi\n}\n# Shadow pkill to refuse patterns matching the CLI process\nunalias pkill 2>/dev/null || true\nfunction pkill {\n  if [ -n \"${CLAUDE_PID:-}\" ] && [ -r \"/proc/${CLAUDE_PID}/comm\" ]; then\n    local _cc_skip=\"\" _cc_a\n    local -a _cc_probe=()\n    for _cc_a in ${1+\"$@\"}; do\n      if [ -n \"$_cc_skip\" ]; then _cc_skip=\"\"; continue; fi\n      case \"$_cc_a\" in\n        --signal) _cc_skip=1 ;;\n        --signal=*|-e|--echo) ;;\n        -[0-9]*) ;;\n        -[PUGOF]?*) _cc_probe+=(\"$_cc_a\") ;;\n        -[ABCDEFGHIJKLMNOPQRSTUVWXYZ][ABCDEFGHIJKLMNOPQRSTUVWXYZ0-9]*) ;;\n        *) _cc_probe+=(\"$_cc_a\") ;;\n      esac\n    done\n    if command pgrep ${_cc_probe[@]+\"${_cc_probe[@]}\"} 2>/dev/null | command grep -qx \"${CLAUDE_PID}\"; then\n      printf 'pkill: refusing to run — this pattern matches the Claude CLI process (PID %s). Narrow the pattern, or target your own children with `pkill -P $$ ...`.\\n' \"${CLAUDE_PID}\" >&2\n      return 1\n    fi\n  fi\n  command pkill ${1+\"$@\"}\n}\nexport PATH=/usr/local/bin:/usr/bin:/bin\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-tabs",
+  "description": "Read literal tabs.",
+  "setup": {
+    "files": {
+      "a.txt": "\talpha\nbeta\tgamma\n\t\tdelta\n"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\t\talpha\n2\tbeta\tgamma\n3\t\t\tdelta\n4\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "\talpha\nbeta\tgamma\n\t\tdelta\n"
+  }
+}

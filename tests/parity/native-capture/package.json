@@ -1,0 +1,8 @@
+{
+  "name": "circus-native-capture",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.x" },
+  "scripts": { "capture": "node capture.mjs" },
+  "dependencies": { "@anthropic-ai/claude-agent-sdk": "0.3.319" }
+}

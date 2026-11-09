@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-crlf",
+  "description": "Read CRLF line endings.",
+  "setup": {
+    "files": {
+      "a.txt": "alpha\r\nbeta\r\ngamma\r\ndelta\r\nepsilon\r\n"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\talpha\n2\tbeta\n3\tgamma\n4\tdelta\n5\tepsilon\n6\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "alpha\r\nbeta\r\ngamma\r\ndelta\r\nepsilon\r\n"
+  }
+}

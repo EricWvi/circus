@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-directory",
+  "description": "Read a directory.",
+  "setup": {
+    "files": {},
+    "dirs": [
+      "sub"
+    ]
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/sub"
+      },
+      "result": {
+        "is_error": true,
+        "content": "EISDIR: illegal operation on a directory, read '{{CWD}}/sub'\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}
