@@ -35,6 +35,9 @@ export async function startFakeApi({ marker, model, onTurn, onError = () => {} }
   const server = http.createServer(async (req, res) => {
     try {
       let raw = '';
+      // Decode across network chunk boundaries; Buffer.toString per chunk can
+      // corrupt a multibyte tool result when a UTF-8 character straddles chunks.
+      req.setEncoding('utf8');
       for await (const chunk of req) raw += chunk;
       const body = raw ? JSON.parse(raw) : {};
       const url = new URL(req.url, 'http://localhost');

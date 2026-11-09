@@ -14,6 +14,8 @@ npm ci --no-audit --no-fund --cache .tmp/npm-cache
 node capture.mjs
 node capture.mjs --case 'read-*'
 node capture.mjs --case bash-background --case bash-background-stop
+node measure-thresholds.mjs
+node measure-thresholds.mjs read-cjk-lines bash-cjk
 ```
 
 The SDK is pinned to `0.3.319`; the captured bundled CLI is `2.1.319`.
@@ -35,6 +37,9 @@ credentials, provider settings and proxies. The allowlist sets the local
 HOME is deliberately isolated too, so personal shell files and settings cannot
 add credentials to `env` or the snapshot. This captures a clean Linux profile,
 not the invoking user's customized shell.
+The profile-sourcing case supplies controlled startup files through
+`setup.home_files` under that isolated HOME. A case may select `shell` (used by
+the conditional zsh variant); other environment values remain on the allowlist.
 
 On failure the process exits nonzero, continues trying other selected cases, and
 writes redacted diagnostics to `.tmp/<case>-failure.txt`. A previous fixture is
@@ -51,6 +56,9 @@ model, contain the case marker in conversation history and offer native `Read`.
 All other Messages requests get a minimal text response without advancing the
 script; this includes title generation even if it uses the same model.
 Unexpected endpoints fail the run. Request headers are never recorded.
+The HTTP request stream uses incremental UTF-8 decoding (`setEncoding('utf8')`)
+so a multibyte character crossing network chunks cannot become replacement
+characters. This matters for the large CJK fixtures.
 
 The fake supports JSON responses and streaming SSE. Streaming sends
 `message_start`, indexed block start/delta/stop events, `message_delta` and
@@ -61,6 +69,17 @@ the result and all other blocks in that same user message are extracted. Then
 the harness performs the next step's optional `before.write`, emits that step,
 or sends the final text response. Success requires that the final response and
 every emitted tool result arrive. No SDK-facing pretty-print is used as evidence.
+
+`capture()` is also importable. `capture(definition, { persist: false })` runs
+the identical native loop and returns the normalized fixture in memory without
+writing a golden fixture. `measure-thresholds.mjs` uses it for independent-session
+integer bisection, widening the initial bracket if necessary and stopping only
+when the passing and failing sizes differ by one unit. Its probe outcomes and
+boundary sizes are written to ignored `.tmp/threshold-results.json`; when families
+are named, results for other families are preserved. The complete measured probe
+lists are published in the behavior document. Only the two boundary definitions
+per family in `threshold-cases.mjs` are included in a normal capture, alongside
+the requested range, edge-input, combined-stream and many-line cases.
 
 The native wire format in this version uses **string** `tool_result.content` for
 all these cases. Fixtures retain that type verbatim instead of inventing an
@@ -83,6 +102,9 @@ not remove reminders, trim output, normalize CRLF file bytes, or alter line
 numbers. PID-table numeric columns and their variable-width padding are replaced
 together. All substitutions are applied recursively to string values; object
 keys such as relative filenames are retained.
+Assignment redaction and absolute-path discovery are anchored to assignments
+and path starts, respectively, to avoid quadratic regex work on large single
+lines. These harness fixes require no changes to the original 51 fixtures.
 
 | Placeholder | Meaning |
 | --- | --- |
@@ -134,3 +156,7 @@ Valid UTF-8 text without NUL is stored verbatim, including CRLF and final newlin
 binary content is base64. Output files outside the project are represented by
 their native result text and, in the background case, the requested Read step.
 Do not add host credentials or personal startup files to case setup.
+The profile case's `resolve_snapshot: true` cats the sole actual `.sh` file in
+the fresh config's `shell-snapshots` directory; it fails unless exactly one exists.
+This avoids adding a process-inspection command to the requested seven-step
+sequence. HOME setup is recorded as data but is not part of project `files_after`.

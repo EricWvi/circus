@@ -1,3 +1,6 @@
+import { shellCases } from './shell-cases.mjs';
+import { thresholdCases } from './threshold-cases.mjs';
+
 const text = 'alpha\nbeta\ngamma\ndelta\nepsilon\n';
 const read = (file_path = '{{CWD}}/a.txt', extra = {}) => ({ tool: 'Read', input: { file_path, ...extra } });
 const write = (file_path = '{{CWD}}/a.txt', content = 'replacement\n') => ({ tool: 'Write', input: { file_path, content } });
@@ -66,4 +69,6 @@ export const cases = [
     bash('sleep 60', { run_in_background: true }), { tool: 'TaskStop', input: { task_id: '{{TASK_ID}}' } },
   ]),
   c('taskstop-unknown', 'Stop a nonexistent task.', {}, [{ tool: 'TaskStop', input: { task_id: 'bogus-task-id' } }]),
+  ...shellCases,
+  ...thresholdCases,
 ];

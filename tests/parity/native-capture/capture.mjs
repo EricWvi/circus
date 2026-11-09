@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile, readFile, readdir, rm, stat } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join, resolve, relative } from 'node:path';
 import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { cases } from './cases.mjs';
 import { startFakeApi } from './fake-api.mjs';
 
@@ -10,16 +11,7 @@ const root = import.meta.dirname;
 const fixtures = resolve(root, '../fixtures/native');
 const model = 'claude-sonnet-4-6';
 const toolNames = ['Bash', 'Read', 'Write', 'Edit', 'TaskStop'];
-const args = process.argv.slice(2);
-if (args.some((arg, i) => arg !== '--case' && args[i - 1] !== '--case') || args.at(-1) === '--case') {
-  throw new Error('Usage: node capture.mjs [--case <glob>]');
-}
-const patterns = args.filter((_, i) => args[i - 1] === '--case');
 const glob = pattern => new RegExp(`^${pattern.split('*').map(s => s.split('?').map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.')).join('.*')}$`);
-const selected = cases.filter(c => !patterns.length || patterns.some(p => glob(p).test(c.id)));
-if (!selected.length) throw new Error('No matching cases');
-await mkdir(fixtures, { recursive: true });
-await mkdir(join(root, '.tmp'), { recursive: true });
 
 const json = value => `${JSON.stringify(value, null, 2)}\n`;
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -27,7 +19,8 @@ const replaceData = (value, fn) => typeof value === 'string' ? fn(value) : Array
   ? value.map(v => replaceData(v, fn)) : value && typeof value === 'object'
     ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, replaceData(v, fn)])) : value;
 
-async function capture(definition) {
+export async function capture(definition, { persist = true } = {}) {
+  await mkdir(join(root, '.tmp'), { recursive: true });
   const base = await mkdtemp(join(tmpdir(), 'circus-native-'));
   const cwd = join(base, 'project');
   const home = join(base, 'home');
@@ -57,15 +50,17 @@ async function capture(definition) {
     const task = text.match(/(?:running in background with ID:|task_id["\\:\s]+|task-id>)\s*([a-z0-9_-]+)/i);
     if (task) values.TASK_ID = task[1];
     const output = text.match(/(?:Output is being written to:|Full output saved to:|output_file["\\:\s]+)\s*([^\s"\\<>]+)/i)
-      || text.match(/([^\s"\\<>]+\/tasks\/[a-z0-9_-]+\.output)/i);
+      || text.match(/(\/[^\s"\\<>]*\/tasks\/[a-z0-9_-]+\.output)/i);
     if (output) values.OUTPUT_PATH = output[1].replace(/\.(?=$)/, '');
-    const snapshot = text.match(/([^\s"'\\;]+\/shell-snapshots\/snapshot-[^\s"'\\;]+\.sh)/);
+    const snapshot = text.match(/(\/[^\s"'\\;]*\/shell-snapshots\/snapshot-[^\s"'\\;]+\.sh)/);
     if (snapshot) values.SNAPSHOT_PATH = snapshot[1];
   }
 
   function normalizeString(text) {
     // Redact assignments in env output and shell snapshots, including the fake key.
-    text = text.replace(/((?:[A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY|AUTHORIZATION)[A-Za-z0-9_]*|ANTHROPIC_API_KEY)=)(?:"[^"\n]*"|'[^'\n]*'|[^\s\n;]+)/gi, '$1<redacted>');
+    text = text.replace(/(^|[ \t;])((?:(?:export|declare -x)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=)("[^"\n]*"|'[^'\n]*'|[^\s\n;]+)/gm,
+      (match, prefix, assignment, name) => /TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY|AUTHORIZATION/i.test(name)
+        ? `${prefix}${assignment}<redacted>` : match);
     text = text.replaceAll('sk-circus-fake-no-network', '<redacted>');
     for (const [key, value] of Object.entries(values).sort((a, b) => b[1].length - a[1].length)) {
       text = text.replaceAll(value, `{{${key}}}`);
@@ -99,6 +94,11 @@ async function capture(definition) {
       await mkdir(resolve(full, '..'), { recursive: true });
       await writeFile(full, typeof content === 'string' ? content : Buffer.from(content.base64, 'base64'));
     }
+    for (const [path, content] of Object.entries(definition.setup.home_files ?? {})) {
+      const full = join(home, path);
+      await mkdir(resolve(full, '..'), { recursive: true });
+      await writeFile(full, content);
+    }
 
     fake = await startFakeApi({ marker, model, onError: () => abortController.abort(), onTurn: async body => {
       tools ??= body.tools;
@@ -119,6 +119,12 @@ async function capture(definition) {
       }
       while (index < definition.steps.length) {
         const step = definition.steps[index++];
+        if (step.resolve_snapshot && !values.SNAPSHOT_PATH) {
+          const dir = join(config, 'shell-snapshots');
+          const names = (await readdir(dir)).filter(name => name.endsWith('.sh'));
+          if (names.length !== 1) throw new Error(`Expected one shell snapshot, found ${names.length}`);
+          values.SNAPSHOT_PATH = join(dir, names[0]);
+        }
         if (step.when === 'snapshot' && !values.SNAPSHOT_PATH) {
           notes.push('No snapshot path appeared in shell-info; the conditional cat step was skipped.');
           continue;
@@ -143,7 +149,7 @@ async function capture(definition) {
     // provider overrides, shell startup files, proxies or Claude settings survive.
     const env = {
       PATH: '/usr/local/bin:/usr/bin:/bin', HOME: home, USER: 'capture', LOGNAME: 'capture',
-      SHELL: '/bin/bash', LANG: 'C.UTF-8', TERM: 'dumb', TMPDIR: temp,
+      SHELL: definition.shell ?? '/bin/bash', LANG: 'C.UTF-8', TERM: 'dumb', TMPDIR: temp,
       ANTHROPIC_BASE_URL: fake.url, ANTHROPIC_API_KEY: 'sk-circus-fake-no-network',
       CLAUDE_CONFIG_DIR: config, DISABLE_TELEMETRY: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     };
@@ -184,9 +190,11 @@ async function capture(definition) {
     await walk(cwd);
     const fixture = normalize({
       meta: { claude_code_version: version, sdk_version: '0.3.319', captured_at: '{{TIME}}' },
-      case: definition.id, description: definition.description, setup: definition.setup, steps,
+      case: definition.id, description: definition.description, setup: definition.setup,
+      ...(definition.shell ? { shell: definition.shell } : {}), steps,
       files_after: filesAfter, ...(notes.length ? { notes } : {}),
     });
+    if (!persist) return { fixture, tools: normalize(tools) };
     const category = definition.id.startsWith('taskstop-') ? 'TaskStop' : definition.id.split('-')[0].replace(/^./, s => s.toUpperCase());
     const path = join(fixtures, category, `${definition.id}.json`);
     await mkdir(resolve(path, '..'), { recursive: true });
@@ -219,17 +227,29 @@ async function capture(definition) {
   }
 }
 
-const results = [];
-for (const definition of selected) {
-  try {
-    const result = await capture(definition);
-    results.push(result);
-    console.log(`PASS ${definition.id}: ${result.steps} step(s), ${result.comparison}`);
-  } catch (error) {
-    results.push({ case: definition.id, error: error.message });
-    console.error(`FAIL ${definition.id}: ${error.message}`);
+async function main() {
+  const args = process.argv.slice(2);
+  if (args.some((arg, i) => arg !== '--case' && args[i - 1] !== '--case') || args.at(-1) === '--case') {
+    throw new Error('Usage: node capture.mjs [--case <glob>]');
   }
+  const patterns = args.filter((_, i) => args[i - 1] === '--case');
+  const selected = cases.filter(c => !patterns.length || patterns.some(p => glob(p).test(c.id)));
+  if (!selected.length) throw new Error('No matching cases');
+  await mkdir(fixtures, { recursive: true });
+  const results = [];
+  for (const definition of selected) {
+    try {
+      const result = await capture(definition);
+      results.push(result);
+      console.log(`PASS ${definition.id}: ${result.steps} step(s), ${result.comparison}`);
+    } catch (error) {
+      results.push({ case: definition.id, error: error.message });
+      console.error(`FAIL ${definition.id}: ${error.message}`);
+    }
+  }
+  await writeFile(join(root, '.tmp', 'last-run.json'), json(results));
+  console.log(`Captured ${results.filter(r => !r.error).length}/${selected.length} cases.`);
+  if (results.some(r => r.error)) process.exitCode = 1;
 }
-await writeFile(join(root, '.tmp', 'last-run.json'), json(results));
-console.log(`Captured ${results.filter(r => !r.error).length}/${selected.length} cases.`);
-if (results.some(r => r.error)) process.exitCode = 1;
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main();

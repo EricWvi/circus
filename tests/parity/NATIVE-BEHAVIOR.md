@@ -4,7 +4,7 @@ Ground truth: Claude Agent SDK **0.3.319**, bundled Claude Code **2.1.319**,
 Node 24.20.0, Linux x64, `/bin/bash`, bypass permissions, fresh isolated HOME and
 config, no settings sources or MCP servers. The fake model emits exactly one
 tool per turn; evidence is the next Messages API request, not SDK display text.
-The 51 cases comprise 16 Read, 6 Write, 13 Edit, 15 Bash and 1 standalone
+The 68 cases comprise 26 Read, 6 Write, 13 Edit, 22 Bash and 1 standalone
 TaskStop case; the Bash stop case also exercises TaskStop. All cases are in
 [`fixtures/native`](fixtures/native/), with exact setups, inputs, side effects,
 results and final file bytes. See [`native-capture/README.md`](native-capture/README.md)
@@ -60,8 +60,8 @@ literal tabs after the prefix; CJK and emoji remain unchanged. CRLF input is
 displayed with LF while `files_after` retains the original CRLF bytes.
 
 `offset: 10, limit: 5` returns lines 10 through 14, numbered 10 through 14.
-Thus offset is one-based for the tested positive value; zero is permitted by
-the advertised schema but was not tested. Range overrun is a successful result:
+Thus offset is one-based for tested positive values. Zero and limit edge cases
+are measured in the Thresholds section below. Range overrun is a successful result:
 
 ```text
 <system-reminder>Warning: the file exists but is shorter than the provided offset (100). The file has 6 lines.</system-reminder>
@@ -78,9 +78,9 @@ Empty input is also successful:
 `read-long-file` returns all **3000 content lines plus line 3001 for the final
 newline**, with no truncation marker. `read-long-line` returns all **5000 x
 characters**, also without truncation. The description's default 2000-line cap
-does **not** describe the observed behavior here. An exact general Read size
-threshold or maximum line width is **unmeasured** by these prescribed cases;
-do not implement a 2000-line or 2000-character truncation based on this capture.
+does **not** describe the observed behavior here. The follow-up bisections below
+establish a 262144-byte default file-size guard, including for a single line;
+there is no 2000-line or 2000-character truncation in these cases.
 
 Repeated unchanged Read returns the full identical text a second time; there
 is no unchanged-file shortcut. After an external write, Read returns the new
@@ -106,6 +106,268 @@ NUL-containing `.bin` input (`is_error: true`):
 ```text
 <tool_use_error>This tool cannot read binary files. The file appears to be a binary .bin file. Use a skill for this file type if one is available, or a shell command or script that can read the format.</tool_use_error>
 ```
+
+## Thresholds
+
+`node native-capture/measure-thresholds.mjs` (run from `tests/parity`) repeats all
+five searches through the same fake API and native tools. Every probe has a
+fresh session, HOME, config and project; no read-state or cumulative context
+from earlier probes is carried over. The initial bracket is bisected until the
+two sizes differ by **one unit**, 0.01% or better for every measured boundary.
+Only these ten boundary fixtures are saved, plus the requested supplementary
+cases. `inline` means the complete expected numbered Read text or exact Bash
+output was compared, not merely that `is_error` was false.
+
+### Exact measured boundaries
+
+All byte counts below are raw UTF-8 file/output bytes before Read numbering or
+the common token reminder; characters include LF in line-based files. These
+inputs use only BMP characters, so character and JavaScript UTF-16 code-unit
+counts coincide.
+
+| Family / fixture stem | Largest complete inline input | Smallest not inline | Behavior above boundary |
+| --- | --- | --- | --- |
+| `read-threshold-ascii` | 24840 lines; 262134 bytes / characters | 24841 lines; 262145 bytes / characters | `is_error: true`, size error |
+| `read-threshold-long-line` | 262144 `x`; 262144 bytes / characters | 262145 `x`; 262145 bytes / characters | `is_error: true`, size error |
+| `read-threshold-cjk` | 16384 lines; 262144 bytes, 98304 characters | 16385 lines; 262160 bytes, 98310 characters | `is_error: true`, size error |
+| `bash-threshold-ascii` | 30000 `a`; 30000 bytes / characters | 30001 `a`; 30001 bytes / characters | Successful persisted output |
+| `bash-threshold-cjk` | 10000 `中`; 30000 bytes, 10000 characters | 10001 `中`; 30003 bytes, 10001 characters | Successful persisted output |
+
+Each stem has `-inline.json` and `-over.json` in its tool directory. ASCII Read
+lines are exactly `line 1\n`, `line 2\n`, etc.; CJK Read lines are exactly
+`中文测试行\n` (five three-byte CJK characters plus LF, 16 bytes / 6 characters
+per line). Long-line Read has no terminal LF. Bash ASCII uses
+`head -c N /dev/zero | tr '\0' a`; Bash CJK constructs exactly N `中` characters
+with no LF, using the command in the fixture.
+
+The observed default Read guard is **262144 bytes (256 KiB), inclusive**.
+ASCII and CJK hit the same raw-byte boundary despite substantially different
+character counts; this guard is byte-based, not a token/character/line-count
+limit. The long-line boundary isolates the exact byte cutoff. The CJK full-file
+success includes 81920 CJK characters plus 16384 LF characters. Larger reads
+using `allow_large` and other possible context limits were not boundary-tested.
+
+All three Read boundary failures have this exact unwrapped error body, followed
+by the shared two-LF token-reminder suffix:
+
+```text
+File content (256KB) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file. To read it anyway, up to what still fits in your context, call Read again with allow_large: true — only if you genuinely need all of it or the user asked for the whole file.
+```
+
+No content preview or truncation marker is returned by Read at this boundary.
+Rounded display sizes can be identical on the two sides (`256KB`), so use exact
+bytes, not the formatted message size. The initial 100000-line CJK probe is
+1600000 bytes and reports an additional context warning instead of the
+`To read it anyway...` sentence:
+
+```text
+File content (1.5MB) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file. Even with allow_large, this is more than fits in the context you have left this turn (other large reads in the same turn share that room).
+```
+
+Bash's measured inclusive cutoff is **30000 bytes**, for both ASCII and CJK.
+The boundary failures are not tool errors: full output is persisted and the
+following envelope is returned, with the fixture's literal preview replacing
+the explanatory placeholder below:
+
+```text
+<persisted-output>
+Output too large (29.3KB). Full output saved to: {{OUTPUT_PATH}}
+
+Preview (first 2KB):
+<literal preview>
+...
+</persisted-output>
+```
+
+The single-line preview is **2000 characters** for both ASCII and CJK (2000 vs
+6000 bytes). Thus the cutoff counts bytes while this preview slices characters;
+the `2KB` label does not describe its UTF-8 byte length. Astral characters were
+not tested. Output path structures are documented in the Bash section.
+
+### Range, edge inputs and combined streams
+
+`read-threshold-range` uses the just-too-large ASCII file (24841 lines / 262145
+bytes), but `offset: 10, limit: 5` succeeds and returns exactly lines 10–14.
+The default full-file size guard does not prevent a small explicit range.
+
+The three separate edge sessions use the five-line `alpha` through `epsilon`
+file, with its trailing LF:
+
+| Fixture / input | Exact body before the common suffix |
+| --- | --- |
+| `read-offset-zero`, `offset: 0` | `0\talpha\n1\tbeta\n2\tgamma\n3\tdelta\n4\tepsilon\n5` |
+| `read-limit-zero`, `limit: 0` | `1\talpha\n2\tbeta\n3\tgamma\n4\tdelta\n5\tepsilon\n6` |
+| `read-offset-one-limit-one`, `offset: 1, limit: 1` | `1\talpha` |
+
+All three succeed. Zero offset starts at the first physical line but numbers it
+zero. Zero limit behaves like an omitted limit for this file, despite the
+advertised schema's `exclusiveMinimum: 0`; the fixture records actual execution,
+not client-side JSON Schema validation.
+
+`bash-threshold-split` emits 15000 ASCII bytes on stdout and 15001 on stderr.
+Each stream alone is below the cutoff, but the 30001-byte combined output
+persists. Supplementary probes at total 29998 and 30000 bytes remain inline,
+with exact `a...ab...b` concatenation, no separator inserted between the streams.
+This demonstrates the combined-output cutoff, not independent per-stream caps.
+
+For many lines, `seq 1 N` probes at N=2000 (8893 bytes), 4000 (18893 bytes),
+6221 (29998 bytes) all return complete inline output. N=6222 (30003 bytes)
+persists. The `bash-threshold-many-lines` fixture stores N=6221. No independent
+line-count cap is observed through 6221 lines; this does not claim behavior
+for arbitrary shorter-line workloads with more lines. In particular, neither
+the advertised Read 2000-line default nor a supposed Bash 2000-line cap should
+be applied to these fixtures.
+
+### Complete bisection probe log
+
+The following tables list all **97 validated probes**, in execution order within
+each family. `error` means a Read size rejection, `persisted` means successful
+Bash persistence, and `inline` means the exact full result was verified.
+Intermediate probes do not create golden fixtures. The report is reproducible
+at `native-capture/.tmp/threshold-results.json`.
+
+Early development probes exposed two harness defects: pathological regex work
+on long lines and HTTP chunk-wise UTF-8 decoding that could introduce U+FFFD.
+Those attempts were discarded, the harness was fixed, and every table below
+was rerun from fresh sessions. No replacement characters or partial matches
+occurred in the validated probes. The original 51 golden fixtures did not need
+any content changes.
+
+<!-- threshold-probes-start -->
+
+#### read-ascii-lines
+
+Size unit: number of ASCII lines.
+
+| Size | UTF-8 bytes | Characters | Outcome |
+| ---: | ---: | ---: | --- |
+| 3000 | 28893 | 28893 | inline |
+| 100000 | 1088895 | 1088895 | error |
+| 51500 | 555394 | 555394 | error |
+| 27250 | 288644 | 288644 | error |
+| 15125 | 155269 | 155269 | inline |
+| 21187 | 221951 | 221951 | inline |
+| 24218 | 255292 | 255292 | inline |
+| 25734 | 271968 | 271968 | error |
+| 24976 | 263630 | 263630 | error |
+| 24597 | 259461 | 259461 | inline |
+| 24786 | 261540 | 261540 | inline |
+| 24881 | 262585 | 262585 | error |
+| 24833 | 262057 | 262057 | inline |
+| 24857 | 262321 | 262321 | error |
+| 24845 | 262189 | 262189 | error |
+| 24839 | 262123 | 262123 | inline |
+| 24842 | 262156 | 262156 | error |
+| 24840 | 262134 | 262134 | inline |
+| 24841 | 262145 | 262145 | error |
+
+#### read-long-line
+
+Size unit: number of ASCII characters.
+
+| Size | UTF-8 bytes | Characters | Outcome |
+| ---: | ---: | ---: | --- |
+| 5000 | 5000 | 5000 | inline |
+| 1000000 | 1000000 | 1000000 | error |
+| 502500 | 502500 | 502500 | error |
+| 253750 | 253750 | 253750 | inline |
+| 378125 | 378125 | 378125 | error |
+| 315937 | 315937 | 315937 | error |
+| 284843 | 284843 | 284843 | error |
+| 269296 | 269296 | 269296 | error |
+| 261523 | 261523 | 261523 | inline |
+| 265409 | 265409 | 265409 | error |
+| 263466 | 263466 | 263466 | error |
+| 262494 | 262494 | 262494 | error |
+| 262008 | 262008 | 262008 | inline |
+| 262251 | 262251 | 262251 | error |
+| 262129 | 262129 | 262129 | inline |
+| 262190 | 262190 | 262190 | error |
+| 262159 | 262159 | 262159 | error |
+| 262144 | 262144 | 262144 | inline |
+| 262151 | 262151 | 262151 | error |
+| 262147 | 262147 | 262147 | error |
+| 262145 | 262145 | 262145 | error |
+
+#### read-cjk-lines
+
+Size unit: number of CJK lines.
+
+| Size | UTF-8 bytes | Characters | Outcome |
+| ---: | ---: | ---: | --- |
+| 1000 | 16000 | 6000 | inline |
+| 100000 | 1600000 | 600000 | error |
+| 50500 | 808000 | 303000 | error |
+| 25750 | 412000 | 154500 | error |
+| 13375 | 214000 | 80250 | inline |
+| 19562 | 312992 | 117372 | error |
+| 16468 | 263488 | 98808 | error |
+| 14921 | 238736 | 89526 | inline |
+| 15694 | 251104 | 94164 | inline |
+| 16081 | 257296 | 96486 | inline |
+| 16274 | 260384 | 97644 | inline |
+| 16371 | 261936 | 98226 | inline |
+| 16419 | 262704 | 98514 | error |
+| 16395 | 262320 | 98370 | error |
+| 16383 | 262128 | 98298 | inline |
+| 16389 | 262224 | 98334 | error |
+| 16386 | 262176 | 98316 | error |
+| 16384 | 262144 | 98304 | inline |
+| 16385 | 262160 | 98310 | error |
+
+#### bash-ascii
+
+Size unit: number of ASCII output characters.
+
+| Size | UTF-8 bytes | Characters | Outcome |
+| ---: | ---: | ---: | --- |
+| 1000 | 1000 | 1000 | inline |
+| 100000 | 100000 | 100000 | persisted |
+| 50500 | 50500 | 50500 | persisted |
+| 25750 | 25750 | 25750 | inline |
+| 38125 | 38125 | 38125 | persisted |
+| 31937 | 31937 | 31937 | persisted |
+| 28843 | 28843 | 28843 | inline |
+| 30390 | 30390 | 30390 | persisted |
+| 29616 | 29616 | 29616 | inline |
+| 30003 | 30003 | 30003 | persisted |
+| 29809 | 29809 | 29809 | inline |
+| 29906 | 29906 | 29906 | inline |
+| 29954 | 29954 | 29954 | inline |
+| 29978 | 29978 | 29978 | inline |
+| 29990 | 29990 | 29990 | inline |
+| 29996 | 29996 | 29996 | inline |
+| 29999 | 29999 | 29999 | inline |
+| 30001 | 30001 | 30001 | persisted |
+| 30000 | 30000 | 30000 | inline |
+
+#### bash-cjk
+
+Size unit: number of CJK output characters.
+
+| Size | UTF-8 bytes | Characters | Outcome |
+| ---: | ---: | ---: | --- |
+| 1000 | 3000 | 1000 | inline |
+| 100000 | 300000 | 100000 | persisted |
+| 50500 | 151500 | 50500 | persisted |
+| 25750 | 77250 | 25750 | persisted |
+| 13375 | 40125 | 13375 | persisted |
+| 7187 | 21561 | 7187 | inline |
+| 10281 | 30843 | 10281 | persisted |
+| 8734 | 26202 | 8734 | inline |
+| 9507 | 28521 | 9507 | inline |
+| 9894 | 29682 | 9894 | inline |
+| 10087 | 30261 | 10087 | persisted |
+| 9990 | 29970 | 9990 | inline |
+| 10038 | 30114 | 10038 | persisted |
+| 10014 | 30042 | 10014 | persisted |
+| 10002 | 30006 | 10002 | persisted |
+| 9996 | 29988 | 9996 | inline |
+| 9999 | 29997 | 9999 | inline |
+| 10000 | 30000 | 10000 | inline |
+| 10001 | 30003 | 10001 | persisted |
+
+<!-- threshold-probes-end -->
 
 ## Write
 
@@ -303,10 +565,12 @@ full command output inline. The actual persistence path structure is:
 {{CONFIG_DIR}}/projects/{{PROJECT_KEY}}/{{SESSION_ID}}/tool-results/{{ID}}.txt
 ```
 
-The fixed cases demonstrate truncation at 200000 and 588895 output bytes;
-the exact inline/persisted cutoff is **unmeasured**. The marker's printed size
-uses KB with one decimal place; **inferred:** binary 1024-byte units. This capture
-does not establish arbitrary Unicode byte-versus-character truncation rules.
+The follow-up bisections in Thresholds establish the exact inline/persisted
+cutoff: 30000 raw UTF-8 output bytes remain inline, and 30001 ASCII bytes persist.
+The marker's printed size uses KB with one decimal place; **inferred:** binary
+1024-byte units. The CJK preview is 2000 characters / 6000 UTF-8 bytes even though
+the printed label says "2KB"; the persistence cutoff and preview length use
+different units. General astral-character preview counting is unmeasured.
 
 ### Shell launch and snapshot
 
@@ -334,8 +598,85 @@ process, then exports the clean PATH. Embedded tools dispatch through
 `CLAUDE_CODE_EXECPATH` with an alternate argv[0]. No aliases were printed.
 `extglob` is explicitly disabled by the command wrapper. The fixture retains
 the complete `shopt -p` output; it is a host Bash feature inventory, not a
-cross-platform constant. The snapshot-generation shell's login/profile flags
-are **unmeasured**; the captured executing shell's flags are measured.
+cross-platform constant. The follow-up profile fixture measures the snapshot
+collector's login and interactive behavior separately, as detailed next.
+
+#### Profile sourcing and state
+
+[`bash-profile-sourcing.json`](fixtures/native/Bash/bash-profile-sourcing.json)
+has seven Bash steps and defines `.bashrc`, `.bash_profile`, `.bash_login` and
+`.profile` in `setup.home_files`, relative to the isolated `{{HOME}}`. The
+`.bash_profile` does **not** source `.bashrc`. Additional aliases in the three
+login files are diagnostic markers: exported variables alone do not prove a
+file was not sourced, because the snapshot does not serialize those variables.
+An alias in `.bash_profile` freezes `$-` at startup time.
+
+The first command's complete body is:
+
+```text
+MARK_BASHRC=1
+MARK_BASHRC_FLAGS=hBc
+local=[1]
+/usr/local/bin
+/usr/bin
+/bin
+```
+
+The snapshot contains these exact lines:
+
+```text
+shopt -s login_shell
+alias -- ll_mark='echo alias-ok'
+alias -- snapshot_flags_mark='echo flags=hBc'
+alias -- source_bash_profile_mark='echo .bash_profile'
+export PATH=/usr/local/bin:/usr/bin:/bin
+```
+
+It also contains the serialized `fn_mark` function. Neither the `.bash_login`
+nor `.profile` alias marker is present. The conclusions for this HOME layout are:
+
+| Property | Measured behavior |
+| --- | --- |
+| `.bash_profile` | Sourced during snapshot creation: its alias survives in the snapshot, despite `MARK_BASH_PROFILE` being absent in command `env`. |
+| `.bashrc` | Sourced independently of `.bash_profile`: its function and alias are in the snapshot; `MARK_BASHRC=1` and non-exported `LOCAL_BASHRC=1` are visible to commands. |
+| `.bash_login`, `.profile` | Not sourced in this layout: their distinct snapshot alias markers and environment markers are absent. Their behavior when `.bash_profile` is absent was not tested. |
+| Collector flags | `login_shell` is on in the captured snapshot; frozen `$-` is `hBc`, without `i`. The collector is a noninteractive login shell. |
+| Interactive-only `.bashrc` guard | `MARK_INTERACTIVE` is absent. |
+| Alias and function | Both execute (`alias-ok`, `fn-ok`); `type` reports an alias and a function. |
+| Non-exported `.bashrc` variable | Available (`local=[1]`); keeping only exported environment variables and blindly replaying snapshot text would miss this state. |
+| Exported `.bash_profile` marker | Not propagated into command `env`; sourcing a file and transferring its exports are different observations. |
+| PATH prepend in `.bashrc` | Does not survive: the snapshot explicitly exports the original harness PATH, and command output starts `/usr/local/bin`, `/usr/bin`, `/bin`, not `{{HOME}}/bin-bashrc`. |
+| Per-command variables | `export SESSION_VAR=1; FOO_SHELL=1` does not survive to the next call: it returns `[][]`. Both exported and unexported command-local changes are lost. |
+| Failed `cd` | `cd does-not-exist; pwd` prints the error and `{{CWD}}`; the next `pwd` also returns `{{CWD}}`. The compound command succeeds because its final `pwd` succeeds. |
+
+The failed-cd body is exactly:
+
+```text
+/bin/bash: line 1: cd: does-not-exist: No such file or directory
+{{CWD}}
+```
+
+The original empty-HOME `bash-shell-info` still measures a non-login executing
+shell (`hBc`, `shopt -u login_shell`). With the profile fixture, the snapshot
+contains additional shell options, functions and aliases collected from the
+login startup, rather than the empty-HOME fallback snapshot alone. **Inferred:**
+normal environment reconstruction needs startup-file processing as well as
+snapshot restoration; command-to-command mutation should not be retained.
+
+Two supplementary fresh-session sourcing diagnostics were run without retaining
+extra fixtures. A `.bashrc` append-only trace contained three `bashrc flags=hBc`
+lines by the first command and four by the next; `declare -p` reported
+`declare -- LOCAL_BASHRC="1"` and `declare -x MARK_BASHRC="1"`, while `BASH_ENV`
+was not set. Recording `ps -o args= -p $$` during `.bashrc` processing exposed
+`/bin/bash -c env`, then `/bin/bash -c -l` explicitly sourcing the isolated
+`.bashrc` to build the snapshot, then the executing `/bin/bash -c source ...`
+wrapper. These diagnostics support the startup-processing distinction above;
+the seven-step fixture is the stable replay contract, not a requirement to
+reproduce an internal startup invocation count.
+
+`/bin/zsh` does **not** exist on this machine, so no zsh fixture was generated.
+`shell-cases.mjs` enables the equivalent variant only when that exact path exists;
+zsh semantics remain unmeasured here.
 
 ### Environment
 
@@ -433,6 +774,51 @@ string `shell_id`, without a JSON Schema `required` array. Missing arguments,
 already-completed IDs and agent tasks are outside the requested cases.
 
 ## Reproducibility
+
+### Follow-up verification
+
+Two complete `node capture.mjs` runs on 2026-11-09 succeeded with **68/68 cases**,
+**94 tool steps**, and **16 expected tool-error results**. All **69 JSON files**
+(68 fixtures plus `tools.json`) were byte-identical after normalization,
+independently checked by SHA-256. All second-run case comparisons were
+`identical`. No original fixture or `tools.json` changed relative to the accepted
+baseline. No case temporary trees remained outside the worktree.
+
+Aggregate digest using the same sorted path/hash format below:
+
+```text
+34082cb7f621d04c5efc808b4cab6be6d19ec16f598690e4ed71dcb6bebbb15a
+```
+
+The 17 new fixtures are:
+
+| Tool | Fixture |
+| --- | --- |
+| Read | `read-threshold-ascii-inline.json` |
+| Read | `read-threshold-ascii-over.json` |
+| Read | `read-threshold-long-line-inline.json` |
+| Read | `read-threshold-long-line-over.json` |
+| Read | `read-threshold-cjk-inline.json` |
+| Read | `read-threshold-cjk-over.json` |
+| Read | `read-threshold-range.json` |
+| Read | `read-offset-zero.json` |
+| Read | `read-limit-zero.json` |
+| Read | `read-offset-one-limit-one.json` |
+| Bash | `bash-threshold-ascii-inline.json` |
+| Bash | `bash-threshold-ascii-over.json` |
+| Bash | `bash-threshold-cjk-inline.json` |
+| Bash | `bash-threshold-cjk-over.json` |
+| Bash | `bash-threshold-split.json` |
+| Bash | `bash-threshold-many-lines.json` |
+| Bash | `bash-profile-sourcing.json` |
+
+The harness fixes are incremental UTF-8 HTTP request decoding, bounded
+assignment/path matching on large single lines, reusable capture without
+fixture persistence, and controlled HOME-file/shell setup. They did not require
+regeneration changes to accepted golden contents. No new placeholders were
+introduced; the original normalization contract is unchanged.
+
+### Original accepted capture
 
 On 2026-11-09, two complete final captures succeeded: **51/51 cases**, **71 tool
 steps** (including 13 expected error results). All **52 JSON files** (51 case
