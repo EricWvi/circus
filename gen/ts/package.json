@@ -1,0 +1,12 @@
+{
+  "name": "@circus/proto",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./circus/v1/device_pb": "./src/circus/v1/device_pb.ts"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.17.0"
+  }
+}

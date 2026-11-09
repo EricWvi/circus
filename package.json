@@ -1,0 +1,9 @@
+{
+  "name": "circus",
+  "private": true,
+  "workspaces": ["gen/ts"],
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "2.17.0",
+    "typescript": "7.0.2"
+  }
+}
