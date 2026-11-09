@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "write-hardlink",
+  "description": "Write one hard-linked name and compare both final inodes and contents.",
+  "setup": {
+    "files": {
+      "a.txt": "alpha\nbeta\ngamma\n"
+    },
+    "dirs": [],
+    "hardlinks": {
+      "b.txt": "a.txt"
+    }
+  },
+  "steps": [
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "content": "replacement\n"
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "replacement\n",
+    "b.txt": "alpha\nbeta\ngamma\n"
+  },
+  "fs_after": {
+    "a.txt": {
+      "type": "file",
+      "mode": "0644",
+      "same_inode_as": null
+    },
+    "b.txt": {
+      "type": "file",
+      "mode": "0644",
+      "same_inode_as": null
+    }
+  }
+}

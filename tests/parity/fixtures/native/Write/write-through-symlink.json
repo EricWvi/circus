@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "write-through-symlink",
+  "description": "Write a relative symlink and observe the link and target.",
+  "setup": {
+    "files": {
+      "real.txt": "alpha\nbeta\ngamma\n"
+    },
+    "dirs": [],
+    "symlinks": {
+      "link.txt": "real.txt"
+    }
+  },
+  "steps": [
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "{{CWD}}/link.txt",
+        "content": "replacement\n"
+      },
+      "result": {
+        "is_error": true,
+        "content": "Refusing to write {{CWD}}/link.txt: it is a symbolic link. Write to the link's target path instead: {{CWD}}/real.txt.\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "real.txt": "alpha\nbeta\ngamma\n"
+  },
+  "fs_after": {
+    "link.txt": {
+      "type": "symlink",
+      "link_target": "real.txt",
+      "mode": "0777",
+      "same_inode_as": null
+    },
+    "real.txt": {
+      "type": "file",
+      "mode": "0644",
+      "same_inode_as": null
+    }
+  }
+}

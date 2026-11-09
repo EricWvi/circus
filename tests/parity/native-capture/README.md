@@ -23,6 +23,11 @@ The committed lockfile includes the SDK's platform dependencies. Each selected
 case gets a new session, project, HOME, config directory and effective TMPDIR
 inside an `os.tmpdir()` temporary tree. `finally` closes the SDK and fake server,
 then removes that entire tree, including snapshots, task output and transcripts.
+Each capture explicitly calls `process.umask(0o022)` before setup and SDK spawn;
+the CLI inherits that mask through the SDK's unchanged subprocess launcher.
+The previous process umask is restored after teardown, including failure paths.
+Captures are sequential because Node's umask is process-wide. No shell wrapper
+or extra environment variable is added, preserving existing model-facing output.
 Temporary diagnostics and npm's cache stay in this directory's ignored `.tmp/`.
 An ordinary SIGINT or forced process termination can interrupt JavaScript cleanup;
 the completed runs used for these fixtures left no case trees behind.
@@ -160,3 +165,58 @@ The profile case's `resolve_snapshot: true` cats the sole actual `.sh` file in
 the fresh config's `shell-snapshots` directory; it fails unless exactly one exists.
 This avoids adding a process-inspection command to the requested seven-step
 sequence. HOME setup is recorded as data but is not part of project `files_after`.
+
+## Links, modes and metadata
+
+Optional setup fields extend the existing file/directory setup:
+
+```json
+{
+  "files": { "a.txt": "alpha\nbeta\ngamma\n", "script.sh": "#!/bin/sh\necho before\n" },
+  "dirs": [],
+  "symlinks": { "link.txt": "a.txt", "dangling.txt": "missing.txt" },
+  "hardlinks": { "b.txt": "a.txt" },
+  "modes": { "script.sh": "0755" }
+}
+```
+
+All setup keys are relative to `{{CWD}}`. Setup creates directories and regular
+files first, then symlinks, hard links, and finally explicit modes. Relative
+symlink targets are passed verbatim to `symlink`; they resolve relative to the
+link's parent, not the harness's directory. Placeholders in a target are expanded
+before creation. Hard-link values name existing paths relative to `{{CWD}}`.
+Modes must be four octal digits and are applied with `chmod` (which follows a
+symlink if one is named); these cases set modes on regular files only.
+
+A definition may specify `observe_fs: ["a.txt", "b.txt", "link.txt", "missing.txt"]`.
+After the last tool step the fixture adds optional `fs_after`, keyed by exactly
+those relative paths. Replay checks use its keys as the observation list; the
+definition-only `observe_fs` property is not separately serialized. For example,
+an untouched hard-link pair and a dangling symlink would be represented as:
+
+```json
+{
+  "a.txt": { "type": "file", "mode": "0644", "same_inode_as": "b.txt" },
+  "b.txt": { "type": "file", "mode": "0644", "same_inode_as": "a.txt" },
+  "dangling.txt": { "type": "symlink", "link_target": "missing.txt", "mode": "0777", "same_inode_as": null },
+  "missing.txt": { "type": "missing", "same_inode_as": null }
+}
+```
+
+This example explains the format, not a Write outcome: native Write/Edit break
+the hard-link relationship in the captured cases. Types and modes use `lstat`,
+so symlink metadata describes the link itself, including a dangling link.
+`link_target` is the exact stored `readlink` string with ordinary path
+normalization; it is present only for symlinks. `mode` is `st_mode & 07777`,
+formatted as a four-digit octal string, and is omitted for a missing path.
+`same_inode_as` is the lexicographically first *other* path listed in setup
+(`files`, `dirs`, `symlinks`, `hardlinks`, or `modes`) whose final `lstat` device
+and inode equal this path's. It is `null` when no such path exists, including
+missing paths. It compares final paths, not a path's historical inode; raw inode
+and device numbers are never persisted. Unsupported special file types fail
+capture rather than being mislabeled.
+
+`files_after` continues to include regular-file contents without traversing
+symlinks. A kept link is described by `fs_after`; its target's contents appear
+under the target's own regular filename. Fixtures without `observe_fs` retain
+their original format, and all accepted existing fixtures remain unchanged.

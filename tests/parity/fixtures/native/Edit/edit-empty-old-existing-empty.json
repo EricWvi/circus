@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-empty-old-existing-empty",
+  "description": "Use empty old_string on an existing empty file without Read.",
+  "setup": {
+    "files": {
+      "a.txt": ""
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "",
+        "new_string": "replacement\n"
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully.\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "replacement\n"
+  },
+  "fs_after": {
+    "a.txt": {
+      "type": "file",
+      "mode": "0644",
+      "same_inode_as": null
+    }
+  }
+}

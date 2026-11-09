@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { mkdir, mkdtemp, writeFile, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, readFile, readdir, rm, stat, lstat, readlink, symlink, link, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, relative } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -40,6 +40,9 @@ export async function capture(definition, { persist = true } = {}) {
   let timer;
   let stderr = '';
   const abortController = new AbortController();
+  // Children inherit the process umask. Captures run sequentially so setup and
+  // the SDK's unmodified CLI spawn both use 022, independent of the caller.
+  const previousUmask = process.umask(0o022);
   const expand = value => replaceData(value, text => text.replace(/\{\{([A-Z_]+)\}\}/g, (match, key) => {
     if (!(key in values)) throw new Error(`Unresolved reference ${match}`);
     return values[key];
@@ -93,6 +96,20 @@ export async function capture(definition, { persist = true } = {}) {
       const full = join(cwd, path);
       await mkdir(resolve(full, '..'), { recursive: true });
       await writeFile(full, typeof content === 'string' ? content : Buffer.from(content.base64, 'base64'));
+    }
+    for (const [path, target] of Object.entries(definition.setup.symlinks ?? {})) {
+      const full = join(cwd, path);
+      await mkdir(resolve(full, '..'), { recursive: true });
+      await symlink(expand(target), full);
+    }
+    for (const [path, existingPath] of Object.entries(definition.setup.hardlinks ?? {})) {
+      const full = join(cwd, path);
+      await mkdir(resolve(full, '..'), { recursive: true });
+      await link(join(cwd, existingPath), full);
+    }
+    for (const [path, mode] of Object.entries(definition.setup.modes ?? {})) {
+      if (!/^[0-7]{4}$/.test(mode)) throw new Error(`Invalid setup mode for ${path}: ${mode}`);
+      await chmod(join(cwd, path), Number.parseInt(mode, 8));
     }
     for (const [path, content] of Object.entries(definition.setup.home_files ?? {})) {
       const full = join(home, path);
@@ -188,11 +205,42 @@ export async function capture(definition, { persist = true } = {}) {
       }
     }
     await walk(cwd);
+    let fsAfter;
+    if (definition.observe_fs) {
+      const setupPaths = [...new Set([
+        ...Object.keys(definition.setup.files), ...definition.setup.dirs,
+        ...Object.keys(definition.setup.symlinks ?? {}), ...Object.keys(definition.setup.hardlinks ?? {}),
+        ...Object.keys(definition.setup.modes ?? {}),
+      ])].sort();
+      const observations = new Map();
+      for (const path of new Set([...setupPaths, ...definition.observe_fs])) {
+        try { observations.set(path, await lstat(join(cwd, path), { bigint: true })); }
+        catch (error) {
+          if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
+          observations.set(path, null);
+        }
+      }
+      fsAfter = {};
+      for (const path of definition.observe_fs) {
+        const info = observations.get(path);
+        if (!info) { fsAfter[path] = { type: 'missing', same_inode_as: null }; continue; }
+        const type = info.isSymbolicLink() ? 'symlink' : info.isDirectory() ? 'dir' : info.isFile() ? 'file' : null;
+        if (!type) throw new Error(`Unsupported observed file type: ${path}`);
+        const sameInodeAs = setupPaths.find(other => {
+          const candidate = observations.get(other);
+          return other !== path && candidate && candidate.dev === info.dev && candidate.ino === info.ino;
+        }) ?? null;
+        fsAfter[path] = { type,
+          ...(type === 'symlink' ? { link_target: await readlink(join(cwd, path)) } : {}),
+          mode: (info.mode & 0o7777n).toString(8).padStart(4, '0'), same_inode_as: sameInodeAs,
+        };
+      }
+    }
     const fixture = normalize({
       meta: { claude_code_version: version, sdk_version: '0.3.319', captured_at: '{{TIME}}' },
       case: definition.id, description: definition.description, setup: definition.setup,
       ...(definition.shell ? { shell: definition.shell } : {}), steps,
-      files_after: filesAfter, ...(notes.length ? { notes } : {}),
+      files_after: filesAfter, ...(fsAfter ? { fs_after: fsAfter } : {}), ...(notes.length ? { notes } : {}),
     });
     if (!persist) return { fixture, tools: normalize(tools) };
     const category = definition.id.startsWith('taskstop-') ? 'TaskStop' : definition.id.split('-')[0].replace(/^./, s => s.toUpperCase());
@@ -221,8 +269,12 @@ export async function capture(definition, { persist = true } = {}) {
       // the generator awaits SDK teardown before deleting files it may flush.
       await sdk?.return();
     } finally {
-      await fake?.close();
-      await rm(base, { recursive: true, force: true, maxRetries: 5 });
+      try {
+        await fake?.close();
+        await rm(base, { recursive: true, force: true, maxRetries: 5 });
+      } finally {
+        process.umask(previousUmask);
+      }
     }
   }
 }

@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-empty-old-existing",
+  "description": "Use empty old_string on a nonempty existing file without Read.",
+  "setup": {
+    "files": {
+      "a.txt": "alpha\nbeta\ngamma\n"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "",
+        "new_string": "replacement\n"
+      },
+      "result": {
+        "is_error": true,
+        "content": "<tool_use_error>Cannot create new file - file already exists.</tool_use_error>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "alpha\nbeta\ngamma\n"
+  },
+  "fs_after": {
+    "a.txt": {
+      "type": "file",
+      "mode": "0644",
+      "same_inode_as": null
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-preserves-mode",
+  "description": "Read then edit an executable script and observe its permissions.",
+  "setup": {
+    "files": {
+      "script.sh": "#!/bin/sh\necho before\n"
+    },
+    "dirs": [],
+    "modes": {
+      "script.sh": "0755"
+    }
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/script.sh"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\t#!/bin/sh\n2\techo before\n3\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/script.sh",
+        "old_string": "before",
+        "new_string": "after"
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/script.sh has been updated successfully. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "script.sh": "#!/bin/sh\necho after\n"
+  },
+  "fs_after": {
+    "script.sh": {
+      "type": "file",
+      "mode": "0755",
+      "same_inode_as": null
+    }
+  }
+}

@@ -4,7 +4,7 @@ Ground truth: Claude Agent SDK **0.3.319**, bundled Claude Code **2.1.319**,
 Node 24.20.0, Linux x64, `/bin/bash`, bypass permissions, fresh isolated HOME and
 config, no settings sources or MCP servers. The fake model emits exactly one
 tool per turn; evidence is the next Messages API request, not SDK display text.
-The 68 cases comprise 26 Read, 6 Write, 13 Edit, 22 Bash and 1 standalone
+The 80 cases comprise 27 Read, 11 Write, 19 Edit, 22 Bash and 1 standalone
 TaskStop case; the Bash stop case also exercises TaskStop. All cases are in
 [`fixtures/native`](fixtures/native/), with exact setups, inputs, side effects,
 results and final file bytes. See [`native-capture/README.md`](native-capture/README.md)
@@ -475,6 +475,102 @@ String: beta</tool_use_error>
 The last wrapper differs from Read's missing-file result. Failed edits leave the
 file bytes unchanged from their immediately preceding state.
 
+## Links, modes and empty old_string
+
+The 12 metadata fixtures use an explicit inherited CLI **umask 022**. The
+harness sets Node's process umask before setup and SDK spawn and restores it
+after cleanup; the native launcher and environment are otherwise unchanged.
+Optional `fs_after` uses `lstat`, `readlink`, octal permission bits and final
+device/inode comparisons, as defined in the [capture README](native-capture/README.md#links-modes-and-metadata).
+`same_inode_as` is `null` for every observed path in these 12 outcomes: native
+updates break the tested hard-link pairs. This means no other listed setup
+path shares the final inode, not that a file was missing or its inode stayed
+unchanged over time.
+
+For the table below, **original** means exact bytes `alpha\nbeta\ngamma\n`;
+**replacement** means `replacement\n`; **edited** means `alpha\nBETA\ngamma\n`.
+All regular `.txt` files are mode `0644`; links are mode `0777` with the exact
+relative targets shown. Missing paths have no mode. The exact result bodies
+are labeled below the table; all retain the common two-LF token-reminder suffix
+in their fixtures. A preceding Read is also saved in full, with its ordinary
+numbered text.
+
+| Case / fixture basename | Final tool body | Observed metadata and final contents |
+| --- | --- | --- |
+| `write-through-symlink` | **S** (`is_error: true`) | `link.txt` remains a symlink to `real.txt`; `real.txt` is a regular file with original contents. |
+| `edit-through-symlink` | **S** after successful Read (`is_error: true` for Edit) | Same link, target mode and original contents as above. Reading first does not permit writing through the link. |
+| `write-dangling-symlink` | **D** (`is_error: true`) | `link.txt` remains a symlink to `missing.txt`; `missing.txt` stays `missing`, and `files_after` is empty. |
+| `write-hardlink` | **U** (`is_error: false`) | `a.txt` and `b.txt` are regular `0644` files with different final inodes (`same_inode_as: null` on both); `a.txt` contains replacement, `b.txt` retains original. |
+| `edit-hardlink` | **U** after Read (`is_error: false`) | The final inode relationship is also broken; `a.txt` contains edited text, `b.txt` retains original. |
+| `write-preserves-mode` | **X** (`is_error: false`) | `script.sh` remains a regular `0755` file with `#!/bin/sh\necho after\n`. |
+| `edit-preserves-mode` | **X** after Read (`is_error: false`) | Same final mode `0755` and script bytes. |
+| `write-new-mode` | **C1**, then **C2** (both `is_error: false`) | `new.txt` and `d1/d2/new.txt` are regular `0644` files containing replacement; `d1` and `d1/d2` are directories with mode `0755`. |
+| `edit-empty-old-existing` | **E** (`is_error: true`) | Existing nonempty `a.txt` remains a regular `0644` file with original contents. |
+| `edit-empty-old-existing-after-read` | **E** after Read (`is_error: true`) | Same rejection and unchanged metadata/contents; prior Read does not change this decision. |
+| `edit-empty-old-existing-empty` | **N** (`is_error: false`) | Existing empty `a.txt` becomes replacement, remains regular `0644`. The success has no context-current parenthetical. |
+| `read-symlink` | **R** (`is_error: false`) | `link.txt` remains a symlink to `real.txt`; the target remains regular `0644` with original contents. |
+
+**S** — symlink write rejection, unwrapped (unlike Edit validation errors):
+
+```text
+Refusing to write {{CWD}}/link.txt: it is a symbolic link. Write to the link's target path instead: {{CWD}}/real.txt.
+```
+
+**D** — dangling symlink rejection, also unwrapped:
+
+```text
+Refusing to write {{CWD}}/link.txt: it is a symbolic link. Write to the link's target path instead: {{CWD}}/missing.txt.
+```
+
+**U** — successful hard-link-name update:
+
+```text
+The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+
+**X** — successful executable-script update:
+
+```text
+The file {{CWD}}/script.sh has been updated successfully. (file state is current in your context — no need to Read it back)
+```
+
+**C1**, **C2** — successful new flat and nested files:
+
+```text
+File created successfully at: {{CWD}}/new.txt (file state is current in your context — no need to Read it back)
+```
+
+```text
+File created successfully at: {{CWD}}/d1/d2/new.txt (file state is current in your context — no need to Read it back)
+```
+
+**E** — empty `old_string` on a nonempty existing file:
+
+```text
+<tool_use_error>Cannot create new file - file already exists.</tool_use_error>
+```
+
+**N** — empty `old_string` on an empty existing file, without Read:
+
+```text
+The file {{CWD}}/a.txt has been updated successfully.
+```
+
+**R** — Read through a symlink (JSON string notation exposes exact tabs/LFs):
+
+```json
+"1\talpha\n2\tbeta\n3\tgamma\n4"
+```
+
+The hard-link observations imply replacement of the updated directory entry
+rather than mutation of its shared original inode (**inferred**); they do not
+establish the exact native syscall sequence. Executable permission preservation
+is separately measured and must not be lost when implementing that replacement.
+Empty `old_string` is neither prepend nor unconditional overwrite: it succeeds
+for a nonexistent file (the earlier fixture) and an existing empty file, and
+rejects these nonempty files regardless of Read state. Parent-directory symlinks,
+ownership, ACLs and special mode bits are outside this case list.
+
 ## Bash
 
 Cases: [`Bash/`](fixtures/native/Bash/). `command` is required; all captures
@@ -775,7 +871,30 @@ already-completed IDs and agent tasks are outside the requested cases.
 
 ## Reproducibility
 
-### Follow-up verification
+### File metadata verification
+
+Two complete `node capture.mjs` runs on 2026-11-09 succeeded with **80/80 cases**,
+**111 tool steps** and **21 expected tool-error results**. All **81 JSON files**
+(80 case fixtures plus `tools.json`) were byte-identical after normalization,
+independently checked by SHA-256. Every second-run case comparison was
+`identical`. None of the 68 previously accepted fixtures or `tools.json` changed,
+and no case temporary directories remained outside the worktree.
+
+Aggregate digest using the sorted path/hash format below:
+
+```text
+9d456b216cb6136e8f35c0405dcafcfe165d898faa5cea6a9080e9061b5e56c5
+```
+
+The 12 new fixture basenames and all model-facing result bodies are listed in
+Links, modes and empty old_string above. Setup/observation definitions live in
+`native-capture/metadata-cases.mjs`. An additional invocation of the existing
+`write-new-mode` case without fixture persistence set the caller umask to `077`:
+the CLI still created `0644` files and `0755` directories, and capture restored
+the caller's `077` mask. No extra fixture or normalization placeholder was added
+for that check.
+
+### Threshold follow-up verification
 
 Two complete `node capture.mjs` runs on 2026-11-09 succeeded with **68/68 cases**,
 **94 tool steps**, and **16 expected tool-error results**. All **69 JSON files**

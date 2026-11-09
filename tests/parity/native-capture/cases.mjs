@@ -1,5 +1,6 @@
 import { shellCases } from './shell-cases.mjs';
 import { thresholdCases } from './threshold-cases.mjs';
+import { metadataCases } from './metadata-cases.mjs';
 
 const text = 'alpha\nbeta\ngamma\ndelta\nepsilon\n';
 const read = (file_path = '{{CWD}}/a.txt', extra = {}) => ({ tool: 'Read', input: { file_path, ...extra } });
@@ -71,4 +72,5 @@ export const cases = [
   c('taskstop-unknown', 'Stop a nonexistent task.', {}, [{ tool: 'TaskStop', input: { task_id: 'bogus-task-id' } }]),
   ...shellCases,
   ...thresholdCases,
+  ...metadataCases,
 ];

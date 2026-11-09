@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "write-new-mode",
+  "description": "Create flat and nested files under an explicit 022 umask.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "{{CWD}}/new.txt",
+        "content": "replacement\n"
+      },
+      "result": {
+        "is_error": false,
+        "content": "File created successfully at: {{CWD}}/new.txt (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "{{CWD}}/d1/d2/new.txt",
+        "content": "replacement\n"
+      },
+      "result": {
+        "is_error": false,
+        "content": "File created successfully at: {{CWD}}/d1/d2/new.txt (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "d1/d2/new.txt": "replacement\n",
+    "new.txt": "replacement\n"
+  },
+  "fs_after": {
+    "new.txt": {
+      "type": "file",
+      "mode": "0644",
+      "same_inode_as": null
+    },
+    "d1": {
+      "type": "dir",
+      "mode": "0755",
+      "same_inode_as": null
+    },
+    "d1/d2": {
+      "type": "dir",
+      "mode": "0755",
+      "same_inode_as": null
+    },
+    "d1/d2/new.txt": {
+      "type": "file",
+      "mode": "0644",
+      "same_inode_as": null
+    }
+  }
+}
