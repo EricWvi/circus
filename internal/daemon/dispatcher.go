@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,8 @@ import (
 var (
 	// ErrCallExpired rejects a retry whose result expired but tombstone remains.
 	ErrCallExpired = errors.New("call result has expired")
+	// ErrCallMismatch rejects a call_id reused with a different call.
+	ErrCallMismatch = errors.New("call_id already used with a different call")
 	// ErrShutdown rejects new work after shutdown begins.
 	ErrShutdown = errors.New("daemon is shut down")
 )
@@ -38,6 +41,7 @@ type callRecord struct {
 	done      chan struct{}
 	result    *circusv1.DeviceResult
 	completed time.Time
+	hash      [sha256.Size]byte
 }
 
 // Dispatcher owns call execution, deduplication, and in-memory result retention.
@@ -128,12 +132,15 @@ func (d *Dispatcher) expireLocked() {
 	}
 }
 
-func status(id string, call *callRecord) *circusv1.CallStatus {
+// status reports the read-time state of a call. A completed record whose
+// result is older than ResultTTL is reported as lost even if the record is
+// still retained, so correctness does not depend on sweep timing.
+func (d *Dispatcher) status(id string, call *callRecord, now time.Time) *circusv1.CallStatus {
 	s := &circusv1.CallStatus{CallId: id, State: circusv1.CallStatus_STATE_LOST}
 	if call != nil {
 		if call.cancel != nil {
 			s.State = circusv1.CallStatus_STATE_RUNNING
-		} else if call.result != nil {
+		} else if call.result != nil && now.Sub(call.completed) < d.opts.ResultTTL {
 			s.State = circusv1.CallStatus_STATE_COMPLETED
 			s.Result = proto.Clone(call.result).(*circusv1.DeviceResult)
 		}
@@ -141,11 +148,20 @@ func status(id string, call *callRecord) *circusv1.CallStatus {
 	return s
 }
 
+// callHash fingerprints a submitted call so a reused call_id can be checked
+// against the original submission.
+func callHash(call *circusv1.DeviceCall) ([sha256.Size]byte, error) {
+	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(call)
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("marshal call: %w", err)
+	}
+	return sha256.Sum256(data), nil
+}
+
 // Submit snapshots and executes a call independently of its submitter.
 // Running and retained IDs return their existing state without executing again.
 func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, error) {
 	d.mu.Lock()
-	d.expireLocked()
 	defer d.mu.Unlock()
 	if d.closed {
 		return nil, ErrShutdown
@@ -158,20 +174,31 @@ func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, er
 	if field == nil {
 		return nil, errors.New("tool is required")
 	}
+	hash, err := callHash(call)
+	if err != nil {
+		return nil, err
+	}
+	now := d.opts.Clock.Now()
 	if existing := d.calls[call.CallId]; existing != nil {
-		if existing.cancel == nil && existing.result == nil {
-			return nil, ErrCallExpired
+		if existing.cancel != nil || now.Sub(existing.completed) < d.opts.TombstoneTTL {
+			if existing.hash != hash {
+				return nil, ErrCallMismatch
+			}
+			if existing.cancel == nil && now.Sub(existing.completed) >= d.opts.ResultTTL {
+				return nil, ErrCallExpired
+			}
+			return d.status(call.CallId, existing, now), nil
 		}
-		return status(call.CallId, existing), nil
+		// Older than TombstoneTTL: treat the record as absent and execute again.
 	}
 	if d.tools[string(field.Name())] == nil {
 		notify := errorResult(fmt.Sprintf("tool %q is not available on this device", field.Name()))
 		notify.CallId = call.CallId
-		r := &callRecord{result: notify, completed: d.opts.Clock.Now(), done: make(chan struct{})}
+		r := &callRecord{result: notify, completed: now, done: make(chan struct{}), hash: hash}
 		close(r.done)
 		d.calls[call.CallId] = r
 		d.queueResultLocked(notify)
-		return status(call.CallId, r), nil
+		return d.status(call.CallId, r, now), nil
 	}
 	call = proto.Clone(call).(*circusv1.DeviceCall)
 	timeout := time.Duration(call.TimeoutMs) * time.Millisecond
@@ -182,13 +209,13 @@ func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, er
 		timeout = d.opts.MaxTimeout
 	}
 	ctx := &deadlineContext{deadline: d.opts.Clock.Now().Add(timeout), done: make(chan struct{})}
-	r := &callRecord{cancel: ctx.cancel, done: make(chan struct{})}
+	r := &callRecord{cancel: ctx.cancel, done: make(chan struct{}), hash: hash}
 	d.calls[call.CallId] = r
 	deadline := d.opts.Clock.After(timeout)
 	fallback := d.opts.Clock.After(timeout + 5*time.Second)
 	d.wg.Add(1)
 	go d.execute(ctx, call, r, string(field.Name()), deadline, fallback)
-	return status(call.CallId, r), nil
+	return d.status(call.CallId, r, now), nil
 }
 
 // deadlineContext uses Clock for cancellation instead of wall-clock timers.
@@ -311,17 +338,15 @@ func (d *Dispatcher) deliverResults() {
 func (d *Dispatcher) Query(callID string) *circusv1.CallStatus {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.expireLocked()
-	return status(callID, d.calls[callID])
+	return d.status(callID, d.calls[callID], d.opts.Clock.Now())
 }
 
 // Wait waits for completion; cancelling ctx leaves the call running.
 func (d *Dispatcher) Wait(ctx context.Context, callID string) (*circusv1.CallStatus, error) {
 	d.mu.Lock()
-	d.expireLocked()
 	r := d.calls[callID]
 	if r == nil || r.cancel == nil {
-		s := status(callID, r)
+		s := d.status(callID, r, d.opts.Clock.Now())
 		d.mu.Unlock()
 		return s, nil
 	}
@@ -338,7 +363,6 @@ func (d *Dispatcher) Wait(ctx context.Context, callID string) (*circusv1.CallSta
 func (d *Dispatcher) Cancel(callID string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.expireLocked()
 	if r := d.calls[callID]; r != nil && r.cancel != nil {
 		r.cancel(context.Canceled)
 		return true

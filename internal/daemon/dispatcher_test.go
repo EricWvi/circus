@@ -139,11 +139,40 @@ func TestDispatcherDeduplicationAndIndependentWait(t *testing.T) {
 		t.Fatalf("result: %v", result)
 	}
 	result.Output.IsError = true
-	s, err := d.Submit(call)
+	s, err := d.Submit(readCall("one"))
 	if err != nil || s.State != circusv1.CallStatus_STATE_COMPLETED || s.Result.Output.IsError {
 		t.Fatalf("completed duplicate: %v, %v", s, err)
 	}
 	eventually(t, func() bool { return callbacks.Load() == 1 })
+	if runs.Load() != 1 {
+		t.Fatalf("runs = %d", runs.Load())
+	}
+}
+
+func TestDispatcherCallIDMismatch(t *testing.T) {
+	var runs atomic.Int32
+	release := make(chan struct{})
+	d := newDispatcher(t, daemon.Options{Tools: []daemon.Tool{fakeTool{"read", func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+		runs.Add(1)
+		<-release
+		return output("done"), nil
+	}}}})
+	if _, err := d.Submit(readCall("reuse")); err != nil {
+		t.Fatal(err)
+	}
+	different := readCall("reuse")
+	different.GetRead().Path = "/y"
+	if _, err := d.Submit(different); !errors.Is(err, daemon.ErrCallMismatch) {
+		t.Fatalf("running mismatch: %v", err)
+	}
+	close(release)
+	completed(t, d, "reuse")
+	if _, err := d.Submit(different); !errors.Is(err, daemon.ErrCallMismatch) {
+		t.Fatalf("completed mismatch: %v", err)
+	}
+	if s, err := d.Submit(readCall("reuse")); err != nil || s.State != circusv1.CallStatus_STATE_COMPLETED {
+		t.Fatalf("identical resubmit: %v, %v", s, err)
+	}
 	if runs.Load() != 1 {
 		t.Fatalf("runs = %d", runs.Load())
 	}
