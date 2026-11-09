@@ -148,11 +148,14 @@ type DeviceCall struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Globally unique UUID or ULID used by the daemon to deduplicate calls.
 	CallId string `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
-	// Owning circus session, including attribution for background jobs.
+	// Owning circus session. The daemon attributes background jobs and their
+	// output files to it.
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	// SDK subagent ID, or an empty string for the main thread.
+	// SDK subagent ID, or an empty string for the main thread. Relay metadata;
+	// the daemon does not read it yet.
 	AgentId string `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	// Locally enforced timeout in milliseconds; zero uses the daemon default.
+	// Locally enforced timeout in milliseconds; zero uses the daemon default of
+	// two minutes, and requests above the ten-minute maximum are clamped to it.
 	TimeoutMs uint32 `protobuf:"varint,4,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	// Tool invocation to execute.
 	//
@@ -675,9 +678,11 @@ type BashRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Shell command to execute.
 	Command string `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
-	// Absolute working directory tracked by the worker per session, agent, and device.
+	// Absolute working directory tracked by the worker per session, agent, and
+	// device. Empty runs the command in the daemon process's working directory.
 	Cwd string `protobuf:"bytes,2,opt,name=cwd,proto3" json:"cwd,omitempty"`
-	// Whether to run the command as a background job.
+	// Whether to run the command as a background job; its lifetime then uses
+	// timeout_ms, defaulting to 30 minutes and capped at two hours.
 	RunInBackground bool `protobuf:"varint,3,opt,name=run_in_background,json=runInBackground,proto3" json:"run_in_background,omitempty"`
 	// Informational description with no execution semantics.
 	Description string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
@@ -860,9 +865,13 @@ type ReadRequest struct {
 	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
 	// Starting line; absent starts at 1, while explicit zero starts at the first line numbered 0.
 	Offset *uint32 `protobuf:"varint,2,opt,name=offset,proto3,oneof" json:"offset,omitempty"`
-	// Maximum lines to return; zero means no line-count limit.
+	// Maximum lines to return; zero means no line-count limit. A read with offset
+	// unset and limit zero of a file larger than 256 KiB fails; set offset or a
+	// positive limit to read portions of it.
 	Limit uint32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	// Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+	// Session working directory on the device; relative paths resolve against it
+	// and it appears in some native error texts. Empty falls back to the daemon
+	// process's working directory.
 	Cwd           string `protobuf:"bytes,4,opt,name=cwd,proto3" json:"cwd,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -999,7 +1008,9 @@ type WriteRequest struct {
 	Content string `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
 	// Hash observed at the last read; absent means never read in this session.
 	ExpectedSha256 *string `protobuf:"bytes,3,opt,name=expected_sha256,json=expectedSha256,proto3,oneof" json:"expected_sha256,omitempty"`
-	// Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+	// Session working directory on the device; relative paths resolve against it
+	// and it appears in some native error texts. Empty falls back to the daemon
+	// process's working directory.
 	Cwd           string `protobuf:"bytes,4,opt,name=cwd,proto3" json:"cwd,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1123,7 +1134,8 @@ type EditRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Path of the file to edit.
 	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	// Existing text to match.
+	// Existing text to match. Empty writes new_string as the whole content of a
+	// missing or empty file; a non-empty file is an error.
 	OldString string `protobuf:"bytes,2,opt,name=old_string,json=oldString,proto3" json:"old_string,omitempty"`
 	// Replacement text for the match.
 	NewString string `protobuf:"bytes,3,opt,name=new_string,json=newString,proto3" json:"new_string,omitempty"`
@@ -1131,7 +1143,9 @@ type EditRequest struct {
 	ReplaceAll bool `protobuf:"varint,4,opt,name=replace_all,json=replaceAll,proto3" json:"replace_all,omitempty"`
 	// Hash observed at the last read; absent means never read in this session.
 	ExpectedSha256 *string `protobuf:"bytes,5,opt,name=expected_sha256,json=expectedSha256,proto3,oneof" json:"expected_sha256,omitempty"`
-	// Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+	// Session working directory on the device; relative paths resolve against it
+	// and it appears in some native error texts. Empty falls back to the daemon
+	// process's working directory.
 	Cwd           string `protobuf:"bytes,6,opt,name=cwd,proto3" json:"cwd,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1356,7 +1370,7 @@ func (*TaskStopResult) Descriptor() ([]byte, []int) {
 	return file_circus_v1_device_proto_rawDescGZIP(), []int{14}
 }
 
-// CallQuery retrieves lifecycle state (D41); completed results are kept by call_id for a TTL.
+// CallQuery retrieves lifecycle state; completed results are kept by call_id for a TTL.
 type CallQuery struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// ID of the call whose state is requested.

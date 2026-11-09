@@ -5,9 +5,14 @@
 // records. Duplicate running or retained calls return their existing state.
 //
 // Call deadlines and cancellation belong to the daemon. Cancelling a Wait only
-// detaches that waiter. Shutdown cancels running calls; a tool that ignores its
-// deadline is abandoned five seconds later. Result callbacks run after storage,
-// outside the dispatcher lock, in completion order, and must return promptly.
+// detaches that waiter. Shutdown cancels running calls. A tool that ignores its
+// deadline is abandoned five seconds after that deadline. Result callbacks run
+// after storage, outside the dispatcher lock, in completion order, and must
+// return promptly.
+//
+// Defaults: a two-minute call timeout, requests clamped to ten minutes,
+// thirty-minute result retention, twenty-four-hour tombstones, and
+// thirty-minute retention of ended background jobs.
 //
 // Tools may register background jobs with a JobManager passed at construction.
 // Jobs belong to sessions and emit running followed by exited or killed events.

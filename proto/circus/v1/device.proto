@@ -11,11 +11,14 @@ option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 message DeviceCall {
   // Globally unique UUID or ULID used by the daemon to deduplicate calls.
   string call_id = 1;
-  // Owning circus session, including attribution for background jobs.
+  // Owning circus session. The daemon attributes background jobs and their
+  // output files to it.
   string session_id = 2;
-  // SDK subagent ID, or an empty string for the main thread.
+  // SDK subagent ID, or an empty string for the main thread. Relay metadata;
+  // the daemon does not read it yet.
   string agent_id = 3;
-  // Locally enforced timeout in milliseconds; zero uses the daemon default.
+  // Locally enforced timeout in milliseconds; zero uses the daemon default of
+  // two minutes, and requests above the ten-minute maximum are clamped to it.
   uint32 timeout_ms = 4;
   // Tool invocation to execute.
   oneof tool {
@@ -84,9 +87,11 @@ message ImageBlock {
 message BashRequest {
   // Shell command to execute.
   string command = 1;
-  // Absolute working directory tracked by the worker per session, agent, and device.
+  // Absolute working directory tracked by the worker per session, agent, and
+  // device. Empty runs the command in the daemon process's working directory.
   string cwd = 2;
-  // Whether to run the command as a background job.
+  // Whether to run the command as a background job; its lifetime then uses
+  // timeout_ms, defaulting to 30 minutes and capped at two hours.
   bool run_in_background = 3;
   // Informational description with no execution semantics.
   string description = 4;
@@ -119,9 +124,13 @@ message ReadRequest {
   string path = 1;
   // Starting line; absent starts at 1, while explicit zero starts at the first line numbered 0.
   optional uint32 offset = 2;
-  // Maximum lines to return; zero means no line-count limit.
+  // Maximum lines to return; zero means no line-count limit. A read with offset
+  // unset and limit zero of a file larger than 256 KiB fails; set offset or a
+  // positive limit to read portions of it.
   uint32 limit = 3;
-  // Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+  // Session working directory on the device; relative paths resolve against it
+  // and it appears in some native error texts. Empty falls back to the daemon
+  // process's working directory.
   string cwd = 4;
 }
 
@@ -143,7 +152,9 @@ message WriteRequest {
   string content = 2;
   // Hash observed at the last read; absent means never read in this session.
   optional string expected_sha256 = 3;
-  // Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+  // Session working directory on the device; relative paths resolve against it
+  // and it appears in some native error texts. Empty falls back to the daemon
+  // process's working directory.
   string cwd = 4;
 }
 
@@ -159,7 +170,8 @@ message WriteResult {
 message EditRequest {
   // Path of the file to edit.
   string path = 1;
-  // Existing text to match.
+  // Existing text to match. Empty writes new_string as the whole content of a
+  // missing or empty file; a non-empty file is an error.
   string old_string = 2;
   // Replacement text for the match.
   string new_string = 3;
@@ -167,7 +179,9 @@ message EditRequest {
   bool replace_all = 4;
   // Hash observed at the last read; absent means never read in this session.
   optional string expected_sha256 = 5;
-  // Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+  // Session working directory on the device; relative paths resolve against it
+  // and it appears in some native error texts. Empty falls back to the daemon
+  // process's working directory.
   string cwd = 6;
 }
 
@@ -190,7 +204,7 @@ message TaskStopRequest {
 // TaskStopResult acknowledges completion of a background job stop request.
 message TaskStopResult {}
 
-// CallQuery retrieves lifecycle state (D41); completed results are kept by call_id for a TTL.
+// CallQuery retrieves lifecycle state; completed results are kept by call_id for a TTL.
 message CallQuery {
   // ID of the call whose state is requested.
   string call_id = 1;

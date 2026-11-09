@@ -7,4 +7,11 @@
 // worker can advance its view. The worker owns that policy and path identity;
 // the daemon only compares the supplied hash with the current bytes.
 // Model-visible output contains one text body, without the CLI token suffix.
+//
+// Edit matches old_string literally. When no literal match exists, curly double
+// quotes in the file match straight quotes in old_string, and straight quotes
+// in new_string become alternating curly quotes when the matched text used
+// them. In CRLF files, multiline old_string and new_string are normalized to
+// CRLF before matching. An empty old_string writes new_string as the whole
+// content of a missing or empty file; a non-empty file is an error.
 package fstools

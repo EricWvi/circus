@@ -60,6 +60,8 @@ type JobManager struct {
 	wg        sync.WaitGroup
 }
 
+// NewJobManager starts retention sweeping; nonpositive RetainExited defaults
+// to thirty minutes.
 func NewJobManager(opts JobOptions) *JobManager {
 	if opts.Clock == nil {
 		opts.Clock = realClock{}
@@ -118,6 +120,7 @@ func (m *JobManager) emit(info JobInfo) {
 	}
 }
 
+// Add registers an already launched job under the session and emits RUNNING.
 func (m *JobManager) Add(sessionID, outputPath string, job Job) (JobInfo, error) {
 	return m.Start(sessionID, "", func(string) (Job, string, error) { return job, outputPath, nil })
 }
@@ -211,6 +214,7 @@ func (m *JobManager) watch(r *jobRecord) {
 	m.emit(info)
 }
 
+// Get returns a job's current snapshot; false means unknown or expired.
 func (m *JobManager) Get(id string) (JobInfo, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -221,6 +225,7 @@ func (m *JobManager) Get(id string) (JobInfo, bool) {
 	return JobInfo{}, false
 }
 
+// List returns the session's jobs, including retained ended jobs, sorted by ID.
 func (m *JobManager) List(sessionID string) []JobInfo {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -235,6 +240,8 @@ func (m *JobManager) List(sessionID string) []JobInfo {
 	return infos
 }
 
+// Stop requests termination of a running job; an ended job returns its
+// snapshot unchanged.
 func (m *JobManager) Stop(id string) (JobInfo, error) {
 	m.mu.Lock()
 	m.expireLocked()
@@ -272,6 +279,8 @@ func (m *JobManager) StopSession(sessionID string) []JobInfo {
 	return infos
 }
 
+// Shutdown requests termination of every running job and waits for their
+// watchers to finish or ctx to expire.
 func (m *JobManager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	m.expireLocked()

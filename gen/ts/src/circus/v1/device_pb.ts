@@ -30,21 +30,24 @@ export type DeviceCall = Message<"circus.v1.DeviceCall"> & {
   callId: string;
 
   /**
-   * Owning circus session, including attribution for background jobs.
+   * Owning circus session. The daemon attributes background jobs and their
+   * output files to it.
    *
    * @generated from field: string session_id = 2;
    */
   sessionId: string;
 
   /**
-   * SDK subagent ID, or an empty string for the main thread.
+   * SDK subagent ID, or an empty string for the main thread. Relay metadata;
+   * the daemon does not read it yet.
    *
    * @generated from field: string agent_id = 3;
    */
   agentId: string;
 
   /**
-   * Locally enforced timeout in milliseconds; zero uses the daemon default.
+   * Locally enforced timeout in milliseconds; zero uses the daemon default of
+   * two minutes, and requests above the ten-minute maximum are clamped to it.
    *
    * @generated from field: uint32 timeout_ms = 4;
    */
@@ -287,14 +290,16 @@ export type BashRequest = Message<"circus.v1.BashRequest"> & {
   command: string;
 
   /**
-   * Absolute working directory tracked by the worker per session, agent, and device.
+   * Absolute working directory tracked by the worker per session, agent, and
+   * device. Empty runs the command in the daemon process's working directory.
    *
    * @generated from field: string cwd = 2;
    */
   cwd: string;
 
   /**
-   * Whether to run the command as a background job.
+   * Whether to run the command as a background job; its lifetime then uses
+   * timeout_ms, defaulting to 30 minutes and capped at two hours.
    *
    * @generated from field: bool run_in_background = 3;
    */
@@ -407,14 +412,18 @@ export type ReadRequest = Message<"circus.v1.ReadRequest"> & {
   offset?: number | undefined;
 
   /**
-   * Maximum lines to return; zero means no line-count limit.
+   * Maximum lines to return; zero means no line-count limit. A read with offset
+   * unset and limit zero of a file larger than 256 KiB fails; set offset or a
+   * positive limit to read portions of it.
    *
    * @generated from field: uint32 limit = 3;
    */
   limit: number;
 
   /**
-   * Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+   * Session working directory on the device; relative paths resolve against it
+   * and it appears in some native error texts. Empty falls back to the daemon
+   * process's working directory.
    *
    * @generated from field: string cwd = 4;
    */
@@ -491,7 +500,9 @@ export type WriteRequest = Message<"circus.v1.WriteRequest"> & {
   expectedSha256?: string | undefined;
 
   /**
-   * Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+   * Session working directory on the device; relative paths resolve against it
+   * and it appears in some native error texts. Empty falls back to the daemon
+   * process's working directory.
    *
    * @generated from field: string cwd = 4;
    */
@@ -547,7 +558,8 @@ export type EditRequest = Message<"circus.v1.EditRequest"> & {
   path: string;
 
   /**
-   * Existing text to match.
+   * Existing text to match. Empty writes new_string as the whole content of a
+   * missing or empty file; a non-empty file is an error.
    *
    * @generated from field: string old_string = 2;
    */
@@ -575,7 +587,9 @@ export type EditRequest = Message<"circus.v1.EditRequest"> & {
   expectedSha256?: string | undefined;
 
   /**
-   * Session working directory on the device; relative paths resolve against it and it appears in some native error texts.
+   * Session working directory on the device; relative paths resolve against it
+   * and it appears in some native error texts. Empty falls back to the daemon
+   * process's working directory.
    *
    * @generated from field: string cwd = 6;
    */
@@ -661,7 +675,7 @@ export const TaskStopResultSchema: GenMessage<TaskStopResult> = /*@__PURE__*/
   messageDesc(file_circus_v1_device, 14);
 
 /**
- * CallQuery retrieves lifecycle state (D41); completed results are kept by call_id for a TTL.
+ * CallQuery retrieves lifecycle state; completed results are kept by call_id for a TTL.
  *
  * @generated from message circus.v1.CallQuery
  */
