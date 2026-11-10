@@ -78,9 +78,14 @@ var pathMutexes = struct {
 	paths map[string]*pathMutex
 }{paths: make(map[string]*pathMutex)}
 
-// lockPath serializes complete read-modify-rename cycles for one cleaned,
-// absolute path. Refcounts let idle entries be removed from the map.
+// lockPath serializes complete read-modify-rename cycles for one file. Parent
+// symlinks are resolved so aliases share a mutex; the file itself is not followed.
+// Unresolvable parents fall back to the cleaned literal path.
 func lockPath(path string) func() {
+	path = filepath.Clean(path)
+	if parent, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
+		path = filepath.Join(parent, filepath.Base(path))
+	}
 	pathMutexes.Lock()
 	entry := pathMutexes.paths[path]
 	if entry == nil {

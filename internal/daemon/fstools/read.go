@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -21,7 +22,18 @@ import (
 // nativeReadSizeLimitBytes is the inclusive raw-byte limit for a full-file Read.
 const nativeReadSizeLimitBytes = 262144
 
+// Inferred: 3200000 is the selected-payload boundary measured in fresh native
+// sessions with a full context budget; other context budgets were not tested.
+const nativeReadRangeLimitBytes = 3200000
+
+const nativeReadRangeSizeError = "The requested line range contains over 3.1MB of text, more than a read can return. Use a smaller limit — or, if a single line is this large, no limit will fit it: search for specific content instead. Even with allow_large, this is more than fits in the context you have left this turn (other large reads in the same turn share that room)."
+
+const nativeReadSizeTextBoundBytes = 10 << 20
+
+const maxFormattedRangeBytes = 2 * nativeReadRangeLimitBytes
+
 const streamContextCheckLines = 4096
+const streamReadBufferSize = 4096
 
 // Read is a stateless file-reading tool.
 type Read struct{}
@@ -90,8 +102,9 @@ func (*Read) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 				return readFailure(path, cwd, readErr), nil
 			}
 			if !textutil.HasUTF16LEBOM(prefix[:n]) {
-				return streamReadRange(ctx, f, path, info, r)
+				return streamReadRange(ctx, f, path, info, r, false)
 			}
+			return streamReadRange(ctx, f, path, info, r, true)
 		}
 		var reader io.Reader = f
 		if guarded {
@@ -231,8 +244,8 @@ func (v *streamingUTF8) finish() {
 
 // streamReadRange hashes and counts the entire file while retaining only the
 // requested lines. ReadSlice fragments prevent an unrequested long line from
-// being accumulated; requested long lines have no artificial length limit.
-func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileInfo, r *circusv1.ReadRequest) (*circusv1.DeviceResult, error) {
+// being accumulated. Selected payload is capped independently of file size.
+func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileInfo, r *circusv1.ReadRequest, utf16le bool) (*circusv1.DeviceResult, error) {
 	start := uint64(1)
 	if r.Offset != nil {
 		start = uint64(r.GetOffset())
@@ -248,19 +261,47 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 
 	hasher := sha256.New()
 	validity := &streamingUTF8{}
-	reader := bufio.NewReader(io.TeeReader(f, io.MultiWriter(hasher, validity)))
+	var source io.Reader
+	if utf16le {
+		source = textutil.NewUTF16LEDecoder(io.TeeReader(f, hasher))
+	} else {
+		source = io.TeeReader(f, io.MultiWriter(hasher, validity))
+	}
+	reader := bufio.NewReaderSize(source, streamReadBufferSize)
 	var body strings.Builder
 	var total uint64
+	var selectedBytes int64
 	sawAny, lastNewline := false, false
-	appendLine := func(index uint64, raw []byte, finalEmpty bool) {
+	appendLine := func(index uint64, raw []byte, finalEmpty bool) bool {
+		var numberBuffer [20]byte
+		number := strconv.AppendUint(numberBuffer[:0], start+index-first, 10)
+		extra := len(number)
+		if body.Len() > 0 {
+			extra++
+		}
+		text := ""
+		if !finalEmpty {
+			text = textutil.NodeUTF8(raw)
+			extra += 1 + len(text)
+		} else if validity.invalid {
+			extra++
+		}
+		// Deviation: native behavior for huge numbers of short lines was not
+		// captured, so formatted output has this additional defensive bound.
+		if body.Len()+extra > maxFormattedRangeBytes {
+			return false
+		}
 		if body.Len() > 0 {
 			body.WriteByte('\n')
 		}
-		fmt.Fprint(&body, start+index-first)
+		body.Write(number)
 		if !finalEmpty {
 			body.WriteByte('\t')
-			body.WriteString(textutil.NodeUTF8(raw))
+			body.WriteString(text)
+		} else if validity.invalid {
+			body.WriteByte('\t')
 		}
+		return true
 	}
 
 	for {
@@ -270,15 +311,48 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 			}
 		}
 		var raw []byte
+		pendingCR := false
 		hadData, endedNewline, eof := false, false, false
 		for {
 			fragment, err := reader.ReadSlice('\n')
+			endedNewline = len(fragment) > 0 && fragment[len(fragment)-1] == '\n'
+			finalFragment := !errors.Is(err, bufio.ErrBufferFull)
+			if selected(total) && pendingCR {
+				pendingCR = false
+				pendingIsCRLF := finalFragment && endedNewline && len(fragment) == 1
+				if !pendingIsCRLF {
+					selectedBytes++
+					if selectedBytes > nativeReadRangeLimitBytes {
+						return output(nativeReadRangeSizeError, true), nil
+					}
+					raw = append(raw, '\r')
+				}
+			}
+			if selected(total) && !finalFragment && len(fragment) > 0 && fragment[len(fragment)-1] == '\r' {
+				// Hold a fragment-final CR until the next fragment distinguishes
+				// a CRLF line ending from line content.
+				pendingCR = true
+				fragment = fragment[:len(fragment)-1]
+			}
+			if finalFragment && endedNewline {
+				fragment = fragment[:len(fragment)-1]
+				if len(fragment) > 0 && fragment[len(fragment)-1] == '\r' {
+					fragment = fragment[:len(fragment)-1]
+				}
+			}
 			if len(fragment) > 0 {
 				hadData = true
-				if bytes.IndexByte(fragment, 0) >= 0 {
+				if !utf16le && bytes.IndexByte(fragment, 0) >= 0 {
 					return binaryReadError(path), nil
 				}
 				if selected(total) {
+					// Inferred: the cap counts selected line-content bytes before Read
+					// numbering (decoded UTF-8 bytes for UTF-16LE). Line numbers, Tabs,
+					// separating LFs and line endings do not count.
+					selectedBytes += int64(len(fragment))
+					if selectedBytes > nativeReadRangeLimitBytes {
+						return output(nativeReadRangeSizeError, true), nil
+					}
 					raw = append(raw, fragment...)
 				}
 			}
@@ -289,7 +363,6 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 				return readFailure(f.Name(), "", err), nil
 			}
 			eof = errors.Is(err, io.EOF)
-			endedNewline = len(fragment) > 0 && fragment[len(fragment)-1] == '\n'
 			break
 		}
 		if !hadData && eof {
@@ -300,26 +373,28 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 		total++
 		sawAny, lastNewline = true, endedNewline
 		if selected(index) {
-			if endedNewline {
-				raw = raw[:len(raw)-1]
-				if len(raw) > 0 && raw[len(raw)-1] == '\r' {
-					raw = raw[:len(raw)-1]
-				}
+			if !appendLine(index, raw, false) {
+				return output(nativeReadRangeSizeError, true), nil
 			}
-			appendLine(index, raw, false)
 		}
 		if eof {
 			break
 		}
 	}
 	validity.finish()
+	if total == 0 && utf16le && info.Size() > 0 {
+		// A BOM-only file decodes to one empty line, matching readComplete.
+		total = 1
+		if selected(0) && !appendLine(0, nil, true) {
+			return output(nativeReadRangeSizeError, true), nil
+		}
+	}
 	if sawAny && lastNewline {
 		index := total
 		total++
 		if selected(index) {
-			appendLine(index, nil, true)
-			if validity.invalid {
-				body.WriteByte('\t')
+			if !appendLine(index, nil, true) {
+				return output(nativeReadRangeSizeError, true), nil
 			}
 		}
 	}
@@ -344,14 +419,25 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 }
 
 func readSizeError(size int64) string {
-	return fmt.Sprintf("File content (%s) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file. To read it anyway, up to what still fits in your context, call Read again with allow_large: true — only if you genuinely need all of it or the user asked for the whole file.", readSize(size))
+	advice := "To read it anyway, up to what still fits in your context, call Read again with allow_large: true — only if you genuinely need all of it or the user asked for the whole file."
+	// Inferred: the 1 MiB probe uses the allow-large advice while the 2 MiB
+	// probe uses the context warning; the switch between them was not bisected.
+	if size > 1024*1024 && size < nativeReadSizeTextBoundBytes {
+		advice = "Even with allow_large, this is more than fits in the context you have left this turn (other large reads in the same turn share that room)."
+	}
+	return fmt.Sprintf("File content (%s) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file. %s", readSize(size), advice)
 }
 
 func readSize(size int64) string {
+	// read-size-text-boundary-real.json reports the real size at 10485759 bytes;
+	// read-size-text-boundary-bounded.json reports 512KB at 10485760 bytes.
+	if size >= nativeReadSizeTextBoundBytes {
+		size = 512 * 1024
+	}
 	// Inferred: binary units rounded to whole KB or one decimal MB reproduce
 	// the boundary fixtures and the larger probe documented in the native spec.
 	if size >= 1024*1024 {
-		return fmt.Sprintf("%.1fMB", float64(size)/(1024*1024))
+		return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(size)/(1024*1024)), ".0") + "MB"
 	}
-	return fmt.Sprintf("%.0fKB", float64(size)/1024)
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(size)/1024), ".0") + "KB"
 }

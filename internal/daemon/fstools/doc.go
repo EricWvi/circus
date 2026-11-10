@@ -10,8 +10,9 @@
 // body, without the CLI token suffix.
 //
 // Read decodes UTF-8 and BOM-marked UTF-16LE. Invalid UTF-8 is displayed with
-// replacement runes and an encoding notice; Edit and Write refuse it. Edit and
-// Write preserve BOM-marked UTF-16LE when writing. Read deliberately rejects
+// replacement runes and an encoding notice; malformed UTF-16LE is displayed with
+// replacement runes. Edit and Write refuse both malformed encodings and preserve
+// valid BOM-marked UTF-16LE when writing. Read deliberately rejects
 // FIFOs and sockets before opening them instead of reproducing native's
 // indefinite block on an unwritten FIFO; character devices are read through a
 // bounded, cancelable goroutine.

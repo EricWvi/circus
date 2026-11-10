@@ -1,10 +1,13 @@
 package fstools_test
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -39,6 +42,13 @@ type fixture struct {
 		Hardlinks map[string]string          `json:"hardlinks"`
 		Modes     map[string]string          `json:"modes"`
 		Fifos     []string                   `json:"fifos"`
+		Generate  *struct {
+			Path    string `json:"path"`
+			Byte    string `json:"byte"`
+			Size    int64  `json:"size"`
+			Newline bool   `json:"newline"`
+			Prefix  string `json:"prefix"`
+		} `json:"generate"`
 	} `json:"setup"`
 	Steps []struct {
 		Tool   string       `json:"tool"`
@@ -50,8 +60,8 @@ type fixture struct {
 			} `json:"write"`
 		} `json:"before"`
 		Result *struct {
-			IsError bool   `json:"is_error"`
-			Content string `json:"content"`
+			IsError bool            `json:"is_error"`
+			Content json.RawMessage `json:"content"`
 		} `json:"result"`
 	} `json:"steps"`
 	FilesAfter map[string]json.RawMessage `json:"files_after"`
@@ -128,6 +138,133 @@ func putFile(t *testing.T, path string, data []byte) {
 	}
 }
 
+func generateFile(t *testing.T, cwd string, setup struct {
+	Path    string `json:"path"`
+	Byte    string `json:"byte"`
+	Size    int64  `json:"size"`
+	Newline bool   `json:"newline"`
+	Prefix  string `json:"prefix"`
+}) {
+	t.Helper()
+	if setup.Path == "" || len(setup.Byte) != 1 || setup.Size < 0 {
+		t.Fatalf("invalid generate descriptor: %+v", setup)
+	}
+	path := filepath.Join(cwd, setup.Path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(f, setup.Prefix); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	chunkSize := min(setup.Size, int64(1<<20))
+	chunk := bytes.Repeat([]byte{setup.Byte[0]}, int(chunkSize))
+	remaining := setup.Size
+	for remaining > 0 {
+		n := min(remaining, int64(len(chunk)))
+		if _, err := f.Write(chunk[:n]); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+		remaining -= n
+	}
+	if setup.Newline {
+		if _, err := f.Write([]byte{'\n'}); err != nil {
+			f.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSize := int64(len(setup.Prefix)) + setup.Size
+	if setup.Newline {
+		wantSize++
+	}
+	if info.Size() != wantSize {
+		t.Fatalf("generated %s has %d bytes, expected %d", setup.Path, info.Size(), wantSize)
+	}
+}
+
+type digestDescriptor struct {
+	Format      string `json:"format"`
+	LengthBytes int64  `json:"length_bytes"`
+	SHA256      string `json:"sha256"`
+	HeadBase64  string `json:"head_base64"`
+	TailBase64  string `json:"tail_base64"`
+}
+
+func isDigest(raw json.RawMessage) bool {
+	var descriptor struct {
+		Format string `json:"format"`
+	}
+	return json.Unmarshal(raw, &descriptor) == nil && descriptor.Format == "sha256-bytes"
+}
+
+func compareDigest(t *testing.T, label string, raw json.RawMessage, source io.Reader) {
+	t.Helper()
+	var want digestDescriptor
+	if err := json.Unmarshal(raw, &want); err != nil || want.Format != "sha256-bytes" {
+		t.Fatalf("%s has an invalid digest descriptor: %s (%v)", label, raw, err)
+	}
+	wantHead, err := base64.StdEncoding.DecodeString(want.HeadBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTail, err := base64.StdEncoding.DecodeString(want.TailBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hasher := sha256.New()
+	head := make([]byte, 0, 200)
+	tail := make([]byte, 0, 200)
+	var length int64
+	buffer := make([]byte, 128*1024)
+	for {
+		n, readErr := source.Read(buffer)
+		chunk := buffer[:n]
+		if len(chunk) > 0 {
+			hasher.Write(chunk)
+			length += int64(len(chunk))
+			if len(head) < 200 {
+				head = append(head, chunk[:min(len(chunk), 200-len(head))]...)
+			}
+			if len(chunk) >= 200 {
+				tail = append(tail[:0], chunk[len(chunk)-200:]...)
+			} else {
+				keep := min(200-len(chunk), len(tail))
+				copy(tail, tail[len(tail)-keep:])
+				tail = append(tail[:keep], chunk...)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+	}
+	if length != want.LengthBytes {
+		t.Errorf("%s length: expected %d, got %d", label, want.LengthBytes, length)
+	}
+	compareText(t, label+" SHA-256", want.SHA256, fmt.Sprintf("%x", hasher.Sum(nil)))
+	if !bytes.Equal(head, wantHead) {
+		t.Errorf("%s head differs", label)
+	}
+	if !bytes.Equal(tail, wantTail) {
+		t.Errorf("%s tail differs", label)
+	}
+}
+
 func parseMode(t *testing.T, text string) os.FileMode {
 	t.Helper()
 	bits, err := strconv.ParseUint(text, 8, 12)
@@ -165,6 +302,9 @@ func verifyFSAfter(t *testing.T, cwd string, f fixture) {
 	}
 	for name := range f.Setup.Modes {
 		setupPaths[name] = true
+	}
+	if f.Setup.Generate != nil {
+		setupPaths[f.Setup.Generate.Path] = true
 	}
 	names := make([]string, 0, len(setupPaths))
 	for name := range setupPaths {
@@ -304,6 +444,8 @@ func (w *simulatedWorker) call(t *testing.T, tool string, input fixtureInput) *c
 
 var tokenSuffix = regexp.MustCompile(`\n\n<system-reminder>\n<total_tokens>[0-9]+ tokens left</total_tokens>\n</system-reminder>$`)
 
+const capturedTokenSuffix = "\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+
 func compareText(t *testing.T, label, want, got string) {
 	t.Helper()
 	if want == got {
@@ -328,7 +470,11 @@ func TestNativeParity(t *testing.T) {
 		}
 		for _, path := range paths {
 			count++
-			t.Run(tool+"/"+strings.TrimSuffix(filepath.Base(path), ".json"), func(t *testing.T) {
+			name := tool + "/" + strings.TrimSuffix(filepath.Base(path), ".json")
+			t.Run(name, func(t *testing.T) {
+				if testing.Short() && strings.HasPrefix(filepath.Base(path), "read-huge-line-") {
+					t.Skip("skipping generated huge-file Read parity fixture in short mode")
+				}
 				cwd := tempDir(t)
 				raw, err := os.ReadFile(path)
 				if err != nil {
@@ -348,6 +494,9 @@ func TestNativeParity(t *testing.T) {
 				}
 				for name, raw := range f.Setup.Files {
 					putFile(t, filepath.Join(cwd, name), fixtureBytes(t, raw))
+				}
+				if f.Setup.Generate != nil {
+					generateFile(t, cwd, *f.Setup.Generate)
 				}
 				for _, name := range f.Setup.Fifos {
 					if err := syscall.Mkfifo(filepath.Join(cwd, name), 0o644); err != nil {
@@ -398,11 +547,20 @@ func TestNativeParity(t *testing.T) {
 					if r.Output.IsError != step.Result.IsError {
 						t.Errorf("step %d is_error: expected %v, got %v", i+1, step.Result.IsError, r.Output.IsError)
 					}
-					if !tokenSuffix.MatchString(step.Result.Content) {
-						t.Fatalf("step %d has no exact CLI token suffix", i+1)
+					got := r.Output.Content[0].GetText()
+					if isDigest(step.Result.Content) {
+						compareDigest(t, fmt.Sprintf("step %d body", i+1), step.Result.Content, strings.NewReader(got+capturedTokenSuffix))
+					} else {
+						var captured string
+						if err := json.Unmarshal(step.Result.Content, &captured); err != nil {
+							t.Fatalf("step %d has invalid result content: %v", i+1, err)
+						}
+						if !tokenSuffix.MatchString(captured) {
+							t.Fatalf("step %d has no exact CLI token suffix", i+1)
+						}
+						want := tokenSuffix.ReplaceAllString(captured, "")
+						compareText(t, fmt.Sprintf("step %d body", i+1), want, got)
 					}
-					want := tokenSuffix.ReplaceAllString(step.Result.Content, "")
-					compareText(t, fmt.Sprintf("step %d body", i+1), want, r.Output.Content[0].GetText())
 				}
 				seen := make(map[string]bool)
 				err = filepath.WalkDir(cwd, func(path string, entry fs.DirEntry, err error) error {
@@ -425,6 +583,14 @@ func TestNativeParity(t *testing.T) {
 						return nil
 					}
 					seen[name] = true
+					if isDigest(expected) {
+						file, err := os.Open(path)
+						if err != nil {
+							return err
+						}
+						compareDigest(t, "files_after/"+name, expected, file)
+						return file.Close()
+					}
 					got, err := os.ReadFile(path)
 					if err != nil {
 						return err
@@ -444,5 +610,5 @@ func TestNativeParity(t *testing.T) {
 			})
 		}
 	}
-	t.Logf("Native fixtures exercised: %d fixtures, %d tool steps (none skipped)", count, steps)
+	t.Logf("Native fixtures discovered: %d fixtures, %d tool steps", count, steps)
 }
