@@ -9,7 +9,6 @@ const invalidUtf8 = { base64: Buffer.from([0x61, 0xff, 0x62, 0xfe, 0xfd, 0x63, 0
 export const reviewCases = [
   c('bash-background-child-foreground', 'Measure foreground shell exit with a background child retaining output pipes.', {}, [
     bash('sleep 30 & echo started', { timeout: 10000 }),
-    bash("ps -o pid,args -C sleep | grep 'sleep 30' || echo gone"),
   ]),
   c('bash-timeout-with-output', 'Keep output emitted before a foreground timeout.', {}, [
     bash('echo before; sleep 5', { timeout: 1000 }),

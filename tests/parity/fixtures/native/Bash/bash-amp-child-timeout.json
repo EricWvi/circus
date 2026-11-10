@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-amp-child-timeout",
+  "description": "Observe child and CLI exit: sleep 20 & sleep 3; echo x.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "sleep 20 & sleep 3; echo x",
+        "description": "Observe ampersand child lifetime",
+        "timeout": 1000
+      },
+      "result": {
+        "is_error": true,
+        "content": "Exit code 143\nCommand timed out after 1s\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

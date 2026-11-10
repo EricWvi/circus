@@ -1,10 +1,11 @@
 import http from 'node:http';
 
 // Adapted from phase0/a: auxiliary calls must never consume the tool script.
-export async function startFakeApi({ marker, model, onTurn, onError = () => {} }) {
+export async function startFakeApi({ marker, model, onTurn, onMessages = () => {}, onError = () => {} }) {
   const records = [];
   let sequence = 0;
   let failure;
+  let conversationStarted = false;
   const usage = { input_tokens: 25, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   function reply(res, body, turn) {
     const id = ++sequence;
@@ -42,12 +43,18 @@ export async function startFakeApi({ marker, model, onTurn, onError = () => {} }
       const body = raw ? JSON.parse(raw) : {};
       const url = new URL(req.url, 'http://localhost');
       const messages = req.method === 'POST' && url.pathname === '/v1/messages';
-      const main = Boolean(messages && body.model === model && body.tools?.some(t => t.name === 'Read') &&
-        body.messages?.some(m => JSON.stringify(m.content).includes(marker)));
+      const compaction = Array.isArray(body.messages?.at(-1)?.content) && body.messages.at(-1).content.some(b =>
+        b.type === 'text' && b.text.startsWith('CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.'));
+      const main = Boolean(messages && !compaction && body.model === model && body.tools?.some(t => t.name === 'Read') &&
+        (conversationStarted || body.messages?.some(m => JSON.stringify(m.content).includes(marker))));
+      if (main) conversationStarted = true;
       // Headers (including credentials) are deliberately never recorded.
       records.push({ method: req.method, path: url.pathname, query: url.search, main, body });
       res.setHeader('content-type', 'application/json');
-      if (messages) return reply(res, body, main ? await onTurn(body) : { text: 'Auxiliary response' });
+      if (messages) {
+        await onMessages(body, { main, compaction });
+        return reply(res, body, main ? await onTurn(body) : { text: 'Auxiliary response' });
+      }
       if (req.method === 'POST' && url.pathname === '/v1/messages/count_tokens') return res.end(JSON.stringify({ input_tokens: 25 }));
       throw new Error(`Unexpected fake API endpoint: ${req.method} ${url.pathname}`);
     } catch (error) {

@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-amp-child-primary",
+  "description": "Observe child and CLI exit: sleep 20 & echo x.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "sleep 20 & echo x",
+        "description": "Observe ampersand child lifetime",
+        "timeout": 10000
+      },
+      "result": {
+        "is_error": false,
+        "content": "x\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "ps -o pid,pgid,sid,ppid,stat,args -C sleep",
+        "description": "Observe ampersand child lifetime"
+      },
+      "result": {
+        "is_error": false,
+        "content": "PID PGID SID PPID STAT COMMAND\n{{UNRELATED_SLEEP_ROWS}}\n{{CHILD_PID}} {{CHILD_PGID}} {{CHILD_PGID}} {{INIT_PID}} S sleep 20\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "true",
+        "description": "Observe ampersand child lifetime"
+      },
+      "before": {
+        "delay_ms": 22000
+      },
+      "result": {
+        "is_error": false,
+        "content": "(Bash completed with no output)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-huge-line-boundary-over",
+  "description": "Read 3200001 generated x bytes.",
+  "setup": {
+    "files": {},
+    "dirs": [],
+    "generate": {
+      "path": "huge.txt",
+      "byte": "x",
+      "size": 3200001,
+      "newline": true
+    }
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/huge.txt",
+        "limit": 1
+      },
+      "result": {
+        "is_error": true,
+        "content": "The requested line range contains over 3.1MB of text, more than a read can return. Use a smaller limit — or, if a single line is this large, no limit will fit it: search for specific content instead. Even with allow_large, this is more than fits in the context you have left this turn (other large reads in the same turn share that room).\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "huge.txt": {
+      "format": "sha256-bytes",
+      "length_bytes": 3200002,
+      "sha256": "86ac5b77f919abf170b696dc214adffb8ce23b8fd19cd14067fe560aabce4a6f",
+      "head_base64": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=",
+      "tail_base64": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eAo="
+    }
+  }
+}

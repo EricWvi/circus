@@ -3,6 +3,8 @@ import { thresholdCases } from './threshold-cases.mjs';
 import { metadataCases } from './metadata-cases.mjs';
 import { reviewCases } from './review-cases.mjs';
 import { sleepEncodingCases } from './sleep-encoding-cases.mjs';
+import { ampHugeCases } from './amp-huge-cases.mjs';
+import { sizeTextCases } from './size-text-cases.mjs';
 
 const text = 'alpha\nbeta\ngamma\ndelta\nepsilon\n';
 const read = (file_path = '{{CWD}}/a.txt', extra = {}) => ({ tool: 'Read', input: { file_path, ...extra } });
@@ -79,4 +81,6 @@ export const cases = [
   // --skip-slow omits it without changing the ordinary case definitions.
   ...reviewCases,
   ...sleepEncodingCases,
+  ...ampHugeCases,
+  ...sizeTextCases,
 ];

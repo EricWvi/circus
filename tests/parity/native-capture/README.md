@@ -20,6 +20,9 @@ node measure-thresholds.mjs read-cjk-lines bash-cjk
 node measure-sleep-encoding.mjs
 node measure-sleep-encoding.mjs --supplement
 node measure-sleep-encoding.mjs --units
+node measure-amp-huge.mjs
+node measure-amp-huge.mjs --bisect
+node capture.mjs --case 'bash-amp-child-*' --case 'read-huge-line-*'
 ```
 
 The SDK is pinned to `0.3.319`; the captured bundled CLI is `2.1.319`.
@@ -66,7 +69,9 @@ before execution. Ordinary sessions retain the 60000 ms harness deadline.
 `fake-api.mjs` adapts the phase0/a prototype. It accepts
 `POST /v1/messages?beta=true` (the query is not required for routing) and
 `POST /v1/messages/count_tokens`. A primary Messages request must use the selected
-model, contain the case marker in conversation history and offer native `Read`.
+model, initially contain the case marker in conversation history and offer native
+`Read`. A known continuation can lose its marker after native compaction; the
+compaction control request itself remains auxiliary as described below.
 All other Messages requests get a minimal text response without advancing the
 script; this includes title generation even if it uses the same model.
 Unexpected endpoints fail the run. Request headers are never recorded.
@@ -111,6 +116,13 @@ stops native-managed background tasks without inventing task IDs or adding
 failed cleanup calls to blocked cases. A shell's own `&` child does not provide
 a native task ID and is not mislabeled as a managed task.
 
+`measure-amp-huge.mjs` runs ten ampersand/process probes and nine generated-file
+probes sequentially. `--bisect` reuses their 1 MiB/10 MiB bracket and appends
+23 fresh-session single-line range-budget probes. Raw process observations,
+timings and all 42 outcomes are retained in ignored `.tmp/amp-huge-probes.json`
+and documented in the behavior spec. `amp-huge-cases.mjs` exports only eleven
+representative fixtures into the ordinary capture list.
+
 The native wire format in this version uses **string** `tool_result.content` for
 all these cases. Fixtures retain that type verbatim instead of inventing an
 array of text blocks. If a future case produces a block array, that array is
@@ -126,7 +138,8 @@ documents the observed behavior, including contradictions with descriptions.
 
 ## Normalization
 
-Normalization replaces only run-specific identifiers and paths, plus redacts
+Normalization replaces run-specific identifiers, paths and the explicitly
+documented unrelated-host process rows, plus redacts
 credential assignments before any diagnostic or fixture is persisted. It does
 not remove reminders, trim output, normalize CRLF file bytes, or alter line
 numbers. PID-table numeric columns and their variable-width padding are replaced
@@ -294,3 +307,131 @@ Task-ID normalization also recognizes automatic timeout-to-background messages.
 Scratch `cwd-*` normalization matches path components only, so the literal case
 name `bash-cwd-deleted` is preserved. These extensions do not change any of the
 80 previously accepted fixtures.
+
+## Process observations, generated files and large result digests
+
+`observe_native: { processes: true }` enables a local SDK spawn callback with
+the unchanged CLI executable, arguments, cwd, isolated environment and pipe stdio.
+The observer records the actual CLI exit code/signal. `/proc/<pid>/status` VmHWM
+is sampled every 20 ms for that CLI PID, including Read auxiliaries/compaction;
+it excludes the Node harness and external Bash children. The maximum observed
+kernel high-water mark is diagnostic evidence, not a promised hard memory bound.
+`processes: false` keeps only RSS/exit observations for generated-file probes.
+
+For process probes, the harness samples `ps -C sleep` and identifies only processes
+whose `/proc/<pid>/cwd` equals the isolated project. It retains their start ticks
+to prevent PID-reuse mistakes. Immediately after each native result arrives,
+before sending another scripted Bash call, it records PID, PPID, PGID, SID,
+state, parent metadata, `readlink` targets of fd 1/2 and `ls -l` of those fds.
+It repeats this after normal CLI exit. `before: { delay_ms: 22000 }` keeps the
+model request open on the fake server, then sends the next tool without using
+a native sleep command. Raw observations and elapsed times are written only to
+`.tmp/<case>-observations.json` and `.tmp/<case>-timings.json`.
+
+Native child rows retain identity/equality through role placeholders:
+`{{CLI_PID}}`, `{{HARNESS_PID}}`, `{{CHILD_PID}}`, `{{FOREGROUND_SLEEP_PID}}`,
+`{{INIT_PID}}`, `{{SHELL_PID}}`, `{{CLI_PGID}}`, `{{CLI_SID}}`,
+`{{CHILD_PGID}}`, `{{CHILD_SID}}` and fallback `{{PROCESS_N_PID}}`.
+One numeric ID always has one label, so a child's PGID and SID may intentionally
+share a label. PID-table padding is canonicalized. Role choice is independent
+of whether sampling catches the transient shell before it exits.
+
+Unrelated host sleeps were present (one versus two `sleep 180` rows), despite
+sequential probe execution. The requested native `ps` command is unchanged.
+Only in these process fixtures, all non-probe rows are represented by a single
+`{{UNRELATED_SLEEP_ROWS}}` placeholder after the header, meaning zero or more
+ambient rows. Owned rows are retained, not merged into this placeholder. The
+complete original stdout and actual numeric IDs remain in diagnostics and the
+spec's observation tables. This explicit environment normalization avoids
+mistaking host activity for a change in native child-lifetime behavior.
+
+For replay tests, the only golden output in `bash-amp-child-*` that contains
+unrelated host processes is `Bash/bash-amp-child-primary.json`, step 2,
+`result.content`, from `ps -o pid,pgid,sid,ppid,stat,args -C sleep`; the other
+four fixtures (`exit`, `managed`, `timeout`, `term-trap`) contain no such output.
+Apply the existing `NativeObserver.normalize` rule to that process table:
+identify probe-owned PIDs by `/proc/<pid>/cwd` matching the isolated case cwd,
+retain `/proc/<pid>/stat` start ticks to guard against PID reuse, and never
+identify ownership from `sleep 20` text alone. Replace all contiguous numeric
+rows after the header with exactly one literal `{{UNRELATED_SLEEP_ROWS}}` line
+(even when there are no unrelated rows), followed by the owned rows in their
+original order. Canonicalize the header to `PID PGID SID PPID STAT COMMAND`
+and column separators to single spaces; map PID, PGID, SID and PPID consistently
+to the observed role placeholders above, preserving numeric identity and
+relationships (the primary child's equal PGID/SID both become
+`{{CHILD_PGID}}`, and its parent PID 1 becomes `{{INIT_PID}}`). Keep owned rows,
+their `STAT` and command text, surrounding newlines, reminders and other result
+content unchanged; an absent owned child or a different process relationship
+must remain a detectable difference. Harness-side `ps`/fd/after-exit observations
+are diagnostics in `.tmp`, not golden output, and require no replay comparison.
+
+CLI exit is observed before cleanup and before final project-file collection.
+Surviving owned children/wrappers are terminated only afterward; the diagnostic
+`cleanup_signals` records those harness actions separately. No unrelated host
+process is signaled. A trap file created by cleanup cannot be misreported as
+evidence of a native exit signal, because fixture `files_after` was captured
+before cleanup. All isolated files, descriptors and surviving probe children
+are cleaned up per case.
+
+`setup.generate` describes a file without embedding its contents:
+
+```json
+{
+  "path": "huge.txt",
+  "byte": "x",
+  "size": 314572800,
+  "newline": true,
+  "prefix": "0123456789\n"
+}
+```
+
+`size` is the repeated one-byte payload count, excluding optional UTF-8 `prefix`
+and optional final LF. This example has a ten-character first line, then a
+300 MiB second-line payload, for 314572812 total file bytes. Without the prefix
+it has 314572801 bytes. The generator writes at most 1 MiB chunks under the
+existing 022 umask and verifies the final length. The file walker stream-hashes
+generated files instead of reading them into a Node string.
+
+Optional `generate.line_bytes` replaces every Nth payload byte with LF (N
+includes the LF); a final partial line retains its remaining `x` bytes. It does
+not change `size`, prefix or final-newline semantics. For example, `size: 10485759`,
+`line_bytes: 100`, `newline: false` creates exactly 10485759 total bytes with
+104857 complete 100-byte lines and a 59-byte final line. Without `line_bytes`,
+generation is unchanged. `node measure-size-text.mjs` runs all requested default
+Read size-text probes, exact integer bisection and both boundary line-structure
+checks in separate sessions, without persisting probe fixtures; diagnostics go
+to `.tmp/size-text-probes.json`. `node capture.mjs --case 'read-size-text-*'`
+captures only the two representative boundary fixtures.
+
+For `summarize_large: true`, result strings of at least 1 MiB are represented by
+the following descriptor in `result.content`; generated `files_after` values
+always use the same format. Other results, including all existing fixtures,
+retain their original format:
+
+```json
+{
+  "format": "sha256-bytes",
+  "length_bytes": 3200090,
+  "sha256": "71667e1d8db3607870dd2ff99bdef486a1eeb8f75c0488a44fe7940aff4eeb7a",
+  "head_base64": "...",
+  "tail_base64": "..."
+}
+```
+
+The digest and byte length cover UTF-8 encoding of the complete normalized native
+result string, including line numbering and reminders, not serialized JSON.
+For a generated file they cover its raw bytes. Head and tail each contain the
+first/last 200 bytes, stored as base64 to preserve exact byte boundaries. This
+descriptor is capture metadata, not native tool output or an extra text block.
+
+Large Read results can trigger native auxiliary summarization and compaction.
+The fake gives those calls minimal responses without advancing the script.
+Compaction is recognized by the native last-user text beginning
+`CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.`; after the first
+primary turn, the isolated conversation may continue without its original
+marker following compaction. The harness observes tool_result blocks on *all*
+Messages requests, independently of script advancement. If the first request
+carrying a result is a compaction request, its step has `delivery: "compaction"`
+and includes the other blocks in that same user message. This records where
+the raw data actually went; it does not claim the post-summary primary model
+received the full file. Existing non-compacting fixtures remain unchanged.

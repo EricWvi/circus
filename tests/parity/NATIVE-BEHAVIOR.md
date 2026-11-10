@@ -4,7 +4,7 @@ Ground truth: Claude Agent SDK **0.3.319**, bundled Claude Code **2.1.319**,
 Node 24.20.0, Linux x64, `/bin/bash`, bypass permissions, fresh isolated HOME and
 config, no settings sources or MCP servers. The fake model emits exactly one
 tool per turn; evidence is the next Messages API request, not SDK display text.
-The 112 cases comprise 32 Read, 14 Write, 25 Edit, 39 Bash and 2 TaskStop-category
+The 125 cases comprise 40 Read, 14 Write, 25 Edit, 44 Bash and 2 TaskStop-category
 cases; the Bash stop case also exercises TaskStop. All cases are in
 [`fixtures/native`](fixtures/native/), with exact setups, inputs, side effects,
 results and final file bytes. See [`native-capture/README.md`](native-capture/README.md)
@@ -19,9 +19,13 @@ or explicitly unmeasured.
 ## Wire representation and shared suffix
 
 Every received `tool_result.content` is a **string**, not an array. Fixtures
-retain this native type. `result.is_error` is boolean (`false` also represents
-an omitted wire flag). All `attachments` arrays are empty. Reminders were merged
-into the result string, including environment changes and background events.
+normally retain this native type; the new huge-result descriptors below are
+capture metadata replacing strings of at least 1 MiB. `result.is_error` is boolean
+(`false` also represents an omitted wire flag). Original non-compacting fixtures
+have empty `attachments` arrays. The huge successful Reads can first deliver
+their result to a compaction request, with its native control text in
+`attachments`. Ordinary reminders remain embedded in the result string,
+including environment changes and background events.
 
 The guarded FIFO fixture has `result: null`: native did not return a result
 before termination. Its explicit `observation` is not a tool-result block.
@@ -890,11 +894,10 @@ no result at all. Timings are diagnostics in this document, never golden data.
 <tool_use_error>Blocked: sleep 30 followed by: echo started. To wait for a condition, use Monitor with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.</tool_use_error>
 ```
 
-This is `is_error: true`, with no `started` output. The following exact input
-`ps -o pid,args -C sleep | grep 'sleep 30' || echo gone` returns `gone`
-(`is_error: false`). The first step took **17.40 ms** in complete run 1,
-measured from emitting the scripted tool input to receiving the next primary
-Messages request containing its result. The second step took **65.29 ms**.
+This is `is_error: true`, with no `started` output. The fixture has one step:
+no child is launched. In the two L7 recaptures, this result took
+**18.95 ms / 18.78 ms**, measured from emitting the scripted tool input to
+receiving the next primary Messages request containing its result.
 This measures preflight rejection, not shell/pipe-exit waiting: no child was
 launched, so survival and pipe-draining semantics remain unmeasured for this
 literal command. No alternative command was substituted to bypass the block.
@@ -1589,7 +1592,481 @@ No human input has been received since the last genuine user message in this con
 
 <!-- sleep-encoding-evidence-end -->
 
+## `&` child lifetime and huge single-line Read
+
+All probes in this section ran sequentially in fresh sessions on 2026-11-10.
+The measured matrix has **42 sessions**: ten ampersand variants, nine generated
+file inputs, and 23 integer bisection probes. Eleven representative fixtures
+are retained. Raw PID values, wall times and RSS are diagnostic observations
+in this document, not variable golden fields. Native tool inputs are not
+modified by the harness's process inspection or cleanup.
+
+### Primary foreground ampersand child
+
+`bash-amp-child-primary` sends the literal `sleep 20 & echo x`, timeout 10000.
+It returns **`is_error: false`**, with body `x`, after **50.52 ms** in the formal
+probe. The native call does not wait 20 seconds for the child's inherited output
+descriptors to close. The immediate harness-side `ps` runs before any second
+scripted Bash call and sees the child still sleeping. Actual recorded IDs:
+
+| Process at first result | PID | PPID | PGID | SID | State / parent |
+| --- | ---: | ---: | ---: | ---: | --- |
+| CLI | 4096808 | 4096796 | 4096786 | 4096786 | `S`; parent is the Node harness |
+| Child `sleep 20` | 4096842 | 1 | 4096841 | 4096841 | `S`; parent PID 1 is `systemd` |
+
+The child is already reparented; it is not a living child of the CLI or the
+foreground shell at this observation. Its PGID and SID are equal to each other
+and distinct from the CLI's. **Inferred:** it retained the detached Bash job's
+group/session after that shell exited. No claim of a separate child task ID
+is inferred from the output-file basename.
+
+The second model-facing Bash call is exactly
+`ps -o pid,pgid,sid,ppid,stat,args -C sleep`; it confirms the same child identity
+and relationships. The representative fixture encodes its result as:
+
+```text
+PID PGID SID PPID STAT COMMAND
+{{UNRELATED_SLEEP_ROWS}}
+{{CHILD_PID}} {{CHILD_PGID}} {{CHILD_PGID}} {{INIT_PID}} S sleep 20
+```
+
+The placeholder represents actual unrelated host rows, not a native line.
+Formal probes saw an unrelated `sleep 180`; early verification runs saw two
+versus one such rows. Raw complete stdout is retained in diagnostics. The
+normalizer replaces only ambient non-probe rows, while keeping the owned row
+and its identity relationships. This is why the exact requested `ps` remains
+usable as a stable golden despite unrelated activity on the shared host.
+
+For fd 1 and fd 2, both harness `readlink` and `ls -l` identify **the same deleted
+regular file**, with this directory structure:
+
+```text
+{{TMPDIR}}/claude-1000/{{PROJECT_KEY}}/{{SESSION_ID}}/tasks/{{ID}}.output (deleted)
+```
+
+The formal probe's basename was `bk6r6c9la.output`; `/proc/4096842/fd/1` and
+`/proc/4096842/fd/2` both pointed there after unlink. These are **not pipes** and
+not `/dev/null`. The open descriptors keep the file object alive after unlink;
+the directory name `tasks` does not mean this foreground `&` child was registered
+as a model-visible background task.
+
+After the second Bash result, the fake API waits 22000 ms on the harness side
+before emitting `true`. The child has disappeared by then. The following native
+result is exactly `(Bash completed with no output)`, with only the ordinary
+token reminder: **no task ID, no task-notification and no sibling attachment**
+about the child in any of the three result requests. The CLI then exits with
+code 0 / no signal, and the child remains absent.
+
+### Immediate CLI-exit variant and other ampersand shapes
+
+`bash-amp-child-exit` launches the same literal command as its only/last tool,
+then the fake emits the final text turn. The actual CLI exits normally with
+code 0, signal null. **The child is still alive afterward**: PID 4097407,
+PPID 1, PGID=SID=4097406, state `S`. Disappearance after the primary's
+22-second wait is consistent with natural completion (**inferred**), not proof
+that foreground-call completion or a normal CLI exit killed the child. The
+precise exit instant/status of that naturally awaited child was not sampled.
+
+All requested variants were measured. Full numeric IDs, fd targets, timing and
+RSS for each are tabulated in the complete evidence block below. Summary:
+
+| Variant | Native first result | Child at result / immediately after CLI exit | Fd 1 / fd 2 |
+| --- | --- | --- | --- |
+| Literal foreground `sleep 20 & echo x` | `x`, false | Alive / alive in immediate-exit variant; PPID 1 | Same deleted regular capture file / same file |
+| Same command, `run_in_background: true` | Real task ID + output path, false | Alive / alive, PPID 1 | Same **non-deleted** managed output file / same file |
+| `(sleep 20 &); echo x` | `x`, false | Alive / alive, PPID 1 | Deleted capture file / same file |
+| `nohup sleep 20 >/dev/null 2>&1 & echo x` | `x`, false | Alive / alive, PPID 1 | `/dev/null` / `/dev/null` |
+| `sleep 20 > /dev/null & echo x` | `x`, false | Alive / alive, PPID 1 | `/dev/null` / deleted capture file |
+| `setsid sleep 20 & echo x` | `x`, false | Alive / alive, PPID 1; **PID=PGID=SID=4097606** | Deleted capture file / same file |
+| Marker wrapper with `exec -a circus_probe_bash_amp_child_marker sleep 20` | `x`, false | Alive / alive, PPID 1; argv marker is retained | Deleted capture file / same file |
+| `sleep 20 & sleep 3; echo x`, timeout 1000 | Exit 143 + timeout, true | Both sleep children gone before the result | Gone; no surviving fd to inspect at result |
+| TERM-trap wrapper around `sleep 20` | `x`, false | Sleep and wrapper still alive at CLI exit; sleep's parent is the wrapper, whose parent is PID 1 | Deleted capture file / same file |
+
+In the managed variant, the model-visible ID belongs to the explicitly
+backgrounded **Bash command**. It does not establish independent supervision of
+its orphaned ampersand descendant: that descendant survives normal CLI exit
+too. Its fd path remains linked at that observation. The literal foreground
+and other untracked variants do not gain a model-visible task simply because
+they contain `&`.
+
+The TERM-trap probe uses exactly
+`bash -c 'trap "echo TERM >> {{CWD}}/sig" TERM; sleep 20' & echo x`.
+At the post-exit boundary, sleep PID 4097758 still has parent bash 4097757;
+that wrapper has PPID 1 and shares PGID/SID 4097756 with its sleep child.
+The `sig` file is absent before harness cleanup. No native TERM trap action was
+observed. A Bash trap may be deferred while waiting for a foreground command,
+so absence of that file alone is not a general signal-delivery proof. The
+surviving processes and exit-zero CLI are the direct lifetime evidence.
+
+For the timeout variant, a repeated instrumented observation catches both
+children **before** timeout: sleep 20 PID 4108168 and sleep 3 PID 4108169 have
+PPID=PGID=SID 4108167 (their Bash shell), whose parent is CLI 4108124. Both are
+absent at the next request, before any harness cleanup, and no task ID is
+returned. The exact outer status is 143 (128+SIGTERM 15), consistent with
+termination of the job. The individual children were reaped before their wait
+statuses could be sampled, so their precise signals are not asserted.
+
+For all immediate-exit variants, the harness checks survival **before** sending
+its own cleanup signals. Surviving owned sleeps/wrappers are then terminated;
+those separate actions are logged under `cleanup_signals`. No unrelated host
+sleep is killed, and no cleanup-created trap file is counted as native evidence.
+
+### Exact distinct ampersand model-facing bodies
+
+Every untracked successful first call has body:
+
+```text
+x
+```
+
+The managed variant has body:
+
+```text
+Command running in background with ID: {{TASK_ID}}. Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. To check interim output, use Read on that file path.
+```
+
+The timeout variant has `is_error: true` and body:
+
+```text
+Exit code 143
+Command timed out after 1s
+```
+
+The primary's final follow-up has body:
+
+```text
+(Bash completed with no output)
+```
+
+The primary's PID-table body is shown above. Each body is followed by the same
+two-LF token reminder as other fixtures. No extra child-completion message was
+observed for an untracked ampersand child, including after the 22-second wait.
+
+### Generated 300 MiB inputs and observed Read limits
+
+The generator and digest format are documented in the capture README. `size`
+counts payload `x` bytes, with a separate final LF. The one-line 300 MiB input
+is **314572801 bytes**. The two-line input prefixes `0123456789\n`, so it is
+**314572812 bytes**: ten ASCII data bytes on line one, then a 300 MiB line two.
+The files are physically generated in bounded chunks and removed per case;
+no fixture embeds a 300 MiB string.
+
+| Probe | Actual file bytes | Read input besides path | Native outcome |
+| --- | ---: | --- | --- |
+| 300 MiB, one line | 314572801 | `limit: 1` | Error: selected line range over 3.1MB. |
+| Same | 314572801 | `offset: 1, limit: 1` | Identical range error. |
+| Same | 314572801 | No offset/limit | Default size error reports **512KB**, not 300MB. |
+| 300 MiB second line | 314572812 | `limit: 1` | Success, complete first line only. |
+| Same | 314572812 | `offset: 1, limit: 1` | Identical success. |
+| Same | 314572812 | No offset/limit | Same default 512KB size error. |
+| 1 MiB, one line | 1048577 | `limit: 1` | Success, all 1048576 `x` bytes. |
+| 10 MiB, one line | 10485761 | `limit: 1` | Same range error as 300 MiB. |
+| 100 MiB, one line | 104857601 | `limit: 1` | Same range error as 300 MiB. |
+
+Because 1 MiB succeeds and 10 MiB fails, integer bisection was performed in
+fresh sessions, down to one payload byte. The observed boundary is:
+
+- **3200000 payload bytes succeed** (file 3200001 bytes including LF).
+- **3200001 payload bytes fail** (file 3200002 bytes including LF).
+
+This is a selected-range/context bound in these fresh Sonnet sessions, not
+the default 256 KiB guard. `limit` does not make a single arbitrarily long line
+returnable. The error explicitly refers to remaining context and sharing room
+with other large reads; different model/history budgets were not tested, so
+3200000 is not claimed as a universal constant for all contexts.
+
+Successful long-line results return the complete line, not a truncated preview:
+the exact string is `"1\t" + "x".repeat(N)` plus the ordinary two-LF reminder.
+Its UTF-8 length is **N+90**. The 1 MiB result has length 1048666 and SHA-256
+`a7c184f94f096375f472eb34627cd003bef9491825c6323662f88a45e00c878e`.
+The largest successful result has length 3200090 and SHA-256
+`71667e1d8db3607870dd2ff99bdef486a1eeb8f75c0488a44fe7940aff4eeb7a`.
+No Read line-truncation marker appears; oversized selected lines are rejected.
+
+### Default size error text
+
+Follow-up 8 measures total file bytes, not the generated payload plus a hidden
+LF: all single-line files contain exactly N ASCII `x` bytes without a final
+newline. Each row below is one fresh isolated session and one Read with only
+`file_path`; every result has `is_error: true`. Rows 1–13 are the requested
+fixed sizes, rows 14–36 are exact integer bisection, and rows 37–38 repeat the
+boundary with 100-byte lines (99 `x` bytes plus LF, with a partial last line).
+
+The exact switch is **10485759 / 10485760 total bytes**: below 10 MiB,
+these oversized ASCII files report their actual size in rounded binary units;
+at **10 MiB inclusive**, and through the largest requested 100 MiB probe,
+they report **512KB** instead. In particular, 3200001 bytes still reports
+`3.1MB`, and 8000000 reports `7.6MB`. The previously measured 3200000-byte
+selected-range bound is a different rule and does not cause this switch.
+Both boundary results are unchanged by the tested line structure.
+
+The results are consistent with a 10 MiB stat-size gate selecting a bounded
+512 KiB read (**inferred**); filesystem calls were not traced. This evidence
+does not establish the reported size for other encodings or every smaller file.
+For the measured ASCII files below the gate, formatting agrees with division
+by 1024 for KB and 1048576 for MB, rounding to one decimal and removing a zero
+fraction (**inferred formatting rule**, e.g. 524289 also rounds to 512KB).
+
+The following complete error templates are verbatim except that `<size>` is
+replaced by the parenthesized value in the table (e.g. `10MB`). The table records which suffix was
+actually received, since the context-dependent advice also differs. The shared
+token reminder is omitted here and retained in the fixtures.
+
+Template A:
+
+```text
+File content (<size>) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file. To read it anyway, up to what still fits in your context, call Read again with allow_large: true — only if you genuinely need all of it or the user asked for the whole file.
+```
+
+Template B:
+
+```text
+File content (<size>) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file. Even with allow_large, this is more than fits in the context you have left this turn (other large reads in the same turn share that room).
+```
+
+| Probe order | Total bytes | Structure | Verbatim size text | Template |
+| ---: | ---: | --- | --- | --- |
+| 1 | 400000 | single line | `File content (390.6KB)` | A |
+| 2 | 524288 | single line | `File content (512KB)` | A |
+| 3 | 524289 | single line | `File content (512KB)` | A |
+| 4 | 600000 | single line | `File content (585.9KB)` | A |
+| 5 | 1048576 | single line | `File content (1MB)` | A |
+| 6 | 2000000 | single line | `File content (1.9MB)` | B |
+| 7 | 3200000 | single line | `File content (3.1MB)` | B |
+| 8 | 3200001 | single line | `File content (3.1MB)` | B |
+| 9 | 4000000 | single line | `File content (3.8MB)` | B |
+| 10 | 8000000 | single line | `File content (7.6MB)` | B |
+| 11 | 16777216 | single line | `File content (512KB)` | A |
+| 12 | 33554432 | single line | `File content (512KB)` | A |
+| 13 | 104857600 | single line | `File content (512KB)` | A |
+| 14 | 12388608 | single line | `File content (512KB)` | A |
+| 15 | 10194304 | single line | `File content (9.7MB)` | B |
+| 16 | 11291456 | single line | `File content (512KB)` | A |
+| 17 | 10742880 | single line | `File content (512KB)` | A |
+| 18 | 10468592 | single line | `File content (10MB)` | B |
+| 19 | 10605736 | single line | `File content (512KB)` | A |
+| 20 | 10537164 | single line | `File content (512KB)` | A |
+| 21 | 10502878 | single line | `File content (512KB)` | A |
+| 22 | 10485735 | single line | `File content (10MB)` | B |
+| 23 | 10494306 | single line | `File content (512KB)` | A |
+| 24 | 10490020 | single line | `File content (512KB)` | A |
+| 25 | 10487877 | single line | `File content (512KB)` | A |
+| 26 | 10486806 | single line | `File content (512KB)` | A |
+| 27 | 10486270 | single line | `File content (512KB)` | A |
+| 28 | 10486002 | single line | `File content (512KB)` | A |
+| 29 | 10485868 | single line | `File content (512KB)` | A |
+| 30 | 10485801 | single line | `File content (512KB)` | A |
+| 31 | 10485768 | single line | `File content (512KB)` | A |
+| 32 | 10485751 | single line | `File content (10MB)` | B |
+| 33 | 10485759 | single line | `File content (10MB)` | B |
+| 34 | 10485763 | single line | `File content (512KB)` | A |
+| 35 | 10485761 | single line | `File content (512KB)` | A |
+| 36 | 10485760 | single line | `File content (512KB)` | A |
+| 37 | 10485759 | 100-byte lines | `File content (10MB)` | B |
+| 38 | 10485760 | 100-byte lines | `File content (512KB)` | A |
+
+Only `Read/read-size-text-boundary-real.json` (10485759 bytes) and
+`Read/read-size-text-boundary-bounded.json` (10485760 bytes) are retained.
+No extra line-structure fixtures are necessary because their complete results
+match the respective single-line boundaries. Setups use `generate`; final
+file contents use stream-computed SHA-256/length/head/tail descriptors.
+
+Reproduce all probes with `node measure-size-text.mjs`. Two successive
+`node capture.mjs --case 'read-size-text-*'` runs captured 2/2 cases each;
+both second-run fixtures were byte-identical, including file hashes and lengths.
+No existing fixture changed. The harness removed every generated case tree
+and large file after its session.
+
+### Verbatim Read bodies and summary delivery
+
+Selected-range rejection (`is_error: true`), identical for 10/100/300 MiB and
+the first failing bisection boundary:
+
+```text
+The requested line range contains over 3.1MB of text, more than a read can return. Use a smaller limit — or, if a single line is this large, no limit will fit it: search for specific content instead. Even with allow_large, this is more than fits in the context you have left this turn (other large reads in the same turn share that room).
+```
+
+Default no-limit rejection (`is_error: true`), on both generated 300 MiB files:
+
+```text
+File content (512KB) exceeds maximum allowed size (256KB). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file. To read it anyway, up to what still fits in your context, call Read again with allow_large: true — only if you genuinely need all of it or the user asked for the whole file.
+```
+
+`512KB` is the reported content size, not the actual stat size of these files.
+Bounded read/lookahead is consistent with this and the RSS observations
+(**inferred**); the exact byte count of native filesystem syscalls was not traced.
+
+The short first-line success (`is_error: false`) is exactly `"1\t0123456789"`,
+plus the common reminder, for **100 UTF-8 result bytes**. Generated-file hashes
+confirm that no input file changed during Read.
+
+Large successful results trigger native file-summary and compaction API calls.
+Every one is still served by the fake. The first request carrying the complete
+Read `tool_result` can be a **compaction** request rather than the next primary
+model turn; the fixture records `delivery: "compaction"` and that request's
+6361-character control-text attachment. The control text is native data, not
+an instruction for this capture agent. The fake must not advance its scripted
+turn for that auxiliary request, and must recognize the marker-less primary
+continuation after compaction. Those routing fixes were necessary to capture
+large results; no existing non-compacting fixture content changed.
+
+For bodies at least 1 MiB, the fixture stores the whole-string SHA-256 and UTF-8
+length, with base64 head/tail 200 bytes, as requested. The head starts `1\t`
+followed by `x`; the tail contains `x` followed by the exact reminder. The
+generated input's `files_after` uses a separate raw-file digest descriptor.
+These are reproducible representations, not native truncation or fabricated
+model text. The result formula above and per-probe hashes below specify all
+omitted megabytes exactly.
+
+### Wall time, memory and interpretation
+
+Elapsed intervals end when the fake has received the request carrying the tool
+result. For a compacted Read this is the compaction request. Peak RSS is the
+maximum sampled `/proc/<CLI-pid>/status` **VmHWM**, in KiB, across the CLI session,
+including its auxiliary/compaction work. It excludes Node's file generator,
+Node's API parser/hash buffers, and external Bash/sleep children. Sampling is
+every 20 ms; kernel high-water marks persist between samples, but the maximum
+observed value is still a measurement rather than an enforced memory ceiling.
+
+The formal probes measured about **197 MiB** for default 300 MiB rejection,
+**211 MiB** for the huge selected-line rejection, **248 MiB** for the 1 MiB
+successful Read including compaction, and **406 MiB** when returning only the
+ten-byte first line of the two-line 300 MiB file. The bisection's largest
+successful Read reached about **354 MiB**. Complete per-probe raw measurements
+are listed next.
+
+The response-byte bound does not establish that RSS is proportional only to
+returned text: the short-first-line case used notably more RSS than the huge
+single-line rejection. These probes do not establish a universal file-size-
+independent native memory bound or the internal allocation strategy. They do
+establish the exact returned-text/error boundaries and show why the daemon must
+not interpret `limit: 1` as permission to return an unlimited single line.
+
+### Complete probe and process evidence
+
+The next tables retain all **42 formal probes** and outcomes in execution
+order. They are reproducible with `measure-amp-huge.mjs`, then `--bisect`.
+Initial scout attempts using the same inputs exposed the fake's compaction
+routing limitation; that harness failure was fixed, and all requested inputs
+and bisection probes were rerun in the formal matrix. No native failure was
+replaced by a guessed result. Unrelated host sleep rows are excluded only from
+the golden's environment-specific PID table; their existence/count is explicit.
+
+<!-- amp-huge-evidence-start -->
+
+| # | Probe | Payload bytes | Read options / Bash result | is_error | First-result ms | CLI VmHWM KiB | Result bytes / SHA-256 |
+| ---: | --- | ---: | --- | --- | ---: | ---: | --- |
+| 1 | `bash-amp-child-primary` | — | `x` | false | 50.52 | 207040 | verbatim body above |
+| 2 | `bash-amp-child-exit` | — | `x` | false | 48.18 | 202500 | verbatim body above |
+| 3 | `bash-amp-child-managed` | — | `managed task + path` | false | 46.19 | 210720 | verbatim body above |
+| 4 | `bash-amp-child-double-fork` | — | `x` | false | 48.64 | 201912 | verbatim body above |
+| 5 | `bash-amp-child-nohup` | — | `x` | false | 49.13 | 202356 | verbatim body above |
+| 6 | `bash-amp-child-stdout-null` | — | `x` | false | 52.55 | 206104 | verbatim body above |
+| 7 | `bash-amp-child-setsid` | — | `x` | false | 50.79 | 201848 | verbatim body above |
+| 8 | `bash-amp-child-marker` | — | `x` | false | 51.53 | 202424 | verbatim body above |
+| 9 | `bash-amp-child-timeout` | — | `exit 143 / timeout` | true | 1051.31 | 200352 | verbatim body above |
+| 10 | `bash-amp-child-term-trap` | — | `x` | false | 50.74 | 203048 | verbatim body above |
+| 11 | `read-huge-line-300m-limit` | 314572800 | `{"limit":1}` | true | 35.24 | 215728 | range-budget error |
+| 12 | `read-huge-line-300m-offset-limit` | 314572800 | `{"offset":1,"limit":1}` | true | 35.12 | 215788 | range-budget error |
+| 13 | `read-huge-line-300m-default` | 314572800 | `{}` | true | 29.25 | 201920 | 512KB / 256KB default error |
+| 14 | `read-huge-line-two-300m-limit` | 314572800 | `{"limit":1}` | false | 197.73 | 415680 | 100 bytes; complete short first line |
+| 15 | `read-huge-line-two-300m-offset-limit` | 314572800 | `{"offset":1,"limit":1}` | false | 194.37 | 415148 | 100 bytes; complete short first line |
+| 16 | `read-huge-line-two-300m-default` | 314572800 | `{}` | true | 29.85 | 201768 | 512KB / 256KB default error |
+| 17 | `read-huge-line-1m-limit` | 1048576 | `{"limit":1}` | false | 61.10 | 254352 | 1048666 / `a7c184f94f096375f472eb34627cd003bef9491825c6323662f88a45e00c878e` |
+| 18 | `read-huge-line-10m-limit` | 10485760 | `{"limit":1}` | true | 35.32 | 215832 | range-budget error |
+| 19 | `read-huge-line-100m-limit` | 104857600 | `{"limit":1}` | true | 35.42 | 215260 | range-budget error |
+| 20 | `read-huge-line-probe-5767168` | 5767168 | `{"limit":1}` | true | 32.63 | 211684 | range-budget error |
+| 21 | `read-huge-line-probe-3407872` | 3407872 | `{"limit":1}` | true | 31.96 | 206712 | range-budget error |
+| 22 | `read-huge-line-probe-2228224` | 2228224 | `{"limit":1}` | false | 114.53 | 310552 | 2228314 / `930b9798fc186ec3f806113769b3c020d5edec3617a92e2c312f5a0bccd8a2f6` |
+| 23 | `read-huge-line-probe-2818048` | 2818048 | `{"limit":1}` | false | 140.42 | 347496 | 2818138 / `b4112000ae993850a58c6c83d48a176fa6b0335d96b9afa11fe08b008135e7d0` |
+| 24 | `read-huge-line-probe-3112960` | 3112960 | `{"limit":1}` | false | 136.09 | 347212 | 3113050 / `c2f78edc2f8ba8f20485a9040bab3e97a3ec469d8b60a473ee040a230b7f3e65` |
+| 25 | `read-huge-line-probe-3260416` | 3260416 | `{"limit":1}` | true | 31.54 | 206352 | range-budget error |
+| 26 | `read-huge-line-probe-3186688` | 3186688 | `{"limit":1}` | false | 145.67 | 351028 | 3186778 / `4f1a99955f2aeaef437edd464f77d64517a0ebdb58667f7816f415069278e40d` |
+| 27 | `read-huge-line-probe-3223552` | 3223552 | `{"limit":1}` | true | 30.95 | 206324 | range-budget error |
+| 28 | `read-huge-line-probe-3205120` | 3205120 | `{"limit":1}` | true | 29.54 | 206276 | range-budget error |
+| 29 | `read-huge-line-probe-3195904` | 3195904 | `{"limit":1}` | false | 141.65 | 355732 | 3195994 / `c6b44b881c7031d8659b6c8c6c75a70ce2f72f4643bd3a0b611dd9c26d3d8272` |
+| 30 | `read-huge-line-probe-3200512` | 3200512 | `{"limit":1}` | true | 33.05 | 206184 | range-budget error |
+| 31 | `read-huge-line-probe-3198208` | 3198208 | `{"limit":1}` | false | 141.62 | 355156 | 3198298 / `660f6b01209817a6f637a576b63e3a39b675341a539da8b70f23ede95a16732b` |
+| 32 | `read-huge-line-probe-3199360` | 3199360 | `{"limit":1}` | false | 134.37 | 346652 | 3199450 / `9a139a3941f836072bbdab03552c6cc59d7f68d596572779f450ef877b321739` |
+| 33 | `read-huge-line-probe-3199936` | 3199936 | `{"limit":1}` | false | 148.21 | 359020 | 3200026 / `0fbd4dabc830d4848c0492c60fd8432fc7bd77736ecbdd6db538f346572fd84b` |
+| 34 | `read-huge-line-probe-3200224` | 3200224 | `{"limit":1}` | true | 29.65 | 205744 | range-budget error |
+| 35 | `read-huge-line-probe-3200080` | 3200080 | `{"limit":1}` | true | 30.81 | 206600 | range-budget error |
+| 36 | `read-huge-line-probe-3200008` | 3200008 | `{"limit":1}` | true | 32.22 | 206504 | range-budget error |
+| 37 | `read-huge-line-probe-3199972` | 3199972 | `{"limit":1}` | false | 138.61 | 353180 | 3200062 / `9325f9b8c82f5dc86adbb72247fd037928f2a7f831a8be0958196f5b445e93e2` |
+| 38 | `read-huge-line-probe-3199990` | 3199990 | `{"limit":1}` | false | 144.32 | 355820 | 3200080 / `1c0887160d5af9e292fea6bb4f50f40e0b99a260ed496fbca2424ac724ede175` |
+| 39 | `read-huge-line-probe-3199999` | 3199999 | `{"limit":1}` | false | 144.79 | 362692 | 3200089 / `cabba3470b238a4b23c9ce1ed4960a97257bc57bb14cfec7fe08f69e2bd67871` |
+| 40 | `read-huge-line-probe-3200003` | 3200003 | `{"limit":1}` | true | 32.72 | 206804 | range-budget error |
+| 41 | `read-huge-line-probe-3200001` | 3200001 | `{"limit":1}` | true | 32.64 | 206580 | range-budget error |
+| 42 | `read-huge-line-probe-3200000` | 3200000 | `{"limit":1}` | false | 142.35 | 362628 | 3200090 / `71667e1d8db3607870dd2ff99bdef486a1eeb8f75c0488a44fe7940aff4eeb7a` |
+
+#### Raw child identity and fd observations
+
+`D` means the deleted regular capture-file path above; `L` means the same directory structure with a linked managed output file; `N` means `/dev/null`. Basenames below are the actual one-run filenames. The child rows are harness observations taken immediately after the first result, before any next Bash tool.
+
+| Probe | PID | PPID | PGID | SID | State at result | fd1 / fd2 | Capture basename | State after normal CLI exit |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- | --- |
+| `bash-amp-child-primary` | 4096842 | 1 | 4096841 | 4096841 | S | D / D | `bk6r6c9la.output` | gone |
+| `bash-amp-child-exit` | 4097407 | 1 | 4097406 | 4097406 | S | D / D | `bca54bg6u.output` | S |
+| `bash-amp-child-managed` | 4097446 | 1 | 4097445 | 4097445 | S | L / L | `b1q2x20ns.output` | S |
+| `bash-amp-child-double-fork` | 4097484 | 1 | 4097482 | 4097482 | S | D / D | `bxhfbdp7v.output` | S |
+| `bash-amp-child-nohup` | 4097523 | 1 | 4097522 | 4097522 | S | N / N | `—` | S |
+| `bash-amp-child-stdout-null` | 4097567 | 1 | 4097566 | 4097566 | S | N / D | `b922nsb7l.output` | S |
+| `bash-amp-child-setsid` | 4097606 | 1 | 4097606 | 4097606 | S | D / D | `b0hu0uq66.output` | S |
+| `bash-amp-child-marker` | 4097645 | 1 | 4097644 | 4097644 | S | D / D | `baalajyqu.output` | S |
+| `bash-amp-child-timeout` | 4097683 | — | — | — | gone | gone / gone | `—` | gone |
+| `bash-amp-child-timeout` | 4097684 | — | — | — | gone | gone / gone | `—` | gone |
+| `bash-amp-child-term-trap` | 4097758 | 4097757 | 4097756 | 4097756 | S | D / D | `bk2l9xatf.output` | S |
+
+Every CLI in this matrix exited with code 0 and signal null. For the primary, the harness rechecked the same process before/after the 22-second delay; it was absent afterward. No native cleanup action is inferred from the later harness-generated `cleanup_signals`.
+
+<!-- amp-huge-evidence-end -->
+
 ## Reproducibility
+
+### Ampersand and huge-line verification
+
+On 2026-11-10, two complete runs of all **11 new representative cases** used:
+
+```bash
+node capture.mjs --case 'bash-amp-child-*' --case 'read-huge-line-*'
+```
+
+All eleven JSON files were byte-identical after normalization, including the
+large-result whole-string hash/length/head/tail descriptors. No new case was
+excluded. An additional run of all **112 previously accepted cases** returned
+`identical` for every fixture, and `tools.json` remained unchanged. No case temp
+trees or owned live sleep children remained after cleanup. At that point the
+corpus had 123 cases plus the shared tools array.
+
+An early comparison exposed an environmental difference in the primary's
+literal `ps` result: unrelated host `sleep 180` rows changed from two to one.
+The final documented `{{UNRELATED_SLEEP_ROWS}}` substitution isolates only those
+ambient rows, retaining the owned child's state and relationship graph. Two
+fresh complete new-case runs after that normalization change were identical.
+Raw original process evidence remains in the diagnostic reports.
+
+The retained fixtures are:
+
+| Tool directory | New fixture |
+| --- | --- |
+| Bash | `bash-amp-child-primary.json` |
+| Bash | `bash-amp-child-exit.json` |
+| Bash | `bash-amp-child-managed.json` |
+| Bash | `bash-amp-child-timeout.json` |
+| Bash | `bash-amp-child-term-trap.json` |
+| Read | `read-huge-line-300m-limit.json` |
+| Read | `read-huge-line-300m-default.json` |
+| Read | `read-huge-line-two-300m-limit.json` |
+| Read | `read-huge-line-1m-limit.json` |
+| Read | `read-huge-line-boundary-inline.json` |
+| Read | `read-huge-line-boundary-over.json` |
+
+Aggregate SHA-256 of the eleven sorted `relative-path + space + file-hash + LF`
+entries, using the same convention as earlier checks:
+
+```text
+acbcb698f507918d6c118f839a893ebf87782a82de6d9b8f12587a5d211a3e02
+```
 
 ### Sleep, timeout and encoding verification
 
@@ -1637,7 +2114,8 @@ e0c5878b836aee2756733f85cefcd9d1c84738e1242012325ecbe7eb4ceadae0
 
 ### M1 review follow-up verification
 
-Two complete `node capture.mjs` runs on 2026-11-09 captured **95/95 cases** with
+Before the L7 fixture simplification below, two complete `node capture.mjs`
+runs on 2026-11-09 captured **95/95 cases** with
 **134 scripted tool invocations**: **133 received tool_results** (25 expected
 tool-error results) and one intentionally guarded FIFO invocation with no result.
 All **96 JSON files** (95 fixtures plus `tools.json`) were byte-identical after
@@ -1669,17 +2147,28 @@ regeneration. The 15 new fixtures are defined in `native-capture/review-cases.mj
 | Edit | `edit-curly-single-quote-restyle.json` |
 | Edit | `edit-mixed-eol.json` |
 
-The foreground-child case's first result took **17.40 ms / 17.17 ms** in the two
-complete runs; its `ps` step took **65.29 ms / 63.58 ms**. The FIFO guard and
+The foreground-child case's preflight rejection took **17.40 ms / 17.17 ms** in
+those complete runs. The FIFO guard and
 termination took **10019.16 ms / 10023.38 ms**. These variable observations stay
 out of the fixtures. Automatic timeout-to-background task IDs use the existing
 `{{TASK_ID}}` placeholder, not a new placeholder type.
 
-Aggregate digest using the sorted path/hash format below:
+Historical aggregate digest before L7, using the sorted path/hash format below:
 
 ```text
 7f83706087cec1565c885a24f1250f512b0d58ea5a63e3a2a6c53b39fe26f7d6
 ```
+
+L7 removes the post-rejection process-listing step from
+`bash-background-child-foreground`: it observed unrelated host processes and
+added no native child-lifetime evidence, because preflight launches no child.
+Only this fixture was recaptured, twice, with
+`node capture.mjs --case bash-background-child-foreground`. Both runs captured
+one error result and produced byte-identical JSON, SHA-256
+`ee15d8d8efc6d1d75e16968c52d78b6638b642b0dcef25de6fda191aac03c602`.
+The rejection text is unchanged; no other fixture, including any
+`bash-amp-child-*` fixture, was regenerated. Earlier full-run counts and digests
+in this document describe their historical fixture versions before this removal.
 
 ### File metadata verification
 

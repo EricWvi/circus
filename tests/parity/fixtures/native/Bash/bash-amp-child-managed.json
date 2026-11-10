@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-amp-child-managed",
+  "description": "Observe child and CLI exit: sleep 20 & echo x.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "sleep 20 & echo x",
+        "description": "Observe ampersand child lifetime",
+        "timeout": 10000,
+        "run_in_background": true
+      },
+      "result": {
+        "is_error": false,
+        "content": "Command running in background with ID: {{TASK_ID}}. Output is being written to: {{OUTPUT_PATH}}. You will be notified when it completes. To check interim output, use Read on that file path.\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

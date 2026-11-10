@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-huge-line-two-300m-limit",
+  "description": "Read 314572800 generated x bytes after a short first line.",
+  "setup": {
+    "files": {},
+    "dirs": [],
+    "generate": {
+      "path": "huge.txt",
+      "byte": "x",
+      "size": 314572800,
+      "newline": true,
+      "prefix": "0123456789\n"
+    }
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/huge.txt",
+        "limit": 1
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\t0123456789\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "huge.txt": {
+      "format": "sha256-bytes",
+      "length_bytes": 314572812,
+      "sha256": "ec3be6d5c2a382650830ba27dee54a0d49f475796332f3c769ca8370e9d8a380",
+      "head_base64": "MDEyMzQ1Njc4OQp4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=",
+      "tail_base64": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eAo="
+    }
+  }
+}

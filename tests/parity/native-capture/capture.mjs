@@ -8,6 +8,8 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { cases } from './cases.mjs';
 import { startFakeApi } from './fake-api.mjs';
+import { NativeObserver } from './native-observer.mjs';
+import { generateFile, summarize, summarizeFile } from './large-artifacts.mjs';
 
 const root = import.meta.dirname;
 const fixtures = resolve(root, '../fixtures/native');
@@ -47,6 +49,7 @@ export async function capture(definition, { persist = true } = {}) {
   const timings = [];
   let stderr = '';
   const abortController = new AbortController();
+  const observer = definition.observe_native ? new NativeObserver(cwd, definition.observe_native.processes) : null;
   // Children inherit the process umask. Captures run sequentially so setup and
   // the SDK's unmodified CLI spawn both use 022, independent of the caller.
   const previousUmask = process.umask(0o022);
@@ -67,6 +70,7 @@ export async function capture(definition, { persist = true } = {}) {
   }
 
   function normalizeString(text) {
+    if (observer) text = observer.normalize(text);
     // Redact assignments in env output and shell snapshots, including the fake key.
     text = text.replace(/(^|[ \t;])((?:(?:export|declare -x)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=)("[^"\n]*"|'[^'\n]*'|[^\s\n;]+)/gm,
       (match, prefix, assignment, name) => /TOKEN|SECRET|PASSWORD|CREDENTIAL|API_KEY|AUTHORIZATION/i.test(name)
@@ -104,6 +108,12 @@ export async function capture(definition, { persist = true } = {}) {
       await mkdir(resolve(full, '..'), { recursive: true });
       await writeFile(full, typeof content === 'string' ? content : Buffer.from(content.base64, 'base64'));
     }
+    if (definition.setup.generate) {
+      const data = definition.setup.generate;
+      const path = join(cwd, data.path);
+      await mkdir(resolve(path, '..'), { recursive: true });
+      await generateFile(path, data);
+    }
     for (const [path, target] of Object.entries(definition.setup.symlinks ?? {})) {
       const full = join(cwd, path);
       await mkdir(resolve(full, '..'), { recursive: true });
@@ -129,11 +139,12 @@ export async function capture(definition, { persist = true } = {}) {
       await writeFile(full, content);
     }
 
-    fake = await startFakeApi({ marker, model, onError: () => abortController.abort(), onTurn: async body => {
-      tools ??= body.tools;
-      if (pending) {
+    fake = await startFakeApi({ marker, model, onError: () => abortController.abort(), onMessages: async (body, route) => {
+      if (pending && body.messages?.some(m => Array.isArray(m.content) &&
+        m.content.some(b => b.type === 'tool_result' && b.tool_use_id === pending.id))) {
         clearTimeout(guardTimer);
         timings.push({ step: steps.length + 1, tool: pending.tool, elapsed_ms: performance.now() - sentAt });
+        await observer?.snapshot(`result_${steps.length + 1}`);
         const containing = body.messages.filter(m => m.role === 'user' && Array.isArray(m.content) &&
           m.content.some(b => b.type === 'tool_result' && b.tool_use_id === pending.id));
         if (containing.length !== 1) throw new Error(`Expected exactly one user message for ${pending.id}`);
@@ -144,10 +155,13 @@ export async function capture(definition, { persist = true } = {}) {
           ...(pending.before ? { before: pending.before } : {}),
           result: { is_error: result.is_error ?? false, content: result.content },
           attachments: message.content.filter(b => b !== result),
+          ...(!route.main ? { delivery: route.compaction ? 'compaction' : 'auxiliary' } : {}),
         });
         await writeFile(join(root, '.tmp', `${definition.id}-steps.json`), json(normalize(steps)));
         pending = null;
       }
+    }, onTurn: async body => {
+      tools ??= body.tools;
       while (index < definition.steps.length) {
         const step = definition.steps[index++];
         if (step.when === 'task' && !values.TASK_ID) continue;
@@ -162,6 +176,10 @@ export async function capture(definition, { persist = true } = {}) {
           continue;
         }
         const expanded = expand(step);
+        if (expanded.before?.delay_ms) {
+          await new Promise(resolve => setTimeout(resolve, expanded.before.delay_ms));
+          await observer?.snapshot(`after_delay_before_step_${steps.length + 1}`);
+        }
         if (expanded.before?.write) {
           const { path, content } = expanded.before.write;
           // Ensure mtime-based checks observe a distinct external write even on coarse filesystems.
@@ -200,11 +218,12 @@ export async function capture(definition, { persist = true } = {}) {
     sdk = query({ prompt: `${marker}: Execute the supplied tool script and finish.`, options: {
       cwd, env, model, tools: toolNames, settingSources: [], mcpServers: {}, strictMcpConfig: true,
       permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true, abortController,
-      ...(definition.steps.some(step => step.guard_ms) ? { spawnClaudeCodeProcess: options => {
+      ...(observer || definition.steps.some(step => step.guard_ms) ? { spawnClaudeCodeProcess: options => {
         guardedChild = spawn(options.command, options.args, {
           cwd: options.cwd, env: options.env, signal: options.signal, stdio: ['pipe', 'pipe', 'pipe'],
         });
         guardedChild.stderr.on('data', chunk => { stderr += chunk.toString(); });
+        observer?.attach(guardedChild);
         return guardedChild;
       } } : {}),
       stderr: chunk => { stderr += chunk; },
@@ -222,6 +241,13 @@ export async function capture(definition, { persist = true } = {}) {
       }
     } catch (error) { if (!guardExpired) throw error; }
     fake.check();
+    if (definition.observe_native) await writeFile(join(root, '.tmp', `${definition.id}-wire.json`), json(fake.records.map(r => ({
+      main: r.main, model: r.body.model, tools: r.body.tools?.map(t => t.name), messages: r.body.messages?.map(m => ({
+        role: m.role, content: typeof m.content === 'string' ? { length: m.content.length, head: normalizeString(m.content.slice(0, 100)) }
+          : m.content.map(b => ({ type: b.type, length: typeof b.content === 'string' ? b.content.length : b.text?.length,
+            head: normalizeString((typeof b.content === 'string' ? b.content : b.text ?? '').slice(0, 100)) })),
+      })),
+    }))));
     if (guardExpired && pending) {
       timings.push({ step: steps.length + 1, tool: pending.tool, elapsed_ms: performance.now() - sentAt, blocked: true });
       steps.push({ tool: pending.tool, input: pending.input,
@@ -231,16 +257,21 @@ export async function capture(definition, { persist = true } = {}) {
       pending = null;
       notes.push('No tool_result arrived before the per-step harness guard; the isolated CLI session was killed.');
     } else if (final?.subtype !== 'success' || final.result !== 'Native capture complete.' || pending || !steps.length) {
-      throw new Error(`Incomplete capture (${final?.subtype ?? 'no final result'})`);
+      throw new Error(`Incomplete capture (${final?.subtype ?? 'no final result'}, final=${JSON.stringify(final?.result)}, pending=${pending?.tool}, steps=${steps.length})`);
     }
     await writeFile(join(root, '.tmp', `${definition.id}-timings.json`), json(timings));
     if (!version || !tools) throw new Error('Missing CLI version or tool schemas');
+    if (observer) { await sdk.return(); await observer.afterExit(); }
     const filesAfter = {};
     async function walk(dir) {
       for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
         const path = join(dir, entry.name);
         if (entry.isDirectory()) await walk(path);
         else if (entry.isFile()) {
+          if (definition.setup.generate?.path === relative(cwd, path)) {
+            filesAfter[relative(cwd, path)] = await summarizeFile(path);
+            continue;
+          }
           const bytes = await readFile(path);
           const text = bytes.toString('utf8');
           filesAfter[relative(cwd, path)] = !bytes.includes(0) && Buffer.from(text).equals(bytes)
@@ -286,6 +317,11 @@ export async function capture(definition, { persist = true } = {}) {
       ...(definition.shell ? { shell: definition.shell } : {}), steps,
       files_after: filesAfter, ...(fsAfter ? { fs_after: fsAfter } : {}), ...(notes.length ? { notes } : {}),
     });
+    if (definition.summarize_large) for (const step of fixture.steps) {
+      if (typeof step.result?.content === 'string' && Buffer.byteLength(step.result.content) >= 1024 * 1024) {
+        step.result.content = summarize(Buffer.from(step.result.content));
+      }
+    }
     if (!persist) return { fixture, tools: normalize(tools) };
     const category = definition.id.startsWith('taskstop-') ? 'TaskStop' : definition.id.split('-')[0].replace(/^./, s => s.toUpperCase());
     const path = join(fixtures, category, `${definition.id}.json`);
@@ -315,6 +351,8 @@ export async function capture(definition, { persist = true } = {}) {
       await sdk?.return();
     } finally {
       try {
+        await observer?.cleanup();
+        if (observer) await writeFile(join(root, '.tmp', `${definition.id}-observations.json`), json({ ...observer.data, cwd, base, config, temp }));
         await fake?.close();
         await rm(base, { recursive: true, force: true, maxRetries: 5 });
       } finally {
