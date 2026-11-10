@@ -188,6 +188,9 @@ func TestBackgroundAndPromotedLeftovers(t *testing.T) {
 		t.Run(strconv.FormatBool(background), func(t *testing.T) {
 			t.Parallel()
 			b, root, events := reviewBash(t, 0)
+			// Prime the snapshot so the short caller deadline measures execution,
+			// not cold shell-environment collection.
+			reviewRun(t, b, root, "true", false)
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 			command := `echo outer; sleep 20 & echo $! > child.pid; echo x`

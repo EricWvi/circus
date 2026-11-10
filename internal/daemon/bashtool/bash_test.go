@@ -361,6 +361,8 @@ func TestCollectorTimeDoesNotConsumeCommandTimeout(t *testing.T) {
 func TestPromotionDrainsDeadlineOutput(t *testing.T) {
 	t.Parallel()
 	w := newWorker(t)
+	// Prime the snapshot so the deadline measures execution, not shell startup.
+	w.bashCall(t, "true", false, 0)
 	r := w.bashCall(t, `echo 1; sleep 1; echo 2; sleep 3`, false, 1000)
 	if r.Output.IsError || r.GetBash().JobId == "" || !strings.HasPrefix(r.Output.Content[0].GetText(), "1\n2\nCommand did not complete") {
 		t.Fatal(r)

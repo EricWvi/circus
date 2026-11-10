@@ -133,6 +133,9 @@ func TestForegroundInlineOutputCap(t *testing.T) {
 func TestConcurrentRegistrationRejectionCleansOutput(t *testing.T) {
 	t.Parallel()
 	b, root, _ := reviewBash(t, 0)
+	// Prime the snapshot before replacing the job manager and starting the
+	// short-deadline call.
+	reviewRun(t, b, root, "true", false)
 	if err := b.jobs.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
