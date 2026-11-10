@@ -44,6 +44,7 @@ func stopProcess(cmd *exec.Cmd, waited <-chan processOutcome) processOutcome {
 	// A natural exit already observed by Wait wins over a concurrent stop.
 	select {
 	case outcome := <-waited:
+		stopGroup(cmd.Process.Pid)
 		return outcome
 	default:
 	}
@@ -61,6 +62,57 @@ func stopProcess(cmd *exec.Cmd, waited <-chan processOutcome) processOutcome {
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	outcome.terminationRequested = signaled
 	if outcome.code == 143 || outcome.code == 137 {
+		outcome.err = jobs.ErrKilled
+	}
+	return outcome
+}
+
+// groupAlive must only be used after the original shell's Wait has completed.
+// Reap adopted descendants when the daemon is PID 1 or a child subreaper;
+// otherwise zombies keep kill(-pgid, 0) reporting a live group indefinitely.
+func groupAlive(pgid int) bool {
+	for {
+		pid, err := syscall.Wait4(-pgid, nil, syscall.WNOHANG, nil)
+		if err == syscall.EINTR {
+			continue
+		}
+		if err != nil || pid <= 0 {
+			break
+		}
+	}
+	err := syscall.Kill(-pgid, 0)
+	return err == nil || err == syscall.EPERM
+}
+
+// stopGroup also handles groups whose original shell has already been reaped.
+func stopGroup(pgid int) {
+	if !groupAlive(pgid) {
+		return
+	}
+	_ = syscall.Kill(-pgid, syscall.SIGTERM)
+	tick := time.NewTicker(outputPollInterval)
+	defer tick.Stop()
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for groupAlive(pgid) {
+		select {
+		case <-tick.C:
+		case <-timer.C:
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			return
+		}
+	}
+}
+
+// Output caps need immediate KILL: a TERM-ignoring writer can fill the disk
+// during the usual shutdown grace period.
+func killGroup(pgid int) { _ = syscall.Kill(-pgid, syscall.SIGKILL) }
+
+func killProcess(cmd *exec.Cmd, waited <-chan processOutcome) processOutcome {
+	signaled := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) == nil
+	outcome := <-waited
+	outcome.terminationRequested = signaled
+	if signaled {
 		outcome.err = jobs.ErrKilled
 	}
 	return outcome

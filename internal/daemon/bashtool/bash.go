@@ -16,6 +16,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
+	"github.com/EricWvi/circus/internal/daemon/toolcontext"
 	"github.com/EricWvi/circus/internal/textutil"
 	"google.golang.org/protobuf/proto"
 )
@@ -24,16 +25,45 @@ import (
 type Bash struct {
 	jobs        *jobs.Manager
 	environment *environment
+	groups      groupTracker
 }
 
-// NewBash uses one lazy process-wide environment snapshot. Supplying Options
-// creates an isolated snapshot instead, without reading the real user's files.
+// NewBash constructs a lazy Bash tool without collecting or touching startup
+// files. Supplying Options isolates startup and storage for embedded callers.
 func NewBash(manager *jobs.Manager, options ...Options) *Bash {
 	env := processEnvironment
 	if len(options) > 0 {
 		env = &environment{options: options[0]}
 	}
 	return &Bash{jobs: manager, environment: env}
+}
+
+// Warm explicitly starts background environment collection at daemon startup.
+// Construction and DefaultTools never start it. Failed warm-up is shared with
+// its waiting calls; a later independent call can retry.
+func (b *Bash) Warm() {
+	b.groups.mu.Lock()
+	defer b.groups.mu.Unlock()
+	if b.groups.closed {
+		return
+	}
+	e := b.environment
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.warmDone != nil {
+		return
+	}
+	e.warmDone = make(chan struct{})
+	warmCtx, cancel := context.WithCancel(context.Background())
+	e.warmCancel = cancel
+	go func() {
+		defer close(e.warmDone)
+		defer cancel()
+		snapshot, _, err := e.load(warmCtx)
+		if err == nil {
+			e.releaseSnapshot(snapshot)
+		}
+	}()
 }
 
 // Name returns the device call tool name.
@@ -101,19 +131,29 @@ func (b *Bash) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.De
 		duration = deadline.Sub(started)
 	}
 	snapshot, env, err := b.environment.load(ctx)
+	if err == nil && ctx.Err() != nil {
+		b.environment.releaseSnapshot(snapshot)
+		err = ctx.Err()
+	}
 	if err != nil {
 		detail := &circusv1.BashResult{Cwd: startFolder(req), ExitCode: 143}
-		if errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			detail.TimedOut = true
 			return result("Exit code 143\nCommand timed out after "+timeoutText(duration), true, detail), nil
 		}
-		if errors.Is(err, context.Canceled) {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			detail.Interrupted = true
 			return result("Command was interrupted", true, detail), nil
 		}
 		return nil, err
 	}
 	defer b.environment.releaseSnapshot(snapshot)
+	// The dispatcher arms its command budget only after environment collection.
+	toolcontext.StartTimeout(ctx)
+	started = time.Now()
+	if deadline, ok := ctx.Deadline(); ok {
+		duration = deadline.Sub(started)
+	}
 	cwdFile, err := os.CreateTemp(filepath.Dir(snapshot), "cwd-")
 	if err != nil {
 		return nil, err
@@ -124,6 +164,7 @@ func (b *Bash) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.De
 		return b.background(call, req, snapshot, cwdPath, env)
 	}
 	owned := false
+	keepOutput := false
 	defer func() {
 		if !owned {
 			_ = os.Remove(cwdPath)
@@ -136,6 +177,9 @@ func (b *Bash) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.De
 	defer func() {
 		if !owned {
 			_ = out.Close()
+			if !keepOutput {
+				_ = os.Remove(out.Name())
+			}
 			b.environment.releaseOutput(out.Name())
 		}
 	}()
@@ -145,53 +189,99 @@ func (b *Bash) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.De
 		_ = os.Remove(out.Name())
 		return nil, err
 	}
-	// Inferred: only wait for the shell. Children launched with & remain in its
-	// session and may keep writing the file after the foreground call returns.
+	b.environment.outputBudget.start(out)
+	// Native waits only for the shell; surviving group members are managed below.
 	waited := startWait(cmd)
 	var outcome processOutcome
-	select {
-	case outcome = <-waited:
-	case <-ctx.Done():
+	tick := time.NewTicker(outputPollInterval)
+	defer tick.Stop()
+	capMessage := ""
+waitForeground:
+	for {
 		select {
-		case outcome = <-waited:
-		default:
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) && !killOnTimeout(req.Command) {
-				if b.jobs == nil {
-					_ = stopProcess(cmd, waited)
-					return nil, errors.New("background job manager is unavailable")
-				}
-				detail := &circusv1.BashResult{Cwd: req.Cwd}
-				body, formatErr := formatOutput(out, detail, false)
-				if formatErr != nil {
-					_ = stopProcess(cmd, waited)
-					return nil, formatErr
-				}
-				// Inferred: promotion starts a fresh remaining background lifetime,
-				// default 30 minutes, capped at two hours (independent of foreground timeout).
-				stat, statErr := out.Stat()
-				if statErr != nil {
-					_ = stopProcess(cmd, waited)
-					return nil, statErr
-				}
-				info, startErr := b.adopt(call, req, cmd, waited, out, cwdPath, backgroundLifetime(0))
-				if startErr != nil {
-					return nil, startErr
-				}
-				owned = true
-				detail.JobId, detail.OutputPath = info.ID, info.OutputPath
-				message := promotionMessage(duration, info.ID, info.OutputPath, stat.Size() == 0)
-				if strings.HasPrefix(strings.TrimSpace(req.Command), "cd ") {
-					message = appendLine(message, "Session cwd remains "+req.Cwd+"; directory changes made by the backgrounded command do not apply to subsequent commands.")
-				}
-				return result(appendLine(body, message), false, detail), nil
+		case <-tick.C:
+			capMessage = b.outputStopMessage(out)
+			if capMessage == "" {
+				continue
 			}
-			outcome = stopProcess(cmd, waited)
-			outcome.code, outcome.err = 143, ctx.Err()
+			outcome = killProcess(cmd, waited)
+			waitGroupEmpty(cmd.Process.Pid)
+			break waitForeground
+		case outcome = <-waited:
+			break waitForeground
+		case <-ctx.Done():
+			select {
+			case outcome = <-waited:
+			default:
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) && !killOnTimeout(req.Command) {
+					if b.jobs == nil {
+						_ = stopProcess(cmd, waited)
+						return nil, errors.New("background job manager is unavailable")
+					}
+					// Inferred: allow 100 ms for output written at the deadline to drain
+					// before taking the bounded promotion preview.
+					time.Sleep(100 * time.Millisecond)
+					detail := &circusv1.BashResult{Cwd: req.Cwd}
+					body, formatErr := formatOutput(out, detail, false)
+					if formatErr != nil {
+						_ = stopProcess(cmd, waited)
+						return nil, formatErr
+					}
+					// Inferred: promotion starts a fresh remaining background lifetime,
+					// default 30 minutes, capped at two hours (independent of foreground timeout).
+					stat, statErr := out.Stat()
+					if statErr != nil {
+						_ = stopProcess(cmd, waited)
+						return nil, statErr
+					}
+					info, transferred, startErr := b.adopt(call, req, cmd, waited, out, cwdPath, backgroundLifetime(0))
+					owned = transferred
+					if startErr != nil {
+						_ = os.Remove(out.Name())
+						return nil, startErr
+					}
+					owned = true
+					detail.JobId, detail.OutputPath = info.ID, info.OutputPath
+					message := promotionMessage(duration, info.ID, info.OutputPath, stat.Size() == 0)
+					if strings.HasPrefix(strings.TrimSpace(req.Command), "cd ") {
+						message = appendLine(message, "Session cwd remains "+req.Cwd+"; directory changes made by the backgrounded command do not apply to subsequent commands.")
+					}
+					return result(appendLine(body, message), false, detail), nil
+				}
+				outcome = stopProcess(cmd, waited)
+				outcome.code, outcome.err = 143, ctx.Err()
+			}
+			break waitForeground
 		}
 	}
+	groupIsAlive := groupAlive(cmd.Process.Pid)
+	capMessage = outputMessageAfterExit(capMessage, outcome.terminationRequested, groupIsAlive)
+	if capMessage != "" || !groupIsAlive {
+		b.environment.outputBudget.finish(out.Name())
+	}
+	if capMessage == "" {
+		capMessage = outputMessageAfterExit(b.outputStopMessage(out), outcome.terminationRequested, groupIsAlive)
+		if capMessage != "" {
+			killGroup(cmd.Process.Pid)
+			waitGroupEmpty(cmd.Process.Pid)
+			b.environment.outputBudget.finish(out.Name())
+		}
+	}
+	if capMessage != "" {
+		if outcome.code == 0 {
+			outcome.code = 137
+		}
+		if err := appendOutputLimit(out, capMessage); err != nil {
+			return nil, err
+		}
+	}
+	leftovers := capMessage == "" && outcome.err != context.Canceled && outcome.err != context.DeadlineExceeded && groupAlive(cmd.Process.Pid)
 	detail := &circusv1.BashResult{ExitCode: int32(outcome.code), Cwd: startFolder(req)}
-	body, err := formatOutput(out, detail, true)
+	body, err := formatOutput(out, detail, !leftovers)
 	if err != nil {
+		if leftovers {
+			stopGroup(cmd.Process.Pid)
+		}
 		return nil, err
 	}
 	switch {
@@ -219,6 +309,12 @@ func (b *Bash) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.De
 	}
 	if body == "" {
 		body = "(Bash completed with no output)"
+	}
+	keepOutput = detail.OutputTruncated
+	if leftovers {
+		b.trackGroup(cmd.Process.Pid, out, !detail.OutputTruncated)
+		owned = true
+		_ = os.Remove(cwdPath)
 	}
 	return result(body, outcome.code != 0, detail), nil
 }
@@ -316,7 +412,7 @@ type backgroundJob struct {
 func (j *backgroundJob) Wait() (int, error) { <-j.done; return j.code, j.err }
 func (j *backgroundJob) Stop() error        { j.once.Do(j.cancel); <-j.done; return nil }
 
-func (b *Bash) adopt(call *circusv1.DeviceCall, req *circusv1.BashRequest, cmd *exec.Cmd, waited <-chan processOutcome, out *os.File, cwdPath string, lifetime time.Duration) (jobs.Info, error) {
+func (b *Bash) adopt(call *circusv1.DeviceCall, req *circusv1.BashRequest, cmd *exec.Cmd, waited <-chan processOutcome, out *os.File, cwdPath string, lifetime time.Duration) (jobs.Info, bool, error) {
 	// Once the launch callback runs, the background job owns the sole Wait
 	// channel, even if concurrent manager shutdown rejects its registration.
 	transferred := false
@@ -324,10 +420,15 @@ func (b *Bash) adopt(call *circusv1.DeviceCall, req *circusv1.BashRequest, cmd *
 		transferred = true
 		return b.newBackground(cmd, waited, out, cwdPath, lifetime), out.Name(), nil
 	})
-	if err != nil && !transferred {
-		_ = stopProcess(cmd, waited)
+	if err != nil {
+		if !transferred {
+			_ = stopProcess(cmd, waited)
+		}
+		// A rejected launch may already have observed natural shell exit and
+		// transferred children internally. Failure still owns group cleanup.
+		stopGroup(cmd.Process.Pid)
 	}
-	return info, err
+	return info, transferred, err
 }
 
 func (b *Bash) background(call *circusv1.DeviceCall, req *circusv1.BashRequest, snapshot, cwdPath string, env []string) (*circusv1.DeviceResult, error) {
@@ -335,11 +436,14 @@ func (b *Bash) background(call *circusv1.DeviceCall, req *circusv1.BashRequest, 
 		_ = os.Remove(cwdPath)
 		return nil, errors.New("background job manager is unavailable")
 	}
+	outputPath := ""
+	pgid := 0
 	info, err := b.jobs.Start(call.SessionId, req.Command, func(id string) (jobs.Job, string, error) {
 		out, err := b.outputFile(call.SessionId, "tasks", id+"-*.output")
 		if err != nil {
 			return nil, "", err
 		}
+		outputPath = out.Name()
 		cmd := command(req, snapshot, cwdPath, env)
 		cmd.Stdout, cmd.Stderr = out, out
 		if err := cmd.Start(); err != nil {
@@ -348,11 +452,19 @@ func (b *Bash) background(call *circusv1.DeviceCall, req *circusv1.BashRequest, 
 			b.environment.releaseOutput(out.Name())
 			return nil, "", err
 		}
+		b.environment.outputBudget.start(out)
+		pgid = cmd.Process.Pid
 		lifetime := backgroundLifetime(time.Duration(call.TimeoutMs) * time.Millisecond)
 		return b.newBackground(cmd, startWait(cmd), out, cwdPath, lifetime), out.Name(), nil
 	})
 	if err != nil {
 		_ = os.Remove(cwdPath)
+		if pgid > 0 {
+			stopGroup(pgid)
+		}
+		if outputPath != "" {
+			_ = os.Remove(outputPath)
+		}
 		return nil, err
 	}
 	body := fmt.Sprintf("Command running in background with ID: %s. Output is being written to: %s. You will be notified when it completes. To check interim output, use Read on that file path.", info.ID, info.OutputPath)
@@ -372,23 +484,59 @@ func (b *Bash) newBackground(cmd *exec.Cmd, waited <-chan processOutcome, out *o
 	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	job := &backgroundJob{done: make(chan struct{}), cancel: cancel}
 	go func() {
+		outputTransferred := false
 		defer close(job.done)
 		defer cancel()
 		defer func() {
 			_ = os.Remove(cwdPath)
-			b.environment.releaseOutput(out.Name())
+			if !outputTransferred {
+				b.environment.releaseOutput(out.Name())
+			}
 			b.environment.releaseSnapshot(filepath.Join(filepath.Dir(cwdPath), "snapshot.sh"))
 		}()
 		var outcome processOutcome
-		select {
-		case outcome = <-waited:
-		case <-ctx.Done():
-			outcome = stopProcess(cmd, waited)
-			// Lifetime expiry is a kill even when a TERM trap exits with another code.
-			// A natural exit already observed before termination keeps its real state.
+		tick := time.NewTicker(outputPollInterval)
+		defer tick.Stop()
+		capMessage := ""
+	waitBackground:
+		for {
+			select {
+			case outcome = <-waited:
+				break waitBackground
+			case <-tick.C:
+				capMessage = b.outputStopMessage(out)
+				if capMessage == "" {
+					continue
+				}
+			case <-ctx.Done():
+			}
+			if capMessage != "" {
+				outcome = killProcess(cmd, waited)
+				waitGroupEmpty(cmd.Process.Pid)
+			} else {
+				outcome = stopProcess(cmd, waited)
+			}
+			// Lifetime expiry remains a kill even when a TERM trap exits cleanly.
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) && outcome.terminationRequested {
 				outcome.err = errors.Join(outcome.err, jobs.ErrKilled)
 			}
+			break
+		}
+		groupIsAlive := groupAlive(cmd.Process.Pid)
+		capMessage = outputMessageAfterExit(capMessage, outcome.terminationRequested, groupIsAlive)
+		if capMessage != "" || !groupIsAlive {
+			b.environment.outputBudget.finish(out.Name())
+		}
+		if capMessage == "" {
+			capMessage = outputMessageAfterExit(b.outputStopMessage(out), outcome.terminationRequested, groupIsAlive)
+			if capMessage != "" {
+				killGroup(cmd.Process.Pid)
+				waitGroupEmpty(cmd.Process.Pid)
+				b.environment.outputBudget.finish(out.Name())
+			}
+		}
+		if capMessage != "" {
+			outcome.err = errors.Join(outcome.err, jobs.ErrKilled)
 		}
 		job.code, job.err = outcome.code, outcome.err
 		// Normal shell exit errors are represented by the exit code, not Wait errors.
@@ -397,7 +545,29 @@ func (b *Bash) newBackground(cmd *exec.Cmd, waited <-chan processOutcome, out *o
 			job.err = nil
 		}
 		_, writeErr := fmt.Fprintf(out, "\n[exited with code %d]\n", job.code)
-		job.err = errors.Join(job.err, writeErr, out.Close())
+		job.err = errors.Join(job.err, writeErr)
+		if capMessage != "" {
+			job.err = errors.Join(job.err, appendOutputLimit(out, capMessage))
+		} else if !outcome.terminationRequested && groupAlive(cmd.Process.Pid) {
+			// Use an independent descriptor: the outer job can close its own now.
+			childOut, err := os.OpenFile(out.Name(), os.O_RDWR|os.O_APPEND, 0600)
+			if err == nil {
+				err = syscall.Flock(int(childOut.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+				if err != nil {
+					_ = childOut.Close()
+					stopGroup(cmd.Process.Pid)
+				}
+			}
+			if err == nil {
+				b.environment.outputBudget.start(childOut)
+				b.trackGroup(cmd.Process.Pid, childOut, false)
+				outputTransferred = true
+			} else {
+				stopGroup(cmd.Process.Pid)
+			}
+			job.err = errors.Join(job.err, err)
+		}
+		job.err = errors.Join(job.err, out.Close())
 	}()
 	return job
 }
@@ -410,4 +580,11 @@ func backgroundLifetime(requested time.Duration) time.Duration {
 		return 2 * time.Hour
 	}
 	return requested
+}
+
+// PreparationBudget bounds both collector attempts and their termination grace.
+func (b *Bash) PreparationBudget() time.Duration {
+	// Inferred: allow two bounded attempts, their two-second cleanup grace each,
+	// and one second for snapshot file I/O. Default total: 25 seconds.
+	return 2*b.environment.collectorTimeout() + 5*time.Second
 }

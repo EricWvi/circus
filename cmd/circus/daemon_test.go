@@ -141,6 +141,14 @@ func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
 			t.Error(err)
 		}
 	})
+	isolated, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", isolated)
+	t.Setenv("XDG_STATE_HOME", filepath.Join(isolated, "state"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(isolated, "cache"))
+	t.Setenv("TMPDIR", isolated)
 	path, err := filepath.Abs(filepath.Join(dir, "read.txt"))
 	if err != nil {
 		t.Fatal(err)

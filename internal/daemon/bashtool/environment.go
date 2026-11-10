@@ -22,20 +22,49 @@ type Options struct {
 	Home     string
 	StateDir string
 	Shell    string
-	TempDir  string
+	// TempDir overrides output storage for tests, retaining circus-<uid> below it.
+	TempDir string
+	// OutputLimitBytes overrides the inferred 1 GiB output limit when positive.
+	OutputLimitBytes int64
+	// TotalOutputLimitBytes overrides the inferred 4 GiB running-output budget.
+	TotalOutputLimitBytes int64
+	// CollectorTimeout bounds each collector attempt; default ten seconds.
+	CollectorTimeout time.Duration
+	// Collector overrides execution of the bounded snapshot collector.
+	// It must respect ctx and wait for cmd before returning.
+	Collector func(ctx context.Context, cmd *exec.Cmd) error
 }
 
 type environment struct {
-	mu          sync.Mutex
-	options     Options
-	snapshot    string
-	env         []string
-	loading     chan struct{}
-	startup     [4]startupStamp
-	initialized bool
-	lastSweep   time.Time
-	active      map[string]bool
-	leases      map[string]int
+	mu           sync.Mutex
+	options      Options
+	snapshot     string
+	env          []string
+	loading      *collection
+	startup      [4]startupStamp
+	instanceDir  string
+	instanceLock *os.File
+	warmDone     chan struct{}
+	warmCancel   context.CancelFunc
+	lastSweep    time.Time
+	active       map[string]bool
+	outputBudget outputBudget
+	leases       map[string]int
+}
+
+// collection publishes one immutable outcome to all callers waiting on it.
+// The close of done makes err and stamps safe to read without the state lock.
+type collection struct {
+	done   chan struct{}
+	stamps [4]startupStamp
+	err    error
+}
+
+func (e *environment) collectorTimeout() time.Duration {
+	if e.options.CollectorTimeout > 0 {
+		return e.options.CollectorTimeout
+	}
+	return 10 * time.Second
 }
 
 var processEnvironment = &environment{}
@@ -111,6 +140,9 @@ func privateDir(path string) error {
 // Concurrent callers share collection, but retain their own cancellation budget.
 func (e *environment) load(ctx context.Context) (string, []string, error) {
 	for {
+		if err := ctx.Err(); err != nil {
+			return "", nil, err
+		}
 		e.mu.Lock()
 		stamps, stampErr := e.startupFiles()
 		if stampErr != nil {
@@ -133,14 +165,26 @@ func (e *environment) load(ctx context.Context) (string, []string, error) {
 			select {
 			case <-ctx.Done():
 				return "", nil, ctx.Err()
-			case <-pending:
+			case <-pending.done:
+				if pending.err != nil && pending.stamps == stamps {
+					return "", nil, pending.err
+				}
 				continue
 			}
 		}
-		e.loading = make(chan struct{})
+		pending := &collection{done: make(chan struct{}), stamps: stamps}
+		e.loading = pending
+		refreshing := e.snapshot != ""
 		e.mu.Unlock()
-		path, env, err := e.collect(ctx)
+		path, env, err := e.collect(ctx, refreshing)
 		e.mu.Lock()
+		if err != nil && e.snapshot != "" && ctx.Err() == nil {
+			if _, statErr := os.Stat(e.snapshot); statErr == nil {
+				slog.Warn("bash snapshot refresh failed; retaining previous snapshot", "error", err)
+				// Remember this failed stamp set; retry only after another startup change.
+				path, env, err = e.snapshot, e.env, nil
+			}
+		}
 		if err == nil {
 			previous := e.snapshot
 			e.snapshot, e.env, e.startup = path, env, stamps
@@ -152,14 +196,19 @@ func (e *environment) load(ctx context.Context) (string, []string, error) {
 				_ = os.RemoveAll(filepath.Dir(previous))
 			}
 		}
-		close(e.loading)
+		// A caller's cancellation is not a failure of these startup stamps.
+		// Waiters retain their own cancellation budget and can collect again.
+		if ctx.Err() == nil {
+			pending.err = err
+		}
+		close(pending.done)
 		e.loading = nil
 		e.mu.Unlock()
 		return path, env, err
 	}
 }
 
-func (e *environment) collect(ctx context.Context) (string, []string, error) {
+func (e *environment) collect(ctx context.Context, refreshing bool) (string, []string, error) {
 	home := e.options.Home
 	if home == "" {
 		var err error
@@ -171,7 +220,7 @@ func (e *environment) collect(ctx context.Context) (string, []string, error) {
 	state := e.options.StateDir
 	if state == "" {
 		state = os.Getenv("XDG_STATE_HOME")
-		if state == "" {
+		if !filepath.IsAbs(state) {
 			state = filepath.Join(home, ".local", "state")
 		}
 		state = filepath.Join(state, "circus", "daemon")
@@ -184,21 +233,10 @@ func (e *environment) collect(ctx context.Context) (string, []string, error) {
 	if err := privateDir(state); err != nil {
 		return "", nil, err
 	}
-	// Inferred: stale snapshots belong to previous daemon instances. The state
-	// directory is exclusive to this daemon; remove them once before collection.
-	if !e.initialized {
-		entries, err := os.ReadDir(state)
-		if err != nil {
+	if e.instanceDir == "" {
+		if err := e.openInstance(state); err != nil {
 			return "", nil, err
 		}
-		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), "snapshot-") {
-				if err := os.RemoveAll(filepath.Join(state, entry.Name())); err != nil {
-					return "", nil, err
-				}
-			}
-		}
-		e.initialized = true
 	}
 	shell := e.options.Shell
 	if shell == "" {
@@ -229,7 +267,7 @@ func (e *environment) collect(ctx context.Context) (string, []string, error) {
 	if lang, ok := os.LookupEnv("LANG"); ok {
 		clean = append(clean, "LANG="+lang)
 	}
-	dir, err := os.MkdirTemp(state, "snapshot-")
+	dir, err := os.MkdirTemp(e.instanceDir, "snapshot-")
 	if err != nil {
 		return "", nil, err
 	}
@@ -275,11 +313,13 @@ printf '%s\n' 'shopt -s expand_aliases'
 		_ = os.Remove(snapshot)
 		_ = os.Remove(exports)
 		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
-		if err = cmd.Start(); err == nil {
-			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			_, err = waitProcess(ctx, cmd)
-			cancel()
+		collectCtx, cancel := context.WithTimeout(ctx, e.collectorTimeout())
+		if e.options.Collector != nil {
+			err = e.options.Collector(collectCtx, cmd)
+		} else if err = cmd.Start(); err == nil {
+			_, err = waitProcess(collectCtx, cmd)
 		}
+		cancel()
 		if err == nil {
 			_, err = os.Stat(snapshot)
 			if err == nil {
@@ -293,7 +333,13 @@ printf '%s\n' 'shopt -s expand_aliases'
 			return "", nil, ctx.Err()
 		}
 		if attempt == 0 {
-			slog.Warn("interactive shell snapshot failed; retrying noninteractive login shell", "error", err)
+			// load warns once if a refresh fails; retry details must not add a
+			// second warning for that same startup stamp set.
+			logRetry := slog.Warn
+			if refreshing {
+				logRetry = slog.Debug
+			}
+			logRetry("interactive shell snapshot failed; retrying noninteractive login shell", "error", err)
 		}
 	}
 	if err != nil {
@@ -343,4 +389,62 @@ func (e *environment) releaseSnapshot(snapshot string) {
 			_ = os.RemoveAll(dir)
 		}
 	}
+}
+
+// openInstance serializes creation and cleanup so another startup cannot remove
+// the new directory between mkdir and locking its lifetime lease.
+func (e *environment) openInstance(state string) error {
+	guard, err := os.OpenFile(filepath.Join(state, ".instances.lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+	if err != nil {
+		return err
+	}
+	defer guard.Close()
+	if err := syscall.Flock(int(guard.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(guard.Fd()), syscall.LOCK_UN)
+	entries, err := os.ReadDir(state)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dir := filepath.Join(state, entry.Name())
+		if strings.HasPrefix(entry.Name(), "snapshot-") {
+			// Legacy versions stored snapshots directly under the state root.
+			_ = os.RemoveAll(dir)
+			continue
+		}
+		if !strings.HasPrefix(entry.Name(), "instance-") {
+			continue
+		}
+		lock, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+		if err != nil {
+			continue
+		}
+		if syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
+			_ = os.RemoveAll(dir)
+		}
+		_ = lock.Close()
+	}
+	dir, err := os.MkdirTemp(state, "instance-")
+	if err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+	if err == nil {
+		err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	}
+	if err != nil {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		_ = os.RemoveAll(dir)
+		return err
+	}
+	// Held until daemon exit, when the OS releases the lock. No PID heuristics.
+	e.instanceDir, e.instanceLock = dir, lock
+	return nil
 }

@@ -33,7 +33,13 @@ func daemonCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 	}
 	jobs := jobs.NewManager(jobs.Options{})
 	defer func() { _ = jobs.Shutdown(context.Background()) }()
-	return daemonCall(in, out, daemon.DefaultTools(jobs), *wait)
+	tools := daemon.DefaultTools(jobs)
+	for _, tool := range tools {
+		if warmer, ok := tool.(interface{ Warm() }); ok {
+			warmer.Warm()
+		}
+	}
+	return daemonCall(in, out, tools, *wait)
 }
 
 // completionQueue serializes result notifications without blocking a tool on stdout.

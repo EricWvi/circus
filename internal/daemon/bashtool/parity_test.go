@@ -37,7 +37,8 @@ type fixture struct {
 			Path       string `json:"file_path"`
 		} `json:"input"`
 		Before *struct {
-			Remove *struct {
+			DelayMS int `json:"delay_ms"`
+			Remove  *struct {
 				Path string `json:"path"`
 			} `json:"remove"`
 			Write *struct {
@@ -116,6 +117,11 @@ type worker struct {
 
 func newWorker(t *testing.T) *worker {
 	t.Helper()
+	return newWorkerWithOptions(t, nil)
+}
+
+func newWorkerWithOptions(t *testing.T, configure func(*bashtool.Options)) *worker {
+	t.Helper()
 	root := tempDir(t)
 	w := &worker{root: root, cwd: filepath.Join(root, "project"), events: make(chan *circusv1.JobEvent, 32)}
 	w.start = w.cwd
@@ -124,6 +130,9 @@ func newWorker(t *testing.T) *worker {
 		if err := os.MkdirAll(p, 0700); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if configure != nil {
+		configure(&w.options)
 	}
 	w.jobs = jobs.NewManager(jobs.Options{OnEvent: func(e *circusv1.JobEvent) { w.events <- e }})
 	manager := w.jobs
@@ -188,7 +197,7 @@ func (w *worker) call(t *testing.T, call *circusv1.DeviceCall) *circusv1.DeviceR
 			w.outputPath = b.OutputPath
 		}
 	}
-	paths, err := filepath.Glob(filepath.Join(w.options.StateDir, "snapshot-*", "snapshot.sh"))
+	paths, err := filepath.Glob(filepath.Join(w.options.StateDir, "instance-*", "snapshot-*", "snapshot.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +319,11 @@ func TestNativeParity(t *testing.T) {
 				if err = json.Unmarshal(raw, &f); err != nil {
 					t.Fatal(err)
 				}
-				w := newWorker(t)
+				w := newWorkerWithOptions(t, func(o *bashtool.Options) {
+					for name, data := range f.Setup.HomeFiles {
+						putFile(t, filepath.Join(o.Home, name), data)
+					}
+				})
 				if len(f.Setup.HomeFiles) == 0 {
 					w.options = shared.options
 					w.bash = bashtool.ShareEnvironmentForTest(w.jobs, shared.bash)
@@ -329,10 +342,14 @@ func TestNativeParity(t *testing.T) {
 				for name, data := range f.Setup.Files {
 					putFile(t, filepath.Join(w.start, name), data)
 				}
-				for name, data := range f.Setup.HomeFiles {
-					putFile(t, filepath.Join(w.options.Home, name), data)
-				}
+				var probeSleeps map[string]string
 				for i, step := range f.Steps {
+					if f.Case == "bash-amp-child-primary" && step.Before != nil && step.Before.DelayMS == 22000 {
+						t.Run("natural-completion-wait", func(t *testing.T) {
+							t.Skip("native waits 22 seconds for sleep 20; natural group completion is covered by a short unit test")
+						})
+						continue
+					}
 					steps.Add(1)
 					if step.Before != nil {
 						if step.Before.Write != nil {
@@ -366,7 +383,16 @@ func TestNativeParity(t *testing.T) {
 					if r.Output.IsError != step.Result.IsError {
 						t.Errorf("step %d is_error: got %v, want %v", i, r.Output.IsError, step.Result.IsError)
 					}
+					if i == 0 && strings.HasPrefix(f.Case, "bash-amp-child-") && f.Case != "bash-amp-child-timeout" {
+						probeSleeps = waitOwnedSleeps(t, w.start)
+					}
+					if f.Case == "bash-amp-child-timeout" && len(ownedSleeps(w.start)) != 0 {
+						t.Fatal("timeout left probe children alive")
+					}
 					got := w.normalize(r.Output.Content[0].GetText())
+					if f.Case == "bash-amp-child-primary" && i == 1 {
+						got = normalizeSleepTable(t, got, probeSleeps)
+					}
 					if exception, ok := fixtureExceptions[fmt.Sprintf("%s/%d", f.Case, i)]; ok {
 						// The host's system profile can make a snapshot exceed the inline
 						// limit; inspect its full persisted bytes for this semantic check.

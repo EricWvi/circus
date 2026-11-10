@@ -11,6 +11,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/daemon/toolcontext"
 	"github.com/EricWvi/circus/internal/textutil"
 	"google.golang.org/protobuf/proto"
 )
@@ -32,6 +33,8 @@ type Options struct {
 	ResultTTL      time.Duration
 	TombstoneTTL   time.Duration
 	Clock          Clock
+	// ToolShutdownTimeout bounds each tool's shutdown hook; default ten seconds.
+	ToolShutdownTimeout time.Duration
 	// OnResult runs asynchronously in completion order, after result storage.
 	// It must return promptly; Shutdown waits for queued callbacks.
 	OnResult func(*circusv1.DeviceResult)
@@ -74,6 +77,10 @@ func NewDispatcher(opts Options) (*Dispatcher, error) {
 	}
 	if opts.TombstoneTTL <= 0 {
 		opts.TombstoneTTL = 24 * time.Hour
+	}
+	if opts.ToolShutdownTimeout <= 0 {
+		// Inferred: bound tool cleanup independently of a caller's wait context.
+		opts.ToolShutdownTimeout = 10 * time.Second
 	}
 	if opts.Clock == nil {
 		opts.Clock = realClock{}
@@ -209,11 +216,24 @@ func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, er
 	if timeout > d.opts.MaxTimeout {
 		timeout = d.opts.MaxTimeout
 	}
-	ctx := &deadlineContext{deadline: d.opts.Clock.Now().Add(timeout), done: make(chan struct{})}
+	ctx := &deadlineContext{deadline: d.opts.Clock.Now().Add(timeout), done: make(chan struct{}), timeout: timeout, clock: d.opts.Clock}
+	preparation := time.Duration(0)
+	if tool, ok := d.tools[string(field.Name())].(PreparingTool); ok {
+		preparation = tool.PreparationBudget()
+	}
+	if preparation > 0 {
+		ctx.deadline = time.Time{}
+		ctx.start = make(chan struct{})
+	}
 	r := &callRecord{cancel: ctx.cancel, done: make(chan struct{}), hash: hash}
 	d.calls[call.CallId] = r
-	deadline := d.opts.Clock.After(timeout)
-	fallback := d.opts.Clock.After(timeout + 5*time.Second)
+	var deadline, fallback <-chan time.Time
+	if preparation > 0 {
+		fallback = d.opts.Clock.After(preparation)
+	} else {
+		deadline = d.opts.Clock.After(timeout)
+		fallback = d.opts.Clock.After(timeout + 5*time.Second)
+	}
 	d.wg.Add(1)
 	go d.execute(ctx, call, r, string(field.Name()), deadline, fallback)
 	return d.status(call.CallId, r, now), nil
@@ -222,15 +242,33 @@ func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, er
 // deadlineContext uses Clock for cancellation instead of wall-clock timers.
 // It implements Context directly so derived contexts inherit DeadlineExceeded.
 type deadlineContext struct {
-	deadline time.Time
-	done     chan struct{}
-	mu       sync.Mutex
-	err      error
+	deadline  time.Time
+	done      chan struct{}
+	mu        sync.Mutex
+	err       error
+	start     chan struct{}
+	startOnce sync.Once
+	timeout   time.Duration
+	clock     Clock
 }
 
-func (c *deadlineContext) Deadline() (time.Time, bool) { return c.deadline, true }
-func (c *deadlineContext) Done() <-chan struct{}       { return c.done }
-func (c *deadlineContext) Value(any) any               { return nil }
+// startTimeout is delivered through a context value so wrappers retain it.
+func (c *deadlineContext) startTimeout() {
+	c.startOnce.Do(func() {
+		c.mu.Lock()
+		c.deadline = c.clock.Now().Add(c.timeout)
+		c.mu.Unlock()
+		close(c.start)
+	})
+}
+
+func (c *deadlineContext) Deadline() (time.Time, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.deadline, !c.deadline.IsZero()
+}
+func (c *deadlineContext) Done() <-chan struct{} { return c.done }
+func (c *deadlineContext) Value(any) any         { return nil }
 func (c *deadlineContext) Err() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -271,9 +309,20 @@ func (d *Dispatcher) execute(ctx *deadlineContext, call *circusv1.DeviceCall, r 
 	tool := d.tools[name]
 	id := call.CallId
 	returned := make(chan *circusv1.DeviceResult, 1)
-	go func() { returned <- runTool(ctx, tool, call) }()
+	toolCtx := context.Context(ctx)
+	if ctx.start != nil {
+		toolCtx = toolcontext.WithTimeoutStarter(ctx, ctx.startTimeout)
+	}
+	go func() { returned <- runTool(toolCtx, tool, call) }()
+	start := ctx.start
 	for {
 		select {
+		case <-start:
+			start = nil
+			end, _ := ctx.Deadline()
+			remaining := end.Sub(d.opts.Clock.Now())
+			deadline = d.opts.Clock.After(remaining)
+			fallback = d.opts.Clock.After(remaining + 5*time.Second)
 		case result := <-returned:
 			d.complete(id, r, result)
 			return
@@ -283,7 +332,12 @@ func (d *Dispatcher) execute(ctx *deadlineContext, call *circusv1.DeviceCall, r 
 		case <-fallback:
 			// Also cancel when a fake clock advances past both timers at once.
 			r.cancel(context.DeadlineExceeded)
-			d.complete(id, r, errorResult("tool did not stop after its timeout"))
+			message := "tool did not stop after its timeout"
+			if end, ok := ctx.Deadline(); !ok || end.IsZero() {
+				// Inferred: distinguish preparation exhaustion from a command timeout.
+				message = "tool preparation exceeded its budget"
+			}
+			d.complete(id, r, errorResult(message))
 			return
 		}
 	}
@@ -386,6 +440,17 @@ func (d *Dispatcher) Shutdown(ctx context.Context) error {
 		}
 		go func() {
 			d.wg.Wait()
+			// Tools with internal processes finish their own shutdown after calls
+			// settle. Late job-to-group transfers are stopped by the closed tracker.
+			for _, tool := range d.tools {
+				if closer, ok := tool.(interface{ Shutdown(context.Context) error }); ok {
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), d.opts.ToolShutdownTimeout)
+					if err := closer.Shutdown(cleanupCtx); err != nil {
+						slog.Warn("tool shutdown failed", "tool", tool.Name(), "error", err)
+					}
+					cancel()
+				}
+			}
 			d.mu.Lock()
 			d.callbackClosed = true
 			select {

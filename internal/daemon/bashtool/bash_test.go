@@ -14,6 +14,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/daemon/bashtool"
 )
 
 func TestEvalQuoting(t *testing.T) {
@@ -60,13 +61,14 @@ func TestSnapshotRefreshesWhenStartupChanges(t *testing.T) {
 
 func TestInteractiveCollectorFallback(t *testing.T) {
 	t.Parallel()
-	w := newWorker(t)
-	writeFile(t, filepath.Join(w.options.Home, ".bash_profile"), []byte(`case $- in
+	w := newWorkerWithOptions(t, func(o *bashtool.Options) {
+		writeFile(t, filepath.Join(o.Home, ".bash_profile"), []byte(`case $- in
  *i*) printf '%s\n' interactive >> "$HOME/attempts"; exit 7;;
  *) printf '%s\n' fallback >> "$HOME/attempts";;
 esac
 `))
-	writeFile(t, filepath.Join(w.options.Home, ".bashrc"), []byte("export FALLBACK_MARK=ok\n"))
+		writeFile(t, filepath.Join(o.Home, ".bashrc"), []byte("export FALLBACK_MARK=ok\n"))
+	})
 	r := w.bashCall(t, `echo "$FALLBACK_MARK"`, false, 0)
 	if r.Output.IsError || r.Output.Content[0].GetText() != "ok" {
 		t.Fatal(r)
@@ -332,5 +334,109 @@ func TestBackgroundLifetimeTrapStillKilled(t *testing.T) {
 				t.Fatalf("lifetime exit trap: %v", e)
 			}
 		})
+	}
+}
+
+func TestCollectorTimeDoesNotConsumeCommandTimeout(t *testing.T) {
+	t.Parallel()
+	started := make(chan struct{}, 1)
+	w := newWorkerWithOptions(t, func(o *bashtool.Options) {
+		o.Collector = func(ctx context.Context, cmd *exec.Cmd) error {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			timer := time.NewTimer(1200 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+			}
+			if err := cmd.Start(); err != nil {
+				return err
+			}
+			return cmd.Wait()
+		}
+	})
+	// Daemon startup explicitly warms collection, before any Bash call.
+	w.bash.Warm()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("snapshot warm-up did not start")
+	}
+	r := w.bashCall(t, `sleep 0.8; echo done`, false, 1000)
+	if r.Output.IsError || r.GetBash().TimedOut || r.Output.Content[0].GetText() != "done" {
+		t.Fatal(r)
+	}
+	// A later refresh gets the same separation from the execution budget.
+	writeFile(t, filepath.Join(w.options.Home, ".bashrc"), []byte("export REFRESH=1\n"))
+	r = w.bashCall(t, `sleep 0.8; echo done`, false, 1000)
+	if r.Output.IsError || r.Output.Content[0].GetText() != "done" {
+		t.Fatal(r)
+	}
+}
+
+func TestPromotionDrainsDeadlineOutput(t *testing.T) {
+	t.Parallel()
+	w := newWorker(t)
+	r := w.bashCall(t, `echo 1; sleep 1; echo 2; sleep 3`, false, 1000)
+	if r.Output.IsError || r.GetBash().JobId == "" || !strings.HasPrefix(r.Output.Content[0].GetText(), "1\n2\nCommand did not complete") {
+		t.Fatal(r)
+	}
+}
+
+func TestDispatcherShutdownStopsInternalGroups(t *testing.T) {
+	t.Parallel()
+	w := newWorker(t)
+	r := w.bashCall(t, `sleep 20 & echo $! > child.pid; echo x`, false, 0)
+	if r.Output.Content[0].GetText() != "x" || r.GetBash().JobId != "" {
+		t.Fatal(r)
+	}
+	data, err := os.ReadFile(filepath.Join(w.start, "child.pid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	if err := w.d.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
+		t.Fatal("dispatcher shutdown left an internal group", err)
+	}
+}
+
+func TestHangingStartupSharesWarmFailure(t *testing.T) {
+	t.Parallel()
+	w := newWorkerWithOptions(t, func(o *bashtool.Options) {
+		o.CollectorTimeout = 150 * time.Millisecond
+		writeFile(t, filepath.Join(o.Home, ".bashrc"), []byte(`printf x >> "$HOME/attempts"; sleep 5`))
+	})
+	w.bash.Warm()
+	waitFile(t, filepath.Join(w.options.Home, "attempts"))
+	started := time.Now()
+	r := w.bashCall(t, "echo must-not-run", false, 1000)
+	body := r.Output.Content[0].GetText()
+	if !r.Output.IsError || !strings.Contains(body, "collect bash environment: context deadline exceeded") || strings.Contains(body, "tool did not stop") {
+		t.Fatal(r)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("waiter started a second collection")
+	}
+	data, err := os.ReadFile(filepath.Join(w.options.Home, "attempts"))
+	if err != nil || string(data) != "xx" {
+		t.Fatalf("collection attempts=%q err=%v", data, err)
+	}
+	// An independent cold call can retry, rather than caching a failure forever.
+	r = w.bashCall(t, "echo must-not-run", false, 1000)
+	data, err = os.ReadFile(filepath.Join(w.options.Home, "attempts"))
+	if !r.Output.IsError || err != nil || string(data) != "xxxx" {
+		t.Fatalf("retry=%v attempts=%q err=%v", r, data, err)
 	}
 }

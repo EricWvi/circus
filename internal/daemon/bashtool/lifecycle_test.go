@@ -97,14 +97,75 @@ func TestPrivateDirectories(t *testing.T) {
 
 func TestOutputRootDefaults(t *testing.T) {
 	root := unitTempDir(t)
-	t.Setenv("XDG_RUNTIME_DIR", root)
+	home := filepath.Join(root, "home")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(root, "runtime"))
 	e := &environment{}
-	if got := e.outputRoot(); got != filepath.Join(root, "circus") {
-		t.Fatal(got)
+	for _, cache := range []string{"", "relative-cache", filepath.Join(root, "xdg-cache")} {
+		t.Setenv("XDG_CACHE_HOME", cache)
+		want := filepath.Join(home, ".cache", "circus", "output")
+		if filepath.IsAbs(cache) {
+			want = filepath.Join(cache, "circus", "output")
+		}
+		if got := e.outputRoot(); got != want {
+			t.Fatalf("XDG_CACHE_HOME=%q: got %s, want %s", cache, got, want)
+		}
 	}
-	t.Setenv("XDG_RUNTIME_DIR", "")
-	if got := e.outputRoot(); got != filepath.Join(os.TempDir(), fmtUID()) {
-		t.Fatal(got)
+	e.options.TempDir = root
+	if got := e.outputRoot(); got != filepath.Join(root, fmtUID()) {
+		t.Fatal("test override ignored", got)
+	}
+}
+
+func TestCacheOutputDirectoriesArePrivate(t *testing.T) {
+	root := unitTempDir(t)
+	cache := filepath.Join(root, "cache")
+	t.Setenv("XDG_CACHE_HOME", cache)
+	e := &environment{options: Options{Home: root}}
+	b := &Bash{environment: e}
+	if err := os.MkdirAll(cache, 0700); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(root, "real")
+	if err := os.Mkdir(real, 0700); err != nil {
+		t.Fatal(err)
+	}
+	owned := filepath.Join(cache, "circus")
+	if err := os.Symlink(real, owned); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.outputFile("session", "tasks", "out-*"); err == nil {
+		t.Fatal("accepted a symlink at the owned cache parent")
+	}
+	if err := os.Remove(owned); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(owned, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, e.outputRoot()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.outputFile("session", "tasks", "out-*"); err == nil {
+		t.Fatal("accepted a symlink at the output root")
+	}
+	if err := os.Remove(e.outputRoot()); err != nil {
+		t.Fatal(err)
+	}
+	out, err := b.outputFile("session", "tasks", "out-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	defer e.releaseOutput(out.Name())
+	for _, path := range []string{owned, e.outputRoot(), filepath.Dir(filepath.Dir(out.Name())), filepath.Dir(out.Name())} {
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != 0700 {
+			t.Fatalf("directory mode: %s: %v %v", path, info, err)
+		}
+	}
+	if info, err := out.Stat(); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("file mode: %v %v", info, err)
 	}
 }
 
@@ -137,9 +198,7 @@ func TestOutputRetention(t *testing.T) {
 	}
 	_ = out.Close()
 	e.releaseOutput(out.Name())
-	if _, err := os.Stat(paths[0]); !os.IsNotExist(err) {
-		t.Fatalf("ended file retained: %v", err)
-	}
+	await(t, func() bool { _, err := os.Stat(paths[0]); return os.IsNotExist(err) })
 	for _, path := range paths[1:] {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatal(err)
@@ -160,7 +219,9 @@ func TestOutputRetention(t *testing.T) {
 	if _, err := os.Stat(paths[0]); err != nil {
 		t.Fatal("swept more than once per hour", err)
 	}
+	e.mu.Lock()
 	e.lastSweep = time.Now().Add(-2 * time.Hour)
+	e.mu.Unlock()
 	e.releaseOutput(paths[1])
 	out, err = b.outputFile("session", "tool-results", "test-*")
 	if err != nil {
@@ -169,9 +230,7 @@ func TestOutputRetention(t *testing.T) {
 	_ = out.Close()
 	e.releaseOutput(out.Name())
 	for _, path := range paths[:2] {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("stale file survived lazy sweep: %s: %v", path, err)
-		}
+		await(t, func() bool { _, err := os.Stat(path); return os.IsNotExist(err) })
 	}
 }
 
@@ -179,7 +238,7 @@ func TestStartupFileLifecycle(t *testing.T) {
 	t.Parallel()
 	root := unitTempDir(t)
 	home, state := filepath.Join(root, "home"), filepath.Join(root, "state")
-	for _, dir := range []string{home, filepath.Join(state, "snapshot-stale")} {
+	for _, dir := range []string{home, filepath.Join(state, "instance-stale"), filepath.Join(state, "snapshot-legacy")} {
 		if err := privateDir(dir); err != nil {
 			t.Fatal(err)
 		}
@@ -195,7 +254,10 @@ func TestStartupFileLifecycle(t *testing.T) {
 		return snapshot
 	}
 	previous := load()
-	if _, err := os.Stat(filepath.Join(state, "snapshot-stale")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(state, "snapshot-legacy")); !os.IsNotExist(err) {
+		t.Fatal("legacy snapshot retained", err)
+	}
+	if _, err := os.Stat(filepath.Join(state, "instance-stale")); !os.IsNotExist(err) {
 		t.Fatal("stale snapshot retained")
 	}
 	for _, name := range []string{".bashrc", ".bash_profile", ".bash_login", ".profile"} {
@@ -256,5 +318,16 @@ func TestBackgroundLifetimeBounds(t *testing.T) {
 		if got := backgroundLifetime(requested); got != want {
 			t.Fatalf("lifetime %v: %v, want %v", requested, got, want)
 		}
+	}
+}
+
+func await(t *testing.T, ready func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(4 * time.Second)
+	for !ready() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition did not become ready")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
