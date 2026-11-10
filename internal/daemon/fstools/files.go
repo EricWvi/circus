@@ -18,8 +18,9 @@ const modifiedContext = " (note: the file had been modified on disk since you la
 const modifiedError = "File has been modified since read, either by the user or by a linter. Read it again before attempting to write it."
 const encodingError = "File is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. These tools write UTF-8 (or UTF-16LE behind its byte-order mark) and never convert a file's encoding on their own, so nothing was written. If the file is text, make the change with a shell command that reads and writes it in its own encoding (iconv, or PowerShell Get-Content/Set-Content -Encoding), or ask the user whether to convert it to UTF-8 first. To replace the whole file with new UTF-8 text anyway, delete it first, then Write it."
 
-// Inferred: native rejects special files without opening them; the exact kind
-// names are provisional until the native special-file captures are available.
+// Deviation: native Read blocks indefinitely on a FIFO (see
+// tests/parity/fixtures/native/Read/read-fifo.json), so circus rejects
+// special files up front instead. The kind names below are circus's own.
 const specialFileErrorFormat = "This tool cannot read special files. The file is a %s."
 
 const wholeFileSizeLimitBytes = 256 << 20

@@ -8,7 +8,7 @@ circus runs an agent loop in a cloud worker and executes tools on the user's own
 | `buf.yaml`, `buf.gen.yaml` | Protocol checks and local code generation |
 | `gen/go/circus/v1/` | Generated Go messages |
 | `gen/ts/` | Generated TypeScript workspace package `@circus/proto` |
-| `internal/daemon/` | Device daemon: tool registry, call dispatcher, job manager, and a protocol round-trip test |
+| `internal/daemon/` | Device daemon: tool registry, call dispatcher, job manager, and dispatcher behavior tests |
 | `internal/daemon/fstools/` | Native-compatible Read, Write, and Edit tools with fixture parity tests |
 | `internal/daemon/bashtool/` | Bash and TaskStop tools with a captured shell environment and fixture parity tests |
 | `internal/daemon/clocktest/` | Manually advanced clock for daemon tests |
