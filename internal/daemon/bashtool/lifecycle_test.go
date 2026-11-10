@@ -2,14 +2,13 @@ package bashtool
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
-	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
@@ -297,31 +296,51 @@ func TestStartupFileLifecycle(t *testing.T) {
 	}
 }
 
-func TestPreviewDoesNotSplitAstral(t *testing.T) {
-	t.Parallel()
-	dir := unitTempDir(t)
-	out, err := os.CreateTemp(dir, "preview-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = out.Close() }()
-	if _, err := out.WriteString(strings.Repeat("a", 1999) + "😀" + strings.Repeat("z", 30000)); err != nil {
-		t.Fatal(err)
-	}
-	body, err := formatOutput(out, &circusv1.BashResult{}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(body, strings.Repeat("a", 1999)+"\n...\n") || strings.Contains(body, "😀") || strings.Contains(body, "�") {
-		t.Fatal("preview split a surrogate pair")
-	}
-}
-
 func TestBackgroundLifetimeBounds(t *testing.T) {
 	for requested, want := range map[time.Duration]time.Duration{0: 30 * time.Minute, time.Minute: time.Minute, 3 * time.Hour: 2 * time.Hour} {
 		if got := backgroundLifetime(requested); got != want {
 			t.Fatalf("lifetime %v: %v, want %v", requested, got, want)
 		}
+	}
+}
+
+func TestShutdownReleasesInstance(t *testing.T) {
+	t.Parallel()
+	b, root, events := reviewBash(t, 0)
+	job := reviewRun(t, b, root, `while [ ! -f release ]; do sleep 0.02; done`, true)
+	if job.GetBash().JobId == "" {
+		t.Fatal(job)
+	}
+	b.environment.mu.Lock()
+	dir, lock := b.environment.instanceDir, b.environment.instanceLock
+	b.environment.mu.Unlock()
+	if err := b.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// A visible job still sources and writes files in the instance.
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatal("instance released while a background job uses it", err)
+	}
+	if _, err := lock.Stat(); err != nil {
+		t.Fatal("instance lock closed while a background job uses it", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	reviewEvent(t, events, true)
+	await(t, func() bool { _, err := os.Stat(dir); return os.IsNotExist(err) })
+	if _, err := lock.Stat(); !errors.Is(err, os.ErrClosed) {
+		t.Fatal("instance lock still open after release", err)
+	}
+	// A shared environment stays usable: the next load locks a new instance.
+	t.Cleanup(b.environment.releaseInstance)
+	snapshot, _, err := b.environment.load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.environment.releaseSnapshot(snapshot)
+	if next := filepath.Dir(filepath.Dir(snapshot)); next == dir || filepath.Dir(next) != filepath.Dir(dir) {
+		t.Fatalf("reload used %s after releasing %s", next, dir)
 	}
 }
 

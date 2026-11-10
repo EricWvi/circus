@@ -6,9 +6,10 @@
 //
 // Call deadlines and cancellation belong to the daemon. Cancelling a Wait only
 // detaches that waiter. Shutdown cancels running calls. A tool that ignores its
-// deadline is abandoned five seconds after that deadline. Result callbacks run
-// after storage, outside the dispatcher lock, in completion order, and must
-// return promptly.
+// deadline is abandoned five seconds after that deadline; a tool that ignores
+// cancellation is independently abandoned five seconds after Cancel or Shutdown
+// requests it. Result callbacks run after storage, outside the dispatcher lock,
+// in completion order, and must return promptly.
 //
 // Defaults: a two-minute call timeout, requests clamped to ten minutes,
 // thirty-minute result retention, twenty-four-hour tombstones, and

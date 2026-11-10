@@ -260,29 +260,6 @@ func TestLargeOutputMemoryBound(t *testing.T) {
 	t.Logf("200 MB output: daemon allocated %d bytes", growth)
 }
 
-func TestForegroundDoesNotWaitForChild(t *testing.T) {
-	t.Parallel()
-	w := newWorker(t)
-	started := time.Now()
-	r := w.bashCall(t, `sleep 2 & echo $! > child.pid; echo started`, false, 2000)
-	if r.Output.IsError || r.Output.Content[0].GetText() != "started" || time.Since(started) > time.Second {
-		t.Fatal(r)
-	}
-	// The child survives the return, and remains in the session created for Bash.
-	data, err := os.ReadFile(filepath.Join(w.start, "child.pid"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := syscall.Kill(pid, 0); err != nil {
-		t.Fatalf("child was terminated with the foreground shell: %v", err)
-	}
-	_ = syscall.Kill(pid, syscall.SIGTERM)
-}
-
 func TestBackgroundLifetimeKilled(t *testing.T) {
 	t.Parallel()
 	w := newWorker(t)

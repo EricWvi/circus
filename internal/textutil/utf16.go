@@ -3,6 +3,7 @@ package textutil
 import (
 	"encoding/binary"
 	"io"
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -49,25 +50,57 @@ func (d Decoded) Encode(text string) []byte {
 	if d.Encoding != EncodingUTF16LE {
 		return []byte(text)
 	}
-	units := utf16.Encode([]rune(text))
-	data := make([]byte, 2+2*len(units))
+	size := 2
+	for _, r := range text {
+		if r > 0xffff {
+			size += 4
+		} else {
+			size += 2
+		}
+	}
+	data := make([]byte, size)
 	data[0], data[1] = 0xff, 0xfe
-	for i, unit := range units {
-		binary.LittleEndian.PutUint16(data[2+2*i:], unit)
+	offset := 2
+	for _, r := range text {
+		if r <= 0xffff {
+			binary.LittleEndian.PutUint16(data[offset:], uint16(r))
+			offset += 2
+			continue
+		}
+		high, low := utf16.EncodeRune(r)
+		binary.LittleEndian.PutUint16(data[offset:], uint16(high))
+		binary.LittleEndian.PutUint16(data[offset+2:], uint16(low))
+		offset += 4
 	}
 	return data
 }
 
 func decodeUTF16LE(data []byte) string {
-	units := make([]uint16, 0, (len(data)+1)/2)
+	var text strings.Builder
+	text.Grow((len(data) + 1) / 2)
 	for len(data) >= 2 {
-		units = append(units, binary.LittleEndian.Uint16(data))
+		unit := binary.LittleEndian.Uint16(data)
 		data = data[2:]
+		r := rune(unit)
+		switch {
+		case 0xd800 <= unit && unit <= 0xdbff:
+			r = utf8.RuneError
+			if len(data) >= 2 {
+				next := binary.LittleEndian.Uint16(data)
+				if 0xdc00 <= next && next <= 0xdfff {
+					r = utf16.DecodeRune(rune(unit), rune(next))
+					data = data[2:]
+				}
+			}
+		case 0xdc00 <= unit && unit <= 0xdfff:
+			r = utf8.RuneError
+		}
+		text.WriteRune(r)
 	}
 	if len(data) == 1 {
-		units = append(units, uint16(utf8.RuneError))
+		text.WriteRune(utf8.RuneError)
 	}
-	return string(utf16.Decode(units))
+	return text.String()
 }
 
 func validUTF16LE(data []byte) bool {

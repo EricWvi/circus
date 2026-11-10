@@ -279,6 +279,84 @@ func TestDispatcherAbandonsUncooperativeTool(t *testing.T) {
 	}
 }
 
+func TestDispatcherAbandonsCancelledUncooperativeTool(t *testing.T) {
+	clock := clocktest.New()
+	started := make(chan context.Context, 1)
+	release := make(chan struct{})
+	returned := make(chan struct{})
+	leakcheck.Allow(t, leakcheck.Calls, "this tool deliberately ignores cancellation to exercise abandonment")
+	d := newDispatcher(t, daemon.Options{Clock: clock, DefaultTimeout: 10 * time.Minute,
+		Tools: []daemon.Tool{fakeTool{"read", func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+			started <- ctx
+			<-release
+			defer close(returned)
+			return output("late result"), nil
+		}}},
+	})
+	if _, err := d.Submit(readCall("cancel-stuck")); err != nil {
+		t.Fatal(err)
+	}
+	ctx := receive(t, started)
+	if !d.Cancel("cancel-stuck") {
+		t.Fatal("cancel returned false")
+	}
+	receive(t, ctx.Done())
+	clock.Advance(5*time.Second - time.Millisecond)
+	if s := d.Query("cancel-stuck"); s.State != circusv1.CallStatus_STATE_RUNNING {
+		t.Fatalf("early cancellation fallback: %v", s)
+	}
+	clock.Advance(time.Millisecond)
+	r := completed(t, d, "cancel-stuck")
+	if !r.Output.IsError || resultText(r) != "Error: tool did not stop after cancellation" {
+		t.Fatalf("cancellation fallback: %v", r)
+	}
+	close(release)
+	receive(t, returned)
+	if err := d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDispatcherCancelAfterDeadlineKeepsEarlierFallback(t *testing.T) {
+	clock := clocktest.New()
+	started := make(chan context.Context, 1)
+	release := make(chan struct{})
+	returned := make(chan struct{})
+	leakcheck.Allow(t, leakcheck.Calls, "this tool deliberately ignores its deadline and cancellation")
+	d := newDispatcher(t, daemon.Options{Clock: clock, DefaultTimeout: 10 * time.Second,
+		Tools: []daemon.Tool{fakeTool{"read", func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+			started <- ctx
+			<-release
+			defer close(returned)
+			return output("late result"), nil
+		}}},
+	})
+	if _, err := d.Submit(readCall("late-cancel")); err != nil {
+		t.Fatal(err)
+	}
+	ctx := receive(t, started)
+	clock.Advance(10 * time.Second)
+	receive(t, ctx.Done())
+	clock.Advance(3 * time.Second)
+	if !d.Cancel("late-cancel") {
+		t.Fatal("cancel returned false")
+	}
+	clock.Advance(2*time.Second - time.Millisecond)
+	if s := d.Query("late-cancel"); s.State != circusv1.CallStatus_STATE_RUNNING {
+		t.Fatalf("deadline fallback was postponed: %v", s)
+	}
+	clock.Advance(time.Millisecond)
+	r := completed(t, d, "late-cancel")
+	if !r.Output.IsError || resultText(r) != "Error: tool did not stop after its timeout" {
+		t.Fatalf("deadline fallback: %v", r)
+	}
+	close(release)
+	receive(t, returned)
+	if err := d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDispatcherCancellationShutdownAndRetention(t *testing.T) {
 	clock := clocktest.New()
 	contexts := make(chan context.Context, 8)

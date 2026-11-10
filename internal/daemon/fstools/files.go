@@ -1,6 +1,7 @@
 package fstools
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -281,12 +282,15 @@ func load(path string) ([]byte, os.FileInfo, error) {
 		return nil, info, err
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, wholeFileSizeLimitBytes+1))
-	if err != nil {
+	var data bytes.Buffer
+	// Reserve the observed size plus one byte so ReadFrom can observe EOF
+	// without another allocation; a concurrently growing file remains bounded.
+	data.Grow(int(info.Size()) + 1)
+	if _, err := data.ReadFrom(io.LimitReader(f, wholeFileSizeLimitBytes+1)); err != nil {
 		return nil, info, err
 	}
-	if len(data) > wholeFileSizeLimitBytes {
+	if data.Len() > wholeFileSizeLimitBytes {
 		return nil, info, fmt.Errorf("%s", wholeFileSizeError)
 	}
-	return data, info, nil
+	return data.Bytes(), info, nil
 }

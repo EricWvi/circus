@@ -33,6 +33,7 @@ const nativeReadSizeTextBoundBytes = 10 << 20
 const maxFormattedRangeBytes = 2 * nativeReadRangeLimitBytes
 
 const streamContextCheckLines = 4096
+const streamContextCheckFragments = 4096
 const streamReadBufferSize = 4096
 
 // Read is a stateless file-reading tool.
@@ -313,7 +314,12 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 		var raw []byte
 		pendingCR := false
 		hadData, endedNewline, eof := false, false, false
-		for {
+		for fragments := 0; ; fragments++ {
+			if fragments > 0 && fragments%streamContextCheckFragments == 0 {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+			}
 			fragment, err := reader.ReadSlice('\n')
 			endedNewline = len(fragment) > 0 && fragment[len(fragment)-1] == '\n'
 			finalFragment := !errors.Is(err, bufio.ErrBufferFull)

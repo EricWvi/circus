@@ -40,12 +40,19 @@ type Options struct {
 	OnResult func(*circusv1.DeviceResult)
 }
 
+type cancelRequest struct {
+	timer <-chan time.Time
+	at    time.Time
+}
+
 type callRecord struct {
-	cancel    func(error)
-	done      chan struct{}
-	result    *circusv1.DeviceResult
-	completed time.Time
-	hash      [sha256.Size]byte
+	cancel          func(error)
+	cancelRequested chan cancelRequest
+	cancelOnce      sync.Once
+	done            chan struct{}
+	result          *circusv1.DeviceResult
+	completed       time.Time
+	hash            [sha256.Size]byte
 }
 
 // Dispatcher owns call execution, deduplication, and in-memory result retention.
@@ -225,17 +232,20 @@ func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, er
 		ctx.deadline = time.Time{}
 		ctx.start = make(chan struct{})
 	}
-	r := &callRecord{cancel: ctx.cancel, done: make(chan struct{}), hash: hash}
+	r := &callRecord{cancel: ctx.cancel, cancelRequested: make(chan cancelRequest, 1), done: make(chan struct{}), hash: hash}
 	d.calls[call.CallId] = r
 	var deadline, fallback <-chan time.Time
+	var fallbackAt time.Time
 	if preparation > 0 {
 		fallback = d.opts.Clock.After(preparation)
+		fallbackAt = now.Add(preparation)
 	} else {
 		deadline = d.opts.Clock.After(timeout)
 		fallback = d.opts.Clock.After(timeout + 5*time.Second)
+		fallbackAt = now.Add(timeout + 5*time.Second)
 	}
 	d.wg.Add(1)
-	go d.execute(ctx, call, r, string(field.Name()), deadline, fallback)
+	go d.execute(ctx, call, r, string(field.Name()), deadline, fallback, fallbackAt)
 	return d.status(call.CallId, r, now), nil
 }
 
@@ -304,7 +314,7 @@ func runTool(ctx context.Context, tool Tool, call *circusv1.DeviceCall) (result 
 	return result
 }
 
-func (d *Dispatcher) execute(ctx *deadlineContext, call *circusv1.DeviceCall, r *callRecord, name string, deadline, fallback <-chan time.Time) {
+func (d *Dispatcher) execute(ctx *deadlineContext, call *circusv1.DeviceCall, r *callRecord, name string, deadline, fallback <-chan time.Time, fallbackAt time.Time) {
 	defer d.wg.Done()
 	tool := d.tools[name]
 	id := call.CallId
@@ -315,25 +325,41 @@ func (d *Dispatcher) execute(ctx *deadlineContext, call *circusv1.DeviceCall, r 
 	}
 	go func() { returned <- runTool(toolCtx, tool, call) }()
 	start := ctx.start
+	cancelRequested := r.cancelRequested
+	cancelSeen, cancelFallback := false, false
 	for {
 		select {
 		case <-start:
 			start = nil
-			end, _ := ctx.Deadline()
-			remaining := end.Sub(d.opts.Clock.Now())
-			deadline = d.opts.Clock.After(remaining)
-			fallback = d.opts.Clock.After(remaining + 5*time.Second)
+			if !cancelSeen {
+				end, _ := ctx.Deadline()
+				now := d.opts.Clock.Now()
+				remaining := end.Sub(now)
+				deadline = d.opts.Clock.After(remaining)
+				fallback = d.opts.Clock.After(remaining + 5*time.Second)
+				fallbackAt = now.Add(remaining + 5*time.Second)
+			}
 		case result := <-returned:
 			d.complete(id, r, result)
 			return
 		case <-deadline:
 			r.cancel(context.DeadlineExceeded)
 			deadline = nil
+		case request := <-cancelRequested:
+			cancelRequested = nil
+			cancelSeen = true
+			if fallback == nil || request.at.Before(fallbackAt) {
+				fallback = request.timer
+				fallbackAt = request.at
+				cancelFallback = true
+			}
 		case <-fallback:
 			// Also cancel when a fake clock advances past both timers at once.
 			r.cancel(context.DeadlineExceeded)
 			message := "tool did not stop after its timeout"
-			if end, ok := ctx.Deadline(); !ok || end.IsZero() {
+			if cancelFallback {
+				message = "tool did not stop after cancellation"
+			} else if end, ok := ctx.Deadline(); !ok || end.IsZero() {
 				// Inferred: distinguish preparation exhaustion from a command timeout.
 				message = "tool preparation exceeded its budget"
 			}
@@ -414,12 +440,21 @@ func (d *Dispatcher) Wait(ctx context.Context, callID string) (*circusv1.CallSta
 	}
 }
 
+// requestCancel interrupts a tool and starts its independent abandonment grace period.
+func (d *Dispatcher) requestCancel(r *callRecord) {
+	r.cancel(context.Canceled)
+	r.cancelOnce.Do(func() {
+		at := d.opts.Clock.Now().Add(5 * time.Second)
+		r.cancelRequested <- cancelRequest{timer: d.opts.Clock.After(5 * time.Second), at: at}
+	})
+}
+
 // Cancel requests interruption and reports whether the call is still running.
 func (d *Dispatcher) Cancel(callID string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if r := d.calls[callID]; r != nil && r.cancel != nil {
-		r.cancel(context.Canceled)
+		d.requestCancel(r)
 		return true
 	}
 	return false
@@ -435,7 +470,7 @@ func (d *Dispatcher) Shutdown(ctx context.Context) error {
 		close(d.stopSweep)
 		for _, r := range d.calls {
 			if r.cancel != nil {
-				r.cancel(context.Canceled)
+				d.requestCancel(r)
 			}
 		}
 		go func() {

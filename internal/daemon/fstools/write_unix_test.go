@@ -13,7 +13,13 @@ import (
 
 func TestMain(m *testing.M) {
 	original := syscall.Umask(0o022)
-	code := leakcheck.Run(m, leakcheck.Config{})
+	config := leakcheck.Config{}
+	if os.Getenv("CIRCUS_EDIT_MEMORY_FILE") != "" || os.Getenv("CIRCUS_EDIT_UTF16_MEMORY_FILE") != "" || os.Getenv("CIRCUS_EDIT_SIZE_FILE") != "" {
+		// The dedicated subprocess intentionally holds a large file and its
+		// decoded text; the parent test process keeps the normal package limit.
+		config.MemoryLimit = 6 << 30
+	}
+	code := leakcheck.Run(m, config)
 	syscall.Umask(original)
 	os.Exit(code)
 }

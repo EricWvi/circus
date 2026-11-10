@@ -15,7 +15,14 @@
 // valid BOM-marked UTF-16LE when writing. Read deliberately rejects
 // FIFOs and sockets before opening them instead of reproducing native's
 // indefinite block on an unwritten FIFO; character devices are read through a
-// bounded, cancelable goroutine.
+// bounded, cancelable goroutine. Ranged Read retains only selected lines and
+// caps their decoded line-content payload at 3,200,000 bytes, excluding line
+// numbers, tabs, separating newlines, and line endings.
+//
+// Edit and Write reject existing files larger than 256 MiB. Before allocating
+// a replacement, Edit also computes the result size from the match count and
+// rejects a result over 256 MiB; with replace_all=false, only one replacement
+// counts toward that check.
 //
 // Edit matches old_string literally. When no literal match exists, curly double
 // or single quotes in the file match straight quotes in old_string, and straight

@@ -11,6 +11,10 @@ circus runs an agent loop in a cloud worker and executes tools on the user's own
 | `internal/daemon/` | Device daemon: tool registry, call dispatcher, job manager, and dispatcher behavior tests |
 | `internal/daemon/fstools/` | Native-compatible Read, Write, and Edit tools with fixture parity tests |
 | `internal/daemon/bashtool/` | Bash and TaskStop tools with a captured shell environment and fixture parity tests |
+| `internal/daemon/jobs/` | Background job lifecycle, ownership, events, and retention |
+| `internal/daemon/toolcontext/` | Context values shared by tools and the dispatcher |
+| `internal/textutil/` | UTF-8 decoding and UTF-16LE conversion helpers |
+| `internal/testutil/leakcheck/` | Test leak detection for goroutines, processes, files, and disk use |
 | `internal/daemon/clocktest/` | Manually advanced clock for daemon tests |
 | `cmd/circus/` | `version` command and the `daemon call` local stream harness |
 | `tests/parity/` | Captured native tool-behavior fixtures, the capture harness, and behavior notes |
