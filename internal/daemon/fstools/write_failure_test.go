@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 func TestFailedRenameCleansUpTemporaryFile(t *testing.T) {
@@ -20,6 +22,7 @@ func TestFailedRenameCleansUpTemporaryFile(t *testing.T) {
 			t.Error(err)
 		}
 	})
+	leakcheck.Track(t, dir)
 	// A directory cannot be replaced by the temporary regular file, so the
 	// rename fails after the temporary file has been written and synced.
 	target := filepath.Join(dir, "target")

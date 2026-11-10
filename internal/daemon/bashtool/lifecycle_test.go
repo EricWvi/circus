@@ -10,6 +10,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 func unitTempDir(t *testing.T) string {
@@ -30,6 +31,8 @@ func unitTempDir(t *testing.T) string {
 			t.Error(err)
 		}
 	})
+	// Runs before the removal above and after cleanups registered later.
+	leakcheck.Track(t, dir)
 	return dir
 }
 
@@ -244,6 +247,7 @@ func TestStartupFileLifecycle(t *testing.T) {
 		}
 	}
 	e := &environment{options: Options{Home: home, StateDir: state, Shell: "/bin/bash"}}
+	t.Cleanup(e.releaseInstance)
 	load := func() string {
 		t.Helper()
 		snapshot, _, err := e.load(context.Background())

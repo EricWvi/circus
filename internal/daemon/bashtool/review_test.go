@@ -15,6 +15,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 func reviewBash(t *testing.T, limit int64) (*Bash, string, <-chan *circusv1.JobEvent) {
@@ -25,6 +26,8 @@ func reviewBash(t *testing.T, limit int64) (*Bash, string, <-chan *circusv1.JobE
 func reviewBashWithLimits(t *testing.T, limit, totalLimit int64) (*Bash, string, <-chan *circusv1.JobEvent) {
 	t.Helper()
 	root := unitTempDir(t)
+	leakcheck.OutputRoot(t, filepath.Join(root, fmtUID()))
+	leakcheck.StateDir(t, filepath.Join(root, "state"))
 	events := make(chan *circusv1.JobEvent, 32)
 	manager := jobs.NewManager(jobs.Options{OnEvent: func(e *circusv1.JobEvent) { events <- e }})
 	b := NewBash(manager, Options{Home: root, StateDir: filepath.Join(root, "state"), TempDir: root, Shell: "/bin/bash", OutputLimitBytes: limit, TotalOutputLimitBytes: totalLimit})
@@ -49,6 +52,7 @@ func reviewRun(t *testing.T, b *Bash, cwd, command string, background bool) *cir
 	if err != nil {
 		t.Fatal(err)
 	}
+	leakcheck.Expect(r.GetBash().GetOutputPath())
 	return r
 }
 
@@ -183,6 +187,7 @@ func TestForegroundAndBackgroundOutputCap(t *testing.T) {
 		t.Run(strconv.FormatBool(background), func(t *testing.T) {
 			t.Parallel()
 			b, root, events := reviewBash(t, 1024)
+			leakcheck.DiskLimit(t, 2<<30, "documented overshoot: an `exec yes` writer outruns the 100 ms cap poll by hundreds of MiB")
 			r := reviewRun(t, b, root, `exec yes`, background)
 			path := r.GetBash().OutputPath
 			if background {
@@ -245,10 +250,13 @@ func TestSnapshotInstancesShareStateSafely(t *testing.T) {
 	}
 	// Releasing only the second instance lock permits the next startup to clean
 	// that instance, while the first instance remains protected by its lease.
-	if err := second.instanceLock.Close(); err != nil {
+	// Unlock explicitly, like a process exit: Close alone keeps the lock while a
+	// concurrently forked child of this process still shares the descriptor.
+	if err := unlockAndClose(second.instanceLock); err != nil {
 		t.Fatal(err)
 	}
 	third := &environment{options: b.environment.options}
+	t.Cleanup(third.releaseInstance)
 	newPath, _, err := third.load(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -274,6 +282,7 @@ func TestSnapshotRefreshFailureKeepsOld(t *testing.T) {
 		_, err := waitProcess(ctx, cmd)
 		return err
 	}}}
+	t.Cleanup(e.releaseInstance)
 	rc := filepath.Join(root, ".bashrc")
 	if err := os.WriteFile(rc, []byte("export MARK=old\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -312,6 +321,7 @@ func TestSnapshotRefreshFailureKeepsOld(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := &environment{options: e.options}
+	t.Cleanup(fresh.releaseInstance)
 	for range 2 {
 		if _, _, err := fresh.load(context.Background()); err == nil {
 			t.Fatal("cold failure succeeded")
@@ -352,6 +362,7 @@ func TestSweepErrorsAreBestEffort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	leakcheck.Expect(out.Name()) // created by the test itself
 	defer out.Close()
 	defer b.environment.releaseOutput(out.Name())
 	await(t, func() bool { _, err := os.Stat(stale); return os.IsNotExist(err) })
@@ -413,6 +424,7 @@ func TestBackgroundAndPromotedLeftovers(t *testing.T) {
 			if err != nil || r.GetBash().JobId == "" {
 				t.Fatalf("%v %v", r, err)
 			}
+			leakcheck.Expect(r.GetBash().GetOutputPath())
 			event := reviewEvent(t, events, true)
 			if event.JobId != r.GetBash().JobId || event.State != circusv1.JobEvent_STATE_EXITED {
 				t.Fatal(event)
@@ -562,5 +574,45 @@ func TestOutputCapKillsTERMIgnoringWriters(t *testing.T) {
 				t.Fatal("missing output-cap diagnostic")
 			}
 		})
+	}
+}
+
+func TestShutdownReleasesInstance(t *testing.T) {
+	t.Parallel()
+	b, root, events := reviewBash(t, 0)
+	job := reviewRun(t, b, root, `while [ ! -f release ]; do sleep 0.02; done`, true)
+	if job.GetBash().JobId == "" {
+		t.Fatal(job)
+	}
+	b.environment.mu.Lock()
+	dir, lock := b.environment.instanceDir, b.environment.instanceLock
+	b.environment.mu.Unlock()
+	if err := b.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// A visible job still sources and writes files in the instance.
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatal("instance released while a background job uses it", err)
+	}
+	if _, err := lock.Stat(); err != nil {
+		t.Fatal("instance lock closed while a background job uses it", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	reviewEvent(t, events, true)
+	await(t, func() bool { _, err := os.Stat(dir); return os.IsNotExist(err) })
+	if _, err := lock.Stat(); !errors.Is(err, os.ErrClosed) {
+		t.Fatal("instance lock still open after release", err)
+	}
+	// A shared environment stays usable: the next load locks a new instance.
+	t.Cleanup(b.environment.releaseInstance)
+	snapshot, _, err := b.environment.load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.environment.releaseSnapshot(snapshot)
+	if next := filepath.Dir(filepath.Dir(snapshot)); next == dir || filepath.Dir(next) != filepath.Dir(dir) {
+		t.Fatalf("reload used %s after releasing %s", next, dir)
 	}
 }

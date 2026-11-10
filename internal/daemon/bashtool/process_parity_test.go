@@ -67,7 +67,9 @@ func normalizeSleepTable(t *testing.T, body string, owned map[string]string) str
 	if strings.Join(strings.Fields(lines[0]), " ") != "PID PGID SID PPID STAT COMMAND" {
 		t.Fatalf("unexpected ps header: %q", lines[0])
 	}
-	labels := map[string]string{"1": "{{INIT_PID}}"}
+	// leakcheck.Run makes the test process a child subreaper, so it adopts the
+	// orphan where native's host init (PID 1) did.
+	labels := map[string]string{"1": "{{INIT_PID}}", strconv.Itoa(os.Getpid()): "{{INIT_PID}}"}
 	var rows []string
 	for _, line := range lines[1:] {
 		fields := strings.Fields(line)

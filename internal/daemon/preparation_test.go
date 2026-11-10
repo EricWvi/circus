@@ -11,6 +11,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/daemon/clocktest"
 	"github.com/EricWvi/circus/internal/daemon/toolcontext"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 type preparingTool struct {
@@ -135,8 +136,11 @@ func TestDefaultToolsDoesNotCollectEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	leakcheck.Track(t, root)
 	t.Setenv("HOME", root)
 	state := filepath.Join(root, "state")
+	leakcheck.StateDir(t, filepath.Join(state, "circus", "daemon"))
+	leakcheck.OutputRoot(t, filepath.Join(root, "cache", "circus", "output"))
 	t.Setenv("XDG_STATE_HOME", state)
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
 	marker := filepath.Join(root, "touched")

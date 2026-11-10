@@ -15,6 +15,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 func TestEvalQuoting(t *testing.T) {
@@ -159,6 +160,7 @@ func TestBackgroundSurvivesCallContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	leakcheck.Expect(r.GetBash().GetOutputPath())
 	waitFile(t, filepath.Join(w.start, "ready"))
 	cancel()
 	writeFile(t, filepath.Join(w.start, "release"), []byte("go"))
@@ -237,6 +239,7 @@ func TestLargeOutputMemoryBound(t *testing.T) {
 		t.Skip("memory regression is measured on Linux; macOS accounting is unreliable")
 	}
 	w := newWorker(t)
+	leakcheck.DiskLimit(t, 256<<20, "the 200 MB persisted output is the subject of this test")
 	w.bashCall(t, "true", false, 0)
 	runtime.GC()
 	var before, after runtime.MemStats

@@ -14,6 +14,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon/clocktest"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 type jobExit struct {
@@ -36,6 +37,7 @@ func (j *fakeJob) Stop() error {
 
 func newJobs(t *testing.T, opts jobs.Options) *jobs.Manager {
 	t.Helper()
+	leakcheck.Track(t)
 	m := jobs.NewManager(opts)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

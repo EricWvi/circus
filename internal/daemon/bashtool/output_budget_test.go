@@ -11,6 +11,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 func TestTotalOutputCapStopsOnlyLargest(t *testing.T) {
@@ -45,6 +46,7 @@ func TestTotalOutputCapStopsOnlyLargest(t *testing.T) {
 				t.Fatal(err)
 			}
 			large := r.GetBash()
+			leakcheck.Expect(large.OutputPath)
 			var out *os.File
 			if mode == "foreground" {
 				body := r.Output.Content[0].GetText()

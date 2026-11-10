@@ -21,6 +21,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 type fixtureInput struct {
@@ -106,6 +107,8 @@ func tempDir(t *testing.T) string {
 			t.Error(err)
 		}
 	})
+	// Runs before the removal above and after cleanups registered later.
+	leakcheck.Track(t, dir)
 	return dir
 }
 
@@ -381,7 +384,7 @@ type simulatedWorker struct {
 
 func newWorker(t *testing.T, cwd string) *simulatedWorker {
 	t.Helper()
-	d, err := daemon.NewDispatcher(daemon.Options{Tools: daemon.DefaultTools(nil)})
+	d, err := daemon.NewDispatcher(daemon.Options{Tools: leakcheck.AuditTools(t, nil, daemon.DefaultTools(nil))})
 	if err != nil {
 		t.Fatal(err)
 	}

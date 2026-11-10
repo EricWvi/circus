@@ -87,6 +87,8 @@ func (b *Bash) trackGroup(pgid int, out *os.File, removeInline bool) {
 
 // Shutdown stops internal groups and prevents later background shell exits from
 // leaving new groups behind. It does not stop jobs.Manager's visible jobs.
+// Once the groups and their outputs are released, it releases the snapshot
+// instance: its directory and lock go away as soon as no visible job uses it.
 // If ctx expires, shutdown continues and can be waited on again.
 func (b *Bash) Shutdown(ctx context.Context) error {
 	g := &b.groups
@@ -107,6 +109,9 @@ func (b *Bash) Shutdown(ctx context.Context) error {
 			g.wg.Wait()
 			if warmDone != nil {
 				<-warmDone
+			}
+			if b.ownsEnvironment {
+				b.environment.releaseInstance()
 			}
 			close(g.done)
 		}()

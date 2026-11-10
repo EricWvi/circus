@@ -13,6 +13,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/daemon/clocktest"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 type fakeTool struct {
@@ -42,6 +43,13 @@ func resultText(r *circusv1.DeviceResult) string {
 
 func newDispatcher(t *testing.T, opts daemon.Options) *daemon.Dispatcher {
 	t.Helper()
+	// Registered before the Shutdown cleanup, so both checks run after it.
+	leakcheck.Track(t)
+	now := time.Now
+	if opts.Clock != nil {
+		now = opts.Clock.Now
+	}
+	opts.Tools = leakcheck.AuditTools(t, now, opts.Tools)
 	d, err := daemon.NewDispatcher(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -236,6 +244,7 @@ func TestDispatcherAbandonsUncooperativeTool(t *testing.T) {
 	release := make(chan struct{})
 	returned := make(chan struct{})
 	var callbacks atomic.Int32
+	leakcheck.Allow(t, leakcheck.Calls, "this tool deliberately ignores its deadline to exercise abandonment")
 	d := newDispatcher(t, daemon.Options{Clock: clock, DefaultTimeout: time.Second,
 		OnResult: func(*circusv1.DeviceResult) { callbacks.Add(1) },
 		Tools: []daemon.Tool{fakeTool{"read", func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
@@ -311,6 +320,7 @@ func TestDispatcherCancellationShutdownAndRetention(t *testing.T) {
 	if _, err := d.Submit(call); !errors.Is(err, daemon.ErrCallExpired) {
 		t.Fatalf("expired submit: %v", err)
 	}
+	leakcheck.AllowReexecution(t, call.CallId, "a call_id may execute again once its tombstone expires")
 	clock.Advance(59 * time.Minute)
 	if _, err := d.Submit(call); err != nil {
 		t.Fatalf("tombstone expired: %v", err)

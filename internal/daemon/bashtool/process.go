@@ -2,6 +2,7 @@ package bashtool
 
 import (
 	"context"
+	"log/slog"
 	"os/exec"
 	"syscall"
 	"time"
@@ -45,6 +46,7 @@ func stopProcess(cmd *exec.Cmd, waited <-chan processOutcome) processOutcome {
 	select {
 	case outcome := <-waited:
 		stopGroup(cmd.Process.Pid)
+		reapKilledGroup(cmd.Process.Pid)
 		return outcome
 	default:
 	}
@@ -60,6 +62,7 @@ func stopProcess(cmd *exec.Cmd, waited <-chan processOutcome) processOutcome {
 	}
 	// Reap through the shell first, then remove any remaining descendants.
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	reapKilledGroup(cmd.Process.Pid)
 	outcome.terminationRequested = signaled
 	if outcome.code == 143 || outcome.code == 137 {
 		outcome.err = jobs.ErrKilled
@@ -99,7 +102,40 @@ func stopGroup(pgid int) {
 		case <-tick.C:
 		case <-timer.C:
 			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			reapKilledGroup(pgid)
 			return
+		}
+	}
+}
+
+// reapPollInterval paces reaping after KILL; killed members exit within
+// milliseconds, so the usual 100 ms poll would only add latency.
+const reapPollInterval = 5 * time.Millisecond
+
+// reapKilledGroup collects the exit status of killed group members that the
+// daemon has adopted as PID 1 or a child subreaper, so none stays a zombie.
+// It must only be used after the original shell's Wait has completed. ECHILD
+// means no member is a child of the daemon any more; orphans adopted by
+// another reaper (normally init) are reaped there. Members that are still
+// running despite KILL are waited for at most groupExitWait.
+func reapKilledGroup(pgid int) bool {
+	timer := time.NewTimer(groupExitWait)
+	defer timer.Stop()
+	tick := time.NewTicker(reapPollInterval)
+	defer tick.Stop()
+	for {
+		pid, err := syscall.Wait4(-pgid, nil, syscall.WNOHANG, nil)
+		if err == syscall.EINTR || err == nil && pid > 0 {
+			continue
+		}
+		if err != nil {
+			return true
+		}
+		select {
+		case <-tick.C:
+		case <-timer.C:
+			slog.Warn("killed process group members were not reaped", "pgid", pgid, "timeout", groupExitWait)
+			return false
 		}
 	}
 }

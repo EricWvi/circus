@@ -48,6 +48,7 @@ func TestCollectionOwnerCancellationDoesNotFailWaiter(t *testing.T) {
 		_, err := waitProcess(ctx, cmd)
 		return err
 	}}}
+	t.Cleanup(e.releaseInstance)
 	if err := os.WriteFile(filepath.Join(root, ".bashrc"), []byte("export SHARED_RETRY=ok\n"), 0600); err != nil {
 		t.Fatal(err)
 	}

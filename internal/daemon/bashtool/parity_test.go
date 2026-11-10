@@ -17,6 +17,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/daemon/fstools"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"sync/atomic"
 )
 
@@ -71,6 +72,8 @@ func tempDir(t *testing.T) string {
 			t.Error(err)
 		}
 	})
+	// Runs before the removal above and after cleanups registered later.
+	leakcheck.Track(t, dir)
 	return dir
 }
 
@@ -134,14 +137,12 @@ func newWorkerWithOptions(t *testing.T, configure func(*bashtool.Options)) *work
 	if configure != nil {
 		configure(&w.options)
 	}
+	leakcheck.OutputRoot(t, filepath.Join(w.options.TempDir, fmt.Sprintf("circus-%d", os.Getuid())))
+	leakcheck.StateDir(t, w.options.StateDir)
 	w.jobs = jobs.NewManager(jobs.Options{OnEvent: func(e *circusv1.JobEvent) { w.events <- e }})
 	manager := w.jobs
 	w.bash = bashtool.NewBash(manager, w.options)
-	d, err := daemon.NewDispatcher(daemon.Options{Tools: []daemon.Tool{w.bash, bashtool.NewTaskStop(manager), fstools.NewRead()}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	w.d = d
+	w.d = newAuditedDispatcher(t, w.bash, bashtool.NewTaskStop(manager), fstools.NewRead())
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -154,6 +155,17 @@ func newWorkerWithOptions(t *testing.T, configure func(*bashtool.Options)) *work
 	})
 	return w
 }
+
+// newAuditedDispatcher counts executions per call_id and call durations.
+func newAuditedDispatcher(t *testing.T, tools ...daemon.Tool) *daemon.Dispatcher {
+	t.Helper()
+	d, err := daemon.NewDispatcher(daemon.Options{Tools: leakcheck.AuditTools(t, nil, tools)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 func (w *worker) expand(s string) string {
 	return strings.NewReplacer("{{CWD}}", w.start, "{{HOME}}", w.options.Home, "{{TMPDIR}}", w.options.TempDir, "{{SNAPSHOT_PATH}}", w.snapshot, "{{TASK_ID}}", w.jobID, "{{OUTPUT_PATH}}", w.outputPath).Replace(s)
 }
@@ -189,6 +201,8 @@ func (w *worker) call(t *testing.T, call *circusv1.DeviceCall) *circusv1.DeviceR
 		t.Fatalf("expected text: %v", r)
 	}
 	if b := r.GetBash(); b != nil {
+		// Announced output files are the only ones allowed to remain.
+		leakcheck.Expect(b.OutputPath)
 		w.cwd = b.Cwd
 		if b.JobId != "" {
 			w.jobID = b.JobId
@@ -327,10 +341,7 @@ func TestNativeParity(t *testing.T) {
 				if len(f.Setup.HomeFiles) == 0 {
 					w.options = shared.options
 					w.bash = bashtool.ShareEnvironmentForTest(w.jobs, shared.bash)
-					d, err := daemon.NewDispatcher(daemon.Options{Tools: []daemon.Tool{w.bash, bashtool.NewTaskStop(w.jobs), fstools.NewRead()}})
-					if err != nil {
-						t.Fatal(err)
-					}
+					d := newAuditedDispatcher(t, w.bash, bashtool.NewTaskStop(w.jobs), fstools.NewRead())
 					_ = w.d.Shutdown(context.Background())
 					w.d = d
 				}

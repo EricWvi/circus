@@ -15,6 +15,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -62,7 +63,8 @@ func TestDaemonCallStreamsInCompletionOrder(t *testing.T) {
 	reader, writer := io.Pipe()
 	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
 	finished := make(chan error, 1)
-	go func() { finished <- daemonCall(input, writer, []daemon.Tool{tool}, true); _ = writer.Close() }()
+	tools := leakcheck.AuditTools(t, nil, []daemon.Tool{tool})
+	go func() { finished <- daemonCall(input, writer, tools, true); _ = writer.Close() }()
 	lines := make(chan string, 2)
 	go func() {
 		scanner := bufio.NewScanner(reader)
@@ -102,7 +104,7 @@ func TestDaemonCallRetriesAndImmediateStatus(t *testing.T) {
 			return &circusv1.DeviceResult{}, nil
 		}}
 		var out bytes.Buffer
-		if err := daemonCall(strings.NewReader(input), &out, []daemon.Tool{tool}, wait); err != nil {
+		if err := daemonCall(strings.NewReader(input), &out, leakcheck.AuditTools(t, nil, []daemon.Tool{tool}), wait); err != nil {
 			t.Fatal(err)
 		}
 		lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -145,6 +147,10 @@ func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// daemonCommand warms the default Bash, which uses these default paths.
+	leakcheck.Track(t, isolated)
+	leakcheck.StateDir(t, filepath.Join(isolated, "state", "circus", "daemon"))
+	leakcheck.OutputRoot(t, filepath.Join(isolated, "cache", "circus", "output"))
 	t.Setenv("HOME", isolated)
 	t.Setenv("XDG_STATE_HOME", filepath.Join(isolated, "state"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(isolated, "cache"))

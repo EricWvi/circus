@@ -50,6 +50,8 @@ type environment struct {
 	active       map[string]bool
 	outputBudget outputBudget
 	leases       map[string]int
+	// releasing defers releaseInstance until leases and collection end.
+	releasing bool
 }
 
 // collection publishes one immutable outcome to all callers waiting on it.
@@ -203,6 +205,7 @@ func (e *environment) load(ctx context.Context) (string, []string, error) {
 		}
 		close(pending.done)
 		e.loading = nil
+		e.releaseIfIdleLocked()
 		e.mu.Unlock()
 		return path, env, err
 	}
@@ -389,6 +392,46 @@ func (e *environment) releaseSnapshot(snapshot string) {
 			_ = os.RemoveAll(dir)
 		}
 	}
+	e.releaseIfIdleLocked()
+}
+
+// releaseInstance ends this instance: once no live shell holds a snapshot
+// lease and no collection runs, it removes the instance directory, whose
+// snapshots can contain secrets, and closes its lock. Background jobs still
+// running keep the instance until they finish. A later load collects into a
+// new locked instance, so environments shared within the process stay usable.
+func (e *environment) releaseInstance() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.releasing = true
+	e.releaseIfIdleLocked()
+}
+
+// unlockAndClose releases a flock before closing its descriptor. A flock
+// belongs to the open file description, and a child forked concurrently by
+// another goroutine shares that description until it execs (O_CLOEXEC only
+// acts at exec). Close alone could therefore leave the lock held for that
+// window, and another instance's startup would skip a released instance.
+func unlockAndClose(f *os.File) error {
+	unlockErr := syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return unlockErr
+}
+
+func (e *environment) releaseIfIdleLocked() {
+	if !e.releasing || len(e.leases) > 0 || e.loading != nil {
+		return
+	}
+	e.releasing = false
+	if e.instanceLock != nil {
+		// Remove while still locked, so no other instance's startup races us.
+		_ = os.RemoveAll(e.instanceDir)
+		_ = unlockAndClose(e.instanceLock)
+	}
+	e.instanceDir, e.instanceLock = "", nil
+	e.snapshot, e.env, e.startup = "", nil, [4]startupStamp{}
 }
 
 // openInstance serializes creation and cleanup so another startup cannot remove
@@ -427,7 +470,7 @@ func (e *environment) openInstance(state string) error {
 		if syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
 			_ = os.RemoveAll(dir)
 		}
-		_ = lock.Close()
+		_ = unlockAndClose(lock)
 	}
 	dir, err := os.MkdirTemp(state, "instance-")
 	if err != nil {
@@ -444,7 +487,8 @@ func (e *environment) openInstance(state string) error {
 		_ = os.RemoveAll(dir)
 		return err
 	}
-	// Held until daemon exit, when the OS releases the lock. No PID heuristics.
+	// Held until the owning Bash shuts down (releaseInstance) or the process
+	// exits, when the OS releases the lock. No PID heuristics.
 	e.instanceDir, e.instanceLock = dir, lock
 	return nil
 }

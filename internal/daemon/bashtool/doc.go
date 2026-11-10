@@ -24,7 +24,12 @@
 // cannot remove their source or cwd scratch files. Their obsolete directories
 // are removed when the shells finish. Each daemon instance holds flock on a
 // private instance-* directory; startup only removes instances whose lock can
-// be acquired, plus legacy top-level snapshot-* directories. Failed refresh keeps a usable old snapshot, warns once, and
+// be acquired, plus legacy top-level snapshot-* directories. A Bash built
+// with explicit Options owns its environment, and its Shutdown releases the
+// instance: once no shell or visible background job holds a snapshot lease,
+// it removes the directory and closes the lock; a later call collects into a
+// new instance. NewBash without Options shares the process-wide environment,
+// whose lock lasts until process exit. Failed refresh keeps a usable old snapshot, warns once, and
 // remembers the failed startup stamps until they change again. Without an old
 // snapshot, callers waiting on the same failed collection receive its error;
 // a later independent call can retry. Cancellation of the collecting caller is
@@ -49,6 +54,9 @@
 // remain linked and exempt from sweeps until the group is empty; inline-result
 // deletion is postponed until then. Polling first reaps adopted group members
 // with wait4(-pgid, WNOHANG), supporting PID 1 and child subreapers. Double forks without setsid remain tracked.
+// After a timeout, cancellation, output cap, lifetime limit or shutdown kills
+// a group, members the daemon adopted are reaped the same way until ECHILD,
+// bounded by the five-second group wait, so none stays a zombie.
 // Known limitation: setsid or any other escape from the process group cannot be
 // tracked by this mechanism and may outlive the daemon.
 // At most 30001 bytes are read. Up to 30000 raw bytes are inlined and the file

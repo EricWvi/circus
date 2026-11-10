@@ -7,11 +7,13 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 func TestMain(m *testing.M) {
 	original := syscall.Umask(0o022)
-	code := m.Run()
+	code := leakcheck.Run(m, leakcheck.Config{})
 	syscall.Umask(original)
 	os.Exit(code)
 }

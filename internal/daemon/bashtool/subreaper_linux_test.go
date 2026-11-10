@@ -4,9 +4,15 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
 func TestSubreaperReapsTrackedGroups(t *testing.T) {
@@ -82,5 +88,82 @@ func TestGroupEmptyWaitIsBounded(t *testing.T) {
 	}
 	if time.Since(started) > time.Second {
 		t.Fatal("group wait exceeded its bound")
+	}
+}
+
+// TestStoppedGroupMembersAreReaped relies on TestMain's child subreaper: the
+// shell's children are adopted by this process, so a stopped command must
+// reap them before Run returns instead of leaving zombies (kill(pid, 0)
+// succeeds on a zombie).
+func TestStoppedGroupMembersAreReaped(t *testing.T) {
+	for _, tc := range []struct {
+		name, command string
+		timeout       time.Duration
+	}{
+		{"timeout kill", `sleep 0; sleep 30 & echo $! > child.pid; wait`, 300 * time.Millisecond},
+		{"timeout stop", `true; sleep 30 & echo $! > child.pid; wait`, 4 * time.Second},
+		{"output cap", `true; sleep 30 & echo $! > child.pid; head -c 2000000 /dev/zero; sleep 30`, 4 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b, root, _ := reviewBash(t, 1<<20)
+			reviewRun(t, b, root, "true", false)
+			ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
+			defer cancel()
+			if tc.name == "timeout stop" {
+				// Cancellation takes the TERM, two-second grace and KILL path.
+				go func() {
+					for {
+						if _, err := os.Stat(filepath.Join(root, "child.pid")); err == nil || ctx.Err() != nil {
+							cancel()
+							return
+						}
+						time.Sleep(5 * time.Millisecond)
+					}
+				}()
+			}
+			r, err := b.Run(ctx, &circusv1.DeviceCall{SessionId: "review", CallId: "reap", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: tc.command}}})
+			if err != nil || !r.Output.IsError {
+				t.Fatal(r, err)
+			}
+			leakcheck.Expect(r.GetBash().GetOutputPath())
+			if pid := childPID(t, root); syscall.Kill(pid, 0) != syscall.ESRCH {
+				t.Fatalf("child %d of the stopped group is alive or an unreaped zombie: %v", pid, r)
+			}
+		})
+	}
+}
+
+// TestTimedOutCollectorChildrenAreReaped is the deterministic regression for
+// stopProcess: nothing after a collector timeout polls the group, so without
+// reaping the killed startup-file child stays a zombie of this subreaper.
+func TestTimedOutCollectorChildrenAreReaped(t *testing.T) {
+	t.Parallel()
+	root := unitTempDir(t)
+	rc := `sleep 30 & echo $! >> "$HOME/child.pids"; exec sleep 30` + "\n"
+	if err := os.WriteFile(filepath.Join(root, ".bashrc"), []byte(rc), 0600); err != nil {
+		t.Fatal(err)
+	}
+	e := &environment{options: Options{Home: root, StateDir: filepath.Join(root, "state"), Shell: "/bin/bash", CollectorTimeout: 200 * time.Millisecond}}
+	t.Cleanup(e.releaseInstance)
+	if _, _, err := e.load(context.Background()); err == nil {
+		t.Fatal("hanging startup files produced a snapshot")
+	}
+	data, err := os.ReadFile(filepath.Join(root, "child.pids"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pids := strings.Fields(string(data))
+	if len(pids) == 0 {
+		t.Fatal("startup files started no child")
+	}
+	for _, field := range pids {
+		pid, err := strconv.Atoi(field)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
+			t.Errorf("collector child %d is alive or an unreaped zombie: %v", pid, err)
+		}
 	}
 }

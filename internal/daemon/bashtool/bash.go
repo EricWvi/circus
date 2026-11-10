@@ -26,16 +26,18 @@ type Bash struct {
 	jobs        *jobs.Manager
 	environment *environment
 	groups      groupTracker
+	// ownsEnvironment lets Shutdown release the environment's instance. Only a
+	// Bash with its own Options owns it; the process-wide one is shared.
+	ownsEnvironment bool
 }
 
 // NewBash constructs a lazy Bash tool without collecting or touching startup
 // files. Supplying Options isolates startup and storage for embedded callers.
 func NewBash(manager *jobs.Manager, options ...Options) *Bash {
-	env := processEnvironment
 	if len(options) > 0 {
-		env = &environment{options: options[0]}
+		return &Bash{jobs: manager, environment: &environment{options: options[0]}, ownsEnvironment: true}
 	}
-	return &Bash{jobs: manager, environment: env}
+	return &Bash{jobs: manager, environment: processEnvironment}
 }
 
 // Warm explicitly starts background environment collection at daemon startup.

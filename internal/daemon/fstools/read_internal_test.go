@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"github.com/EricWvi/circus/internal/textutil"
 )
 
@@ -41,6 +42,7 @@ func TestStreamReadRangeCRLFAtBufferBoundary(t *testing.T) {
 					t.Error(err)
 				}
 			})
+			leakcheck.Track(t, dir)
 			path := filepath.Join(dir, "boundary.txt")
 			if err := os.WriteFile(path, test.raw, 0o600); err != nil {
 				t.Fatal(err)
