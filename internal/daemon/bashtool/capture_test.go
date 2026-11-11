@@ -101,7 +101,7 @@ func gate(t *testing.T, path string) {
 	}
 }
 func (h *captureHarness) start(name, mode string, children bool, exitCode int, trap string, lifetime uint32) *drivenCapture {
-	command := `echo ready > ready; while [ ! -f exit ]; do for f in write-*; do [ -f "$f" ] || continue; n=$(cat "$f"); head -c "$n" /dev/zero; mv "$f" "done-${f#write-}"; done; sleep 0.005; done; exit ` + fmt.Sprint(exitCode)
+	command := `echo ready > ready; while [ ! -f exit ]; do for f in write-*; do [ -f "$f" ] || continue; n=$(cat "$f"); id=${f#write-}; if [ -f "hold-$id" ]; then : > "writing-$id"; while [ ! -f "go-$id" ]; do sleep 0.005; done; fi; head -c "$n" /dev/zero; mv "$f" "done-$id"; done; sleep 0.005; done; exit ` + fmt.Sprint(exitCode)
 	if trap != "" {
 		command = `trap '` + trap + `' TERM; ` + command
 	}
@@ -178,20 +178,27 @@ func (h *captureHarness) promote(r *drivenCapture) {
 		h.t.Fatal("promotion failed", reply.err, reply.result)
 	}
 }
+func (h *captureHarness) publishFill(r *drivenCapture, id, n int) error {
+	pending := filepath.Join(r.dir, fmt.Sprintf("pending-%d", id))
+	if err := os.WriteFile(pending, []byte(fmt.Sprint(n)), 0600); err != nil {
+		return err
+	}
+	// Publish content atomically: an empty newly created file is not a request.
+	return os.Rename(pending, filepath.Join(r.dir, fmt.Sprintf("write-%d", id)))
+}
+func (h *captureHarness) awaitFill(r *drivenCapture, id int) {
+	h.t.Helper()
+	await(h.t, func() bool { _, err := os.Stat(filepath.Join(r.dir, fmt.Sprintf("done-%d", id))); return err == nil })
+}
 func (h *captureHarness) fill(r *drivenCapture, n int, terminal bool) {
 	h.t.Helper()
 	id := r.write
 	r.write++
-	pending := filepath.Join(r.dir, fmt.Sprintf("pending-%d", id))
-	if err := os.WriteFile(pending, []byte(fmt.Sprint(n)), 0600); err != nil {
-		h.t.Fatal(err)
-	}
-	// Publish content atomically: an empty newly created file is not a request.
-	if err := os.Rename(pending, filepath.Join(r.dir, fmt.Sprintf("write-%d", id))); err != nil {
+	if err := h.publishFill(r, id, n); err != nil {
 		h.t.Fatal(err)
 	}
 	if !terminal {
-		await(h.t, func() bool { _, err := os.Stat(filepath.Join(r.dir, fmt.Sprintf("done-%d", id))); return err == nil })
+		h.awaitFill(r, id)
 	}
 }
 func (h *captureHarness) job(r *drivenCapture) jobs.Info {
@@ -231,11 +238,7 @@ func (h *captureHarness) resources() {
 		h.b.outputs.outputBudget.mu.Unlock()
 		h.b.groups.mu.Lock()
 		g := len(h.b.groups.stops)
-		err := h.b.groups.err
 		h.b.groups.mu.Unlock()
-		if err != nil {
-			h.t.Fatal("tracker error", err)
-		}
 		h.b.snapshots.mu.Lock()
 		leases := len(h.b.snapshots.leases)
 		h.b.snapshots.mu.Unlock()
@@ -574,6 +577,15 @@ func TestCaptureTrackerHandoverOrder(t *testing.T) {
 	if state := r.c.snapshotState(); state != (captureState{captureTracked, ownerTracker}) {
 		t.Fatal("tracker registered before ownership transfer", state)
 	}
+	r.c.mu.Lock()
+	entry := r.c.tracking
+	r.c.mu.Unlock()
+	h.b.groups.mu.Lock()
+	registered := entry != nil && h.b.groups.stops[r.c.pgid()] == entry
+	h.b.groups.mu.Unlock()
+	if !registered {
+		t.Fatal("ownership transferred without atomic tracker registration")
+	}
 	gate(t, filepath.Join(r.dir, "child-exit"))
 	resume <- struct{}{}
 	if info := h.job(r); info.State != circusv1.JobEvent_STATE_EXITED || info.ExitCode != 0 {
@@ -658,7 +670,7 @@ func TestCaptureTrackerEntryIdentity(t *testing.T) {
 func TestCaptureFaults(t *testing.T) {
 	// All listed operations have a real production error branch. Close's injected
 	// error is returned after real Close, representing a reported I/O close error.
-	for _, step := range []string{"cwd-open", "open", "file-lock", "start", "register-job", "promote", "promotion-stat", "format-read", "format-stat", "remove"} {
+	for _, step := range []string{"cwd-open", "open", "file-lock", "start", "register-job", "promotion-stat", "format-read", "format-stat", "remove"} {
 		t.Run(step, func(t *testing.T) {
 			t.Parallel()
 			h := newCaptureHarness(t, 0, 0)
@@ -671,6 +683,15 @@ func TestCaptureFaults(t *testing.T) {
 				}
 				return nil
 			}
+			var closed atomic.Int32
+			if step == "file-lock" {
+				h.b.effects.after = func(s string, err error) error {
+					if s == "close" && err == nil {
+						closed.Add(1)
+					}
+					return err
+				}
+			}
 			if step == "cwd-open" || step == "open" || step == "file-lock" || step == "start" || step == "register-job" {
 				result, err := h.b.Run(context.Background(), &circusv1.DeviceCall{SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: h.root, Command: "true", RunInBackground: step == "register-job"}}})
 				if !errors.Is(err, boom) || result != nil {
@@ -678,7 +699,7 @@ func TestCaptureFaults(t *testing.T) {
 				}
 			} else {
 				mode := "foreground"
-				if step == "promote" || step == "promotion-stat" {
+				if step == "promotion-stat" {
 					mode = "promoted"
 				}
 				r := h.start("A", mode, false, 0, "", 0)
@@ -713,6 +734,9 @@ func TestCaptureFaults(t *testing.T) {
 					t.Fatal("error path left fd", err)
 				}
 			}
+			if step == "file-lock" && closed.Load() != 1 {
+				t.Fatal("file-lock failure did not close the output descriptor")
+			}
 			if hits.Load() == 0 {
 				t.Fatal("fault branch not reached")
 			}
@@ -742,7 +766,7 @@ func TestCaptureForegroundCloseError(t *testing.T) {
 }
 
 func TestCaptureDelays(t *testing.T) {
-	steps := []string{"cwd-open", "open", "file-lock", "start", "register-job", "promote", "promotion-stat", "format-read", "format-stat", "exit-marker", "explain", "close", "remove", "budget-add", "budget-start", "wait-shell", "shell-exited", "stop", "kill", "wait", "kill-group", "stop-group", "budget-finish", "budget-remove", "active-remove", "lease-retain", "lease-release", "tracker-register", "tracker-remove", "tracker-removed", "output-check", "job-launched", "finish-shell"}
+	steps := []string{"cwd-open", "open", "file-lock", "start", "register-job", "promotion-stat", "format-read", "format-stat", "exit-marker", "explain", "close", "remove", "budget-add", "budget-start", "wait-shell", "shell-exited", "stop", "kill", "wait", "kill-group", "stop-group", "budget-finish", "budget-remove", "active-remove", "lease-retain", "lease-release", "tracker-register", "tracker-remove", "tracker-removed", "output-check", "job-launched", "finish-shell"}
 	for _, step := range steps {
 		t.Run(step, func(t *testing.T) {
 			t.Parallel()
@@ -761,7 +785,7 @@ func TestCaptureDelays(t *testing.T) {
 			h.b.effects.delay = pause
 			h.b.effects.before = func(s string) error { pause(s); return nil }
 			mode := "foreground"
-			if step == "register-job" || step == "promote" || step == "promotion-stat" {
+			if step == "register-job" || step == "promotion-stat" {
 				mode = "promoted"
 			}
 			if step == "exit-marker" || step == "job-launched" {
@@ -1191,5 +1215,184 @@ func TestCaptureShutdownKeepsSnapshotThroughChildTrap(t *testing.T) {
 		t.Fatalf("snapshot lease ended before child TERM trap: %q %v", data, err)
 	}
 	h.released(r, captureEmpty, true)
+	h.resources()
+}
+
+func TestCaptureForegroundHandoffReleasesSnapshotBeforeChildExit(t *testing.T) {
+	t.Parallel()
+	h := newCaptureHarness(t, 0, 0)
+	a := h.start("A", "foreground", true, 0, "", 0)
+	oldDir := filepath.Dir(a.c.lease.path)
+	gate(t, filepath.Join(a.dir, "exit"))
+	reply := h.returned(a)
+	if reply.err != nil || reply.result.GetBash().ExitCode != 0 {
+		t.Fatal(reply.err, reply.result)
+	}
+	if !groupAlive(a.c.pgid()) {
+		t.Fatal("child exited before snapshot refresh")
+	}
+	if _, err := os.Stat(a.c.cwdPath); !os.IsNotExist(err) {
+		t.Fatal("foreground handoff retained cwd scratch file", err)
+	}
+	// Creating .bashrc changes the startup stamp set even on a coarse filesystem
+	// timestamp. The next command must collect a replacement snapshot.
+	if err := os.WriteFile(filepath.Join(h.root, ".bashrc"), []byte("export SNAPSHOT_REFRESH=1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	b := h.start("B", "foreground", false, 0, "", 0)
+	if filepath.Dir(b.c.lease.path) == oldDir {
+		t.Fatal("startup change did not refresh the snapshot")
+	}
+	gate(t, filepath.Join(b.dir, "exit"))
+	h.returned(b)
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Fatal("obsolete snapshot remains leased by a foreground child", err)
+	}
+	if !groupAlive(a.c.pgid()) {
+		t.Fatal("child did not remain alive across snapshot refresh")
+	}
+	gate(t, filepath.Join(a.dir, "child-exit"))
+	h.released(a, captureEmpty, false)
+	h.released(b, captureExited, false)
+	h.resources()
+}
+
+func TestCaptureTrackerReleaseErrorsIgnored(t *testing.T) {
+	for _, state := range []string{"live", "closed"} {
+		for _, step := range []string{"close", "remove"} {
+			t.Run(state+"/"+step, func(t *testing.T) {
+				t.Parallel()
+				h := newCaptureHarness(t, 0, 0)
+				boom := errors.New("tracker " + step + " failed")
+				var hits atomic.Int32
+				if step == "close" {
+					h.b.effects.after = func(s string, err error) error {
+						if s == step {
+							hits.Add(1)
+							return boom
+						}
+						return err
+					}
+				} else {
+					h.b.effects.before = func(s string) error {
+						if s == step {
+							hits.Add(1)
+							return boom
+						}
+						return nil
+					}
+				}
+				r := h.start("A", "foreground", true, 0, "", 0)
+				if state == "closed" {
+					if err := h.b.Shutdown(context.Background()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				gate(t, filepath.Join(r.dir, "exit"))
+				reply := h.returned(r)
+				if reply.err != nil || reply.result.GetBash().ExitCode != 0 {
+					t.Fatal("tracker cleanup changed the foreground result", reply.err, reply.result)
+				}
+				if state == "live" {
+					gate(t, filepath.Join(r.dir, "child-exit"))
+				}
+				if step == "close" {
+					h.released(r, captureEmpty, false)
+				} else {
+					h.released(r, captureEmpty, true)
+					if err := os.Remove(r.c.out.Name()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := h.b.Shutdown(context.Background()); err != nil {
+					t.Fatal("tracker cleanup changed Shutdown", err)
+				}
+				h.resources()
+				if hits.Load() != 1 {
+					t.Fatal("tracker cleanup fault was not reached", hits.Load())
+				}
+			})
+		}
+	}
+}
+
+func TestCaptureClosedTrackerExplainsLateCap(t *testing.T) {
+	t.Parallel()
+	h := newCaptureHarness(t, 1024, 0)
+	entered, resume := make(chan struct{}, 1), make(chan struct{})
+	var once sync.Once
+	defer once.Do(func() { close(resume) })
+	h.b.effects.delay = func(step string) {
+		if step == "stop-group" {
+			entered <- struct{}{}
+			<-resume
+		}
+	}
+	r := h.startCommand("A", "background", `(while [ ! -f grow ]; do sleep 0.01; done; printf '%02048d' 0; echo grown > grown; while [ ! -f child-exit ]; do sleep 0.01; done) & echo ready > ready; while [ ! -f exit ]; do sleep 0.005; done; exit 0`, 0)
+	if err := h.b.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	gate(t, filepath.Join(r.dir, "exit"))
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("closed tracker did not begin child cleanup")
+	}
+	// Grow only after finishShell's cap check, while the closed tracker is
+	// synchronously stopping the leftover group.
+	gate(t, filepath.Join(r.dir, "grow"))
+	await(t, func() bool { _, err := os.Stat(filepath.Join(r.dir, "grown")); return err == nil })
+	once.Do(func() { close(resume) })
+	if info := h.job(r); info.State != circusv1.JobEvent_STATE_EXITED || info.ExitCode != 0 {
+		t.Fatal(info)
+	}
+	h.released(r, captureEmpty, true)
+	file, err := os.Open(r.c.out.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if tail := outputTail(t, file); strings.Count(tail, outputLimitMessage) != 1 || !strings.HasSuffix(tail, outputLimitMessage) {
+		t.Fatal("closed tracker lost late cap explanation", tail)
+	}
+	h.resources()
+}
+
+func TestCaptureBackgroundCapAndMarkerErrors(t *testing.T) {
+	t.Parallel()
+	h := newCaptureHarness(t, 1024, 0)
+	markerBoom := errors.New("marker failed")
+	explainBoom := errors.New("explanation failed")
+	h.b.effects.before = func(step string) error {
+		switch step {
+		case "exit-marker":
+			return markerBoom
+		case "explain":
+			return explainBoom
+		default:
+			return nil
+		}
+	}
+	exited := make(chan struct{})
+	var once sync.Once
+	h.b.effects.delay = func(step string) {
+		if step == "shell-exited" {
+			once.Do(func() { close(exited) })
+		}
+		if step == "output-check" {
+			<-exited
+		}
+	}
+	r := h.start("A", "background", false, 0, "", 0)
+	h.fill(r, 2048, false)
+	gate(t, filepath.Join(r.dir, "exit"))
+	if info := h.job(r); info.State != circusv1.JobEvent_STATE_KILLED || info.ExitCode != 0 {
+		t.Fatal(info)
+	}
+	code, err := r.c.job.Wait()
+	if code != 0 || !errors.Is(err, markerBoom) || !errors.Is(err, explainBoom) || !errors.Is(err, jobs.ErrKilled) {
+		t.Fatal("cap and marker errors were not both retained", code, err)
+	}
+	h.released(r, captureKilled, true)
 	h.resources()
 }

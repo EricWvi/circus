@@ -60,6 +60,22 @@ func TestSnapshotRefreshesWhenStartupChanges(t *testing.T) {
 	}
 }
 
+func TestBashDescriptionHasNoExecutionSemantics(t *testing.T) {
+	t.Parallel()
+	w := newWorker(t)
+	const description = "informational only; touch description-command-ran"
+	r, err := w.bash.Run(context.Background(), &circusv1.DeviceCall{CallId: "description", SessionId: "fixture-session", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "printf executed", Description: description, Cwd: w.start}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Output.IsError || r.Output.Content[0].GetText() != "executed" {
+		t.Fatal(r)
+	}
+	if _, err := os.Stat(filepath.Join(w.start, "description-command-ran")); !os.IsNotExist(err) {
+		t.Fatal("description was executed", err)
+	}
+}
+
 func TestInteractiveCollectorFallback(t *testing.T) {
 	t.Parallel()
 	w := newWorkerWithOptions(t, func(o *bashtool.Options) {

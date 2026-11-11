@@ -15,9 +15,11 @@ descriptor closed and active/budget records gone; retained names belong to
 outputStore's retention policy. Snapshot leases identify snapshots directly,
 not through cwd scratch paths, and end after shell/cwd work and synchronous
 closed-tracker cleanup. A child TERM trap retains the snapshot until that
-cleanup finishes; this is tested by ShutdownKeepsSnapshotThroughChildTrap. Each store has its
-own configuration and mutex. `effects` is a separate injected dependency, not
-a pointer into Bash's fields.
+cleanup finishes; this is tested by ShutdownKeepsSnapshotThroughChildTrap.
+Foreground handoff instead releases its shell lease before returning, allowing
+a refresh to remove the obsolete snapshot while the child remains alive. Each
+store has its own configuration and mutex. `effects` is a separate injected
+dependency, not a pointer into Bash's fields.
 
 ## Public transition table
 
@@ -64,7 +66,10 @@ Additional driven transitions and scheduling windows have focused tests:
 | promoted, launch callback held × cap | CapDuringPromotion | real worker finishes while registration pending; later published KILLED/137, one explanation |
 | launch callback held × jobs.Shutdown, before or after tracker handover | RejectedRegistration | ErrShutdown, no registered job, no unannounced file, empty group and zero records |
 | B × wrong-driver release | WrongDriverRelease | error, live descriptor unchanged; normal Run/manager completion |
-| B natural exit × tracker registration gate | TrackerHandoverOrder | owner T is established before tracker registration, even if children exit at the gate |
+| B natural exit × tracker registration gate | TrackerHandoverOrder | owner T and its index entry are installed atomically before the registration gate opens, even if children exit at the gate |
+| F natural exit with children × snapshot refresh | ForegroundHandoffReleasesSnapshotBeforeChildExit | Run removes cwd scratch and drops its lease; refresh removes the old snapshot while the child is still alive |
+| live or closed T × Close/Remove failure | TrackerReleaseErrorsIgnored | real cleanup completes; injected errors do not change Run or Shutdown; failed Remove leaves a file for test cleanup |
+| closed T × cap selected during child cleanup | ClosedTrackerExplainsLateCap | exactly one cap explanation follows synchronous cleanup |
 | T empty × entry removal | TrackerEntriesReleased | g.stops really becomes empty |
 | old T empty × reused pgid index | TrackerEntryIdentity | stop uses capture's own entry; old defer cannot remove replacement |
 | T × shutdown | TrackerShutdown, TrackerStopUsesTERM | group stopped within bound; TERM trap actually runs |
@@ -73,32 +78,45 @@ Additional driven transitions and scheduling windows have focused tests:
 | stopped B × bounded wait still reports alive | StoppedGroupFallback | no handover to unbounded tracker; KILLED/143 and released records |
 | ended F × blocked formatting | FinishedBudgetBeforeFormatting | descriptor remains for formatting, but finished file no longer consumes running budget |
 
-The wait and final-alive probes are read adapters. The fallback test simulates a
+The wait and final-alive probes are test-only read adapters. The fallback test simulates a
 kernel verdict after bounded cleanup, without an unkillable privileged process
-or a five-second delay; Run, Stop, Wait and jobs.Manager remain real. In
-particular M18 is only equivalent if stopping always empties the group. Existing
-bounded-wait behavior permits a nonempty final verdict, so the
-terminationRequested guard is retained and tested, preserving that behavior.
+or a five-second delay; Run, Stop, Wait and jobs.Manager remain real. Removing
+these probes would make the nonempty-group handoff guard and wait-ownership
+invariants impractical to test deterministically. In particular M18 is only
+equivalent if stopping always empties the group. Existing bounded-wait behavior
+permits a nonempty final verdict, so the terminationRequested guard is retained
+and tested, preserving that behavior.
 
 ## Failures versus scheduling delays
 
 `attempt` propagates errors. `pause` cannot return one. There is no cleanup hook
 that discards an injected error, no fallible budget-add rollback and no no-op
-track action. The 13 fallible operations are cwd-open, output open, file-lock,
-process start, register-job, promote (state guard), promotion-stat, format-read,
-format-stat, exit-marker, explain, close and remove.
+track action. The 12 fallible operations are cwd-open, output open, file-lock,
+process start, register-job, promotion-stat, format-read, format-stat,
+exit-marker, explain, close and remove. Promotion's foreground-to-background
+state move is not injectable: no production state can make it fail.
 
-`TestCaptureFaults` checks ten acquisition/format/transition/unlink branches.
-`BackgroundWriteErrors` checks marker, explanation and Close errors for exit 0
-and exit 7, including the actual manager mapping and Wait error. Close errors
-are injected **after real Close**, matching a reported close I/O error without
-inventing an open-descriptor leak. Foreground Close errors remain ignored, as
-before; tracker cleanup I/O errors also retain their prior policy. Remove
-failure genuinely leaves the name: the test checks the returned error and
-released descriptor/accounting, then removes the artificial inaccessible file.
-It does not claim that a failed unlink deletes a file. No allowance is added.
+`TestCaptureFaults` checks nine acquisition/format/transition/unlink branches.
+The file-lock case observes a successful real Close through the after-Close
+adapter, so it detects rollback descriptor leaks without relying on GC or a
+finalizer. `BackgroundWriteErrors` checks marker, explanation and Close errors
+for exit 0 and exit 7, including the actual manager mapping and Wait error.
+`BackgroundCapAndMarkerErrors` uses distinct marker and explanation failures
+and requires Wait to retain both. Close errors are injected **after real Close**,
+matching a reported close I/O error without inventing an open-descriptor leak.
+Foreground Close errors remain ignored, as before. Live and closed tracker
+cleanup ignore both Close and Remove errors; tests require unchanged Run and
+Shutdown results. Remove failure genuinely leaves the name: tests check the
+returned error where the policy reports it and released descriptor/accounting,
+then remove the artificial inaccessible file. They do not claim that a failed
+unlink deletes a file. No allowance is added.
 
-`TestCaptureDelays` separately delays all 33 named operation/ownership points
+`reject` may call Stop after `jobs.Manager.Start` rejects a launched job. This
+relies on Manager.Start's closed-after-launch contract: it calls job.Stop before
+returning ErrShutdown. The capture's Stop is idempotent; Wait then reclaims
+resources without publishing a job.
+
+`TestCaptureDelays` separately delays all 32 named operation/ownership points
 by at least the 100 ms poll interval. Budget add/start/finish/remove, active-set
 removal, shell wait/exit, signals, group wait, output checks, lease retain/release,
 tracker registration/removal and job-launch publication are scheduling-only;
@@ -119,13 +137,22 @@ operations. A total-budget event must select the unique largest writer while
 the smaller job stays running.
 
 After enumeration, 12 randomized multi-step sequences (2 with `-short`) start
-A and B, shuffle writes/promotion/Cancel, end A while optionally retaining its
-children, overflow B as the largest total-budget victim, start/fill C, and
-interleave natural exit, TaskStop or foreground Cancel with both shutdown APIs.
-The model checks phase/driver, exact live bytes, file/descriptor lifetime,
-running budget identity/count, tracker count, actual manager state/code and
-cap explanations after **every** operation. Request contents are atomically
-published via rename so a shell cannot consume a half-written test request.
+at least three captures and issue weighted fills, promotion, effective
+foreground Cancel, natural exit and TaskStop in concurrent waves. Randomized
+jobs.Shutdown occurs between waves, and Bash.Shutdown may precede final pressure.
+Each wave operates on at least two distinct captures behind a common start barrier.
+Per-request shell gates hold writes until every participant is in flight; only
+the parent test goroutine then settles replies and updates the model. A Cancel
+target is selected from any of the initial, still-foreground captures. The
+aggregate victim is recomputed from actual descriptor sizes after the final
+concurrent write wave, including tracked background exit markers, and is not
+fixed by capture construction. Its KILL is then held while a second writer
+exceeds the aggregate budget and exits; pending selection must suppress a second
+victim. The model checks phase/driver, exact live bytes,
+file/descriptor lifetime, running budget identity/count, tracker count, actual
+manager state/code and cap explanations after every settled operation or wave.
+Request contents are atomically published via rename so a shell cannot consume
+a half-written test request.
 
 `CIRCUS_CAPTURE_SEED` accepts an integer (including 0x-prefixed hexadecimal).
 The default is the current Unix nanosecond time. Every failing case prints the
@@ -135,20 +162,10 @@ seed and its operation trace. Replay, for example:
 CIRCUS_CAPTURE_SEED=0xc1ac05 go test -count=1 -run TestCaptureModelSequences ./internal/daemon/bashtool
 ```
 
-The review's seq/main.go was reused to record the old 23/7-cell distribution and
-expanded under .tmp/revision/seq to enumerate the new 40 cells and replay the
-new random decisions. Enumeration is complete even in short mode.
-
 ## Mutation observations
 
-The runner reuses definitions from the review's mutate.py/mutate2.py and the
-original 18. It restores exact source bytes in finally blocks, without git
-checkout or other state-changing git commands. Patterns are adapted where
-operations moved: M5 explicitly leaks the capture's lease on failed promotion;
-M6b preserves the kill-group label while changing the real signal behavior;
-O14 drops the real wait call while retaining its scheduling pause. An initial
-O14 edit left a local probe unused and did not compile; it was corrected to a
-compiling no-wait mutation and rerun. Compile failure is not counted as a kill.
+The runner restores exact source bytes in finally blocks, without git checkout
+or other state-changing git commands. Patterns follow operations when they move.
 
 These are observations about the listed mutations, not a claim that all
 possible regressions are covered. Every non-equivalent mutation below fails
@@ -160,13 +177,13 @@ a test aimed at its effect; hook visitation alone is not its signal.
 | M2 | abandonForeground skips stopLeftovers after shell exit | KILLED | `TestCaptureFormatFailureStopsChildren` |
 | M3 | closed tracker does not stop leftovers | KILLED | `TestCaptureShutdownBeforeHandover` |
 | M4 | reject ignores tracker-owned children | KILLED | `TestCaptureRejectedRegistration` |
-| M5 | promote failure leaks snapshot lease | KILLED | `TestCaptureFaults/promote` |
+| M5 | promote failure leaks snapshot lease | REMOVED: the test-only promote fault point and unreachable state guard were deleted | `—` |
 | M6 | total victim children get TERM grace instead of KILL | KILLED | `TestCaptureTotalVictimChildrenUseKILL` |
 | M7 | background cap uses TERM path | KILLED | `TestOutputCapKillsTERMIgnoringWriters/background` |
 | M8 | tracker release keeps active/budget records | KILLED | `TestCaptureTrackerEntriesReleased` |
 | M9 | background release deletes its output | KILLED | `TestCaptureTransitions/background-exit` |
 | M10 | truncated foreground output not retained | KILLED | `TestCaptureTransitions/foreground-persisted` |
-| M11 | hand to tracker before state move | KILLED | `TestCaptureTrackerHandoverOrder` |
+| M11 | hand to tracker before state move | REMOVED: ownership transfer and index registration now occur under the same locks | `TestCaptureTrackerHandoverOrder` |
 | M12 | Shutdown does not stop tracked groups | KILLED | `TestCaptureTrackerShutdown` |
 | M13 | tracker cap does not kill group | KILLED | `TestCaptureTrackedCap` |
 | M14 | background children output deleted when group empties | KILLED | `TestCaptureTransitions/background-children` |
@@ -201,6 +218,12 @@ a test aimed at its effect; hook visitation alone is not its signal.
 | X1 | old tracker unconditionally deletes replacement entry | KILLED | `TestCaptureTrackerEntryIdentity` |
 | X2 | stopTracked takes entry from reused pgid index | KILLED | `TestCaptureTrackerEntryIdentity` |
 | X3 | release snapshot before closed-tracker child cleanup | KILLED | `TestCaptureShutdownKeepsSnapshotThroughChildTrap` |
+| N3 | foreground tracker handoff retains its shell lease | KILLED | `TestCaptureForegroundHandoffReleasesSnapshotBeforeChildExit` |
+| N6 | tracker Close errors become visible | KILLED | `TestCaptureTrackerReleaseErrorsIgnored/closed/close` |
+| N7 | tracker Remove errors become visible | KILLED | `TestCaptureTrackerReleaseErrorsIgnored/closed/remove` |
+| N8 | file-lock rollback skips Close | KILLED | `TestCaptureFaults/file-lock` |
+| N10 | closed tracker omits a late cap explanation | KILLED | `TestCaptureClosedTrackerExplainsLateCap` |
+| N12 | cap explanation overwrites the marker error | KILLED | `TestCaptureBackgroundCapAndMarkerErrors` |
 
 M15's repeated-terminate branch and M19's explicit pre-return terminate calls
 were removed. M16 was already marked invalid in the review: changing only a
@@ -208,45 +231,3 @@ hook label has no production effect. M18's guard is intentionally retained for
 the bounded-wait fallback, and the corresponding mutation is now killed.
 X1, X2 and X3 are extra tests of identity-safe deletion and stopping after index
 replacement and snapshot lifetime through child cleanup; the collision uses real captures without requiring PID rollover.
-
-## Verification
-
-Original baseline: full `go test -count=1 ./...` wall time 9.50 s. This revision's
-measured run: 13.20 s, under the approximate 2× budget.
-The review's 24-scenario parity probe was reused against main@6418c3f and the
-revision at the same scratch path. Paths are normalized before the probe's
-preview cut to avoid path-length artifacts; job IDs are normalized as before.
-Both 24-scenario reports matched exactly. Fixtures and leakcheck allowances
-are unchanged. Final required command results are recorded after verification. During this
-revision, a regression test first demonstrated that releasing the background
-lease before a closed-tracker handover made its child's TERM trap lose access
-to the snapshot. The release was moved back to the driver end (or completed
-tracker cleanup), restoring the original lifetime. The red and green results
-are in .tmp/revision/lease-trap-{red,green}.log.
-
-| Required verification | Final result |
-| --- | --- |
-| make check-gen lint test build | exit 0; 22.80 s wall (including generation, vet, tests and build); node_modules already present |
-| go test -race ./internal/... ./cmd/... | exit 0; 36.62 s, run after stress ended |
-| New tests: -race -count=20 -cpu 1,4 with continuous parallel jobs tests | exit 0; bashtool 246.354 s; 32 parallel jobs loads all passed |
-| go test -count=1 ./... in a ten-run loop | 10/10 passed; 14.61–18.37 s per run under load; median 15.14 s |
-| script -qec 'go test ./internal/daemon/bashtool/' /dev/null | exit 0; uncached bashtool 12.796 s (20.04 s wall) |
-| Final standalone go test -count=1 ./... | exit 0; 13.20 s wall, 1.39× the original 9.50 s |
-
-The initial concurrent full-race command hit the unchanged fstools
-TestRangedReadManyEmptyLinesStaysBounded allocation threshold (33,574,640 bytes
-versus 33,554,432). The final isolated command above passed without changing
-fstools, its threshold or leakcheck allowances. Earlier test-harness failures
-were corrected: prefer the already-published started notification when a quick
-background result is also ready, atomically publish write requests, wait for the
-actual aggregate selection at the shell-finish gate, and observe tracker removal
-after the release notification rather than racing its defer. Those intermediate
-failures are retained in .tmp/revision logs; only the final completed checks are
-listed as passing.
-
-Final resource audit found no process cwd or open descriptor under this task's
-scratch paths, and no zombies. The real ~/.cache/circus remains absent. The
-pre-existing ~/.local/state/circus manifest (paths, sizes and mtimes) matches
-its pre-verification copy. No parity fixture, dependency manifest or generated
-source changed; no leakcheck allowance, commit or state-changing Git command
-was added. Review scripts and byte-restoring adapters/logs remain under .tmp/.

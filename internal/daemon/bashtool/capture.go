@@ -50,6 +50,9 @@ const (
 // effects separates fallible operations from scheduling-only observation.
 // Hooks are configured before starting commands. after can simulate a Close
 // that reports an error after closing the descriptor, as real Close may do.
+// alive and waitAlive are test-only kernel read adapters: they preserve the
+// nonempty-group handoff guard and descriptor-ownership tests without creating
+// privileged, unkillable processes or waiting for the full kernel timeout.
 type effects struct {
 	waitAlive func(int) bool
 	alive     func(int) bool
@@ -180,16 +183,6 @@ func (c *capture) finishBudget() {
 	c.bash.outputs.outputBudget.finish(c.out.Name())
 }
 
-func (c *capture) beginBackground() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.state != (captureState{captureForeground, ownerForeground}) {
-		return errors.New("capture is not foreground")
-	}
-	c.state = captureState{captureBackground, ownerBackground}
-	return nil
-}
-
 func captureOutcomePhase(outcome processOutcome) capturePhase {
 	if !outcome.terminationRequested {
 		return captureExited
@@ -306,7 +299,6 @@ func (c *capture) releaseShell() {
 }
 func (c *capture) track(disposition outputDisposition) error {
 	c.disposition = disposition
-	c.move(captureTracked, ownerTracker)
 	return c.bash.trackCapture(c)
 }
 
@@ -344,9 +336,7 @@ func (j *backgroundJob) Stop() error        { j.once.Do(j.cancel); <-j.done; ret
 
 func (c *capture) background(lifetime time.Duration) (*backgroundJob, error) {
 	b := c.bash
-	if err := b.effects.attempt("promote", c.beginBackground); err != nil {
-		return nil, err
-	}
+	c.move(captureBackground, ownerBackground)
 	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	job := &backgroundJob{done: make(chan struct{}), cancel: cancel}
 	c.job = job

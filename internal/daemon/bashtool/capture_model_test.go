@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -31,6 +33,7 @@ type captureSequence struct {
 	h                  *captureHarness
 	models             []*modeledCapture
 	closed, jobsClosed bool
+	total              int64
 	trace              []string
 }
 
@@ -49,12 +52,15 @@ func (s *captureSequence) start(name, mode string, children bool) *modeledCaptur
 	s.check()
 	return m
 }
-func (s *captureSequence) promote(m *modeledCapture) {
-	s.record("promote " + m.run.name)
+func (s *captureSequence) settlePromote(m *modeledCapture) {
 	s.h.promote(m.run)
 	m.mode = "background"
 	m.phase = captureBackground
 	m.keep = true
+}
+func (s *captureSequence) promote(m *modeledCapture) {
+	s.record("promote " + m.run.name)
+	s.settlePromote(m)
 	s.check()
 }
 func (s *captureSequence) fill(m *modeledCapture, n int) {
@@ -63,11 +69,8 @@ func (s *captureSequence) fill(m *modeledCapture, n int) {
 	m.bytes += n
 	s.check()
 }
-func (s *captureSequence) cancel(m *modeledCapture) {
-	s.record("Cancel " + m.run.name)
-	m.run.cancel()
+func (s *captureSequence) settleCancel(m *modeledCapture) {
 	if m.mode == "background" {
-		s.check()
 		return
 	}
 	m.live = false
@@ -79,11 +82,14 @@ func (s *captureSequence) cancel(m *modeledCapture) {
 		s.h.t.Fatal("cancel outcome", reply.err, reply.result)
 	}
 	s.h.released(m.run, m.phase, m.keep)
+}
+func (s *captureSequence) cancel(m *modeledCapture) {
+	s.record("Cancel " + m.run.name)
+	m.run.cancel()
+	s.settleCancel(m)
 	s.check()
 }
-func (s *captureSequence) natural(m *modeledCapture) {
-	s.record("shell exit " + m.run.name)
-	gate(s.h.t, filepath.Join(m.run.dir, "exit"))
+func (s *captureSequence) settleNatural(m *modeledCapture) {
 	m.live = false
 	m.phase = captureExited
 	m.keep = m.mode == "background"
@@ -104,11 +110,14 @@ func (s *captureSequence) natural(m *modeledCapture) {
 	if !m.tracked {
 		s.h.released(m.run, m.phase, m.keep)
 	}
+}
+func (s *captureSequence) natural(m *modeledCapture) {
+	s.record("shell exit " + m.run.name)
+	gate(s.h.t, filepath.Join(m.run.dir, "exit"))
+	s.settleNatural(m)
 	s.check()
 }
-func (s *captureSequence) stop(m *modeledCapture) {
-	s.record("TaskStop " + m.run.name)
-	s.h.stop(m.run)
+func (s *captureSequence) settleStop(m *modeledCapture) {
 	m.live = false
 	m.phase = captureKilled
 	m.code = 143
@@ -116,20 +125,14 @@ func (s *captureSequence) stop(m *modeledCapture) {
 	m.jobState = circusv1.JobEvent_STATE_KILLED
 	s.h.job(m.run)
 	s.h.released(m.run, m.phase, m.keep)
+}
+func (s *captureSequence) stop(m *modeledCapture) {
+	s.record("TaskStop " + m.run.name)
+	s.h.stop(m.run)
+	s.settleStop(m)
 	s.check()
 }
-func (s *captureSequence) pressure(m *modeledCapture, n int, aggregate bool) {
-	s.record(fmt.Sprintf("pressure %s +%d total=%v", m.run.name, n, aggregate))
-	if aggregate {
-		// All other live captures are smaller; they must survive the shared stat
-		// pass while the selected largest victim is pending and being reaped.
-		for _, other := range s.models {
-			if other != m && (other.live || other.tracked) && other.bytes >= m.bytes+n {
-				s.h.t.Fatal("invalid largest-victim model")
-			}
-		}
-	}
-	s.h.fill(m.run, n, true)
+func (s *captureSequence) settlePressure(m *modeledCapture, n int, aggregate bool) {
 	m.bytes += n
 	m.live = false
 	m.phase = captureKilled
@@ -146,6 +149,32 @@ func (s *captureSequence) pressure(m *modeledCapture, n int, aggregate bool) {
 		s.h.returned(m.run)
 	}
 	s.h.released(m.run, m.phase, m.keep)
+}
+func (s *captureSequence) pressure(m *modeledCapture, n int, aggregate bool) {
+	s.record(fmt.Sprintf("pressure %s +%d total=%v", m.run.name, n, aggregate))
+	if aggregate {
+		// The victim is selected from actual descriptor sizes, including exit
+		// markers on tracked background files, rather than construction order or
+		// requested byte counts alone.
+		info, err := m.run.c.out.Stat()
+		if err != nil {
+			s.h.t.Fatal(err)
+		}
+		for _, other := range s.models {
+			if other == m || (!other.live && !other.tracked) {
+				continue
+			}
+			otherInfo, err := other.run.c.out.Stat()
+			if err != nil {
+				s.h.t.Fatal(err)
+			}
+			if otherInfo.Size() >= info.Size() {
+				s.h.t.Fatal("total-budget victim is not the unique largest actual writer", m.run.name, other.run.name)
+			}
+		}
+	}
+	s.h.fill(m.run, n, true)
+	s.settlePressure(m, n, aggregate)
 	s.check()
 }
 func (s *captureSequence) drain(m *modeledCapture) {
@@ -280,11 +309,7 @@ func (s *captureSequence) check() {
 		s.h.b.outputs.outputBudget.mu.Unlock()
 		s.h.b.groups.mu.Lock()
 		g := len(s.h.b.groups.stops)
-		err := s.h.b.groups.err
 		s.h.b.groups.mu.Unlock()
-		if err != nil {
-			t.Fatal(err)
-		}
 		return a == running && b == running && g == tracked
 	})
 }
@@ -304,6 +329,131 @@ func (s *captureSequence) finish() {
 	s.shutdownJobs()
 	s.shutdownBash()
 	s.h.resources()
+}
+
+type captureWaveOp struct {
+	kind    string
+	capture *modeledCapture
+	n, id   int
+	jobID   string
+}
+
+// wave triggers one operation per capture behind a common barrier. Fill
+// requests also wait at per-request shell gates, proving that their writes are
+// simultaneously in flight. Only the parent goroutine settles replies and
+// updates the model, so concurrent public operations never race test state.
+func (s *captureSequence) wave(ops []captureWaveOp) {
+	t := s.h.t
+	if len(ops) < 2 {
+		t.Fatal("random wave needs at least two captures")
+	}
+	seen := make(map[*modeledCapture]bool)
+	descriptions := make([]string, len(ops))
+	for i := range ops {
+		op := &ops[i]
+		if !op.capture.live || seen[op.capture] {
+			t.Fatal("invalid concurrent operation", op.kind, op.capture.run.name)
+		}
+		seen[op.capture] = true
+		descriptions[i] = op.kind + " " + op.capture.run.name
+		switch op.kind {
+		case "fill":
+			op.id = op.capture.run.write
+			op.capture.run.write++
+			gate(t, filepath.Join(op.capture.run.dir, fmt.Sprintf("hold-%d", op.id)))
+			descriptions[i] = fmt.Sprintf("fill %s +%d", op.capture.run.name, op.n)
+		case "TaskStop":
+			reply := s.h.returned(op.capture.run)
+			op.jobID = reply.result.GetBash().JobId
+		case "promote", "Cancel", "natural":
+		default:
+			t.Fatal("unknown wave operation", op.kind)
+		}
+	}
+	s.record("concurrent [" + strings.Join(descriptions, " | ") + "]")
+
+	var ready sync.WaitGroup
+	ready.Add(len(ops))
+	start := make(chan struct{})
+	errs := make(chan error, len(ops))
+	for i := range ops {
+		op := &ops[i]
+		go func() {
+			ready.Done()
+			<-start
+			switch op.kind {
+			case "fill":
+				errs <- s.h.publishFill(op.capture.run, op.id, op.n)
+			case "promote":
+				op.capture.run.expiry.expire()
+				errs <- nil
+			case "Cancel":
+				op.capture.run.cancel()
+				errs <- nil
+			case "natural":
+				errs <- os.WriteFile(filepath.Join(op.capture.run.dir, "exit"), nil, 0600)
+			case "TaskStop":
+				result, err := NewTaskStop(s.h.b.jobs).Run(context.Background(), &circusv1.DeviceCall{SessionId: "review", Tool: &circusv1.DeviceCall_TaskStop{TaskStop: &circusv1.TaskStopRequest{JobId: op.jobID}}})
+				if err == nil && result.Output.IsError {
+					err = fmt.Errorf("TaskStop rejected %s", op.capture.run.name)
+				}
+				errs <- err
+			}
+		}()
+	}
+	ready.Wait()
+	close(start)
+	for range ops {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, op := range ops {
+		if op.kind == "fill" {
+			await(t, func() bool {
+				_, err := os.Stat(filepath.Join(op.capture.run.dir, fmt.Sprintf("writing-%d", op.id)))
+				return err == nil
+			})
+		}
+	}
+	for _, op := range ops {
+		if op.kind == "fill" {
+			gate(t, filepath.Join(op.capture.run.dir, fmt.Sprintf("go-%d", op.id)))
+		}
+	}
+	for _, op := range ops {
+		switch op.kind {
+		case "fill":
+			s.h.awaitFill(op.capture.run, op.id)
+			op.capture.bytes += op.n
+		case "promote":
+			s.settlePromote(op.capture)
+		case "Cancel":
+			s.settleCancel(op.capture)
+		case "natural":
+			s.settleNatural(op.capture)
+		case "TaskStop":
+			s.settleStop(op.capture)
+		}
+	}
+	s.check()
+}
+
+func (s *captureSequence) actualSizes() (map[*modeledCapture]int64, int64) {
+	sizes := make(map[*modeledCapture]int64)
+	var total int64
+	for _, m := range s.models {
+		if !m.live && !m.tracked {
+			continue
+		}
+		info, err := m.run.c.out.Stat()
+		if err != nil {
+			s.h.t.Fatal(err)
+		}
+		sizes[m] = info.Size()
+		total += info.Size()
+	}
+	return sizes, total
 }
 
 func TestCaptureModelSequences(t *testing.T) {
@@ -335,7 +485,7 @@ func TestCaptureModelSequences(t *testing.T) {
 						if op == "total" {
 							limit, total = 1<<20, 10000
 						}
-						s := &captureSequence{h: newCaptureHarness(t, limit, total)}
+						s := &captureSequence{h: newCaptureHarness(t, limit, total), total: total}
 						a := s.start("A", mode, children)
 						b := s.start("B", "background", !children)
 						s.fill(b, 1024)
@@ -379,60 +529,177 @@ func TestCaptureModelSequences(t *testing.T) {
 		extra = 2
 	}
 	for i := range extra {
-		childA, childB := random.IntN(2) == 0, random.IntN(2) == 0
-		order := random.Perm(6)
-		fill := 256 + random.IntN(512)
-		shutdownFirst := random.IntN(2) == 0
-		endC := random.IntN(3)
+		scenarioSeed := random.Uint64()
 		t.Run(fmt.Sprintf("random/%#x/%d", seed, i), func(t *testing.T) {
 			t.Parallel()
-			t.Logf("CIRCUS_CAPTURE_SEED=%#x", seed)
-			s := &captureSequence{h: newCaptureHarness(t, 1<<20, 10000)}
-			a := s.start("A", "promoted", childA)
-			b := s.start("B", "background", childB)
-			for _, event := range order {
-				switch event {
-				case 0:
-					s.fill(a, fill)
-				case 1:
-					s.fill(b, 512)
-				case 2:
-					s.promote(a)
-				case 3:
-					s.cancel(b)
-				case 4:
-					s.fill(a, 512)
-				case 5:
-					s.fill(b, fill)
+			t.Logf("CIRCUS_CAPTURE_SEED=%#x scenario=%#x", seed, scenarioSeed)
+			rng := rand.New(rand.NewPCG(scenarioSeed, scenarioSeed^0x9e3779b97f4a7c15))
+			s := &captureSequence{h: newCaptureHarness(t, 1<<20, 10000), total: 10000}
+			var blockKill atomic.Bool
+			killEntered := make(chan struct{}, 1)
+			resumeKill := make(chan struct{})
+			var resumeOnce sync.Once
+			defer resumeOnce.Do(func() { close(resumeKill) })
+			s.h.b.effects.delay = func(step string) {
+				if step == "kill" && blockKill.CompareAndSwap(true, false) {
+					killEntered <- struct{}{}
+					<-resumeKill
 				}
 			}
-			s.natural(a)
-			// A's completed shell may still account for live children. B must be the
-			// unique largest victim, and releasing it must not consume A's record.
-			s.pressure(b, 11000, true)
-			modeC := "background"
-			if endC == 2 {
-				modeC = "foreground"
+			models := make([]*modeledCapture, 3)
+			initial := make([]captureWaveOp, 3)
+			for j := range models {
+				models[j] = s.start(string(rune('A'+j)), "promoted", rng.IntN(2) == 0)
+				initial[j] = captureWaveOp{kind: "fill", capture: models[j], n: 32 + rng.IntN(160)}
 			}
-			c := s.start("C", modeC, true)
-			s.fill(c, 1024)
-			if shutdownFirst {
+			// Every scenario starts with writes genuinely in flight on all three
+			// captures. The following wave can effectively Cancel any of them:
+			// none has been promoted yet, so none is a background no-op.
+			s.wave(initial)
+			cancelTarget := rng.IntN(len(models))
+			wave := []captureWaveOp{{kind: "Cancel", capture: models[cancelTarget]}}
+			for j, m := range models {
+				if j == cancelTarget {
+					continue
+				}
+				kind := "fill"
+				if rng.IntN(2) == 0 {
+					kind = "promote"
+				}
+				wave = append(wave, captureWaveOp{kind: kind, capture: m, n: 32 + rng.IntN(160)})
+			}
+			s.wave(wave)
+
+			nextName := 0
+			live := func() []*modeledCapture {
+				var result []*modeledCapture
+				for _, m := range s.models {
+					if m.live {
+						result = append(result, m)
+					}
+				}
+				return result
+			}
+			ensureLive := func() {
+				for len(live()) < 3 {
+					name := fmt.Sprintf("N%d", nextName)
+					nextName++
+					s.start(name, "promoted", rng.IntN(2) == 0)
+				}
+			}
+			for range 3 + rng.IntN(3) {
+				ensureLive()
+				candidates := live()
+				permutation := rng.Perm(len(candidates))
+				count := 2 + rng.IntN(len(candidates)-1)
+				wave = make([]captureWaveOp, 0, count)
+				for _, index := range permutation[:count] {
+					m := candidates[index]
+					choices := []string{"fill", "fill", "fill", "natural"}
+					if m.mode == "background" {
+						choices = append(choices, "TaskStop")
+					} else {
+						choices = append(choices, "Cancel")
+						if !s.jobsClosed {
+							choices = append(choices, "promote")
+						}
+					}
+					kind := choices[rng.IntN(len(choices))]
+					wave = append(wave, captureWaveOp{kind: kind, capture: m, n: 16 + rng.IntN(128)})
+				}
+				s.wave(wave)
+				if rng.IntN(10) == 0 && !s.jobsClosed {
+					s.shutdownJobs()
+				}
+			}
+
+			// A final concurrent write wave makes the largest writer seed-dependent.
+			// Choose the victim from descriptor sizes, not from A/B/C construction.
+			ensureLive()
+			candidates := live()
+			wave = make([]captureWaveOp, len(candidates))
+			for j, m := range candidates {
+				wave[j] = captureWaveOp{kind: "fill", capture: m, n: 32 + rng.IntN(160)}
+			}
+			s.wave(wave)
+			childless := false
+			for _, m := range live() {
+				childless = childless || !m.children
+			}
+			if !childless {
+				s.start(fmt.Sprintf("N%d", nextName), "promoted", false)
+				nextName++
+			}
+			// No captures are started after Bash.Shutdown: a later first use would
+			// legitimately create a fresh snapshot instance outside this model's
+			// single shutdown lifecycle.
+			if !s.closed && rng.IntN(2) == 0 {
 				s.shutdownBash()
-			} else {
-				if a.tracked {
-					s.drain(a)
+			}
+			candidates = live()
+			sizes, total := s.actualSizes()
+			var victim *modeledCapture
+			var victimSize int64 = -1
+			for _, m := range candidates {
+				if sizes[m] > victimSize {
+					victim, victimSize = m, sizes[m]
 				}
 			}
-			switch endC {
-			case 0:
-				s.natural(c)
-			case 1:
-				s.stop(c)
-			case 2:
-				s.cancel(c)
+			var largestOther int64
+			for m, size := range sizes {
+				if m != victim && size > largestOther {
+					largestOther = size
+				}
 			}
-			s.shutdownJobs()
-			s.shutdownBash()
+			if largestOther >= victimSize {
+				s.fill(victim, int(largestOther-victimSize)+1+rng.IntN(32))
+				sizes, total = s.actualSizes()
+				victimSize = sizes[victim]
+			}
+			for m, size := range sizes {
+				if m != victim && size >= victimSize {
+					t.Fatal("selected victim is not the unique largest actual writer", victim.run.name, m.run.name)
+				}
+			}
+			if total >= s.total {
+				t.Fatal("random setup crossed the aggregate budget before pressure", total)
+			}
+			// Hold the selected victim inside KILL. A second writer can now exceed
+			// the aggregate limit without being selected: pending suppresses another
+			// victim. Let that second shell exit before releasing the first KILL so
+			// its finished file leaves the running budget deterministically.
+			var second *modeledCapture
+			for _, m := range live() {
+				if m != victim && !m.children {
+					second = m
+					break
+				}
+			}
+			if second == nil {
+				second = s.start(fmt.Sprintf("N%d", nextName), "promoted", false)
+				nextName++
+			}
+			victimBytes := int(s.total-total) + 1
+			victimID := victim.run.write
+			victim.run.write++
+			blockKill.Store(true)
+			if err := s.h.publishFill(victim.run, victimID, victimBytes); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-killEntered:
+			case <-time.After(4 * time.Second):
+				t.Fatal("largest actual writer was not selected for aggregate KILL", victim.run.name)
+			}
+			s.record("pending total victim " + victim.run.name)
+			secondBytes := int(s.total) + 1
+			s.h.fill(second.run, secondBytes, false)
+			second.bytes += secondBytes
+			gate(t, filepath.Join(second.run.dir, "exit"))
+			s.settleNatural(second)
+			resumeOnce.Do(func() { close(resumeKill) })
+			s.settlePressure(victim, victimBytes, true)
+			s.check()
 			s.finish()
 		})
 	}

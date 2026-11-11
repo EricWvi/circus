@@ -144,11 +144,10 @@ func TestConcurrentRegistrationRejectionCleansOutput(t *testing.T) {
 	b.jobs = manager
 	t.Cleanup(func() { _ = manager.Shutdown(context.Background()) })
 	resume := make(chan struct{})
-	b.effects.before = func(step string) error {
-		if step == "promote" {
+	b.effects.delay = func(step string) {
+		if step == "job-launched" {
 			<-resume
 		}
-		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()

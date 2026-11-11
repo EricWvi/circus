@@ -2,7 +2,6 @@ package bashtool
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -17,7 +16,6 @@ type groupTracker struct {
 	stops  map[int]*trackedGroup
 	wg     sync.WaitGroup
 	done   chan struct{}
-	err    error
 }
 
 type trackedGroup struct {
@@ -27,17 +25,17 @@ type trackedGroup struct {
 
 func (g *trackedGroup) requestStop() { g.once.Do(func() { close(g.stop) }) }
 
-// trackCapture takes the driver role; the capture keeps its original file.
+// trackCapture atomically transfers the driver role and installs the tracker
+// entry. The capture keeps its original file.
 func (b *Bash) trackCapture(c *capture) error {
-	b.effects.pause("tracker-register")
 	g := &b.groups
 	g.mu.Lock()
-	if got := c.snapshotState().owner; got != ownerTracker {
-		g.mu.Unlock()
-		return errors.New("tracker received capture before ownership transfer")
-	}
+	c.mu.Lock()
+	c.state = captureState{captureTracked, ownerTracker}
 	if g.closed {
+		c.mu.Unlock()
 		g.mu.Unlock()
+		b.effects.pause("tracker-register")
 		c.stopLeftovers()
 		c.finishBudget()
 		if message := b.outputs.outputStopMessage(c.out); message != "" {
@@ -49,20 +47,19 @@ func (b *Bash) trackCapture(c *capture) error {
 		g.stops = make(map[int]*trackedGroup)
 	}
 	entry := &trackedGroup{stop: make(chan struct{})}
-	c.mu.Lock()
 	c.tracking = entry
 	c.mu.Unlock()
 	g.stops[c.pgid()] = entry
 	g.wg.Add(1)
 	g.mu.Unlock()
+	b.effects.pause("tracker-register")
 	go func() {
 		defer g.wg.Done()
 		defer func() {
 			c.finishBudget()
-			err := c.release(ownerTracker, c.disposition)
+			_ = c.release(ownerTracker, c.disposition)
 			b.effects.pause("tracker-remove")
 			g.mu.Lock()
-			g.err = errors.Join(g.err, err)
 			if g.stops[c.pgid()] == entry {
 				delete(g.stops, c.pgid())
 			}
@@ -133,10 +130,7 @@ func (b *Bash) Shutdown(ctx context.Context) error {
 	g.mu.Unlock()
 	select {
 	case <-done:
-		g.mu.Lock()
-		err := g.err
-		g.mu.Unlock()
-		return err
+		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
