@@ -35,9 +35,40 @@ type Options struct {
 	Collector func(ctx context.Context, cmd *exec.Cmd) error
 }
 
-type environment struct {
+type snapshotOptions struct {
+	Home, StateDir, Shell string
+	CollectorTimeout      time.Duration
+	Collector             func(context.Context, *exec.Cmd) error
+}
+
+func snapshotConfig(o Options) snapshotOptions {
+	return snapshotOptions{o.Home, o.StateDir, o.Shell, o.CollectorTimeout, o.Collector}
+}
+func userHome(override string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	return os.UserHomeDir()
+}
+
+// snapshotLease identifies the actual snapshot, independently of cwd scratch.
+// A capture retains its own handle while Run releases its preparation handle.
+type snapshotLease struct {
+	store *snapshotStore
+	path  string
+	once  sync.Once
+}
+
+func (l *snapshotLease) retain() *snapshotLease {
+	l.store.retainSnapshot(filepath.Dir(l.path))
+	return &snapshotLease{store: l.store, path: l.path}
+}
+func (l *snapshotLease) release() { l.once.Do(func() { l.store.releaseSnapshot(l.path) }) }
+
+type snapshotStore struct {
 	mu           sync.Mutex
-	options      Options
+	options      snapshotOptions
+	effects      *effects
 	snapshot     string
 	env          []string
 	loading      *collection
@@ -46,9 +77,6 @@ type environment struct {
 	instanceLock *os.File
 	warmDone     chan struct{}
 	warmCancel   context.CancelFunc
-	lastSweep    time.Time
-	active       map[string]bool
-	outputBudget outputBudget
 	leases       map[string]int
 	// releasing defers releaseInstance until leases and collection end.
 	releasing bool
@@ -62,14 +90,12 @@ type collection struct {
 	err    error
 }
 
-func (e *environment) collectorTimeout() time.Duration {
+func (e *snapshotStore) collectorTimeout() time.Duration {
 	if e.options.CollectorTimeout > 0 {
 		return e.options.CollectorTimeout
 	}
 	return 10 * time.Second
 }
-
-var processEnvironment = &environment{}
 
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 
@@ -78,16 +104,9 @@ type startupStamp struct {
 	mtime  time.Time
 }
 
-func (e *environment) home() (string, error) {
-	if e.options.Home != "" {
-		return e.options.Home, nil
-	}
-	return os.UserHomeDir()
-}
-
-func (e *environment) startupFiles() ([4]startupStamp, error) {
+func (e *snapshotStore) startupFiles() ([4]startupStamp, error) {
 	var stamps [4]startupStamp
-	home, err := e.home()
+	home, err := userHome(e.options.Home)
 	if err != nil {
 		return stamps, err
 	}
@@ -140,16 +159,16 @@ func privateDir(path string) error {
 }
 
 // Concurrent callers share collection, but retain their own cancellation budget.
-func (e *environment) load(ctx context.Context) (string, []string, error) {
+func (e *snapshotStore) load(ctx context.Context) (string, []string, *snapshotLease, error) {
 	for {
 		if err := ctx.Err(); err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 		e.mu.Lock()
 		stamps, stampErr := e.startupFiles()
 		if stampErr != nil {
 			e.mu.Unlock()
-			return "", nil, stampErr
+			return "", nil, nil, stampErr
 		}
 		if e.snapshot != "" {
 			if _, err := os.Stat(e.snapshot); err == nil && stamps == e.startup {
@@ -157,19 +176,20 @@ func (e *environment) load(ctx context.Context) (string, []string, error) {
 				if e.leases == nil {
 					e.leases = make(map[string]int)
 				}
+				e.effects.pause("lease-retain")
 				e.leases[filepath.Dir(path)]++
 				e.mu.Unlock()
-				return path, env, nil
+				return path, env, &snapshotLease{store: e, path: path}, nil
 			}
 		}
 		if pending := e.loading; pending != nil {
 			e.mu.Unlock()
 			select {
 			case <-ctx.Done():
-				return "", nil, ctx.Err()
+				return "", nil, nil, ctx.Err()
 			case <-pending.done:
 				if pending.err != nil && pending.stamps == stamps {
-					return "", nil, pending.err
+					return "", nil, nil, pending.err
 				}
 				continue
 			}
@@ -193,6 +213,7 @@ func (e *environment) load(ctx context.Context) (string, []string, error) {
 			if e.leases == nil {
 				e.leases = make(map[string]int)
 			}
+			e.effects.pause("lease-retain")
 			e.leases[filepath.Dir(path)]++
 			if previous != "" && previous != path && e.leases[filepath.Dir(previous)] == 0 {
 				_ = os.RemoveAll(filepath.Dir(previous))
@@ -207,18 +228,17 @@ func (e *environment) load(ctx context.Context) (string, []string, error) {
 		e.loading = nil
 		e.releaseIfIdleLocked()
 		e.mu.Unlock()
-		return path, env, err
+		if err != nil {
+			return path, env, nil, err
+		}
+		return path, env, &snapshotLease{store: e, path: path}, nil
 	}
 }
 
-func (e *environment) collect(ctx context.Context, refreshing bool) (string, []string, error) {
-	home := e.options.Home
-	if home == "" {
-		var err error
-		home, err = os.UserHomeDir()
-		if err != nil {
-			return "", nil, err
-		}
+func (e *snapshotStore) collect(ctx context.Context, refreshing bool) (string, []string, error) {
+	home, err := userHome(e.options.Home)
+	if err != nil {
+		return "", nil, err
 	}
 	state := e.options.StateDir
 	if state == "" {
@@ -376,12 +396,14 @@ printf '%s\n' 'shopt -s expand_aliases'
 }
 
 // Keep snapshots used by live shells until they finish sourcing and writing cwd.
-func (e *environment) retainSnapshot(dir string) {
+func (e *snapshotStore) retainSnapshot(dir string) {
+	e.effects.pause("lease-retain")
 	e.mu.Lock()
 	e.leases[dir]++
 	e.mu.Unlock()
 }
-func (e *environment) releaseSnapshot(snapshot string) {
+func (e *snapshotStore) releaseSnapshot(snapshot string) {
+	e.effects.pause("lease-release")
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	dir := filepath.Dir(snapshot)
@@ -399,8 +421,8 @@ func (e *environment) releaseSnapshot(snapshot string) {
 // lease and no collection runs, it removes the instance directory, whose
 // snapshots can contain secrets, and closes its lock. Background jobs still
 // running keep the instance until they finish. A later load collects into a
-// new locked instance, so environments shared within the process stay usable.
-func (e *environment) releaseInstance() {
+// new locked instance.
+func (e *snapshotStore) releaseInstance() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.releasing = true
@@ -420,7 +442,7 @@ func unlockAndClose(f *os.File) error {
 	return unlockErr
 }
 
-func (e *environment) releaseIfIdleLocked() {
+func (e *snapshotStore) releaseIfIdleLocked() {
 	if !e.releasing || len(e.leases) > 0 || e.loading != nil {
 		return
 	}
@@ -436,7 +458,7 @@ func (e *environment) releaseIfIdleLocked() {
 
 // openInstance serializes creation and cleanup so another startup cannot remove
 // the new directory between mkdir and locking its lifetime lease.
-func (e *environment) openInstance(state string) error {
+func (e *snapshotStore) openInstance(state string) error {
 	guard, err := os.OpenFile(filepath.Join(state, ".instances.lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
 		return err

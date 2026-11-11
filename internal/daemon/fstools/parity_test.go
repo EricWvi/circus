@@ -21,6 +21,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon"
+	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
@@ -384,7 +385,7 @@ type simulatedWorker struct {
 
 func newWorker(t *testing.T, cwd string) *simulatedWorker {
 	t.Helper()
-	d, err := daemon.NewDispatcher(daemon.Options{Tools: leakcheck.AuditTools(t, nil, daemon.DefaultTools(nil))})
+	d, err := daemon.NewDispatcher(daemon.Options{Tools: leakcheck.AuditTools(t, nil, daemon.DefaultTools(nil, bashtool.Options{}))})
 	if err != nil {
 		t.Fatal(err)
 	}

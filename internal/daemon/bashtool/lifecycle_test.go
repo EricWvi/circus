@@ -84,15 +84,15 @@ func TestPrivateDirectories(t *testing.T) {
 			t.Fatal("changed foreign directory permissions")
 		}
 	}
-	e := &environment{options: Options{Home: root, StateDir: link}}
-	if _, _, err := e.load(context.Background()); err == nil {
+	e := &snapshotStore{options: snapshotOptions{Home: root, StateDir: link}}
+	if _, _, _, err := e.load(context.Background()); err == nil {
 		t.Fatal("accepted symlink state directory")
 	}
-	e = &environment{options: Options{TempDir: root}}
-	if err := os.Symlink(real, e.outputRoot()); err != nil {
+	o := &outputStore{options: outputOptions{TempDir: root}}
+	if err := os.Symlink(real, o.outputRoot()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (&Bash{environment: e}).outputFile("session", "tool-results", "out-*"); err == nil {
+	if _, err := o.outputFile("session", "tool-results", "out-*"); err == nil {
 		t.Fatal("accepted symlink output root")
 	}
 }
@@ -102,7 +102,7 @@ func TestOutputRootDefaults(t *testing.T) {
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(root, "runtime"))
-	e := &environment{}
+	e := &outputStore{}
 	for _, cache := range []string{"", "relative-cache", filepath.Join(root, "xdg-cache")} {
 		t.Setenv("XDG_CACHE_HOME", cache)
 		want := filepath.Join(home, ".cache", "circus", "output")
@@ -123,8 +123,8 @@ func TestCacheOutputDirectoriesArePrivate(t *testing.T) {
 	root := unitTempDir(t)
 	cache := filepath.Join(root, "cache")
 	t.Setenv("XDG_CACHE_HOME", cache)
-	e := &environment{options: Options{Home: root}}
-	b := &Bash{environment: e}
+	e := &outputStore{options: outputOptions{Home: root}}
+	b := &Bash{outputs: e}
 	if err := os.MkdirAll(cache, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestCacheOutputDirectoriesArePrivate(t *testing.T) {
 	if err := os.Symlink(real, owned); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.outputFile("session", "tasks", "out-*"); err == nil {
+	if _, err := b.outputs.outputFile("session", "tasks", "out-*"); err == nil {
 		t.Fatal("accepted a symlink at the owned cache parent")
 	}
 	if err := os.Remove(owned); err != nil {
@@ -148,13 +148,13 @@ func TestCacheOutputDirectoriesArePrivate(t *testing.T) {
 	if err := os.Symlink(real, e.outputRoot()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.outputFile("session", "tasks", "out-*"); err == nil {
+	if _, err := b.outputs.outputFile("session", "tasks", "out-*"); err == nil {
 		t.Fatal("accepted a symlink at the output root")
 	}
 	if err := os.Remove(e.outputRoot()); err != nil {
 		t.Fatal(err)
 	}
-	out, err := b.outputFile("session", "tasks", "out-*")
+	out, err := b.outputs.outputFile("session", "tasks", "out-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,8 +175,8 @@ func fmtUID() string { return "circus-" + strconv.Itoa(os.Getuid()) }
 
 func TestOutputRetention(t *testing.T) {
 	t.Parallel()
-	e := &environment{options: Options{TempDir: unitTempDir(t)}}
-	b := &Bash{environment: e}
+	e := &outputStore{options: outputOptions{TempDir: unitTempDir(t)}}
+	b := &Bash{outputs: e}
 	dir := filepath.Join(e.outputRoot(), "session", "tasks")
 	if err := privateDir(dir); err != nil {
 		t.Fatal(err)
@@ -194,7 +194,7 @@ func TestOutputRetention(t *testing.T) {
 		}
 	}
 	e.active = map[string]bool{paths[1]: true}
-	out, err := b.outputFile("session", "tool-results", "test-*")
+	out, err := b.outputs.outputFile("session", "tool-results", "test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestOutputRetention(t *testing.T) {
 	if err := os.Chtimes(paths[0], old, old); err != nil {
 		t.Fatal(err)
 	}
-	out, err = b.outputFile("session", "tool-results", "test-*")
+	out, err = b.outputs.outputFile("session", "tool-results", "test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestOutputRetention(t *testing.T) {
 	e.lastSweep = time.Now().Add(-2 * time.Hour)
 	e.mu.Unlock()
 	e.releaseOutput(paths[1])
-	out, err = b.outputFile("session", "tool-results", "test-*")
+	out, err = b.outputs.outputFile("session", "tool-results", "test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,15 +245,15 @@ func TestStartupFileLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	e := &environment{options: Options{Home: home, StateDir: state, Shell: "/bin/bash"}}
+	e := &snapshotStore{options: snapshotOptions{Home: home, StateDir: state, Shell: "/bin/bash"}}
 	t.Cleanup(e.releaseInstance)
 	load := func() string {
 		t.Helper()
-		snapshot, _, err := e.load(context.Background())
+		snapshot, _, snapshotLease, err := e.load(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
-		e.releaseSnapshot(snapshot)
+		snapshotLease.release()
 		return snapshot
 	}
 	previous := load()
@@ -311,9 +311,9 @@ func TestShutdownReleasesInstance(t *testing.T) {
 	if job.GetBash().JobId == "" {
 		t.Fatal(job)
 	}
-	b.environment.mu.Lock()
-	dir, lock := b.environment.instanceDir, b.environment.instanceLock
-	b.environment.mu.Unlock()
+	b.snapshots.mu.Lock()
+	dir, lock := b.snapshots.instanceDir, b.snapshots.instanceLock
+	b.snapshots.mu.Unlock()
 	if err := b.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -332,13 +332,13 @@ func TestShutdownReleasesInstance(t *testing.T) {
 	if _, err := lock.Stat(); !errors.Is(err, os.ErrClosed) {
 		t.Fatal("instance lock still open after release", err)
 	}
-	// A shared environment stays usable: the next load locks a new instance.
-	t.Cleanup(b.environment.releaseInstance)
-	snapshot, _, err := b.environment.load(context.Background())
+	// The snapshot store stays usable: the next load locks a new instance.
+	t.Cleanup(b.snapshots.releaseInstance)
+	snapshot, _, snapshotLease, err := b.snapshots.load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.environment.releaseSnapshot(snapshot)
+	snapshotLease.release()
 	if next := filepath.Dir(filepath.Dir(snapshot)); next == dir || filepath.Dir(next) != filepath.Dir(dir) {
 		t.Fatalf("reload used %s after releasing %s", next, dir)
 	}

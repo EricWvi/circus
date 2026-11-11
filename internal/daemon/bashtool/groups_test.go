@@ -56,12 +56,12 @@ func reviewRun(t *testing.T, b *Bash, cwd, command string, background bool) *cir
 
 func trackedPath(t *testing.T, b *Bash) string {
 	t.Helper()
-	b.environment.mu.Lock()
-	defer b.environment.mu.Unlock()
-	if len(b.environment.active) != 1 {
-		t.Fatalf("active outputs: %v", b.environment.active)
+	b.outputs.mu.Lock()
+	defer b.outputs.mu.Unlock()
+	if len(b.outputs.active) != 1 {
+		t.Fatalf("active outputs: %v", b.outputs.active)
 	}
-	for path := range b.environment.active {
+	for path := range b.outputs.active {
 		return path
 	}
 	return ""
@@ -99,9 +99,9 @@ func TestTrackedGroupNaturalExit(t *testing.T) {
 	if err := os.Chtimes(path, old, old); err != nil {
 		t.Fatal(err)
 	}
-	b.environment.sweepOutput(b.environment.outputRoot(), time.Now())
+	b.outputs.sweepOutput(b.outputs.outputRoot(), time.Now())
 	// A second daemon uses the same root but does not share the active map.
-	other := &environment{options: b.environment.options}
+	other := &outputStore{options: b.outputs.options}
 	other.sweepOutput(other.outputRoot(), time.Now())
 	if _, err := os.Stat(path); err != nil {
 		t.Fatal("sweep removed tracked output", err)

@@ -312,8 +312,6 @@ var fixtureExceptions = map[string]semanticCheck{
 func TestNativeParity(t *testing.T) {
 	count := 0
 	var steps atomic.Int32
-	shared := newWorker(t)
-	shared.bashCall(t, "true", false, 0)
 	for _, tool := range []string{"Bash", "TaskStop"} {
 		paths, err := filepath.Glob(filepath.Join("../../../tests/parity/fixtures/native", tool, "*.json"))
 		if err != nil || len(paths) == 0 {
@@ -338,13 +336,6 @@ func TestNativeParity(t *testing.T) {
 						putFile(t, filepath.Join(o.Home, name), data)
 					}
 				})
-				if len(f.Setup.HomeFiles) == 0 {
-					w.options = shared.options
-					w.bash = bashtool.ShareEnvironmentForTest(w.jobs, shared.bash)
-					d := newAuditedDispatcher(t, w.bash, bashtool.NewTaskStop(w.jobs), fstools.NewRead())
-					_ = w.d.Shutdown(context.Background())
-					w.d = d
-				}
 				for _, dir := range f.Setup.Dirs {
 					if err = os.MkdirAll(filepath.Join(w.start, dir), 0700); err != nil {
 						t.Fatal(err)

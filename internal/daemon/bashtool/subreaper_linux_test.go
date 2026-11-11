@@ -62,9 +62,9 @@ func TestSubreaperReapsTrackedGroups(t *testing.T) {
 			if _, err := os.Stat(path); !os.IsNotExist(err) {
 				t.Fatal("group output retained", err)
 			}
-			b.environment.mu.Lock()
-			defer b.environment.mu.Unlock()
-			if b.environment.active[path] {
+			b.outputs.mu.Lock()
+			defer b.outputs.mu.Unlock()
+			if b.outputs.active[path] {
 				t.Fatal("output lease retained")
 			}
 		})
@@ -114,7 +114,11 @@ func TestStoppedGroupMembersAreReaped(t *testing.T) {
 				// Cancellation takes the TERM, two-second grace and KILL path.
 				go func() {
 					for {
-						if _, err := os.Stat(filepath.Join(root, "child.pid")); err == nil || ctx.Err() != nil {
+						// Redirection creates the file before echo writes the PID. Do not
+						// cancel the shell in that window and turn the fixture into an empty file.
+						data, readErr := os.ReadFile(filepath.Join(root, "child.pid"))
+						pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
+						if readErr == nil && parseErr == nil && pid > 0 || ctx.Err() != nil {
 							cancel()
 							return
 						}
@@ -144,9 +148,9 @@ func TestTimedOutCollectorChildrenAreReaped(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".bashrc"), []byte(rc), 0600); err != nil {
 		t.Fatal(err)
 	}
-	e := &environment{options: Options{Home: root, StateDir: filepath.Join(root, "state"), Shell: "/bin/bash", CollectorTimeout: 200 * time.Millisecond}}
+	e := &snapshotStore{options: snapshotOptions{Home: root, StateDir: filepath.Join(root, "state"), Shell: "/bin/bash", CollectorTimeout: 200 * time.Millisecond}}
 	t.Cleanup(e.releaseInstance)
-	if _, _, err := e.load(context.Background()); err == nil {
+	if _, _, _, err := e.load(context.Background()); err == nil {
 		t.Fatal("hanging startup files produced a snapshot")
 	}
 	data, err := os.ReadFile(filepath.Join(root, "child.pids"))

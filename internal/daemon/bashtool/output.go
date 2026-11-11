@@ -11,13 +11,33 @@ import (
 	"time"
 )
 
-func (e *environment) outputRoot() string {
+type outputOptions struct {
+	Home, TempDir                           string
+	OutputLimitBytes, TotalOutputLimitBytes int64
+}
+
+func outputConfig(o Options) outputOptions {
+	return outputOptions{o.Home, o.TempDir, o.OutputLimitBytes, o.TotalOutputLimitBytes}
+}
+
+// outputStore has an independent lock: no invariant spans snapshots and output.
+// The budget lock protects stat records; the store lock protects sweep exemptions.
+type outputStore struct {
+	mu           sync.Mutex
+	options      outputOptions
+	lastSweep    time.Time
+	active       map[string]bool
+	outputBudget outputBudget
+	effects      *effects
+}
+
+func (e *outputStore) outputRoot() string {
 	if e.options.TempDir != "" {
 		return filepath.Join(e.options.TempDir, fmt.Sprintf("circus-%d", os.Getuid()))
 	}
 	cache := os.Getenv("XDG_CACHE_HOME")
 	if !filepath.IsAbs(cache) {
-		home, err := e.home()
+		home, err := userHome(e.options.Home)
 		if err != nil || !filepath.IsAbs(home) {
 			return ""
 		}
@@ -26,8 +46,7 @@ func (e *environment) outputRoot() string {
 	return filepath.Join(cache, "circus", "output")
 }
 
-func (b *Bash) outputFile(sessionID, kind, pattern string) (*os.File, error) {
-	e := b.environment
+func (e *outputStore) outputFile(sessionID, kind, pattern string) (*os.File, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	root := e.outputRoot()
@@ -57,30 +76,34 @@ func (b *Bash) outputFile(sessionID, kind, pattern string) (*os.File, error) {
 		go e.sweepOutput(root, now)
 		e.lastSweep = now
 	}
-	out, err := os.CreateTemp(dir, pattern)
+	var out *os.File
+	err := e.effects.attempt("open", func() error { var err error; out, err = os.CreateTemp(dir, pattern); return err })
 	if err == nil {
 		// Keep a shared file lease across daemon instances. Another instance's
 		// sweep must not unlink a quiet, indefinitely running ampersand child.
-		err = syscall.Flock(int(out.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+		err = e.effects.attempt("file-lock", func() error { return syscall.Flock(int(out.Fd()), syscall.LOCK_SH|syscall.LOCK_NB) })
 		if err != nil {
-			_ = out.Close()
-			_ = os.Remove(out.Name())
+			_ = e.effects.attempt("close", out.Close)
+			_ = e.effects.attempt("remove", func() error { return os.Remove(out.Name()) })
 			return nil, err
 		}
 		e.active[out.Name()] = true
+		e.effects.pause("budget-add")
 		e.outputBudget.register(out)
 	}
 	return out, err
 }
 
-func (e *environment) releaseOutput(path string) {
+func (e *outputStore) releaseOutput(path string) {
 	e.mu.Lock()
+	e.effects.pause("active-remove")
 	delete(e.active, path)
 	e.mu.Unlock()
+	e.effects.pause("budget-remove")
 	e.outputBudget.release(path)
 }
 
-func (e *environment) sweepOutput(root string, now time.Time) {
+func (e *outputStore) sweepOutput(root string, now time.Time) {
 	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !entry.Type().IsRegular() {
 			return nil
@@ -119,7 +142,7 @@ const defaultOutputLimit = int64(1 << 30)
 // Inferred: this diagnostic explains daemon-enforced output termination.
 const outputLimitMessage = "\n[circus: output exceeded 1 GiB, the command was stopped]\n"
 
-// Inferred: running captures share a daemon-wide 4 GiB budget. Finished files
+// Inferred: running captures share a per-Bash 4 GiB budget. Finished files
 // remain available under the retention policy but no longer consume this budget.
 const defaultTotalOutputLimit = int64(4 << 30)
 
@@ -172,8 +195,8 @@ func (a *outputBudget) release(path string) {
 	a.mu.Unlock()
 }
 
-func (b *Bash) outputStopMessage(out *os.File) string {
-	e := b.environment
+func (e *outputStore) outputStopMessage(out *os.File) string {
+	e.effects.pause("output-check")
 	limit, totalLimit := e.options.OutputLimitBytes, e.options.TotalOutputLimitBytes
 	if limit <= 0 {
 		limit = defaultOutputLimit

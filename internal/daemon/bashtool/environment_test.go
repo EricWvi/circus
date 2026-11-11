@@ -31,7 +31,7 @@ func TestCollectionOwnerCancellationDoesNotFailWaiter(t *testing.T) {
 	root := unitTempDir(t)
 	started := make(chan struct{})
 	var attempts atomic.Int32
-	e := &environment{options: Options{Home: root, StateDir: filepath.Join(root, "state"), Shell: "/bin/bash", Collector: func(ctx context.Context, cmd *exec.Cmd) error {
+	e := &snapshotStore{options: snapshotOptions{Home: root, StateDir: filepath.Join(root, "state"), Shell: "/bin/bash", Collector: func(ctx context.Context, cmd *exec.Cmd) error {
 		if attempts.Add(1) == 1 {
 			close(started)
 			<-ctx.Done()
@@ -72,7 +72,7 @@ func TestCollectionOwnerCancellationDoesNotFailWaiter(t *testing.T) {
 			t.Error("collection did not stop")
 		}
 	})
-	go func() { defer wg.Done(); _, _, err := e.load(aCtx); aResult <- err }()
+	go func() { defer wg.Done(); _, _, _, err := e.load(aCtx); aResult <- err }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
@@ -80,9 +80,9 @@ func TestCollectionOwnerCancellationDoesNotFailWaiter(t *testing.T) {
 	}
 	go func() {
 		defer wg.Done()
-		snapshot, env, err := e.load(bCtx)
+		_, env, snapshotLease, err := e.load(bCtx)
 		if err == nil {
-			e.releaseSnapshot(snapshot)
+			snapshotLease.release()
 			if !strings.Contains(strings.Join(env, "\n"), "SHARED_RETRY=ok") {
 				err = errors.New("waiter lost collected exports")
 			}
@@ -111,11 +111,11 @@ func TestCollectionOwnerCancellationDoesNotFailWaiter(t *testing.T) {
 func TestSnapshotInstancesShareStateSafely(t *testing.T) {
 	t.Parallel()
 	b, root, _ := reviewBash(t, 0)
-	snapshot, _, err := b.environment.load(context.Background())
+	snapshot, _, snapshotLease, err := b.snapshots.load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer b.environment.releaseSnapshot(snapshot)
+	defer snapshotLease.release()
 	// Hold an actual command lease while a second daemon creates its snapshot.
 	call := &circusv1.DeviceCall{Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: `echo ready > ready; while [ ! -f release ]; do sleep 0.02; done; echo A-done`, Cwd: root}}}
 	returned := make(chan *circusv1.DeviceResult, 1)
@@ -123,12 +123,12 @@ func TestSnapshotInstancesShareStateSafely(t *testing.T) {
 	defer cancel()
 	go func() { r, _ := b.Run(ctx, call); returned <- r }()
 	await(t, func() bool { _, err := os.Stat(filepath.Join(root, "ready")); return err == nil })
-	second := &environment{options: b.environment.options}
-	path, _, err := second.load(context.Background())
+	second := &snapshotStore{options: b.snapshots.options}
+	path, _, pathLease, err := second.load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	second.releaseSnapshot(path)
+	pathLease.release()
 	if filepath.Dir(filepath.Dir(path)) == filepath.Dir(filepath.Dir(snapshot)) {
 		t.Fatal("instances share a directory")
 	}
@@ -153,13 +153,13 @@ func TestSnapshotInstancesShareStateSafely(t *testing.T) {
 	if err := unlockAndClose(second.instanceLock); err != nil {
 		t.Fatal(err)
 	}
-	third := &environment{options: b.environment.options}
+	third := &snapshotStore{options: b.snapshots.options}
 	t.Cleanup(third.releaseInstance)
-	newPath, _, err := third.load(context.Background())
+	_, _, newPathLease, err := third.load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	third.releaseSnapshot(newPath)
+	newPathLease.release()
 	if _, err := os.Stat(second.instanceDir); !os.IsNotExist(err) {
 		t.Fatal("unlocked instance not cleaned", err)
 	}
@@ -172,7 +172,7 @@ func TestSnapshotRefreshFailureKeepsOld(t *testing.T) {
 	t.Parallel()
 	root := unitTempDir(t)
 	attempts := 0
-	e := &environment{options: Options{Home: root, StateDir: filepath.Join(root, "state"), Shell: "/bin/bash", Collector: func(ctx context.Context, cmd *exec.Cmd) error {
+	e := &snapshotStore{options: snapshotOptions{Home: root, StateDir: filepath.Join(root, "state"), Shell: "/bin/bash", Collector: func(ctx context.Context, cmd *exec.Cmd) error {
 		attempts++
 		if err := cmd.Start(); err != nil {
 			return err
@@ -185,20 +185,20 @@ func TestSnapshotRefreshFailureKeepsOld(t *testing.T) {
 	if err := os.WriteFile(rc, []byte("export MARK=old\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	old, _, err := e.load(context.Background())
+	old, _, oldLease, err := e.load(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.releaseSnapshot(old)
+	oldLease.release()
 	if err := os.WriteFile(rc, []byte("exit 3\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	for range 3 {
-		path, env, err := e.load(context.Background())
+		path, env, pathLease, err := e.load(context.Background())
 		if err != nil || path != old || !strings.Contains(strings.Join(env, "\n"), "MARK=old") {
 			t.Fatalf("lost old snapshot: %s %v %v", path, env, err)
 		}
-		e.releaseSnapshot(path)
+		pathLease.release()
 	}
 	if attempts != 3 {
 		t.Fatalf("retried unchanged failed startup: attempts=%d", attempts)
@@ -206,11 +206,11 @@ func TestSnapshotRefreshFailureKeepsOld(t *testing.T) {
 	if err := os.WriteFile(rc, []byte("export MARK=new\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	path, env, err := e.load(context.Background())
+	path, env, pathLease, err := e.load(context.Background())
 	if err != nil || path == old || !strings.Contains(strings.Join(env, "\n"), "MARK=new") {
 		t.Fatalf("did not retry changed startup: %s %v %v", path, env, err)
 	}
-	e.releaseSnapshot(path)
+	pathLease.release()
 	if attempts != 4 {
 		t.Fatal(attempts)
 	}
@@ -218,10 +218,10 @@ func TestSnapshotRefreshFailureKeepsOld(t *testing.T) {
 	if err := os.WriteFile(rc, []byte("exit 3\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fresh := &environment{options: e.options}
+	fresh := &snapshotStore{options: e.options}
 	t.Cleanup(fresh.releaseInstance)
 	for range 2 {
-		if _, _, err := fresh.load(context.Background()); err == nil {
+		if _, _, _, err := fresh.load(context.Background()); err == nil {
 			t.Fatal("cold failure succeeded")
 		}
 	}
@@ -239,14 +239,14 @@ func TestStateRootDefaultsIgnoreRelativeXDG(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("XDG_STATE_HOME", xdg)
-			e := &environment{options: Options{Home: home, TempDir: root, Shell: "/bin/bash"}}
+			e := &snapshotStore{options: snapshotOptions{Home: home, Shell: "/bin/bash"}}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			snapshot, _, err := e.load(ctx)
+			_, _, snapshotLease, err := e.load(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
-			e.releaseSnapshot(snapshot)
+			snapshotLease.release()
 			defer e.instanceLock.Close()
 			base := xdg
 			if !filepath.IsAbs(base) {

@@ -2,7 +2,16 @@
 // model-visible text body plus BashResult metadata. The worker supplies cwd and
 // working_dirs, remembers the returned cwd, and renders its own reminders.
 //
-// A lazy shared collector reconstructs the user's terminal environment using
+// Each Bash owns a snapshotStore (collection, refresh, instance lock and leases)
+// and an independently locked outputStore (retention, active files and budget).
+// Explicit Options configure both. A capture owns one command, its group, file
+// and budget record; foreground, background and tracker drivers transfer through
+// explicit states without replacing the descriptor or accounting record. The
+// output driver releases resources after group completion. Snapshot lease handles
+// end with shell/cwd work and do not depend on cwd scratch-file paths. Shutdown releases the
+// Bash's snapshot instance once all leases end.
+//
+// A lazy collector reconstructs the user's terminal environment using
 // bash -l -i -c with stdin at /dev/null. Warm explicitly starts it at production
 // daemon startup; constructing tools or DefaultTools does not collect anything. Both collector and commands use setsid,
 // like Node's detached mode: they have an independent session and no controlling
@@ -24,12 +33,8 @@
 // cannot remove their source or cwd scratch files. Their obsolete directories
 // are removed when the shells finish. Each daemon instance holds flock on a
 // private instance-* directory; startup only removes instances whose lock can
-// be acquired, plus legacy top-level snapshot-* directories. A Bash built
-// with explicit Options owns its environment, and its Shutdown releases the
-// instance: once no shell or visible background job holds a snapshot lease,
-// it removes the directory and closes the lock; a later call collects into a
-// new instance. NewBash without Options shares the process-wide environment,
-// whose lock lasts until process exit. Failed refresh keeps a usable old snapshot, warns once, and
+// be acquired, plus legacy top-level snapshot-* directories. Failed refresh
+// keeps a usable old snapshot, warns once, and
 // remembers the failed startup stamps until they change again. Without an old
 // snapshot, callers waiting on the same failed collection receive its error;
 // a later independent call can retry. Cancellation of the collecting caller is
@@ -95,12 +100,12 @@
 // repaired to mode 0700 when needed. Files use 0600. Unsafe ID components are encoded. Output sweeps run
 // on first use, then at most hourly, deleting files older than 24 hours while
 // exempting active commands and internally tracked groups. Sweeps run outside
-// the environment lock, ignore per-entry errors, and always advance lastSweep.
+// the output-store lock, ignore per-entry errors, and always advance lastSweep.
 // Shared output-file locks protect running files from other daemon instances'
 // sweeps too. Snapshots can contain secrets and use private directories.
 //
 // Inferred: every command capture file has a 1 GiB cap. All running capture
-// files in this daemon also share a 4 GiB total cap. Checks run every 100 ms;
+// files in each Bash instance also share a 4 GiB total cap. Checks run every 100 ms;
 // one shared stat pass accounts for foreground, promoted, background and tracked
 // groups. Files of finished commands are excluded, even when retained on disk.
 // Total overflow selects the largest file and waits for that victim to finish

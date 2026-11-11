@@ -59,13 +59,13 @@ func TestTotalOutputCapStopsOnlyLargest(t *testing.T) {
 					if r.Output.IsError || r.Output.Content[0].GetText() != "x" || large.JobId != "" {
 						t.Fatal(r)
 					}
-					b.environment.mu.Lock()
-					for candidate := range b.environment.active {
+					b.outputs.mu.Lock()
+					for candidate := range b.outputs.active {
 						if candidate != small.OutputPath {
 							path = candidate
 						}
 					}
-					b.environment.mu.Unlock()
+					b.outputs.mu.Unlock()
 				} else if large.JobId == "" {
 					t.Fatal("missing outer job", r)
 				}
@@ -137,8 +137,8 @@ func TestTotalOutputCapAfterBackgroundShellExit(t *testing.T) {
 	await(t, func() bool { _, err := os.Stat(filepath.Join(root, "small.ready")); return err == nil })
 	large := reviewRun(t, b, root, `(echo $BASHPID > child.pid; while [ ! -f start-large ]; do sleep 0.02; done; printf '%08192d' 0; while :; do sleep 0.02; done) & echo x`, true).GetBash()
 	// The visible outer job has ended, but its output still belongs to a live
-	// child group. Accounting must use the replacement descriptor after the
-	// outer background job closes its original descriptor.
+	// child group. The capture must keep its original descriptor and budget
+	// record alive after the visible background job finishes.
 	await(t, func() bool {
 		info, ok := b.jobs.Get(large.JobId)
 		return ok && info.State == circusv1.JobEvent_STATE_EXITED
@@ -155,9 +155,9 @@ func TestTotalOutputCapAfterBackgroundShellExit(t *testing.T) {
 	}
 	await(t, func() bool { return syscall.Kill(pid, 0) == syscall.ESRCH })
 	await(t, func() bool {
-		b.environment.mu.Lock()
-		defer b.environment.mu.Unlock()
-		return !b.environment.active[large.OutputPath]
+		b.outputs.mu.Lock()
+		defer b.outputs.mu.Unlock()
+		return !b.outputs.active[large.OutputPath]
 	})
 	if tail := outputTail(t, out); !strings.HasSuffix(tail, totalOutputLimitMessage) {
 		t.Fatalf("transferred output diagnostic: %q", tail)

@@ -7,6 +7,6 @@ import (
 )
 
 // DefaultTools is the single registry for tools available on this device.
-func DefaultTools(manager *jobs.Manager) []Tool {
-	return []Tool{fstools.NewRead(), fstools.NewWrite(), fstools.NewEdit(), bashtool.NewBash(manager), bashtool.NewTaskStop(manager)}
+func DefaultTools(manager *jobs.Manager, options bashtool.Options) []Tool {
+	return []Tool{fstools.NewRead(), fstools.NewWrite(), fstools.NewEdit(), bashtool.NewBash(manager, options), bashtool.NewTaskStop(manager)}
 }

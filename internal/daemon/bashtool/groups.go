@@ -2,8 +2,8 @@ package bashtool
 
 import (
 	"context"
+	"errors"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 )
@@ -14,75 +14,90 @@ import (
 type groupTracker struct {
 	mu     sync.Mutex
 	closed bool
-	stops  map[int]chan struct{}
+	stops  map[int]*trackedGroup
 	wg     sync.WaitGroup
 	done   chan struct{}
+	err    error
 }
 
-// trackGroup takes sole ownership of out, keeping its active-file exemption.
-func (b *Bash) trackGroup(pgid int, out *os.File, removeInline bool) {
+type trackedGroup struct {
+	stop chan struct{}
+	once sync.Once
+}
+
+func (g *trackedGroup) requestStop() { g.once.Do(func() { close(g.stop) }) }
+
+// trackCapture takes the driver role; the capture keeps its original file.
+func (b *Bash) trackCapture(c *capture) error {
+	b.effects.pause("tracker-register")
 	g := &b.groups
 	g.mu.Lock()
+	if got := c.snapshotState().owner; got != ownerTracker {
+		g.mu.Unlock()
+		return errors.New("tracker received capture before ownership transfer")
+	}
 	if g.closed {
 		g.mu.Unlock()
-		stopGroup(pgid)
-		waitGroupEmpty(pgid)
-		b.environment.outputBudget.finish(out.Name())
-		if message := b.outputStopMessage(out); message != "" {
-			_ = appendOutputLimit(out, message)
+		c.stopLeftovers()
+		c.finishBudget()
+		if message := b.outputs.outputStopMessage(c.out); message != "" {
+			_ = c.writeLimit(message)
 		}
-		_ = out.Close()
-		if removeInline {
-			_ = os.Remove(out.Name())
-		}
-		b.environment.releaseOutput(out.Name())
-		return
+		return c.release(ownerTracker, c.disposition)
 	}
 	if g.stops == nil {
-		g.stops = make(map[int]chan struct{})
+		g.stops = make(map[int]*trackedGroup)
 	}
-	stop := make(chan struct{})
-	g.stops[pgid] = stop
+	entry := &trackedGroup{stop: make(chan struct{})}
+	c.mu.Lock()
+	c.tracking = entry
+	c.mu.Unlock()
+	g.stops[c.pgid()] = entry
 	g.wg.Add(1)
 	g.mu.Unlock()
 	go func() {
 		defer g.wg.Done()
 		defer func() {
-			b.environment.outputBudget.finish(out.Name())
-			_ = out.Close()
-			if removeInline {
-				_ = os.Remove(out.Name())
-			}
-			b.environment.releaseOutput(out.Name())
+			c.finishBudget()
+			err := c.release(ownerTracker, c.disposition)
+			b.effects.pause("tracker-remove")
 			g.mu.Lock()
-			delete(g.stops, pgid)
+			g.err = errors.Join(g.err, err)
+			if g.stops[c.pgid()] == entry {
+				delete(g.stops, c.pgid())
+			}
 			g.mu.Unlock()
+			b.effects.pause("tracker-removed")
 		}()
 		tick := time.NewTicker(outputPollInterval)
 		defer tick.Stop()
-		for groupAlive(pgid) {
+		for groupAlive(c.pgid()) {
 			select {
-			case <-stop:
-				// Deviation: native leaves children after CLI exit. A long-lived
-				// daemon must stop its tracked groups during shutdown.
-				stopGroup(pgid)
-				waitGroupEmpty(pgid)
-				b.environment.outputBudget.finish(out.Name())
-				if message := b.outputStopMessage(out); message != "" {
-					_ = appendOutputLimit(out, message)
+			case <-entry.stop:
+				c.stopLeftovers()
+				c.finishBudget()
+				if message := b.outputs.outputStopMessage(c.out); message != "" {
+					_ = c.writeLimit(message)
 				}
 				return
 			case <-tick.C:
-				if message := b.outputStopMessage(out); message != "" {
-					// Deviation: native leaves ampersand child output unbounded.
-					killGroup(pgid)
-					waitGroupEmpty(pgid)
-					_ = appendOutputLimit(out, message)
+				if message := b.outputs.outputStopMessage(c.out); message != "" {
+					c.killLeftovers()
+					_ = c.writeLimit(message)
 					return
 				}
 			}
 		}
 	}()
+	return nil
+}
+func (b *Bash) stopTracked(c *capture) {
+	c.mu.Lock()
+	entry := c.tracking
+	c.mu.Unlock()
+	if entry != nil {
+		entry.requestStop()
+	}
 }
 
 // Shutdown stops internal groups and prevents later background shell exits from
@@ -97,11 +112,11 @@ func (b *Bash) Shutdown(ctx context.Context) error {
 		g.closed = true
 		g.done = make(chan struct{})
 		for _, stop := range g.stops {
-			close(stop)
+			stop.requestStop()
 		}
-		b.environment.mu.Lock()
-		cancel, warmDone := b.environment.warmCancel, b.environment.warmDone
-		b.environment.mu.Unlock()
+		b.snapshots.mu.Lock()
+		cancel, warmDone := b.snapshots.warmCancel, b.snapshots.warmDone
+		b.snapshots.mu.Unlock()
 		if cancel != nil {
 			cancel()
 		}
@@ -110,9 +125,7 @@ func (b *Bash) Shutdown(ctx context.Context) error {
 			if warmDone != nil {
 				<-warmDone
 			}
-			if b.ownsEnvironment {
-				b.environment.releaseInstance()
-			}
+			b.snapshots.releaseInstance()
 			close(g.done)
 		}()
 	}
@@ -120,7 +133,10 @@ func (b *Bash) Shutdown(ctx context.Context) error {
 	g.mu.Unlock()
 	select {
 	case <-done:
-		return nil
+		g.mu.Lock()
+		err := g.err
+		g.mu.Unlock()
+		return err
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -133,11 +149,14 @@ const groupExitWait = 5 * time.Second
 func waitGroupEmpty(pgid int) { waitGroupEmptyWithin(pgid, groupExitWait) }
 
 func waitGroupEmptyWithin(pgid int, limit time.Duration) bool {
+	return waitGroupEmptyWith(pgid, limit, groupAlive)
+}
+func waitGroupEmptyWith(pgid int, limit time.Duration, alive func(int) bool) bool {
 	timer := time.NewTimer(limit)
 	defer timer.Stop()
 	tick := time.NewTicker(outputPollInterval)
 	defer tick.Stop()
-	for groupAlive(pgid) {
+	for alive(pgid) {
 		select {
 		case <-tick.C:
 		case <-timer.C:

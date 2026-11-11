@@ -9,6 +9,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon"
+	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/daemon/clocktest"
 	"github.com/EricWvi/circus/internal/daemon/toolcontext"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
@@ -147,7 +148,7 @@ func TestDefaultToolsDoesNotCollectEnvironment(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".bashrc"), []byte(`echo touched > "$HOME/touched"`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	tools := daemon.DefaultTools(nil)
+	tools := daemon.DefaultTools(nil, bashtool.Options{})
 	defer func() {
 		for _, tool := range tools {
 			if closer, ok := tool.(interface{ Shutdown(context.Context) error }); ok {

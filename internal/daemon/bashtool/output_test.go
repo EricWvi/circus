@@ -61,7 +61,7 @@ func TestForegroundAndBackgroundOutputCap(t *testing.T) {
 func TestSweepErrorsAreBestEffort(t *testing.T) {
 	t.Parallel()
 	b, _, _ := reviewBash(t, 0)
-	locked := filepath.Join(b.environment.outputRoot(), "locked")
+	locked := filepath.Join(b.outputs.outputRoot(), "locked")
 	if err := os.MkdirAll(locked, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestSweepErrorsAreBestEffort(t *testing.T) {
 	}
 	defer os.Chmod(locked, 0700)
 	// Explicitly exercise walking beyond an inaccessible directory.
-	dir := filepath.Join(b.environment.outputRoot(), "z", "tasks")
+	dir := filepath.Join(b.outputs.outputRoot(), "z", "tasks")
 	if err := privateDir(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -84,13 +84,13 @@ func TestSweepErrorsAreBestEffort(t *testing.T) {
 	}
 	// Scheduling must actually run the sweep and continue after the locked
 	// directory; merely advancing lastSweep cannot make this assertion pass.
-	out, err := b.outputFile("review", "tool-results", "sweep-*")
+	out, err := b.outputs.outputFile("review", "tool-results", "sweep-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	leakcheck.Expect(out.Name()) // created by the test itself
 	defer out.Close()
-	defer b.environment.releaseOutput(out.Name())
+	defer b.outputs.releaseOutput(out.Name())
 	await(t, func() bool { _, err := os.Stat(stale); return os.IsNotExist(err) })
 }
 
@@ -107,14 +107,14 @@ func TestPromotionRegistrationFailureCleansOutput(t *testing.T) {
 	if !errors.Is(err, jobs.ErrShutdown) {
 		t.Fatal(err)
 	}
-	paths, err := filepath.Glob(filepath.Join(b.environment.outputRoot(), "review", "tool-results", "*"))
+	paths, err := filepath.Glob(filepath.Join(b.outputs.outputRoot(), "review", "tool-results", "*"))
 	if err != nil || len(paths) != 0 {
 		t.Fatalf("failed promotion retained output: %v %v", paths, err)
 	}
-	b.environment.mu.Lock()
-	defer b.environment.mu.Unlock()
-	if len(b.environment.active) != 0 {
-		t.Fatal(b.environment.active)
+	b.outputs.mu.Lock()
+	defer b.outputs.mu.Unlock()
+	if len(b.outputs.active) != 0 {
+		t.Fatal(b.outputs.active)
 	}
 }
 
@@ -143,6 +143,13 @@ func TestConcurrentRegistrationRejectionCleansOutput(t *testing.T) {
 	manager := jobs.NewManager(jobs.Options{NewID: func() string { close(allocated); return "rejected" }})
 	b.jobs = manager
 	t.Cleanup(func() { _ = manager.Shutdown(context.Background()) })
+	resume := make(chan struct{})
+	b.effects.before = func(step string) error {
+		if step == "promote" {
+			<-resume
+		}
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	returned := make(chan error, 1)
@@ -151,14 +158,6 @@ func TestConcurrentRegistrationRejectionCleansOutput(t *testing.T) {
 		returned <- err
 	}()
 	await(t, func() bool { _, err := os.Stat(filepath.Join(root, "ready")); return err == nil })
-	// Block newBackground's snapshot retain inside Manager.Start's callback.
-	b.environment.mu.Lock()
-	unlocked := false
-	defer func() {
-		if !unlocked {
-			b.environment.mu.Unlock()
-		}
-	}()
 	select {
 	case <-allocated:
 	case <-time.After(3 * time.Second):
@@ -167,8 +166,7 @@ func TestConcurrentRegistrationRejectionCleansOutput(t *testing.T) {
 	shutdownCtx, stopWaiting := context.WithCancel(context.Background())
 	stopWaiting()
 	_ = manager.Shutdown(shutdownCtx)
-	b.environment.mu.Unlock()
-	unlocked = true
+	close(resume)
 	select {
 	case err := <-returned:
 		if !errors.Is(err, jobs.ErrShutdown) {
@@ -177,7 +175,7 @@ func TestConcurrentRegistrationRejectionCleansOutput(t *testing.T) {
 	case <-time.After(4 * time.Second):
 		t.Fatal("rejected promotion did not finish")
 	}
-	paths, err := filepath.Glob(filepath.Join(b.environment.outputRoot(), "review", "tool-results", "*"))
+	paths, err := filepath.Glob(filepath.Join(b.outputs.outputRoot(), "review", "tool-results", "*"))
 	if err != nil || len(paths) != 0 {
 		t.Fatalf("rejected launch retained output: %v %v", paths, err)
 	}
