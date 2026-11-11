@@ -23,5 +23,8 @@ jobs:
       - uses: bufbuild/buf-setup-action@v1
         with:
           version: 1.73.0
-      - run: make lint test check-gen
+      - uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+      - run: task lint test check-gen
       - run: npx tsc --noEmit -p gen/ts

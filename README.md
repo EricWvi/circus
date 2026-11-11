@@ -20,20 +20,20 @@ circus runs an agent loop in a cloud worker and executes tools on the user's own
 | `tests/parity/` | Captured native tool-behavior fixtures, the capture harness, and behavior notes |
 | `go.mod`, `go.sum` | Go module and pinned generator tool |
 | `package.json`, `package-lock.json` | npm workspace and pinned Node dependencies |
-| `Makefile` | Generation, lint, test, build, and generation drift checks |
+| `Taskfile.yml` | Generation, lint, test, build, and generation drift checks ([Task](https://taskfile.dev)) |
 | `.github/workflows/ci.yml` | Go, protocol, generation, and TypeScript checks |
 
-Development requires Go 1.26, Node 24 with npm, and Buf 1.73.0 on `PATH`.
+Development requires Go 1.26, Node 24 with npm, Buf 1.73.0 and Task 3 on `PATH`.
 
 ```sh
 npm ci
-make gen lint test build
+task gen lint test build
 npx tsc --noEmit -p gen/ts
-make check-gen
+task check-gen
 ./bin/circus version
 ```
 
-Generated files are checked in. `make check-gen` requires a clean `gen/` tree after generation. Breaking checks are configured but will enter CI after there is a release to compare against. Set the CLI version at build time with `go build -ldflags "-X main.version=1.0.0" -o bin/circus ./cmd/circus`.
+Generated files are checked in. `task check-gen` requires a clean `gen/` tree after generation. Breaking checks are configured but will enter CI after there is a release to compare against. Set the CLI version at build time with `go build -ldflags "-X main.version=1.0.0" -o bin/circus ./cmd/circus`.
 
 ## Try the daemon locally
 

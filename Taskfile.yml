@@ -1,0 +1,35 @@
+version: "3"
+
+tasks:
+  gen:
+    desc: Generate Go and TypeScript code from the protocol
+    cmds:
+      - buf generate
+
+  lint:
+    desc: Lint the protocol, vet Go code and check gofmt
+    cmds:
+      - buf lint
+      - go vet ./...
+      - |
+        files="$(gofmt -l $(go list -f '{{"{{.Dir}}"}}' ./...))"
+        if [ -n "$files" ]; then printf '%s\n' "$files"; exit 1; fi
+
+  test:
+    desc: Run Go tests
+    cmds:
+      - go test ./...
+
+  check-gen:
+    desc: Fail if generation changed tracked files or produced untracked ones
+    cmds:
+      - task: gen
+      - git diff --exit-code --stat -- gen/
+      - |
+        untracked="$(git ls-files --others --exclude-standard -- gen/)"
+        if [ -n "$untracked" ]; then printf '%s\n' "$untracked"; exit 1; fi
+
+  build:
+    desc: Build bin/circus
+    cmds:
+      - go build -o bin/circus ./cmd/circus
