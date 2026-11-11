@@ -8,9 +8,9 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
-	"github.com/EricWvi/circus/internal/daemon/clocktest"
 	"github.com/EricWvi/circus/internal/daemon/toolcontext"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
@@ -24,7 +24,7 @@ func (f preparingTool) PreparationBudget() time.Duration { return f.budget }
 
 func TestWrappedContextStartsExecutionTimeout(t *testing.T) {
 	t.Parallel()
-	clock := clocktest.New()
+	clock := clock.New()
 	preparing := make(chan struct{})
 	release := make(chan struct{})
 	started := make(chan time.Time, 1)
@@ -73,7 +73,7 @@ func TestWrappedContextStartsExecutionTimeout(t *testing.T) {
 
 func TestToolDeclaresPreparationBudget(t *testing.T) {
 	t.Parallel()
-	clock := clocktest.New()
+	clock := clock.New()
 	started := make(chan struct{})
 	tool := preparingTool{budget: 3 * time.Second, fakeTool: fakeTool{"read", func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
 		close(started)
@@ -172,7 +172,7 @@ func TestNormalToolCannotRestartTimeout(t *testing.T) {
 	for _, preparedInterface := range []bool{false, true} {
 		t.Run(map[bool]string{false: "normal", true: "zero preparation budget"}[preparedInterface], func(t *testing.T) {
 			t.Parallel()
-			clock := clocktest.New()
+			clock := clock.New()
 			original := clock.Now().Add(time.Second)
 			started := make(chan struct{})
 			release := make(chan struct{})

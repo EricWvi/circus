@@ -1,6 +1,6 @@
 // First version of the circus device protocol. circus is pre-release and offers
-// no backward-compatibility guarantee yet. The transport envelope (WSS framing,
-// handshake, and version) comes later.
+// no backward-compatibility guarantee yet. WSS envelopes, handshake, versioning,
+// heartbeat and fragmentation are defined in link.proto and the role link files.
 syntax = "proto3";
 
 package circus.v1;
@@ -9,13 +9,15 @@ option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
 // DeviceCall is one tool invocation from the worker to a device daemon.
 message DeviceCall {
-  // Globally unique UUID or ULID used by the daemon to deduplicate calls.
+  // Globally unique ID used by the daemon to deduplicate calls (UUID/ULID recommended).
+  // Required: 1-128 bytes, charset [A-Za-z0-9_-].
   string call_id = 1;
   // Owning circus session. The daemon attributes background jobs and their
-  // output files to it.
+  // output files to it. Required: 1-128 bytes, charset [A-Za-z0-9_-].
   string session_id = 2;
   // SDK subagent ID, or an empty string for the main thread. Relay metadata;
-  // the daemon does not read it yet.
+  // the daemon does not read it yet. May be empty; otherwise charset
+  // [A-Za-z0-9_-], at most 128 bytes.
   string agent_id = 3;
   // Locally enforced timeout in milliseconds; zero uses the daemon default of
   // two minutes, and requests above the ten-minute maximum are clamped to it.
@@ -40,10 +42,13 @@ message DeviceCall {
 
 // DeviceResult is the final result of a DeviceCall.
 message DeviceResult {
-  // ID of the completed call.
+  // ID of the completed call: 1-128 bytes, charset [A-Za-z0-9_-].
   string call_id = 1;
   // Exactly the tool output presented to the model.
   ToolOutput output = 2;
+  // Present only for daemon failures; ordinary tool errors only set output.is_error.
+  // Output still contains the model-visible Error text when a fault is present.
+  DaemonFault fault = 3;
   // Structured metadata for the worker's session state.
   oneof detail {
     // Shell command metadata.
@@ -57,6 +62,31 @@ message DeviceResult {
     // Background job stop metadata.
     TaskStopResult task_stop = 14;
   }
+}
+
+// DaemonFault distinguishes daemon failures from ordinary tool errors.
+message DaemonFault {
+  // Code identifies the daemon failure.
+  enum Code {
+    // No failure code supplied.
+    CODE_UNSPECIFIED = 0;
+    // Tool.Run returned a Go error.
+    CODE_INTERNAL = 1;
+    // Tool execution panicked.
+    CODE_PANIC = 2;
+    // Tool did not return within the timeout abandonment grace.
+    CODE_ABANDONED_AFTER_TIMEOUT = 3;
+    // Tool did not return within the cancellation abandonment grace.
+    CODE_ABANDONED_AFTER_CANCEL = 4;
+    // Preparation exhausted its deadline or abandonment grace.
+    CODE_PREPARATION_EXHAUSTED = 5;
+    // This daemon version does not provide the requested tool.
+    CODE_TOOL_UNAVAILABLE = 6;
+  }
+  // Machine-readable failure category; never CODE_UNSPECIFIED when present.
+  Code code = 1;
+  // Diagnostic text; the model-visible output remains in DeviceResult.output.
+  string message = 2;
 }
 
 // ToolOutput contains model-visible output and the tool failure indicator.
@@ -210,7 +240,7 @@ message TaskStopResult {}
 
 // CallQuery retrieves lifecycle state; completed results are kept by call_id for a TTL.
 message CallQuery {
-  // ID of the call whose state is requested.
+  // ID of the call whose state is requested: 1-128 bytes, charset [A-Za-z0-9_-].
   string call_id = 1;
 }
 
@@ -227,7 +257,7 @@ message CallStatus {
     // The call or its retained result is no longer available.
     STATE_LOST = 3;
   }
-  // ID of the queried call.
+  // ID of the queried call: 1-128 bytes, charset [A-Za-z0-9_-].
   string call_id = 1;
   // Current lifecycle state.
   State state = 2;
@@ -235,13 +265,24 @@ message CallStatus {
   DeviceResult result = 3;
 }
 
-// CancelCall asks the daemon to cancel an in-flight call.
+// CancelCall is idempotent: unknown or completed calls are a no-op.
+// DispatchCall must precede CancelCall for the same call, including on resend.
 message CancelCall {
-  // ID of the call to cancel.
+  // ID of the call to cancel: 1-128 bytes, charset [A-Za-z0-9_-].
   string call_id = 1;
 }
 
 // JobEvent is a background job state change pushed by the daemon.
+// Within a boot, events across all jobs have strictly increasing seq, allocated
+// under the manager lock in enqueue order, starting at 1. RUNNING transitions to
+// EXITED or KILLED. The daemon never emits LOST: only the control plane marks jobs
+// from an old boot LOST when boot_id changes. Job IDs are daemon-generated
+// 12-character hex strings; their global key is (device_id, boot_id, job_id).
+// There is no event replay. Reconnect always requests ListJobs; discard events
+// at or below the snapshot high-water mark. A live sequence gap is an assertion
+// failure requiring a fresh snapshot (queue overflow closes the connection).
+// No ordering is guaranteed relative to ack or result. An event may arrive
+// before its creating call's result; associate it using call_id.
 message JobEvent {
   // State identifies the background job's lifecycle stage.
   enum State {
@@ -253,12 +294,12 @@ message JobEvent {
     STATE_EXITED = 2;
     // The job was killed.
     STATE_KILLED = 3;
-    // The job's state is no longer available.
+    // The old boot is lost; produced only by the control plane, never the daemon.
     STATE_LOST = 4;
   }
   // ID of the background job that changed state.
   string job_id = 1;
-  // Session that owns the background job.
+  // Owning session: 1-128 bytes, charset [A-Za-z0-9_-].
   string session_id = 2;
   // Current background job lifecycle state.
   State state = 3;
@@ -266,4 +307,9 @@ message JobEvent {
   int32 exit_code = 4;
   // Path to the job's full output file on the device.
   string output_path = 5;
+  // Boot-wide global event sequence; starts at 1, strictly increasing.
+  uint64 seq = 6;
+  // Creating call (explicit background or timeout promotion): 1-128 bytes,
+  // charset [A-Za-z0-9_-].
+  string call_id = 7;
 }

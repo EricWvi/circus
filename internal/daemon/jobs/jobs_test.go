@@ -12,7 +12,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/daemon/clocktest"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
@@ -50,7 +50,7 @@ func newJobs(t *testing.T, opts jobs.Options) *jobs.Manager {
 }
 
 func TestJobManagerLifecycleAndRetention(t *testing.T) {
-	clock := clocktest.New()
+	clock := clock.New()
 	events := make(chan *circusv1.JobEvent, 16)
 	m := newJobs(t, jobs.Options{Clock: clock, RetainExited: time.Minute, OnEvent: func(e *circusv1.JobEvent) { events <- e }})
 	job := newFakeJob()

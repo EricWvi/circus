@@ -11,8 +11,8 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/daemon"
-	"github.com/EricWvi/circus/internal/daemon/clocktest"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
@@ -199,7 +199,7 @@ func TestDispatcherTimeouts(t *testing.T) {
 		{"configured default", 0, 6 * time.Second, 10 * time.Second, 6 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			clock := clocktest.New()
+			clock := clock.New()
 			start := clock.Now()
 			started := make(chan time.Time, 1)
 			d := newDispatcher(t, daemon.Options{Clock: clock, DefaultTimeout: tc.defaultTimeout, MaxTimeout: tc.maxTimeout,
@@ -239,7 +239,7 @@ func TestDispatcherTimeouts(t *testing.T) {
 }
 
 func TestDispatcherAbandonsUncooperativeTool(t *testing.T) {
-	clock := clocktest.New()
+	clock := clock.New()
 	started := make(chan context.Context, 1)
 	release := make(chan struct{})
 	returned := make(chan struct{})
@@ -280,7 +280,7 @@ func TestDispatcherAbandonsUncooperativeTool(t *testing.T) {
 }
 
 func TestDispatcherAbandonsCancelledUncooperativeTool(t *testing.T) {
-	clock := clocktest.New()
+	clock := clock.New()
 	started := make(chan context.Context, 1)
 	release := make(chan struct{})
 	returned := make(chan struct{})
@@ -318,7 +318,7 @@ func TestDispatcherAbandonsCancelledUncooperativeTool(t *testing.T) {
 }
 
 func TestDispatcherCancelAfterDeadlineKeepsEarlierFallback(t *testing.T) {
-	clock := clocktest.New()
+	clock := clock.New()
 	started := make(chan context.Context, 1)
 	release := make(chan struct{})
 	returned := make(chan struct{})
@@ -358,7 +358,7 @@ func TestDispatcherCancelAfterDeadlineKeepsEarlierFallback(t *testing.T) {
 }
 
 func TestDispatcherCancellationShutdownAndRetention(t *testing.T) {
-	clock := clocktest.New()
+	clock := clock.New()
 	contexts := make(chan context.Context, 8)
 	d := newDispatcher(t, daemon.Options{Clock: clock, ResultTTL: time.Minute, TombstoneTTL: time.Hour,
 		Tools: []daemon.Tool{fakeTool{"read", func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
@@ -456,7 +456,7 @@ func TestDispatcherValidationAndToolFailures(t *testing.T) {
 }
 
 func TestDispatcherShutdownContextOnlyStopsWaiting(t *testing.T) {
-	clock := clocktest.New()
+	clock := clock.New()
 	release := make(chan struct{})
 	started := make(chan context.Context, 1)
 	d := newDispatcher(t, daemon.Options{Clock: clock, Tools: []daemon.Tool{fakeTool{"read", func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {

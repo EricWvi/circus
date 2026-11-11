@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package circus.v1;
+
+import "circus/v1/device.proto";
+import "circus/v1/link.proto";
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// DaemonUplink is one daemon-to-control-plane WSS binary message.
+// Physical frames are FIFO in each direction. Ack, result and job events have
+// NO relative ordering: result may precede ack and implies acknowledgement;
+// job events may precede results and must be associated by call_id. Job events
+// within one boot are strictly increasing by seq. A rejected ack has no later
+// result for that rejected submission. Duplicate accepted submits return the
+// existing RUNNING or COMPLETED status (including the retained result).
+// Pushes are disposable: disconnected pushes are dropped, a full outbound queue
+// closes the link. There is no daemon outbox. Recover using CallQuery (results
+// retained 30 minutes) and ListJobs, never event-log replay.
+message DaemonUplink {
+  oneof payload {
+    Hello hello = 1;
+    Heartbeat heartbeat = 2;
+    Fragment fragment = 3;
+    CallAck call_ack = 10;
+    DeviceResult result = 11;
+    CallStatus call_status = 12;
+    JobEvent job_event = 13;
+    JobSnapshot job_snapshot = 14;
+  }
+}
+
+// DaemonDownlink is one control-plane-to-daemon WSS binary message.
+// No business message precedes Welcome. Every same-call DispatchCall,
+// CancelCall and CallQuery shares an ordering key and is delivered FIFO,
+// including resends. ListJobs and StopSessionJobs are barriers behind every
+// earlier DispatchCall, including queued and partially written dispatches.
+// Only heartbeats, GoAway and acknowledgements receive urgent control priority.
+// Unrelated small business messages may bypass large ones with different keys;
+// no business message bypasses a barrier. Fragmented controls obey in-flight caps.
+message DaemonDownlink {
+  oneof payload {
+    Welcome welcome = 1;
+    Reject reject = 2;
+    Heartbeat heartbeat = 3;
+    Fragment fragment = 4;
+    GoAway go_away = 5;
+    DispatchCall dispatch_call = 10;
+    CancelCall cancel_call = 11;
+    CallQuery call_query = 12;
+    ListJobs list_jobs = 13;
+    StopSessionJobs stop_session_jobs = 14;
+  }
+}
+
+// DispatchCall fences execution to one daemon boot.
+message DispatchCall {
+  DeviceCall call = 1;
+  // Required, equal to dispatched_boot_id committed before writing this call.
+  // A daemon with a different boot_id must reject without executing.
+  string target_boot_id = 2;
+}
+
+// CallAck reports Submit's immediate outcome, not necessarily before result.
+message CallAck {
+  // 1-128 bytes, charset [A-Za-z0-9_-].
+  string call_id = 1;
+  // Exactly one outcome. Accepted duplicates report the existing status.
+  oneof outcome {
+    CallStatus status = 2;
+    Rejection rejection = 3;
+  }
+}
+
+// Rejection turns a submit error into a wire value; no result follows rejection.
+message Rejection {
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    CODE_BOOT_MISMATCH = 1;
+    CODE_INVALID = 2;
+    CODE_CALL_MISMATCH = 3;
+    CODE_EXPIRED = 4;
+    CODE_SHUTTING_DOWN = 5;
+  }
+  Code code = 1;
+  string message = 2;
+}
+
+// ListJobs requests an atomic current-state snapshot, always after reconnect.
+message ListJobs {
+  // Empty means all sessions; otherwise 1-128 bytes, charset [A-Za-z0-9_-].
+  string session_id = 1;
+}
+
+// JobSnapshot captures job states and the boot-wide sequence under one lock.
+// Each entry is the current state, not a replay, with its last event seq <= seq.
+// Discard subsequent stale events at or below this high-water mark. Snapshot
+// replies can race with live events; receivers must not regress newer states.
+message JobSnapshot {
+  uint64 seq = 1;
+  repeated JobEvent jobs = 2;
+}
+
+// StopSessionJobs exposes idempotent session job stopping; M2 has no session
+// orchestration. It does not cancel foreground calls.
+message StopSessionJobs {
+  // Required: 1-128 bytes, charset [A-Za-z0-9_-].
+  string session_id = 1;
+}

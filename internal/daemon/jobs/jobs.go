@@ -10,6 +10,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/clock"
 )
 
 // ErrNotFound indicates an unknown or expired job ID.
@@ -23,15 +24,9 @@ var ErrShutdown = errors.New("job manager is shut down")
 var ErrKilled = errors.New("job killed")
 
 // Clock supplies retention time and timers.
-type Clock interface {
-	Now() time.Time
-	After(time.Duration) <-chan time.Time
-}
+type Clock = clock.Clock
 
-type realClock struct{}
-
-func (realClock) Now() time.Time                         { return time.Now() }
-func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+type realClock = clock.Real
 
 // Job represents a background process owned by a tool. Wait reports the actual
 // exit code and wraps ErrKilled only when termination caused the exit; Stop

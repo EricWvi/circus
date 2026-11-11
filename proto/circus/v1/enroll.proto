@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package circus.v1;
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// Role identifies an independently credentialed principal on a machine.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_DAEMON = 1;
+  ROLE_WORKER = 2;
+}
+
+// EnrollService exchanges one-time tokens for machine-role credentials via
+// unary Connect RPC. Authentication for links is on the HTTP upgrade request.
+service EnrollService {
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+}
+
+// EnrollRequest exchanges one role-bound token for one machine-role identity.
+// A join command may call Enroll for both roles to obtain two credentials (D43).
+// No cross-role atomicity is implied; each token is independently single-use.
+message EnrollRequest {
+  string one_time_token = 1;
+  Role role = 2;
+  string name = 3;
+  string hostname = 4;
+  // Shared machine hash links identities; credentials and revocation stay separate.
+  string machine_id = 5;
+  string os = 6;
+  string arch = 7;
+  string client_version = 8;
+}
+
+// EnrollResponse returns the identity and credential for the requested role.
+// Worker and daemon have different IDs/tokens even on the same machine; either
+// role can be revoked independently. Treat long_term_token as secret.
+message EnrollResponse {
+  // Principal ID; also used for worker identities.
+  string principal_id = 1;
+  string long_term_token = 2;
+  string control_plane_url = 3;
+}

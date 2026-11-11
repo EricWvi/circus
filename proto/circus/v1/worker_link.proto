@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package circus.v1;
+
+import "circus/v1/device.proto";
+import "circus/v1/link.proto";
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// WorkerUplink is the M2 call-only worker-to-control-plane envelope.
+// Hello must be first; no business messages before Welcome. Session and lease
+// messages belong to M3. Frames are FIFO; fragment/control scheduling follows
+// Fragment's rules. A submission must precede its same-call cancellation.
+message WorkerUplink {
+  oneof payload {
+    Hello hello = 1;
+    Heartbeat heartbeat = 2;
+    Fragment fragment = 3;
+    SubmitCall submit_call = 10;
+    CancelCall cancel_call = 11;
+    CallQuery call_query = 12;
+  }
+}
+
+// WorkerDownlink contains only the call subset approved for M2.
+message WorkerDownlink {
+  oneof payload {
+    Welcome welcome = 1;
+    Reject reject = 2;
+    Heartbeat heartbeat = 3;
+    Fragment fragment = 4;
+    CallUpdate call_update = 10;
+    WorkerJobEvent job_event = 11;
+  }
+}
+
+// WorkerJobEvent supplies the global identity of a daemon job. Device is the
+// user-unique device name, boot_id is the daemon's process epoch, and event.job_id
+// is unique only within that pair. LOST for an old boot is emitted by the
+// control plane when it observes a new boot, never by the daemon.
+message WorkerJobEvent {
+  string device = 1;
+  string boot_id = 2;
+  JobEvent event = 3;
+}
+
+// SubmitCall addresses a device by its user-unique name.
+message SubmitCall {
+  string device = 1;
+  DeviceCall call = 2;
+}
+
+// CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
+// and cancelled are terminal. Unknown is NOT terminal: reconnect with the same
+// daemon boot can still yield a result; CallQuery can retrieve the latest state.
+message CallUpdate {
+  // Required: 1-128 bytes, charset [A-Za-z0-9_-].
+  string call_id = 1;
+  oneof update {
+    Accepted accepted = 2;
+    Dispatched dispatched = 3;
+    DeviceResult result = 4;
+    DeviceOffline offline = 5;
+    Unknown unknown = 6;
+    Lost lost = 7;
+    Rejected rejected = 8;
+    Cancelled cancelled = 9;
+  }
+  // Accepted means metadata was accepted, but execution is not yet dispatched.
+  message Accepted {}
+  // Dispatched means dispatch metadata was committed before sending.
+  message Dispatched {}
+  // DeviceOffline reports the addressed device offline, with alternatives.
+  message DeviceOffline {
+    repeated string online_devices = 1;
+  }
+  // Unknown leaves open the outcome of an already dispatched call.
+  message Unknown {
+    string reason = 1;
+  }
+  // Lost means the authoritative result cannot be recovered.
+  message Lost {
+    string reason = 1;
+  }
+  // Rejected is a routing/validation failure, not a tool result.
+  message Rejected {
+    enum Code {
+      CODE_UNSPECIFIED = 0;
+      CODE_INVALID = 1;
+      CODE_OVERLOADED = 2;
+      CODE_CALL_MISMATCH = 3;
+      CODE_UNKNOWN_DEVICE = 4;
+    }
+    Code code = 1;
+    string message = 2;
+  }
+  // Cancelled means cancellation before dispatch. After dispatch, cancellation
+  // is recorded and the daemon's final result (including interrupted) wins.
+  message Cancelled {}
+}

@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package circus.v1;
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// Hello is the client's first message after authenticated HTTP upgrade. Bearer
+// credentials belong to the upgrade request, never this message. No business
+// messages may be sent by either side before Welcome. Missing Hello times out
+// and closes the connection; handshake policy is implemented by the gateway.
+message Hello {
+  uint32 protocol_version = 1;
+  // Fresh process-start ULID/UUIDv7, kept only in memory, not across restarts.
+  string boot_id = 2;
+  string client_version = 3;
+  string os = 4;
+  string arch = 5;
+  string hostname = 6;
+  // Hash of the platform machine identifier, shared by roles on one machine.
+  string machine_id = 7;
+}
+
+// Welcome accepts Hello within the configured inclusive version range.
+// Limits and heartbeat values apply to this connection in both directions.
+message Welcome {
+  // Identity of this machine-role principal (also used for worker identities).
+  string principal_id = 1;
+  string instance_id = 2;
+  uint32 heartbeat_interval_ms = 3;
+  uint32 heartbeat_timeout_ms = 4;
+  // Default 64 MiB; applies to the complete serialized logical envelope.
+  uint64 max_message_bytes = 5;
+  // Default 256 KiB; bounds Fragment.data and unfragmented envelopes.
+  uint32 max_fragment_bytes = 6;
+  uint32 negotiated_version = 7;
+  // Diagnostic only, never used to derive deadlines.
+  int64 server_time_unix_ms = 8;
+  // Agreed reassembly limits in both directions, used by the sender to bound
+  // started fragmented messages. Default count 2, bytes 2 * max_message_bytes.
+  // Each peer applies these values to wire Options after this raw handshake.
+  uint32 max_in_flight_messages = 9;
+  uint64 max_in_flight_bytes = 10;
+}
+
+// Reject ends the handshake; close the connection after sending it.
+message Reject {
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    CODE_UNAUTHENTICATED = 1;
+    CODE_REVOKED = 2;
+    CODE_VERSION_UNSUPPORTED = 3;
+    CODE_BAD_HELLO = 4;
+  }
+  Code code = 1;
+  string message = 2;
+  uint32 min_version = 3;
+  uint32 max_version = 4;
+}
+
+// Heartbeat is sent independently by both peers (default every 5 seconds).
+// Receiving ANY message refreshes liveness; default timeout is 15 seconds.
+// Sequence and wall time are diagnostic, not acknowledgements or deadlines.
+// With complete-frame liveness and two active messages, usable link throughput
+// must exceed 2 * max_fragment_bytes / timeout (about 35 KiB/s by default),
+// plus control traffic and scheduling margin. Local consumer backpressure pauses
+// inactivity/fragment deadlines for at most the local MaxConsumerStall (default
+// heartbeat timeout); exceeding it closes with a local consumer-stalled error.
+// Resume resets liveness time and shifts fragment deadlines by the pause.
+// Otherwise detection takes timeout to timeout +
+// timer interval (15-20 s by default); adding a 30 s gateway grace is 45-50 s.
+message Heartbeat {
+  uint64 seq = 1;
+  int64 sent_unix_ms = 2;
+}
+
+// Fragment carries part of one serialized role-specific Uplink/Downlink.
+// A WSS binary message contains exactly one envelope (possibly a Fragment).
+// Each direction assigns nonzero, strictly increasing message_id on FIRST
+// fragment transmission; fragments of different messages may interleave.
+// For each message, index starts at zero and increments by one without gaps.
+// total_size is positive on index zero only and zero on subsequent fragments.
+// data is nonempty and at most max_fragment_bytes; last is true exactly when
+// the accumulated bytes equal total_size. Reassembled envelopes cannot contain
+// another Fragment. At most two fragmented logical messages are started at a
+// time (fewer when the negotiated in-flight budget requires it). Only heartbeat,
+// GoAway and acknowledgements receive urgent control priority. Unrelated small
+// business messages may bypass large ones with different keys; business messages
+// never bypass a barrier. Each scheduling round serves an eligible control
+// first, then one small business message, then rotating large fragments.
+// A started fragmented control joins rotation instead of monopolizing priority;
+// in-flight caps still apply. Senders declare ordering keys: all same-call messages are FIFO; job events share one
+// boot-wide ordering key. Query/Cancel never pass an earlier same-call
+// Dispatch/Submit. ListJobs/StopSessionJobs are barriers behind ALL earlier
+// Dispatch/Submit messages, including messages not yet started.
+// WebSocket preserves physical FIFO per direction; logical completion may be
+// interleaved. Job event sequence order must be preserved by the sender.
+// Oversize, out-of-order, missing or malformed fragments close the connection.
+// Missing tails are detected by a bounded idle reassembly timeout even if other
+// traffic keeps the connection alive; EOF with unfinished messages is an error.
+message Fragment {
+  uint64 message_id = 1;
+  uint32 index = 2;
+  bool last = 3;
+  uint64 total_size = 4;
+  bytes data = 5;
+}
+
+// GoAway asks the peer to reconnect after a delay, e.g. during server shutdown
+// or replacement by a new connection for the same machine-role identity.
+message GoAway {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_SHUTTING_DOWN = 1;
+    REASON_SUPERSEDED = 2;
+  }
+  Reason reason = 1;
+  uint32 reconnect_after_ms = 2;
+}

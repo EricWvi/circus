@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./circus/v1/device_pb": "./src/circus/v1/device_pb.ts"
+    "./circus/v1/device_pb": "./src/circus/v1/device_pb.ts",
+    "./circus/v1/link_pb": "./src/circus/v1/link_pb.ts",
+    "./circus/v1/daemon_link_pb": "./src/circus/v1/daemon_link_pb.ts",
+    "./circus/v1/worker_link_pb": "./src/circus/v1/worker_link_pb.ts",
+    "./circus/v1/enroll_pb": "./src/circus/v1/enroll_pb.ts"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.17.0"
