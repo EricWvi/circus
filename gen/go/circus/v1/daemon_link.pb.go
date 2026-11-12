@@ -543,7 +543,8 @@ func (x *DispatchCall) GetTargetBootId() string {
 // CallAck reports Submit's immediate outcome, not necessarily before result.
 type CallAck struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 1-128 bytes, charset [A-Za-z0-9_-].
+	// 1-128 bytes, charset [A-Za-z0-9_-]. Empty when an invalid call_id
+	// cannot be echoed (for example, with Rejection.INVALID).
 	CallId string `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
 	// Exactly one outcome. Accepted duplicates report the existing status.
 	//
@@ -738,9 +739,13 @@ func (x *ListJobs) GetSessionId() string {
 // Discard subsequent stale events at or below this high-water mark. Snapshot
 // replies can race with live events; receivers must not regress newer states.
 type JobSnapshot struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Seq           uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	Jobs          []*JobEvent            `protobuf:"bytes,2,rep,name=jobs,proto3" json:"jobs,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Seq   uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	Jobs  []*JobEvent            `protobuf:"bytes,2,rep,name=jobs,proto3" json:"jobs,omitempty"`
+	// The snapshot omitted jobs to fit its resource caps. Receivers MUST NOT
+	// infer anything from omissions when true, including marking jobs LOST.
+	// RUNNING jobs are included first, then ended jobs in job-ID order.
+	Truncated     bool `protobuf:"varint,3,opt,name=truncated,proto3" json:"truncated,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -787,6 +792,13 @@ func (x *JobSnapshot) GetJobs() []*JobEvent {
 		return x.Jobs
 	}
 	return nil
+}
+
+func (x *JobSnapshot) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
 }
 
 // StopSessionJobs exposes idempotent session job stopping; M2 has no session
@@ -888,10 +900,11 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"\x12CODE_SHUTTING_DOWN\x10\x05\")\n" +
 	"\bListJobs\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"H\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"f\n" +
 	"\vJobSnapshot\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12'\n" +
-	"\x04jobs\x18\x02 \x03(\v2\x13.circus.v1.JobEventR\x04jobs\"0\n" +
+	"\x04jobs\x18\x02 \x03(\v2\x13.circus.v1.JobEventR\x04jobs\x12\x1c\n" +
+	"\ttruncated\x18\x03 \x01(\bR\ttruncated\"0\n" +
 	"\x0fStopSessionJobs\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionIdB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"

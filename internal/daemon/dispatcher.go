@@ -12,11 +12,14 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon/toolcontext"
+	"github.com/EricWvi/circus/internal/identifier"
 	"github.com/EricWvi/circus/internal/textutil"
 	"google.golang.org/protobuf/proto"
 )
 
 var (
+	// ErrInvalidCall rejects malformed IDs or a missing tool before execution.
+	ErrInvalidCall = errors.New("invalid call")
 	// ErrCallExpired rejects a retry whose result expired but tombstone remains.
 	ErrCallExpired = errors.New("call result has expired")
 	// ErrCallMismatch rejects a call_id reused with a different call.
@@ -38,6 +41,10 @@ type Options struct {
 	// OnResult runs asynchronously in completion order, after result storage.
 	// It must return promptly; Shutdown waits for queued callbacks.
 	OnResult func(*circusv1.DeviceResult)
+	// CallbackByteLimit bounds serialized backlog (default 128 MiB, 4096 items).
+	// Overflow drops the notification; OnOverflow must not block.
+	CallbackByteLimit int
+	OnOverflow        func()
 }
 
 type cancelRequest struct {
@@ -65,7 +72,8 @@ type Dispatcher struct {
 	stopSweep      chan struct{}
 	stopped        chan struct{}
 	wg             sync.WaitGroup
-	callbackQueue  []*circusv1.DeviceResult
+	callbackQueue  [][]byte
+	callbackBytes  int
 	callbackWake   chan struct{}
 	callbackClosed bool
 	callbackDone   chan struct{}
@@ -88,6 +96,9 @@ func NewDispatcher(opts Options) (*Dispatcher, error) {
 	if opts.ToolShutdownTimeout <= 0 {
 		// Inferred: bound tool cleanup independently of a caller's wait context.
 		opts.ToolShutdownTimeout = 10 * time.Second
+	}
+	if opts.CallbackByteLimit <= 0 {
+		opts.CallbackByteLimit = 128 << 20
 	}
 	if opts.Clock == nil {
 		opts.Clock = realClock{}
@@ -174,20 +185,18 @@ func callHash(call *circusv1.DeviceCall) ([sha256.Size]byte, error) {
 }
 
 // Submit snapshots and executes a call independently of its submitter.
-// Running and retained IDs return their existing state without executing again.
+// Running and retained IDs return their existing state without executing again,
+// including during shutdown. ErrShutdown rejects only previously unseen IDs.
 func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.closed {
-		return nil, ErrShutdown
-	}
-	if call == nil || call.GetCallId() == "" {
-		return nil, errors.New("call_id is required")
+	if call == nil || !identifier.Valid(call.GetCallId(), false) || !identifier.Valid(call.GetSessionId(), false) || !identifier.Valid(call.GetAgentId(), true) {
+		return nil, ErrInvalidCall
 	}
 	msg := call.ProtoReflect()
 	field := msg.WhichOneof(msg.Descriptor().Oneofs().ByName("tool"))
 	if field == nil {
-		return nil, errors.New("tool is required")
+		return nil, ErrInvalidCall
 	}
 	hash, err := callHash(call)
 	if err != nil {
@@ -206,8 +215,11 @@ func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, er
 		}
 		// Older than TombstoneTTL: treat the record as absent and execute again.
 	}
+	if d.closed {
+		return nil, ErrShutdown
+	}
 	if d.tools[string(field.Name())] == nil {
-		notify := errorResult(fmt.Sprintf("tool %q is not available on this device", field.Name()))
+		notify := faultResult(fmt.Sprintf("tool %q is not available on this device", field.Name()), circusv1.DaemonFault_CODE_TOOL_UNAVAILABLE)
 		notify.CallId = call.CallId
 		r := &callRecord{result: notify, completed: now, done: make(chan struct{}), hash: hash}
 		close(r.done)
@@ -241,8 +253,8 @@ func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, er
 		fallbackAt = now.Add(preparation)
 	} else {
 		deadline = d.opts.Clock.After(timeout)
-		fallback = d.opts.Clock.After(timeout + 5*time.Second)
-		fallbackAt = now.Add(timeout + 5*time.Second)
+		fallback = d.opts.Clock.After(timeout + AbandonGrace)
+		fallbackAt = now.Add(timeout + AbandonGrace)
 	}
 	d.wg.Add(1)
 	go d.execute(ctx, call, r, string(field.Name()), deadline, fallback, fallbackAt)
@@ -293,6 +305,16 @@ func (c *deadlineContext) cancel(err error) {
 	}
 }
 
+// AbandonGrace is how long a timed-out or cancelled tool may take to return
+// before its call completes with an ABANDONED_* fault.
+const AbandonGrace = 5 * time.Second
+
+func faultResult(message string, code circusv1.DaemonFault_Code) *circusv1.DeviceResult {
+	result := errorResult(message)
+	result.Fault = &circusv1.DaemonFault{Code: code, Message: code.String()}
+	return result
+}
+
 func errorResult(message string) *circusv1.DeviceResult {
 	return &circusv1.DeviceResult{Output: &circusv1.ToolOutput{IsError: true, Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: "Error: " + textutil.NodeUTF8([]byte(message))}}}}}
 }
@@ -301,15 +323,15 @@ func runTool(ctx context.Context, tool Tool, call *circusv1.DeviceCall) (result 
 	defer func() {
 		if value := recover(); value != nil {
 			slog.Error("tool panicked", "tool", tool.Name(), "panic", value, "stack", string(debug.Stack()))
-			result = errorResult(fmt.Sprint(value))
+			result = faultResult(fmt.Sprint(value), circusv1.DaemonFault_CODE_PANIC)
 		}
 	}()
 	result, err := tool.Run(ctx, call)
 	if err != nil {
-		return errorResult(err.Error())
+		return faultResult(err.Error(), circusv1.DaemonFault_CODE_INTERNAL)
 	}
 	if result == nil {
-		return errorResult("tool returned no result")
+		return faultResult("tool returned no result", circusv1.DaemonFault_CODE_INTERNAL)
 	}
 	return result
 }
@@ -336,8 +358,8 @@ func (d *Dispatcher) execute(ctx *deadlineContext, call *circusv1.DeviceCall, r 
 				now := d.opts.Clock.Now()
 				remaining := end.Sub(now)
 				deadline = d.opts.Clock.After(remaining)
-				fallback = d.opts.Clock.After(remaining + 5*time.Second)
-				fallbackAt = now.Add(remaining + 5*time.Second)
+				fallback = d.opts.Clock.After(remaining + AbandonGrace)
+				fallbackAt = now.Add(remaining + AbandonGrace)
 			}
 		case result := <-returned:
 			d.complete(id, r, result)
@@ -356,14 +378,17 @@ func (d *Dispatcher) execute(ctx *deadlineContext, call *circusv1.DeviceCall, r 
 		case <-fallback:
 			// Also cancel when a fake clock advances past both timers at once.
 			r.cancel(context.DeadlineExceeded)
+			code := circusv1.DaemonFault_CODE_ABANDONED_AFTER_TIMEOUT
 			message := "tool did not stop after its timeout"
 			if cancelFallback {
+				code = circusv1.DaemonFault_CODE_ABANDONED_AFTER_CANCEL
 				message = "tool did not stop after cancellation"
 			} else if end, ok := ctx.Deadline(); !ok || end.IsZero() {
 				// Inferred: distinguish preparation exhaustion from a command timeout.
+				code = circusv1.DaemonFault_CODE_PREPARATION_EXHAUSTED
 				message = "tool preparation exceeded its budget"
 			}
-			d.complete(id, r, errorResult(message))
+			d.complete(id, r, faultResult(message, code))
 			return
 		}
 	}
@@ -387,7 +412,22 @@ func (d *Dispatcher) queueResultLocked(result *circusv1.DeviceResult) {
 	if d.opts.OnResult == nil {
 		return
 	}
-	d.callbackQueue = append(d.callbackQueue, result)
+	n := proto.Size(result)
+	if n > d.opts.CallbackByteLimit-d.callbackBytes || len(d.callbackQueue) >= 4096 {
+		if d.opts.OnOverflow != nil {
+			d.opts.OnOverflow()
+		}
+		return
+	}
+	data, err := proto.Marshal(result)
+	if err != nil {
+		if d.opts.OnOverflow != nil {
+			d.opts.OnOverflow()
+		}
+		return
+	}
+	d.callbackQueue = append(d.callbackQueue, data)
+	d.callbackBytes += len(data)
 	select {
 	case d.callbackWake <- struct{}{}:
 	default:
@@ -407,11 +447,15 @@ func (d *Dispatcher) deliverResults() {
 			<-d.callbackWake
 			continue
 		}
-		result := d.callbackQueue[0]
+		data := d.callbackQueue[0]
+		d.callbackBytes -= len(data)
 		d.callbackQueue[0] = nil
 		d.callbackQueue = d.callbackQueue[1:]
 		d.mu.Unlock()
-		d.opts.OnResult(proto.Clone(result).(*circusv1.DeviceResult))
+		result := new(circusv1.DeviceResult)
+		if proto.Unmarshal(data, result) == nil {
+			d.opts.OnResult(result)
+		}
 	}
 }
 
@@ -444,8 +488,8 @@ func (d *Dispatcher) Wait(ctx context.Context, callID string) (*circusv1.CallSta
 func (d *Dispatcher) requestCancel(r *callRecord) {
 	r.cancel(context.Canceled)
 	r.cancelOnce.Do(func() {
-		at := d.opts.Clock.Now().Add(5 * time.Second)
-		r.cancelRequested <- cancelRequest{timer: d.opts.Clock.After(5 * time.Second), at: at}
+		at := d.opts.Clock.Now().Add(AbandonGrace)
+		r.cancelRequested <- cancelRequest{timer: d.opts.Clock.After(AbandonGrace), at: at}
 	})
 }
 

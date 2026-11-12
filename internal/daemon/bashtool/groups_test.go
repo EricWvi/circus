@@ -197,7 +197,7 @@ func TestBackgroundAndPromotedLeftovers(t *testing.T) {
 			if !background {
 				command = `echo outer; sleep 0.35; sleep 20 & echo $! > child.pid; echo x`
 			}
-			r, err := b.Run(ctx, &circusv1.DeviceCall{TimeoutMs: 100, SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: command, RunInBackground: background}}})
+			r, err := b.Run(ctx, &circusv1.DeviceCall{CallId: "leftovers", TimeoutMs: 100, SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: command, RunInBackground: background}}})
 			if err != nil || r.GetBash().JobId == "" {
 				t.Fatalf("%v %v", r, err)
 			}

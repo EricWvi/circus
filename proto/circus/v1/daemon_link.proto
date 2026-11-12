@@ -63,7 +63,8 @@ message DispatchCall {
 
 // CallAck reports Submit's immediate outcome, not necessarily before result.
 message CallAck {
-  // 1-128 bytes, charset [A-Za-z0-9_-].
+  // 1-128 bytes, charset [A-Za-z0-9_-]. Empty when an invalid call_id
+  // cannot be echoed (for example, with Rejection.INVALID).
   string call_id = 1;
   // Exactly one outcome. Accepted duplicates report the existing status.
   oneof outcome {
@@ -99,6 +100,10 @@ message ListJobs {
 message JobSnapshot {
   uint64 seq = 1;
   repeated JobEvent jobs = 2;
+  // The snapshot omitted jobs to fit its resource caps. Receivers MUST NOT
+  // infer anything from omissions when true, including marking jobs LOST.
+  // RUNNING jobs are included first, then ended jobs in job-ID order.
+  bool truncated = 3;
 }
 
 // StopSessionJobs exposes idempotent session job stopping; M2 has no session

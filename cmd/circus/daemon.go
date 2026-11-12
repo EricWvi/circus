@@ -7,21 +7,22 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
+	daemonlink "github.com/EricWvi/circus/internal/daemon/link"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func daemonCommand(args []string, in io.Reader, out, errOut io.Writer) error {
-	if len(args) == 0 {
-		return errors.New("not implemented yet")
-	}
-	if args[0] != "call" {
-		return errors.New("usage: circus daemon call [-wait=true]")
+	if len(args) == 0 || args[0] != "call" {
+		return daemonRun(args, errOut)
 	}
 	flags := flag.NewFlagSet("daemon call", flag.ContinueOnError)
 	flags.SetOutput(errOut)
@@ -172,4 +173,43 @@ func daemonCall(in io.Reader, out io.Writer, tools []daemon.Tool, wait bool) err
 		return streamErr
 	}
 	return scanner.Err()
+}
+
+// daemonRun reads role credentials and runs until SIGINT/SIGTERM.
+func daemonRun(args []string, errOut io.Writer) error {
+	flags := flag.NewFlagSet("daemon", flag.ContinueOnError)
+	flags.SetOutput(errOut)
+	credentials := flags.String("credentials", "", "daemon credential file (default $XDG_CONFIG_HOME/circus/daemon.json)")
+	flags.Usage = func() {
+		fmt.Fprintln(errOut, "Usage: circus daemon [--credentials path]\n       circus daemon call [-wait=true]\n\nRun the outbound daemon client until SIGINT or SIGTERM.")
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("usage: circus daemon [--credentials path] | circus daemon call [-wait=true]")
+	}
+	path := *credentials
+	if path == "" {
+		var err error
+		path, err = credfile.Path(credfile.RoleDaemon)
+		if err != nil {
+			return err
+		}
+	}
+	file, err := credfile.Load(path)
+	if err != nil {
+		return err
+	}
+	client, err := daemonlink.New(daemonlink.Options{Credentials: file, ClientVersion: version})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	return client.Run(ctx)
 }

@@ -3,6 +3,7 @@ package daemon_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"sync"
@@ -27,7 +28,7 @@ func (f fakeTool) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1
 }
 
 func readCall(id string) *circusv1.DeviceCall {
-	return &circusv1.DeviceCall{CallId: id, Tool: &circusv1.DeviceCall_Read{Read: &circusv1.ReadRequest{Path: "/x"}}}
+	return &circusv1.DeviceCall{CallId: id, SessionId: "session", Tool: &circusv1.DeviceCall_Read{Read: &circusv1.ReadRequest{Path: "/x"}}}
 }
 
 func output(text string) *circusv1.DeviceResult {
@@ -266,7 +267,7 @@ func TestDispatcherAbandonsUncooperativeTool(t *testing.T) {
 	}
 	clock.Advance(time.Millisecond)
 	r := completed(t, d, "stuck")
-	if !r.Output.IsError || resultText(r) != "Error: tool did not stop after its timeout" {
+	if r.GetFault().GetCode() != circusv1.DaemonFault_CODE_ABANDONED_AFTER_TIMEOUT || !r.Output.IsError || resultText(r) != "Error: tool did not stop after its timeout" {
 		t.Fatalf("fallback: %v", r)
 	}
 	close(release)
@@ -307,7 +308,7 @@ func TestDispatcherAbandonsCancelledUncooperativeTool(t *testing.T) {
 	}
 	clock.Advance(time.Millisecond)
 	r := completed(t, d, "cancel-stuck")
-	if !r.Output.IsError || resultText(r) != "Error: tool did not stop after cancellation" {
+	if r.GetFault().GetCode() != circusv1.DaemonFault_CODE_ABANDONED_AFTER_CANCEL || !r.Output.IsError || resultText(r) != "Error: tool did not stop after cancellation" {
 		t.Fatalf("cancellation fallback: %v", r)
 	}
 	close(release)
@@ -347,7 +348,7 @@ func TestDispatcherCancelAfterDeadlineKeepsEarlierFallback(t *testing.T) {
 	}
 	clock.Advance(time.Millisecond)
 	r := completed(t, d, "late-cancel")
-	if !r.Output.IsError || resultText(r) != "Error: tool did not stop after its timeout" {
+	if r.GetFault().GetCode() != circusv1.DaemonFault_CODE_ABANDONED_AFTER_TIMEOUT || !r.Output.IsError || resultText(r) != "Error: tool did not stop after its timeout" {
 		t.Fatalf("deadline fallback: %v", r)
 	}
 	close(release)
@@ -482,4 +483,160 @@ func TestDispatcherShutdownContextOnlyStopsWaiting(t *testing.T) {
 		t.Fatal(err)
 	}
 	completed(t, d, "shutdown")
+}
+
+func TestDispatcherFaultCategoriesAndFixedDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		code circusv1.DaemonFault_Code
+		run  func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error)
+	}{
+		{"internal", circusv1.DaemonFault_CODE_INTERNAL, func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+			return nil, errors.New("private tool output")
+		}},
+		{"panic", circusv1.DaemonFault_CODE_PANIC, func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+			panic("private tool output")
+		}},
+		{"nil", circusv1.DaemonFault_CODE_INTERNAL, func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error) { return nil, nil }},
+		{"tool-error", circusv1.DaemonFault_CODE_UNSPECIFIED, func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+			r := output("private tool output")
+			r.Output.IsError = true
+			return r, nil
+		}},
+		{"unavailable", circusv1.DaemonFault_CODE_TOOL_UNAVAILABLE, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := daemon.Options{}
+			if tc.run != nil {
+				opts.Tools = []daemon.Tool{fakeTool{"read", tc.run}}
+			}
+			d := newDispatcher(t, opts)
+			if _, err := d.Submit(readCall(tc.name)); err != nil {
+				t.Fatal(err)
+			}
+			r := completed(t, d, tc.name)
+			if r.GetFault().GetCode() != tc.code {
+				t.Fatal(r)
+			}
+			if tc.code == circusv1.DaemonFault_CODE_UNSPECIFIED {
+				if r.Fault != nil {
+					t.Fatal(r)
+				}
+			} else if r.Fault.Message != tc.code.String() {
+				t.Fatal("fault diagnostic contains tool output")
+			}
+		})
+	}
+}
+
+func TestDispatcherIdentifierBoundaries(t *testing.T) {
+	var runs atomic.Int32
+	d := newDispatcher(t, daemon.Options{Tools: []daemon.Tool{fakeTool{"read", func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+		runs.Add(1)
+		return output("ok"), nil
+	}}}})
+	for _, field := range []string{"call", "session", "agent"} {
+		for _, value := range []string{"", strings.Repeat("a", 129), "a/b", "é", "a.b", "a b"} {
+			if field == "agent" && value == "" {
+				continue
+			}
+			c := readCall("invalid")
+			switch field {
+			case "call":
+				c.CallId = value
+			case "session":
+				c.SessionId = value
+			case "agent":
+				c.AgentId = value
+			}
+			if _, err := d.Submit(c); !errors.Is(err, daemon.ErrInvalidCall) {
+				t.Fatalf("%s %q: %v", field, value, err)
+			}
+		}
+	}
+	c := readCall(strings.Repeat("a", 128))
+	c.SessionId = strings.Repeat("B", 128)
+	c.AgentId = strings.Repeat("_-09Z", 25)
+	if _, err := d.Submit(c); err != nil {
+		t.Fatal(err)
+	}
+	completed(t, d, c.CallId)
+	if runs.Load() != 1 {
+		t.Fatal(runs.Load())
+	}
+}
+
+func TestDispatcherCallbackOverflowRetainsQueryableResults(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var overflows atomic.Int32
+	d := newDispatcher(t, daemon.Options{CallbackByteLimit: 128, OnOverflow: func() { overflows.Add(1) }, OnResult: func(*circusv1.DeviceResult) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+	}})
+	if _, err := d.Submit(readCall("first")); err != nil {
+		t.Fatal(err)
+	}
+	receive(t, entered)
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("overflow-%d", i)
+		if _, err := d.Submit(readCall(id)); err != nil {
+			t.Fatal(err)
+		}
+		if d.Query(id).GetState() != circusv1.CallStatus_STATE_COMPLETED {
+			t.Fatal("overflow lost authoritative result")
+		}
+	}
+	if overflows.Load() == 0 {
+		t.Fatal("callback backlog was not bounded")
+	}
+	close(release)
+}
+
+func TestShutdownStillDeduplicatesKnownCalls(t *testing.T) {
+	release := make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	started := make(chan struct{}, 1)
+	d := newDispatcher(t, daemon.Options{Tools: []daemon.Tool{fakeTool{"read", func(ctx context.Context, c *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+		if c.CallId == "running" {
+			started <- struct{}{}
+			<-release
+		}
+		return output("done"), nil
+	}}}})
+	if _, err := d.Submit(readCall("done")); err != nil {
+		t.Fatal(err)
+	}
+	completed(t, d, "done")
+	if _, err := d.Submit(readCall("running")); err != nil {
+		t.Fatal(err)
+	}
+	receive(t, started)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_ = d.Shutdown(ctx)
+	for id, want := range map[string]circusv1.CallStatus_State{"done": circusv1.CallStatus_STATE_COMPLETED, "running": circusv1.CallStatus_STATE_RUNNING} {
+		status, err := d.Submit(readCall(id))
+		if err != nil || status.GetState() != want {
+			t.Fatalf("dedup %s: %v %v", id, status, err)
+		}
+		mismatch := readCall(id)
+		mismatch.GetRead().Path = "changed"
+		if _, err = d.Submit(mismatch); !errors.Is(err, daemon.ErrCallMismatch) {
+			t.Fatal(err)
+		}
+	}
+	if _, err := d.Submit(readCall("unseen")); !errors.Is(err, daemon.ErrShutdown) {
+		t.Fatal(err)
+	}
+	close(release)
 }

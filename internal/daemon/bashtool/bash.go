@@ -366,7 +366,7 @@ func (b *Bash) adopt(call *circusv1.DeviceCall, req *circusv1.BashRequest, c *ca
 	var info jobs.Info
 	err := b.effects.attempt("register-job", func() error {
 		var err error
-		info, err = b.jobs.Start(call.SessionId, req.Command, func(string) (jobs.Job, string, error) {
+		info, err = b.jobs.Start(call.SessionId, call.CallId, req.Command, func(string) (jobs.Job, string, error) {
 			job, err := c.background(lifetime)
 			b.effects.pause("job-launched")
 			return job, c.out.Name(), err
@@ -388,7 +388,7 @@ func (b *Bash) background(call *circusv1.DeviceCall, req *circusv1.BashRequest, 
 	var info jobs.Info
 	err := b.effects.attempt("register-job", func() error {
 		var err error
-		info, err = b.jobs.Start(call.SessionId, req.Command, func(id string) (jobs.Job, string, error) {
+		info, err = b.jobs.Start(call.SessionId, call.CallId, req.Command, func(id string) (jobs.Job, string, error) {
 			out, err := b.outputs.outputFile(call.SessionId, "tasks", id+"-*.output")
 			if err != nil {
 				return nil, "", err

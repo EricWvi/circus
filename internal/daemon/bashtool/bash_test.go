@@ -181,7 +181,7 @@ func TestBackgroundSurvivesCallContext(t *testing.T) {
 	cancel()
 	writeFile(t, filepath.Join(w.start, "release"), []byte("go"))
 	e := w.waitJob(t, r.GetBash().JobId)
-	if e.ExitCode != 0 || e.State != circusv1.JobEvent_STATE_EXITED {
+	if e.ExitCode != 0 || e.State != circusv1.JobEvent_STATE_EXITED || e.CallId != "background" || e.Seq < 2 {
 		t.Fatal(e)
 	}
 	data, err := os.ReadFile(r.GetBash().OutputPath)

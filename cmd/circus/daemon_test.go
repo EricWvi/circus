@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -50,7 +53,7 @@ func decodeStatus(t *testing.T, line string) *circusv1.CallStatus {
 }
 
 func TestDaemonCallStreamsInCompletionOrder(t *testing.T) {
-	input := strings.NewReader("{\"callId\":\"slow\",\"read\":{\"path\":\"/a\"}}\n{\"callId\":\"fast\",\"read\":{\"path\":\"/b\"}}\n")
+	input := strings.NewReader("{\"sessionId\":\"session\",\"callId\":\"slow\",\"read\":{\"path\":\"/a\"}}\n{\"sessionId\":\"session\",\"callId\":\"fast\",\"read\":{\"path\":\"/b\"}}\n")
 	release := make(chan struct{})
 	started := make(chan string, 2)
 	tool := harnessTool{run: func(_ context.Context, call *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
@@ -93,7 +96,7 @@ func TestDaemonCallStreamsInCompletionOrder(t *testing.T) {
 }
 
 func TestDaemonCallRetriesAndImmediateStatus(t *testing.T) {
-	input := "{\"callId\":\"same\",\"read\":{}}\n{\"callId\":\"same\",\"read\":{}}\n"
+	input := "{\"sessionId\":\"session\",\"callId\":\"same\",\"read\":{}}\n{\"sessionId\":\"session\",\"callId\":\"same\",\"read\":{}}\n"
 	for _, wait := range []bool{true, false} {
 		var runs atomic.Int32
 		tool := harnessTool{run: func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
@@ -163,8 +166,8 @@ func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	call, err := protojson.Marshal(&circusv1.DeviceCall{
-		CallId: "c1",
-		Tool:   &circusv1.DeviceCall_Read{Read: &circusv1.ReadRequest{Path: path}},
+		CallId: "c1", SessionId: "session",
+		Tool: &circusv1.DeviceCall_Read{Read: &circusv1.ReadRequest{Path: path}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +182,7 @@ func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
 		t.Fatalf("default registry: %v", s)
 	}
 	out.Reset()
-	unavailableInput := "{\"callId\":\"c2\",\"taskStop\":{\"jobId\":\"unavailable\"}}\n"
+	unavailableInput := "{\"sessionId\":\"session\",\"callId\":\"c2\",\"taskStop\":{\"jobId\":\"unavailable\"}}\n"
 	if err := daemonCall(strings.NewReader(unavailableInput), &out, nil, false); err != nil {
 		t.Fatal(err)
 	}
@@ -198,5 +201,46 @@ func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
 	}
 	if err := daemonCommand([]string{"call"}, strings.NewReader(input), failingWriter{}, &errOut); err == nil || err.Error() != "stdout failed" {
 		t.Fatalf("stdout error: %v", err)
+	}
+}
+
+func TestDaemonHelpAndCredentialErrors(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if err := daemonCommand([]string{"--help"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"credentials", "daemon call", "SIGTERM"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("help missing %s: %s", want, errOut.String())
+		}
+	}
+	path := filepath.Join(t.TempDir(), "missing.json")
+	if err := daemonCommand([]string{"--credentials", path}, strings.NewReader(""), &out, &errOut); !errors.Is(err, credfile.ErrNotFound) {
+		t.Fatal(err)
+	}
+}
+
+func TestDaemonDefaultCredentialsAndAuthenticationExit(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		if r.URL.Path != "/v1/link/daemon" || r.Header.Get("Authorization") != "Bearer daemon-secret" {
+			t.Errorf("unexpected upgrade: %s %q", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path, err := credfile.Path(credfile.RoleDaemon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = credfile.Save(path, credfile.File{Role: credfile.RoleDaemon, ControlPlaneURL: server.URL, PrincipalID: "device", Token: "daemon-secret"}); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	err = daemonCommand(nil, strings.NewReader(""), &out, &errOut)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 401") || attempts.Load() != 1 {
+		t.Fatalf("attempts=%d error=%v", attempts.Load(), err)
 	}
 }

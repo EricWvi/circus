@@ -103,7 +103,7 @@ func TestPromotionRegistrationFailureCleansOutput(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := b.Run(ctx, &circusv1.DeviceCall{SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: `echo started; exec sleep 20`}}})
+	_, err := b.Run(ctx, &circusv1.DeviceCall{CallId: "registration", SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: `echo started; exec sleep 20`}}})
 	if !errors.Is(err, jobs.ErrShutdown) {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestConcurrentRegistrationRejectionCleansOutput(t *testing.T) {
 	defer cancel()
 	returned := make(chan error, 1)
 	go func() {
-		_, err := b.Run(ctx, &circusv1.DeviceCall{SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: `echo ready > ready; exec sleep 20`}}})
+		_, err := b.Run(ctx, &circusv1.DeviceCall{CallId: "registration", SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: `echo ready > ready; exec sleep 20`}}})
 		returned <- err
 	}()
 	await(t, func() bool { _, err := os.Stat(filepath.Join(root, "ready")); return err == nil })

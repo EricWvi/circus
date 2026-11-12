@@ -6,11 +6,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/clock"
+	"github.com/EricWvi/circus/internal/identifier"
+	"github.com/EricWvi/circus/internal/wire"
+	"google.golang.org/protobuf/proto"
 )
 
 // ErrNotFound indicates an unknown or expired job ID.
@@ -38,11 +42,12 @@ type Job interface {
 
 // Info is a snapshot of a job's execution state.
 type Info struct {
-	ID, SessionID, OutputPath string
-	Command                   string
-	State                     circusv1.JobEvent_State
-	ExitCode                  int32
-	Started, Ended            time.Time
+	ID, SessionID, CallID, OutputPath string
+	Seq                               uint64
+	Command                           string
+	State                             circusv1.JobEvent_State
+	ExitCode                          int32
+	Started, Ended                    time.Time
 }
 
 // Options configures job retention, events, and ID generation.
@@ -52,7 +57,12 @@ type Options struct {
 	// OnEvent runs serially in transition order and must return promptly.
 	// Shutdown drains all queued callbacks.
 	OnEvent func(*circusv1.JobEvent)
-	NewID   func() string
+	// CallbackByteLimit bounds serialized callback backlog; default 8 << 20.
+	// At most 4096 callbacks are retained. Overflow drops the new notification
+	// and calls OnOverflow under the state lock; OnOverflow must not block.
+	CallbackByteLimit int
+	OnOverflow        func()
+	NewID             func() string
 }
 
 type jobRecord struct {
@@ -61,20 +71,30 @@ type jobRecord struct {
 	done     chan struct{}
 	stopOnce sync.Once
 	stopErr  error
+	// stopRequested is set under the state lock by the first stop caller; it
+	// keeps repeated requests from starting more than one stop goroutine.
+	stopRequested bool
 }
 
 // Manager can be passed to tools at construction without changing Tool.
-// OnEvent runs on a single goroutine, in state transition order.
+// OnEvent runs on a single goroutine, in state transition order. Callback storage
+// owns at most CallbackByteLimit serialized bytes (default 8 MiB), 4096 entries
+// (at most about 256 KiB of slice overhead), and one additional <=64 KiB event
+// plus its decoded protobuf during delivery. Overflow drops notifications and
+// invokes OnOverflow; the link client disconnects for snapshot recovery. Jobs
+// themselves have no count cap; Snapshot bounds allocations independently.
 type Manager struct {
 	mu             sync.Mutex
 	opts           Options
 	jobs           map[string]*jobRecord
 	reserved       map[string]struct{}
+	seq            uint64
 	closed         bool
 	stopSweep      chan struct{}
 	stopped        chan struct{}
 	wg             sync.WaitGroup
-	callbackQueue  []*circusv1.JobEvent
+	callbackQueue  [][]byte
+	callbackBytes  int
 	callbackWake   chan struct{}
 	callbackDone   chan struct{}
 	callbackClosed bool
@@ -83,6 +103,9 @@ type Manager struct {
 // NewManager starts retention sweeping; nonpositive RetainExited defaults
 // to thirty minutes.
 func NewManager(opts Options) *Manager {
+	if opts.CallbackByteLimit <= 0 {
+		opts.CallbackByteLimit = 8 << 20
+	}
 	if opts.Clock == nil {
 		opts.Clock = realClock{}
 	}
@@ -138,11 +161,28 @@ func (m *Manager) sweep(tick <-chan time.Time) {
 }
 
 // Queue events under the state lock to preserve transition order.
-func (m *Manager) emit(info Info) {
+func (m *Manager) emit(info *Info) {
+	m.seq++
+	info.Seq = m.seq
 	if m.opts.OnEvent == nil {
 		return
 	}
-	m.callbackQueue = append(m.callbackQueue, &circusv1.JobEvent{JobId: info.ID, SessionId: info.SessionID, State: info.State, ExitCode: info.ExitCode, OutputPath: info.OutputPath})
+	n := proto.Size(jobEvent(*info))
+	if n > m.opts.CallbackByteLimit-m.callbackBytes || len(m.callbackQueue) >= 4096 {
+		if m.opts.OnOverflow != nil {
+			m.opts.OnOverflow()
+		}
+		return
+	}
+	data, err := proto.Marshal(jobEvent(*info))
+	if err != nil {
+		if m.opts.OnOverflow != nil {
+			m.opts.OnOverflow()
+		}
+		return
+	}
+	m.callbackQueue = append(m.callbackQueue, data)
+	m.callbackBytes += len(data)
 	select {
 	case m.callbackWake <- struct{}{}:
 	default:
@@ -162,16 +202,25 @@ func (m *Manager) deliverEvents() {
 			<-m.callbackWake
 			continue
 		}
-		event := m.callbackQueue[0]
+		data := m.callbackQueue[0]
+		m.callbackBytes -= len(data)
 		m.callbackQueue[0] = nil
 		m.callbackQueue = m.callbackQueue[1:]
 		m.mu.Unlock()
-		m.opts.OnEvent(event)
+		event := new(circusv1.JobEvent)
+		if proto.Unmarshal(data, event) == nil {
+			m.opts.OnEvent(event)
+		}
 	}
 }
 
-// Start allocates a job ID before launching, so output can use that ID.
-func (m *Manager) Start(sessionID, command string, launch func(id string) (Job, string, error)) (Info, error) {
+// Start allocates a job ID before launch and attributes events to callID.
+// Malformed ownership IDs are rejected before launch. OutputPath is bounded
+// to 4096 bytes in wire events; the full path remains available in Info.
+func (m *Manager) Start(sessionID, callID, command string, launch func(id string) (Job, string, error)) (Info, error) {
+	if !identifier.Valid(sessionID, false) || !identifier.Valid(callID, false) {
+		return Info{}, ErrInvalidMetadata
+	}
 	m.mu.Lock()
 	m.expireLocked()
 	if m.closed {
@@ -179,9 +228,9 @@ func (m *Manager) Start(sessionID, command string, launch func(id string) (Job, 
 		return Info{}, ErrShutdown
 	}
 	id := m.opts.NewID()
-	if id == "" {
+	if !identifier.Valid(id, false) {
 		m.mu.Unlock()
-		return Info{}, errors.New("empty job ID")
+		return Info{}, ErrInvalidMetadata
 	}
 	if _, exists := m.jobs[id]; exists {
 		m.mu.Unlock()
@@ -214,11 +263,12 @@ func (m *Manager) Start(sessionID, command string, launch func(id string) (Job, 
 		_ = job.Stop()
 		return Info{}, ErrShutdown
 	}
-	info := Info{ID: id, SessionID: sessionID, Command: command, OutputPath: outputPath, State: circusv1.JobEvent_STATE_RUNNING, Started: m.opts.Clock.Now()}
+	info := Info{ID: id, SessionID: sessionID, CallID: callID, Command: command, OutputPath: outputPath, State: circusv1.JobEvent_STATE_RUNNING, Started: m.opts.Clock.Now()}
 	r := &jobRecord{info: info, job: job, done: make(chan struct{})}
 	m.jobs[id] = r
 	m.wg.Add(1)
-	m.emit(info)
+	m.emit(&r.info)
+	info = r.info
 	m.mu.Unlock()
 	go m.watch(r)
 	return info, nil
@@ -250,7 +300,7 @@ func (m *Manager) watch(r *jobRecord) {
 	if errors.Is(err, ErrKilled) {
 		r.info.State = circusv1.JobEvent_STATE_KILLED
 	}
-	m.emit(r.info)
+	m.emit(&r.info)
 	close(r.done)
 	m.mu.Unlock()
 }
@@ -267,6 +317,9 @@ func (m *Manager) Get(id string) (Info, bool) {
 }
 
 func (m *Manager) stop(r *jobRecord) (Info, error) {
+	m.mu.Lock()
+	r.stopRequested = true
+	m.mu.Unlock()
 	r.stopOnce.Do(func() { r.stopErr = r.job.Stop() })
 	if r.stopErr == nil {
 		<-r.done
@@ -307,8 +360,7 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 			if r.info.State != circusv1.JobEvent_STATE_RUNNING {
 				continue
 			}
-			m.wg.Add(1)
-			go func() { defer m.wg.Done(); _, _ = m.stop(r) }()
+			m.requestStopLocked(r)
 		}
 		go func() {
 			m.wg.Wait()
@@ -330,4 +382,125 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// ErrInvalidMetadata rejects job ownership IDs outside the wire grammar.
+var ErrInvalidMetadata = errors.New("invalid job ownership IDs")
+
+// ErrSnapshotLimit reports omitted jobs exceeding the wire snapshot caps.
+var ErrSnapshotLimit = errors.New("job snapshot exceeds wire limits")
+
+func jobEvent(info Info) *circusv1.JobEvent {
+	return &circusv1.JobEvent{JobId: info.ID, SessionId: info.SessionID, CallId: info.CallID, Seq: info.Seq, State: info.State, ExitCode: info.ExitCode, OutputPath: boundedPath(info.OutputPath)}
+}
+
+// Snapshot atomically captures retained jobs and their sequence high-water mark.
+// At most 4096 entries and 8 MiB INCLUDING the uplink envelope are returned.
+// On overflow it sets Truncated and returns a prefix and ErrSnapshotLimit.
+// RUNNING jobs come first, then ended jobs; each group is ordered by job ID;
+// callers must log the incomplete snapshot. Individual entries fit 64 KiB.
+// Allocation is bounded by 8 MiB of encoded entries plus 4096 protobuf objects
+// and at most 4096 candidate pointers; it never copies the unbounded job map.
+func (m *Manager) Snapshot() (*circusv1.JobSnapshot, error) {
+	return m.SnapshotSession("", 0)
+}
+
+// SnapshotSession applies the optional session filter before the Snapshot caps.
+// Empty sessionID returns all jobs. Seq is always the boot-wide high-water mark.
+// maxBytes further lowers the 8 MiB envelope cap, for example to a link's
+// negotiated limit; nonpositive means 8 MiB. Exceeding it truncates as above.
+func (m *Manager) SnapshotSession(sessionID string, maxBytes int) (*circusv1.JobSnapshot, error) {
+	limit := wire.MaxSnapshotBytes
+	if maxBytes > 0 {
+		limit = min(limit, maxBytes)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.expireLocked()
+	snapshot := &circusv1.JobSnapshot{Seq: m.seq}
+	// Retain only 4096 candidates, ordered by running state then job ID.
+	ids := make([]string, 0, min(len(m.jobs), 4096))
+	before := func(a, b string) bool {
+		ar, br := m.jobs[a].info.State == circusv1.JobEvent_STATE_RUNNING, m.jobs[b].info.State == circusv1.JobEvent_STATE_RUNNING
+		if ar != br {
+			return ar
+		}
+		return a < b
+	}
+	count := 0
+	for id, record := range m.jobs {
+		if sessionID != "" && record.info.SessionID != sessionID {
+			continue
+		}
+		count++
+		at := sort.Search(len(ids), func(i int) bool { return !before(ids[i], id) })
+		if at >= 4096 {
+			continue
+		}
+		if len(ids) < 4096 {
+			ids = append(ids, "")
+		}
+		copy(ids[at+1:], ids[at:len(ids)-1])
+		ids[at] = id
+	}
+	var err error
+	if count > len(ids) {
+		err = ErrSnapshotLimit
+		snapshot.Truncated = true
+	}
+	size := 18 // sequence, truncated flag and uplink envelope framing
+	for _, id := range ids {
+		event := jobEvent(m.jobs[id].info)
+		n := proto.Size(event)
+		if n > wire.MaxMetadataBytes || size+n+4 > limit {
+			err = ErrSnapshotLimit
+			snapshot.Truncated = true
+			break
+		}
+		snapshot.Jobs = append(snapshot.Jobs, event)
+		size += n + 4
+	}
+	return snapshot, err
+}
+
+// boundedPath keeps event metadata below 64 KiB without stopping an already
+// launched process. Real OS paths fit 4096 bytes; malformed longer paths use a
+// fixed diagnostic rather than a misleading truncated filesystem path.
+func boundedPath(path string) string {
+	if len(path) > 4096 {
+		return "[output path exceeds 4096 bytes]"
+	}
+	return path
+}
+
+// RequestStopSession requests stop for matching running jobs and returns
+// without waiting for Job.Stop or Wait, so the link reader never blocks on a
+// stubborn process. Each running job gets at most one stop goroutine for its
+// lifetime, however often stop is requested, so these goroutines are bounded
+// by the running jobs (each of which already has a watcher goroutine) and stop
+// in parallel. KILLED/EXITED is emitted by the job watcher.
+//
+// A job whose Stop never returns keeps its stop goroutine (and its watcher)
+// for the life of the process. Every later stop of that job, including
+// StopOwned from a TaskStop call, waits in the same sync.Once for that Stop.
+// Shutdown is not held by it: it returns when its ctx expires.
+func (m *Manager) RequestStopSession(sessionID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, r := range m.jobs {
+		if r.info.SessionID == sessionID && r.info.State == circusv1.JobEvent_STATE_RUNNING {
+			m.requestStopLocked(r)
+		}
+	}
+}
+
+// requestStopLocked must be called with r RUNNING: its watcher then still holds
+// a wg count, so this Add never races Shutdown's Wait from zero.
+func (m *Manager) requestStopLocked(r *jobRecord) {
+	if r.stopRequested {
+		return
+	}
+	r.stopRequested = true
+	m.wg.Add(1)
+	go func() { defer m.wg.Done(); _, _ = m.stop(r) }()
 }

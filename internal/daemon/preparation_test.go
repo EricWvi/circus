@@ -90,7 +90,11 @@ func TestToolDeclaresPreparationBudget(t *testing.T) {
 		t.Fatal(status)
 	}
 	clock.Advance(time.Second)
-	if body := resultText(completed(t, d, "prepare")); body != "Error: tool preparation exceeded its budget" {
+	r := completed(t, d, "prepare")
+	if r.GetFault().GetCode() != circusv1.DaemonFault_CODE_PREPARATION_EXHAUSTED {
+		t.Fatal(r)
+	}
+	if body := resultText(r); body != "Error: tool preparation exceeded its budget" {
 		t.Fatal(body)
 	}
 }
