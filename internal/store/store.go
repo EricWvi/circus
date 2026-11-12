@@ -67,6 +67,12 @@ type Ops interface {
 	// SetDisconnected records the end of the identity's connection at time
 	// at. CurrentBootID is kept: a later SetConnected compares against it.
 	SetDisconnected(ctx context.Context, kind PrincipalKind, id string, at int64) error
+	// DeleteIdentity soft-deletes a live identity: it sets DeletedAt = at,
+	// which frees the name for a new identity of that kind, and returns
+	// true. It returns false with no change when the identity is already
+	// deleted; ErrNotFound if absent. Credentials are not touched; revoke
+	// them in the same Tx (RevokeCredentials).
+	DeleteIdentity(ctx context.Context, kind PrincipalKind, id string, at int64) (bool, error)
 
 	// CreateCredential inserts a credential. ErrNotFound if the identity it
 	// names does not exist; ErrExists if the id or token hash is taken.

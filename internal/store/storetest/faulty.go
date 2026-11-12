@@ -275,6 +275,11 @@ func (o *faultyOps) SetDisconnected(ctx context.Context, kind store.PrincipalKin
 	return o.write(ctx, func(s store.Ops) error { return s.SetDisconnected(ctx, kind, id, at) })
 }
 
+func (o *faultyOps) DeleteIdentity(ctx context.Context, kind store.PrincipalKind, id string, at int64) (ok bool, err error) {
+	err = o.write(ctx, func(s store.Ops) error { ok, err = s.DeleteIdentity(ctx, kind, id, at); return err })
+	return ok, err
+}
+
 func (o *faultyOps) CreateCredential(ctx context.Context, c store.Credential) error {
 	return o.write(ctx, func(s store.Ops) error { return s.CreateCredential(ctx, c) })
 }

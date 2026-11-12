@@ -300,6 +300,30 @@ func (o *ops) SetDisconnected(ctx context.Context, kind store.PrincipalKind, id 
 	return err
 }
 
+func (o *ops) DeleteIdentity(ctx context.Context, kind store.PrincipalKind, id string, at int64) (bool, error) {
+	table, err := identityTable(kind)
+	if err != nil {
+		return false, err
+	}
+	if id == "" || at == 0 {
+		return false, invalid("DeleteIdentity needs id and time")
+	}
+	var deleted bool
+	err = o.atomic(ctx, func(tx *ops) error {
+		var was int64
+		if err := tx.q.QueryRow(ctx, `SELECT deleted_at FROM `+table+` WHERE id = ?`, id).Scan(nullInt{&was}); err != nil {
+			return mapErr(err)
+		}
+		if was != 0 {
+			return nil
+		}
+		_, err := tx.exec(ctx, `UPDATE `+table+` SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`, at, id)
+		deleted = err == nil
+		return err
+	})
+	return deleted, err
+}
+
 // Credentials.
 
 const credentialCols = `id, principal_kind, principal_id, token_hash, created_at, last_used_at, revoked_at`

@@ -10,14 +10,15 @@ tool (
 require (
 	connectrpc.com/connect v1.21.1
 	github.com/coder/websocket v1.8.15
+	github.com/google/uuid v1.6.0
 	go.uber.org/goleak v1.3.0
+	golang.org/x/term v0.45.0
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.62.0
 )
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

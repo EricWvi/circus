@@ -39,6 +39,7 @@ func Run(t *testing.T, b Backend) {
 	}{
 		{"Users", testUsers},
 		{"Identities", testIdentities},
+		{"DeleteIdentity", testDeleteIdentity},
 		{"Credentials", testCredentials},
 		{"EnrollTokens", testEnrollTokens},
 		{"EnrollTokenConcurrentUse", testEnrollTokenConcurrentUse},
