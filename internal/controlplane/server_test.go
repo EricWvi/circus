@@ -625,27 +625,44 @@ func TestReadyzDuringShutdown(t *testing.T) {
 
 // L-1: hooks start only after the listener stops accepting.
 func TestHooksStartAfterListenerCloses(t *testing.T) {
+	// Observe the listener directly instead of dialing its port: once closed,
+	// the port may be handed to a listener in another test process, and a
+	// successful dial would then say nothing about this server.
 	for i := range 50 {
-		var addr string
-		dialed := make(chan error, 1)
+		var ln *closeRecordingListener
+		closedAtHook := make(chan bool, 1)
 		h := newServer(t, controlplane.Config{}, func(s *controlplane.Server) {
-			s.AddShutdownHook("dial", func(context.Context) error {
-				c, err := net.DialTimeout("tcp", addr, time.Second)
-				if err == nil {
-					c.Close()
+			controlplane.SetListen(s, func(network, addr string) (net.Listener, error) {
+				inner, err := net.Listen(network, addr)
+				if err != nil {
+					return nil, err
 				}
-				dialed <- err
+				ln = &closeRecordingListener{Listener: inner}
+				return ln, nil
+			})
+			s.AddShutdownHook("observe", func(context.Context) error {
+				closedAtHook <- ln.closed.Load()
 				return nil
 			})
 		})
-		addr = h.srv.Addr().String()
 		if err := h.srv.Shutdown(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		if err := <-dialed; err == nil {
-			t.Fatalf("round %d: a hook could still connect to the listener", i)
+		if !<-closedAtHook {
+			t.Fatalf("round %d: a hook started before the listener was closed", i)
 		}
 	}
+}
+
+// closeRecordingListener records whether Close was called.
+type closeRecordingListener struct {
+	net.Listener
+	closed atomic.Bool
+}
+
+func (l *closeRecordingListener) Close() error {
+	l.closed.Store(true)
+	return l.Listener.Close()
 }
 
 // L-8: a hook that ignores ctx does not hold Shutdown past its deadline,
