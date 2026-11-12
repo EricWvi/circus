@@ -153,7 +153,7 @@ func TestBusy(t *testing.T) {
 	if err := waiter.CreateUser(ctx, store.User{ID: "u1", Name: "a", CreatedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
-	ts, err := waiter.ListTimers(ctx)
+	ts, err := waiter.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	if err != nil || len(ts) != 1 {
 		t.Fatalf("holder's commit: %v %v", ts, err)
 	}

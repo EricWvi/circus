@@ -76,7 +76,7 @@ func testCallResubmit(t *testing.T, b Backend) {
 	}
 	// Listed in submission order with the new times: after the call
 	// submitted between the two attempts.
-	cs, err := s.ListCalls(ctx, store.CallFilter{States: []store.CallState{store.CallAccepted}})
+	cs, err := s.ListCalls(ctx, store.CallFilter{Limit: store.MaxPageSize, States: []store.CallState{store.CallAccepted}})
 	must(t, err)
 	var order []string
 	for _, c := range cs {
@@ -238,13 +238,13 @@ func testLoseCalls(t *testing.T, b Backend) {
 	must(t, err)
 	mustEqual(t, "grace outcome", ok, true)
 	before := map[string]store.Call{}
-	cs, err := s.ListCalls(ctx, store.CallFilter{})
+	cs, err := s.ListCalls(ctx, store.CallFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	for _, c := range cs {
 		before[c.CallID] = c
 	}
 
-	lost, err := s.LoseCalls(ctx, "d1", "b2", t0+50, "daemon restarted")
+	lost, err := s.LoseCalls(ctx, "d1", "b2", t0+50, "daemon restarted", store.MaxPageSize)
 	must(t, err)
 	mustEqual(t, "lost calls", lost, []store.LostCall{
 		{CallID: "dispatched-b1", From: D}, {CallID: "running-b0", From: R}, {CallID: "unknown-b1", From: U},
@@ -255,19 +255,19 @@ func testLoseCalls(t *testing.T, b Backend) {
 		}
 		mustEqual(t, id, getCall(t, s, id), c)
 	}
-	lost, err = s.LoseCalls(ctx, "d1", "b2", t0+60, "daemon restarted")
+	lost, err = s.LoseCalls(ctx, "d1", "b2", t0+60, "daemon restarted", store.MaxPageSize)
 	must(t, err)
 	mustEqual(t, "lost again", len(lost), 0)
 	// What LoseCalls lost was dispatched: it is never resubmitted.
 	mustEqual(t, "resubmit", transition(t, s, "running-b0", expect(store.CallLost), store.CallAccepted, store.CallPatch{SubmittedAt: t0 + 70}), false)
 
 	for _, bad := range []func() error{
-		func() error { _, err := s.LoseCalls(ctx, "", "b2", t0, "r"); return err },
-		func() error { _, err := s.LoseCalls(ctx, "d1", "", t0, "r"); return err },
-		func() error { _, err := s.LoseCalls(ctx, "d1", "b2", 0, "r"); return err },
+		func() error { _, err := s.LoseCalls(ctx, "", "b2", t0, "r", store.MaxPageSize); return err },
+		func() error { _, err := s.LoseCalls(ctx, "d1", "", t0, "r", store.MaxPageSize); return err },
+		func() error { _, err := s.LoseCalls(ctx, "d1", "b2", 0, "r", store.MaxPageSize); return err },
 		func() error {
 			// No call matches, so only the argument check can refuse it.
-			_, err := s.LoseCalls(ctx, "d-none", "b3", t0, string(make([]byte, store.MaxCodeBytes+1)))
+			_, err := s.LoseCalls(ctx, "d-none", "b3", t0, string(make([]byte, store.MaxCodeBytes+1)), store.MaxPageSize)
 			return err
 		},
 	} {
@@ -298,7 +298,7 @@ func testJobTerminalIsFinal(t *testing.T, b Backend) {
 	mustEqual(t, "lost", n, 1)
 	put(job("exited", store.JobExited, 5))
 	put(job("killed", store.JobKilled, 5))
-	before, err := s.ListJobs(ctx, store.JobFilter{})
+	before, err := s.ListJobs(ctx, store.JobFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	for _, id := range []string{"lost", "exited", "killed"} {
 		for _, st := range []store.JobState{store.JobRunning, store.JobExited, store.JobKilled, store.JobLost} {
@@ -307,7 +307,7 @@ func testJobTerminalIsFinal(t *testing.T, b Backend) {
 			mustEqual(t, label("late ", st, " event for ", id), put(late), false)
 		}
 	}
-	after, err := s.ListJobs(ctx, store.JobFilter{})
+	after, err := s.ListJobs(ctx, store.JobFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	mustEqual(t, "jobs after late events", after, before)
 }
@@ -330,7 +330,7 @@ func testTxSerializable(t *testing.T, b Backend) {
 			for range rounds {
 				err := retryBusy(func() error {
 					return s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
-						ts, err := tx.ListTimers(ctx)
+						ts, err := tx.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 						if err != nil {
 							return err
 						}
@@ -345,7 +345,7 @@ func testTxSerializable(t *testing.T, b Backend) {
 		})
 	}
 	wg.Wait()
-	ts, err := s1.ListTimers(ctx)
+	ts, err := s1.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	mustEqual(t, "counter", ts[0].DueAt, int64(workers*rounds))
 }

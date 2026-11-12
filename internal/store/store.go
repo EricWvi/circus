@@ -109,7 +109,7 @@ type Ops interface {
 	CreateCall(ctx context.Context, c Call) error
 	// GetCall returns the call, or ErrNotFound.
 	GetCall(ctx context.Context, callID string) (Call, error)
-	// ListCalls returns the calls matching f, oldest submission first.
+	// ListCalls returns at most f.Limit rows ordered by (submitted_at, call_id).
 	ListCalls(ctx context.Context, f CallFilter) ([]Call, error)
 	// TransitionCall moves the call to state to and applies patch, only if
 	// the call matches expect (see CallExpect). Otherwise it returns false
@@ -143,13 +143,13 @@ type Ops interface {
 	// Empty SessionID or CallID never overwrite stored values, so a job row
 	// created from an event can be completed by a later one (F22).
 	PutJob(ctx context.Context, j Job) (bool, error)
-	// ListJobs returns the jobs matching f, by device, boot and job id.
+	// ListJobs returns at most f.Limit rows ordered by (device_id, boot_id, job_id).
 	ListJobs(ctx context.Context, f JobFilter) ([]Job, error)
 	// LoseJobs marks every running job of the device whose boot is not
 	// keepBootID as lost at time at, and returns how many. It is called when
 	// the device connects with a new boot (outline 3.3 step 1).
 	LoseJobs(ctx context.Context, deviceID, keepBootID string, at int64) (int, error)
-	// LoseCalls moves every dispatched, running or unknown call of the
+	// LoseCalls moves at most limit (1..MaxPageSize) dispatched, running or unknown calls of the
 	// device whose DispatchedBootID is not keepBootID to lost, sets
 	// FinishedAt = at and OutcomeReason = reason (a short code, at most
 	// MaxCodeBytes), and returns those calls with the state each left,
@@ -159,7 +159,7 @@ type Ops interface {
 	// also catches calls dispatched to a boot that was never recorded as
 	// current. The caller uses the result to notify the calls' subscribers
 	// and to cancel their timers (call_watchdog) in the same Tx.
-	LoseCalls(ctx context.Context, deviceID, keepBootID string, at int64, reason string) ([]LostCall, error)
+	LoseCalls(ctx context.Context, deviceID, keepBootID string, at int64, reason string, limit int) ([]LostCall, error)
 
 	// SetTimer creates the (kind, subjectID) timer or moves it to dueAt,
 	// clearing any claim and attempt count.
@@ -188,7 +188,6 @@ type Ops interface {
 	// first in the handler's Tx and abort that Tx on false (see
 	// ClaimDueTimers).
 	CompleteTimer(ctx context.Context, t Timer) (bool, error)
-	// ListTimers returns every timer, earliest due first. For invariant
-	// checks and diagnostics.
-	ListTimers(ctx context.Context) ([]Timer, error)
+	// ListTimers returns a bounded page ordered by (due_at, kind, subject_id).
+	ListTimers(ctx context.Context, f TimerFilter) ([]Timer, error)
 }

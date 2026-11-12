@@ -416,8 +416,12 @@ type LostCall struct {
 	From   CallState
 }
 
-// CallFilter selects calls for ListCalls. Empty fields do not filter.
+// CallFilter selects calls for ListCalls. Limit is required (1..MaxPageSize).
+// Other empty fields do not filter; After is an exclusive keyset cursor.
 type CallFilter struct {
+	UserID           string
+	Limit            int
+	After            *CallCursor
 	DeviceID         string
 	DispatchedBootID string
 	States           []CallState
@@ -463,8 +467,11 @@ type Job struct {
 	UpdatedAt int64
 }
 
-// JobFilter selects jobs for ListJobs. Empty fields do not filter.
+// JobFilter selects jobs for ListJobs. Limit is required (1..MaxPageSize).
+// Other empty fields do not filter; After is an exclusive keyset cursor.
 type JobFilter struct {
+	Limit     int
+	After     *JobCursor
 	DeviceID  string
 	BootID    string
 	SessionID string
@@ -485,4 +492,41 @@ type Timer struct {
 	// the token still matches, so a timer re-set or re-claimed after this
 	// claim survives the stale handler's completion.
 	Token string
+}
+
+// MaxPageSize bounds every enumerated page and bulk loss batch.
+const MaxPageSize = 256
+
+// CallCursor is the exclusive (SubmittedAt, CallID) key of the last call read.
+// Pages are live reads: new rows behind the cursor are not revisited. Changing
+// SubmittedAt (resubmission) may move a row; use a Tx when a snapshot is needed.
+type CallCursor struct {
+	SubmittedAt int64
+	CallID      string
+}
+
+// JobCursor is the exclusive immutable (DeviceID, BootID, JobID) ordering key.
+type JobCursor struct{ DeviceID, BootID, JobID string }
+
+// TimerCursor is the exclusive (DueAt, Kind, SubjectID) key. Resetting a timer
+// may move it; use a Tx when a consistent snapshot is needed.
+type TimerCursor struct {
+	DueAt           int64
+	Kind, SubjectID string
+}
+
+// TimerFilter bounds a live keyset page. Limit is required, 1..MaxPageSize.
+// Kind and SubjectID optionally select a timer family or one subject.
+type TimerFilter struct {
+	Limit           int
+	After           *TimerCursor
+	Kind, SubjectID string
+}
+
+// CheckLimit rejects unbounded or excessively large result sets.
+func CheckLimit(limit int) error {
+	if limit < 1 || limit > MaxPageSize {
+		return invalid("limit must be 1..%d", MaxPageSize)
+	}
+	return nil
 }

@@ -351,8 +351,11 @@ func (o *faultyOps) LoseJobs(ctx context.Context, deviceID, keepBootID string, a
 	return n, err
 }
 
-func (o *faultyOps) LoseCalls(ctx context.Context, deviceID, keepBootID string, at int64, reason string) (v []store.LostCall, err error) {
-	err = o.write(ctx, func(s store.Ops) error { v, err = s.LoseCalls(ctx, deviceID, keepBootID, at, reason); return err })
+func (o *faultyOps) LoseCalls(ctx context.Context, deviceID, keepBootID string, at int64, reason string, limit int) (v []store.LostCall, err error) {
+	err = o.write(ctx, func(s store.Ops) error {
+		v, err = s.LoseCalls(ctx, deviceID, keepBootID, at, reason, limit)
+		return err
+	})
 	return v, err
 }
 
@@ -374,7 +377,7 @@ func (o *faultyOps) CompleteTimer(ctx context.Context, t store.Timer) (ok bool, 
 	return ok, err
 }
 
-func (o *faultyOps) ListTimers(ctx context.Context) (v []store.Timer, err error) {
-	err = o.read(ctx, func(s store.Ops) error { v, err = s.ListTimers(ctx); return err })
+func (o *faultyOps) ListTimers(ctx context.Context, filter store.TimerFilter) (v []store.Timer, err error) {
+	err = o.read(ctx, func(s store.Ops) error { v, err = s.ListTimers(ctx, filter); return err })
 	return v, err
 }

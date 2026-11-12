@@ -227,11 +227,11 @@ func takeSnapshot(t testing.TB, s store.Ops) snapshot {
 	must(t, err)
 	snap.Workers, err = s.ListIdentities(ctx, store.KindWorker, "u1")
 	must(t, err)
-	snap.Calls, err = s.ListCalls(ctx, store.CallFilter{})
+	snap.Calls, err = s.ListCalls(ctx, store.CallFilter{Limit: store.MaxPageSize})
 	must(t, err)
-	snap.Jobs, err = s.ListJobs(ctx, store.JobFilter{})
+	snap.Jobs, err = s.ListJobs(ctx, store.JobFilter{Limit: store.MaxPageSize})
 	must(t, err)
-	snap.Timers, err = s.ListTimers(ctx)
+	snap.Timers, err = s.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	for i := range snap.Timers {
 		snap.Timers[i].Token = "" // random per claim
@@ -310,7 +310,7 @@ func testCrashKeepsTimerClaim(t *testing.T, b Backend) {
 	mustIs(t, err, ErrCrashed)
 	p.Restart()
 
-	ts, err := p.Store().ListTimers(ctx)
+	ts, err := p.Store().ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	if len(ts) != 1 || ts[0].ClaimedBy != "old" || ts[0].Attempts != 1 {
 		t.Fatalf("timers after restart: %+v", ts)

@@ -29,6 +29,11 @@ const (
 	CallUpdate_Rejected_CODE_OVERLOADED     CallUpdate_Rejected_Code = 2
 	CallUpdate_Rejected_CODE_CALL_MISMATCH  CallUpdate_Rejected_Code = 3
 	CallUpdate_Rejected_CODE_UNKNOWN_DEVICE CallUpdate_Rejected_Code = 4
+	// Nothing was persisted or dispatched. Retrying the same call_id is safe.
+	CallUpdate_Rejected_CODE_STORE_UNAVAILABLE CallUpdate_Rejected_Code = 5
+	// The daemon refused during shutdown, without executing on that boot.
+	// Terminal rejection: a retry requires a new call_id.
+	CallUpdate_Rejected_CODE_DEVICE_SHUTTING_DOWN CallUpdate_Rejected_Code = 6
 )
 
 // Enum value maps for CallUpdate_Rejected_Code.
@@ -39,13 +44,17 @@ var (
 		2: "CODE_OVERLOADED",
 		3: "CODE_CALL_MISMATCH",
 		4: "CODE_UNKNOWN_DEVICE",
+		5: "CODE_STORE_UNAVAILABLE",
+		6: "CODE_DEVICE_SHUTTING_DOWN",
 	}
 	CallUpdate_Rejected_Code_value = map[string]int32{
-		"CODE_UNSPECIFIED":    0,
-		"CODE_INVALID":        1,
-		"CODE_OVERLOADED":     2,
-		"CODE_CALL_MISMATCH":  3,
-		"CODE_UNKNOWN_DEVICE": 4,
+		"CODE_UNSPECIFIED":          0,
+		"CODE_INVALID":              1,
+		"CODE_OVERLOADED":           2,
+		"CODE_CALL_MISMATCH":        3,
+		"CODE_UNKNOWN_DEVICE":       4,
+		"CODE_STORE_UNAVAILABLE":    5,
+		"CODE_DEVICE_SHUTTING_DOWN": 6,
 	}
 )
 
@@ -1014,7 +1023,7 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
 	"SubmitCall\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12)\n" +
-	"\x04call\x18\x02 \x01(\v2\x15.circus.v1.DeviceCallR\x04call\"\x89\a\n" +
+	"\x04call\x18\x02 \x01(\v2\x15.circus.v1.DeviceCallR\x04call\"\xc5\a\n" +
 	"\n" +
 	"CallUpdate\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12<\n" +
@@ -1037,16 +1046,18 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\aUnknown\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\x1a\x1e\n" +
 	"\x04Lost\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\x1a\xd3\x01\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\x1a\x8f\x02\n" +
 	"\bRejected\x127\n" +
 	"\x04code\x18\x01 \x01(\x0e2#.circus.v1.CallUpdate.Rejected.CodeR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"t\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xaf\x01\n" +
 	"\x04Code\x12\x14\n" +
 	"\x10CODE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fCODE_INVALID\x10\x01\x12\x13\n" +
 	"\x0fCODE_OVERLOADED\x10\x02\x12\x16\n" +
 	"\x12CODE_CALL_MISMATCH\x10\x03\x12\x17\n" +
-	"\x13CODE_UNKNOWN_DEVICE\x10\x04\x1a\v\n" +
+	"\x13CODE_UNKNOWN_DEVICE\x10\x04\x12\x1a\n" +
+	"\x16CODE_STORE_UNAVAILABLE\x10\x05\x12\x1d\n" +
+	"\x19CODE_DEVICE_SHUTTING_DOWN\x10\x06\x1a\v\n" +
 	"\tCancelledB\b\n" +
 	"\x06updateB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 

@@ -36,7 +36,7 @@ func testTimers(t *testing.T, b Backend) {
 	must(t, s.SetTimer(ctx, "call_watchdog", "c2", t0+20))
 	must(t, s.SetTimer(ctx, "call_watchdog", "c3", t0+20))
 	must(t, s.SetTimer(ctx, "enroll_token_expiry", "e1", t0+99))
-	ts, err := s.ListTimers(ctx)
+	ts, err := s.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	mustEqual(t, "listed", subjects(ts), []string{
 		"device_grace/d1", "call_watchdog/c2", "call_watchdog/c3", "call_watchdog/c1", "enroll_token_expiry/e1",
@@ -64,7 +64,7 @@ func testTimers(t *testing.T, b Backend) {
 	// Re-setting a claimed timer clears its claim: the stale handler cannot
 	// complete it, and the new due time governs.
 	must(t, s.SetTimer(ctx, "call_watchdog", "c2", t0+50))
-	ts, err = s.ListTimers(ctx)
+	ts, err = s.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	for _, tm := range ts {
 		if tm.SubjectID == "c2" && (tm.ClaimedBy != "" || tm.ClaimUntil != 0 || tm.Attempts != 0 || tm.Token != "" || tm.DueAt != t0+50) {
@@ -79,7 +79,7 @@ func testTimers(t *testing.T, b Backend) {
 	must(t, s.CancelTimer(ctx, "call_watchdog", "c3"))
 	must(t, s.CancelTimer(ctx, "call_watchdog", "c3"))
 	must(t, s.CancelTimer(ctx, "enroll_token_expiry", "e1"))
-	ts, err = s.ListTimers(ctx)
+	ts, err = s.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	mustEqual(t, "left", subjects(ts), []string{"call_watchdog/c1", "call_watchdog/c2"})
 
@@ -121,7 +121,7 @@ func testTimerLeaseExpiry(t *testing.T, b Backend) {
 	ok, err = s.CompleteTimer(ctx, c)
 	must(t, err)
 	mustEqual(t, "completion", ok, true)
-	ts, err := s.ListTimers(ctx)
+	ts, err := s.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	mustEqual(t, "timers left", len(ts), 0)
 }
@@ -293,7 +293,7 @@ func testTxTimerAtomicity(t *testing.T, b Backend) {
 	}), errAbort)
 	_, err := s.GetCall(ctx, "c1")
 	mustIs(t, err, store.ErrNotFound)
-	ts, err := s.ListTimers(ctx)
+	ts, err := s.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	mustEqual(t, "timers after rollback", len(ts), 0)
 
@@ -310,13 +310,13 @@ func testTxTimerAtomicity(t *testing.T, b Backend) {
 	}
 	mustIs(t, s.Tx(ctx, func(ctx context.Context, tx store.Ops) error { must(t, finish(ctx, tx)); return errAbort }), errAbort)
 	mustEqual(t, "state after rollback", getCall(t, s, "c1").State, store.CallDispatched)
-	ts, err = s.ListTimers(ctx)
+	ts, err = s.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	mustEqual(t, "watchdog kept", subjects(ts), []string{"call_watchdog/c1"})
 
 	must(t, s.Tx(ctx, finish))
 	mustEqual(t, "state after commit", getCall(t, s, "c1").State, store.CallCompleted)
-	ts, err = s.ListTimers(ctx)
+	ts, err = s.ListTimers(ctx, store.TimerFilter{Limit: store.MaxPageSize})
 	must(t, err)
 	mustEqual(t, "watchdog gone", len(ts), 0)
 }

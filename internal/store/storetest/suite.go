@@ -38,6 +38,7 @@ func Run(t *testing.T, b Backend) {
 		fn   func(*testing.T, Backend)
 	}{
 		{"Users", testUsers},
+		{"Pages", testPages},
 		{"Identities", testIdentities},
 		{"DeleteIdentity", testDeleteIdentity},
 		{"Credentials", testCredentials},

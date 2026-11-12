@@ -332,6 +332,7 @@ func testCallList(t *testing.T, b Backend) {
 
 	ids := func(f store.CallFilter) []string {
 		t.Helper()
+		f.Limit = store.MaxPageSize
 		cs, err := s.ListCalls(ctx, f)
 		must(t, err)
 		out := []string{}
@@ -341,14 +342,14 @@ func testCallList(t *testing.T, b Backend) {
 		return out
 	}
 	inflight := []store.CallState{store.CallDispatched, store.CallRunning, store.CallUnknown}
-	mustEqual(t, "all", ids(store.CallFilter{}), []string{"c4", "c1", "c2", "c3", "c5"})
-	mustEqual(t, "device", ids(store.CallFilter{DeviceID: "d1"}), []string{"c1", "c2", "c3", "c5"})
-	mustEqual(t, "device in flight", ids(store.CallFilter{DeviceID: "d1", States: inflight}), []string{"c2", "c3"})
-	mustEqual(t, "boot in flight", ids(store.CallFilter{DispatchedBootID: "b1", States: inflight}), []string{"c4", "c3"})
-	mustEqual(t, "device boot", ids(store.CallFilter{DeviceID: "d1", DispatchedBootID: "b1"}), []string{"c3", "c5"})
-	mustEqual(t, "accepted", ids(store.CallFilter{States: []store.CallState{store.CallAccepted}}), []string{"c1"})
-	mustEqual(t, "no match", ids(store.CallFilter{DeviceID: "d9"}), []string{})
-	_, err := s.ListCalls(ctx, store.CallFilter{States: []store.CallState{"weird"}})
+	mustEqual(t, "all", ids(store.CallFilter{Limit: store.MaxPageSize}), []string{"c4", "c1", "c2", "c3", "c5"})
+	mustEqual(t, "device", ids(store.CallFilter{Limit: store.MaxPageSize, DeviceID: "d1"}), []string{"c1", "c2", "c3", "c5"})
+	mustEqual(t, "device in flight", ids(store.CallFilter{Limit: store.MaxPageSize, DeviceID: "d1", States: inflight}), []string{"c2", "c3"})
+	mustEqual(t, "boot in flight", ids(store.CallFilter{Limit: store.MaxPageSize, DispatchedBootID: "b1", States: inflight}), []string{"c4", "c3"})
+	mustEqual(t, "device boot", ids(store.CallFilter{Limit: store.MaxPageSize, DeviceID: "d1", DispatchedBootID: "b1"}), []string{"c3", "c5"})
+	mustEqual(t, "accepted", ids(store.CallFilter{Limit: store.MaxPageSize, States: []store.CallState{store.CallAccepted}}), []string{"c1"})
+	mustEqual(t, "no match", ids(store.CallFilter{Limit: store.MaxPageSize, DeviceID: "d9"}), []string{})
+	_, err := s.ListCalls(ctx, store.CallFilter{Limit: store.MaxPageSize, States: []store.CallState{"weird"}})
 	mustIs(t, err, store.ErrInvalid)
 }
 
@@ -364,6 +365,7 @@ func testJobs(t *testing.T, b Backend) {
 	}
 	list := func(f store.JobFilter) []store.Job {
 		t.Helper()
+		f.Limit = store.MaxPageSize
 		js, err := s.ListJobs(ctx, f)
 		must(t, err)
 		return js
@@ -375,7 +377,7 @@ func testJobs(t *testing.T, b Backend) {
 	older := j
 	older.LastSeq, older.State = 4, store.JobExited
 	mustEqual(t, "stale", put(older), false)
-	mustEqual(t, "after stale", list(store.JobFilter{}), []store.Job{j})
+	mustEqual(t, "after stale", list(store.JobFilter{Limit: store.MaxPageSize}), []store.Job{j})
 
 	// A newer event fills in the session and call and does not lose them
 	// when the next one omits them.
@@ -386,16 +388,16 @@ func testJobs(t *testing.T, b Backend) {
 	mustEqual(t, "exit", put(done), true)
 	want := done
 	want.SessionID, want.CallID, want.StartedAt = "s1", "c1", t0
-	mustEqual(t, "after exit", list(store.JobFilter{}), []store.Job{want})
+	mustEqual(t, "after exit", list(store.JobFilter{Limit: store.MaxPageSize}), []store.Job{want})
 
 	// Job ids are unique per boot only.
 	j2 := store.Job{DeviceID: "d1", BootID: "b2", JobID: "j1", UserID: "u1", SessionID: "s2", State: store.JobRunning, LastSeq: 1}
 	j3 := store.Job{DeviceID: "d1", BootID: "b1", JobID: "j3", UserID: "u1", SessionID: "s1", State: store.JobRunning, LastSeq: 8}
 	mustEqual(t, "other boot", put(j2), true)
 	mustEqual(t, "j3", put(j3), true)
-	mustEqual(t, "by boot", len(list(store.JobFilter{DeviceID: "d1", BootID: "b1"})), 2)
-	mustEqual(t, "by session", list(store.JobFilter{SessionID: "s2"}), []store.Job{j2})
-	mustEqual(t, "running", len(list(store.JobFilter{States: []store.JobState{store.JobRunning}})), 2)
+	mustEqual(t, "by boot", len(list(store.JobFilter{Limit: store.MaxPageSize, DeviceID: "d1", BootID: "b1"})), 2)
+	mustEqual(t, "by session", list(store.JobFilter{Limit: store.MaxPageSize, SessionID: "s2"}), []store.Job{j2})
+	mustEqual(t, "running", len(list(store.JobFilter{Limit: store.MaxPageSize, States: []store.JobState{store.JobRunning}})), 2)
 
 	// The device reconnects with boot b2: running jobs of other boots are
 	// lost, ended jobs and the live boot's jobs are untouched.
@@ -404,7 +406,7 @@ func testJobs(t *testing.T, b Backend) {
 	mustEqual(t, "lost", n, 1)
 	lost := j3
 	lost.State, lost.EndedAt, lost.UpdatedAt = store.JobLost, t0+10, t0+10
-	mustEqual(t, "after LoseJobs", list(store.JobFilter{}), []store.Job{want, lost, j2})
+	mustEqual(t, "after LoseJobs", list(store.JobFilter{Limit: store.MaxPageSize}), []store.Job{want, lost, j2})
 	for _, st := range []store.JobState{store.JobRunning, store.JobExited, store.JobKilled, store.JobLost} {
 		mustEqual(t, label(st, ".Terminal()"), st.Terminal(), slices.Contains(wantJobTerminal, st))
 	}

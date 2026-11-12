@@ -90,6 +90,11 @@ message CallUpdate {
       CODE_OVERLOADED = 2;
       CODE_CALL_MISMATCH = 3;
       CODE_UNKNOWN_DEVICE = 4;
+      // Nothing was persisted or dispatched. Retrying the same call_id is safe.
+      CODE_STORE_UNAVAILABLE = 5;
+      // The daemon refused during shutdown, without executing on that boot.
+      // Terminal rejection: a retry requires a new call_id.
+      CODE_DEVICE_SHUTTING_DOWN = 6;
     }
     Code code = 1;
     string message = 2;

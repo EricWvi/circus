@@ -467,13 +467,25 @@ func (o *ops) GetCall(ctx context.Context, callID string) (store.Call, error) {
 }
 
 func (o *ops) ListCalls(ctx context.Context, f store.CallFilter) ([]store.Call, error) {
+	if err := store.CheckLimit(f.Limit); err != nil {
+		return nil, err
+	}
 	var where []string
 	var args []any
+	if f.UserID != "" {
+		where, args = append(where, "user_id = ?"), append(args, f.UserID)
+	}
+	if f.After != nil {
+		where, args = append(where, "(submitted_at, call_id) > (?, ?)"), append(args, f.After.SubmittedAt, f.After.CallID)
+	}
 	if f.DeviceID != "" {
 		where, args = append(where, "device_id = ?"), append(args, f.DeviceID)
 	}
 	if f.DispatchedBootID != "" {
 		where, args = append(where, "dispatched_boot_id = ?"), append(args, f.DispatchedBootID)
+	}
+	if len(f.States) > 9 {
+		return nil, invalid("too many call states")
 	}
 	if len(f.States) > 0 {
 		if err := store.CheckStates(f.States); err != nil {
@@ -485,7 +497,7 @@ func (o *ops) ListCalls(ctx context.Context, f store.CallFilter) ([]store.Call, 
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, " AND ")
 	}
-	rows, err := o.q.QueryContext(ctx, q+` ORDER BY submitted_at, call_id`, args...)
+	rows, err := o.q.QueryContext(ctx, q+` ORDER BY submitted_at, call_id LIMIT ?`, append(args, f.Limit)...)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -586,7 +598,10 @@ func (o *ops) PatchCall(ctx context.Context, callID string, expect store.CallExp
 	return o.updateCall(ctx, callID, expect, false, sets, args)
 }
 
-func (o *ops) LoseCalls(ctx context.Context, deviceID, keepBootID string, at int64, reason string) ([]store.LostCall, error) {
+func (o *ops) LoseCalls(ctx context.Context, deviceID, keepBootID string, at int64, reason string, limit int) ([]store.LostCall, error) {
+	if err := store.CheckLimit(limit); err != nil {
+		return nil, err
+	}
 	if deviceID == "" || keepBootID == "" || at == 0 {
 		return nil, invalid("LoseCalls needs a device id, the boot to keep and a time")
 	}
@@ -598,8 +613,8 @@ func (o *ops) LoseCalls(ctx context.Context, deviceID, keepBootID string, at int
 	const where = `WHERE device_id = ? AND state IN ('dispatched', 'running', 'unknown') AND dispatched_boot_id <> ?`
 	var lost []store.LostCall
 	err := o.atomic(ctx, func(tx *ops) error {
-		rows, err := tx.q.QueryContext(ctx, `SELECT call_id, state FROM calls `+where+` ORDER BY submitted_at, call_id`,
-			deviceID, keepBootID)
+		rows, err := tx.q.QueryContext(ctx, `SELECT call_id, state FROM calls `+where+` ORDER BY submitted_at, call_id LIMIT ?`,
+			deviceID, keepBootID, limit)
 		if err != nil {
 			return mapErr(err)
 		}
@@ -611,8 +626,12 @@ func (o *ops) LoseCalls(ctx context.Context, deviceID, keepBootID string, at int
 		if err != nil || len(lost) == 0 {
 			return err
 		}
-		n, err := tx.exec(ctx, `UPDATE calls SET state = 'lost', finished_at = ?, outcome_reason = ? `+where,
-			at, nstr(reason), deviceID, keepBootID)
+		ids := make([]any, 0, len(lost)+2)
+		ids = append(ids, at, nstr(reason))
+		for _, l := range lost {
+			ids = append(ids, l.CallID)
+		}
+		n, err := tx.exec(ctx, `UPDATE calls SET state = 'lost', finished_at = ?, outcome_reason = ? WHERE call_id IN (`+placeholders(len(lost))+`)`, ids...)
 		if err == nil && n != len(lost) {
 			err = fmt.Errorf("sqlite: LoseCalls selected %d calls but updated %d", len(lost), n)
 		}
@@ -659,14 +678,23 @@ func (o *ops) PutJob(ctx context.Context, j store.Job) (bool, error) {
 }
 
 func (o *ops) ListJobs(ctx context.Context, f store.JobFilter) ([]store.Job, error) {
+	if err := store.CheckLimit(f.Limit); err != nil {
+		return nil, err
+	}
 	var where []string
 	var args []any
+	if f.After != nil {
+		where, args = append(where, "(device_id, boot_id, job_id) > (?, ?, ?)"), append(args, f.After.DeviceID, f.After.BootID, f.After.JobID)
+	}
 	for _, c := range []struct{ col, v string }{
 		{"device_id", f.DeviceID}, {"boot_id", f.BootID}, {"session_id", f.SessionID},
 	} {
 		if c.v != "" {
 			where, args = append(where, c.col+" = ?"), append(args, c.v)
 		}
+	}
+	if len(f.States) > 4 {
+		return nil, invalid("too many job states")
 	}
 	if len(f.States) > 0 {
 		for _, s := range f.States {
@@ -680,7 +708,7 @@ func (o *ops) ListJobs(ctx context.Context, f store.JobFilter) ([]store.Job, err
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, " AND ")
 	}
-	rows, err := o.q.QueryContext(ctx, q+` ORDER BY device_id, boot_id, job_id`, args...)
+	rows, err := o.q.QueryContext(ctx, q+` ORDER BY device_id, boot_id, job_id LIMIT ?`, append(args, f.Limit)...)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -778,8 +806,22 @@ func (o *ops) CompleteTimer(ctx context.Context, t store.Timer) (bool, error) {
 	return n > 0, err
 }
 
-func (o *ops) ListTimers(ctx context.Context) ([]store.Timer, error) {
-	rows, err := o.q.QueryContext(ctx, `SELECT `+timerCols+` FROM timers ORDER BY due_at, kind, subject_id`)
+func (o *ops) ListTimers(ctx context.Context, f store.TimerFilter) ([]store.Timer, error) {
+	if err := store.CheckLimit(f.Limit); err != nil {
+		return nil, err
+	}
+	where := []string{"1=1"}
+	args := []any{}
+	if f.After != nil {
+		where, args = append(where, "(due_at, kind, subject_id) > (?, ?, ?)"), append(args, f.After.DueAt, f.After.Kind, f.After.SubjectID)
+	}
+	if f.Kind != "" {
+		where, args = append(where, "kind = ?"), append(args, f.Kind)
+	}
+	if f.SubjectID != "" {
+		where, args = append(where, "subject_id = ?"), append(args, f.SubjectID)
+	}
+	rows, err := o.q.QueryContext(ctx, `SELECT `+timerCols+` FROM timers WHERE `+strings.Join(where, " AND ")+` ORDER BY due_at, kind, subject_id LIMIT ?`, append(args, f.Limit)...)
 	if err != nil {
 		return nil, mapErr(err)
 	}
