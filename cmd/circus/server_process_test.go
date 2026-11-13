@@ -237,8 +237,15 @@ func TestServerJoinProcess(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	if s := get("/readyz", ""); s != http.StatusOK {
-		t.Fatalf("readyz %d", s)
+	// Listening precedes readiness (store, router health, timers), so poll.
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		s := get("/readyz", "")
+		if s == http.StatusOK {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("readyz %d", s)
+		}
 	}
 
 	// Enrollment token, written to the database directly while the server runs.
