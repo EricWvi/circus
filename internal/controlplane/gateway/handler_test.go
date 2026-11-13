@@ -279,9 +279,30 @@ func TestRecheckStoreErrorsUseStalenessWindow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	link := daemonLink(t, ctx, s.URL, "boot", c.Fake)
+	// armed waits for the recheck to arm its next timer. A recheck that
+	// closes the link arms none, and the close may still be in progress
+	// when its call is counted, so also stop once the link is gone.
+	armed := func() bool {
+		end := time.Now().Add(5 * time.Second)
+		for {
+			select {
+			case <-c.armed:
+				return true
+			case <-time.After(time.Millisecond):
+			}
+			if h.Stats().Connections == 0 {
+				return false
+			}
+			if time.Now().After(end) {
+				t.Fatal("recheck neither armed its timer nor closed the link")
+			}
+		}
+	}
 	// Exactly ten seconds of store failures must not close the daemon link.
 	for i := range 10 {
-		<-c.armed
+		if !armed() {
+			t.Fatal("transient store errors closed the link within ten seconds")
+		}
 		c.Advance(time.Second)
 		waitFor(t, func() bool { return a.calls.Load() >= int32(i+1) })
 	}
@@ -289,8 +310,7 @@ func TestRecheckStoreErrorsUseStalenessWindow(t *testing.T) {
 		t.Fatal("transient store errors closed the link within ten seconds")
 	}
 	// Once no valid check has completed for 30 seconds, the link must close.
-	for i := 10; i < 31 && h.Stats().Connections != 0; i++ {
-		<-c.armed
+	for i := 10; i < 31 && armed(); i++ {
 		c.Advance(time.Second)
 		waitFor(t, func() bool { return a.calls.Load() >= int32(i+1) })
 	}
