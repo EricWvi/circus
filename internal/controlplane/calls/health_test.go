@@ -127,7 +127,9 @@ func TestHealthProbeDoesNotHoldRouterLock(t *testing.T) {
 		t.Fatal("failed submission did not clear store health")
 	}
 	advanceUntil(t, f, func() bool { return closed(wrapper.started) })
-	ctx, cancel := context.WithTimeout(f.ctx, 100*time.Millisecond)
+	// The probe blocks until release, so a Submit queued behind it never
+	// returns; the deadline only needs to cover a Submit on a loaded machine.
+	ctx, cancel := context.WithTimeout(f.ctx, 5*time.Second)
 	defer cancel()
 	defer close(wrapper.release)
 	s, err = f.router.Submit(ctx, "u", "desk", call("during-probe"))

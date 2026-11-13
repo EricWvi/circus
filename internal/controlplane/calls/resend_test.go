@@ -46,7 +46,17 @@ func TestResendOnBusyLinkKeepsCallDispatched(t *testing.T) {
 	drain(t, f.ctx, s, 2)
 	f.disconnect(l)
 	busy.Store(true)
-	f.open("boot") // the sync's resend is refused; the sync fails and closes the link
+	// The sync's resend is refused; the sync fails and closes the link. Wait
+	// for that close itself: open returns at Welcome, possibly before the
+	// link registers, so a zero connection count alone proves nothing and a
+	// late registration would supersede the next link.
+	refused := f.open("boot")
+	for {
+		if _, err := refused.Receive(f.ctx); err != nil {
+			break
+		}
+	}
+	must(t, f.ctx.Err())
 	eventually(t, func() bool { return f.registry.Stats().Connections == 0 })
 	if c, err := f.db.GetCall(f.ctx, "call"); err != nil || c.State != store.CallDispatched {
 		t.Fatalf("a refused resend settled the call: %+v %v", c, err)

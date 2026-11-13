@@ -424,7 +424,9 @@ func (w *simulatedWorker) call(t *testing.T, tool string, input fixtureInput) *c
 	if _, err := w.d.Submit(call); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// The 300 MB fixtures take about 3 s alone under -race; the daemon's own
+	// two-minute default timeout still bounds the call.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	status, err := w.d.Wait(ctx, call.CallId)
 	if err != nil {

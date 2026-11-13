@@ -245,6 +245,8 @@ func takeSnapshot(t testing.TB, s store.Ops) snapshot {
 // commit leaves nothing), then finishes the script on the restarted store
 // and checks it reaches the same end state as an uninterrupted run.
 func testCrashAtEveryWritePoint(t *testing.T, b Backend) {
+	// One deadline per crash point: a single shared one covers dozens of
+	// restarts and expires under heavy parallel -race load.
 	ctx := deadline(t)
 	script := crashScript(fixtureRows())
 
@@ -258,6 +260,7 @@ func testCrashAtEveryWritePoint(t *testing.T, b Backend) {
 	}
 
 	for n := 1; n <= total; n++ {
+		ctx := deadline(t)
 		p := StartProcess(t, b, t.TempDir())
 		p.CrashAfterWrite(n)
 		crashedIn, end := -1, 0

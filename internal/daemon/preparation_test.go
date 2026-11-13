@@ -63,8 +63,24 @@ func TestWrappedContextStartsExecutionTimeout(t *testing.T) {
 	if end := receive(t, started); !end.Equal(clock.Now().Add(time.Second)) {
 		t.Fatal("wrong execution deadline", end)
 	}
-	clock.Advance(time.Second)
-	if body := resultText(completed(t, d, "wrapped")); body != context.DeadlineExceeded.Error() {
+	// execute arms the deadline timer only after it observes the start, from
+	// a Now it may read before or after an Advance; advancing once can miss
+	// that timer under load. Keep advancing, staying below AbandonGrace.
+	var status *circusv1.CallStatus
+	for advanced := time.Duration(0); status == nil; {
+		if advanced >= 4*time.Second {
+			t.Fatal("call did not time out")
+		}
+		clock.Advance(time.Second)
+		advanced += time.Second
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		status, _ = d.Wait(ctx, "wrapped")
+		cancel()
+	}
+	if status.State != circusv1.CallStatus_STATE_COMPLETED {
+		t.Fatal(status)
+	}
+	if body := resultText(status.Result); body != context.DeadlineExceeded.Error() {
 		t.Fatal(body)
 	}
 	// A standalone tool caller need not install dispatcher state.

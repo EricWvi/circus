@@ -170,7 +170,9 @@ func TestEditUnmatchedMemoryBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// This bounds memory, not time: the subprocess takes about 14 s alone
+	// under -race and twice that on a loaded machine.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, "-test.run=^TestEditUnmatchedMemoryBound$", "-test.v")
 	cmd.Env = append(os.Environ(), "CIRCUS_EDIT_MEMORY_FILE="+path)
