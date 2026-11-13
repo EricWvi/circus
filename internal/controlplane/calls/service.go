@@ -73,9 +73,16 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 		r.storeFailed(err)
 		return nil, errors.Join(ErrStoreUnavailable, err)
 	}
-	// Charge serialization scratch before allocating it, even for duplicate input.
+	// Look up existing calls before scratch admission so equal duplicates can
+	// attach without new pending memory. New calls still budget scratch before
+	// Marshal; existing calls must marshal to verify their deterministic hash.
 	scratch := int64(2 * proto.Size(call))
-	if scratch > r.config.Pending.MaxBytes-r.pendingBytes {
+	old, lookupErr := r.config.Store.GetCall(op.ctx, id)
+	if lookupErr != nil && !errors.Is(lookupErr, store.ErrNotFound) {
+		r.storeFailed(lookupErr)
+		return nil, errors.Join(ErrStoreUnavailable, lookupErr)
+	}
+	if errors.Is(lookupErr, store.ErrNotFound) && scratch > r.config.Pending.MaxBytes-r.pendingBytes {
 		return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
 	}
 	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(call)
@@ -83,7 +90,6 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 		return nil, err
 	}
 	hash := sha256.Sum256(data)
-	old, lookupErr := r.config.Store.GetCall(op.ctx, id)
 	if lookupErr == nil {
 		if old.UserID != user {
 			return nil, store.ErrNotFound // never disclose another user's call
@@ -94,9 +100,10 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 		if old.State != store.CallLost || old.DispatchedBootID != "" {
 			return r.attach(op, ctx, old)
 		}
-	} else if !errors.Is(lookupErr, store.ErrNotFound) {
-		r.storeFailed(lookupErr)
-		return nil, errors.Join(ErrStoreUnavailable, lookupErr)
+		// An undispatched lost call starts a new attempt and needs scratch.
+		if scratch > r.config.Pending.MaxBytes-r.pendingBytes {
+			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
+		}
 	}
 	route, online, err := r.config.Registry.Lookup(op.ctx, device.ID)
 	if err != nil {
@@ -168,7 +175,7 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 		}
 		return nil, errors.Join(ErrStoreUnavailable, err)
 	}
-	r.healthy = true
+	r.markHealthy()
 	if !online {
 		delete(r.unrecorded, device.ID)
 	}
@@ -282,7 +289,7 @@ func (r *router) dispatch(ctx context.Context, c store.Call, route gateway.Conne
 		r.storeFailed(err)
 		return err
 	}
-	r.healthy = true
+	r.markHealthy()
 	if changed {
 		r.publish(dispatched(c.CallID))
 		return r.writeDispatch(ctx, c, route, false)

@@ -42,7 +42,7 @@ func (r *router) HandleTimer(ctx context.Context, claim store.Timer) error {
 		r.storeFailed(err)
 		return err
 	}
-	r.healthy = true
+	r.markHealthy()
 	if fx.offline != "" {
 		delete(r.unrecorded, fx.offline)
 	}

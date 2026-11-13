@@ -22,14 +22,19 @@ import (
 
 const serverUsage = `usage:
   circus server [--db PATH] [--listen HOST:PORT] (--tls-cert FILE --tls-key FILE | --behind-proxy | --dev-insecure)
-                [--public-url URL] [--shutdown-timeout 10s]
+                [--public-url URL] [--shutdown-timeout 10s] [--timer-poll-interval 1s]
+                [--max-message-bytes N] [--device-grace 30s]
+                [--heartbeat-interval 5s] [--heartbeat-timeout 15s]
   circus server enroll-token create --role daemon|worker|both [--ttl 1h] [--url https://host:port] [--db PATH]
   circus server device list|revoke <name> [--db PATH]
   circus server worker list|revoke <name> [--db PATH]
 
 revoke revokes the identity's credentials and deletes it, freeing the name
 for a new join. The admin commands open only an existing database: pass the
-server's --db when it is not the default.`
+server's --db when it is not the default.
+
+M2 supports one long-lived worker plus one CLI connection at a time. HTTP 503
+on a worker link means both connection slots are full.`
 
 // defaultListen is the default --listen address and the port enroll-token
 // create assumes without --url.
@@ -66,6 +71,11 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	insecure := fs.Bool("dev-insecure", false, "serve plaintext; loopback addresses only")
 	publicURL := fs.String("public-url", "", "base URL clients use (default: derived from each request)")
 	shutdown := fs.Duration("shutdown-timeout", controlplane.DefaultShutdownTimeout, "graceful shutdown deadline")
+	timerPoll := fs.Duration("timer-poll-interval", 0, "durable timer poll interval (default 1s)")
+	maxMessage := fs.Int("max-message-bytes", 0, "link message limit in bytes (default 64 MiB)")
+	grace := fs.Duration("device-grace", 0, "disconnected device grace (default 30s)")
+	heartbeat := fs.Duration("heartbeat-interval", 0, "link heartbeat interval (default 5s)")
+	heartbeatTimeout := fs.Duration("heartbeat-timeout", 0, "link heartbeat timeout (default 15s)")
 	debug := fs.Bool("debug", false, "log at debug level")
 	pos, err := parseArgs(fs, args)
 	if err != nil {
@@ -97,9 +107,12 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	defer st.Close()
 	srv, err := controlplane.New(ctx, st, controlplane.Config{
 		Listen: *listen, TLSCert: *cert, TLSKey: *key, BehindProxy: *proxy, DevInsecure: *insecure,
-		PublicURL: *publicURL, ShutdownTimeout: *shutdown, LogOutput: errOut, LogLevel: level,
+		PublicURL: *publicURL, ShutdownTimeout: *shutdown, TimerPollInterval: *timerPoll, LogOutput: errOut, LogLevel: level,
 	})
 	if err != nil {
+		return err
+	}
+	if err := srv.ConfigureLinks(ctx, controlplane.LinkConfig{MaxMessageBytes: *maxMessage, GracePeriod: *grace, HeartbeatInterval: *heartbeat, HeartbeatTimeout: *heartbeatTimeout}); err != nil {
 		return err
 	}
 	return srv.Run(ctx)

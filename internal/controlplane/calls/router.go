@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -18,6 +19,9 @@ import (
 
 // pageSize bounds every store walk and every loss or grace batch.
 const pageSize = 64
+
+// healthProbeTimeout bounds the single-row store read used to recover readiness.
+const healthProbeTimeout = time.Second
 
 // resultRetention is the daemon's result lifetime (D43 item 4): a dispatched
 // call whose device stays offline this long can no longer be recovered.
@@ -52,7 +56,7 @@ type router struct {
 	callbackCount int
 	operations    chan struct{} // MaxOperations admission slots
 	closed        bool
-	healthy       bool
+	health        atomic.Uint64
 	pending       map[string]*pendingCall // <= Pending.MaxCalls
 	pendingBytes  int64
 	subs          map[*Subscription]struct{} // with callbacks/queries <= MaxSubscriptions
@@ -228,9 +232,10 @@ func newRouter(c Config) (Router, error) {
 		config: c, started: c.Clock.Now().UnixMilli(), ctx: ctx, cancel: cancel,
 		syncLimit: int(min(int64(c.MaxSyncRequests), c.MaxSyncReplyBytes/int64(c.MaxMessageBytes))),
 		done:      make(chan struct{}), joined: make(chan struct{}), operations: make(chan struct{}, c.MaxOperations),
-		healthy: true, pending: make(map[string]*pendingCall), subs: make(map[*Subscription]struct{}),
+		pending: make(map[string]*pendingCall), subs: make(map[*Subscription]struct{}),
 		devices: make(map[string]*deviceState), queries: make(map[string][]*queryWaiter), unrecorded: make(map[string]int64),
 	}
+	r.health.Store(1)
 	if err := r.reconcileStartup(ctx); err != nil {
 		cancel()
 		return nil, err
@@ -273,7 +278,27 @@ func (r *router) reconcileStartup(ctx context.Context) error {
 // during sync) are not store failures and leave readiness untouched (L2).
 func (r *router) storeFailed(err error) {
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-		r.healthy = false
+		r.markFailed()
+	}
+}
+
+// markFailed advances the packed failure generation and clears health in one
+// atomic operation. markHealthy sets the bit only when no failure raced it.
+func (r *router) markFailed() {
+	for {
+		v := r.health.Load()
+		if r.health.CompareAndSwap(v, (v+2)&^1) {
+			return
+		}
+	}
+}
+
+func (r *router) markHealthy() {
+	for {
+		v := r.health.Load()
+		if v&1 == 1 || r.health.CompareAndSwap(v, v|1) {
+			return
+		}
 	}
 }
 
@@ -341,8 +366,23 @@ func (r *router) retryDisconnects() {
 			r.storeFailed(err)
 			return
 		}
-		r.healthy = true
+		r.markHealthy()
 		delete(r.unrecorded, id)
+	}
+}
+
+// probeStore recovers readiness without requiring new call traffic. The read is
+// limited to one row and one second, runs only while the health bit is false,
+// and is always called outside r.mu. A successful read can make readiness flap
+// when writes keep failing (for example disk full); the next failed write clears
+// the bit again.
+func (r *router) probeStore() {
+	generation := r.health.Load()
+	ctx, cancel := context.WithTimeout(r.ctx, healthProbeTimeout)
+	defer cancel()
+	if _, err := r.config.Store.ListTimers(ctx, store.TimerFilter{Limit: 1}); err == nil {
+		// Restore only if no newer failed write advanced the packed generation.
+		r.health.CompareAndSwap(generation, generation|1)
 	}
 }
 
@@ -355,6 +395,9 @@ func (r *router) sweep() {
 		case <-r.ctx.Done():
 			return
 		case <-alarm:
+		}
+		if !r.Healthy() {
+			r.probeStore()
 		}
 		r.mu.Lock()
 		if !r.closed {
@@ -401,9 +444,15 @@ func (r *router) Close(ctx context.Context) error {
 	}
 }
 
+// Healthy reports the in-memory store health bit without locking or store I/O,
+// so readiness probes cannot queue behind router work or a stalled store.
+func (r *router) Healthy() bool {
+	return r.health.Load()&1 == 1
+}
+
 func (r *router) Stats() Stats {
 	r.mu.Lock()
-	s := Stats{Callbacks: r.callbackCount, PendingCalls: len(r.pending), PendingBytes: r.pendingBytes, Subscribers: len(r.subs), BufferedBytes: r.bufferedBytes, QueryWaiters: r.queryCount, Devices: len(r.devices), Operations: len(r.operations), UnrecordedDisconnects: len(r.unrecorded), StoreHealthy: r.healthy}
+	s := Stats{Callbacks: r.callbackCount, PendingCalls: len(r.pending), PendingBytes: r.pendingBytes, Subscribers: len(r.subs), BufferedBytes: r.bufferedBytes, QueryWaiters: r.queryCount, Devices: len(r.devices), Operations: len(r.operations), UnrecordedDisconnects: len(r.unrecorded), StoreHealthy: r.Healthy()}
 	for _, d := range r.devices {
 		s.SyncRequests += len(d.outstanding)
 	}
@@ -454,7 +503,7 @@ func (r *router) settle(ctx context.Context, c store.Call, to store.CallState, p
 		r.storeFailed(err)
 		return err
 	}
-	r.healthy = true
+	r.markHealthy()
 	if changed {
 		r.release(c.CallID)
 		r.publish(u)

@@ -67,6 +67,13 @@ type Service interface {
 	// jobs. It stops background jobs only, never foreground calls or future jobs.
 	// Return means command admission, not daemon completion; offline routes error.
 	StopSessionJobs(ctx context.Context, userID, sessionID string) error
+	// Healthy reports the in-memory store health bit without locking, store I/O
+	// or Stats' durable timer walk, so readiness always stays within its context.
+	// While false, the existing sweep probes one bounded row outside the router
+	// lock and restores it on success, without requiring call traffic. Read
+	// success does not prove writes work: readiness can flap (for example disk
+	// full), and the next failed write clears the bit again.
+	Healthy() bool
 	// Stats reports retained resources and store health for readiness/invariants.
 	Stats() Stats
 	// Close stops admission, releases pending content and subscriptions, and
@@ -117,8 +124,12 @@ type Router interface {
 }
 
 // PendingBudget bounds unacknowledged request ownership, including accepted calls.
-// MaxBytes charges conservative decoded memory plus deterministic-hash scratch,
-// not merely proto.Size; MaxCalls also bounds map entries and ordering records.
+// New calls charge decoded memory and serialization scratch before marshal.
+// Existing calls, including undispatched-Lost resubmits, first perform one
+// transient deterministic marshal under the router lock (at most 2x message
+// size, outside this budget) to prove equality. Equal duplicates attach without
+// new pending ownership; Lost resubmits then pass new-attempt scratch admission.
+// MaxCalls also bounds map entries and ordering records.
 // Ack, result, rejection, offline, lost or cancellation releases content. Retry
 // admission on wire.ErrBusy during Submit yields Rejected{OVERLOADED}. A known
 // refusal of the first send can reject dispatched while preserving its boot;
@@ -181,7 +192,9 @@ type Config struct {
 // store write failed and awaits retry. PendingBytes includes
 // pending scratch; BufferedBytes includes queued updates; QueryWaiters counts
 // coalesced query consumers. DurableTimers counts router-owned durable timers,
-// including claimed ones; StoreHealthy is false after persistence failure.
+// including claimed ones; StoreHealthy is false after persistence failure and
+// may also be false solely because Stats' own timer walk failed. Healthy instead
+// tracks writes and the sweep's bounded recovery probes, so the two can differ.
 // All volatile gauges reach zero on Close. Durable timers disappear on outcome,
 // not merely on process shutdown, and never point at terminal calls.
 type Stats struct {

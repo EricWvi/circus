@@ -2,15 +2,19 @@ package calls_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"strings"
+	"testing"
+	"time"
+
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
-	"testing"
-	"time"
+	"google.golang.org/protobuf/proto"
 )
 
 type busyBus struct{ bus.Bus }
@@ -174,5 +178,100 @@ func TestAckReleasesPendingAdmission(t *testing.T) {
 	m := receive(t, f.ctx, l)
 	if m.GetDispatchCall().GetCall().GetCallId() != "second" {
 		t.Fatal(m)
+	}
+}
+
+func TestEqualDuplicateAttachesWhenPendingScratchIsFull(t *testing.T) {
+	const maxMessageBytes = 256 << 10
+	existing := call("existing")
+	existing.GetBash().Command = strings.Repeat("x", 8192)
+	filler := call("filler")
+	filler.GetBash().Command = "x"
+	filler.GetBash().Cwd = ""
+	charge := func(c *circusv1.DeviceCall) int64 {
+		envelope := &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: "desk", Call: c}}}
+		cost, err := bus.Charge(envelope, maxMessageBytes)
+		must(t, err)
+		return cost
+	}
+	existingScratch := int64(2 * proto.Size(existing))
+	maxBytes := charge(existing) + existingScratch
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) {
+		c.Pending.MaxBytes = maxBytes
+	})
+	l := f.connect("boot")
+
+	first, err := f.router.Submit(f.ctx, "u", "desk", existing)
+	must(t, err)
+	defer first.Close()
+	if m := receive(t, f.ctx, l); m.GetDispatchCall().GetCall().GetCallId() != existing.GetCallId() {
+		t.Fatal(m)
+	}
+	second, err := f.router.Submit(f.ctx, "u", "desk", filler)
+	must(t, err)
+	defer second.Close()
+	if u, err := second.Next(f.ctx); err != nil || u.GetAccepted() == nil {
+		t.Fatalf("filler was not admitted: %v, %v", u, err)
+	}
+	if m := receive(t, f.ctx, l); m.GetDispatchCall().GetCall().GetCallId() != filler.GetCallId() {
+		t.Fatal(m)
+	}
+	if remaining := maxBytes - f.router.Stats().PendingBytes; remaining >= existingScratch {
+		t.Fatalf("test did not fill serialization scratch budget: remaining=%d scratch=%d", remaining, existingScratch)
+	}
+
+	duplicate, err := f.router.Submit(f.ctx, "u", "desk", existing)
+	must(t, err)
+	defer duplicate.Close()
+	u, err := duplicate.Next(f.ctx)
+	must(t, err)
+	if u.GetCallId() != existing.GetCallId() || u.GetDispatched() == nil {
+		t.Fatalf("equal duplicate must report existing dispatched state, got %v", u)
+	}
+}
+
+func TestNewCallRejectsWhenScratchExhausted(t *testing.T) {
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Pending.MaxBytes = 1 })
+	s, err := f.router.Submit(f.ctx, "u", "desk", call("new-scratch"))
+	must(t, err)
+	defer s.Close()
+	u, err := s.Next(f.ctx)
+	must(t, err)
+	if u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_OVERLOADED {
+		t.Fatalf("new call bypassed scratch admission: %v", u)
+	}
+	if _, err = f.db.GetCall(f.ctx, "new-scratch"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("rejected new call persisted: %v", err)
+	}
+}
+
+func TestUndispatchedLostResubmitRejectsWhenScratchExhausted(t *testing.T) {
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Pending.MaxBytes = 1 })
+	original := call("lost-scratch")
+	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(original)
+	must(t, err)
+	hash := sha256.Sum256(data)
+	must(t, f.db.CreateCall(f.ctx, store.Call{
+		CallID: original.CallId, UserID: "u", DeviceID: "d", SessionID: original.SessionId,
+		Tool: "bash", RequestHash: hash[:], RequestBytes: int64(len(data)),
+		State: store.CallAccepted, SubmittedAt: 1,
+	}))
+	changed, err := f.db.TransitionCall(f.ctx, original.CallId, store.CallExpect{States: []store.CallState{store.CallAccepted}, Undispatched: true}, store.CallLost, store.CallPatch{FinishedAt: 1, OutcomeReason: "CONTROL_PLANE_RESTARTED"})
+	must(t, err)
+	if !changed {
+		t.Fatal("could not seed undispatched Lost call")
+	}
+	s, err := f.router.Submit(f.ctx, "u", "desk", original)
+	must(t, err)
+	defer s.Close()
+	u, err := s.Next(f.ctx)
+	must(t, err)
+	if u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_OVERLOADED {
+		t.Fatalf("lost resubmit bypassed scratch admission: %v", u)
+	}
+	row, err := f.db.GetCall(f.ctx, original.CallId)
+	must(t, err)
+	if row.State != store.CallLost || row.DispatchedBootID != "" {
+		t.Fatalf("rejected resubmit changed the attempt: %+v", row)
 	}
 }

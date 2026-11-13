@@ -1,7 +1,13 @@
 package gateway_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
+	"sync"
+	"sync/atomic"
+
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/bus"
@@ -194,5 +200,108 @@ func waitFor(t *testing.T, p func() bool) {
 			t.Fatal("condition did not become true")
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// A store error is retryable infrastructure failure, not invalid credentials.
+type unavailableAuth struct{ auth }
+
+func (unavailableAuth) Authenticate(context.Context, *http.Request) (gateway.Principal, error) {
+	return gateway.Principal{}, context.DeadlineExceeded
+}
+func TestAuthenticationStoreFailureReturns503(t *testing.T) {
+	b, _ := bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 1, MaxBytes: 1 << 20})
+	r, _ := gateway.NewRegistry(1)
+	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: clock.Real{}, Auth: unavailableAuth{}, Registry: r, Bus: b, Hooks: hooks{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Shutdown(t.Context())
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/link/daemon", nil))
+	if rec.Code != 503 {
+		t.Fatal(rec.Code)
+	}
+}
+
+type failingRecheck struct {
+	auth
+	calls atomic.Int32
+}
+
+func (a *failingRecheck) Recheck(context.Context, gateway.Principal) error {
+	a.calls.Add(1)
+	return errors.New("store temporarily unavailable")
+}
+
+type lockedLogs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedLogs) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+func (b *lockedLogs) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+type armedRecheckClock struct {
+	*clock.Fake
+	armed chan struct{}
+}
+
+func (c *armedRecheckClock) After(d time.Duration) <-chan time.Time {
+	ch := c.Fake.After(d)
+	if d >= 0 && d <= time.Second {
+		c.armed <- struct{}{}
+	}
+	return ch
+}
+
+func TestRecheckStoreErrorsUseStalenessWindow(t *testing.T) {
+	c := &armedRecheckClock{Fake: clock.New(), armed: make(chan struct{}, 64)}
+	b, _ := bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 8, MaxBytes: 8 << 20})
+	r, _ := gateway.NewRegistry(2)
+	a := &failingRecheck{}
+	logs := &lockedLogs{}
+	logger := slog.New(slog.NewJSONHandler(logs, nil)).With("test_logger", "configured")
+	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: c, Auth: a, Registry: r, Bus: b, Hooks: hooks{}, Logger: logger, RecheckInterval: time.Second, RecheckMaxStale: 30 * time.Second, LinkOptions: wire.Options{MaxMessageBytes: 1 << 20, MaxFragmentBytes: 1024, DisableHeartbeat: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(h)
+	defer s.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	link := daemonLink(t, ctx, s.URL, "boot", c.Fake)
+	// Exactly ten seconds of store failures must not close the daemon link.
+	for i := range 10 {
+		<-c.armed
+		c.Advance(time.Second)
+		waitFor(t, func() bool { return a.calls.Load() >= int32(i+1) })
+	}
+	if h.Stats().Connections != 1 {
+		t.Fatal("transient store errors closed the link within ten seconds")
+	}
+	// Once no valid check has completed for 30 seconds, the link must close.
+	for i := 10; i < 31 && h.Stats().Connections != 0; i++ {
+		<-c.armed
+		c.Advance(time.Second)
+		waitFor(t, func() bool { return a.calls.Load() >= int32(i+1) })
+	}
+	waitFor(t, func() bool { return h.Stats().Connections == 0 })
+	if _, err = link.Receive(ctx); err == nil {
+		t.Fatal("stale credential revalidation left link open")
+	}
+	if err = h.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := logs.String(); !strings.Contains(got, `"test_logger":"configured"`) || !strings.Contains(got, `"msg":"daemon credential revalidation closed link"`) {
+		t.Fatalf("recheck did not use configured logger: %s", got)
 	}
 }

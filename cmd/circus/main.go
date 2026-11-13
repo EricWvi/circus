@@ -11,7 +11,7 @@ var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: circus <version|daemon|server|join|doctor>")
+		fmt.Fprintln(os.Stderr, "usage: circus <version|daemon|server|join|doctor|call>")
 		os.Exit(1)
 	}
 
@@ -23,6 +23,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "call":
+		exitOn(callCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	case "server":
 		exitOn(serverCommand(os.Args[2:], os.Stdout, os.Stderr))
 	case "join":
@@ -30,7 +32,7 @@ func main() {
 	case "doctor":
 		exitOn(doctorCommand(os.Args[2:], os.Stdout, os.Stderr))
 	default:
-		fmt.Fprintln(os.Stderr, "usage: circus <version|daemon|server|join|doctor>")
+		fmt.Fprintln(os.Stderr, "usage: circus <version|daemon|server|join|doctor|call>")
 		os.Exit(1)
 	}
 }
@@ -40,6 +42,13 @@ func main() {
 func exitOn(err error) {
 	if err == nil {
 		return
+	}
+	var outcome callExit
+	if errors.As(err, &outcome) {
+		if outcome.err != nil {
+			fmt.Fprintln(os.Stderr, outcome.err)
+		}
+		os.Exit(outcome.code)
 	}
 	if !errors.Is(err, flag.ErrHelp) {
 		fmt.Fprintln(os.Stderr, err)

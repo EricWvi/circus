@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -20,23 +21,27 @@ var (
 	ErrUnauthenticated = errors.New("gateway: unauthenticated")
 	// ErrRevoked maps to HTTP 403 and closes an existing authenticated link.
 	ErrRevoked = errors.New("gateway: credential revoked")
+	// ErrWrongRole reports a valid non-daemon credential without calling it revoked.
+	ErrWrongRole = errors.New("gateway: daemon role required")
 )
 
 // Principal is the gateway-owned daemon identity, containing no bearer token.
-// All strings are nonempty, copied on retention and at most 128 bytes. T6 adapts
-// the auth module to this type; a worker credential must never produce it.
+// All strings are nonempty, copied on retention and at most 128 bytes. The host
+// adapts its shared auth instance to this type; a worker credential must never produce it.
 type Principal struct {
 	UserID, DeviceID, DeviceName, CredentialID string
 }
 
-// Authenticator is the consumer seam implemented by T6's auth adapter.
+// Authenticator is the consumer seam implemented by the host auth adapter.
 type Authenticator interface {
 	// Authenticate checks the upgrade request, including its daemon role.
 	// Both methods must promptly honor context cancellation.
 	Authenticate(context.Context, *http.Request) (Principal, error)
 	// Recheck validates that this exact credential is still usable. Polling
-	// closes live links within RecheckInterval plus RecheckTimeout (F17).
-	// Any error closes the connection; no plaintext credential is retained.
+	// closes a definitively revoked link within RecheckInterval plus
+	// RecheckTimeout (F17), with per-link phase jitter. Store errors and check
+	// timeouts keep the link until RecheckMaxStale has elapsed without a valid
+	// check; that bound is then logged and enforced. No token is retained.
 	Recheck(context.Context, Principal) error
 }
 
@@ -114,14 +119,17 @@ type Handler interface {
 	http.Handler
 	// Shutdown stops admission, sends GoAway, calls Link.Shutdown(ctx), drains
 	// received messages and joins owned work. A deadline bounds graceful close.
+	// The join-before-return guarantee can outlast ctx after forced abort; this
+	// preserves the requirement that Router.Close runs only after disconnects.
 	Shutdown(context.Context) error
 	// Stats counts actual ownership; shutdown must release it rather than reset it.
 	Stats() Stats
 }
 
 // Config supplies dependencies and hard bounds. Zero selects 100 connections,
-// a 10s Hello timeout, 1s credential recheck interval, 5s recheck timeout,
-// version 1 and pools twice wire.MinBudget. Negative values are refused;
+// a 10s Hello timeout, 1s credential recheck interval, 5s recheck timeout, 30s
+// maximum credential staleness, version 1 and pools twice wire.MinBudget.
+// Negative values are refused;
 // MinVersion/MaxVersion form an inclusive supported range (currently 1 only).
 // MaxConnections (1-256) includes handshakes, current and superseded sockets,
 // so replacement cannot accumulate closing links. At capacity, refuse admission.
@@ -136,10 +144,12 @@ type Config struct {
 	Registry                        Registry
 	Bus                             bus.Bus
 	Hooks                           Hooks
+	Logger                          *slog.Logger
 	MinVersion, MaxVersion          uint32
 	MaxConnections                  int
 	HelloTimeout                    time.Duration
 	RecheckInterval, RecheckTimeout time.Duration
+	RecheckMaxStale                 time.Duration
 	LinkOptions                     wire.Options
 	SendPoolBytes, ReceivePoolBytes int
 }

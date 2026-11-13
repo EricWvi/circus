@@ -34,6 +34,10 @@ const (
 	// The daemon refused during shutdown, without executing on that boot.
 	// Terminal rejection: a retry requires a new call_id.
 	CallUpdate_Rejected_CODE_DEVICE_SHUTTING_DOWN CallUpdate_Rejected_Code = 6
+	// No call with this id is visible to this user. Answers only this query;
+	// it says nothing about a submission of the same id still in flight elsewhere,
+	// and is not an outcome of any call.
+	CallUpdate_Rejected_CODE_NOT_FOUND CallUpdate_Rejected_Code = 7
 )
 
 // Enum value maps for CallUpdate_Rejected_Code.
@@ -46,6 +50,7 @@ var (
 		4: "CODE_UNKNOWN_DEVICE",
 		5: "CODE_STORE_UNAVAILABLE",
 		6: "CODE_DEVICE_SHUTTING_DOWN",
+		7: "CODE_NOT_FOUND",
 	}
 	CallUpdate_Rejected_Code_value = map[string]int32{
 		"CODE_UNSPECIFIED":          0,
@@ -55,6 +60,7 @@ var (
 		"CODE_UNKNOWN_DEVICE":       4,
 		"CODE_STORE_UNAVAILABLE":    5,
 		"CODE_DEVICE_SHUTTING_DOWN": 6,
+		"CODE_NOT_FOUND":            7,
 	}
 )
 
@@ -216,6 +222,8 @@ type WorkerUplink_SubmitCall struct {
 }
 
 type WorkerUplink_CancelCall struct {
+	// Cancellation never has a direct reply, including for unknown or invalid
+	// IDs. A watched subscription or subsequent CallQuery carries the outcome.
 	CancelCall *CancelCall `protobuf:"bytes,11,opt,name=cancel_call,json=cancelCall,proto3,oneof"`
 }
 
@@ -500,7 +508,8 @@ func (x *SubmitCall) GetCall() *DeviceCall {
 }
 
 // CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
-// and cancelled are terminal. Unknown is NOT terminal: reconnect with the same
+// and cancelled are terminal call outcomes, except that Rejected NOT_FOUND only
+// answers its query operation. Unknown is NOT terminal: reconnect with
 // daemon boot can still yield a result; CallQuery can retrieve the latest state.
 type CallUpdate struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1023,7 +1032,7 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
 	"SubmitCall\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12)\n" +
-	"\x04call\x18\x02 \x01(\v2\x15.circus.v1.DeviceCallR\x04call\"\xc5\a\n" +
+	"\x04call\x18\x02 \x01(\v2\x15.circus.v1.DeviceCallR\x04call\"\xd9\a\n" +
 	"\n" +
 	"CallUpdate\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12<\n" +
@@ -1046,10 +1055,10 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\aUnknown\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\x1a\x1e\n" +
 	"\x04Lost\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\x1a\x8f\x02\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\x1a\xa3\x02\n" +
 	"\bRejected\x127\n" +
 	"\x04code\x18\x01 \x01(\x0e2#.circus.v1.CallUpdate.Rejected.CodeR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xaf\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xc3\x01\n" +
 	"\x04Code\x12\x14\n" +
 	"\x10CODE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fCODE_INVALID\x10\x01\x12\x13\n" +
@@ -1057,7 +1066,8 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\x12CODE_CALL_MISMATCH\x10\x03\x12\x17\n" +
 	"\x13CODE_UNKNOWN_DEVICE\x10\x04\x12\x1a\n" +
 	"\x16CODE_STORE_UNAVAILABLE\x10\x05\x12\x1d\n" +
-	"\x19CODE_DEVICE_SHUTTING_DOWN\x10\x06\x1a\v\n" +
+	"\x19CODE_DEVICE_SHUTTING_DOWN\x10\x06\x12\x12\n" +
+	"\x0eCODE_NOT_FOUND\x10\a\x1a\v\n" +
 	"\tCancelledB\b\n" +
 	"\x06updateB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 

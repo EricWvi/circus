@@ -211,7 +211,7 @@ func (r *router) connectAndLose(op *operation, conn gateway.Connection, d *devic
 			r.storeFailed(err)
 			return err
 		}
-		r.healthy = true
+		r.markHealthy()
 		for _, l := range losses {
 			r.release(l.CallID)
 			u := lost(l.CallID, "DAEMON_RESTARTED")
@@ -525,7 +525,7 @@ func (r *router) status(ctx context.Context, c store.Call, s *circusv1.CallStatu
 			r.storeFailed(err)
 			return err
 		}
-		r.healthy = true
+		r.markHealthy()
 		r.release(c.CallID)
 		if c.State != store.CallRunning {
 			r.publish(dispatched(c.CallID))

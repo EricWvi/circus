@@ -17,6 +17,8 @@ message WorkerUplink {
     Heartbeat heartbeat = 2;
     Fragment fragment = 3;
     SubmitCall submit_call = 10;
+    // Cancellation never has a direct reply, including for unknown or invalid
+    // IDs. A watched subscription or subsequent CallQuery carries the outcome.
     CancelCall cancel_call = 11;
     CallQuery call_query = 12;
   }
@@ -51,7 +53,8 @@ message SubmitCall {
 }
 
 // CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
-// and cancelled are terminal. Unknown is NOT terminal: reconnect with the same
+// and cancelled are terminal call outcomes, except that Rejected NOT_FOUND only
+// answers its query operation. Unknown is NOT terminal: reconnect with
 // daemon boot can still yield a result; CallQuery can retrieve the latest state.
 message CallUpdate {
   // Required: 1-128 bytes, charset [A-Za-z0-9_-].
@@ -95,6 +98,10 @@ message CallUpdate {
       // The daemon refused during shutdown, without executing on that boot.
       // Terminal rejection: a retry requires a new call_id.
       CODE_DEVICE_SHUTTING_DOWN = 6;
+      // No call with this id is visible to this user. Answers only this query;
+      // it says nothing about a submission of the same id still in flight elsewhere,
+      // and is not an outcome of any call.
+      CODE_NOT_FOUND = 7;
     }
     Code code = 1;
     string message = 2;

@@ -335,9 +335,7 @@ func TestHealthAndReadiness(t *testing.T) {
 	if status, _ := h.get(t, "/healthz", ""); status != http.StatusOK {
 		t.Fatalf("healthz %d", status)
 	}
-	if status, body := h.get(t, "/readyz", ""); status != http.StatusOK {
-		t.Fatalf("readyz %d %s", status, body)
-	}
+	waitReady(t, h)
 	fail.Store(true)
 	if status, body := h.get(t, "/readyz", ""); status != http.StatusServiceUnavailable || !strings.Contains(body, "gateway") || strings.Contains(body, "down") {
 		t.Fatalf("readyz with failing check: %d %q", status, body)
@@ -496,7 +494,7 @@ func TestPurgeExpiredEnrollTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv, err := controlplane.New(context.Background(), st, controlplane.Config{
-		Listen: "127.0.0.1:0", DevInsecure: true, LogOutput: logs, PurgeInterval: 10 * time.Millisecond,
+		Listen: "127.0.0.1:0", DevInsecure: true, LogOutput: logs,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -525,6 +523,11 @@ func TestPurgeExpiredEnrollTokens(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	// Only the expired token went; nothing is left to purge, even in an hour.
+	// The one-shot cleanup claim was also replaced by a fresh durable timer.
+	timers, err := st.ListTimers(context.Background(), store.TimerFilter{Kind: "enroll_token_expiry", SubjectID: "purge", Limit: 1})
+	if err != nil || len(timers) != 1 || timers[0].Token != "" || timers[0].DueAt <= time.Now().UnixMilli() {
+		t.Fatalf("cleanup timer was not re-armed: %+v, %v", timers, err)
+	}
 	if n, err := st.PurgeEnrollTokens(context.Background(), time.Now().UnixMilli()); n != 0 || err != nil {
 		t.Fatalf("purge after server purge = %d, %v", n, err)
 	}
@@ -610,6 +613,7 @@ func TestReadyzDuringShutdown(t *testing.T) {
 			return nil
 		})
 	})
+	waitReady(t, h)
 	rec := httptest.NewRecorder()
 	controlplane.ServeReady(h.srv, rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if rec.Code != http.StatusOK {
@@ -771,4 +775,53 @@ func writeCert(t *testing.T, dir string) (string, string) {
 		t.Fatal(err)
 	}
 	return certPath, keyPath
+}
+
+// Timers complete their first health poll asynchronously after Start.
+func waitReady(t *testing.T, h *harness) {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for {
+		status, body := h.get(t, "/readyz", "")
+		if status == http.StatusOK {
+			return
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("not ready: %s", body)
+		case <-poll.C:
+		}
+	}
+}
+
+func TestComposedLinksCleanupWithoutListener(t *testing.T) {
+	for _, failedStart := range []bool{false, true} {
+		cfg := controlplane.Config{Listen: "127.0.0.1:0", DevInsecure: true, LogOutput: io.Discard}
+		if failedStart {
+			cfg.DevInsecure = false
+			cfg.TLSCert = "missing-cert"
+			cfg.TLSKey = "missing-key"
+		}
+		s, err := controlplane.New(t.Context(), openStore(t), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.ConfigureLinks(t.Context(), controlplane.LinkConfig{}); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		if failedStart {
+			if err = s.Run(ctx); err == nil {
+				t.Fatal("invalid certificate accepted")
+			}
+		} else {
+			if err = s.Shutdown(ctx); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cancel()
+	}
 }

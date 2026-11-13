@@ -30,6 +30,7 @@ const DefaultTouchInterval = 5 * time.Minute
 type Principal struct {
 	Kind         store.PrincipalKind
 	ID           string // the device or worker id
+	Name         string // the user-visible device or worker name
 	UserID       string
 	MachineID    string
 	CredentialID string
@@ -126,7 +127,7 @@ func (a *Authenticator) Authenticate(ctx context.Context, r *http.Request) (Prin
 		return Principal{}, ErrRevoked
 	}
 	a.touchCredential(ctx, cred.ID, hash)
-	return Principal{Kind: cred.Kind, ID: id.ID, UserID: id.UserID, MachineID: id.MachineID, CredentialID: cred.ID}, nil
+	return Principal{Kind: cred.Kind, ID: id.ID, Name: id.Name, UserID: id.UserID, MachineID: id.MachineID, CredentialID: cred.ID}, nil
 }
 
 // touchCredential records LastUsedAt when this process has not done so for

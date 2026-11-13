@@ -212,9 +212,13 @@ below that lifetime. Query-only recovery applies outside the horizon.
 ## Backpressure and memory
 
 Pending has byte AND count bounds; ack/result/terminal outcome releases it.
-Reserve before cloning or hash serialization; charge decoded tree and scratch
-memory, not only protobuf size. Direct Submit enforces wire structural limits.
-Per-device sync cursors, public operations, query waiters, subscriptions and
+For a new call, reserve decoded request and serialization scratch before cloning
+or marshaling. An existing call, including an undispatched-Lost resubmit, instead
+performs one transient deterministic marshal while serialized under the router
+lock (at most 2x message size, outside the pending budget) to prove equality.
+An equal existing call attaches without new pending ownership; a Lost resubmit
+then passes the new-attempt scratch check before allocation. Direct Submit
+enforces wire structural limits. Per-device sync cursors, public operations, query waiters, subscriptions and
 subscription buffers have explicit limits. No terminal-result cache exists.
 Next hands out an immutable update (one clone shared by every subscriber and
 query waiter of the publish, each charged separately) and decrements charges;

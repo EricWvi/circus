@@ -125,7 +125,7 @@ func TestEnrollCreatesIdentityAndCredential(t *testing.T) {
 	}
 	a := auth.NewAuthenticator(f.st, auth.Options{Now: func() time.Time { return t0 }})
 	p, err := a.Authenticate(context.Background(), bearer(en.Token))
-	want := auth.Principal{Kind: store.KindDevice, ID: en.Identity.ID, UserID: f.user.ID, MachineID: "m-1", CredentialID: en.CredentialID}
+	want := auth.Principal{Kind: store.KindDevice, ID: en.Identity.ID, Name: "laptop", UserID: f.user.ID, MachineID: "m-1", CredentialID: en.CredentialID}
 	if err != nil || p != want {
 		t.Fatalf("Authenticate = %+v, %v; want %+v", p, err, want)
 	}

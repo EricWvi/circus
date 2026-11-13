@@ -19,6 +19,9 @@ import (
 
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/clock"
+	"github.com/EricWvi/circus/internal/controlplane/calls"
+	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/loopback"
 	"github.com/EricWvi/circus/internal/store"
 )
@@ -26,7 +29,6 @@ import (
 // Defaults for Config.
 const (
 	DefaultShutdownTimeout = 10 * time.Second
-	DefaultPurgeInterval   = 10 * time.Minute
 	// readyTimeout bounds one /readyz evaluation.
 	readyTimeout = 2 * time.Second
 	// hookGrace is how long Shutdown still collects hook results after its
@@ -59,9 +61,8 @@ type Config struct {
 	// ShutdownTimeout bounds Run's graceful shutdown; zero means
 	// DefaultShutdownTimeout.
 	ShutdownTimeout time.Duration
-	// PurgeInterval is the period of the enrollment token purge; zero means
-	// DefaultPurgeInterval.
-	PurgeInterval time.Duration
+	// TimerPollInterval is the durable-timer claim poll interval; zero means 1s.
+	TimerPollInterval time.Duration
 	// LogOutput receives JSON log lines; nil means os.Stderr.
 	LogOutput io.Writer
 	// LogLevel is the minimum level logged.
@@ -94,7 +95,7 @@ func (c Config) validate() error {
 	if c.DevInsecure && !loopback.Host(host) {
 		return fmt.Errorf("--dev-insecure serves plaintext and is allowed only on a loopback address (127.0.0.1, ::1, localhost), not %q", c.Listen)
 	}
-	if c.ShutdownTimeout < 0 || c.PurgeInterval < 0 {
+	if c.ShutdownTimeout < 0 || c.TimerPollInterval < 0 {
 		return errors.New("negative timeout or interval")
 	}
 	return nil
@@ -123,16 +124,20 @@ type Server struct {
 	now        func() time.Time
 	listen     func(network, addr string) (net.Listener, error) // net.Listen; tests replace it
 
-	mu       sync.Mutex
-	started  bool
-	stopping bool
-	checks   []readyCheck
-	hooks    []shutdownHook
-	httpSrv  *http.Server
-	ln       net.Listener
-	serveErr chan error
-	stopBg   context.CancelFunc
-	bg       sync.WaitGroup
+	mu         sync.Mutex
+	started    bool
+	stopping   bool
+	checks     []readyCheck
+	hooks      []shutdownHook
+	httpSrv    *http.Server
+	ln         net.Listener
+	serveErr   chan error
+	closeLinks func(context.Context) error
+	router     calls.Router
+	runner     timers.Runner
+	timersDone chan struct{}
+	stopBg     context.CancelFunc
+	bg         sync.WaitGroup
 
 	shutdownOnce sync.Once
 	shutdownErr  error
@@ -147,8 +152,8 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	if cfg.ShutdownTimeout == 0 {
 		cfg.ShutdownTimeout = DefaultShutdownTimeout
 	}
-	if cfg.PurgeInterval == 0 {
-		cfg.PurgeInterval = DefaultPurgeInterval
+	if cfg.TimerPollInterval == 0 {
+		cfg.TimerPollInterval = time.Second
 	}
 	if cfg.LogOutput == nil {
 		cfg.LogOutput = os.Stderr
@@ -177,6 +182,19 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	s.mux.Handle("GET /v1/whoami", s.authn.Require(http.HandlerFunc(serveWhoami), store.KindDevice, store.KindWorker))
 	s.mux.HandleFunc("GET /join", func(w http.ResponseWriter, _ *http.Request) {
 		writeText(w, http.StatusOK, "This is a circus join link. Run on the machine to enroll:\n\n  circus join '<the full link, including the part after #>'\n")
+	})
+	if err := s.seedCleanup(ctx); err != nil {
+		return nil, err
+	}
+	s.runner, err = timers.New(timers.Config{Store: st, Clock: clock.Real{}, InstanceID: s.instanceID, Lease: 5 * time.Second, PollInterval: cfg.TimerPollInterval, BatchSize: 64, Handler: s.handleTimer})
+	if err != nil {
+		return nil, err
+	}
+	s.AddReadyCheck("timers", func(context.Context) error {
+		if v := s.runner.Stats(); !v.Running || !v.Healthy {
+			return errors.New("timers unhealthy")
+		}
+		return nil
 	})
 	return s, nil
 }
@@ -291,6 +309,7 @@ func (s *Server) Start() error {
 	var bgCtx context.Context
 	bgCtx, s.stopBg = context.WithCancel(context.Background())
 	s.started = true
+	s.timersDone = make(chan struct{})
 	s.bg.Add(2)
 	go func() {
 		defer s.bg.Done()
@@ -302,7 +321,8 @@ func (s *Server) Start() error {
 	}()
 	go func() {
 		defer s.bg.Done()
-		s.purgeLoop(bgCtx)
+		defer close(s.timersDone)
+		_ = s.runner.Run(bgCtx)
 	}()
 	s.logger.Info("control plane listening", "addr", ln.Addr().String(), "mode", mode)
 	return nil
@@ -323,7 +343,9 @@ func (s *Server) Addr() net.Addr {
 // shutdown error.
 func (s *Server) Run(ctx context.Context) error {
 	if err := s.Start(); err != nil {
-		return err
+		cleanup, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout)
+		defer cancel()
+		return errors.Join(err, s.Shutdown(cleanup))
 	}
 	var serveErr error
 	select {
@@ -356,10 +378,12 @@ func (s *Server) shutdown(ctx context.Context) error {
 	s.started = true // forbid Start and registrations from now on
 	s.mu.Unlock()
 	if !started {
+		if s.closeLinks != nil {
+			return s.closeLinks(ctx)
+		}
 		return nil
 	}
 	begin := time.Now()
-	s.stopBg()
 
 	// http.Server.Shutdown closes the listeners and only then calls the
 	// OnShutdown functions, so the hooks start after the last accept.
@@ -428,6 +452,7 @@ func (s *Server) shutdown(ctx context.Context) error {
 		s.httpSrv.Close()
 		all = append(all, ErrShutdownTimeout)
 	}
+	s.stopBg()
 	s.bg.Wait()
 	result := errors.Join(all...)
 	if result != nil {

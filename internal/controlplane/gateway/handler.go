@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"slices"
 	"strings"
@@ -51,6 +52,9 @@ func newHandler(c Config) (Handler, error) {
 		return nil, fmt.Errorf("gateway: missing dependency")
 	}
 	c.InstanceID = strings.Clone(c.InstanceID)
+	if c.Logger == nil {
+		c.Logger = slog.Default()
+	}
 	if c.MaxConnections == 0 {
 		c.MaxConnections = 100
 	}
@@ -66,7 +70,10 @@ func newHandler(c Config) (Handler, error) {
 	if c.RecheckTimeout == 0 {
 		c.RecheckTimeout = 5 * time.Second
 	}
-	if c.HelloTimeout <= 0 || c.RecheckInterval <= 0 || c.RecheckTimeout <= 0 {
+	if c.RecheckMaxStale == 0 {
+		c.RecheckMaxStale = 30 * time.Second
+	}
+	if c.HelloTimeout <= 0 || c.RecheckInterval <= 0 || c.RecheckTimeout <= 0 || c.RecheckMaxStale <= 0 {
 		return nil, fmt.Errorf("gateway: invalid duration")
 	}
 	if c.MinVersion == 0 {
@@ -181,8 +188,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		close(p.done)
 	}()
 	principal, err := h.config.Auth.Authenticate(ctx, r)
+	if errors.Is(err, ErrWrongRole) {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err != nil {
-		status := http.StatusUnauthorized
+		status := http.StatusServiceUnavailable
+		if errors.Is(err, ErrUnauthenticated) {
+			status = http.StatusUnauthorized
+		}
 		if errors.Is(err, ErrRevoked) {
 			status = http.StatusForbidden
 		}
@@ -344,8 +358,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (h *handler) recheck(ctx context.Context, p *peer, principal Principal) {
+	lastValid := h.config.Clock.Now()
+	// Randomize only the phase, preserving a worst-case definitive-revoke
+	// observation of one interval plus one timeout while desynchronizing links.
+	delay := time.Duration(rand.Float64() * float64(h.config.RecheckInterval))
 	for {
-		alarm := h.config.Clock.After(h.config.RecheckInterval)
+		alarm := h.config.Clock.After(delay)
 		select {
 		case <-ctx.Done():
 			return
@@ -355,15 +373,25 @@ func (h *handler) recheck(ctx context.Context, p *peer, principal Principal) {
 		err := h.config.Auth.Recheck(check, principal)
 		timedOut := check.Err() != nil
 		finish()
-		if err != nil || timedOut {
-			h.mu.Lock()
-			link := p.link
-			h.mu.Unlock()
-			if link != nil {
-				_ = link.Close()
-			}
+		if ctx.Err() != nil {
 			return
 		}
+		if err == nil && !timedOut {
+			lastValid = h.config.Clock.Now()
+		} else {
+			definitive := !timedOut && errors.Is(err, ErrRevoked)
+			if definitive || h.config.Clock.Now().Sub(lastValid) >= h.config.RecheckMaxStale {
+				h.config.Logger.WarnContext(ctx, "daemon credential revalidation closed link", "device_id", principal.DeviceID, "definitive_revoke", definitive, "last_valid", lastValid, "error", err)
+				h.mu.Lock()
+				link := p.link
+				h.mu.Unlock()
+				if link != nil {
+					_ = link.Close()
+				}
+				return
+			}
+		}
+		delay = h.config.RecheckInterval
 	}
 }
 func (h *handler) requestClose(p *peer, reason circusv1.GoAway_Reason) {
