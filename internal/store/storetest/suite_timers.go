@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 const lease = int64(10_000) // milliseconds
@@ -222,7 +223,7 @@ func testTx(t *testing.T, b Backend) {
 	}()
 	// A transaction left open by the panic would hold the single writer:
 	// the next calls would wait for it, so give them a short deadline.
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, wait.Timeout)
 	defer cancel()
 	_, err = s.GetUser(ctx, "u3")
 	mustIs(t, err, store.ErrNotFound)
@@ -241,7 +242,7 @@ func testTxReentrant(t *testing.T, b Backend) {
 	for i, s := range []store.Store{inner, NewFaulty(inner)} {
 		// A store that waits instead of failing ends with DeadlineExceeded,
 		// which the ErrInvalid checks below reject, within this deadline.
-		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)
 		id := fmt.Sprint("u", i)
 		var leaked context.Context
 		start := time.Now()
@@ -267,7 +268,7 @@ func testTxReentrant(t *testing.T, b Backend) {
 			return tx.CreateUser(ctx, store.User{ID: id, Name: id, CreatedAt: t0})
 		})
 		must(t, err)
-		if waited := time.Since(start); waited > 2*time.Second {
+		if waited := time.Since(start); waited > wait.Timeout {
 			t.Fatalf("re-entrant calls took %v: they waited instead of failing", waited)
 		}
 		_, err = s.GetUser(leaked, id) // committed, and the ctx works again

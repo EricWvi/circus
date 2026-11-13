@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -91,7 +92,7 @@ func TestQueryAnsweredOnDisconnect(t *testing.T) {
 		t.Fatal(m)
 	}
 	f.disconnect(l)
-	a := <-answer
+	a := waitAnswer(t, answer)
 	if a.err != nil || a.u.GetDispatched() == nil {
 		t.Fatalf("stranded or wrong query answer: %v %v", a.u, a.err)
 	}
@@ -109,8 +110,8 @@ func TestQueryAnsweredOnDisconnect(t *testing.T) {
 
 // Stale boot/user rows: replies for a call dispatched to another boot, or
 // claiming another user, change nothing. Replies are fenced by device and
-// dispatch boot, not by generation (M2): a superseded connection of the
-// dispatch boot still settles the call, and its disconnect keeps the route.
+// dispatch boot, not by generation: a superseded connection of the dispatch
+// boot still settles the call, and its disconnect keeps the route.
 func TestReplyFencingByDeviceAndBoot(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")
@@ -228,7 +229,7 @@ func TestOverflowThenQueryRecoversState(t *testing.T) {
 		t.Fatal(m)
 	}
 	send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallStatus{CallStatus: &circusv1.CallStatus{CallId: "call", State: circusv1.CallStatus_STATE_COMPLETED, Result: &circusv1.DeviceResult{CallId: "call", Output: &circusv1.ToolOutput{}}}}})
-	if u := <-answer; u.GetResult() == nil {
+	if u := waitAnswer(t, answer); u.GetResult() == nil {
 		t.Fatal(u)
 	}
 	f.waitState("call", store.CallCompleted)
@@ -268,10 +269,25 @@ func TestCrashAtEveryWritePoint(t *testing.T) {
 				defer s.Close()
 			}
 			executed := false
-			short, cancel := context.WithTimeout(f.ctx, 200*time.Millisecond)
-			m, rerr := l.Receive(short)
-			cancel()
-			if rerr == nil {
+			// A quiet link proves nothing: an early crash prevents the dispatch,
+			// while a later crash still requires it. Receive until the actual
+			// dispatch, link closure, or the fixture's shared bound.
+			for !f.fault.Crashed() {
+				receiveCtx, cancel := context.WithTimeout(f.ctx, 100*time.Millisecond)
+				m, rerr := l.Receive(receiveCtx)
+				cancel()
+				if rerr != nil {
+					if f.fault.Crashed() {
+						break
+					}
+					if f.ctx.Err() != nil {
+						t.Fatal(rerr)
+					}
+					if errors.Is(rerr, context.DeadlineExceeded) {
+						continue // polling wakeup only; quiet is not evidence
+					}
+					break // the failed operation closed the link
+				}
 				d := m.(*circusv1.DaemonDownlink).GetDispatchCall()
 				if d == nil {
 					t.Fatal(m)
@@ -283,6 +299,7 @@ func TestCrashAtEveryWritePoint(t *testing.T) {
 				}
 				send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallAck{CallAck: &circusv1.CallAck{CallId: "call", Outcome: &circusv1.CallAck_Status{Status: &circusv1.CallStatus{CallId: "call", State: circusv1.CallStatus_STATE_RUNNING}}}}})
 				f.result(l, "call")
+				break
 			}
 			eventually(t, func() bool { return f.fault.Crashed() })
 			f.restart()
@@ -366,5 +383,208 @@ func TestDispatchReadsCurrentBootInTx(t *testing.T) {
 	must(t, err)
 	if c.State != store.CallAccepted || c.DispatchedBootID != "" {
 		t.Fatal(c)
+	}
+}
+
+// dispatchCountBus counts DispatchCall messages accepted by the underlying
+// bus. A refused send is not delivery evidence.
+type dispatchCountBus struct {
+	bus.Bus
+	sent atomic.Int64
+}
+
+func (b *dispatchCountBus) Send(ctx context.Context, target bus.Target, msg *circusv1.DaemonDownlink) error {
+	err := b.Bus.Send(ctx, target, msg)
+	if err == nil && msg.GetDispatchCall() != nil {
+		b.sent.Add(1)
+	}
+	return err
+}
+
+// Crash after every write point of the reconnect sync that dispatches an
+// accepted call. Dispatch evidence precedes every DispatchCall; a restart
+// never re-dispatches the old attempt.
+func TestCrashAtEverySyncWritePoint(t *testing.T) {
+	prepare := func() (*fixture, *dispatchCountBus, int) {
+		counted := &dispatchCountBus{}
+		f := setup(t, func(c *calls.Config, _ *gateway.Config) {
+			counted.Bus = c.Bus
+			c.Bus = counted
+		})
+		l := f.connect("boot")
+		f.disconnect(l)
+		s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+		must(t, err)
+		t.Cleanup(func() { _ = s.Close() })
+		f.haltTimers()
+		return f, counted, f.fault.Writes()
+	}
+	dispatchWrite := 0
+	writes := func() int {
+		f, _, start := prepare()
+		l := f.open("boot")
+		f.finishSync(l)
+		if m := receive(t, f.ctx, l); m.GetDispatchCall() == nil {
+			t.Fatal(m)
+		}
+		dispatchWrite = f.fault.Writes() - start
+		return dispatchWrite
+	}()
+	if writes < 3 {
+		t.Fatalf("unexpectedly few write points: %d", writes)
+	}
+	for n := 1; n <= writes; n++ {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			f, counted, _ := prepare()
+			f.fault.CrashAfterWrite(n, nil)
+			l := f.open("boot")
+			executed := false
+			received := int64(0)
+			handle := func(m *circusv1.DaemonDownlink) {
+				if m.GetListJobs() != nil {
+					trySnapshot(f.ctx, l) // the crashed sync may be closing the link
+					// Widen the window between the final store write and the client
+					// receive: observing Crashed must not hide an accepted send.
+					time.Sleep(20 * time.Millisecond)
+				}
+				if m.GetDispatchCall() != nil {
+					received++
+					executed = true
+					if row, err := f.db.GetCall(f.ctx, "call"); err != nil || row.DispatchedBootID != "boot" {
+						t.Fatalf("dispatched without durable evidence: %+v %v", row, err)
+					}
+				}
+			}
+			for {
+				if f.fault.Crashed() {
+					// Crashed can become visible after the dispatch commit but before
+					// Send returns and increments counted.sent. OnConnected holds an
+					// operation slot across that send, so quiescence makes the count
+					// final even when both counters are still zero.
+					eventually(t, func() bool { return f.router.Stats().Operations == 0 })
+					if received == counted.sent.Load() {
+						break
+					}
+				}
+				receiveCtx, cancel := context.WithTimeout(f.ctx, 100*time.Millisecond)
+				v, err := l.Receive(receiveCtx)
+				cancel()
+				if err != nil {
+					if f.ctx.Err() != nil {
+						t.Fatal(err)
+					}
+					if errors.Is(err, context.DeadlineExceeded) {
+						continue // polling wakeup only; quiet is not evidence
+					}
+					break // the crashed sync closed the link
+				}
+				handle(v.(*circusv1.DaemonDownlink))
+			}
+			eventually(t, func() bool { return f.fault.Crashed() })
+			eventually(t, func() bool { return f.router.Stats().Operations == 0 })
+			sent := counted.sent.Load()
+			t.Logf("sync crash point %d: DispatchCall sent=%d received=%d executed=%v", n, sent, received, executed)
+			if n == dispatchWrite && (sent != 1 || received != 1 || !executed) {
+				t.Fatalf("dispatch-write crash skipped the executed branch: sent=%d received=%d executed=%v", sent, received, executed)
+			}
+			f.restart()
+			l = f.open("boot")
+			for {
+				m := receive(t, f.ctx, l)
+				if m.GetListJobs() != nil {
+					break
+				}
+				if m.GetDispatchCall() != nil {
+					t.Fatal("restart re-dispatched an old attempt")
+				}
+				status := &circusv1.CallStatus{CallId: m.GetCallQuery().GetCallId(), State: circusv1.CallStatus_STATE_LOST}
+				if executed {
+					status = statusCompleted(status.CallId).GetCallStatus()
+				}
+				send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallStatus{CallStatus: status}})
+			}
+			f.snapshot(l)
+			eventually(t, func() bool { c, _ := f.db.GetCall(f.ctx, "call"); return c.State.Terminal() })
+			row, err := f.db.GetCall(f.ctx, "call")
+			must(t, err)
+			if (row.State == store.CallCompleted) != executed || (row.State != store.CallCompleted && row.State != store.CallLost) {
+				t.Fatalf("outcome %s/%s, executed %v", row.State, row.OutcomeReason, executed)
+			}
+		})
+	}
+}
+
+// A new boot loses more than one LoseCalls batch (64) of old-boot calls,
+// notifies each and cancels every watchdog (checked by the fixture's
+// orphan-timer invariant).
+func TestNewBootLosesManyBatches(t *testing.T) {
+	const n = 2*64 + 5
+	f := setup(t)
+	l := f.connect("old")
+	subs := make([]*calls.Subscription, 0, n)
+	for i := range n {
+		s, err := f.router.Submit(f.ctx, "u", "desk", call(fmt.Sprintf("call-%03d", i)))
+		must(t, err)
+		subs = append(subs, s)
+		receive(t, f.ctx, l)
+	}
+	f.disconnect(l)
+	f.connect("new")
+	for i, s := range subs {
+		for {
+			u, err := s.Next(f.ctx)
+			must(t, err)
+			if u.GetLost() != nil {
+				break
+			}
+		}
+		if st := f.state(fmt.Sprintf("call-%03d", i)); st != store.CallLost {
+			t.Fatalf("call %d: %s", i, st)
+		}
+		s.Close()
+	}
+}
+
+// Events at or below the snapshot watermark are dropped, even for a job the
+// store has never seen.
+func TestStaleEventBelowWatermarkDropped(t *testing.T) {
+	f := setup(t)
+	l := f.connect("boot")
+	send(t, f.ctx, l, jobEvent("00000000000a", 7)) // gap: requests a snapshot
+	if m := receive(t, f.ctx, l); m.GetListJobs() == nil {
+		t.Fatal(m)
+	}
+	before := f.hooks.snapshots.Load()
+	kept := &circusv1.JobEvent{JobId: "00000000000a", SessionId: "session", CallId: "call", Seq: 7, State: circusv1.JobEvent_STATE_RUNNING}
+	send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_JobSnapshot{JobSnapshot: &circusv1.JobSnapshot{Seq: 9, Jobs: []*circusv1.JobEvent{kept}}}})
+	eventually(t, func() bool { return f.hooks.snapshots.Load() > before })
+	send(t, f.ctx, l, jobEvent("00000000000b", 8))
+	send(t, f.ctx, l, jobEvent("00000000000c", 10))
+	eventually(t, func() bool { return f.hooks.events.Load() == 3 })
+	jobs := f.jobs()
+	if _, ok := jobs["00000000000b"]; ok {
+		t.Fatal("event below the snapshot watermark created a job")
+	}
+	if jobs["00000000000c"].State != store.JobRunning {
+		t.Fatal("event above the watermark was dropped")
+	}
+}
+
+// A truncated snapshot never settles omissions (D43 item 14).
+func TestTruncatedSnapshotSettlesNothing(t *testing.T) {
+	f := setup(t)
+	l := f.connect("boot")
+	send(t, f.ctx, l, jobEvent("00000000000a", 1))
+	send(t, f.ctx, l, jobEvent("00000000000b", 3)) // gap: requests a snapshot
+	if m := receive(t, f.ctx, l); m.GetListJobs() == nil {
+		t.Fatal(m)
+	}
+	before := f.hooks.snapshots.Load()
+	send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_JobSnapshot{JobSnapshot: &circusv1.JobSnapshot{Seq: 5, Truncated: true}}})
+	eventually(t, func() bool { return f.hooks.snapshots.Load() > before })
+	for id, j := range f.jobs() {
+		if j.State != store.JobRunning {
+			t.Fatalf("truncated snapshot settled job %s: %s", id, j.State)
+		}
 	}
 }

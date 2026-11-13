@@ -4,92 +4,22 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/clock"
-	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/wire/wiretest"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/proto"
 )
-
-func track(t *testing.T) { t.Helper(); leakcheck.Track(t) }
-func contextFor(t *testing.T) context.Context {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
-func eventually(t *testing.T, f func() bool) {
-	t.Helper()
-	end := time.Now().Add(3 * time.Second)
-	for !f() {
-		if time.Now().After(end) {
-			t.Fatal("condition did not become true")
-		}
-		time.Sleep(time.Millisecond)
-	}
-}
-func newLink(t *testing.T, c wire.Conn, in, out wire.Kind, o wire.Options) *wire.Link {
-	t.Helper()
-	l, err := wire.New(c, testSide(in, out), o)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = l.Close()
-		s := l.Stats()
-		if s.QueuedBytes != 0 || s.QueuedMessages != 0 || s.ReassemblyBytes != 0 || s.ReassemblyMessages != 0 || s.ReceivedMessages != 0 || s.ReceivedBytes != 0 || s.ReassemblyAllocatedBytes != 0 || s.ReassemblyBlocks != 0 || s.ActiveMessages != 0 || s.ReadBlocked || s.SharedSendBytes != 0 || s.SharedReceiveBytes != 0 || s.LinkReserveBytes != 0 {
-			t.Errorf("resources after close: %+v", s)
-		}
-	})
-	return l
-}
-func send(t *testing.T, l *wire.Link, m proto.Message) {
-	t.Helper()
-	if err := testSend(l, contextFor(t), m); err != nil {
-		t.Fatal(err)
-	}
-}
-func receive(t *testing.T, l *wire.Link) proto.Message {
-	t.Helper()
-	m, err := l.Receive(contextFor(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return m
-}
-func frame(t *testing.T, c wire.Conn, m proto.Message) {
-	t.Helper()
-	b, err := proto.Marshal(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = c.WriteMessage(contextFor(t), b); err != nil {
-		t.Fatal(err)
-	}
-}
-func fragment(f *circusv1.Fragment) proto.Message {
-	return &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Fragment{Fragment: f}}
-}
-func result(s string) proto.Message {
-	return &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Result{Result: &circusv1.DeviceResult{CallId: "c", Output: &circusv1.ToolOutput{Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: s}}}}}}}
-}
-func dispatch(id, s string) proto.Message {
-	return &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_DispatchCall{DispatchCall: &circusv1.DispatchCall{TargetBootId: "boot", Call: &circusv1.DeviceCall{CallId: id, SessionId: "s", Tool: &circusv1.DeviceCall_Write{Write: &circusv1.WriteRequest{Content: s}}}}}}
-}
-func smallOptions() wire.Options {
-	return wire.Options{MaxFragmentBytes: 64, MaxMessageBytes: 4096, DisableHeartbeat: true}
-}
 
 func TestRoundTripRoles(t *testing.T) {
 	for _, worker := range []bool{false, true} {
@@ -153,11 +83,7 @@ func TestInvalidFragmentsClose(t *testing.T) {
 			for _, f := range fs {
 				frame(t, a, fragment(f))
 			}
-			select {
-			case <-l.Done():
-			case <-time.After(3 * time.Second):
-				t.Fatal("protocol error did not close")
-			}
+			wait.Recv(t, l.Done())
 			var pe *wire.ProtocolError
 			if !errors.As(l.Err(), &pe) {
 				t.Fatalf("error=%v", l.Err())
@@ -168,13 +94,13 @@ func TestInvalidFragmentsClose(t *testing.T) {
 
 func TestMissingTailExpiresDespiteHeartbeats(t *testing.T) {
 	track(t)
-	clk := &notifyingClock{Fake: clock.New(), registered: make(chan time.Duration, 16)}
+	clk := clock.New()
 	a, b := wiretest.Pipe(wiretest.Options{})
 	t.Cleanup(func() { _ = a.Close() })
 	o := smallOptions()
 	o.Clock = clk
 	l := newLink(t, b, wire.DaemonUplink, wire.DaemonDownlink, o)
-	awaitTimer(t, clk)
+	awaitTimers(t, clk, 1)
 	frame(t, a, fragment(&circusv1.Fragment{MessageId: 1, TotalSize: 6, Data: []byte("abc")}))
 	eventually(t, func() bool { return l.Stats().ReassemblyMessages == 1 })
 	for i := 0; i < 3; i++ {
@@ -182,14 +108,10 @@ func TestMissingTailExpiresDespiteHeartbeats(t *testing.T) {
 		eventually(t, func() bool { return l.Stats().HeartbeatsRead == uint64(i+1) })
 		clk.Advance(5 * time.Second)
 		if i < 2 {
-			awaitTimer(t, clk)
+			awaitTimers(t, clk, 1)
 		}
 	}
-	select {
-	case <-l.Done():
-	case <-time.After(3 * time.Second):
-		t.Fatal("missing tail did not expire")
-	}
+	wait.Recv(t, l.Done())
 	var pe *wire.ProtocolError
 	if !errors.As(l.Err(), &pe) || !strings.Contains(pe.Reason, "missing fragment") {
 		t.Fatal(l.Err())
@@ -203,51 +125,13 @@ func TestMissingTailAtEOF(t *testing.T) {
 	frame(t, a, fragment(&circusv1.Fragment{MessageId: 1, TotalSize: 6, Data: []byte("abc")}))
 	eventually(t, func() bool { return l.Stats().ReassemblyMessages == 1 })
 	_ = a.Close()
-	<-l.Done()
+	wait.Recv(t, l.Done())
 	var pe *wire.ProtocolError
 	if !errors.As(l.Err(), &pe) {
 		t.Fatal(l.Err())
 	}
 }
 
-// gate blocks individual physical writes, allowing deterministic scheduler checks.
-type gate struct {
-	wire.Conn
-	entered, release chan struct{}
-}
-
-func (g *gate) WriteMessage(ctx context.Context, b []byte) error {
-	select {
-	case g.entered <- struct{}{}:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	select {
-	case <-g.release:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	return g.Conn.WriteMessage(ctx, b)
-}
-func step(t *testing.T, g *gate, peer wire.Conn) proto.Message {
-	t.Helper()
-	ctx := contextFor(t)
-	select {
-	case <-g.entered:
-	case <-ctx.Done():
-		t.Fatal("writer did not enter")
-	}
-	g.release <- struct{}{}
-	data, err := peer.ReadMessage(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := wire.Decode(wire.DaemonDownlink, data, 4096)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return m
-}
 func TestPriorityInterleavingAndCancelOrder(t *testing.T) {
 	track(t)
 	a, b := wiretest.Pipe(wiretest.Options{})
@@ -256,7 +140,7 @@ func TestPriorityInterleavingAndCancelOrder(t *testing.T) {
 	l := newLink(t, g, wire.DaemonUplink, wire.DaemonDownlink, smallOptions())
 	d1, d2 := dispatch("c", strings.Repeat("a", 180)), dispatch("other", strings.Repeat("b", 180))
 	send(t, l, d1)
-	<-g.entered
+	wait.Recv(t, g.entered)
 	send(t, l, d2)
 	send(t, l, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: "c"}}})
 	send(t, l, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_GoAway{GoAway: &circusv1.GoAway{Reason: circusv1.GoAway_REASON_SHUTTING_DOWN}}})
@@ -308,30 +192,24 @@ func TestJobEventsRemainOrdered(t *testing.T) {
 
 func TestHeartbeatAnyMessageAndHalfOpen(t *testing.T) {
 	track(t)
-	clk := &notifyingClock{Fake: clock.New(), registered: make(chan time.Duration, 16)}
+	clk := clock.New()
 	a, b := wiretest.Pipe(wiretest.Options{AtoB: wiretest.Faults{Silence: true}})
 	o := smallOptions()
 	o.Clock = clk
 	o.DisableHeartbeat = false
 	left := newLink(t, a, wire.DaemonDownlink, wire.DaemonUplink, o)
 	right := newLink(t, b, wire.DaemonUplink, wire.DaemonDownlink, o)
-	awaitTimer(t, clk)
-	awaitTimer(t, clk)
+	awaitTimers(t, clk, 2)
 	// Any application frame refreshes left, while right sees only silence.
 	for i := 0; i < 2; i++ {
 		clk.Advance(5 * time.Second)
 		send(t, right, dispatch("c", "x"))
 		_ = receive(t, left)
 		eventually(t, func() bool { return left.Stats().HeartbeatsWritten >= uint64(i+1) })
-		awaitTimer(t, clk)
-		awaitTimer(t, clk)
+		awaitTimers(t, clk, 2)
 	}
 	clk.Advance(5 * time.Second)
-	select {
-	case <-right.Done():
-	case <-time.After(3 * time.Second):
-		t.Fatal("half-open did not time out")
-	}
+	wait.Recv(t, right.Done())
 	if !strings.Contains(right.Err().Error(), "heartbeat timeout") {
 		t.Fatal(right.Err())
 	}
@@ -339,22 +217,22 @@ func TestHeartbeatAnyMessageAndHalfOpen(t *testing.T) {
 
 func TestHeartbeatClockAndActivation(t *testing.T) {
 	track(t)
-	clk := &notifyingClock{Fake: clock.New(), registered: make(chan time.Duration, 16)}
+	clk := clock.New()
 	a, b := wiretest.Pipe(wiretest.Options{})
 	t.Cleanup(func() { _ = a.Close() })
 	o := smallOptions()
 	o.Clock = clk
 	l := newLink(t, b, wire.DaemonUplink, wire.DaemonDownlink, o)
-	awaitTimer(t, clk)
+	awaitTimers(t, clk, 1)
 	clk.Advance(time.Hour)
-	awaitTimer(t, clk)
+	awaitTimers(t, clk, 1)
 	if l.Err() != nil {
 		t.Fatal("heartbeat active before activation")
 	}
 	l.StartHeartbeat()
 	l.StartHeartbeat()
 	clk.Advance(5 * time.Second)
-	awaitTimer(t, clk)
+	awaitTimers(t, clk, 1)
 	raw, err := a.ReadMessage(contextFor(t))
 	if err != nil {
 		t.Fatal(err)
@@ -366,16 +244,12 @@ func TestHeartbeatClockAndActivation(t *testing.T) {
 	frame(t, a, result("alive"))
 	_ = receive(t, l)
 	clk.Advance(10 * time.Second)
-	awaitTimer(t, clk)
+	awaitTimers(t, clk, 1)
 	if l.Err() != nil {
 		t.Fatal("application traffic did not refresh liveness")
 	}
 	clk.Advance(5 * time.Second)
-	select {
-	case <-l.Done():
-	case <-time.After(3 * time.Second):
-		t.Fatal("timeout missing")
-	}
+	wait.Recv(t, l.Done())
 }
 
 func TestSendReceiveBoundsAndCancellation(t *testing.T) {
@@ -406,7 +280,7 @@ func TestSendReceiveBoundsAndCancellation(t *testing.T) {
 	if err := testSend(l, contextFor(t), dispatch("q", strings.Repeat("x", 60))); !errors.Is(err, wire.ErrQueueFull) {
 		t.Fatal("queue did not close", err)
 	}
-	<-l.Done()
+	wait.Recv(t, l.Done())
 }
 
 func TestMalformedEnvelopeCloses(t *testing.T) {
@@ -483,7 +357,7 @@ func TestWebSocketAdapter(t *testing.T) {
 					t.Fatal("binary roundtrip", err)
 				}
 			}
-			<-serverDone
+			wait.Recv(t, serverDone)
 			select {
 			case err := <-errCh:
 				if err != nil {
@@ -495,23 +369,21 @@ func TestWebSocketAdapter(t *testing.T) {
 	}
 }
 
+// notifyingClock retains exact delay assertions for wiretest's fault injector.
 type notifyingClock struct {
 	*clock.Fake
 	registered chan time.Duration
 }
 
-func awaitTimer(t *testing.T, c *notifyingClock) {
-	t.Helper()
-	select {
-	case <-c.registered:
-	case <-contextFor(t).Done():
-		t.Fatal("clock timer was not registered")
-	}
-}
 func (c *notifyingClock) After(d time.Duration) <-chan time.Time {
 	ch := c.Fake.After(d)
 	c.registered <- d
 	return ch
+}
+
+func awaitRegistered(t *testing.T, c *notifyingClock) time.Duration {
+	t.Helper()
+	return wait.Recv(t, c.registered)
 }
 
 func TestFaultInjectionPipe(t *testing.T) {
@@ -519,12 +391,16 @@ func TestFaultInjectionPipe(t *testing.T) {
 		track(t)
 		a, b := wiretest.Pipe(wiretest.Options{AtoB: wiretest.Faults{DisconnectAfter: 1}})
 		defer a.Close()
-		var wg sync.WaitGroup
-		wg.Go(func() { _, _ = b.ReadMessage(context.Background()) })
+		readCtx := contextFor(t)
+		readDone := make(chan struct{})
+		go func() {
+			_, _ = b.ReadMessage(readCtx)
+			close(readDone)
+		}()
 		if err := a.WriteMessage(contextFor(t), []byte("ok")); err != nil {
 			t.Fatal(err)
 		}
-		wg.Wait()
+		wait.Recv(t, readDone)
 		if _, err := b.ReadMessage(contextFor(t)); !errors.Is(err, io.EOF) {
 			t.Fatal("not disconnected after N messages", err)
 		}
@@ -541,8 +417,9 @@ func TestFaultInjectionPipe(t *testing.T) {
 		a, b := wiretest.Pipe(wiretest.Options{Clock: clk, AtoB: wiretest.Faults{FrameDelay: time.Second, BytesPerSecond: 3, Truncate: true, KeepBytes: 2}})
 		defer a.Close()
 		done := make(chan error, 1)
-		go func() { done <- a.WriteMessage(context.Background(), []byte("abc")) }()
-		if delay := <-clk.registered; delay != 2*time.Second {
+		writeCtx := contextFor(t)
+		go func() { done <- a.WriteMessage(writeCtx, []byte("abc")) }()
+		if delay := awaitRegistered(t, clk); delay != 2*time.Second {
 			t.Fatalf("delay+rate = %s", delay)
 		}
 		clk.Advance(2*time.Second - time.Millisecond)
@@ -557,7 +434,7 @@ func TestFaultInjectionPipe(t *testing.T) {
 		if err != nil || string(data) != "ab" {
 			t.Fatal("truncated delivery", string(data), err)
 		}
-		if err := <-done; err != nil {
+		if err := wait.Recv(t, done); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -565,9 +442,10 @@ func TestFaultInjectionPipe(t *testing.T) {
 		track(t)
 		a, b := wiretest.Pipe(wiretest.Options{AtoB: wiretest.Faults{BlockWrites: true}})
 		done := make(chan error, 1)
-		go func() { done <- a.WriteMessage(context.Background(), []byte("a")) }()
+		writeCtx := contextFor(t)
+		go func() { done <- a.WriteMessage(writeCtx, []byte("a")) }()
 		_ = b.Close()
-		if err := <-done; !errors.Is(err, io.EOF) {
+		if err := wait.Recv(t, done); !errors.Is(err, io.EOF) {
 			t.Fatal(err)
 		}
 	})
@@ -601,7 +479,7 @@ func TestTruncatedPipeClosesLink(t *testing.T) {
 	t.Cleanup(func() { _ = a.Close() })
 	l := newLink(t, b, wire.DaemonUplink, wire.DaemonDownlink, smallOptions())
 	frame(t, a, result("truncated"))
-	<-l.Done()
+	wait.Recv(t, l.Done())
 	var pe *wire.ProtocolError
 	if !errors.As(l.Err(), &pe) {
 		t.Fatal(l.Err())
@@ -641,27 +519,79 @@ func TestMessageCountBudget(t *testing.T) {
 	if err := testSend(l, contextFor(t), dispatch("2", "b")); !errors.Is(err, wire.ErrQueueFull) {
 		t.Fatal(err)
 	}
-	<-l.Done()
+	wait.Recv(t, l.Done())
 }
 
-// Caller policy: transport knows only classes and keys.
-func testSide(in, out wire.Kind) wire.Side {
-	switch in {
-	case wire.DaemonUplink:
-		return wire.DaemonControlSide
-	case wire.DaemonDownlink:
-		return wire.DaemonSide
-	case wire.WorkerUplink:
-		return wire.WorkerControlSide
-	case wire.WorkerDownlink:
-		return wire.WorkerSide
+func TestPropagationPipelines(t *testing.T) {
+	track(t)
+	clk := &notifyingClock{Fake: clock.New(), registered: make(chan time.Duration, 2)}
+	a, b := wiretest.Pipe(wiretest.Options{Clock: clk, AtoB: wiretest.Faults{Delay: time.Second}, BufferMessages: 8})
+	defer a.Close()
+	for i := 0; i < 8; i++ {
+		if err := a.WriteMessage(contextFor(t), []byte{byte(i)}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	panic("invalid test side")
+	done := make(chan error, 1)
+	readCtx := contextFor(t)
+	go func() {
+		for i := 0; i < 8; i++ {
+			data, err := b.ReadMessage(readCtx)
+			if err != nil {
+				done <- err
+				return
+			}
+			if len(data) != 1 || data[0] != byte(i) {
+				done <- fmt.Errorf("propagation order")
+				return
+			}
+		}
+		done <- nil
+	}()
+	if delay := awaitRegistered(t, clk); delay != time.Second {
+		t.Fatal(delay)
+	}
+	clk.Advance(time.Second)
+	if err := wait.Recv(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if a.Writes() != 8 {
+		t.Fatal("propagation serialized writes")
+	}
 }
-func testSend(l *wire.Link, ctx context.Context, m proto.Message) error {
-	class, key, err := wirepolicy.Classify(m)
-	if err != nil {
-		return err
+func TestBlockedWritesCancel(t *testing.T) {
+	track(t)
+	a, b := wiretest.Pipe(wiretest.Options{AtoB: wiretest.Faults{BlockWrites: true}})
+	defer a.Close()
+	defer b.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := a.WriteMessage(ctx, []byte("x")); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
-	return l.Send(ctx, m, class, key)
+	if a.Writes() != 0 {
+		t.Fatal("blocked write was accepted")
+	}
+}
+
+func TestWorkerJobIdentityAndProtoEnums(t *testing.T) {
+	track(t)
+	a, b := wiretest.Pipe(wiretest.Options{})
+	s := newLink(t, a, wire.WorkerUplink, wire.WorkerDownlink, wire.Options{})
+	r := newLink(t, b, wire.WorkerDownlink, wire.WorkerUplink, wire.Options{})
+	for _, device := range []string{"laptop", "desktop"} {
+		m := &circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_JobEvent{JobEvent: &circusv1.WorkerJobEvent{Device: device, BootId: "boot", Event: &circusv1.JobEvent{JobId: "012345abcdef", State: circusv1.JobEvent_STATE_LOST}}}}
+		send(t, s, m)
+		if !proto.Equal(receive(t, r), m) {
+			t.Fatal("job machine/boot identity lost")
+		}
+	}
+	m := &circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_CallUpdate{CallUpdate: &circusv1.CallUpdate{CallId: "c", Update: &circusv1.CallUpdate_Rejected_{Rejected: &circusv1.CallUpdate_Rejected{Code: circusv1.CallUpdate_Rejected_CODE_UNKNOWN_DEVICE, Message: "unknown"}}}}}
+	send(t, s, m)
+	if !proto.Equal(receive(t, r), m) {
+		t.Fatal("rejection enum lost")
+	}
+	if (&circusv1.EnrollResponse{PrincipalId: "worker"}).GetPrincipalId() != "worker" {
+		t.Fatal("principal naming")
+	}
 }

@@ -332,7 +332,7 @@ func TestRejoinSameNameAfterRevoke(t *testing.T) {
 	h.authenticates(fresh)
 }
 
-// L-7: admin commands never create a database.
+// Admin commands never create a database.
 func TestAdminCommandsNeedExistingDatabase(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope", "circus.db")
 	for _, args := range [][]string{
@@ -351,7 +351,7 @@ func TestAdminCommandsNeedExistingDatabase(t *testing.T) {
 	}
 }
 
-// M21: doctor fails when the server's principal or role differs from the
+// Doctor fails when the server's principal or role differs from the
 // credential file.
 func TestDoctorPrincipalMismatch(t *testing.T) {
 	h := newJoinHarness(t)
@@ -382,7 +382,7 @@ func TestDoctorPrincipalMismatch(t *testing.T) {
 	}
 }
 
-// L-2: the CLI client follows no redirect, so a token is never resent to
+// The CLI client follows no redirect, so a token is never resent to
 // another URL.
 func TestClientRefusesRedirects(t *testing.T) {
 	var hit atomic.Bool
@@ -407,7 +407,7 @@ func TestClientRefusesRedirects(t *testing.T) {
 	}
 }
 
-// NL-3: an http:// control plane URL gets the loopback dial check: a host
+// An http:// control plane URL gets the loopback dial check: a host
 // that resolves to a non-loopback address is refused after the dial, before
 // any request is written.
 func TestClientLoopbackDialCheck(t *testing.T) {
@@ -415,7 +415,7 @@ func TestClientLoopbackDialCheck(t *testing.T) {
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit.Store(true) })
 	local := httptest.NewServer(handler)
 	defer local.Close()
-	// Upper-case scheme too (NL-4): still recognised as plaintext.
+	// Upper-case scheme is still recognised as plaintext.
 	client, err := httpClient(strings.Replace(local.URL, "http://", "HTTP://", 1), "")
 	if err != nil {
 		t.Fatal(err)
@@ -470,7 +470,7 @@ func nonLoopbackListener(t *testing.T) net.Listener {
 	return nil
 }
 
-// NL-4: doctor validates the URL in the credential file before sending the
+// Doctor validates the URL in the credential file before sending the
 // token, and accepts an upper-case scheme on loopback.
 func TestDoctorValidatesFileURL(t *testing.T) {
 	h := newJoinHarness(t)

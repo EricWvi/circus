@@ -24,6 +24,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"connectrpc.com/connect"
@@ -36,6 +37,7 @@ import (
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 func TestMain(m *testing.M) {
@@ -420,7 +422,7 @@ func TestShutdownBounded(t *testing.T) {
 		}
 		errc <- err
 	}()
-	<-entered
+	wait.Recv(t, entered)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	start := time.Now()
@@ -428,13 +430,7 @@ func TestShutdownBounded(t *testing.T) {
 	if !errors.Is(err, controlplane.ErrShutdownTimeout) || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Shutdown = %v", err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for !hookCtxDone.Load() && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if !hookCtxDone.Load() {
-		t.Fatal("hook never saw the deadline")
-	}
+	wait.For(t, hookCtxDone.Load)
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("Shutdown took %v", d)
 	}
@@ -490,7 +486,8 @@ func TestPurgeExpiredEnrollTokens(t *testing.T) {
 	if _, _, err := auth.CreateEnrollToken(context.Background(), st, user.ID, store.KindDevice, time.Second, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := auth.CreateEnrollToken(context.Background(), st, user.ID, store.KindDevice, time.Hour, time.Now()); err != nil {
+	liveToken, _, err := auth.CreateEnrollToken(context.Background(), st, user.ID, store.KindDevice, time.Hour, time.Now())
+	if err != nil {
 		t.Fatal(err)
 	}
 	srv, err := controlplane.New(context.Background(), st, controlplane.Config{
@@ -503,36 +500,19 @@ func TestPurgeExpiredEnrollTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer srv.Shutdown(context.Background())
-	deadline := time.Now().Add(5 * time.Second)
-	purged := func() bool {
-		for line := range strings.Lines(logs.String()) {
-			var rec struct {
-				Msg   string
-				Count int
-			}
-			if json.Unmarshal([]byte(line), &rec) == nil && rec.Msg == "purged expired enroll tokens" && rec.Count == 1 {
-				return true
-			}
-		}
-		return false
-	}
-	for !purged() {
-		if time.Now().After(deadline) {
-			t.Fatalf("no purge logged: %s", logs)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	// Only the expired token went; nothing is left to purge, even in an hour.
-	// The one-shot cleanup claim was also replaced by a fresh durable timer.
-	timers, err := st.ListTimers(context.Background(), store.TimerFilter{Kind: "enroll_token_expiry", SubjectID: "purge", Limit: 1})
-	if err != nil || len(timers) != 1 || timers[0].Token != "" || timers[0].DueAt <= time.Now().UnixMilli() {
-		t.Fatalf("cleanup timer was not re-armed: %+v, %v", timers, err)
-	}
+	// A fresh, unclaimed future timer is the store effect of the cleanup
+	// handler completing. Wait for that effect rather than for a log line.
+	wait.For(t, func() bool {
+		timers, err := st.ListTimers(context.Background(), store.TimerFilter{Kind: "enroll_token_expiry", SubjectID: "purge", Limit: 1})
+		return err == nil && len(timers) == 1 && timers[0].Token == "" && timers[0].DueAt > time.Now().UnixMilli()
+	})
+	// Only the expired token went; a second purge has no effect.
+	// The live token remains usable.
 	if n, err := st.PurgeEnrollTokens(context.Background(), time.Now().UnixMilli()); n != 0 || err != nil {
 		t.Fatalf("purge after server purge = %d, %v", n, err)
 	}
-	if strings.Count(logs.String(), "purged expired enroll tokens") != 1 {
-		t.Fatalf("purge logged more than once: %s", logs)
+	if _, err := st.UseEnrollToken(context.Background(), auth.HashToken(liveToken), time.Now().UnixMilli(), "purge-test"); err != nil {
+		t.Fatalf("live token did not survive cleanup: %v", err)
 	}
 }
 
@@ -555,7 +535,7 @@ func listenAs(t *testing.T, ip string) (func(network, addr string) (net.Listener
 	}, fake
 }
 
-// M8: --dev-insecure re-checks the address actually bound; "localhost"
+// --dev-insecure re-checks the address actually bound; "localhost"
 // resolving elsewhere must not serve plaintext.
 func TestDevInsecureChecksBoundAddress(t *testing.T) {
 	st := openStore(t)
@@ -576,7 +556,7 @@ func TestDevInsecureChecksBoundAddress(t *testing.T) {
 	}
 }
 
-// L-6: --behind-proxy on a non-loopback address starts but warns.
+// --behind-proxy on a non-loopback address starts but warns.
 func TestBehindProxyWarnsOffLoopback(t *testing.T) {
 	for _, c := range []struct {
 		ip   string
@@ -594,13 +574,26 @@ func TestBehindProxyWarnsOffLoopback(t *testing.T) {
 			t.Fatal(err)
 		}
 		_ = srv.Shutdown(context.Background())
-		if got := strings.Contains(logs.String(), `"level":"WARN","msg":"--behind-proxy serves plaintext`); got != c.warn {
-			t.Errorf("%s: warning logged = %v\n%s", c.ip, got, logs)
+		warned := false
+		for line := range strings.Lines(logs.String()) {
+			var rec struct {
+				Level string
+				Msg   string
+			}
+			if err := json.Unmarshal([]byte(line), &rec); err != nil {
+				t.Fatalf("%s: log line is not JSON: %q: %v", c.ip, line, err)
+			}
+			if rec.Level == "WARN" && strings.HasPrefix(rec.Msg, "--behind-proxy serves plaintext") {
+				warned = true
+			}
+		}
+		if warned != c.warn {
+			t.Errorf("%s: warning logged = %v\n%s", c.ip, warned, logs)
 		}
 	}
 }
 
-// M19: /readyz answers 503 once shutdown has begun.
+// /readyz answers 503 once shutdown has begun.
 func TestReadyzDuringShutdown(t *testing.T) {
 	var srv *controlplane.Server
 	statuses := make(chan int, 1)
@@ -619,15 +612,15 @@ func TestReadyzDuringShutdown(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("readyz before shutdown: %d", rec.Code)
 	}
-	if err := h.srv.Shutdown(context.Background()); err != nil {
+	if err := h.srv.Shutdown(wait.Ctx(t)); err != nil {
 		t.Fatal(err)
 	}
-	if got := <-statuses; got != http.StatusServiceUnavailable {
+	if got := wait.Recv(t, statuses); got != http.StatusServiceUnavailable {
 		t.Fatalf("readyz during shutdown: %d", got)
 	}
 }
 
-// L-1: hooks start only after the listener stops accepting.
+// Hooks start only after the listener stops accepting.
 func TestHooksStartAfterListenerCloses(t *testing.T) {
 	// Observe the listener directly instead of dialing its port: once closed,
 	// the port may be handed to a listener in another test process, and a
@@ -669,7 +662,7 @@ func (l *closeRecordingListener) Close() error {
 	return l.Listener.Close()
 }
 
-// L-8: a hook that ignores ctx does not hold Shutdown past its deadline,
+// A hook that ignores ctx does not hold Shutdown past its deadline,
 // and the log names it.
 func TestShutdownAbandonsStuckHook(t *testing.T) {
 	release := make(chan struct{})
@@ -678,7 +671,7 @@ func TestShutdownAbandonsStuckHook(t *testing.T) {
 		s.AddShutdownHook("fast", func(context.Context) error { return nil })
 		s.AddShutdownHook("stuck", func(context.Context) error { <-release; return nil })
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	start := time.Now()
 	err := h.srv.Shutdown(ctx)
@@ -694,7 +687,7 @@ func TestShutdownAbandonsStuckHook(t *testing.T) {
 	}
 }
 
-// NL-3: errors returned by hooks are part of the shutdown result.
+// Errors returned by hooks are part of the shutdown result.
 func TestShutdownReportsHookErrors(t *testing.T) {
 	boom := errors.New("boom")
 	h := newServer(t, controlplane.Config{}, func(s *controlplane.Server) {
@@ -707,28 +700,52 @@ func TestShutdownReportsHookErrors(t *testing.T) {
 	}
 }
 
-// NL-1: a hook that waits for ctx and returns as the deadline passes is
-// finished, not abandoned, and its own error is reported.
+// Hooks returning shortly after the deadline are collected within the grace
+// window; hooks taking longer than that window are reported unfinished.
 func TestShutdownHookReturningAtDeadline(t *testing.T) {
-	late := errors.New("late")
-	for i := range 30 {
-		h := newServer(t, controlplane.Config{}, func(s *controlplane.Server) {
-			s.AddShutdownHook("waiter", func(ctx context.Context) error { <-ctx.Done(); return late })
-			s.AddShutdownHook("clean", func(ctx context.Context) error { <-ctx.Done(); return nil })
-		})
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-		err := h.srv.Shutdown(ctx)
-		cancel()
-		if !errors.Is(err, late) || strings.Contains(err.Error(), "did not finish") {
-			t.Fatalf("round %d: Shutdown = %v", i, err)
-		}
-		if strings.Contains(h.logs.String(), "did not finish") {
-			t.Fatalf("round %d: hook logged as unfinished", i)
-		}
+	// Pin delays to the nominal contract, not to HookGrace itself. Otherwise a
+	// production change to the grace would also move the hooks' return times.
+	const contractedHookGrace = 50 * time.Millisecond
+	if got := controlplane.HookGrace; got != contractedHookGrace {
+		t.Errorf("HookGrace = %v, want %v", got, contractedHookGrace)
 	}
+	synctest.Test(t, func(t *testing.T) {
+		late := errors.New("late")
+		for i := range 30 {
+			logs := &syncBuffer{}
+			srv := new(controlplane.Server)
+			beyondDone := make(chan struct{})
+			srv.AddShutdownHook("within-grace", func(ctx context.Context) error {
+				<-ctx.Done()
+				time.Sleep(contractedHookGrace / 2)
+				return late
+			})
+			srv.AddShutdownHook("beyond-grace", func(ctx context.Context) error {
+				<-ctx.Done()
+				time.Sleep(2 * contractedHookGrace)
+				close(beyondDone)
+				return nil
+			})
+			controlplane.PrepareShutdownForTest(srv, logs)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			err := srv.Shutdown(ctx)
+			cancel()
+			<-beyondDone
+			synctest.Wait()
+			if !errors.Is(err, late) ||
+				strings.Contains(err.Error(), "shutdown hook within-grace did not finish") ||
+				!strings.Contains(err.Error(), "shutdown hook beyond-grace did not finish") {
+				t.Fatalf("round %d: Shutdown = %v", i, err)
+			}
+			if strings.Contains(logs.String(), `"hook":"within-grace"`) ||
+				!strings.Contains(logs.String(), `"hook":"beyond-grace"`) {
+				t.Fatalf("round %d: unfinished hooks logged incorrectly:\n%s", i, logs)
+			}
+		}
+	})
 }
 
-// L-5: client-controlled fields are truncated in the log.
+// Client-controlled fields are truncated in the log.
 func TestLogTruncatesClientFields(t *testing.T) {
 	h := newServer(t, controlplane.Config{}, nil)
 	long := strings.Repeat("m", 200) + "TAIL"
@@ -780,21 +797,10 @@ func writeCert(t *testing.T, dir string) (string, string) {
 // Timers complete their first health poll asynchronously after Start.
 func waitReady(t *testing.T, h *harness) {
 	t.Helper()
-	deadline := time.NewTimer(5 * time.Second)
-	defer deadline.Stop()
-	poll := time.NewTicker(time.Millisecond)
-	defer poll.Stop()
-	for {
-		status, body := h.get(t, "/readyz", "")
-		if status == http.StatusOK {
-			return
-		}
-		select {
-		case <-deadline.C:
-			t.Fatalf("not ready: %s", body)
-		case <-poll.C:
-		}
-	}
+	wait.For(t, func() bool {
+		status, _ := h.get(t, "/readyz", "")
+		return status == http.StatusOK
+	})
 }
 
 func TestComposedLinksCleanupWithoutListener(t *testing.T) {
@@ -812,7 +818,7 @@ func TestComposedLinksCleanupWithoutListener(t *testing.T) {
 		if err = s.ConfigureLinks(t.Context(), controlplane.LinkConfig{}); err != nil {
 			t.Fatal(err)
 		}
-		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)
 		if failedStart {
 			if err = s.Run(ctx); err == nil {
 				t.Fatal("invalid certificate accepted")

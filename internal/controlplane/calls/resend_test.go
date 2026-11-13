@@ -226,3 +226,62 @@ func TestWatchdogLosesCallOfReplacedBoot(t *testing.T) {
 		t.Fatal(c)
 	}
 }
+
+func shuttingDown(id string) *circusv1.DaemonUplink {
+	return &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallAck{CallAck: &circusv1.CallAck{CallId: id, Outcome: &circusv1.CallAck_Rejection{Rejection: &circusv1.Rejection{Code: circusv1.Rejection_CODE_SHUTTING_DOWN}}}}}
+}
+
+// SHUTTING_DOWN answering a resend may follow an execution, so the call stays
+// dispatched and a later result still completes it. A refusal of the only
+// dispatch (TestAckRejections/shutdown) is a terminal rejection.
+func TestShuttingDownOnResendKeepsDispatched(t *testing.T) {
+	o := &observer{seen: make(chan string, 8)}
+	f := setup(t, func(_ *calls.Config, g *gateway.Config) { g.Hooks = o })
+	l := f.connect("boot")
+	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+	must(t, err)
+	defer s.Close()
+	receive(t, f.ctx, l)
+	drain(t, f.ctx, s, 2)
+	f.disconnect(l)
+	l = f.open("boot")
+	if m := receive(t, f.ctx, l); m.GetDispatchCall() == nil {
+		t.Fatal(m)
+	}
+	f.finishSync(l)
+	send(t, f.ctx, l, shuttingDown("call"))
+	o.wait(t, f.ctx, "ack")
+	if c, _ := f.db.GetCall(f.ctx, "call"); c.State != store.CallDispatched {
+		t.Fatalf("resend refusal settled the call: %s/%s", c.State, c.OutcomeReason)
+	}
+	quiet(t, f.ctx, s)
+	f.result(l, "call")
+	nextResult(t, f.ctx, s)
+	f.waitState("call", store.CallCompleted)
+}
+
+// After a control-plane restart the router cannot prove a first send, so
+// SHUTTING_DOWN for an old dispatch keeps the call recoverable.
+func TestShuttingDownAfterRestartKeepsDispatched(t *testing.T) {
+	o := &observer{seen: make(chan string, 8)}
+	f := setup(t, func(_ *calls.Config, g *gateway.Config) { g.Hooks = o })
+	l := f.connect("boot")
+	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+	must(t, err)
+	receive(t, f.ctx, l)
+	s.Close()
+	f.restart()
+	l = f.open("boot")
+	if m := receive(t, f.ctx, l); m.GetCallQuery() == nil {
+		t.Fatal(m)
+	}
+	f.finishSync(l)
+	before := f.hooks.acks.Load()
+	send(t, f.ctx, l, shuttingDown("call"))
+	eventually(t, func() bool { return f.hooks.acks.Load() > before })
+	if f.state("call") != store.CallDispatched {
+		t.Fatalf("refusal after restart settled the call: %s", f.state("call"))
+	}
+	send(t, f.ctx, l, statusCompleted("call"))
+	f.waitState("call", store.CallCompleted)
+}

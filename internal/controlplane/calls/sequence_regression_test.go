@@ -5,12 +5,12 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 // Found by TestRandomSequences (seed 24): a Query waiting for the daemon's
@@ -34,14 +34,14 @@ func TestQueryAnsweredWhenReplyCannotPersist(t *testing.T) {
 				err error
 			}
 			answer := make(chan reply, 1)
-			ctx, cancel := context.WithTimeout(f.ctx, 3*time.Second)
+			ctx, cancel := context.WithTimeout(f.ctx, wait.Timeout)
 			defer cancel()
 			go func() { u, err := f.router.Query(ctx, "u", "call"); answer <- reply{u, err} }()
 			if m := receive(t, f.ctx, l); m.GetCallQuery().GetCallId() != "call" {
 				t.Fatal(m)
 			}
 			send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallStatus{CallStatus: &circusv1.CallStatus{CallId: "call", State: state}}})
-			a := <-answer
+			a := wait.Recv(t, answer)
 			if a.err != nil || a.u.GetDispatched() == nil {
 				t.Fatalf("query not answered with the durable state: %v %v", a.u, a.err)
 			}
@@ -94,7 +94,7 @@ func TestQueryReplyUnreadableAfterStoreReadFailure(t *testing.T) {
 				err error
 			}
 			done := make(chan answer, 1)
-			ctx, cancel := context.WithTimeout(f.ctx, 3*time.Second)
+			ctx, cancel := context.WithTimeout(f.ctx, wait.Timeout)
 			defer cancel()
 			go func() { u, err := f.router.Query(ctx, "u", "call"); done <- answer{u, err} }()
 			if m := receive(t, f.ctx, l); m.GetCallQuery().GetCallId() != "call" {
@@ -102,7 +102,7 @@ func TestQueryReplyUnreadableAfterStoreReadFailure(t *testing.T) {
 			}
 			reads.failReads.Store(true)
 			send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallStatus{CallStatus: reply}})
-			a := <-done
+			a := wait.Recv(t, done)
 			reads.failReads.Store(false)
 			switch {
 			case completed && !errors.Is(a.err, calls.ErrStoreUnavailable):

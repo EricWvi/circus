@@ -27,6 +27,13 @@ func (c *Fake) Now() time.Time {
 	return c.now
 }
 
+// Waiters reports the number of armed timers.
+func (c *Fake) Waiters() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.timers)
+}
+
 func (c *Fake) After(d time.Duration) <-chan time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -13,6 +13,7 @@ import (
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/storetest"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 func TestMain(m *testing.M) { os.Exit(leakcheck.Run(m, leakcheck.Config{})) }
@@ -130,7 +131,7 @@ func TestBusy(t *testing.T) {
 			return nil
 		})
 	}()
-	<-locked
+	wait.Recv(t, locked)
 	start := time.Now()
 	err := waiter.CreateUser(ctx, store.User{ID: "u1", Name: "a", CreatedAt: 1})
 	if !errors.Is(err, store.ErrBusy) {
@@ -144,7 +145,7 @@ func TestBusy(t *testing.T) {
 		t.Fatalf("begin under lock: %v, want ErrBusy", err)
 	}
 	close(release)
-	if err := <-done; err != nil {
+	if err := wait.Recv(t, done); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := waiter.GetUser(ctx, "u1"); !errors.Is(err, store.ErrNotFound) {

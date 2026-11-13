@@ -648,7 +648,7 @@ func (w *seqWorld) opDeferredQueryBootChange() bool {
 	return true
 }
 
-// opResendDuringShutdown reaches the H1 rule: a dispatch is lost, the
+// opResendDuringShutdown covers the shutdown-refusal rule: a dispatch is lost, the
 // device reconnects with its sync held, the daemon begins a graceful
 // shutdown that a stubborn tool keeps open, and only then the sync resends
 // the call. The daemon refuses the unseen ID with SHUTTING_DOWN, but a
@@ -748,7 +748,7 @@ func (w *seqWorld) quietBoot(dev *seqDevice) bool {
 // seqClaims is the timer runner's store. Its claims bypass the Faulty
 // store's write points (but fail once it crashed): how often the runner
 // polls depends on scheduling, and counting its claims would move an armed
-// crash point from run to run (M5). Handlers still write through Faulty.
+// crash point from run to run. Handlers still write through Faulty.
 type seqClaims struct{ *storetest.Faulty }
 
 func (s seqClaims) ClaimDueTimers(ctx context.Context, now int64, instance string, lease int64, limit int) ([]store.Timer, error) {

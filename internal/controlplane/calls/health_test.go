@@ -11,6 +11,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 type failingTimerWalkStore struct {
@@ -163,11 +164,7 @@ func TestHealthProbeDoesNotOverwriteNewerFailure(t *testing.T) {
 		t.Fatal("second failed write did not keep health false")
 	}
 	close(wrapper.release)
-	select {
-	case <-wrapper.finished:
-	case <-time.After(time.Second):
-		t.Fatal("probe did not finish")
-	}
+	wait.Recv(t, wrapper.finished)
 	if f.router.Healthy() {
 		t.Fatal("older probe overwrote a newer failed write")
 	}
@@ -179,14 +176,13 @@ func TestHealthProbeDoesNotOverwriteNewerFailure(t *testing.T) {
 // under load; repeating the tick makes the wait independent of scheduling.
 func advanceUntil(t testing.TB, f *fixture, p func() bool) {
 	t.Helper()
-	end := time.Now().Add(5 * time.Second)
-	for !p() {
-		if time.Now().After(end) {
-			t.Fatal("condition did not become true")
+	wait.For(t, func() bool {
+		if p() {
+			return true
 		}
 		f.clock.Advance(time.Second)
-		time.Sleep(time.Millisecond)
-	}
+		return false
+	})
 }
 
 func closed(c <-chan struct{}) bool {
@@ -196,4 +192,43 @@ func closed(c <-chan struct{}) bool {
 	default:
 		return false
 	}
+}
+
+// ctxErrStore makes GetIdentityByName fail with a chosen error, standing in
+// for a store call cut short by its context.
+type ctxErrStore struct {
+	store.Store
+	err atomic.Pointer[error]
+}
+
+func (s *ctxErrStore) GetIdentityByName(ctx context.Context, kind store.PrincipalKind, user, name string) (store.Identity, error) {
+	if e := s.err.Load(); e != nil {
+		return store.Identity{}, *e
+	}
+	return s.Store.GetIdentityByName(ctx, kind, user, name)
+}
+
+// A context ending inside a store call is not a store failure; readiness stays
+// healthy. A real failure still marks it.
+func TestContextEndIsNotStoreFailure(t *testing.T) {
+	wrapper := &ctxErrStore{}
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { wrapper.Store = c.Store; c.Store = wrapper })
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		wrapper.err.Store(&cause)
+		if _, err := f.router.Submit(f.ctx, "u", "desk", call("call")); !errors.Is(err, cause) {
+			t.Fatal(err)
+		}
+		if !f.router.Stats().StoreHealthy {
+			t.Fatalf("%v marked the store unhealthy", cause)
+		}
+	}
+	broken := errors.New("disk failure")
+	wrapper.err.Store(&broken)
+	if _, err := f.router.Submit(f.ctx, "u", "desk", call("call")); !errors.Is(err, calls.ErrStoreUnavailable) {
+		t.Fatal(err)
+	}
+	if f.router.Stats().StoreHealthy {
+		t.Fatal("store failure not reported")
+	}
+	wrapper.err.Store(nil)
 }

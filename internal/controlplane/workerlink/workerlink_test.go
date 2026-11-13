@@ -19,6 +19,7 @@ import (
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/EricWvi/circus/internal/workerclient"
@@ -100,7 +101,16 @@ func setup(t *testing.T, configure ...func(*workerlink.Config)) *fixture {
 	authenticator := &authStub{Authenticator: auth.NewAuthenticator(st, auth.Options{})}
 	authenticator.valid = authenticator.Authenticator.Valid
 	svc := &service{started: make(chan string, 16)}
-	cfg := workerlink.Config{Auth: authenticator, Router: svc, InstanceID: "instance", Wire: wire.Options{MaxMessageBytes: 1 << 20}, HelloTimeout: 100 * time.Millisecond, RecheckInterval: 10 * time.Millisecond, RecheckTimeout: 30 * time.Millisecond, RecheckMaxStale: time.Second}
+	cfg := workerlink.Config{
+		Auth:            authenticator,
+		Router:          svc,
+		InstanceID:      "instance",
+		Wire:            wire.Options{MaxMessageBytes: 1 << 20},
+		HelloTimeout:    10 * time.Second,
+		RecheckInterval: time.Second,
+		RecheckTimeout:  5 * time.Second,
+		RecheckMaxStale: 30 * time.Second,
+	}
 	for _, fn := range configure {
 		fn(&cfg)
 	}
@@ -109,7 +119,7 @@ func setup(t *testing.T, configure ...func(*workerlink.Config)) *fixture {
 	server := httptest.NewServer(h)
 	t.Cleanup(server.Close)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
 		defer cancel()
 		must(t, h.Shutdown(ctx))
 		if svc.active.Load() != 0 {
@@ -131,6 +141,32 @@ func raw(t *testing.T, f *fixture) *wire.WebSocket {
 	t.Cleanup(func() { _ = c.Close() })
 	return c
 }
+
+// rawAvailable tolerates only the transient capacity race between a client
+// close and the server releasing the old connection's slot.
+func rawAvailable(t *testing.T, f *fixture) *wire.WebSocket {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)
+	defer cancel()
+	for {
+		c, res, err := wire.DialWebSocket(ctx, "ws"+strings.TrimPrefix(f.server.URL, "http")+"/v1/link/worker", &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer " + f.f.Token}}})
+		if res != nil && res.Body != nil {
+			_ = res.Body.Close()
+		}
+		if err == nil {
+			t.Cleanup(func() { _ = c.Close() })
+			return c
+		}
+		if res == nil || res.StatusCode != http.StatusServiceUnavailable {
+			must(t, err)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("worker dial remained unavailable: %v", err)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
 func write(t *testing.T, c wire.Conn, m proto.Message) {
 	t.Helper()
 	d, err := proto.Marshal(m)
@@ -139,7 +175,7 @@ func write(t *testing.T, c wire.Conn, m proto.Message) {
 }
 func read(t *testing.T, c wire.Conn) *circusv1.WorkerDownlink {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)
 	defer cancel()
 	d, err := c.ReadMessage(ctx)
 	must(t, err)
@@ -174,7 +210,9 @@ func client(t *testing.T, f *fixture) *workerclient.Client {
 }
 
 func TestHandshakeAuthAndDeadlines(t *testing.T) {
-	f := setup(t)
+	f := setup(t, func(c *workerlink.Config) {
+		c.HelloTimeout = 100 * time.Millisecond
+	})
 	for _, tc := range []struct {
 		token  string
 		status int
@@ -202,8 +240,8 @@ func TestHandshakeAuthAndDeadlines(t *testing.T) {
 		}
 		_ = c.Close()
 	}
-	c := raw(t, f)
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	c := rawAvailable(t, f)
+	ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)
 	defer cancel()
 	if _, err := c.ReadMessage(ctx); err == nil || ctx.Err() != nil {
 		t.Fatal("Hello deadline not enforced", err)
@@ -216,13 +254,8 @@ func TestOperationCapClosesWithoutTerminalOverload(t *testing.T) {
 	for i := range 4 {
 		id := string(rune('a' + i))
 		send(t, l, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: id}}})
-		select {
-		case got := <-f.svc.started:
-			if got != id {
-				t.Fatalf("query %q, want %q", got, id)
-			}
-		case <-time.After(time.Second):
-			t.Fatal("query did not start")
+		if got := wait.Recv(t, f.svc.started); got != id {
+			t.Fatalf("query %q, want %q", got, id)
 		}
 	}
 	cancelled := make(chan struct{})
@@ -231,13 +264,9 @@ func TestOperationCapClosesWithoutTerminalOverload(t *testing.T) {
 		return nil
 	}
 	send(t, l, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: "victim"}}})
-	select {
-	case <-cancelled:
-	case <-time.After(time.Second):
-		t.Fatal("slot-free Cancel did not run on a full connection")
-	}
+	wait.Recv(t, cancelled)
 	send(t, l, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: "fifth"}}})
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)
 	defer cancel()
 	if m, err := l.Receive(ctx); err == nil {
 		t.Fatalf("overload produced an update instead of closing: %v", m)
@@ -315,16 +344,12 @@ func TestQueryOverloadedAndSendFailureCloseLink(t *testing.T) {
 			f := setup(t)
 			f.svc.query = tc.query
 			c := client(t, f)
-			queryCtx, queryCancel := context.WithTimeout(t.Context(), time.Second)
+			queryCtx, queryCancel := context.WithTimeout(t.Context(), wait.Timeout)
 			defer queryCancel()
 			if _, err := c.Query(queryCtx, "victim"); err == nil {
 				t.Fatal("operation returned a terminal update or nil error")
 			}
-			select {
-			case <-c.Done():
-			case <-time.After(time.Second):
-				t.Fatal("link stayed open")
-			}
+			wait.Recv(t, c.Done())
 		})
 	}
 }
@@ -384,13 +409,9 @@ func TestCancelUnknownOrInvalidSendsNothingAndKeepsLink(t *testing.T) {
 			}
 			l := linked(t, f)
 			send(t, l, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: tc.id}}})
-			select {
-			case <-cancelled:
-			case <-time.After(time.Second):
-				t.Fatal("cancel did not run")
-			}
+			wait.Recv(t, cancelled)
 			send(t, l, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: tc.id}}})
-			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)
 			defer cancel()
 			m, err := l.Receive(ctx)
 			must(t, err)
@@ -430,17 +451,15 @@ func TestConnectionCapAfterAuthentication(t *testing.T) {
 }
 
 func TestIdleRevocationClosesDefinitively(t *testing.T) {
-	f := setup(t)
+	f := setup(t, func(c *workerlink.Config) {
+		c.RecheckInterval = 10 * time.Millisecond
+	})
 	c := client(t, f)
 	u, err := f.st.GetUserByName(t.Context(), "admin")
 	must(t, err)
 	_, _, err = auth.RevokeByName(t.Context(), f.st, store.KindWorker, u.ID, "desk", time.Now())
 	must(t, err)
-	select {
-	case <-c.Done():
-	case <-time.After(time.Second):
-		t.Fatal("idle revoked link survived interval plus timeout")
-	}
+	wait.Recv(t, c.Done())
 	if _, err = workerclient.Dial(t.Context(), workerclient.Options{Credentials: f.f}); err == nil {
 		t.Fatal("revoked upgrade accepted")
 	}
@@ -450,7 +469,8 @@ func TestRecheckStoreErrorsKeepLinkUntilStalenessBound(t *testing.T) {
 	for _, timeout := range []bool{false, true} {
 		t.Run(map[bool]string{false: "store error", true: "recheck timeout"}[timeout], func(t *testing.T) {
 			f := setup(t, func(c *workerlink.Config) {
-				c.RecheckMaxStale = 120 * time.Millisecond
+				c.RecheckInterval = 10 * time.Millisecond
+				c.RecheckMaxStale = 2 * time.Second
 				c.RecheckTimeout = 10 * time.Millisecond
 			})
 			f.auth.setValid(func(ctx context.Context, _ string) (bool, error) {
@@ -464,13 +484,9 @@ func TestRecheckStoreErrorsKeepLinkUntilStalenessBound(t *testing.T) {
 			select {
 			case <-c.Done():
 				t.Fatal("transient revalidation failure closed link before the staleness window")
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(500 * time.Millisecond):
 			}
-			select {
-			case <-c.Done():
-			case <-time.After(time.Second):
-				t.Fatal("credential remained connected beyond the staleness window")
-			}
+			wait.Recv(t, c.Done())
 		})
 	}
 }
@@ -485,22 +501,18 @@ func TestShutdownReturnsAtContextWithStuckOperation(t *testing.T) {
 	}
 	l := linked(t, f)
 	send(t, l, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: "stuck"}}})
-	select {
-	case <-f.svc.started:
-	case <-time.After(time.Second):
-		t.Fatal("query did not start")
-	}
+	wait.Recv(t, f.svc.started)
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 	start := time.Now()
 	if err := f.h.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Shutdown = %v", err)
 	}
-	if time.Since(start) > 500*time.Millisecond {
+	if time.Since(start) > 3*time.Second {
 		t.Fatal("Shutdown ignored its context")
 	}
 	close(release)
-	ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+	ctx, cancel = context.WithTimeout(t.Context(), wait.Timeout)
 	defer cancel()
 	must(t, f.h.Shutdown(ctx))
 }

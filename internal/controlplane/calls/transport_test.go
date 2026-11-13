@@ -72,8 +72,9 @@ func TestHalfOpenHeartbeatThenGraceF15(t *testing.T) {
 	defer s.Close()
 	receive(t, f.ctx, l)
 	drain(t, f.ctx, s, 2)
+	before := f.hooks.disconnects.Load()
 	f.advance(16 * time.Second)
-	eventually(t, func() bool { return f.registry.Stats().Connections == 0 })
+	f.awaitDisconnectRecorded(before, f.clock.Now().UnixMilli())
 	f.advance(31 * time.Second)
 	f.waitState("call", store.CallUnknown)
 }
@@ -116,5 +117,45 @@ func TestMalformedFragmentsCloseAndResyncF23(t *testing.T) {
 			nextResult(t, f.ctx, s)
 			f.waitState("call", store.CallCompleted)
 		})
+	}
+}
+
+// A result sent just before a graceful daemon close is processed before the
+// disconnect (D43 item 12).
+func TestGracefulCloseDrainsFinalResult(t *testing.T) {
+	f := setup(t)
+	l := f.connect("boot")
+	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+	must(t, err)
+	defer s.Close()
+	receive(t, f.ctx, l)
+	for i := range 20 {
+		send(t, f.ctx, l, jobEvent("012345abcdef", uint64(i+1)))
+	}
+	f.result(l, "call")
+	must(t, l.Shutdown(f.ctx))
+	nextResult(t, f.ctx, s)
+	f.waitState("call", store.CallCompleted)
+}
+
+// A non-protocol hook error (store failure) does not stop the gateway reading
+// that link; the next reply settles the call without a reconnect.
+func TestGatewayKeepsReadingAfterHookError(t *testing.T) {
+	f := setup(t)
+	l := f.connect("boot")
+	route, _, err := f.registry.Lookup(f.ctx, "d")
+	must(t, err)
+	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+	must(t, err)
+	defer s.Close()
+	receive(t, f.ctx, l)
+	f.fault.FailAllWrites(store.ErrBusy)
+	f.result(l, "call")
+	nextResult(t, f.ctx, s)
+	f.fault.FailAllWrites(nil)
+	send(t, f.ctx, l, statusCompleted("call"))
+	f.waitState("call", store.CallCompleted)
+	if now, ok, _ := f.registry.Lookup(f.ctx, "d"); !ok || now.Target != route.Target {
+		t.Fatal("hook error closed the link")
 	}
 }

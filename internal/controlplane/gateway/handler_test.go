@@ -12,6 +12,7 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/coder/websocket"
 	"go.uber.org/goleak"
@@ -49,8 +50,7 @@ func TestHTTPAuthenticationAndRawVersionReject(t *testing.T) {
 	}
 	s := httptest.NewServer(h)
 	defer s.Close()
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
+	ctx := wait.Ctx(t)
 	defer func() {
 		if err := h.Shutdown(ctx); err != nil {
 			t.Error(err)
@@ -156,8 +156,7 @@ func TestSupersedeAndRevocation(t *testing.T) {
 	}
 	s := httptest.NewServer(h)
 	defer s.Close()
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
+	ctx := wait.Ctx(t)
 	old := daemonLink(t, ctx, s.URL, "boot", c)
 	waitFor(t, func() bool { v, ok, _ := r.Lookup(ctx, "d"); return ok && v.Target.BootID == "boot" })
 	current := daemonLink(t, ctx, s.URL, "boot2", c)
@@ -194,13 +193,7 @@ func TestSupersedeAndRevocation(t *testing.T) {
 
 func waitFor(t *testing.T, p func() bool) {
 	t.Helper()
-	end := time.Now().Add(5 * time.Second)
-	for !p() {
-		if time.Now().After(end) {
-			t.Fatal("condition did not become true")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	wait.For(t, p)
 }
 
 // A store error is retryable infrastructure failure, not invalid credentials.
@@ -276,14 +269,13 @@ func TestRecheckStoreErrorsUseStalenessWindow(t *testing.T) {
 	}
 	s := httptest.NewServer(h)
 	defer s.Close()
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
+	ctx := wait.Ctx(t)
 	link := daemonLink(t, ctx, s.URL, "boot", c.Fake)
 	// armed waits for the recheck to arm its next timer. A recheck that
 	// closes the link arms none, and the close may still be in progress
 	// when its call is counted, so also stop once the link is gone.
 	armed := func() bool {
-		end := time.Now().Add(5 * time.Second)
+		end := time.Now().Add(wait.Timeout)
 		for {
 			select {
 			case <-c.armed:

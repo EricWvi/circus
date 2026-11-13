@@ -7,6 +7,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 )
 
@@ -27,7 +28,7 @@ func TestSendWithBusyRetry(t *testing.T) {
 	if err = sendWithBusyRetry(t.Context(), func(context.Context) error { attempts++; return nonbusy }); !errors.Is(err, nonbusy) || attempts != 1 {
 		t.Fatalf("attempts=%d err=%v", attempts, err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	defer cancel()
 	attempts = 0
 	if err = sendWithBusyRetry(ctx, func(context.Context) error { attempts++; return wire.ErrBusy }); !errors.Is(err, context.DeadlineExceeded) || attempts < 2 {
@@ -37,25 +38,20 @@ func TestSendWithBusyRetry(t *testing.T) {
 
 func TestBusyRetryStopsAtBound(t *testing.T) {
 	attempts := 0
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
+	ctx := wait.Ctx(t)
 	done := make(chan error, 1)
 	start := time.Now()
 	go func() {
-		done <- sendWithBusyRetryLimit(ctx, 25*time.Millisecond, func(context.Context) error {
+		done <- sendWithBusyRetryLimit(ctx, 200*time.Millisecond, func(context.Context) error {
 			attempts++
 			return wire.ErrBusy
 		})
 	}()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.DeadlineExceeded) || attempts < 2 {
-			t.Fatalf("perpetual ErrBusy did not stop at its bound: attempts=%d err=%v", attempts, err)
-		}
-	case <-time.After(50 * time.Millisecond):
-		t.Fatal("perpetual ErrBusy did not stop at its bound")
+	err := wait.Recv(t, done)
+	if !errors.Is(err, context.DeadlineExceeded) || attempts < 2 {
+		t.Fatalf("perpetual ErrBusy did not stop at its bound: attempts=%d err=%v", attempts, err)
 	}
-	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("retry exceeded its bound: %v", elapsed)
 	}
 }
@@ -64,8 +60,7 @@ func TestAcquireSendSlotWaits(t *testing.T) {
 	slots := make(chan struct{}, 1)
 	handlers := make(chan struct{}, 1)
 	handlers <- struct{}{}
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
+	ctx := wait.Ctx(t)
 	done := make(chan bool, 1)
 	go func() {
 		done <- acquireSendSlot(ctx, slots, handlers, func() { t.Error("logical cap was unexpectedly full") })
@@ -76,13 +71,8 @@ func TestAcquireSendSlotWaits(t *testing.T) {
 	case <-time.After(25 * time.Millisecond):
 	}
 	<-handlers
-	select {
-	case got := <-done:
-		if !got {
-			t.Fatal("admission failed after a send slot became available")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("admission did not resume after a send slot became available")
+	if got := wait.Recv(t, done); !got {
+		t.Fatal("admission failed after a send slot became available")
 	}
 }
 

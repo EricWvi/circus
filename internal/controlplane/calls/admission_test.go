@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,8 +47,51 @@ func TestFirstSendBusyIsRejectedAndKeepsBootEvidence(t *testing.T) {
 		t.Fatal("busy send retained content")
 	}
 }
+
+// tooLargeBus proves that a first dispatch was too large to be queued.
+type tooLargeBus struct{ bus.Bus }
+
+func (b tooLargeBus) Send(ctx context.Context, target bus.Target, msg *circusv1.DaemonDownlink) error {
+	if msg.GetDispatchCall() != nil {
+		return wire.ErrTooLarge
+	}
+	return b.Bus.Send(ctx, target, msg)
+}
+
+func TestFirstSendTooLargeIsRejected(t *testing.T) {
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Bus = tooLargeBus{c.Bus} })
+	f.connect("boot")
+	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+	must(t, err)
+	defer s.Close()
+	drain(t, f.ctx, s, 2)
+	if u, err := s.Next(f.ctx); err != nil || u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_INVALID {
+		t.Fatal(u, err)
+	}
+	if f.state("call") != store.CallRejected || f.router.Stats().PendingCalls != 0 {
+		t.Fatal("too-large dispatch not settled")
+	}
+}
+
+type queryCountBus struct {
+	bus.Bus
+	queries atomic.Int64
+}
+
+func (b *queryCountBus) Send(ctx context.Context, target bus.Target, msg *circusv1.DaemonDownlink) error {
+	if msg.GetCallQuery() != nil {
+		b.queries.Add(1)
+	}
+	return b.Bus.Send(ctx, target, msg)
+}
+
 func TestQueriesCoalesceWithoutStarvingTheirReply(t *testing.T) {
-	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.MaxOperations = 1 })
+	counted := &queryCountBus{}
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) {
+		c.MaxOperations = 1
+		counted.Bus = c.Bus
+		c.Bus = counted
+	})
 	l := f.connect("boot")
 	var s *calls.Subscription
 	var err error
@@ -74,15 +118,23 @@ func TestQueriesCoalesceWithoutStarvingTheirReply(t *testing.T) {
 	if m := receive(t, f.ctx, l); m.GetCallQuery() == nil {
 		t.Fatal(m)
 	}
+	// Both waiters have passed the send decision. Exactly the leader may have
+	// sent a CallQuery; this does not depend on wire scheduling or a quiet window.
+	if got := counted.queries.Load(); got != 1 {
+		t.Fatalf("CallQuery sends for two coalesced queries = %d, want 1", got)
+	}
 	send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallStatus{CallStatus: &circusv1.CallStatus{CallId: "call", State: circusv1.CallStatus_STATE_COMPLETED, Result: &circusv1.DeviceResult{CallId: "call", Output: &circusv1.ToolOutput{}}}}})
 	for range 2 {
-		a := <-answers
+		a := waitAnswer(t, answers)
 		must(t, a.err)
 		if a.u.GetResult() == nil {
 			t.Fatal(a.u)
 		}
 	}
 	eventually(t, func() bool { return f.router.Stats().QueryWaiters == 0 })
+	if got := counted.queries.Load(); got != 1 {
+		t.Fatalf("CallQuery sends after the shared reply = %d, want 1", got)
+	}
 	nextResult(t, f.ctx, s)
 }
 func TestQueryCancellationDoesNotCancelExecution(t *testing.T) {

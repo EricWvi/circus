@@ -232,7 +232,8 @@ func (m *seqModel) dispatchSeen(id, boot string) bool {
 
 // refusedOnlyDispatch reports whether the daemon of boot received exactly
 // one DispatchCall for id and none was lost: only then may a SHUTTING_DOWN
-// refusal settle the call as rejected (H1).
+// refusal settle the call as rejected: a resend or lost dispatch may have
+// executed.
 func (m *seqModel) refusedOnlyDispatch(id, boot string) bool {
 	d := m.boots[boot]
 	if d == nil {
@@ -337,7 +338,7 @@ func (m *seqModel) blockedExecs() []*seqExec {
 			out = append(out, e)
 		}
 	}
-	// Tool goroutines start in scheduling order; pick by call ID (M5).
+	// Tool goroutines start in scheduling order; pick deterministically by call ID.
 	slices.SortFunc(out, func(a, b *seqExec) int { return strings.Compare(a.callID, b.callID) })
 	return out
 }
@@ -878,7 +879,7 @@ func (m *seqModel) checkUpdate(s *seqSub, u *circusv1.CallUpdate, where string) 
 			if row := m.row(c.id); current && (row == nil || !m.boots[row.DispatchedBootID].graceful) {
 				w.fail("%s of %s: DEVICE_SHUTTING_DOWN without a graceful stop of its dispatch boot", where, c.id)
 			} else if current && !m.refusedOnlyDispatch(c.id, row.DispatchedBootID) {
-				w.fail("%s of %s: DEVICE_SHUTTING_DOWN although its DispatchCall was resent or lost (H1)", where, c.id)
+				w.fail("%s of %s: DEVICE_SHUTTING_DOWN although its DispatchCall was resent or lost and may have executed", where, c.id)
 			}
 		default:
 			w.fail("%s of %s: unexpected rejection %s", where, c.id, code)
@@ -1069,7 +1070,7 @@ func (m *seqModel) checkRow(c *seqCall, row store.Call) {
 				w.fail("call %s rejected DEVICE_SHUTTING_DOWN without a graceful stop of %s", c.id, m.label(row.DispatchedBootID))
 			}
 			if !m.refusedOnlyDispatch(c.id, row.DispatchedBootID) {
-				w.fail("call %s rejected DEVICE_SHUTTING_DOWN although its DispatchCall was resent or lost (H1: it may have executed)", c.id)
+				w.fail("call %s rejected DEVICE_SHUTTING_DOWN although its DispatchCall was resent or lost and may have executed", c.id)
 			}
 		default:
 			w.fail("call %s rejected with unexpected reason %s", c.id, row.OutcomeReason)

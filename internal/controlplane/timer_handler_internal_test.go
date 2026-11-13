@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"bytes"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -58,7 +59,7 @@ func TestEnrollmentCleanupIgnoresStaleClaim(t *testing.T) {
 	}
 }
 
-func TestUnhandledTimerCompletedAndLoggedOnce(t *testing.T) {
+func TestUnhandledTimerCompleted(t *testing.T) {
 	for _, kind := range []string{"unknown_kind", timers.DeviceGrace} {
 		t.Run(kind, func(t *testing.T) {
 			var logs bytes.Buffer
@@ -84,8 +85,26 @@ func TestUnhandledTimerCompletedAndLoggedOnce(t *testing.T) {
 			if err = s.handleTimer(ctx, claims[0]); err != nil {
 				t.Fatal(err)
 			}
-			if got := strings.Count(logs.String(), "completed unhandled durable timer"); got != 1 {
-				t.Fatalf("log count=%d: %s", got, logs.String())
+			completedLogs := 0
+			for line := range strings.Lines(logs.String()) {
+				var rec struct {
+					Msg       string `json:"msg"`
+					Kind      string `json:"kind"`
+					SubjectID string `json:"subject_id"`
+				}
+				if err := json.Unmarshal([]byte(line), &rec); err != nil {
+					t.Fatalf("log line is not JSON: %q: %v", line, err)
+				}
+				if rec.Msg != "completed unhandled durable timer" {
+					continue
+				}
+				completedLogs++
+				if rec.Kind != kind || rec.SubjectID != "subject" {
+					t.Fatalf("unhandled-timer log = %+v", rec)
+				}
+			}
+			if completedLogs != 1 {
+				t.Fatalf("unhandled-timer logs = %d, want 1:\n%s", completedLogs, logs.String())
 			}
 		})
 	}

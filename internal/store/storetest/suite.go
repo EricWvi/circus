@@ -25,9 +25,9 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 // Run runs the contract suite against b. Subtests run in parallel, each on
@@ -80,9 +80,7 @@ func Run(t *testing.T, b Backend) {
 // fail, such as a Faulty lock left held: the stuck call then returns the
 // ctx's error after a few seconds instead of the test binary timing out.
 func deadline(t testing.TB) context.Context {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	t.Cleanup(cancel)
-	return ctx
+	return wait.Ctx(t)
 }
 
 // open opens a fresh database for one test.

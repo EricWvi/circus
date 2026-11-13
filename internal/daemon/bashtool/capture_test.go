@@ -15,6 +15,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 type triggeredDeadline struct {
@@ -917,7 +918,7 @@ func TestCaptureTrackerShutdown(t *testing.T) {
 	r := h.start("A", "background", true, 0, "", 0)
 	gate(t, filepath.Join(r.dir, "exit"))
 	h.job(r)
-	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
 	defer cancel()
 	if err := h.b.Shutdown(ctx); err != nil {
 		t.Fatal("tracked shutdown did not stop group", err)

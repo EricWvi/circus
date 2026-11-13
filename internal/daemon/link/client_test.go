@@ -22,6 +22,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	daemonlink "github.com/EricWvi/circus/internal/daemon/link"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/wire/wiretest"
 	"github.com/EricWvi/circus/internal/wirepolicy"
@@ -48,24 +49,11 @@ func call(id string) *circusv1.DeviceCall {
 }
 func recv[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
-	select {
-	case v := <-ch:
-		return v
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out")
-		var zero T
-		return zero
-	}
+	return wait.Recv(t, ch)
 }
 func eventually(t *testing.T, f func() bool) {
 	t.Helper()
-	end := time.Now().Add(3 * time.Second)
-	for !f() {
-		if time.Now().After(end) {
-			t.Fatal("condition not reached")
-		}
-		runtime.Gosched()
-	}
+	wait.For(t, f)
 }
 func send(t *testing.T, l *wire.Link, m *circusv1.DaemonDownlink) {
 	t.Helper()
@@ -73,17 +61,13 @@ func send(t *testing.T, l *wire.Link, m *circusv1.DaemonDownlink) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err = l.Send(ctx, m, class, key); err != nil {
+	if err = l.Send(wait.Ctx(t), m, class, key); err != nil {
 		t.Fatal(err)
 	}
 }
 func receive(t *testing.T, l *wire.Link) *circusv1.DaemonUplink {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	m, err := l.Receive(ctx)
+	m, err := l.Receive(wait.Ctx(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,9 +178,7 @@ func (h *harness) handshake(t *testing.T) (*wire.Link, pair, *circusv1.Hello) {
 }
 func rawHello(t *testing.T, raw wire.Conn) *circusv1.Hello {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	data, err := raw.ReadMessage(ctx)
+	data, err := raw.ReadMessage(wait.Ctx(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,6 +360,71 @@ func TestGoAwayDelay(t *testing.T) {
 	}
 	h.clk.Advance(time.Millisecond)
 	h.handshake(t)
+}
+
+func TestGoAwayZeroAndSmallDelaysRespectBackoffFloor(t *testing.T) {
+	h := start(t, nil, nil)
+	for i, request := range []uint32{0, 1, 1} {
+		l, _, _ := h.handshake(t)
+		send(t, l, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_GoAway{GoAway: &circusv1.GoAway{ReconnectAfterMs: request}}})
+		h.retry(t, []time.Duration{500 * time.Millisecond, 500 * time.Millisecond, time.Second}[i])
+	}
+	h.handshake(t)
+}
+
+type blockedClose struct {
+	wire.Conn
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (c *blockedClose) Shutdown(ctx context.Context) error {
+	c.once.Do(func() { close(c.entered) })
+	<-ctx.Done()
+	_ = c.Conn.Close()
+	return ctx.Err()
+}
+func TestGoAwayCloseObservesOuterCancellation(t *testing.T) {
+	entered := make(chan struct{})
+	h := start(t, nil, func(c wire.Conn) wire.Conn { return &blockedClose{Conn: c, entered: entered} })
+	l, _, _ := h.handshake(t)
+	send(t, l, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_GoAway{GoAway: &circusv1.GoAway{}}})
+	recv(t, entered)
+	h.cancel()
+	if err := recv(t, h.done); err != nil {
+		t.Fatal(err)
+	}
+	h.done <- nil
+}
+
+func TestMachineIDIsCachedAcrossReconnects(t *testing.T) {
+	var probes atomic.Int32
+	h := start(t, func(o *daemonlink.Options) {
+		o.MachineIDSource = func(context.Context) (string, error) { probes.Add(1); return "cached-machine-hash", nil }
+	}, nil)
+	l, _, hello := h.handshake(t)
+	if hello.MachineId != "cached-machine-hash" {
+		t.Fatal(hello)
+	}
+	_ = l.Close()
+	h.retry(t, 500*time.Millisecond)
+	_, _, again := h.handshake(t)
+	if again.MachineId != hello.MachineId || probes.Load() != 1 {
+		t.Fatalf("probes=%d hello=%v", probes.Load(), again)
+	}
+}
+
+func TestMachineIDUnavailableFailsBeforeDial(t *testing.T) {
+	for _, probeErr := range []error{nil, errors.New("no initialized machine ID")} {
+		var dials atomic.Int32
+		_, err := daemonlink.New(daemonlink.Options{Credentials: credfile.File{Role: credfile.RoleDaemon, ControlPlaneURL: "http://127.0.0.1", PrincipalID: "device", Token: "secret"}, MachineIDSource: func(context.Context) (string, error) { return "", probeErr }, Dial: func(context.Context, string, *websocket.DialOptions) (wire.Conn, *http.Response, error) {
+			dials.Add(1)
+			return nil, nil, errors.New("must not dial")
+		}})
+		if err == nil || !strings.Contains(err.Error(), "machine ID unavailable at startup") || dials.Load() != 0 {
+			t.Fatalf("error=%v dials=%d", err, dials.Load())
+		}
+	}
 }
 
 func TestShutdownFlushesInterruptedResultAndRejectsNewCalls(t *testing.T) {

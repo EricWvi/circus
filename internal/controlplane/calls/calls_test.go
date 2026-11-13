@@ -12,6 +12,7 @@ import (
 	"github.com/EricWvi/circus/internal/store/sqlite"
 	"github.com/EricWvi/circus/internal/store/storetest"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/coder/websocket"
@@ -73,15 +74,20 @@ type fixture struct {
 }
 
 // hookCounter wraps the gateway's consumer seam and counts completed hooks, so
-// tests wait for real processing instead of sleeping. It retains two counters.
+// tests wait for real processing instead of sleeping.
 type hookCounter struct {
 	gateway.Hooks
-	snapshots, events, acks atomic.Int64
+	snapshots, events, acks, disconnects atomic.Int64
 }
 
 func (h *hookCounter) OnCallAck(ctx context.Context, c gateway.Connection, v *circusv1.CallAck) error {
 	defer h.acks.Add(1)
 	return h.Hooks.OnCallAck(ctx, c, v)
+}
+
+func (h *hookCounter) OnDisconnected(ctx context.Context, c gateway.Connection) error {
+	defer h.disconnects.Add(1)
+	return h.Hooks.OnDisconnected(ctx, c)
 }
 
 func (h *hookCounter) OnJobSnapshot(ctx context.Context, c gateway.Connection, v *circusv1.JobSnapshot) error {
@@ -253,13 +259,7 @@ func receive(t testing.TB, ctx context.Context, l *wire.Link) *circusv1.DaemonDo
 }
 func eventually(t testing.TB, p func() bool) {
 	t.Helper()
-	end := time.Now().Add(5 * time.Second)
-	for !p() {
-		if time.Now().After(end) {
-			t.Fatal("condition did not become true")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	wait.For(t, p)
 }
 func TestResultBeforeAckF22(t *testing.T) {
 	f := setup(t)
@@ -320,8 +320,39 @@ func (f *fixture) waitState(id string, state store.CallState) {
 	eventually(f.t, func() bool { return f.state(id) == state })
 }
 func (f *fixture) disconnect(l *wire.Link) {
+	f.t.Helper()
+	disconnectedAt := f.clock.Now().UnixMilli()
+	before := f.hooks.disconnects.Load()
 	must(f.t, l.Close())
-	eventually(f.t, func() bool { return f.registry.Stats().Connections == 0 })
+	f.awaitDisconnectRecorded(before, disconnectedAt)
+}
+
+// awaitDisconnectRecorded waits until the router recorded a disconnect after
+// the hook count before, at fake time disconnectedAt (ms), so a following
+// advance cannot land before OnDisconnected reads Now.
+func (f *fixture) awaitDisconnectRecorded(before int64, disconnectedAt int64) {
+	f.t.Helper()
+	grace := f.routerConfig.GracePeriod
+	if grace == 0 {
+		grace = 30 * time.Second
+	}
+	eventually(f.t, func() bool {
+		if f.registry.Stats().Connections != 0 || f.hooks.disconnects.Load() == before {
+			return false
+		}
+		// A same-fake-time reconnect can legitimately recreate a row with the
+		// same LastDisconnectedAt and DueAt, so DueAt > its previous value is
+		// not a freshness condition. This hook completion is: the counter is
+		// deferred until OnDisconnected, including its Now and Tx, has returned.
+		// The exact durable values and no unrecorded disconnect then prove that
+		// this disconnect's write landed rather than a stale grace row surviving.
+		d, err := f.db.GetIdentity(f.ctx, store.KindDevice, "d")
+		if err != nil || d.LastDisconnectedAt != disconnectedAt {
+			return false
+		}
+		rows, err := f.db.ListTimers(f.ctx, store.TimerFilter{Kind: "device_grace", SubjectID: "d", Limit: 1})
+		return err == nil && len(rows) == 1 && rows[0].DueAt == disconnectedAt+grace.Milliseconds() && f.router.Stats().UnrecordedDisconnects == 0
+	})
 }
 func (f *fixture) finishSync(l *wire.Link) {
 	f.t.Helper()

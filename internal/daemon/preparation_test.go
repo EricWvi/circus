@@ -13,6 +13,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/daemon/toolcontext"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 type preparingTool struct {
@@ -132,7 +133,7 @@ func TestToolShutdownContextIsBounded(t *testing.T) {
 		return ctx.Err()
 	}}
 	d := newDispatcher(t, daemon.Options{ToolShutdownTimeout: 20 * time.Millisecond, Tools: []daemon.Tool{tool}})
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
 	defer cancel()
 	if err := d.Shutdown(ctx); err != nil {
 		t.Fatal(err)

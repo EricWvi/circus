@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 func unitTempDir(t *testing.T) string {
@@ -346,11 +347,5 @@ func TestShutdownReleasesInstance(t *testing.T) {
 
 func await(t *testing.T, ready func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(4 * time.Second)
-	for !ready() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition did not become ready")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	wait.For(t, ready)
 }

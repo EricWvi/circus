@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +14,7 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 type fakeTool struct {
@@ -56,7 +56,7 @@ func newDispatcher(t *testing.T, opts daemon.Options) *daemon.Dispatcher {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
 		defer cancel()
 		if err := d.Shutdown(ctx); err != nil {
 			t.Errorf("shutdown: %v", err)
@@ -67,7 +67,7 @@ func newDispatcher(t *testing.T, opts daemon.Options) *daemon.Dispatcher {
 
 func completed(t *testing.T, d *daemon.Dispatcher, id string) *circusv1.DeviceResult {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
 	defer cancel()
 	s, err := d.Wait(ctx, id)
 	if err != nil {
@@ -81,25 +81,12 @@ func completed(t *testing.T, d *daemon.Dispatcher, id string) *circusv1.DeviceRe
 
 func receive[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
-	select {
-	case value := <-ch:
-		return value
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for event")
-		var zero T
-		return zero
-	}
+	return wait.Recv(t, ch)
 }
 
 func eventually(t *testing.T, check func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for !check() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition did not become true")
-		}
-		runtime.Gosched()
-	}
+	wait.For(t, check)
 }
 
 func TestDispatcherDeduplicationAndIndependentWait(t *testing.T) {

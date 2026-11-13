@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -38,8 +39,8 @@ func (c *chanConn) Close() error {
 func (c *chanConn) SetReadLimit(int64)             {}
 func (c *chanConn) Shutdown(context.Context) error { return c.Close() }
 
-// Review 4 Low 1 (Z7): a failure between admission and acceptance must not let
-// the read loop append a message after fail dropped the shared charges.
+// A failure between admission and acceptance must not let the read loop append
+// a message after fail dropped the shared charges.
 func TestNoAcceptanceAfterFailure(t *testing.T) {
 	o := Options{MaxFragmentBytes: 64 << 10, MaxMessageBytes: 64 << 10, DisableHeartbeat: true}
 	o.Budget, _ = NewBudget(minBudget(func() Options { d, _ := o.defaults(); return d }()))
@@ -53,7 +54,7 @@ func TestNoAcceptanceAfterFailure(t *testing.T) {
 	m := &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Result{Result: &circusv1.DeviceResult{CallId: "c", Output: &circusv1.ToolOutput{Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: strings.Repeat("x", 30<<10)}}}}}}}
 	data, _ := proto.Marshal(m)
 	conn.frames <- data // the channel send orders the hook write before the reader's use
-	<-l.Done()
+	wait.Recv(t, l.Done())
 	l.mu.Lock()
 	n := len(l.received)
 	l.mu.Unlock()

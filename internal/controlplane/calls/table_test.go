@@ -7,6 +7,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"io"
 	"sync"
@@ -95,7 +96,7 @@ func prepareSub(t *testing.T, state store.CallState) (*fixture, *wire.Link, *obs
 	switch state {
 	case store.CallAccepted:
 		l = f.open("boot")
-		<-entered
+		wait.Recv(t, entered)
 		sub, err = f.router.Submit(f.ctx, "u", "desk", call("call"))
 		must(t, err)
 		drain(t, f.ctx, sub, 1)

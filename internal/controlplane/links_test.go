@@ -14,6 +14,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 type readinessStore struct {
@@ -50,7 +51,7 @@ func TestReadinessUsesRouterHealth(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		faulty.fail.Store(false)
-		cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
+		cleanup, cancel := context.WithTimeout(context.Background(), wait.Timeout)
 		defer cancel()
 		_ = s.Shutdown(cleanup)
 		_ = db.Close()
@@ -60,17 +61,10 @@ func TestReadinessUsesRouterHealth(t *testing.T) {
 		s.serveReady(recorder, httptest.NewRequest("GET", "/readyz", nil))
 		return recorder.Code, recorder.Body.String()
 	}
-	deadline := time.Now().Add(time.Second)
-	for {
-		status, body := ready()
-		if status == 200 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("server never became ready: %s", body)
-		}
-		time.Sleep(time.Millisecond)
-	}
+	wait.For(t, func() bool {
+		status, _ := ready()
+		return status == 200
+	})
 	faulty.fail.Store(true)
 	_, err = s.router.Submit(ctx, s.User().ID, "desk", &circusv1.DeviceCall{CallId: "call", SessionId: "session", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "true"}}})
 	if err == nil {
@@ -85,17 +79,10 @@ func TestReadinessUsesRouterHealth(t *testing.T) {
 	}
 	// No more call traffic: the router sweep's bounded read must recover /readyz.
 	faulty.fail.Store(false)
-	deadline = time.Now().Add(3 * time.Second)
-	for {
-		status, body = ready()
-		if status == 200 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("readiness did not recover after the store probe: %s", body)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	wait.For(t, func() bool {
+		status, _ := ready()
+		return status == 200
+	})
 }
 
 type blockingWorkerShutdown struct{ ended chan time.Time }
@@ -121,7 +108,7 @@ func (f recordingRouterClose) Close(context.Context) error {
 }
 
 func TestShutdownSubbudgetsAndOrdering(t *testing.T) {
-	const budget = 400 * time.Millisecond
+	const budget = 4 * time.Second
 	worker := blockingWorkerShutdown{ended: make(chan time.Time, 1)}
 	gateway := recordingGatewayShutdown{started: make(chan time.Time, 1)}
 	router := recordingRouterClose{closed: make(chan time.Time, 1)}

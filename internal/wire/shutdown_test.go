@@ -10,10 +10,117 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/clock"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/wire/wiretest"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestShutdownAndEOFDrain(t *testing.T) {
+	track(t)
+	for i := 0; i < 100; i++ {
+		a, b := wiretest.Pipe(wiretest.Options{})
+		s, err := wire.New(a, wire.DaemonControlSide, wire.Options{DisableHeartbeat: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := wire.New(b, wire.DaemonSide, wire.Options{DisableHeartbeat: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_Reject{Reject: &circusv1.Reject{Code: circusv1.Reject_CODE_REVOKED}}}
+		if err := testSend(s, contextFor(t), m); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Shutdown(contextFor(t)); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-r.Done():
+		case <-contextFor(t).Done():
+			t.Fatal("receiver did not see EOF")
+		}
+		got, err := r.Receive(contextFor(t))
+		if err != nil || !proto.Equal(got, m) {
+			t.Fatal("Reject lost after EOF", err)
+		}
+		if _, err = r.Receive(contextFor(t)); err == nil {
+			t.Fatal("missing terminal error")
+		}
+		_ = s.Close()
+		_ = r.Close()
+	}
+	a, b := wiretest.Pipe(wiretest.Options{})
+	r := newLink(t, b, wire.DaemonDownlink, wire.DaemonUplink, wire.Options{DisableHeartbeat: true})
+	m := &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_GoAway{GoAway: &circusv1.GoAway{ReconnectAfterMs: 30000}}}
+	frame(t, a, m)
+	_ = a.Close()
+	wait.Recv(t, r.Done())
+	if got := receive(t, r); !proto.Equal(got, m) {
+		t.Fatal("GoAway lost")
+	}
+}
+func TestShutdownDeadline(t *testing.T) {
+	track(t)
+	a, b := wiretest.Pipe(wiretest.Options{AtoB: wiretest.Faults{BlockWrites: true}})
+	defer b.Close()
+	l := newLink(t, a, wire.DaemonUplink, wire.DaemonDownlink, smallOptions())
+	send(t, l, dispatch("c", "x"))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if err := l.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	if err := testSend(l, contextFor(t), dispatch("c", "x")); err == nil {
+		t.Fatal("accepted send after shutdown")
+	}
+	if l.Stats().QueuedBytes != 0 {
+		t.Fatal("aborted queue not released")
+	}
+}
+
+// deadlineOnCancel lets the test trigger deadline expiry explicitly once
+// Shutdown has entered its closing state, rather than waiting for a wall clock.
+type deadlineOnCancel struct{ context.Context }
+
+func (c deadlineOnCancel) Err() error {
+	if c.Context.Err() != nil {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func TestShutdownRejectsNewSends(t *testing.T) {
+	track(t)
+	a, b := wiretest.Pipe(wiretest.Options{AtoB: wiretest.Faults{BlockWrites: true}})
+	defer b.Close()
+	l := newLink(t, a, wire.DaemonUplink, wire.DaemonDownlink, smallOptions())
+	send(t, l, dispatch("first", "x"))
+	done := make(chan error, 1)
+	base, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx := deadlineOnCancel{base}
+	go func() { done <- l.Shutdown(ctx) }()
+	eventually(t, func() bool { return errors.Is(testSend(l, contextFor(t), dispatch("probe", "x")), wire.ErrClosing) })
+	cancel()
+	err := wait.Recv(t, done)
+	if !errors.Is(err, wire.ErrShutdownTimeout) || !errors.Is(err, context.DeadlineExceeded) || !errors.Is(l.Err(), wire.ErrShutdownTimeout) {
+		t.Fatal("shutdown timeout identity", err, l.Err())
+	}
+}
+
+func TestReceiveReturnsTerminalError(t *testing.T) {
+	track(t)
+	a, b := wiretest.Pipe(wiretest.Options{})
+	defer a.Close()
+	l := newLink(t, b, wire.DaemonUplink, wire.DaemonDownlink, smallOptions())
+	_ = l.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := l.Receive(ctx); !errors.Is(err, wire.ErrClosed) {
+		t.Fatal("terminal error replaced by caller timeout", err)
+	}
+}
 
 func gracefulOptions() wire.Options {
 	return wire.Options{MaxMessageBytes: 1 << 20, MaxFragmentBytes: 64 << 10, DisableHeartbeat: true}
@@ -24,8 +131,8 @@ func finalResults() []proto.Message {
 	return []proto.Message{result("small"), result(strings.Repeat("1", 40<<10)), result(strings.Repeat("2", 300<<10)), result("tail")}
 }
 
-// Review 4 High 1: results a peer delivered before closing normally reach a
-// budgeted consumer that keeps calling Receive, every time.
+// Results a peer delivered before closing normally reach a budgeted consumer
+// that keeps calling Receive, every time.
 func TestGracefulCloseKeepsDelivered(t *testing.T) {
 	track(t)
 	o := gracefulOptions()
@@ -38,10 +145,11 @@ func TestGracefulCloseKeepsDelivered(t *testing.T) {
 		control := newLink(t, b, wire.DaemonUplink, wire.DaemonDownlink, ob)
 		got := make(chan int, 1)
 		var final error
+		receiveCtx := contextFor(t)
 		go func() {
 			n := 0
 			for {
-				if _, err := control.Receive(context.Background()); err != nil {
+				if _, err := control.Receive(receiveCtx); err != nil {
 					final = err
 					got <- n
 					return
@@ -53,12 +161,10 @@ func TestGracefulCloseKeepsDelivered(t *testing.T) {
 		for _, m := range want {
 			send(t, daemon, m)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := daemon.Shutdown(ctx); err != nil {
+		if err := daemon.Shutdown(contextFor(t)); err != nil {
 			t.Fatal(err)
 		}
-		cancel()
-		if n := <-got; n != len(want) || !errors.Is(final, io.EOF) {
+		if n := wait.Recv(t, got); n != len(want) || !errors.Is(final, io.EOF) {
 			t.Fatalf("run %d: received %d/%d before %v", run, n, len(want), final)
 		}
 		_ = control.Close()
@@ -87,7 +193,7 @@ func TestGracefulCloseDeliversGoAwayAfterSharedMessage(t *testing.T) {
 	if err := tx.Shutdown(contextFor(t)); err != nil {
 		t.Fatal(err)
 	}
-	<-rx.Done()
+	wait.Recv(t, rx.Done())
 	if receive(t, rx).(*circusv1.DaemonDownlink).GetDispatchCall() == nil {
 		t.Fatal("dispatch lost")
 	}
@@ -103,7 +209,7 @@ func TestGracefulCloseDeliversGoAwayAfterSharedMessage(t *testing.T) {
 // within MaxConsumerStall, without Receive or Close.
 func TestGracefulCloseUndrainedReleasesWithinStall(t *testing.T) {
 	track(t)
-	clk := &notifyingClock{Fake: clock.New(), registered: make(chan time.Duration, 64)}
+	clk := clock.New()
 	o := gracefulOptions()
 	budget := minBudget(t, o)
 	ob := o
@@ -118,9 +224,10 @@ func TestGracefulCloseUndrainedReleasesWithinStall(t *testing.T) {
 	if err := daemon.Shutdown(contextFor(t)); err != nil {
 		t.Fatal(err)
 	}
-	<-control.Done()
-	for awaitRegistered(t, clk) != ob.MaxConsumerStall {
-	}
+	wait.Recv(t, control.Done())
+	// The link's original timer remains in the fake; the second timer is the
+	// graceful-drain deadline.
+	awaitTimers(t, clk, 2)
 	if s := control.Stats(); s.ReceivedMessages != len(want) || budget.Stats().Receive.Used == 0 {
 		t.Fatalf("delivered messages must survive until the deadline: %+v", s)
 	}
@@ -139,8 +246,8 @@ func TestGracefulCloseUndrainedReleasesWithinStall(t *testing.T) {
 	}
 }
 
-// Review 4 Low 1 (Z2): an error drops from the first shared-charged message but
-// still returns the leading reserve-only prefix, then the error.
+// An error drops from the first shared-charged message but still returns the
+// leading reserve-only prefix, then the error.
 func TestFailureKeepsReservePrefix(t *testing.T) {
 	track(t)
 	o := poolOptions()
@@ -156,7 +263,7 @@ func TestFailureKeepsReservePrefix(t *testing.T) {
 	if err := a.WriteMessage(contextFor(t), []byte{0xff}); err != nil {
 		t.Fatal(err)
 	}
-	<-l.Done()
+	wait.Recv(t, l.Done())
 	if s := budget.Stats(); s.Receive.Used != 0 || l.Stats().ReceivedMessages != 1 {
 		t.Fatal("error must release shared charges at once", s, l.Stats())
 	}

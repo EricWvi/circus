@@ -1,7 +1,6 @@
 package workerclient
 
 import (
-	"context"
 	"encoding/pem"
 	"io"
 	"log"
@@ -12,9 +11,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/EricWvi/circus/internal/credfile"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 func TestTransportTLSAndPlaintextPolicy(t *testing.T) {
@@ -62,8 +61,7 @@ func TestDialNeverFollowsRedirects(t *testing.T) {
 		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
 	}))
 	defer source.Close()
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
+	ctx := wait.Ctx(t)
 	_, err := Dial(ctx, Options{Credentials: credfile.File{Role: credfile.RoleWorker, Token: "secret", PrincipalID: "worker", ControlPlaneURL: source.URL}})
 	if err == nil || !strings.Contains(err.Error(), "redirects are disabled") || reached.Load() != 0 {
 		t.Fatalf("redirect: %v, target requests %d", err, reached.Load())

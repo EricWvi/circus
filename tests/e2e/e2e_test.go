@@ -25,6 +25,7 @@ import (
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	testwait "github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/EricWvi/circus/internal/workerclient"
@@ -215,6 +216,7 @@ func (p *child) signal(t *testing.T, s syscall.Signal) {
 }
 func (p *child) wait(t *testing.T, d time.Duration) error {
 	t.Helper()
+	d = max(d, testwait.Timeout)
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
@@ -271,7 +273,7 @@ func (h *harness) start(extra []string, input string, args ...string) *child {
 	h.t.Cleanup(func() {
 		if !p.exited() {
 			p.signal(h.t, syscall.SIGTERM)
-			timer := time.NewTimer(3 * time.Second)
+			timer := time.NewTimer(testwait.Timeout)
 			select {
 			case <-p.done:
 				timer.Stop()
@@ -331,7 +333,7 @@ func (h *harness) startServer(fault bool) {
 	if fault {
 		extra = append(extra, "CIRCUS_E2E_CRASH_DISPATCH=1")
 	}
-	h.server = h.start(extra, "", "server", "--db", h.db, "--listen", listen, "--dev-insecure", "--device-grace", h.grace, "--timer-poll-interval", "50ms", "--heartbeat-interval", "100ms", "--heartbeat-timeout", "600ms", "--shutdown-timeout", "4s", "--max-message-bytes", "8388608")
+	h.server = h.start(extra, "", "server", "--db", h.db, "--listen", listen, "--dev-insecure", "--device-grace", h.grace, "--timer-poll-interval", "50ms", "--heartbeat-interval", "1s", "--heartbeat-timeout", "6s", "--shutdown-timeout", "4s", "--max-message-bytes", "8388608")
 	wait(h.t, 5*time.Second, func() bool {
 		if h.server.exited() {
 			h.t.Fatalf("server exited: %s", h.server.stderr.String())
@@ -346,7 +348,7 @@ func (h *harness) startServer(fault bool) {
 		}
 		return false
 	})
-	client := &http.Client{Timeout: time.Second}
+	client := &http.Client{Timeout: 5 * time.Second}
 	defer client.CloseIdleConnections()
 	wait(h.t, 5*time.Second, func() bool {
 		res, err := client.Get(h.base + "/readyz")
@@ -360,7 +362,7 @@ func (h *harness) startServer(fault bool) {
 func (h *harness) startDaemon() { h.daemon = h.start(nil, "", "daemon") }
 func (h *harness) client() *workerclient.Client {
 	h.t.Helper()
-	ctx, cancel := context.WithTimeout(h.t.Context(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(h.t.Context(), testwait.Timeout)
 	defer cancel()
 	c, err := workerclient.Dial(ctx, workerclient.Options{Credentials: h.worker})
 	must(h.t, err)
@@ -369,7 +371,7 @@ func (h *harness) client() *workerclient.Client {
 }
 func (h *harness) rawWorker() *wire.Link {
 	h.t.Helper()
-	ctx, cancel := context.WithTimeout(h.t.Context(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(h.t.Context(), testwait.Timeout)
 	defer cancel()
 	conn, _, err := wire.DialWebSocket(ctx, "ws"+strings.TrimPrefix(h.base, "http")+"/v1/link/worker", &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer " + h.worker.Token}}})
 	must(h.t, err)
@@ -405,7 +407,7 @@ func (h *harness) submit(c *workerclient.Client, call *circusv1.DeviceCall) *wor
 }
 func (h *harness) result(s *workerclient.Updates) *circusv1.CallUpdate {
 	h.t.Helper()
-	ctx, cancel := context.WithTimeout(h.t.Context(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(h.t.Context(), testwait.Timeout)
 	defer cancel()
 	for {
 		u, err := s.Next(ctx)
@@ -454,7 +456,7 @@ func (h *harness) query(id string) *circusv1.CallUpdate {
 	h.t.Helper()
 	c := h.client()
 	defer c.Close()
-	ctx, cancel := context.WithTimeout(h.t.Context(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(h.t.Context(), testwait.Timeout)
 	defer cancel()
 	u, err := c.Query(ctx, id)
 	must(h.t, err)
@@ -468,6 +470,7 @@ func must(t *testing.T, err error) {
 }
 func wait(t *testing.T, d time.Duration, p func() bool) {
 	t.Helper()
+	d = max(d, testwait.Timeout)
 	deadline := time.NewTimer(d)
 	defer deadline.Stop()
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -634,7 +637,7 @@ func TestCLIExitCodes(t *testing.T) {
 	h.offline()
 	accepted := h.call("accepted-cli", "printf should-not-run")
 	stream = h.submit(c, accepted)
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
 	defer cancel()
 	u, err := stream.Next(ctx)
 	must(t, err)
@@ -755,7 +758,7 @@ func TestWorkerCloseSlotsAndCancelOrdering(t *testing.T) {
 	wait(t, 3*time.Second, func() bool { return markerLines(t, marker) == 1 })
 	_ = c.Close()
 	c = h.client()
-	queryCtx, queryCancel := context.WithTimeout(t.Context(), 5*time.Second)
+	queryCtx, queryCancel := context.WithTimeout(t.Context(), testwait.Timeout)
 	defer queryCancel()
 	outcome, err := c.Query(queryCtx, call.CallId)
 	must(t, err)
@@ -790,7 +793,7 @@ func TestWorkerCloseSlotsAndCancelOrdering(t *testing.T) {
 	accepted := h.call("cancel-ordered", "printf should-not-run")
 	h.sendWorker(raw, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: "desk", Call: accepted}}})
 	h.sendWorker(raw, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: accepted.CallId}}})
-	cancelCtx, cancelDone := context.WithTimeout(t.Context(), 3*time.Second)
+	cancelCtx, cancelDone := context.WithTimeout(t.Context(), testwait.Timeout)
 	defer cancelDone()
 	for {
 		msg, err := raw.Receive(cancelCtx)
@@ -829,7 +832,7 @@ func (h *harness) trackTool(pidfile string) int {
 	return pid
 }
 func TestDaemonCrashF4(t *testing.T) {
-	h := newHarness(t, "200ms")
+	h := newHarness(t, "1s")
 	c := h.client()
 	marker := filepath.Join(h.dir, "marker")
 	pidfile := filepath.Join(h.dir, "tool.pid")
@@ -842,7 +845,7 @@ func TestDaemonCrashF4(t *testing.T) {
 		t.Fatal("SIGKILL succeeded")
 	}
 	h.state(call.CallId, store.CallUnknown)
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
 	defer cancel()
 	for {
 		u, err := s.Next(ctx)
@@ -885,7 +888,7 @@ func TestServerCrashAcceptedF6(t *testing.T) {
 	marker := filepath.Join(h.dir, "marker")
 	call := h.call("f6accepted", "printf 'run\n' >> "+shellQuote(marker)+"; printf accepted-recovered")
 	s := h.submit(c, call)
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
 	defer cancel()
 	u, err := s.Next(ctx)
 	must(t, err)
@@ -1018,7 +1021,7 @@ func TestRevocationF17(t *testing.T) {
 	req, err := http.NewRequest("GET", h.base+"/v1/link/daemon", nil)
 	must(t, err)
 	req.Header.Set("Authorization", "Bearer "+f.Token)
-	client := &http.Client{Timeout: time.Second}
+	client := &http.Client{Timeout: 5 * time.Second}
 	defer client.CloseIdleConnections()
 	res, err := client.Do(req)
 	must(t, err)
@@ -1034,7 +1037,7 @@ func TestRevocationF17(t *testing.T) {
 	// The subscription started before either revocation is still live here.
 	h.run("", 0, "server", "worker", "revoke", "desk", "--db", h.db)
 	// An active client notices revocation through its joined reader.
-	ctx, cancel := context.WithTimeout(t.Context(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
 	defer cancel()
 	select {
 	case <-c.Done():
@@ -1069,7 +1072,7 @@ func TestGracefulShutdown(t *testing.T) {
 	}
 	select {
 	case <-c.Done():
-	case <-time.After(time.Second):
+	case <-time.After(testwait.Timeout):
 		t.Fatal("worker survived server shutdown")
 	}
 	_ = c.Close()

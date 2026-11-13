@@ -385,7 +385,7 @@ func TestRejoinAfterRevoke(t *testing.T) {
 	}
 }
 
-// NL-3: revoking only the worker frees only the worker's name; the device
+// Revoking only the worker frees only the worker's name; the device
 // of the same name on the same machine keeps working.
 func TestRevokeWorkerFreesOnlyWorkerName(t *testing.T) {
 	f := newFixture(t)

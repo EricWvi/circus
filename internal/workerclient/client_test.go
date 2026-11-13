@@ -12,6 +12,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/credfile"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/wirepolicy"
 	"google.golang.org/protobuf/proto"
@@ -177,7 +178,7 @@ func TestUpdateQueueOverflowFailsLink(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
 		defer cancel()
 		data, err := conn.ReadMessage(ctx)
 		if err != nil {
@@ -231,7 +232,7 @@ func TestUpdateQueueOverflowFailsLink(t *testing.T) {
 		if c.Err() == nil || !strings.Contains(c.Err().Error(), "update queue full") {
 			t.Fatalf("link ended for wrong reason: %v", c.Err())
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(wait.Timeout):
 		t.Fatal("reader dropped an overflowing update without failing the link")
 	}
 	// Exercise the real Submit send path on its now-closed wire link. Clear

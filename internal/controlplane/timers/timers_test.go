@@ -7,6 +7,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"go.uber.org/goleak"
 	"path/filepath"
 	"testing"
@@ -44,13 +45,9 @@ func TestClaimCompleteAndJoin(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- r.Run(ctx) }()
-	select {
-	case <-handled:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timer not handled")
-	}
+	wait.Recv(t, handled)
 	cancel()
-	<-done
+	wait.Recv(t, done)
 	if got := r.Stats(); got.Running || got.Active != 0 || got.Claims != 0 {
 		t.Fatal(got)
 	}
@@ -91,7 +88,7 @@ func TestFailedClaimIsReclaimedAfterLease(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- r.Run(ctx) }()
-	first := <-claims
+	first := wait.Recv(t, claims)
 	if first.SubjectID != "due" {
 		t.Fatal(first)
 	}
@@ -115,7 +112,7 @@ func TestFailedClaimIsReclaimedAfterLease(t *testing.T) {
 		return err == nil && len(rows) == 0
 	})
 	cancel()
-	<-done
+	wait.Recv(t, done)
 	if c.Now().UnixMilli() < now+time.Hour.Milliseconds() {
 		select {
 		case extra := <-claims:
@@ -130,11 +127,5 @@ func TestFailedClaimIsReclaimedAfterLease(t *testing.T) {
 
 func waitUntil(t *testing.T, p func() bool) {
 	t.Helper()
-	end := time.Now().Add(5 * time.Second)
-	for !p() {
-		if time.Now().After(end) {
-			t.Fatal("condition did not become true")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	wait.For(t, p)
 }

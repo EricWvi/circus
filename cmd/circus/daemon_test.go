@@ -13,12 +13,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -33,14 +33,7 @@ func (h harnessTool) Run(ctx context.Context, call *circusv1.DeviceCall) (*circu
 
 func await[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
-	select {
-	case value := <-ch:
-		return value
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out")
-		var zero T
-		return zero
-	}
+	return wait.Recv(t, ch)
 }
 
 func decodeStatus(t *testing.T, line string) *circusv1.CallStatus {

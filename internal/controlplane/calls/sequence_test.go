@@ -129,6 +129,9 @@ func seqSteps(t *testing.T) int {
 // the two runs see different start orders: a picker that depended on start
 // order (blockedExecs unsorted) diverges here.
 func TestRandomSequencesReplay(t *testing.T) {
+	if raceEnabled {
+		t.Skip("trace replay is independent of race instrumentation")
+	}
 	if os.Getenv("CIRCUS_ROUTER_SEED") != "" {
 		t.Skip("replaying one seed")
 	}
@@ -722,7 +725,7 @@ func (w *seqWorld) restartControlPlane() {
 	for _, d := range w.devices {
 		if d.daemon != nil && !d.daemon.stopped {
 			// Kick only once the daemon noticed the cut and holds its
-			// backoff timer; an earlier kick would find no timer (M5).
+			// backoff timer; an earlier kick would find no timer.
 			dm := d.daemon
 			w.wait("backoff of "+dm.label, func() bool { s := dm.client.Stats(); return !s.Connected && s.RetryDelay > 0 && dm.clock.pending() })
 			dm.kick(true)

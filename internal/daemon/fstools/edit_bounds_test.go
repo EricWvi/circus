@@ -138,6 +138,9 @@ func TestEditEncodedResultSizeLimit(t *testing.T) {
 }
 
 func TestEditUnmatchedMemoryBound(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation bounds are distorted by race instrumentation")
+	}
 	if testing.Short() {
 		t.Skip("skipping 250 MiB memory regression in short mode")
 	}
@@ -184,6 +187,9 @@ func TestEditUnmatchedMemoryBound(t *testing.T) {
 }
 
 func TestEditUTF16MemoryBound(t *testing.T) {
+	if raceEnabled {
+		t.Skip("allocation bounds are distorted by race instrumentation")
+	}
 	if testing.Short() {
 		t.Skip("skipping 200 MiB UTF-16 memory regression in short mode")
 	}

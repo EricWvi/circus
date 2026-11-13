@@ -16,6 +16,7 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"google.golang.org/protobuf/proto"
 )
@@ -43,7 +44,7 @@ func newJobs(t *testing.T, opts jobs.Options) *jobs.Manager {
 	leakcheck.Track(t)
 	m := jobs.NewManager(opts)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
 		defer cancel()
 		if err := m.Shutdown(ctx); err != nil {
 			t.Errorf("jobs shutdown: %v", err)
@@ -204,7 +205,7 @@ func TestJobManagerLaunchDoesNotBlockLookups(t *testing.T) {
 		if result.found {
 			t.Fatalf("reserved job was visible: %+v", result)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(wait.Timeout):
 		t.Fatal("lookups blocked while launch was running")
 	}
 
@@ -248,14 +249,7 @@ func addJob(m *jobs.Manager, session, path string, job jobs.Job) (jobs.Info, err
 }
 func receive[T any](t *testing.T, ch <-chan T) T {
 	t.Helper()
-	select {
-	case value := <-ch:
-		return value
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for event")
-		var zero T
-		return zero
-	}
+	return wait.Recv(t, ch)
 }
 
 func TestNaturalExitWhileStopIsInFlight(t *testing.T) {
@@ -302,7 +296,7 @@ func TestEventsSerializedWithoutBlockingStateChanges(t *testing.T) {
 	}
 	first.exit <- jobExit{code: 4}
 	// Wait for the state transition without waiting for the blocked callback.
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(wait.Timeout)
 	for {
 		if info, ok := m.Get(firstInfo.ID); ok && info.State == circusv1.JobEvent_STATE_EXITED {
 			break
@@ -700,11 +694,5 @@ func TestRequestStopSessionIsAsyncParallelAndOncePerJob(t *testing.T) {
 
 func eventually(t *testing.T, check func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for !check() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition not reached")
-		}
-		runtime.Gosched()
-	}
+	wait.For(t, check)
 }

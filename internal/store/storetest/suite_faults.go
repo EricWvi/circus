@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 func testFaultInjection(t *testing.T, b Backend) {
@@ -90,7 +91,7 @@ func testFaultyLockHonoursCtx(t *testing.T, b Backend) {
 		select {
 		case err := <-done:
 			mustIs(t, err, context.DeadlineExceeded)
-		case <-time.After(2 * time.Second):
+		case <-time.After(wait.Timeout):
 			t.Fatal("write waited for the Faulty lock past its own deadline")
 		}
 		return nil

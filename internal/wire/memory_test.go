@@ -9,13 +9,14 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/wire/wiretest"
 	"google.golang.org/protobuf/proto"
 )
 
-// Scaled from reviewer TestMemReceiveWorst. Opt in with the existing large-test
-// memory budget; ordinary go test stays fast. Every sampling goroutine is joined.
+// Opt in with the existing large-test memory budget; ordinary go test stays
+// fast. Every sampling goroutine is joined.
 func TestReceiveMemoryPhases(t *testing.T) {
 	if os.Getenv("CIRCUS_WIRE_LARGE_TEST") != "1" {
 		t.Skip("explicit heap phase measurement")
@@ -48,7 +49,7 @@ func TestReceiveMemoryPhases(t *testing.T) {
 			time.Sleep(2 * time.Millisecond)
 		}
 	}()
-	defer func() { close(stop); <-done }()
+	defer func() { close(stop); wait.Recv(t, done) }()
 	write := func(id uint64, full bool) {
 		var index uint32
 		for off := 0; off < len(src); off += wire.DefaultMaxFragmentBytes {
