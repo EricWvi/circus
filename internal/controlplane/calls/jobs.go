@@ -17,7 +17,7 @@ import (
 // dropped; the current generation's snapshot reconciles them.
 
 func (r *router) OnJobEvent(ctx context.Context, conn gateway.Connection, event *circusv1.JobEvent) error {
-	op, err := r.enter(ctx, true)
+	op, err := r.enter(ctx, true, "job-event")
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (r *router) job(conn gateway.Connection, event *circusv1.JobEvent) store.Jo
 }
 
 func (r *router) OnJobSnapshot(ctx context.Context, conn gateway.Connection, s *circusv1.JobSnapshot) error {
-	op, err := r.enter(ctx, true)
+	op, err := r.enter(ctx, true, "job-snapshot")
 	if err != nil {
 		return err
 	}

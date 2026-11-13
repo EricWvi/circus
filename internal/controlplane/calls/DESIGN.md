@@ -65,7 +65,15 @@ cannot commit, publish the actual result anyway, release pending content and mar
 readiness unhealthy. Keep the existing durable watchdog for later query repair;
 do not pretend completion was persisted. Transient delivery is not a new durable
 state transition. Duplicate terminal replies may supply content to explicit query
-waiters without regressing metadata.
+waiters without regressing metadata. A daemon reply (ack or status) that cannot
+be applied still answers the waiting queries of that call whose CallQuery went
+out on the reply's connection, instead of leaving them waiting for a reply that
+already came (T6 randomized sequence test,
+TestQueryAnsweredWhenReplyCannotPersist): after a store write or read failure
+an active call falls back to its durable state and a completed one reports
+ErrStoreUnavailable; after an invalid reply (the link closes) they are
+answered as when the daemon cannot be asked. Waiters on other connections
+keep waiting for their own reply.
 
 ## Connection ownership and reconnect
 
@@ -294,6 +302,15 @@ graceful close still drains within MaxConsumerStall before reservations disappea
 I do not propose a per-link share in T5: Q33 explicitly assigns capacity planning
 first. A fairness cap may be necessary for many slow devices; T6 should measure
 cross-device starvation and budget-exhaustion rates before deciding a wire change.
+The T6 measurement is gateway/measure_test.go, TestMeasureReceivePoolShare
+(opt-in, a few minutes per segment):
+
+    CIRCUS_MEASURE=1 CIRCUS_MEASURE_SCENARIOS=n16-k4-2min,n16-k4-640,n16-k4-k462 \
+      go test -timeout 580s -count=1 -v -run TestMeasureReceivePoolShare ./internal/controlplane/gateway/
+
+Scenario names are n<devices>-none and n<devices>-k<large>-{2min,640,k462};
+CIRCUS_MEASURE_SECONDS and CIRCUS_MEASURE_SLOW_MIBPS tune duration and the
+large consumer's rate.
 
 ## Phase 2 decisions (main session, D43 items 13–15)
 
@@ -339,7 +356,12 @@ cross-device starvation and budget-exhaustion rates before deciding a wire chang
   delays every link's Receive and can trip MaxConsumerStall and resync on
   other devices. Acceptable at M2 scale (single user, few devices, SQLite's
   single writer); T6 should measure lock hold times. Per-device locks with
-  marshalling and cloning outside them are the follow-up.
+  marshalling and cloning outside them are the follow-up. The T6 measurement
+  is measure_lock_test.go, TestMeasureLockHold (opt-in, about a minute; put
+  the SQLite file on a real disk to include fsync):
+
+      CIRCUS_MEASURE=1 CIRCUS_MEASURE_DIR=$PWD/.tmp \
+        go test -timeout 580s -count=1 -v -run TestMeasureLockHold ./internal/controlplane/calls/
 - **Grace expiry does not consult the registry.** OnConnected cancels the grace
   timer in its first Tx, so a successful CompleteTimer already proves no sync
   has started. A registered-but-unsynchronized route must not swallow the timer.

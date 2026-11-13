@@ -44,7 +44,7 @@ func isActive(s store.CallState) bool {
 }
 
 func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.DeviceCall) (*Subscription, error) {
-	op, err := r.enter(ctx, false)
+	op, err := r.enter(ctx, false, "submit")
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +298,7 @@ func (r *router) dispatch(ctx context.Context, c store.Call, route gateway.Conne
 }
 
 func (r *router) Cancel(ctx context.Context, user, id string) error {
-	op, err := r.enter(ctx, false)
+	op, err := r.enter(ctx, false, "cancel")
 	if err != nil {
 		return err
 	}
@@ -340,7 +340,7 @@ func (r *router) Cancel(ctx context.Context, user, id string) error {
 }
 
 func (r *router) Query(ctx context.Context, user, id string) (*circusv1.CallUpdate, error) {
-	op, err := r.enter(ctx, false)
+	op, err := r.enter(ctx, false, "query")
 	if err != nil {
 		return nil, err
 	}
@@ -434,7 +434,7 @@ func (r *router) query(op *operation, c store.Call) (*circusv1.CallUpdate, error
 	if r.closed {
 		return nil, ErrClosed
 	}
-	if errors.Is(response.err, ErrDeviceOffline) {
+	if errors.Is(response.err, ErrDeviceOffline) || (errors.Is(response.err, ErrStoreUnavailable) && c.State != store.CallCompleted) {
 		return r.unreachable(op.ctx, c, nil)
 	}
 	return response.update, response.err
@@ -500,7 +500,7 @@ func (r *router) answer(id string, u *circusv1.CallUpdate, err error) {
 }
 
 func (r *router) StopSessionJobs(ctx context.Context, user, session string) error {
-	op, err := r.enter(ctx, false)
+	op, err := r.enter(ctx, false, "stop-session-jobs")
 	if err != nil {
 		return err
 	}

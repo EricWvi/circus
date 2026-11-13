@@ -428,7 +428,7 @@ func TestCrashAtEverySyncWritePoint(t *testing.T) {
 				}
 				m := v.(*circusv1.DaemonDownlink)
 				if m.GetListJobs() != nil {
-					send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_JobSnapshot{JobSnapshot: &circusv1.JobSnapshot{}}})
+					trySnapshot(f.ctx, l) // the crashed sync may be closing the link
 				}
 				if m.GetDispatchCall() != nil {
 					executed = true

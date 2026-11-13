@@ -101,11 +101,19 @@ type operation struct {
 	stop   func() bool
 	locked bool
 	slot   bool
+	kind   string    // operation name reported to lockObserver
+	since  time.Time // start of the current locked segment, when observed
 }
+
+// lockObserver, when set by tests (export_test.go), receives how long each
+// locked segment of an operation held the router-wide admission lock. It is
+// nil in production: the cost is one nil check per lock and unlock. Set it
+// only while no router runs.
+var lockObserver func(kind string, held time.Duration)
 
 // enter admits an operation and returns it locked. Public calls refuse at
 // once when every slot is busy (wait false); hooks and timers wait for one.
-func (r *router) enter(ctx context.Context, wait bool) (*operation, error) {
+func (r *router) enter(ctx context.Context, wait bool, kind string) (*operation, error) {
 	if r.ctx.Err() != nil {
 		return nil, ErrClosed
 	}
@@ -146,10 +154,31 @@ func (r *router) enter(ctx context.Context, wait bool) (*operation, error) {
 		r.work.Done()
 		return nil, ErrClosed
 	}
-	return &operation{r: r, ctx: ctx, cancel: cancel, stop: stop, locked: true, slot: true}, nil
+	op := &operation{r: r, ctx: ctx, cancel: cancel, stop: stop, locked: true, slot: true, kind: kind}
+	if lockObserver != nil {
+		op.since = time.Now()
+	}
+	return op, nil
 }
-func (o *operation) unlock() { o.locked = false; o.r.mu.Unlock() }
-func (o *operation) lock()   { o.r.mu.Lock(); o.locked = true }
+func (o *operation) unlock() {
+	observe := lockObserver
+	var held time.Duration
+	if observe != nil {
+		held = time.Since(o.since)
+	}
+	o.locked = false
+	o.r.mu.Unlock()
+	if observe != nil {
+		observe(o.kind, held)
+	}
+}
+func (o *operation) lock() {
+	o.r.mu.Lock()
+	o.locked = true
+	if lockObserver != nil {
+		o.since = time.Now()
+	}
+}
 
 // yield lets other operations run between items of a long walk.
 func (o *operation) yield() { o.unlock(); o.lock() }
@@ -400,6 +429,10 @@ func (r *router) sweep() {
 			r.probeStore()
 		}
 		r.mu.Lock()
+		observe, since := lockObserver, time.Time{}
+		if observe != nil {
+			since = time.Now()
+		}
 		if !r.closed {
 			now := r.config.Clock.Now()
 			for s := range r.subs {
@@ -412,6 +445,9 @@ func (r *router) sweep() {
 			}
 		}
 		r.mu.Unlock()
+		if observe != nil {
+			observe("sweep", time.Since(since))
+		}
 		alarm = r.config.Clock.After(interval)
 	}
 }

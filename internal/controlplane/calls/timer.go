@@ -18,7 +18,7 @@ type timerEffects struct {
 }
 
 func (r *router) HandleTimer(ctx context.Context, claim store.Timer) error {
-	op, err := r.enter(ctx, true)
+	op, err := r.enter(ctx, true, "timer")
 	if err != nil {
 		return err
 	}

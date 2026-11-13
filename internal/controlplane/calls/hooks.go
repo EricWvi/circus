@@ -81,7 +81,7 @@ func (r *router) replied(conn gateway.Connection, key string) {
 }
 
 func (r *router) OnConnected(ctx context.Context, conn gateway.Connection) error {
-	op, err := r.enter(ctx, true)
+	op, err := r.enter(ctx, true, "connected")
 	if err != nil {
 		return err
 	}
@@ -336,7 +336,7 @@ func (r *router) replayCancels(op *operation, conn gateway.Connection) error {
 }
 
 func (r *router) OnDisconnected(ctx context.Context, c gateway.Connection) error {
-	op, err := r.enter(ctx, true)
+	op, err := r.enter(ctx, true, "disconnected")
 	if err != nil {
 		return err
 	}
@@ -388,8 +388,8 @@ func (r *router) inbound(ctx context.Context, conn gateway.Connection, id string
 	return c, c.UserID == conn.UserID && c.DeviceID == conn.Target.DeviceID && c.DispatchedBootID == conn.Target.BootID, nil
 }
 
-func (r *router) OnCallAck(ctx context.Context, conn gateway.Connection, ack *circusv1.CallAck) error {
-	op, err := r.enter(ctx, true)
+func (r *router) OnCallAck(ctx context.Context, conn gateway.Connection, ack *circusv1.CallAck) (err error) {
+	op, err := r.enter(ctx, true, "call-ack")
 	if err != nil {
 		return err
 	}
@@ -398,6 +398,7 @@ func (r *router) OnCallAck(ctx context.Context, conn gateway.Connection, ack *ci
 		return protocol("invalid ack")
 	}
 	r.replied(conn, ack.CallId)
+	defer r.unapplied(conn, ack.CallId, &err)
 	c, ok, err := r.inbound(op.ctx, conn, ack.CallId)
 	if err != nil || !ok {
 		return err
@@ -445,7 +446,7 @@ func (r *router) OnCallAck(ctx context.Context, conn gateway.Connection, ack *ci
 }
 
 func (r *router) OnDeviceResult(ctx context.Context, conn gateway.Connection, result *circusv1.DeviceResult) error {
-	op, err := r.enter(ctx, true)
+	op, err := r.enter(ctx, true, "device-result")
 	if err != nil {
 		return err
 	}
@@ -460,8 +461,8 @@ func (r *router) OnDeviceResult(ctx context.Context, conn gateway.Connection, re
 	return r.complete(op.ctx, c, result)
 }
 
-func (r *router) OnCallStatus(ctx context.Context, conn gateway.Connection, status *circusv1.CallStatus) error {
-	op, err := r.enter(ctx, true)
+func (r *router) OnCallStatus(ctx context.Context, conn gateway.Connection, status *circusv1.CallStatus) (err error) {
+	op, err := r.enter(ctx, true, "call-status")
 	if err != nil {
 		return err
 	}
@@ -470,11 +471,35 @@ func (r *router) OnCallStatus(ctx context.Context, conn gateway.Connection, stat
 		return protocol("invalid status")
 	}
 	r.replied(conn, status.CallId)
+	defer r.unapplied(conn, status.CallId, &err)
 	c, ok, err := r.inbound(op.ctx, conn, status.CallId)
 	if err != nil || !ok {
 		return err
 	}
 	return r.status(op.ctx, c, status)
+}
+
+// unapplied answers the waiting queries of call id whose CallQuery went out
+// on conn when the daemon's reply could not be applied: a store write or
+// read failed (ErrStoreUnavailable: an active call falls back to its durable
+// state, a completed one reports the store failure), or the reply was
+// invalid (ErrDeviceOffline: the link closes, the daemon cannot answer).
+// Waiters on other connections keep waiting for their own reply. A result
+// already answered them (F19), so this reaches only unanswered waiters.
+func (r *router) unapplied(conn gateway.Connection, id string, err *error) {
+	if *err == nil {
+		return
+	}
+	code := ErrStoreUnavailable
+	if protocolErr := (*wire.ProtocolError)(nil); errors.As(*err, &protocolErr) {
+		code = ErrDeviceOffline
+	}
+	for _, q := range r.queries[id] {
+		if !q.answered && q.conn == conn.Target.ConnectionID {
+			q.answered = true
+			q.reply <- queryReply{err: code}
+		}
+	}
 }
 
 func (r *router) status(ctx context.Context, c store.Call, s *circusv1.CallStatus) error {

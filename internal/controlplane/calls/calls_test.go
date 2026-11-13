@@ -27,7 +27,13 @@ import (
 	"time"
 )
 
-func TestMain(m *testing.M) { os.Exit(leakcheck.Run(m, leakcheck.Config{})) }
+func TestMain(m *testing.M) {
+	config := leakcheck.Config{}
+	if os.Getenv("CIRCUS_MEASURE") == "1" {
+		config.MemoryLimit = 64 << 30 // the opt-in measurements move 64 MiB messages
+	}
+	os.Exit(leakcheck.Run(m, config))
+}
 
 type authStub struct{}
 
