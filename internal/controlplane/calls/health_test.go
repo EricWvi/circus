@@ -56,8 +56,7 @@ func TestHealthyRecoversAfterPeriodicStoreProbe(t *testing.T) {
 	if f.router.Healthy() {
 		t.Fatal("failed submission did not clear store health")
 	}
-	f.clock.Advance(time.Second)
-	eventually(t, f.router.Healthy)
+	advanceUntil(t, f, f.router.Healthy)
 }
 
 type probeTestStore struct {
@@ -105,14 +104,12 @@ func TestHealthProbeFailureKeepsUnhealthy(t *testing.T) {
 	if f.router.Healthy() {
 		t.Fatal("failed submission did not clear store health")
 	}
-	f.clock.Advance(time.Second)
-	eventually(t, func() bool { return wrapper.reads.Load() > 0 })
+	advanceUntil(t, f, func() bool { return wrapper.reads.Load() > 0 })
 	if f.router.Healthy() {
 		t.Fatal("failed store probe restored health")
 	}
 	wrapper.failReads.Store(false)
-	f.clock.Advance(time.Second)
-	eventually(t, f.router.Healthy)
+	advanceUntil(t, f, f.router.Healthy)
 }
 
 func TestHealthProbeDoesNotHoldRouterLock(t *testing.T) {
@@ -129,12 +126,7 @@ func TestHealthProbeDoesNotHoldRouterLock(t *testing.T) {
 	if f.router.Healthy() {
 		t.Fatal("failed submission did not clear store health")
 	}
-	f.clock.Advance(time.Second)
-	select {
-	case <-wrapper.started:
-	case <-time.After(time.Second):
-		t.Fatal("store probe did not start")
-	}
+	advanceUntil(t, f, func() bool { return closed(wrapper.started) })
 	ctx, cancel := context.WithTimeout(f.ctx, 100*time.Millisecond)
 	defer cancel()
 	defer close(wrapper.release)
@@ -159,12 +151,7 @@ func TestHealthProbeDoesNotOverwriteNewerFailure(t *testing.T) {
 	if f.router.Healthy() {
 		t.Fatal("first failed write did not clear health")
 	}
-	f.clock.Advance(time.Second)
-	select {
-	case <-wrapper.started:
-	case <-time.After(time.Second):
-		t.Fatal("probe did not start")
-	}
+	advanceUntil(t, f, func() bool { return closed(wrapper.started) })
 	f.fault.FailAllWrites(store.ErrBusy)
 	second, err := f.router.Submit(f.ctx, "u", "desk", call("second-failure"))
 	must(t, err)
@@ -181,5 +168,30 @@ func TestHealthProbeDoesNotOverwriteNewerFailure(t *testing.T) {
 	}
 	if f.router.Healthy() {
 		t.Fatal("older probe overwrote a newer failed write")
+	}
+}
+
+// advanceUntil advances the fake clock one sweep interval at a time until p
+// holds. A single Advance can race the sweep goroutine re-arming its alarm
+// (it re-arms only after the previous probe returns), so one tick may be lost
+// under load; repeating the tick makes the wait independent of scheduling.
+func advanceUntil(t testing.TB, f *fixture, p func() bool) {
+	t.Helper()
+	end := time.Now().Add(5 * time.Second)
+	for !p() {
+		if time.Now().After(end) {
+			t.Fatal("condition did not become true")
+		}
+		f.clock.Advance(time.Second)
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func closed(c <-chan struct{}) bool {
+	select {
+	case <-c:
+		return true
+	default:
+		return false
 	}
 }
