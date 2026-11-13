@@ -269,7 +269,7 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 		source = io.TeeReader(f, io.MultiWriter(hasher, validity))
 	}
 	reader := bufio.NewReaderSize(source, streamReadBufferSize)
-	var body strings.Builder
+	body := &strings.Builder{}
 	var total uint64
 	var selectedBytes int64
 	sawAny, lastNewline := false, false
@@ -291,6 +291,15 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 		// captured, so formatted output has this additional defensive bound.
 		if body.Len()+extra > maxFormattedRangeBytes {
 			return false
+		}
+		if need := body.Len() + extra; need > body.Cap() {
+			// Double up to the bound: append's ~1.25x growth for large buffers
+			// would allocate about five times the final size in total. An empty
+			// Builder's Grow(n) allocates exactly n.
+			grown := &strings.Builder{}
+			grown.Grow(min(max(need, 2*body.Cap()), maxFormattedRangeBytes))
+			grown.WriteString(body.String())
+			body = grown
 		}
 		if body.Len() > 0 {
 			body.WriteByte('\n')
