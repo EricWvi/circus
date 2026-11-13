@@ -1,4 +1,4 @@
-// First version of the circus device protocol. circus is pre-release and offers
+// Version 1 of the circus device protocol. circus is pre-release and offers
 // no backward-compatibility guarantee yet. WSS envelopes, handshake, versioning,
 // heartbeat and fragmentation are defined in link.proto and the role link files.
 
@@ -221,8 +221,10 @@ type DeviceCall struct {
 	// Owning circus session. The daemon attributes background jobs and their
 	// output files to it. Required: 1-128 bytes, charset [A-Za-z0-9_-].
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	// SDK subagent ID, or an empty string for the main thread. Relay metadata;
-	// the daemon does not read it yet. May be empty; otherwise charset
+	// SDK subagent ID, or an empty string for the main thread. Relay metadata:
+	// the daemon validates it but attributes jobs and output by session_id
+	// only; the control plane stores it in the call's metadata. May be empty;
+	// otherwise charset
 	// [A-Za-z0-9_-], at most 128 bytes.
 	AgentId string `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	// Locally enforced timeout in milliseconds; zero uses the daemon default of
@@ -749,7 +751,7 @@ type ContentBlock_Text struct {
 }
 
 type ContentBlock_Image struct {
-	// Reserved for image reads; not produced in M1.
+	// Reserved for image reads; not produced yet.
 	Image *ImageBlock `protobuf:"bytes,2,opt,name=image,proto3,oneof"`
 }
 

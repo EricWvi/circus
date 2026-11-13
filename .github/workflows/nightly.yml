@@ -1,0 +1,48 @@
+name: Nightly
+
+on:
+  schedule:
+    # 19:17 UTC daily; off the top of the hour to dodge scheduler congestion.
+    - cron: "17 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # 500 seeds of the router random-sequence sweep, split into five segments
+  # so a hang is attributed to one segment. CIRCUS_ROUTER_TIMEOUT_SCALE=2
+  # stretches the harness's real-time waits for slower CI runners.
+  router-seeds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # the first seed of each 100-seed segment of the 1..500 sweep.
+        first-seed: [1, 101, 201, 301, 401]
+    env:
+      CIRCUS_ROUTER_TIMEOUT_SCALE: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+      - name: seeds from ${{ matrix.first-seed }}
+        run: task seeds CIRCUS_ROUTER_SEEDS=100 CIRCUS_ROUTER_FIRST_SEED=${{ matrix.first-seed }}
+
+  e2e-race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+      - run: task e2e-race

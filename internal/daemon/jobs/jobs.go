@@ -1,3 +1,16 @@
+// Package jobs manages background processes started by tools: lifecycle and
+// ownership, running and exited events on a boot-wide sequence, bounded
+// snapshots, session-wide stopping and retention of ended jobs.
+//
+// Jobs belong to a session and its creating call; IDs are daemon-generated
+// 12-character hex strings. Events run serially in transition order through
+// OnEvent, with a bounded callback backlog (default 8 MiB, 4096 entries).
+// Each stop request owns at most one stop goroutine. Ended jobs remain
+// queryable until RetainExited (default thirty minutes) expires. Snapshot
+// captures the sequence high-water mark and retained states; oversize
+// snapshots take a RUNNING-first bounded prefix, mark Truncated, and return
+// ErrSnapshotLimit. See internal/daemon's package doc for how the dispatcher
+// wires the manager.
 package jobs
 
 import (

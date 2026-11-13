@@ -1,4 +1,4 @@
-// First version of the circus device protocol. circus is pre-release and offers
+// Version 1 of the circus device protocol. circus is pre-release and offers
 // no backward-compatibility guarantee yet. WSS envelopes, handshake, versioning,
 // heartbeat and fragmentation are defined in link.proto and the role link files.
 
@@ -39,8 +39,10 @@ export type DeviceCall = Message<"circus.v1.DeviceCall"> & {
   sessionId: string;
 
   /**
-   * SDK subagent ID, or an empty string for the main thread. Relay metadata;
-   * the daemon does not read it yet. May be empty; otherwise charset
+   * SDK subagent ID, or an empty string for the main thread. Relay metadata:
+   * the daemon validates it but attributes jobs and output by session_id
+   * only; the control plane stores it in the call's metadata. May be empty;
+   * otherwise charset
    * [A-Za-z0-9_-], at most 128 bytes.
    *
    * @generated from field: string agent_id = 3;
@@ -335,7 +337,7 @@ export type ContentBlock = Message<"circus.v1.ContentBlock"> & {
     case: "text";
   } | {
     /**
-     * Reserved for image reads; not produced in M1.
+     * Reserved for image reads; not produced yet.
      *
      * @generated from field: circus.v1.ImageBlock image = 2;
      */

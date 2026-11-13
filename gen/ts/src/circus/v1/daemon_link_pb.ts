@@ -369,8 +369,8 @@ export const JobSnapshotSchema: GenMessage<JobSnapshot> = /*@__PURE__*/
   messageDesc(file_circus_v1_daemon_link, 6);
 
 /**
- * StopSessionJobs exposes idempotent session job stopping; M2 has no session
- * orchestration. It does not cancel foreground calls.
+ * StopSessionJobs exposes idempotent session job stopping; there is no
+ * session orchestration yet. It does not cancel foreground calls.
  *
  * @generated from message circus.v1.StopSessionJobs
  */

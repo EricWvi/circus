@@ -91,7 +91,7 @@ func (CallUpdate_Rejected_Code) EnumDescriptor() ([]byte, []int) {
 	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 5, 0}
 }
 
-// WorkerUplink is the M2 call-only worker-to-control-plane envelope.
+// WorkerUplink is the call-only worker-to-control-plane envelope.
 // Hello must be first; no business messages before Welcome. Session and lease
 // messages belong to M3. Frames are FIFO; fragment/control scheduling follows
 // Fragment's rules. A submission must precede its same-call cancellation.
@@ -243,7 +243,7 @@ func (*WorkerUplink_CancelCall) isWorkerUplink_Payload() {}
 
 func (*WorkerUplink_CallQuery) isWorkerUplink_Payload() {}
 
-// WorkerDownlink contains only the call subset approved for M2.
+// WorkerDownlink contains only the call subset.
 type WorkerDownlink struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:

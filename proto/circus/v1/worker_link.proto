@@ -7,7 +7,7 @@ import "circus/v1/link.proto";
 
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
-// WorkerUplink is the M2 call-only worker-to-control-plane envelope.
+// WorkerUplink is the call-only worker-to-control-plane envelope.
 // Hello must be first; no business messages before Welcome. Session and lease
 // messages belong to M3. Frames are FIFO; fragment/control scheduling follows
 // Fragment's rules. A submission must precede its same-call cancellation.
@@ -24,7 +24,7 @@ message WorkerUplink {
   }
 }
 
-// WorkerDownlink contains only the call subset approved for M2.
+// WorkerDownlink contains only the call subset.
 message WorkerDownlink {
   oneof payload {
     Welcome welcome = 1;

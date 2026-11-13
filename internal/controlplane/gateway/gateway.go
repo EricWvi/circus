@@ -1,5 +1,21 @@
 // Package gateway defines authenticated daemon links and their registry.
 // The HTTP host supplies TLS (or explicitly allowed loopback development HTTP).
+//
+// All daemon links share ONE wire.Budget (SendPoolBytes/ReceivePoolBytes;
+// zero default: twice wire.MinBudget). Pool sizing rule (D43 item 18):
+// with (Smin, Rmin) = wire.MinBudget(LinkOptions) (about 262 MiB receive
+// with the default 64 MiB message limit), pools below 2*Smin / 2*Rmin are
+// rejected (PoolError). Let K be the number of devices that may stream
+// large (8–64 MiB) results at once; size the receive pool at
+// max(2*Rmin, K*Rmin) plus headroom: large links measured about 250–300 MiB
+// each, and the conservative K*462 MiB (one link's peak receive phase)
+// showed no starvation at 4/16/64 devices (TestMeasureReceivePoolShare,
+// opt-in CIRCUS_MEASURE=1). ErrBudgetExhausted or forced reconnects on
+// large-result links mean K exceeds what the pool was sized for. There is
+// no per-link share yet: a few large transfers can delay or starve other
+// devices' results when K is not bounded; a per-link cap (Rmin) plus a
+// small-message reserve is planned before multi-user (M4). See
+// calls/DESIGN.md "Capacity planning (Q33)".
 package gateway
 
 import (
@@ -24,6 +40,19 @@ var (
 	// ErrWrongRole reports a valid non-daemon credential without calling it revoked.
 	ErrWrongRole = errors.New("gateway: daemon role required")
 )
+
+// PoolError reports send or receive pools below twice wire.MinBudget. It
+// carries the configured and smallest accepted values so the host can name
+// its flags and the minimum (see the sizing rule in this package's doc).
+type PoolError struct {
+	Send, Receive       int
+	MinSend, MinReceive int
+}
+
+func (e *PoolError) Error() string {
+	return fmt.Sprintf("gateway: send pool %d and receive pool %d below the minimum %d and %d (twice wire.MinBudget)",
+		e.Send, e.Receive, e.MinSend, e.MinReceive)
+}
 
 // Principal is the gateway-owned daemon identity, containing no bearer token.
 // All strings are nonempty, copied on retention and at most 128 bytes. The host

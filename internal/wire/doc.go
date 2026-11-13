@@ -18,7 +18,7 @@
 //
 // Inputs and tool-output envelopes follow negotiated MaxMessageBytes (default
 // 64 MiB, D43), including DeviceResult inside CallStatus, a duplicate CallAck or
-// a worker CallUpdate. M1 ranged Read can format 6.4 MB, and Edit failures echo
+// a worker CallUpdate. Ranged Read can format 6.4 MB, and Edit failures echo
 // old_string near the input limit; wire does not impose a smaller result cap.
 // Status-only envelopes and all metadata outside embedded results stay within
 // 64 KiB, enough for IDs, state, diagnostics and bounded device lists. Other
@@ -93,7 +93,7 @@
 //     about 5 KiB, so a budgeted link buffers only about 12 unread small
 //     messages before its reader pauses (backpressure; after MaxConsumerStall,
 //     ErrConsumerStalled). Without a Budget the bound is MaxReceiveBytes
-//     (136 MiB). T5 consumers must keep Receive running to sustain throughput.
+//     (136 MiB). Consumers must keep Receive running to sustain throughput.
 //
 // New rejects pools that cannot hold one maximum-size message (MinBudget):
 // send >= 2M, receive >= 2M + 2M + 6 MiB + 4 KiB = 4M + 6 MiB + 4 KiB, which is
@@ -146,7 +146,7 @@
 // peers in timeout..timeout+min(interval,fragment_timeout), default 15..20 s.
 // A subsequent 30 s gateway grace therefore gives 45..50 s, not exactly 45 s.
 //
-// Barriers also delay unrelated cancels behind earlier large dispatches; T5
+// Barriers also delay unrelated cancels behind earlier large dispatches;
 // cancellation watchdogs must account for that delay. Send serializes under a
 // per-link mutex; another Send waiting for it does not observe ctx until it
 // acquires the mutex (shared exhaustion still returns ErrBusy before that wait).

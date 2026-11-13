@@ -17,6 +17,7 @@ import (
 
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/controlplane"
+	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 )
 
@@ -25,6 +26,7 @@ const serverUsage = `usage:
                 [--public-url URL] [--shutdown-timeout 10s] [--timer-poll-interval 1s]
                 [--max-message-bytes N] [--device-grace 30s]
                 [--heartbeat-interval 5s] [--heartbeat-timeout 15s]
+                [--send-pool-bytes N] [--receive-pool-bytes N]
   circus server enroll-token create --role daemon|worker|both [--ttl 1h] [--url https://host:port] [--db PATH]
   circus server device list|revoke <name> [--db PATH]
   circus server worker list|revoke <name> [--db PATH]
@@ -32,6 +34,10 @@ const serverUsage = `usage:
 revoke revokes the identity's credentials and deletes it, freeing the name
 for a new join. The admin commands open only an existing database: pass the
 server's --db when it is not the default.
+
+All daemon links share one wire.Budget; --send-pool-bytes and
+--receive-pool-bytes size its two pools (0 keeps the default, twice
+wire.MinBudget; the gateway refuses smaller values).
 
 M2 supports one long-lived worker plus one CLI connection at a time. HTTP 503
 on a worker link means both connection slots are full.`
@@ -76,6 +82,8 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	grace := fs.Duration("device-grace", 0, "disconnected device grace (default 30s)")
 	heartbeat := fs.Duration("heartbeat-interval", 0, "link heartbeat interval (default 5s)")
 	heartbeatTimeout := fs.Duration("heartbeat-timeout", 0, "link heartbeat timeout (default 15s)")
+	sendPool := fs.Int("send-pool-bytes", 0, "shared send pool bytes across all daemon links (0 = default, twice wire.MinBudget)")
+	receivePool := fs.Int("receive-pool-bytes", 0, "shared receive pool bytes across all daemon links (0 = default, twice wire.MinBudget)")
 	debug := fs.Bool("debug", false, "log at debug level")
 	pos, err := parseArgs(fs, args)
 	if err != nil {
@@ -112,7 +120,20 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := srv.ConfigureLinks(ctx, controlplane.LinkConfig{MaxMessageBytes: *maxMessage, GracePeriod: *grace, HeartbeatInterval: *heartbeat, HeartbeatTimeout: *heartbeatTimeout}); err != nil {
+	if err := srv.ConfigureLinks(ctx, controlplane.LinkConfig{MaxMessageBytes: *maxMessage, GracePeriod: *grace, HeartbeatInterval: *heartbeat, HeartbeatTimeout: *heartbeatTimeout, SendPoolBytes: *sendPool, ReceivePoolBytes: *receivePool}); err != nil {
+		// The gateway keeps the validation; name the operator's flags and
+		// the minimum each pool fell below.
+		var pool *gateway.PoolError
+		if errors.As(err, &pool) {
+			var parts []string
+			if pool.Send < pool.MinSend {
+				parts = append(parts, fmt.Sprintf("--send-pool-bytes %d is below the minimum %d", pool.Send, pool.MinSend))
+			}
+			if pool.Receive < pool.MinReceive {
+				parts = append(parts, fmt.Sprintf("--receive-pool-bytes %d is below the minimum %d", pool.Receive, pool.MinReceive))
+			}
+			return errors.New(strings.Join(parts, "; ") + " (twice wire.MinBudget)")
+		}
 		return err
 	}
 	return srv.Run(ctx)

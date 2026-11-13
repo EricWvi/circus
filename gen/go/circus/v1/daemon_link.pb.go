@@ -801,8 +801,8 @@ func (x *JobSnapshot) GetTruncated() bool {
 	return false
 }
 
-// StopSessionJobs exposes idempotent session job stopping; M2 has no session
-// orchestration. It does not cancel foreground calls.
+// StopSessionJobs exposes idempotent session job stopping; there is no
+// session orchestration yet. It does not cancel foreground calls.
 type StopSessionJobs struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required: 1-128 bytes, charset [A-Za-z0-9_-].

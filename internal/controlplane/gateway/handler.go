@@ -105,7 +105,7 @@ func newHandler(c Config) (Handler, error) {
 		c.ReceivePoolBytes = 2 * receive
 	}
 	if c.SendPoolBytes < 2*send || c.ReceivePoolBytes < 2*receive {
-		return nil, fmt.Errorf("gateway: pools must each be at least twice MinBudget")
+		return nil, &PoolError{Send: c.SendPoolBytes, Receive: c.ReceivePoolBytes, MinSend: 2 * send, MinReceive: 2 * receive}
 	}
 	budget, err := wire.NewBudget(c.SendPoolBytes, c.ReceivePoolBytes)
 	if err != nil {

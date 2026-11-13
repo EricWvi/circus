@@ -25,7 +25,8 @@
 // role can be revoked without the other.
 //
 // Package storetest holds the contract suite every implementation must pass
-// and a fault-injection wrapper; package sqlite is the SQLite backend.
+// plus fault-injection and crash-restart harnesses; package sqlite is the
+// SQLite backend.
 //
 // The suite's crash point emulates a process crash (kill -9): the restarted
 // store sees the files as the dead process left them. It does not emulate

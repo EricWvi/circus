@@ -1,5 +1,6 @@
 // Package credfile reads and writes the local credential file that `circus
-// join` creates and long-running roles (`circus daemon`, later the worker) read.
+// join` creates and the role commands read: `circus daemon` and `circus call`
+// (the M3 worker will read worker.json the same way).
 //
 // One file per machine-role principal (D43 item 8): daemon.json and
 // worker.json under $XDG_CONFIG_HOME/circus (default ~/.config/circus). The

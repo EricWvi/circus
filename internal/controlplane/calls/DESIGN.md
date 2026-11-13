@@ -299,11 +299,23 @@ small heartbeats use per-link reserves, but large results can still starve.
 Keep Receive moving: no subscriber waits in a hook, and store work must have
 bounded latency. ErrBudgetExhausted/ErrConsumerStalled mean close and resync;
 graceful close still drains within MaxConsumerStall before reservations disappear.
-I do not propose a per-link share in T5: Q33 explicitly assigns capacity planning
-first. A fairness cap may be necessary for many slow devices; T6 should measure
-cross-device starvation and budget-exhaustion rates before deciding a wire change.
-The T6 measurement is gateway/measure_test.go, TestMeasureReceivePoolShare
-(opt-in, a few minutes per segment):
+The T6 measurements (gateway/measure_test.go, TestMeasureReceivePoolShare)
+settled Q33 without a wire change for M2. Pools sized by max(2*Rmin, K*462 MiB)
+showed no starvation, budget exhaustion or stalls at 4, 16 and 64 devices;
+unconstrained large links peaked at about 250–300 MiB each, close to Rmin
+(262 MiB at 64 MiB messages). At M2 scale (4 devices, K = 1) the 524 and
+640 MiB pools are fine as well. When K is not bounded (64 devices, 8 large
+senders, 524/640 MiB) ordinary 1 KiB results waited up to the 15 s stall
+bound and 25–82% were lost to forced reconnects: large links' partial
+reassemblies compete for the pool, and small results queue behind a large
+message waiting on the same link. Operational rule: size receive at
+max(2*Rmin, K*Rmin) plus headroom (K*462 MiB is the measured-safe value), and
+read ErrBudgetExhausted or forced reconnects on large-result links as K
+exceeding the provisioning. Before multi-user (M4), add a per-link cap of
+Rmin on shared receive holdings plus a 32–64 MiB reserve usable only by
+admissions up to 4 MiB; a cap alone does not protect ordinary links once
+K*Rmin reaches the pool. The measurement is opt-in
+(CIRCUS_MEASURE=1), a few minutes per segment:
 
     CIRCUS_MEASURE=1 CIRCUS_MEASURE_SCENARIOS=n16-k4-2min,n16-k4-640,n16-k4-k462 \
       go test -timeout 580s -count=1 -v -run TestMeasureReceivePoolShare ./internal/controlplane/gateway/

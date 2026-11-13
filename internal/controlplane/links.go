@@ -19,6 +19,11 @@ type LinkConfig struct {
 	MaxMessageBytes                     int
 	GracePeriod                         time.Duration
 	HeartbeatInterval, HeartbeatTimeout time.Duration
+	// SendPoolBytes and ReceivePoolBytes set the ONE wire.Budget shared by
+	// all daemon links. Zero uses the default, twice wire.MinBudget; the
+	// gateway rejects smaller pools (see gateway.PoolError and the sizing
+	// rule in gateway's package doc).
+	SendPoolBytes, ReceivePoolBytes int
 }
 
 // ConfigureLinks composes the M2 call path using this server's authenticator.
@@ -43,7 +48,7 @@ func (s *Server) ConfigureLinks(ctx context.Context, c LinkConfig) error {
 		return err
 	}
 	opts := wire.Options{MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}
-	g, err := gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clock.Real{}, Auth: daemonAuth{s.authn, s.st}, Registry: registry, Bus: b, Hooks: r, Logger: s.logger, LinkOptions: opts})
+	g, err := gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clock.Real{}, Auth: daemonAuth{s.authn, s.st}, Registry: registry, Bus: b, Hooks: r, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
 	if err != nil {
 		_ = r.Close(ctx)
 		return err

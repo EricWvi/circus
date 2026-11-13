@@ -1,5 +1,12 @@
 version: "3"
 
+# Defaults for the task knobs below; override any of them on the command
+# line, e.g. `task fuzz FUZZTIME=10s` or `task seeds CIRCUS_ROUTER_SEEDS=50`.
+vars:
+  FUZZTIME: "30s"
+  CIRCUS_ROUTER_SEEDS: "500"
+  CIRCUS_ROUTER_FIRST_SEED: "1"
+
 tasks:
   gen:
     desc: Generate Go and TypeScript code from the protocol
@@ -20,6 +27,21 @@ tasks:
     cmds:
       - go test ./...
 
+  race:
+    desc: Run Go tests with the race detector
+    cmds:
+      - go test -race ./...
+
+  e2e:
+    desc: Run the process end-to-end tests once
+    cmds:
+      - go test -tags e2e ./tests/e2e/ -count=1
+
+  e2e-race:
+    desc: Run the process end-to-end tests three times with the race detector
+    cmds:
+      - go test -race -tags e2e ./tests/e2e/ -count=3
+
   check-gen:
     desc: Fail if generation changed tracked files or produced untracked ones
     cmds:
@@ -33,3 +55,26 @@ tasks:
     desc: Build bin/circus
     cmds:
       - go build -o bin/circus ./cmd/circus
+
+  fuzz:
+    desc: Run every fuzz target for FUZZTIME (default 30s)
+    cmds:
+      - for:
+          var: FUZZ_TARGETS
+        cmd: go test -run '^$' -fuzz '^{{.ITEM}}$' -fuzztime {{.FUZZTIME}} ./internal/wire/
+    vars:
+      # One line per target; `go test -fuzz` accepts a single target.
+      FUZZ_TARGETS:
+        - FuzzDecode
+        - FuzzReassembly
+
+  seeds:
+    desc: Router random-sequence sweep of TestRandomSequences (CIRCUS_ROUTER_SEEDS seeds from CIRCUS_ROUTER_FIRST_SEED)
+    cmds:
+      - |
+        seeds="{{.CIRCUS_ROUTER_SEEDS}}"
+        case "$seeds" in ''|*[!0-9]*) echo "CIRCUS_ROUTER_SEEDS must be a positive integer, got '$seeds'" >&2; exit 1;; esac
+        # A seed takes about 1s locally (non-race); 10s per seed
+        # gives a slow-CI safety factor while bounding a hang.
+        CIRCUS_ROUTER_SEEDS="$seeds" CIRCUS_ROUTER_FIRST_SEED="{{.CIRCUS_ROUTER_FIRST_SEED}}" \
+          go test -run '^TestRandomSequences$' -count=1 -timeout "$((seeds * 10))s" ./internal/controlplane/calls/
