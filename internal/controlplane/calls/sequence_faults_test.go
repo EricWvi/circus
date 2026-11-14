@@ -773,6 +773,14 @@ func (w *seqWorld) opResendDuringShutdown() bool {
 		old.fmu.Unlock()
 	}
 	w.shutdownSeen = refused()
+	// The refusal is counted as the daemon writes it; it may still be on the
+	// wire, not yet in a hook, so idle hooks prove nothing. Wait for its
+	// effect: the call leaves dispatched (a router that ignores the refusal
+	// times out here and fails below).
+	w.wait("router to apply the refusal of "+id, func() bool {
+		row := w.m.row(id)
+		return row != nil && row.State != store.CallDispatched
+	})
 	w.settleHooks()
 	if row := w.m.row(id); row == nil || row.State != store.CallRejected || row.OutcomeReason != "DEVICE_SHUTTING_DOWN" {
 		w.fail("resend refused during shutdown ended %v, want rejected DEVICE_SHUTTING_DOWN", row)
