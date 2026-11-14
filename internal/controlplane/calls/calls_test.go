@@ -2,9 +2,18 @@ package calls_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
@@ -14,18 +23,9 @@ import (
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/coder/websocket"
 	"go.uber.org/goleak"
 	"google.golang.org/protobuf/proto"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync/atomic"
-	"testing"
-	"time"
 )
 
 func TestMain(m *testing.M) {
@@ -38,16 +38,16 @@ func TestMain(m *testing.M) {
 
 type authStub struct{}
 
-func (authStub) Authenticate(_ context.Context, r *http.Request) (gateway.Principal, error) {
+func (authStub) Authenticate(_ context.Context, r *http.Request) (auth.Principal, error) {
 	switch r.Header.Get("Authorization") {
 	case "Bearer test":
-		return gateway.Principal{UserID: "u", DeviceID: "d", DeviceName: "desk", CredentialID: "cred"}, nil
+		return auth.Principal{Kind: store.KindDevice, UserID: "u", ID: "d", Name: "desk", CredentialID: "cred"}, nil
 	case "Bearer laptop":
-		return gateway.Principal{UserID: "u", DeviceID: "d2", DeviceName: "laptop", CredentialID: "cred2"}, nil
+		return auth.Principal{Kind: store.KindDevice, UserID: "u", ID: "d2", Name: "laptop", CredentialID: "cred2"}, nil
 	}
-	return gateway.Principal{}, gateway.ErrUnauthenticated
+	return auth.Principal{}, auth.ErrUnauthenticated
 }
-func (authStub) Recheck(context.Context, gateway.Principal) error { return nil }
+func (authStub) Valid(context.Context, string) (bool, error) { return true, nil }
 
 type fixture struct {
 	daemonBase    wire.Options
@@ -64,7 +64,6 @@ type fixture struct {
 	db            store.Store
 	fault         *storetest.Faulty
 	registry      gateway.Registry
-	bus           bus.Bus
 	router        calls.Router
 	gateway       gateway.Handler
 	server        *httptest.Server
@@ -101,7 +100,7 @@ func (h *hookCounter) OnJobEvent(ctx context.Context, c gateway.Connection, v *c
 
 // assertReleased checks the leakcheck-style ownership invariants after Close:
 // no pending content, subscribers, waiters, operations, callbacks, device
-// cursors, registry routes, gateway sockets, pool reservations or bus charges.
+// cursors, registry routes, gateway sockets, pool reservations.
 func (f *fixture) assertReleased() {
 	f.t.Helper()
 	s := f.router.Stats()
@@ -116,9 +115,6 @@ func (f *fixture) assertReleased() {
 	}
 	if s.SyncRequests != 0 || s.UnrecordedDisconnects != 0 {
 		f.t.Errorf("router sync ownership: %+v", s)
-	}
-	if s := f.bus.Stats(); s.InFlight != 0 || s.Bytes != 0 {
-		f.t.Errorf("bus ownership: %+v", s)
 	}
 }
 
@@ -137,10 +133,8 @@ func setup(t *testing.T, configure ...func(*calls.Config, *gateway.Config)) *fix
 	must(t, db.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "d", UserID: "u", Name: "desk", MachineID: "m", CreatedAt: 1}))
 	f.registry, err = gateway.NewRegistry(8)
 	must(t, err)
-	f.bus, err = bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 32, MaxBytes: 16 << 20})
-	must(t, err)
-	f.routerConfig = calls.Config{Store: f.fault, Registry: f.registry, Bus: f.bus, Clock: f.clock, MaxMessageBytes: 256 << 10}
-	f.gatewayConfig = gateway.Config{InstanceID: "instance", Clock: f.clock, Auth: authStub{}, Registry: f.registry, Bus: f.bus, MaxConnections: 8, LinkOptions: wire.Options{MaxMessageBytes: 256 << 10, MaxFragmentBytes: 1024, DisableHeartbeat: true}}
+	f.routerConfig = calls.Config{Store: f.fault, Registry: f.registry, Sender: senderTo(&f.gateway), Clock: f.clock, MaxMessageBytes: 256 << 10}
+	f.gatewayConfig = gateway.Config{InstanceID: "instance", Clock: f.clock, Auth: authStub{}, Registry: f.registry, MaxConnections: 8, LinkOptions: wire.Options{MaxMessageBytes: 256 << 10, MaxFragmentBytes: 1024, DisableHeartbeat: true}}
 	for _, fn := range configure {
 		fn(&f.routerConfig, &f.gatewayConfig)
 	}
@@ -247,9 +241,7 @@ func (f *fixture) snapshot(l *wire.Link) {
 }
 func send(t testing.TB, ctx context.Context, l *wire.Link, m proto.Message) {
 	t.Helper()
-	class, key, err := wirepolicy.Classify(m)
-	must(t, err)
-	must(t, l.Send(ctx, m, class, key))
+	must(t, l.Send(ctx, m))
 }
 func receive(t testing.TB, ctx context.Context, l *wire.Link) *circusv1.DaemonDownlink {
 	t.Helper()
@@ -393,4 +385,13 @@ func (f *fixture) daemonOptions() wire.Options {
 	o.Clock = f.clock
 	o.DisableHeartbeat = true
 	return o
+}
+
+// senderTo delivers through the gateway *g, which the fixtures build after
+// the router (the gateway calls the router's hooks). Deliveries need a
+// connected device, so they happen only after *g is set.
+func senderTo(g *gateway.Handler) calls.Sender {
+	return calls.SenderFunc(func(ctx context.Context, t gateway.Target, m *circusv1.DaemonDownlink) error {
+		return (*g).Deliver(ctx, t, m)
+	})
 }

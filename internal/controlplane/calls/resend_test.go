@@ -8,25 +8,23 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 )
 
-// switchBus refuses DispatchCall sends with wire.ErrBusy while busy is set.
-type switchBus struct {
-	bus.Bus
+// switchSender refuses DispatchCall sends with wire.ErrBusy while busy is set.
+type switchSender struct {
+	calls.Sender
 	busy *atomic.Bool
 }
 
-func (b switchBus) Send(ctx context.Context, target bus.Target, msg *circusv1.DaemonDownlink) error {
+func (b switchSender) Deliver(ctx context.Context, target gateway.Target, msg *circusv1.DaemonDownlink) error {
 	if msg.GetDispatchCall() != nil && b.busy.Load() {
 		return wire.ErrBusy
 	}
-	return b.Bus.Send(ctx, target, msg)
+	return b.Sender.Deliver(ctx, target, msg)
 }
 
 // A resend may follow an execution of the first DispatchCall, so a full
@@ -35,7 +33,7 @@ func (b switchBus) Send(ctx context.Context, target bus.Target, msg *circusv1.Da
 // fails and a later reconnect resends again.
 func TestResendOnBusyLinkKeepsCallDispatched(t *testing.T) {
 	busy := new(atomic.Bool)
-	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Bus = switchBus{c.Bus, busy} })
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Sender = switchSender{c.Sender, busy} })
 	l := f.connect("boot")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
 	must(t, err)
@@ -72,21 +70,21 @@ func TestResendOnBusyLinkKeepsCallDispatched(t *testing.T) {
 	f.waitState("call", store.CallCompleted)
 }
 
-// evidenceBus checks commit-before-send where it matters, at the bus: when
+// evidenceSender checks commit-before-send where it matters, at the sender: when
 // a DispatchCall is handed over, the call's durable row must already name
 // its target boot. (A failing sync closes the link, which usually discards
 // an early DispatchCall, so the wire alone would hide the violation.)
 // busyNext, when set, refuses the next DispatchCall with wire.ErrBusy (as
 // a full send pool would); refused reports which call it was.
-type evidenceBus struct {
-	bus.Bus
+type evidenceSender struct {
+	calls.Sender
 	db       store.Store
 	report   func(string)
 	busyNext atomic.Bool
 	refused  func(id, boot string)
 }
 
-func (b *evidenceBus) Send(ctx context.Context, target bus.Target, msg *circusv1.DaemonDownlink) error {
+func (b *evidenceSender) Deliver(ctx context.Context, target gateway.Target, msg *circusv1.DaemonDownlink) error {
 	if d := msg.GetDispatchCall(); d != nil {
 		if b.busyNext.CompareAndSwap(true, false) {
 			if b.refused != nil {
@@ -100,7 +98,7 @@ func (b *evidenceBus) Send(ctx context.Context, target bus.Target, msg *circusv1
 			b.report(fmt.Sprintf("DispatchCall for %s sent to boot %s at %d while its row is %s on boot %q at %d (%v): invalid dispatch evidence", d.GetCall().GetCallId(), d.TargetBootId, d.DispatchedAtUnixMs, c.State, c.DispatchedBootID, c.DispatchedAt, err))
 		}
 	}
-	return b.Bus.Send(ctx, target, msg)
+	return b.Sender.Deliver(ctx, target, msg)
 }
 
 // The reconnect sync dispatches accepted calls in their own transaction. A
@@ -108,8 +106,8 @@ func (b *evidenceBus) Send(ctx context.Context, target bus.Target, msg *circusv1
 // of its durable dispatch evidence (commit before send).
 func TestSyncDispatchFailedCommitSendsNothing(t *testing.T) {
 	prepare := func(t *testing.T) *fixture {
-		evidence := &evidenceBus{report: func(msg string) { t.Error(msg) }}
-		f := setup(t, func(c *calls.Config, _ *gateway.Config) { evidence.Bus = c.Bus; c.Bus = evidence })
+		evidence := &evidenceSender{report: func(msg string) { t.Error(msg) }}
+		f := setup(t, func(c *calls.Config, _ *gateway.Config) { evidence.Sender = c.Sender; c.Sender = evidence })
 		evidence.db = f.db
 		l := f.connect("boot")
 		f.disconnect(l)
@@ -160,9 +158,7 @@ func TestSyncDispatchFailedCommitSendsNothing(t *testing.T) {
 // be closing because the sync failed, so a refused send is not an error.
 func trySnapshot(ctx context.Context, l *wire.Link) {
 	snapshot := &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_JobSnapshot{JobSnapshot: &circusv1.JobSnapshot{}}}
-	if class, key, err := wirepolicy.Classify(snapshot); err == nil {
-		_ = l.Send(ctx, snapshot, class, key)
-	}
+	_ = l.Send(ctx, snapshot)
 }
 
 // tryReceiveOrClosed returns the next downlink message, or false once the

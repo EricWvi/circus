@@ -14,6 +14,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/credfile"
@@ -21,7 +22,6 @@ import (
 	"github.com/EricWvi/circus/internal/store/sqlite"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/EricWvi/circus/internal/workerclient"
 	"github.com/coder/websocket"
 	"go.uber.org/goleak"
@@ -55,11 +55,13 @@ func (s *service) Cancel(ctx context.Context, _ string, id string) error {
 
 type authStub struct {
 	*auth.Authenticator
-	mu    sync.RWMutex
-	valid func(context.Context, string) (bool, error)
+	mu     sync.RWMutex
+	valid  func(context.Context, string) (bool, error)
+	checks atomic.Int32
 }
 
 func (a *authStub) Valid(ctx context.Context, id string) (bool, error) {
+	a.checks.Add(1)
 	a.mu.RLock()
 	fn := a.valid
 	a.mu.RUnlock()
@@ -79,6 +81,7 @@ type fixture struct {
 	daemonToken string
 	svc         *service
 	auth        *authStub
+	clock       *clock.Fake
 }
 
 func setup(t *testing.T, configure ...func(*workerlink.Config)) *fixture {
@@ -101,15 +104,13 @@ func setup(t *testing.T, configure ...func(*workerlink.Config)) *fixture {
 	authenticator := &authStub{Authenticator: auth.NewAuthenticator(st, auth.Options{})}
 	authenticator.valid = authenticator.Authenticator.Valid
 	svc := &service{started: make(chan string, 16)}
+	clk := clock.New()
 	cfg := workerlink.Config{
-		Auth:            authenticator,
-		Router:          svc,
-		InstanceID:      "instance",
-		Wire:            wire.Options{MaxMessageBytes: 1 << 20},
-		HelloTimeout:    10 * time.Second,
-		RecheckInterval: time.Second,
-		RecheckTimeout:  5 * time.Second,
-		RecheckMaxStale: 30 * time.Second,
+		Auth:       authenticator,
+		Router:     svc,
+		InstanceID: "instance",
+		Clock:      clk,
+		Wire:       wire.Options{MaxMessageBytes: 1 << 20},
 	}
 	for _, fn := range configure {
 		fn(&cfg)
@@ -126,7 +127,7 @@ func setup(t *testing.T, configure ...func(*workerlink.Config)) *fixture {
 			t.Fatal("operations outlived shutdown")
 		}
 	})
-	return &fixture{h: h, server: server, st: st, f: credfile.File{ControlPlaneURL: server.URL, Role: credfile.RoleWorker, PrincipalID: worker.Identity.ID, Token: worker.Token}, daemonToken: daemon.Token, svc: svc, auth: authenticator}
+	return &fixture{h: h, server: server, st: st, f: credfile.File{ControlPlaneURL: server.URL, Role: credfile.RoleWorker, PrincipalID: worker.Identity.ID, Token: worker.Token}, daemonToken: daemon.Token, svc: svc, auth: authenticator, clock: clk}
 }
 func must(t *testing.T, err error) {
 	t.Helper()
@@ -197,9 +198,7 @@ func linked(t *testing.T, f *fixture) *wire.Link {
 }
 func send(t *testing.T, l *wire.Link, m *circusv1.WorkerUplink) {
 	t.Helper()
-	class, key, err := wirepolicy.Classify(m)
-	must(t, err)
-	must(t, l.Send(t.Context(), m, class, key))
+	must(t, l.Send(t.Context(), m))
 }
 func client(t *testing.T, f *fixture) *workerclient.Client {
 	t.Helper()
@@ -210,9 +209,7 @@ func client(t *testing.T, f *fixture) *workerclient.Client {
 }
 
 func TestHandshakeAuthAndDeadlines(t *testing.T) {
-	f := setup(t, func(c *workerlink.Config) {
-		c.HelloTimeout = 100 * time.Millisecond
-	})
+	f := setup(t)
 	for _, tc := range []struct {
 		token  string
 		status int
@@ -240,7 +237,19 @@ func TestHandshakeAuthAndDeadlines(t *testing.T) {
 		}
 		_ = c.Close()
 	}
+	// A connection that never sends Hello is closed once the Hello timeout
+	// elapses on the handler's clock, and not before.
+	armed := f.clock.Waiters()
 	c := rawAvailable(t, f)
+	wait.For(t, func() bool { return f.clock.Waiters() > armed })
+	f.clock.Advance(wire.HelloTimeout - time.Millisecond)
+	short, stop := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	_, err := c.ReadMessage(short)
+	stop()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("connection closed before the Hello timeout", err)
+	}
+	f.clock.Advance(time.Millisecond)
 	ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)
 	defer cancel()
 	if _, err := c.ReadMessage(ctx); err == nil || ctx.Err() != nil {
@@ -304,14 +313,14 @@ func TestQueryErrorMapping(t *testing.T) {
 		verify func(*circusv1.CallUpdate) bool
 	}{
 		{"missing", func(u *circusv1.CallUpdate) bool {
-			return u.GetRejected().GetCode() == circusv1.CallUpdate_Rejected_CODE_NOT_FOUND && !workerlink.Terminal(u)
+			return u.GetRejected().GetCode() == circusv1.CallUpdate_Rejected_CODE_NOT_FOUND && !wire.Terminal(u)
 		}},
 		{"invalid", func(u *circusv1.CallUpdate) bool {
 			return u.GetRejected().GetCode() == circusv1.CallUpdate_Rejected_CODE_INVALID
 		}},
 		{"expired", func(u *circusv1.CallUpdate) bool { return u.GetLost().GetReason() == "RESULT_UNAVAILABLE" }},
 		{"offline", func(u *circusv1.CallUpdate) bool {
-			return u.GetUnknown().GetReason() == "DEVICE_OFFLINE" && !workerlink.Terminal(u)
+			return u.GetUnknown().GetReason() == "DEVICE_OFFLINE" && !wire.Terminal(u)
 		}},
 	} {
 		u, err := c.Query(t.Context(), tc.id)
@@ -378,7 +387,7 @@ func TestCancelSendThenQueryAndNotFound(t *testing.T) {
 	must(t, c.Cancel(t.Context(), "missing"))
 	u, err = c.Query(t.Context(), "missing")
 	must(t, err)
-	if u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_NOT_FOUND || workerlink.Terminal(u) {
+	if u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_NOT_FOUND || wire.Terminal(u) {
 		t.Fatal(u)
 	}
 	select {
@@ -451,15 +460,15 @@ func TestConnectionCapAfterAuthentication(t *testing.T) {
 }
 
 func TestIdleRevocationClosesDefinitively(t *testing.T) {
-	f := setup(t, func(c *workerlink.Config) {
-		c.RecheckInterval = 10 * time.Millisecond
-	})
+	f := setup(t)
 	c := client(t, f)
 	u, err := f.st.GetUserByName(t.Context(), "admin")
 	must(t, err)
 	_, _, err = auth.RevokeByName(t.Context(), f.st, store.KindWorker, u.ID, "desk", time.Now())
 	must(t, err)
-	wait.Recv(t, c.Done())
+	// The first recheck after the revoke closes the link (auth's Watch tests
+	// pin its timing).
+	advanceUntilDone(t, f, c, time.Second)
 	if _, err = workerclient.Dial(t.Context(), workerclient.Options{Credentials: f.f}); err == nil {
 		t.Fatal("revoked upgrade accepted")
 	}
@@ -468,10 +477,9 @@ func TestIdleRevocationClosesDefinitively(t *testing.T) {
 func TestRecheckStoreErrorsKeepLinkUntilStalenessBound(t *testing.T) {
 	for _, timeout := range []bool{false, true} {
 		t.Run(map[bool]string{false: "store error", true: "recheck timeout"}[timeout], func(t *testing.T) {
+			const stale = 5 * time.Second
 			f := setup(t, func(c *workerlink.Config) {
-				c.RecheckInterval = 10 * time.Millisecond
-				c.RecheckMaxStale = 2 * time.Second
-				c.RecheckTimeout = 10 * time.Millisecond
+				c.Recheck = auth.RecheckPolicy{Interval: 250 * time.Millisecond, Timeout: 250 * time.Millisecond, MaxStale: stale}
 			})
 			f.auth.setValid(func(ctx context.Context, _ string) (bool, error) {
 				if timeout {
@@ -480,13 +488,15 @@ func TestRecheckStoreErrorsKeepLinkUntilStalenessBound(t *testing.T) {
 				}
 				return false, store.ErrBusy
 			})
+			start := f.clock.Now()
 			c := client(t, f)
-			select {
-			case <-c.Done():
-				t.Fatal("transient revalidation failure closed link before the staleness window")
-			case <-time.After(500 * time.Millisecond):
+			advanceUntilDone(t, f, c, 100*time.Millisecond)
+			if elapsed := f.clock.Now().Sub(start); elapsed < stale {
+				t.Fatalf("transient revalidation failure closed the link after %s, before the staleness window", elapsed)
 			}
-			wait.Recv(t, c.Done())
+			if f.auth.checks.Load() == 0 {
+				t.Fatal("link closed without a recheck")
+			}
 		})
 	}
 }
@@ -518,7 +528,22 @@ func TestShutdownReturnsAtContextWithStuckOperation(t *testing.T) {
 }
 
 func TestUnknownIsNotTerminal(t *testing.T) {
-	if workerlink.Terminal(&circusv1.CallUpdate{Update: &circusv1.CallUpdate_Unknown_{Unknown: &circusv1.CallUpdate_Unknown{}}}) {
+	if wire.Terminal(&circusv1.CallUpdate{Update: &circusv1.CallUpdate_Unknown_{Unknown: &circusv1.CallUpdate_Unknown{}}}) {
 		t.Fatal("unknown is terminal")
 	}
+}
+
+// advanceUntilDone advances the handler's clock by step until c's link
+// closes. Only the recheck loop runs on that clock once the link is up.
+func advanceUntilDone(t *testing.T, f *fixture, c *workerclient.Client, step time.Duration) {
+	t.Helper()
+	wait.For(t, func() bool {
+		select {
+		case <-c.Done():
+			return true
+		default:
+			f.clock.Advance(step)
+			return false
+		}
+	})
 }

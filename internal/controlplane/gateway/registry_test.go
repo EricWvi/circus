@@ -1,9 +1,9 @@
 package gateway_test
 
 import (
-	"github.com/EricWvi/circus/internal/controlplane/bus"
-	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"testing"
+
+	"github.com/EricWvi/circus/internal/controlplane/gateway"
 )
 
 func TestRegistryReplacementFencesStaleClose(t *testing.T) {
@@ -11,7 +11,7 @@ func TestRegistryReplacementFencesStaleClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := gateway.Connection{Target: bus.Target{InstanceID: "i", DeviceID: "d", BootID: "b", ConnectionID: "a"}, UserID: "u", DeviceName: "desk"}
+	a := gateway.Connection{Target: gateway.Target{InstanceID: "i", DeviceID: "d", BootID: "b", ConnectionID: "a"}, UserID: "u", DeviceName: "desk"}
 	b := a
 	b.Target.ConnectionID = "b"
 	if _, err = r.Register(t.Context(), a); err != nil {

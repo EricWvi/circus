@@ -20,8 +20,8 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
@@ -390,15 +390,15 @@ func (h *seqHooks) OnJobSnapshot(ctx context.Context, c gateway.Connection, v *c
 
 type seqAuth struct{ devices []*seqDevice }
 
-func (a seqAuth) Authenticate(_ context.Context, r *http.Request) (gateway.Principal, error) {
+func (a seqAuth) Authenticate(_ context.Context, r *http.Request) (auth.Principal, error) {
 	for _, d := range a.devices {
 		if r.Header.Get("Authorization") == "Bearer "+d.token {
-			return gateway.Principal{UserID: "u", DeviceID: d.id, DeviceName: d.name, CredentialID: "cred-" + d.id}, nil
+			return auth.Principal{Kind: store.KindDevice, UserID: "u", ID: d.id, Name: d.name, CredentialID: "cred-" + d.id}, nil
 		}
 	}
-	return gateway.Principal{}, gateway.ErrUnauthenticated
+	return auth.Principal{}, auth.ErrUnauthenticated
 }
-func (seqAuth) Recheck(context.Context, gateway.Principal) error { return nil }
+func (seqAuth) Valid(context.Context, string) (bool, error) { return true, nil }
 
 // seqDevice is one enrolled device. up is the dial gate: a down device's
 // daemon cannot connect. A ghost device never runs a daemon.
@@ -527,7 +527,6 @@ type seqWorld struct {
 	db          store.Store
 	fault       *storetest.Faulty
 	registry    gateway.Registry
-	bus         bus.Bus
 	router      calls.Router
 	hooks       *seqHooks
 	gateway     gateway.Handler
@@ -554,8 +553,8 @@ type seqWorld struct {
 	// current step (guarded by covMu); errorExplained accepts only errors
 	// those faults can cause.
 	inEffect map[string]bool
-	store    *seqStore    // the router's store: Faulty plus a dispatch-commit failure
-	evidence *evidenceBus // the router's bus: commit-before-send check, busy injection
+	store    *seqStore       // the router's store: Faulty plus a dispatch-commit failure
+	evidence *evidenceSender // the router's sender: commit-before-send check, busy injection
 	// cov counts the mid-flight paths reached (sequence_faults_test.go).
 	covMu        sync.Mutex
 	cov          map[string]int
@@ -648,7 +647,7 @@ func (w *seqWorld) fail(format string, args ...any) {
 }
 
 // openControlPlane builds a fresh control-plane incarnation on the SQLite
-// file: store, registry, bus, router, gateway, HTTP server and timer runner.
+// file: store, registry, router, gateway, HTTP server and timer runner.
 func (w *seqWorld) openControlPlane() {
 	t := w.t
 	w.incarnation++
@@ -660,15 +659,13 @@ func (w *seqWorld) openControlPlane() {
 	w.faultTarget, w.faultAll, w.crashArmed = 0, false, false
 	w.registry, err = gateway.NewRegistry(16)
 	must(t, err)
-	w.bus, err = bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 64, MaxBytes: 16 << 20})
-	must(t, err)
-	// The router's bus checks commit-before-send on every DispatchCall.
-	w.evidence = &evidenceBus{Bus: w.bus, db: db, report: w.violation, refused: w.busyRefused}
-	w.router, err = calls.New(calls.Config{Store: w.store, Registry: w.registry, Bus: w.evidence, Clock: w.clock, MaxMessageBytes: 256 << 10, Pending: calls.PendingBudget{MaxCalls: 4}})
+	// The router's sender checks commit-before-send on every DispatchCall.
+	w.evidence = &evidenceSender{Sender: senderTo(&w.gateway), db: db, report: w.violation, refused: w.busyRefused}
+	w.router, err = calls.New(calls.Config{Store: w.store, Registry: w.registry, Sender: w.evidence, Clock: w.clock, MaxMessageBytes: 256 << 10, Pending: calls.PendingBudget{MaxCalls: 4}})
 	must(t, err)
 	w.hooks = &seqHooks{Hooks: w.router, w: w, synced: make(map[string]bool), gates: make(map[string]*seqGate)}
 	w.beginStep()
-	w.gateway, err = gateway.New(gateway.Config{InstanceID: "instance", Clock: w.clock, Auth: seqAuth{w.devices}, Registry: w.registry, Bus: w.bus, Hooks: w.hooks, MaxConnections: 16, LinkOptions: wire.Options{MaxMessageBytes: 256 << 10, MaxFragmentBytes: 16 << 10, DisableHeartbeat: true}})
+	w.gateway, err = gateway.New(gateway.Config{InstanceID: "instance", Clock: w.clock, Auth: seqAuth{w.devices}, Registry: w.registry, Hooks: w.hooks, MaxConnections: 16, LinkOptions: wire.Options{MaxMessageBytes: 256 << 10, MaxFragmentBytes: 16 << 10, DisableHeartbeat: true}})
 	must(t, err)
 	w.server = httptest.NewServer(w.gateway)
 	w.wsURL.Store("ws" + strings.TrimPrefix(w.server.URL, "http") + "/v1/link/daemon")
@@ -1266,8 +1263,8 @@ func (w *seqWorld) quiesce() {
 }
 
 // teardown stops every daemon, then the control plane, and checks that
-// nothing is retained: router and gateway gauges, registry routes, bus
-// charges, and no watchdog timer of a terminal call.
+// nothing is retained: router and gateway gauges, registry routes,
+// and no watchdog timer of a terminal call.
 func (w *seqWorld) teardown() {
 	w.m.closing = true
 	w.haltTimers()
@@ -1295,9 +1292,6 @@ func (w *seqWorld) teardown() {
 	}
 	if n := w.registry.Stats().Connections; n != 0 {
 		w.fail("registry retains %d routes", n)
-	}
-	if s := w.bus.Stats(); s.InFlight != 0 || s.Bytes != 0 {
-		w.fail("bus retains %+v", s)
 	}
 	rows, err := w.db.ListTimers(ctx, store.TimerFilter{Kind: timers.CallWatchdog, Limit: store.MaxPageSize})
 	must(w.t, err)

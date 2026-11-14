@@ -10,7 +10,6 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/identifier"
@@ -57,7 +56,7 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 		return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
 	}
 	envelope := &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: name, Call: call}}}
-	cost, err := bus.Charge(envelope, r.config.MaxMessageBytes)
+	cost, err := wire.Charge(envelope, r.config.MaxMessageBytes)
 	if err != nil {
 		if errors.Is(err, wire.ErrTooLarge) {
 			// Inferred: D43 bounds input; large Write must be split by the caller.
@@ -124,7 +123,7 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 	}
 	row := store.Call{CallID: id, UserID: user, DeviceID: device.ID, SessionID: call.SessionId, AgentID: call.AgentId, Tool: toolName(call), RequestHash: hash[:], RequestBytes: int64(len(data)), State: store.CallAccepted, SubmittedAt: now}
 	if waiting {
-		r.pending[strings.Clone(id)] = &pendingCall{call: bus.CloneOwned(call).(*circusv1.DeviceCall), cost: cost}
+		r.pending[strings.Clone(id)] = &pendingCall{call: wire.CloneOwned(call).(*circusv1.DeviceCall), cost: cost}
 		r.pendingBytes += cost
 	}
 	initialDispatch := false
@@ -250,7 +249,7 @@ func (r *router) commitDispatch(ctx context.Context, tx store.Ops, c store.Call,
 
 // writeDispatch sends DispatchCall after its commit. Every send carries the
 // original committed dispatch time, including a resend. A first send that wire
-// or bus proves was never queued settles the attempt: busy → OVERLOADED, too
+// proves was never queued settles the attempt: busy → OVERLOADED, too
 // large → INVALID (L3). Other failures (no route, closed link) keep D; sync or
 // the watchdog recovers.
 func (r *router) writeDispatch(ctx context.Context, c store.Call, route gateway.Connection, resend bool) error {
@@ -258,13 +257,13 @@ func (r *router) writeDispatch(ctx context.Context, c store.Call, route gateway.
 	if !ok {
 		return nil
 	}
-	err := r.config.Bus.Send(ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_DispatchCall{DispatchCall: &circusv1.DispatchCall{Call: p.call, TargetBootId: c.DispatchedBootID, DispatchedAtUnixMs: c.DispatchedAt}}})
+	err := r.config.Sender.Deliver(ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_DispatchCall{DispatchCall: &circusv1.DispatchCall{Call: p.call, TargetBootId: c.DispatchedBootID, DispatchedAtUnixMs: c.DispatchedAt}}})
 	if resend {
 		return err
 	}
 	now := r.config.Clock.Now().UnixMilli()
 	switch {
-	case errors.Is(err, wire.ErrBusy) || errors.Is(err, bus.ErrBusy):
+	case errors.Is(err, wire.ErrBusy):
 		return r.settle(ctx, c, store.CallRejected, store.CallPatch{FinishedAt: now, OutcomeReason: "OVERLOADED"}, rejected(c.CallID, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
 	case errors.Is(err, wire.ErrTooLarge):
 		return r.settle(ctx, c, store.CallRejected, store.CallPatch{FinishedAt: now, OutcomeReason: "INVALID"}, rejected(c.CallID, circusv1.CallUpdate_Rejected_CODE_INVALID))
@@ -523,7 +522,7 @@ func (r *router) StopSessionJobs(ctx context.Context, user, session string) erro
 				failures = ErrDeviceOffline
 				continue
 			}
-			err = r.config.Bus.Send(op.ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_StopSessionJobs{StopSessionJobs: &circusv1.StopSessionJobs{SessionId: session}}})
+			err = r.config.Sender.Deliver(op.ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_StopSessionJobs{StopSessionJobs: &circusv1.StopSessionJobs{SessionId: session}}})
 			if err != nil {
 				failures = err
 			}

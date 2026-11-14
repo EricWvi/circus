@@ -26,7 +26,6 @@ import (
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/wire/wiretest"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -58,11 +57,7 @@ func eventually(t *testing.T, f func() bool) {
 }
 func send(t *testing.T, l *wire.Link, m *circusv1.DaemonDownlink) {
 	t.Helper()
-	class, key, err := wirepolicy.Classify(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = l.Send(wait.Ctx(t), m, class, key); err != nil {
+	if err := l.Send(wait.Ctx(t), m); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -459,6 +454,40 @@ func TestTerminalRejectionsStopWithoutRetry(t *testing.T) {
 			h.clk.Advance(time.Hour)
 			if err == nil || !strings.Contains(err.Error(), fmt.Sprint(status)) || attempts.Load() != 1 {
 				t.Fatalf("attempts=%d error=%v", attempts.Load(), err)
+			}
+		})
+	}
+}
+
+// A Welcome the daemon must not use (another principal, another protocol
+// version, or a message limit above its local cap) ends Run without retry.
+func TestIncompatibleWelcomeStopsWithoutRetry(t *testing.T) {
+	for name, edit := range map[string]func(*circusv1.Welcome){
+		"principal": func(w *circusv1.Welcome) { w.PrincipalId = "other" },
+		"version":   func(w *circusv1.Welcome) { w.NegotiatedVersion = 2 },
+		"limit":     func(w *circusv1.Welcome) { w.MaxMessageBytes = 2 * wire.DefaultMaxMessageBytes },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := start(t, nil, nil)
+			p := recv(t, h.pairs)
+			rawHello(t, p.server)
+			w := &circusv1.Welcome{PrincipalId: "device", NegotiatedVersion: 1, ServerTimeUnixMs: h.clk.Now().UnixMilli()}
+			if _, err := wire.FillWelcome(w, h.opts); err != nil {
+				t.Fatal(err)
+			}
+			edit(w)
+			data, _ := proto.Marshal(&circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_Welcome{Welcome: w}})
+			if err := p.server.WriteMessage(context.Background(), data); err != nil {
+				t.Fatal(err)
+			}
+			err := recv(t, h.done)
+			if err == nil || !strings.Contains(err.Error(), "incompatible Welcome") {
+				t.Fatalf("error: %v", err)
+			}
+			h.done <- nil
+			h.clk.Advance(24 * time.Hour)
+			if len(h.pairs) != 0 || h.client.Stats().Connections != 0 {
+				t.Fatal("retried an incompatible Welcome")
 			}
 		})
 	}

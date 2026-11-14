@@ -58,7 +58,7 @@ metadata, marker files or bounded polling; no sleep establishes test ordering.
   tool, then restart. The same daemon boot reconciles to Completed; Query
   returns the real retained output, an equal resubmit acts as a per-call ordered
   dedup barrier, and only then is the marker counted (exactly one line).
-- F7: the tagged bus wrapper SIGKILLs the server after dispatch commit and before
+- F7: the tagged Sender wrapper SIGKILLs the server after dispatch commit and before
   gateway delivery. Restart queries the daemon and settles Lost. Equal retry
   stays Lost and the marker is absent (zero executions).
 - F17: a separate CLI process revokes the connected daemon in the same SQLite

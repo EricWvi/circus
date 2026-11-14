@@ -15,8 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
@@ -24,6 +22,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/loopback"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/google/uuid"
 )
 
 // Defaults for Config.
@@ -69,6 +68,18 @@ type Config struct {
 	LogLevel slog.Level
 	// Now supplies time; nil means time.Now.
 	Now func() time.Time
+
+	// MaxMessageBytes, GracePeriod, HeartbeatInterval and HeartbeatTimeout
+	// set the links' transport and disconnect limits; zero uses the package
+	// defaults.
+	MaxMessageBytes                     int
+	GracePeriod                         time.Duration
+	HeartbeatInterval, HeartbeatTimeout time.Duration
+	// SendPoolBytes and ReceivePoolBytes set the one wire.Budget shared by
+	// all daemon links. Zero uses the default, twice wire.MinBudget; smaller
+	// pools are refused with a *gateway.PoolError (see the sizing rule in
+	// gateway's package doc).
+	SendPoolBytes, ReceivePoolBytes int
 }
 
 func (c Config) validate() error {
@@ -106,6 +117,15 @@ type readyCheck struct {
 	fn   func(context.Context) error
 }
 
+// shutdownHook is one Shutdown step. Hooks start once the listener has
+// closed, so no new connection arrives, and run concurrently with the HTTP
+// server's wait for in-flight requests, with Shutdown's context. A hook
+// closes what the HTTP server does not track, such as hijacked WebSocket
+// links; a request accepted before the listener closed may still be
+// upgrading, so a hook must also refuse links that register after it began.
+// A hook must return when ctx ends: Shutdown waits a short grace after the
+// deadline, then stops waiting, logs the names of unfinished hooks and
+// reports them in the returned error, together with errors hooks return.
 type shutdownHook struct {
 	name string
 	fn   func(context.Context) error
@@ -132,7 +152,7 @@ type Server struct {
 	httpSrv    *http.Server
 	ln         net.Listener
 	serveErr   chan error
-	closeLinks func(context.Context) error
+	closeCalls func(context.Context) error
 	router     calls.Router
 	runner     timers.Runner
 	timersDone chan struct{}
@@ -144,7 +164,8 @@ type Server struct {
 }
 
 // New validates cfg, ensures the default user exists in st and builds the
-// mux with the built-in endpoints. It does not listen yet.
+// mux with the built-in endpoints and both links. It does not listen yet;
+// call Run, or Shutdown, to release what it built.
 func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("controlplane: %w", err)
@@ -190,73 +211,16 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.AddReadyCheck("timers", func(context.Context) error {
+	s.checks = []readyCheck{{"timers", func(context.Context) error {
 		if v := s.runner.Stats(); !v.Running || !v.Healthy {
 			return errors.New("timers unhealthy")
 		}
 		return nil
-	})
-	return s, nil
-}
-
-// InstanceID returns this process's instance id (UUIDv7), present on every
-// log line.
-func (s *Server) InstanceID() string { return s.instanceID }
-
-// Logger returns the server's logger; every line carries instance_id.
-func (s *Server) Logger() *slog.Logger { return s.logger }
-
-// Store returns the store the server was built on.
-func (s *Server) Store() store.Store { return s.st }
-
-// Authenticator returns the authenticator for link upgrade requests.
-func (s *Server) Authenticator() *auth.Authenticator { return s.authn }
-
-// User returns the default user (M2 has one, auth.DefaultUserName).
-func (s *Server) User() store.User { return s.user }
-
-// Mount registers h for pattern (http.ServeMux syntax, for example
-// "/v1/link/daemon" or "GET /v1/x"). It panics after Start, or on a pattern
-// that conflicts with one already registered.
-func (s *Server) Mount(pattern string, h http.Handler) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.mustNotHaveStarted("Mount")
-	s.mux.Handle(pattern, h)
-}
-
-// AddReadyCheck adds a check to /readyz. fn gets a context bounded by the
-// readiness timeout and returns nil when its component is ready. It panics
-// after Start.
-func (s *Server) AddReadyCheck(name string, fn func(context.Context) error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.mustNotHaveStarted("AddReadyCheck")
-	s.checks = append(s.checks, readyCheck{name, fn})
-}
-
-// AddShutdownHook adds fn to Shutdown. Hooks start once the listener has
-// closed, so no new connection arrives, and run concurrently with the HTTP
-// server's wait for in-flight requests, with Shutdown's context. A hook
-// closes what the HTTP server does not track, such as hijacked WebSocket
-// links; a request accepted before the listener closed may still be
-// upgrading, so a hook must also refuse links that register after it began.
-// A hook must return when ctx ends: Shutdown waits a short grace after the
-// deadline, then stops waiting, logs the names of unfinished hooks and
-// reports them in the returned error. Errors returned by hooks are part of
-// that error too. It panics after
-// Start.
-func (s *Server) AddShutdownHook(name string, fn func(context.Context) error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.mustNotHaveStarted("AddShutdownHook")
-	s.hooks = append(s.hooks, shutdownHook{name, fn})
-}
-
-func (s *Server) mustNotHaveStarted(op string) {
-	if s.started {
-		panic("controlplane: " + op + " after Start")
+	}}}
+	if err := s.buildCallPlane(ctx); err != nil {
+		return nil, err
 	}
+	return s, nil
 }
 
 // Start listens on cfg.Listen and serves in the background. It returns once
@@ -375,13 +339,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 	s.stopping = true
 	started := s.started
 	hooks := s.hooks
-	s.started = true // forbid Start and registrations from now on
+	s.started = true // forbid Start from now on
 	s.mu.Unlock()
 	if !started {
-		if s.closeLinks != nil {
-			return s.closeLinks(ctx)
-		}
-		return nil
+		return s.closeCalls(ctx)
 	}
 	begin := time.Now()
 

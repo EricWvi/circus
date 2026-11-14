@@ -3,19 +3,47 @@ package workerlink
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 )
 
+// retryOnFake runs sendWithBusyRetryLimit on a fake clock and reports the
+// result, the attempts made and the fake time that passed. It advances the
+// clock by the largest backoff only while the retry waits on both its bound
+// and a backoff timer, so the bound is overshot by at most one backoff.
+func retryOnFake(t *testing.T, ctx context.Context, limit time.Duration, send func(int) error) (error, int, time.Duration) {
+	t.Helper()
+	clk := clock.New()
+	start := clk.Now()
+	var attempts atomic.Int32
+	done := make(chan error, 1)
+	go func() {
+		done <- sendWithBusyRetryLimit(ctx, clk, limit, func(context.Context) error { return send(int(attempts.Add(1))) })
+	}()
+	var err error
+	wait.For(t, func() bool {
+		select {
+		case err = <-done:
+			return true
+		default:
+			if clk.Waiters() == 2 {
+				clk.Advance(100 * time.Millisecond)
+			}
+			return false
+		}
+	})
+	return err, int(attempts.Load()), clk.Now().Sub(start)
+}
+
 func TestSendWithBusyRetry(t *testing.T) {
-	attempts := 0
-	err := sendWithBusyRetry(t.Context(), func(context.Context) error {
-		attempts++
-		if attempts < 3 {
+	err, attempts, _ := retryOnFake(t, t.Context(), sendBusyLimit, func(n int) error {
+		if n < 3 {
 			return wire.ErrBusy
 		}
 		return nil
@@ -23,36 +51,31 @@ func TestSendWithBusyRetry(t *testing.T) {
 	if err != nil || attempts != 3 {
 		t.Fatalf("attempts=%d err=%v", attempts, err)
 	}
-	attempts = 0
 	nonbusy := errors.New("send failed")
-	if err = sendWithBusyRetry(t.Context(), func(context.Context) error { attempts++; return nonbusy }); !errors.Is(err, nonbusy) || attempts != 1 {
+	if err, attempts, _ = retryOnFake(t, t.Context(), sendBusyLimit, func(int) error { return nonbusy }); !errors.Is(err, nonbusy) || attempts != 1 {
 		t.Fatalf("attempts=%d err=%v", attempts, err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
-	defer cancel()
-	attempts = 0
-	if err = sendWithBusyRetry(ctx, func(context.Context) error { attempts++; return wire.ErrBusy }); !errors.Is(err, context.DeadlineExceeded) || attempts < 2 {
+	// The caller's context bounds the retries too, and its error is kept.
+	ctx, cancel := context.WithCancel(t.Context())
+	err, attempts, _ = retryOnFake(t, ctx, sendBusyLimit, func(n int) error {
+		if n == 2 {
+			cancel()
+		}
+		return wire.ErrBusy
+	})
+	if !errors.Is(err, context.Canceled) || attempts != 2 {
 		t.Fatalf("busy retry was not bounded by context: attempts=%d err=%v", attempts, err)
 	}
 }
 
 func TestBusyRetryStopsAtBound(t *testing.T) {
-	attempts := 0
-	ctx := wait.Ctx(t)
-	done := make(chan error, 1)
-	start := time.Now()
-	go func() {
-		done <- sendWithBusyRetryLimit(ctx, 200*time.Millisecond, func(context.Context) error {
-			attempts++
-			return wire.ErrBusy
-		})
-	}()
-	err := wait.Recv(t, done)
+	const limit = 2 * time.Second
+	err, attempts, elapsed := retryOnFake(t, wait.Ctx(t), limit, func(int) error { return wire.ErrBusy })
 	if !errors.Is(err, context.DeadlineExceeded) || attempts < 2 {
 		t.Fatalf("perpetual ErrBusy did not stop at its bound: attempts=%d err=%v", attempts, err)
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Fatalf("retry exceeded its bound: %v", elapsed)
+	if elapsed < limit || elapsed > limit+100*time.Millisecond {
+		t.Fatalf("retry stopped after %v, want its %v bound", elapsed, limit)
 	}
 }
 

@@ -199,7 +199,7 @@ func TestOrderingKeyBound(t *testing.T) {
 	a, b := wiretest.Pipe(wiretest.Options{})
 	defer b.Close()
 	l := newLink(t, a, wire.DaemonUplink, wire.DaemonDownlink, smallOptions())
-	if err := l.Send(contextFor(t), dispatch("c", "x"), wire.Data, strings.Repeat("x", wire.MaxOrderingKeyBytes+1)); !errors.Is(err, wire.ErrTooLarge) {
+	if err := l.SendAs(contextFor(t), dispatch("c", "x"), wire.Data, strings.Repeat("x", wire.MaxOrderingKeyBytes+1)); !errors.Is(err, wire.ErrTooLarge) {
 		t.Fatal(err)
 	}
 	if l.Err() != nil {
@@ -218,7 +218,7 @@ func TestOrderingKeyDoesNotRetainBacking(t *testing.T) {
 	runtime.ReadMemStats(&before)
 	func() {
 		backing := strings.Repeat("k", 32<<20)
-		if err := l.Send(contextFor(t), dispatch("held", "x"), wire.Data, backing[:2]); err != nil {
+		if err := l.SendAs(contextFor(t), dispatch("held", "x"), wire.Data, backing[:2]); err != nil {
 			t.Fatal(err)
 		}
 	}()

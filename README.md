@@ -15,7 +15,6 @@ debug client. The TypeScript worker itself is M3 and not built yet.
 | `gen/go/circus/v1/` | Generated Go messages |
 | `gen/ts/` | Generated TypeScript workspace package `@circus/proto` |
 | `internal/controlplane/` | circus server: enrollment, auth, HTTP, TLS, health, timers, call-path composition |
-| `internal/controlplane/bus/` | Bounded in-process delivery of daemon commands |
 | `internal/controlplane/calls/` | Metadata-only routing with boot-fenced at-most-once dispatch |
 | `internal/controlplane/gateway/` | Authenticated daemon links, their shared wire budget and registry |
 | `internal/controlplane/timers/` | Lease-based runner for durable control-plane timers |
@@ -27,13 +26,12 @@ debug client. The TypeScript worker itself is M3 and not built yet.
 | `internal/daemon/jobs/` | Background job lifecycle, ownership, events and retention |
 | `internal/daemon/link/` | The daemon's single outbound control-plane connection |
 | `internal/daemon/toolcontext/` | Execution timer signal shared by dispatcher and tools |
-| `internal/wire/` | Bounded protobuf transport over authenticated binary WebSocket |
+| `internal/wire/` | Bounded protobuf transport over authenticated binary WebSocket, its scheduling table and the raw Hello handshake |
 | `internal/wire/wiretest/` | Bounded in-memory duplex Conn with directional faults |
-| `internal/wirepolicy/` | Shared scheduling table for link callers |
 | `internal/store/` | Control-plane domain types and the Store interface |
 | `internal/store/sqlite/` | SQLite store backend (WAL, synchronous=FULL, embedded migrations) |
 | `internal/store/storetest/` | Store contract suite, fault injection and crash-restart harness |
-| `internal/auth/` | One-time enrollment tokens, long-term bearer tokens, revocation |
+| `internal/auth/` | One-time enrollment tokens, long-term bearer tokens, revocation, link credential rechecks |
 | `internal/credfile/` | Local credential files written by `circus join` |
 | `internal/machineid/` | Machine identity reported at enrollment |
 | `internal/identifier/` | Wire grammar for call, session and agent IDs |

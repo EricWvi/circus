@@ -14,7 +14,6 @@ import (
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -208,8 +207,7 @@ func TestUpdateQueueOverflowFailsLink(t *testing.T) {
 		for range 9 {
 			u := &circusv1.CallUpdate{CallId: "overflow", Update: &circusv1.CallUpdate_Accepted_{Accepted: &circusv1.CallUpdate_Accepted{}}}
 			msg := &circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_CallUpdate{CallUpdate: u}}
-			class, key, err := wirepolicy.Classify(msg)
-			if err != nil || link.Send(ctx, msg, class, key) != nil {
+			if link.Send(ctx, msg) != nil {
 				return
 			}
 		}

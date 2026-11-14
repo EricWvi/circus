@@ -15,7 +15,6 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/clock"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 )
@@ -147,6 +146,25 @@ type PendingBudget struct {
 // ResendHorizon is a replay policy and request-retention bound, not a safety
 // bound: the daemon's dispatch-age check enforces at-most-once execution.
 // No request/result cache exists outside pending and subscription buffers.
+// Sender delivers a command to one daemon connection generation; the gateway
+// implements it. Every call runs under the router's admission lock, so at most
+// one delivery is in flight. Delivery success means queued, not written,
+// acknowledged or executed. At-most-once dispatch does not depend on it: the
+// dispatch transaction commits before the DispatchCall is handed to Deliver.
+type Sender interface {
+	Deliver(context.Context, gateway.Target, *circusv1.DaemonDownlink) error
+}
+
+// SenderFunc adapts a function to Sender. Assembly uses it to bind the
+// gateway, which is built after the router because it calls the router's
+// hooks.
+type SenderFunc func(context.Context, gateway.Target, *circusv1.DaemonDownlink) error
+
+// Deliver calls f.
+func (f SenderFunc) Deliver(ctx context.Context, t gateway.Target, m *circusv1.DaemonDownlink) error {
+	return f(ctx, t, m)
+}
+
 // MaxOperations bounds active public calls, hooks and timer work; each may
 // borrow one wire-bounded message. Waiting queries release their operation slot
 // and are bounded independently by MaxSubscriptions;
@@ -157,7 +175,7 @@ type PendingBudget struct {
 type Config struct {
 	Store                          store.Store
 	Registry                       gateway.Registry
-	Bus                            bus.Bus
+	Sender                         Sender
 	Clock                          clock.Clock
 	Pending                        PendingBudget
 	MaxDevices, MaxOperations      int
@@ -188,6 +206,11 @@ type Config struct {
 	// limits two sync replies are outstanding at once. Results pushed by the
 	// daemon outside the sync share that queue; see DESIGN.md.
 	MaxSyncReplyBytes int64
+	// lockObserver, when set (by tests, through export_test.go), receives how
+	// long each locked segment of an operation held the router-wide
+	// admission lock. It is nil in production: the cost is one nil check per
+	// lock and unlock.
+	lockObserver func(kind string, held time.Duration)
 }
 
 // Stats is a constant-size snapshot of actual ownership. SyncRequests counts

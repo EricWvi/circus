@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -79,35 +78,22 @@ func openExistingStore(ctx context.Context, path string, errOut io.Writer) (*sql
 }
 
 // checkBaseURL accepts an https:// base URL, or http:// on a loopback host
-// only (D43 item 7), with no path beyond "/", query or fragment. It returns
-// the URL without a trailing slash.
+// only. It returns scheme://host, dropping any path.
 func checkBaseURL(u *url.URL) (string, error) {
 	if u.Host == "" || u.User != nil || u.RawQuery != "" {
 		return "", fmt.Errorf("%q is not a base URL like https://host:port", u.Redacted())
 	}
-	switch u.Scheme {
-	case "https":
-	case "http":
-		if !loopback.Host(u.Hostname()) {
-			return "", fmt.Errorf("plaintext http:// is allowed only for a loopback control plane; use https:// for %s", u.Host)
-		}
-	default:
+	if u.Scheme != "https" && u.Scheme != "http" {
 		return "", fmt.Errorf("unsupported scheme %q; use https://", u.Scheme)
+	}
+	if _, err := loopback.CheckScheme(u); err != nil {
+		return "", err
 	}
 	return u.Scheme + "://" + u.Host, nil
 }
 
-// errRedirect refuses every redirect: the control plane API never
-// redirects, and following one could resend a bearer token or a one-time
-// token in plaintext (https → http) or to another host.
-var errRedirect = errors.New("the control plane answered with a redirect; refusing to follow it (check the URL and the reverse proxy)")
-
 // httpClient talks to the control plane at baseURL, which must pass
-// checkBaseURL. It verifies TLS with the system roots, or only with the
-// certificates in caFile when it is set; for an http:// base URL (scheme
-// compared after parsing, so in any case) it refuses any connection whose
-// remote address is not loopback, whatever the host name resolved to. It
-// follows no redirect.
+// checkBaseURL (see loopback.Client). Every request is bounded by 30s.
 func httpClient(baseURL, caFile string) (*http.Client, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
@@ -116,29 +102,12 @@ func httpClient(baseURL, caFile string) (*http.Client, error) {
 	if _, err := checkBaseURL(u); err != nil {
 		return nil, fmt.Errorf("control plane URL: %w", err)
 	}
-	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-	if caFile != "" {
-		pem, err := os.ReadFile(caFile)
-		if err != nil {
-			return nil, fmt.Errorf("read --ca-file: %w", err)
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("--ca-file %s holds no PEM certificate", caFile)
-		}
-		tlsCfg.RootCAs = pool
+	c, err := loopback.Client(u, caFile)
+	if err != nil {
+		return nil, fmt.Errorf("--ca-file: %w", err) // only the CA file can fail here
 	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.TLSClientConfig = tlsCfg
-	if u.Scheme == "http" { // url.Parse lowercases the scheme
-		tr.Proxy = nil // a proxy would be the remote address, and it sees the plaintext
-		tr.DialContext = loopback.DialContext(&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second})
-	}
-	return &http.Client{
-		Transport:     tr,
-		Timeout:       30 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return errRedirect },
-	}, nil
+	c.Timeout = 30 * time.Second
+	return c, nil
 }
 
 // tlsHint explains a certificate verification failure.

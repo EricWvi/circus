@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,7 @@ func purgeTestServer(t *testing.T, logs *bytes.Buffer) (*Server, *sqlite.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.Shutdown(context.Background()) })
 	return s, st
 }
 
@@ -60,7 +62,7 @@ func TestEnrollmentCleanupIgnoresStaleClaim(t *testing.T) {
 }
 
 func TestUnhandledTimerCompleted(t *testing.T) {
-	for _, kind := range []string{"unknown_kind", timers.DeviceGrace} {
+	for _, kind := range []string{"unknown_kind"} {
 		t.Run(kind, func(t *testing.T) {
 			var logs bytes.Buffer
 			s, st := purgeTestServer(t, &logs)

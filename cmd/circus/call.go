@@ -12,9 +12,9 @@ import (
 	"syscall"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/identifier"
+	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/workerclient"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -204,7 +204,7 @@ func callCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 		if printErr != nil {
 			return printErr
 		}
-		if workerlink.Terminal(u) {
+		if wire.Terminal(u) {
 			return nil
 		}
 	}
@@ -233,7 +233,7 @@ func printCallUpdate(u *circusv1.CallUpdate, out, errOut io.Writer) error {
 		fmt.Fprintln(errOut, "unknown call id")
 		return callExit{code: 1}
 	}
-	if workerlink.Terminal(u) {
+	if wire.Terminal(u) {
 		return callExit{code: 1}
 	}
 	return nil

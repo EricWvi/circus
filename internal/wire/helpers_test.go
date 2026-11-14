@@ -9,7 +9,6 @@ import (
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
@@ -181,9 +180,5 @@ func testSide(in, out wire.Kind) wire.Side {
 	panic("invalid test side")
 }
 func testSend(l *wire.Link, ctx context.Context, m proto.Message) error {
-	class, key, err := wirepolicy.Classify(m)
-	if err != nil {
-		return err
-	}
-	return l.Send(ctx, m, class, key)
+	return l.Send(ctx, m)
 }

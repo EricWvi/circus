@@ -136,7 +136,7 @@ func (h *harness) get(t *testing.T, path, token string) (int, string) {
 
 func (h *harness) token(t *testing.T, kind store.PrincipalKind, ttl time.Duration, now time.Time) string {
 	t.Helper()
-	tok, _, err := auth.CreateEnrollToken(context.Background(), h.st, h.srv.User().ID, kind, ttl, now)
+	tok, _, err := auth.CreateEnrollToken(context.Background(), h.st, controlplane.User(h.srv).ID, kind, ttl, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,10 @@ func TestTransportModes(t *testing.T) {
 	}
 	for _, c := range cases {
 		c.cfg.LogOutput = io.Discard
-		_, err := controlplane.New(context.Background(), st, c.cfg)
+		srv, err := controlplane.New(context.Background(), st, c.cfg)
+		if err == nil {
+			_ = srv.Shutdown(context.Background())
+		}
 		if (err == nil) != c.ok {
 			t.Errorf("%s: err = %v", c.name, err)
 		}
@@ -327,7 +330,7 @@ func TestTLS(t *testing.T) {
 func TestHealthAndReadiness(t *testing.T) {
 	var fail atomic.Bool
 	h := newServer(t, controlplane.Config{}, func(s *controlplane.Server) {
-		s.AddReadyCheck("gateway", func(context.Context) error {
+		controlplane.AddReadyCheck(s, "gateway", func(context.Context) error {
 			if fail.Load() {
 				return errors.New("down")
 			}
@@ -354,28 +357,20 @@ func TestHealthAndReadiness(t *testing.T) {
 
 func TestMountAndLogs(t *testing.T) {
 	h := newServer(t, controlplane.Config{}, func(s *controlplane.Server) {
-		s.Mount("/v1/link/daemon", s.Authenticator().Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		controlplane.Mount(s, "/v1/echo", controlplane.Authenticator(s).Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			p, _ := auth.PrincipalFrom(r.Context())
 			fmt.Fprint(w, p.ID)
 		}), store.KindDevice))
 	})
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Error("Mount after Start did not panic")
-			}
-		}()
-		h.srv.Mount("/late", http.NotFoundHandler())
-	}()
 	tok := h.token(t, store.KindDevice, time.Hour, time.Now())
 	resp, err := h.enrollClient().Enroll(context.Background(), enrollReq(tok, circusv1.Role_ROLE_DAEMON, "laptop"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status, body := h.get(t, "/v1/link/daemon", resp.Msg.GetLongTermToken()); status != http.StatusOK || body != resp.Msg.GetPrincipalId() {
+	if status, body := h.get(t, "/v1/echo", resp.Msg.GetLongTermToken()); status != http.StatusOK || body != resp.Msg.GetPrincipalId() {
 		t.Fatalf("mounted handler: %d %q", status, body)
 	}
-	if status, _ := h.get(t, "/v1/link/daemon", "wrong"); status != http.StatusUnauthorized {
+	if status, _ := h.get(t, "/v1/echo", "wrong"); status != http.StatusUnauthorized {
 		t.Fatalf("wrong token: %d", status)
 	}
 	h.get(t, "/healthz", "")
@@ -389,11 +384,11 @@ func TestMountAndLogs(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			t.Fatalf("log line is not JSON: %q", line)
 		}
-		if rec["instance_id"] != h.srv.InstanceID() {
+		if rec["instance_id"] != controlplane.InstanceID(h.srv) {
 			t.Fatalf("log line without instance_id: %q", line)
 		}
 	}
-	if !strings.Contains(h.logs.String(), `"path":"/v1/link/daemon"`) {
+	if !strings.Contains(h.logs.String(), `"path":"/v1/echo"`) {
 		t.Fatal("request not logged")
 	}
 }
@@ -404,11 +399,11 @@ func TestShutdownBounded(t *testing.T) {
 	entered := make(chan struct{})
 	var hookCtxDone atomic.Bool
 	h := newServer(t, controlplane.Config{}, func(s *controlplane.Server) {
-		s.Mount("/block", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		controlplane.Mount(s, "/block", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			close(entered)
 			<-r.Context().Done()
 		}))
-		s.AddShutdownHook("links", func(ctx context.Context) error {
+		controlplane.AddShutdownHook(s, "links", func(ctx context.Context) error {
 			<-ctx.Done()
 			hookCtxDone.Store(true)
 			return ctx.Err()
@@ -554,6 +549,9 @@ func TestDevInsecureChecksBoundAddress(t *testing.T) {
 	if srv.Addr() != nil {
 		t.Fatal("server reports an address after refusing to start")
 	}
+	if err := srv.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // --behind-proxy on a non-loopback address starts but warns.
@@ -599,7 +597,7 @@ func TestReadyzDuringShutdown(t *testing.T) {
 	statuses := make(chan int, 1)
 	h := newServer(t, controlplane.Config{}, func(s *controlplane.Server) {
 		srv = s
-		s.AddShutdownHook("probe", func(context.Context) error {
+		controlplane.AddShutdownHook(s, "probe", func(context.Context) error {
 			rec := httptest.NewRecorder()
 			controlplane.ServeReady(srv, rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 			statuses <- rec.Code
@@ -637,7 +635,7 @@ func TestHooksStartAfterListenerCloses(t *testing.T) {
 				ln = &closeRecordingListener{Listener: inner}
 				return ln, nil
 			})
-			s.AddShutdownHook("observe", func(context.Context) error {
+			controlplane.AddShutdownHook(s, "observe", func(context.Context) error {
 				closedAtHook <- ln.closed.Load()
 				return nil
 			})
@@ -668,8 +666,8 @@ func TestShutdownAbandonsStuckHook(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	h := newServer(t, controlplane.Config{}, func(s *controlplane.Server) {
-		s.AddShutdownHook("fast", func(context.Context) error { return nil })
-		s.AddShutdownHook("stuck", func(context.Context) error { <-release; return nil })
+		controlplane.AddShutdownHook(s, "fast", func(context.Context) error { return nil })
+		controlplane.AddShutdownHook(s, "stuck", func(context.Context) error { <-release; return nil })
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -691,8 +689,8 @@ func TestShutdownAbandonsStuckHook(t *testing.T) {
 func TestShutdownReportsHookErrors(t *testing.T) {
 	boom := errors.New("boom")
 	h := newServer(t, controlplane.Config{}, func(s *controlplane.Server) {
-		s.AddShutdownHook("ok", func(context.Context) error { return nil })
-		s.AddShutdownHook("bad", func(context.Context) error { return boom })
+		controlplane.AddShutdownHook(s, "ok", func(context.Context) error { return nil })
+		controlplane.AddShutdownHook(s, "bad", func(context.Context) error { return boom })
 	})
 	err := h.srv.Shutdown(context.Background())
 	if !errors.Is(err, boom) || !strings.Contains(err.Error(), "shutdown hook bad: boom") || strings.Contains(err.Error(), "hook ok") {
@@ -715,12 +713,12 @@ func TestShutdownHookReturningAtDeadline(t *testing.T) {
 			logs := &syncBuffer{}
 			srv := new(controlplane.Server)
 			beyondDone := make(chan struct{})
-			srv.AddShutdownHook("within-grace", func(ctx context.Context) error {
+			controlplane.AddShutdownHook(srv, "within-grace", func(ctx context.Context) error {
 				<-ctx.Done()
 				time.Sleep(contractedHookGrace / 2)
 				return late
 			})
-			srv.AddShutdownHook("beyond-grace", func(ctx context.Context) error {
+			controlplane.AddShutdownHook(srv, "beyond-grace", func(ctx context.Context) error {
 				<-ctx.Done()
 				time.Sleep(2 * contractedHookGrace)
 				close(beyondDone)
@@ -813,9 +811,6 @@ func TestComposedLinksCleanupWithoutListener(t *testing.T) {
 		}
 		s, err := controlplane.New(t.Context(), openStore(t), cfg)
 		if err != nil {
-			t.Fatal(err)
-		}
-		if err = s.ConfigureLinks(t.Context(), controlplane.LinkConfig{}); err != nil {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)

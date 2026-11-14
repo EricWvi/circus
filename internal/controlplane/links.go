@@ -5,66 +5,56 @@ import (
 	"errors"
 	"time"
 
+	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/clock"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/wire"
 )
 
-// LinkConfig exposes the operational transport and disconnect limits. Zero uses
-// package defaults. ConfigureLinks must run once, before Start.
-type LinkConfig struct {
-	MaxMessageBytes                     int
-	GracePeriod                         time.Duration
-	HeartbeatInterval, HeartbeatTimeout time.Duration
-	// SendPoolBytes and ReceivePoolBytes set the ONE wire.Budget shared by
-	// all daemon links. Zero uses the default, twice wire.MinBudget; the
-	// gateway rejects smaller pools (see gateway.PoolError and the sizing
-	// rule in gateway's package doc).
-	SendPoolBytes, ReceivePoolBytes int
-}
-
-// ConfigureLinks composes the M2 call path using this server's authenticator.
-func (s *Server) ConfigureLinks(ctx context.Context, c LinkConfig) error {
-	s.mu.Lock()
-	s.mustNotHaveStarted("ConfigureLinks")
-	s.mu.Unlock()
-	if s.router != nil {
-		return errors.New("controlplane: links already configured")
-	}
+// buildCallPlane composes the call path (registry, call router, daemon
+// gateway and worker call handler) with this server's single authenticator,
+// mounts both links, and registers its readiness check and its one shutdown
+// step. On error it closes what it built.
+func (s *Server) buildCallPlane(ctx context.Context) error {
+	c := s.cfg
 	registry, err := gateway.NewRegistry(100)
 	if err != nil {
 		return err
 	}
-	b, err := bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 128, MaxBytes: 256 << 20})
-	if err != nil {
-		return err
-	}
-	b = dispatchBus(b)
 	// Dispatch commit timestamps and Welcome share one clock on the daemon link.
 	clk := clock.Real{}
-	r, err := calls.New(calls.Config{Store: s.st, Registry: registry, Bus: b, Clock: clk, MaxMessageBytes: c.MaxMessageBytes, GracePeriod: c.GracePeriod})
+	// The gateway calls the router's hooks, so it is built second; the
+	// router reaches it through this sender, which is only used once a
+	// device is connected and so after g is set.
+	var g gateway.Handler
+	sender := dispatchSender(calls.SenderFunc(func(ctx context.Context, t gateway.Target, m *circusv1.DaemonDownlink) error {
+		if g == nil { // fail safe if a delivery ever precedes the binding
+			return gateway.ErrNoRoute
+		}
+		return g.Deliver(ctx, t, m)
+	}))
+	r, err := calls.New(calls.Config{Store: s.st, Registry: registry, Sender: sender, Clock: clk, MaxMessageBytes: c.MaxMessageBytes, GracePeriod: c.GracePeriod})
 	if err != nil {
 		return err
 	}
-	opts := wire.Options{MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}
-	g, err := gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: daemonAuth{s.authn, s.st}, Registry: registry, Bus: b, Hooks: r, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
+	opts := wire.Options{Clock: clk, MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}
+	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, Registry: registry, Hooks: r, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
 	if err != nil {
 		_ = r.Close(ctx)
 		return err
 	}
-	w, err := workerlink.New(workerlink.Config{Auth: s.authn, Router: r, InstanceID: s.instanceID, Wire: opts, Logger: s.logger})
+	w, err := workerlink.New(workerlink.Config{Auth: s.authn, Router: r, InstanceID: s.instanceID, Clock: clk, Wire: opts, Logger: s.logger})
 	if err != nil {
 		_ = g.Shutdown(ctx)
 		_ = r.Close(ctx)
 		return err
 	}
 	s.router = r
-	s.Mount("/v1/link/daemon", g)
-	s.Mount("/v1/link/worker", w)
-	s.AddReadyCheck("calls", func(ctx context.Context) error {
+	s.mux.Handle("/v1/link/daemon", g)
+	s.mux.Handle("/v1/link/worker", w)
+	s.checks = append(s.checks, readyCheck{"calls", func(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -72,11 +62,11 @@ func (s *Server) ConfigureLinks(ctx context.Context, c LinkConfig) error {
 			return errors.New("call store unhealthy")
 		}
 		return nil
-	})
-	s.closeLinks = func(ctx context.Context) error {
+	}})
+	s.closeCalls = func(ctx context.Context) error {
 		return closeCallPlane(ctx, w, g, r, s.stopBg, s.timersDone)
 	}
-	s.AddShutdownHook("call plane", s.closeLinks)
+	s.hooks = append(s.hooks, shutdownHook{"call plane", s.closeCalls})
 	return nil
 }
 

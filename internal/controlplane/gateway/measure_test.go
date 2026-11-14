@@ -16,10 +16,10 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
+	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/proto"
 )
@@ -229,14 +229,14 @@ func (p *poolHooks) OnDeviceResult(_ context.Context, _ Connection, v *circusv1.
 
 type poolAuth struct{}
 
-func (poolAuth) Authenticate(_ context.Context, r *http.Request) (Principal, error) {
+func (poolAuth) Authenticate(_ context.Context, r *http.Request) (auth.Principal, error) {
 	name := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if name == "" {
-		return Principal{}, ErrUnauthenticated
+		return auth.Principal{}, auth.ErrUnauthenticated
 	}
-	return Principal{UserID: "u", DeviceID: name, DeviceName: name, CredentialID: "cred-" + name}, nil
+	return auth.Principal{Kind: store.KindDevice, UserID: "u", ID: name, Name: name, CredentialID: "cred-" + name}, nil
 }
-func (poolAuth) Recheck(context.Context, Principal) error { return nil }
+func (poolAuth) Valid(context.Context, string) (bool, error) { return true, nil }
 
 // poolDevice is a raw daemon-side link that reconnects after a closure.
 type poolDevice struct {
@@ -281,11 +281,7 @@ func (d *poolDevice) dial(ctx context.Context) (*wire.Link, error) {
 
 func poolSend(l *wire.Link, id, text string) error {
 	m := &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Result{Result: &circusv1.DeviceResult{CallId: id, Output: &circusv1.ToolOutput{Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: text}}}}}}}
-	class, key, err := wirepolicy.Classify(m)
-	if err != nil {
-		return err
-	}
-	return l.Send(context.Background(), m, class, key)
+	return l.Send(context.Background(), m)
 }
 
 func stamped(size int) string {
@@ -299,11 +295,7 @@ func runPoolScenario(t *testing.T, devices, large, sendPool, receivePool int, du
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 64, MaxBytes: 1 << 20})
-	if err != nil {
-		t.Fatal(err)
-	}
-	gw, err := New(Config{InstanceID: "instance", Clock: clock.Real{}, Auth: poolAuth{}, Registry: registry, Bus: b, Hooks: hooks, MaxConnections: 256, SendPoolBytes: sendPool, ReceivePoolBytes: receivePool})
+	gw, err := New(Config{InstanceID: "instance", Clock: clock.Real{}, Auth: poolAuth{}, Registry: registry, Hooks: hooks, MaxConnections: 256, SendPoolBytes: sendPool, ReceivePoolBytes: receivePool})
 	if err != nil {
 		t.Fatal(err)
 	}

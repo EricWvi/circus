@@ -2,9 +2,9 @@ package wire
 
 import (
 	"fmt"
-	"google.golang.org/protobuf/encoding/protowire"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -53,17 +53,17 @@ func Decode(k Kind, data []byte, maxBytes int) (proto.Message, error) {
 }
 
 type decodeBudget struct {
-	nodes, fields, jobs, blocks, dirs, devices int
-	resultBytes                                int
+	nodes, fields int
+	repeated      [len(repeatedLimits)]int
+	resultBytes   int
 }
 
 func (b decodeBudget) cost(n int) int {
-	// Retained copies, objects, pointer/string slices and size classes. Temporary
-	// decoder slice growth is accounted separately in the package memory model.
-	// Deliberately conservative; never rely on proto.Size for retained memory.
-	return 2*n + 256*b.nodes + 64*b.fields + 4096
+	return int(decodedCost(int64(n), int64(b.nodes), int64(b.fields)))
 }
-func maxMessageCost(n int) int { return 2*n + 256*MaxDecodeNodes + 64*MaxDecodeFields + 4096 }
+func maxMessageCost(n int) int {
+	return int(decodedCost(int64(n), MaxDecodeNodes, MaxDecodeFields))
+}
 
 func payloadLimit(name protoreflect.Name, fragmentBytes, messageBytes int) int {
 	switch name {
@@ -145,26 +145,10 @@ func scanMessage(d protoreflect.MessageDescriptor, data []byte, depth int, b *de
 		}
 		if field != nil {
 			if field.IsList() {
-				switch field.FullName() {
-				case "circus.v1.JobSnapshot.jobs":
-					b.jobs++
-					if b.jobs > MaxSnapshotJobs {
-						return protocol("snapshot job limit")
-					}
-				case "circus.v1.ToolOutput.content":
-					b.blocks++
-					if b.blocks > 128 {
-						return protocol("content block limit")
-					}
-				case "circus.v1.BashRequest.working_dirs":
-					b.dirs++
-					if b.dirs > 256 {
-						return protocol("working directory limit")
-					}
-				case "circus.v1.CallUpdate.DeviceOffline.online_devices":
-					b.devices++
-					if b.devices > 256 {
-						return protocol("online device limit")
+				if slot, limit := repeatedLimit(field.FullName()); slot >= 0 {
+					b.repeated[slot]++
+					if b.repeated[slot] > limit {
+						return protocol("repeated field limit: %s", field.FullName())
 					}
 				}
 			}

@@ -1,7 +1,8 @@
 // Package workerclient implements a single authenticated worker connection.
 // It never reconnects: transport loss returns an error; open a new connection
 // and Query the call ID. Credentials must have the worker role. TLS roots,
-// loopback plaintext restrictions and redirect refusal match daemon/link.
+// loopback plaintext restrictions and redirect refusal come from loopback.Link,
+// shared with daemon/link.
 //
 // At most four streams (the server's per-connection operation cap), eight
 // updates each, and 256 MiB decoded queued updates are retained. Overflow
@@ -22,17 +23,13 @@ import (
 	"io"
 	"net/http"
 	"sync"
-	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
-	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/identifier"
+	"github.com/EricWvi/circus/internal/loopback"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/coder/websocket"
-	"google.golang.org/protobuf/proto"
 )
 
 const maxStreams = 4
@@ -88,11 +85,11 @@ func Dial(ctx context.Context, o Options) (*Client, error) {
 	if o.CAFile != "" {
 		f.CAFile = o.CAFile
 	}
-	endpoint, h, err := transport(f)
+	endpoint, h, err := loopback.Link(f.ControlPlaneURL, f.CAFile, "/v1/link/worker")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("worker link: %w", err)
 	}
-	handshake, cancel := context.WithTimeout(ctx, 10*time.Second)
+	handshake, cancel := context.WithTimeout(ctx, wire.HelloTimeout)
 	defer cancel()
 	conn, resp, err := wire.DialWebSocket(handshake, endpoint, &websocket.DialOptions{HTTPClient: h, HTTPHeader: http.Header{"Authorization": []string{"Bearer " + f.Token}}})
 	if resp != nil && resp.Body != nil {
@@ -109,32 +106,10 @@ func Dial(ctx context.Context, o Options) (*Client, error) {
 		return nil, err
 	}
 	fail := func(err error) (*Client, error) { _ = conn.Close(); h.CloseIdleConnections(); return nil, err }
-	data, err := proto.Marshal(&circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_Hello{Hello: &circusv1.Hello{ProtocolVersion: 1, ClientVersion: o.ClientVersion}}})
+	hello := &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, ClientVersion: o.ClientVersion}
+	_, opts, err := wire.DialHello(handshake, conn, wire.WorkerUplink, hello, f.PrincipalID, o.Wire)
 	if err != nil {
-		return fail(err)
-	}
-	if err = conn.WriteMessage(handshake, data); err != nil {
-		return fail(err)
-	}
-	data, err = conn.ReadMessage(handshake)
-	if err != nil {
-		return fail(err)
-	}
-	m, err := wire.Decode(wire.WorkerDownlink, data, wire.MaxMetadataBytes)
-	if err != nil {
-		return fail(err)
-	}
-	down := m.(*circusv1.WorkerDownlink)
-	if r := down.GetReject(); r != nil {
-		return fail(fmt.Errorf("workerclient: Hello rejected: %s", r.Code))
-	}
-	welcome := down.GetWelcome()
-	if welcome == nil || welcome.NegotiatedVersion != 1 || welcome.PrincipalId != f.PrincipalID {
-		return fail(errors.New("workerclient: invalid Welcome"))
-	}
-	opts, err := wire.OptionsFromWelcome(welcome, o.Wire)
-	if err != nil {
-		return fail(err)
+		return fail(fmt.Errorf("workerclient: %w", err))
 	}
 	l, err := wire.New(conn, wire.WorkerSide, opts)
 	if err != nil {
@@ -162,7 +137,7 @@ func (c *Client) read() {
 			c.fail(errors.New("workerclient: unexpected message"))
 			return
 		}
-		cost, err := bus.Charge(u, c.maxMessage)
+		cost, err := wire.Charge(u, c.maxMessage)
 		if err == nil {
 			err = c.enqueue(u, cost)
 		}
@@ -183,7 +158,7 @@ func (c *Client) enqueue(u *circusv1.CallUpdate, cost int64) error {
 		return nil
 	}
 	if s.ghost {
-		if s.oneShot || workerlink.Terminal(u) {
+		if s.oneShot || wire.Terminal(u) {
 			delete(c.streams, u.CallId)
 		}
 		return nil
@@ -208,10 +183,7 @@ func (c *Client) fail(err error) {
 	_ = c.link.Close()
 }
 func (c *Client) send(ctx context.Context, m *circusv1.WorkerUplink) error {
-	class, key, err := wirepolicy.Classify(m)
-	if err == nil {
-		err = c.link.Send(ctx, m, class, key)
-	}
+	err := c.link.Send(ctx, m)
 	if err != nil {
 		c.fail(err)
 	}
@@ -285,7 +257,7 @@ func (s *Updates) Next(ctx context.Context) (*circusv1.CallUpdate, error) {
 		return nil, io.EOF
 	}
 	consume := func(q queued) (*circusv1.CallUpdate, error) {
-		terminal := workerlink.Terminal(q.update)
+		terminal := wire.Terminal(q.update)
 		s.client.mu.Lock()
 		s.client.bytes -= q.bytes
 		s.answered = true
@@ -353,7 +325,7 @@ func (s *Updates) Close() error {
 		case q := <-s.queue:
 			c.bytes -= q.bytes
 			answered = true
-			terminal = terminal || workerlink.Terminal(q.update)
+			terminal = terminal || wire.Terminal(q.update)
 		default:
 			if terminal || s.oneShot && answered {
 				delete(c.streams, s.id)

@@ -71,11 +71,11 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	"github.com/EricWvi/circus/internal/identifier"
+	"github.com/EricWvi/circus/internal/loopback"
+	"github.com/EricWvi/circus/internal/machineid"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/proto"
 )
 
 // DialFunc permits transport fault injection; production uses wire.DialWebSocket.
@@ -173,9 +173,9 @@ func New(o Options) (*Client, error) {
 	if o.Credentials.Role != credfile.RoleDaemon || o.Credentials.Token == "" || o.Credentials.PrincipalID == "" {
 		return nil, errors.New("daemon link: daemon credentials required")
 	}
-	endpoint, httpClient, err := transport(o.Credentials)
+	endpoint, httpClient, err := loopback.Link(o.Credentials.ControlPlaneURL, o.Credentials.CAFile, "/v1/link/daemon")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("daemon link: %w", err)
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
@@ -227,7 +227,9 @@ func New(o Options) (*Client, error) {
 		o.Dispatcher.ToolShutdownTimeout = max(cleanup-daemon.AbandonGrace, cleanup/2)
 	}
 	if o.MachineIDSource == nil {
-		o.MachineIDSource = machineID
+		// The shared machine-role hash, so the daemon's Hello matches the
+		// machine_id `circus join` enrolled with.
+		o.MachineIDSource = func(context.Context) (string, error) { return machineid.Get() }
 	}
 	probe, cancelProbe := context.WithTimeout(context.Background(), o.HandshakeTimeout)
 	machine, err := o.MachineIDSource(probe)
@@ -305,11 +307,7 @@ func (c *Client) send(a *connection, m *circusv1.DaemonUplink) {
 	err := errors.New("daemon link: not connected")
 	if a != nil {
 		m = fitUplink(m, a.maxUplink)
-		var class wire.Class
-		var key string
-		if class, key, err = wirepolicy.Classify(m); err == nil {
-			err = a.link.Send(context.Background(), m, class, key)
-		}
+		err = a.link.Send(context.Background(), m)
 	}
 	if err == nil {
 		return
@@ -393,7 +391,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 }
 
 func (c *Client) connect(ctx context.Context) (*connection, error) {
-	handshake, cancel := withTimeout(ctx, c.opts.Clock, c.opts.HandshakeTimeout)
+	handshake, cancel := clock.WithTimeout(ctx, c.opts.Clock, c.opts.HandshakeTimeout)
 	defer cancel()
 	raw, response, err := c.opts.Dial(handshake, c.endpoint, &websocket.DialOptions{HTTPClient: c.http, HTTPHeader: http.Header{"Authorization": []string{"Bearer " + c.opts.Credentials.Token}}})
 	if err != nil {
@@ -408,51 +406,21 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 			_ = raw.Close()
 		}
 	}()
-	hello := &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Hello{Hello: &circusv1.Hello{ProtocolVersion: 1, BootId: c.bootID, ClientVersion: c.opts.ClientVersion, Os: runtime.GOOS, Arch: runtime.GOARCH, Hostname: c.hostname, MachineId: c.machineID}}}
-	data, err := proto.Marshal(hello)
-	if err != nil {
+	hello := &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, BootId: c.bootID, ClientVersion: c.opts.ClientVersion, Os: runtime.GOOS, Arch: runtime.GOARCH, Hostname: c.hostname, MachineId: c.machineID}
+	welcome, options, err := wire.DialHello(handshake, raw, wire.DaemonUplink, hello, c.opts.Credentials.PrincipalID, c.opts.Wire)
+	var rejected *wire.RejectError
+	switch {
+	case errors.As(err, &rejected):
+		return nil, rejectError(rejected.Reject)
+	case errors.Is(err, wire.ErrIncompatible):
+		return nil, &terminalError{"daemon link: " + err.Error()}
+	case err != nil:
 		return nil, err
-	}
-	if err = raw.WriteMessage(handshake, data); err != nil {
-		return nil, err
-	}
-	data, err = raw.ReadMessage(handshake)
-	if err != nil {
-		return nil, err
-	}
-	decoded, err := wire.Decode(wire.DaemonDownlink, data, wire.MaxMetadataBytes)
-	if err != nil {
-		return nil, err
-	}
-	down := decoded.(*circusv1.DaemonDownlink)
-	if r := down.GetReject(); r != nil {
-		return nil, rejectError(r)
-	}
-	welcome := down.GetWelcome()
-	if welcome == nil {
-		return nil, errors.New("daemon link: expected Welcome or Reject")
 	}
 	welcomeMono := c.opts.Clock.Now()
 	if welcome.ServerTimeUnixMs <= 0 {
 		// The dispatch-age anchor; without it no age bound can be enforced.
 		return nil, errors.New("daemon link: Welcome has no server time")
-	}
-	if welcome.NegotiatedVersion != 1 {
-		return nil, &terminalError{"daemon link: unsupported negotiated protocol version"}
-	}
-	if welcome.PrincipalId != c.opts.Credentials.PrincipalID {
-		return nil, &terminalError{"daemon link: Welcome principal does not match credentials"}
-	}
-	options, err := wire.OptionsFromWelcome(welcome, c.opts.Wire)
-	if err != nil {
-		return nil, err
-	}
-	localMax := c.opts.Wire.MaxMessageBytes
-	if localMax == 0 {
-		localMax = wire.DefaultMaxMessageBytes
-	}
-	if options.MaxMessageBytes > localMax {
-		return nil, &terminalError{"daemon link: negotiated message limit exceeds local cap"}
 	}
 	options.Clock = c.opts.Clock
 	l, err := wire.New(raw, wire.DaemonSide, options)
@@ -567,7 +535,7 @@ func (c *Client) serve(ctx context.Context, a *connection) (time.Duration, error
 	c.detach(a)
 	if r.err == nil {
 		// GoAway: write what wire accepted. Outer cancellation still bounds it.
-		closing, cancel := withTimeout(ctx, c.opts.Clock, c.opts.ShutdownTimeout)
+		closing, cancel := clock.WithTimeout(ctx, c.opts.Clock, c.opts.ShutdownTimeout)
 		r.err = a.link.Shutdown(closing)
 		cancel()
 	} else {
@@ -583,7 +551,7 @@ func (c *Client) serve(ctx context.Context, a *connection) (time.Duration, error
 // joinReader cancels a's Receive and waits, bounded, for the reader to return.
 func (c *Client) joinReader(a *connection) error {
 	a.cancel()
-	join, cancel := withTimeout(context.Background(), c.opts.Clock, readerJoinTimeout)
+	join, cancel := clock.WithTimeout(context.Background(), c.opts.Clock, readerJoinTimeout)
 	defer cancel()
 	return waitDone(join, a.readerDone)
 }
@@ -592,9 +560,9 @@ func (c *Client) joinReader(a *connection) error {
 // FlushReserve; the reserve is left for the final wire.Shutdown. The reader
 // keeps answering during cleanup, so resent known calls report their status.
 func (c *Client) stop(a *connection) error {
-	total, cancel := withTimeout(context.Background(), c.opts.Clock, c.opts.ShutdownTimeout)
+	total, cancel := clock.WithTimeout(context.Background(), c.opts.Clock, c.opts.ShutdownTimeout)
 	defer cancel()
-	cleanup, cancelCleanup := withTimeout(total, c.opts.Clock, c.opts.ShutdownTimeout-c.opts.FlushReserve)
+	cleanup, cancelCleanup := clock.WithTimeout(total, c.opts.Clock, c.opts.ShutdownTimeout-c.opts.FlushReserve)
 	c.stopping.Store(true)
 	jobsDone := make(chan error, 1)
 	go func() { jobsDone <- c.jobs.Shutdown(cleanup) }()
@@ -615,21 +583,6 @@ func (c *Client) stop(a *connection) error {
 }
 
 // withTimeout uses the shared clock and joins its one timer watcher on cancel.
-func withTimeout(parent context.Context, clk clock.Clock, d time.Duration) (context.Context, func()) {
-	ctx, cancel := context.WithCancel(parent)
-	done := make(chan struct{})
-	timer := clk.After(d)
-	go func() {
-		defer close(done)
-		select {
-		case <-ctx.Done():
-		case <-timer:
-			cancel()
-		}
-	}()
-	return ctx, func() { cancel(); <-done }
-}
-
 // waitDone checks completion before cancellation so a finished worker does not
 // spuriously lose a race with an expired shutdown context.
 func waitDone(ctx context.Context, done <-chan struct{}) error {

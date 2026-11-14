@@ -3,16 +3,17 @@ package calls_test
 import (
 	"context"
 	"errors"
+	"io"
+	"sync"
+	"testing"
+	"time"
+
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
-	"io"
-	"sync"
-	"testing"
-	"time"
 )
 
 // observer decorates the public gateway consumer seam. It observes completion

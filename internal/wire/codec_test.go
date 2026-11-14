@@ -92,7 +92,7 @@ func TestResultCarriersUseNegotiatedLimit(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = receiver.Close() })
-			if err := sender.Send(contextFor(t), tc.message, wire.Data, "c"); err != nil {
+			if err := sender.SendAs(contextFor(t), tc.message, wire.Data, "c"); err != nil {
 				t.Fatal(err)
 			}
 			if got := receive(t, receiver); !proto.Equal(got, tc.message) {

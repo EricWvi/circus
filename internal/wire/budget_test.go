@@ -563,3 +563,32 @@ func TestBudgetValidation(t *testing.T) {
 		}
 	}
 }
+
+// Once Shutdown has begun, Send reports ErrClosing even when the shared send
+// pool is exhausted: callers treat ErrBusy as "rejected, overloaded" but
+// ErrClosing as "link going away, keep the call's state".
+func TestSendDuringShutdownReportsClosingBeforeBusy(t *testing.T) {
+	track(t)
+	o := smallOptions()
+	o.Budget = minBudget(t, o)
+	a, b := wiretest.Pipe(wiretest.Options{})
+	t.Cleanup(func() { _ = b.Close() })
+	g := &gate{Conn: a, entered: make(chan struct{}), release: make(chan struct{})}
+	l := newLink(t, g, wire.DaemonUplink, wire.DaemonDownlink, o)
+	m := dispatch("c", strings.Repeat("x", 4000))
+	send(t, l, m) // stays queued: its write is held at the gate
+	if err := testSend(l, contextFor(t), m); !errors.Is(err, wire.ErrBusy) {
+		t.Fatal("exhausted pool did not reject send", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- l.Shutdown(contextFor(t)) }()
+	eventually(t, func() bool {
+		err := testSend(l, contextFor(t), m)
+		if !errors.Is(err, wire.ErrBusy) && !errors.Is(err, wire.ErrClosing) {
+			t.Fatalf("send during Shutdown: %v", err)
+		}
+		return errors.Is(err, wire.ErrClosing)
+	})
+	_ = l.Close()
+	<-done
+}

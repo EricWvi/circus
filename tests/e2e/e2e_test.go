@@ -21,13 +21,11 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
 	testwait "github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/EricWvi/circus/internal/workerclient"
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -391,9 +389,7 @@ func (h *harness) rawWorker() *wire.Link {
 }
 func (h *harness) sendWorker(link *wire.Link, msg *circusv1.WorkerUplink) {
 	h.t.Helper()
-	class, key, err := wirepolicy.Classify(msg)
-	must(h.t, err)
-	must(h.t, link.Send(h.t.Context(), msg, class, key))
+	must(h.t, link.Send(h.t.Context(), msg))
 }
 func (h *harness) call(id, command string) *circusv1.DeviceCall {
 	return &circusv1.DeviceCall{CallId: id, SessionId: "session", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: command, Cwd: h.dir}}}
@@ -412,7 +408,7 @@ func (h *harness) result(s *workerclient.Updates) *circusv1.CallUpdate {
 	for {
 		u, err := s.Next(ctx)
 		must(h.t, err)
-		if workerlink.Terminal(u) {
+		if wire.Terminal(u) {
 			return u
 		}
 	}
@@ -853,7 +849,7 @@ func TestDaemonCrashF4(t *testing.T) {
 		if u.GetUnknown() != nil {
 			break
 		}
-		if workerlink.Terminal(u) {
+		if wire.Terminal(u) {
 			t.Fatal(u)
 		}
 	}

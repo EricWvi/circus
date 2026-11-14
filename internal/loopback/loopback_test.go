@@ -25,13 +25,13 @@ func TestAddr(t *testing.T) {
 	}
 }
 
-func TestDialContext(t *testing.T) {
+func TestGuard(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln.Close()
-	dial := DialContext(&net.Dialer{Timeout: 5 * time.Second})
+	dial := guard((&net.Dialer{Timeout: 5 * time.Second}).DialContext)
 	c, err := dial(context.Background(), "tcp", ln.Addr().String())
 	if err != nil {
 		t.Fatal(err)

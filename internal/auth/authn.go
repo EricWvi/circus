@@ -203,11 +203,8 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 	return p, ok
 }
 
-// Require authenticates every request before next sees it. It answers 401
-// (with WWW-Authenticate: Bearer) for ErrUnauthenticated, 403 for ErrRevoked
-// or a principal whose kind is not one of kinds, and
-// 503 for a store failure, without calling next, so an unauthenticated
-// request never reaches a WebSocket upgrade. next finds the principal with
+// Require authenticates every request before next sees it, answering
+// failures as Admit does without calling next. next finds the principal with
 // PrincipalFrom.
 //
 // kinds must name at least one valid kind: an endpoint that forgets to say
@@ -224,27 +221,8 @@ func (a *Authenticator) Require(next http.Handler, kinds ...store.PrincipalKind)
 	}
 	kinds = slices.Clone(kinds)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, err := a.Authenticate(r.Context(), r)
-		log := a.logger.With("path", r.URL.Path, "remote", r.RemoteAddr)
-		switch {
-		case errors.Is(err, ErrUnauthenticated):
-			log.InfoContext(r.Context(), "request rejected", "status", http.StatusUnauthorized, "reason", "unknown or malformed token")
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			http.Error(w, "unauthenticated", http.StatusUnauthorized)
-			return
-		case errors.Is(err, ErrRevoked):
-			log.InfoContext(r.Context(), "request rejected", "status", http.StatusForbidden, "reason", "credential revoked")
-			http.Error(w, "credential revoked", http.StatusForbidden)
-			return
-		case err != nil:
-			log.ErrorContext(r.Context(), "authentication failed", "error", err)
-			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		if !slices.Contains(kinds, p.Kind) {
-			log.InfoContext(r.Context(), "request rejected", "status", http.StatusForbidden, "reason", "wrong role",
-				"kind", p.Kind, "principal_id", p.ID)
-			http.Error(w, "wrong role for this endpoint", http.StatusForbidden)
+		p, ok := Admit(w, r, a, a.logger, kinds...)
+		if !ok {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), p)))

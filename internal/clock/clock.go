@@ -2,6 +2,7 @@
 package clock
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -74,3 +75,22 @@ type Real struct{}
 
 func (Real) Now() time.Time                         { return time.Now() }
 func (Real) After(d time.Duration) <-chan time.Time { return time.After(d) }
+
+// WithTimeout is context.WithTimeout measured on clk: the returned context is
+// cancelled when d elapses on clk, when ctx ends or when cancel is called.
+// cancel joins the helper goroutine, so nothing outlives it. On expiry the
+// context's Err is context.Canceled.
+func WithTimeout(ctx context.Context, clk Clock, d time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	alarm := clk.After(d)
+	go func() {
+		defer close(done)
+		select {
+		case <-ctx.Done():
+		case <-alarm:
+			cancel()
+		}
+	}()
+	return ctx, func() { cancel(); <-done }
+}

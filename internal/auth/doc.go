@@ -54,7 +54,7 @@
 //
 // # Revocation
 //
-// Revoke and RevokeByName revoke an identity's credentials and soft-delete
+// RevokeByName revokes an identity's credentials and soft-deletes
 // the identity in one transaction, so the name can be enrolled again (a
 // re-join after revocation, or after a join whose credential file was never
 // written).

@@ -2,6 +2,6 @@
 
 package controlplane
 
-import "github.com/EricWvi/circus/internal/controlplane/bus"
+import "github.com/EricWvi/circus/internal/controlplane/calls"
 
-func dispatchBus(b bus.Bus) bus.Bus { return b }
+func dispatchSender(s calls.Sender) calls.Sender { return s }

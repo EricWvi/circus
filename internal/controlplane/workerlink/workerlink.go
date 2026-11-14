@@ -24,8 +24,8 @@
 // Sends retry wire.ErrBusy with bounded backoff for at most 10 seconds (below
 // the router's default 15-second SubscriberStall and wire's default
 // MaxConsumerStall), then close the link. The 256 MiB default send pool is
-// shared by both connections, not reserved per link. Every send uses wirepolicy;
-// no router callback waits for this handler.
+// shared by both connections, not reserved per link. No router callback waits
+// for this handler.
 //
 // Worst case memory (live ownership, excluding runtime/GC, SQLite, kernel/TLS):
 // two connections and four subscriptions/queries each, no extra inbox/outbox;
@@ -46,20 +46,17 @@ package workerlink
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"net/http"
 	"sync"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -69,25 +66,18 @@ const (
 	sendBusyLimit = 10 * time.Second
 )
 
-// Authenticator is the worker auth seam. The host supplies the single shared
-// auth.Authenticator; tests may inject revalidation failures.
-type Authenticator interface {
-	Authenticate(context.Context, *http.Request) (auth.Principal, error)
-	Valid(context.Context, string) (bool, error)
-}
-
-// Config shares the host's single authenticator and call router. Zero durations
-// use 10s Hello, 1s recheck, 5s check timeout and 30s maximum credential
-// staleness. Revalidation errors and timeouts are retried with an initial
-// per-link phase jitter; only a definitive revoke closes immediately.
+// Config shares the host's single authenticator and call router. Only a
+// worker credential is admitted; Recheck (zero: the auth.RecheckPolicy
+// defaults) revalidates it. Clock (zero: real time) times the handshake,
+// rechecks and send retries; Wire.Clock times the links themselves.
 type Config struct {
-	Auth                                          Authenticator
-	Router                                        calls.Service
-	InstanceID                                    string
-	Wire                                          wire.Options
-	Logger                                        *slog.Logger
-	HelloTimeout, RecheckInterval, RecheckTimeout time.Duration
-	RecheckMaxStale                               time.Duration
+	Auth       auth.LinkAuthenticator
+	Router     calls.Service
+	InstanceID string
+	Clock      clock.Clock
+	Wire       wire.Options
+	Logger     *slog.Logger
+	Recheck    auth.RecheckPolicy
 }
 
 // Handler owns every admitted handshake, subscription and query. Shutdown
@@ -107,20 +97,12 @@ func New(c Config) (*Handler, error) {
 	if c.Auth == nil || c.Router == nil || c.InstanceID == "" || len(c.InstanceID) > 128 || c.Wire.Budget != nil {
 		return nil, errors.New("workerlink: invalid dependencies")
 	}
-	if c.HelloTimeout == 0 {
-		c.HelloTimeout = 10 * time.Second
+	var err error
+	if c.Recheck, err = c.Recheck.Normalize(); err != nil {
+		return nil, err
 	}
-	if c.RecheckInterval == 0 {
-		c.RecheckInterval = time.Second
-	}
-	if c.RecheckTimeout == 0 {
-		c.RecheckTimeout = 5 * time.Second
-	}
-	if c.RecheckMaxStale == 0 {
-		c.RecheckMaxStale = 30 * time.Second
-	}
-	if c.HelloTimeout <= 0 || c.RecheckInterval <= 0 || c.RecheckTimeout <= 0 || c.RecheckMaxStale <= 0 {
-		return nil, errors.New("workerlink: invalid timeout")
+	if c.Clock == nil {
+		c.Clock = clock.Real{}
 	}
 	if c.Logger == nil {
 		c.Logger = slog.Default()
@@ -152,20 +134,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	principal, err := h.cfg.Auth.Authenticate(ctx, r)
-	switch {
-	case errors.Is(err, auth.ErrUnauthenticated):
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		http.Error(w, "unauthenticated", http.StatusUnauthorized)
-		return
-	case errors.Is(err, auth.ErrRevoked):
-		http.Error(w, "revoked", http.StatusForbidden)
-		return
-	case err != nil:
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-		return
-	case principal.Kind != store.KindWorker:
-		http.Error(w, "worker role required; use a worker credential", http.StatusForbidden)
+	principal, ok := auth.Admit(w, r, h.cfg.Auth, h.cfg.Logger, store.KindWorker)
+	if !ok {
 		return
 	}
 	// Authentication is deliberately outside the bounded peer set: invalid
@@ -196,13 +166,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	abortDone := make(chan struct{})
 	go func() { defer close(abortDone); <-ctx.Done(); _ = conn.Close() }()
 	defer func() { cancel(); <-abortDone }()
-	handshake, finish := context.WithTimeout(ctx, h.cfg.HelloTimeout)
-	err = h.hello(handshake, conn, principal)
+	handshake, finish := clock.WithTimeout(ctx, h.cfg.Clock, wire.HelloTimeout)
+	_, opts, err := wire.AcceptHello(handshake, conn, wire.WorkerUplink, h.cfg.Wire, func(*circusv1.Hello) *circusv1.Welcome {
+		return &circusv1.Welcome{PrincipalId: principal.ID, InstanceId: h.cfg.InstanceID, ServerTimeUnixMs: h.cfg.Clock.Now().UnixMilli()}
+	})
 	finish()
 	if err != nil {
 		return
 	}
-	link, err := wire.New(conn, wire.WorkerControlSide, h.cfg.Wire)
+	link, err := wire.New(conn, wire.WorkerControlSide, opts)
 	if err != nil {
 		return
 	}
@@ -220,10 +192,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		m := &circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_CallUpdate{CallUpdate: u}}
-		class, key, err := wirepolicy.Classify(m)
-		if err == nil {
-			err = sendWithBusyRetry(ctx, func(sendCtx context.Context) error { return link.Send(sendCtx, m, class, key) })
-		}
+		err := h.sendWithBusyRetry(ctx, func(sendCtx context.Context) error { return link.Send(sendCtx, m) })
 		if err != nil && ctx.Err() == nil {
 			h.cfg.Logger.WarnContext(ctx, "worker send closed link", "error", err)
 			cancel()
@@ -323,7 +292,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						}
 						return
 					}
-					if Terminal(u) {
+					if wire.Terminal(u) {
 						// As with Query, terminal visibility follows slot release.
 						<-slots
 						held = false
@@ -359,36 +328,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// WorkerJobEvent fanout belongs here in M3.
 	}
 }
-func (h *Handler) hello(ctx context.Context, conn wire.Conn, p auth.Principal) error {
-	data, err := conn.ReadMessage(ctx)
-	if err != nil {
-		return err
-	}
-	m, err := wire.Decode(wire.WorkerUplink, data, wire.MaxMetadataBytes)
-	code := circusv1.Reject_CODE_BAD_HELLO
-	if err == nil {
-		hello := m.(*circusv1.WorkerUplink).GetHello()
-		if hello != nil {
-			if hello.ProtocolVersion != 1 {
-				code = circusv1.Reject_CODE_VERSION_UNSUPPORTED
-			} else {
-				w := &circusv1.Welcome{PrincipalId: p.ID, InstanceId: h.cfg.InstanceID, NegotiatedVersion: 1, ServerTimeUnixMs: time.Now().UnixMilli()}
-				if _, err = wire.FillWelcome(w, h.cfg.Wire); err != nil {
-					return err
-				}
-				data, err = proto.Marshal(&circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_Welcome{Welcome: w}})
-				if err != nil {
-					return err
-				}
-				return conn.WriteMessage(ctx, data)
-			}
-		}
-	}
-	data, _ = proto.Marshal(&circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_Reject{Reject: &circusv1.Reject{Code: code, MinVersion: 1, MaxVersion: 1}}})
-	_ = conn.WriteMessage(ctx, data)
-	_ = conn.Shutdown(ctx)
-	return fmt.Errorf("workerlink: rejected Hello: %s", code)
-}
 
 // acquireSendSlot admits a logical operation, then waits for its send-lifetime
 // slot rather than exceeding the goroutine/outbound cap. A full logical cap is
@@ -411,13 +350,13 @@ func acquireSendSlot(ctx context.Context, slots, handlers chan struct{}, onFull 
 
 // sendWithBusyRetry treats shared-pool exhaustion as recoverable. All other
 // failures return immediately. The retry schedule and total wait are bounded.
-func sendWithBusyRetry(ctx context.Context, send func(context.Context) error) error {
-	return sendWithBusyRetryLimit(ctx, sendBusyLimit, send)
+func (h *Handler) sendWithBusyRetry(ctx context.Context, send func(context.Context) error) error {
+	return sendWithBusyRetryLimit(ctx, h.cfg.Clock, sendBusyLimit, send)
 }
 
-func sendWithBusyRetryLimit(ctx context.Context, limit time.Duration, send func(context.Context) error) error {
+func sendWithBusyRetryLimit(ctx context.Context, clk clock.Clock, limit time.Duration, send func(context.Context) error) error {
 	const initial = 10 * time.Millisecond
-	retryCtx, cancel := context.WithTimeout(ctx, limit)
+	retryCtx, cancel := clock.WithTimeout(ctx, clk, limit)
 	defer cancel()
 	backoff := initial
 	for {
@@ -425,61 +364,25 @@ func sendWithBusyRetryLimit(ctx context.Context, limit time.Duration, send func(
 		if !errors.Is(err, wire.ErrBusy) {
 			return err
 		}
-		if retryCtx.Err() != nil {
-			return retryCtx.Err()
-		}
-		timer := time.NewTimer(backoff)
 		select {
 		case <-retryCtx.Done():
-			timer.Stop()
-			return retryCtx.Err()
-		case <-timer.C:
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return context.DeadlineExceeded
+		case <-clk.After(backoff):
 		}
 		backoff = min(2*backoff, 100*time.Millisecond)
 	}
 }
 
 func (h *Handler) recheck(ctx context.Context, cancel context.CancelFunc, id string) {
-	lastValid := time.Now()
-	// Jitter only the phase. The resulting periodic schedule still observes a
-	// definitive revoke within one interval plus one check timeout.
-	delay := time.Duration(rand.Float64() * float64(h.cfg.RecheckInterval))
-	for {
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-		}
-		check, finish := context.WithTimeout(ctx, h.cfg.RecheckTimeout)
-		valid, err := h.cfg.Auth.Valid(check, id)
-		timedOut := check.Err() != nil
-		finish()
-		if ctx.Err() != nil {
-			return
-		}
-		if !timedOut && err == nil && valid {
-			lastValid = time.Now()
-		} else {
-			definitive := !timedOut && (errors.Is(err, auth.ErrRevoked) || err == nil && !valid)
-			if definitive || time.Since(lastValid) >= h.cfg.RecheckMaxStale {
-				h.cfg.Logger.WarnContext(ctx, "worker credential revalidation closed link", "definitive_revoke", definitive, "last_valid", lastValid, "error", err)
-				cancel()
-				return
-			}
-		}
-		delay = h.cfg.RecheckInterval
-	}
-}
-
-// Terminal recognizes actual call outcomes. Unknown and the operation-scoped
-// NOT_FOUND answer deliberately do not settle a call.
-func Terminal(u *circusv1.CallUpdate) bool {
-	if r := u.GetRejected(); r != nil && r.GetCode() == circusv1.CallUpdate_Rejected_CODE_NOT_FOUND {
-		return false
-	}
-	return u.GetResult() != nil || u.GetOffline() != nil || u.GetLost() != nil || u.GetRejected() != nil || u.GetCancelled() != nil
+	h.cfg.Recheck.Watch(ctx, h.cfg.Clock, func(ctx context.Context) (bool, error) {
+		return h.cfg.Auth.Valid(ctx, id)
+	}, func(definitive bool, lastValid time.Time, err error) {
+		h.cfg.Logger.WarnContext(ctx, "worker credential revalidation closed link", "definitive_revoke", definitive, "last_valid", lastValid, "error", err)
+		cancel()
+	})
 }
 
 // Shutdown refuses new upgrades and aborts links. It joins peers until ctx

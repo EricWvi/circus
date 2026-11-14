@@ -98,15 +98,9 @@ type operation struct {
 	stop   func() bool
 	locked bool
 	slot   bool
-	kind   string    // operation name reported to lockObserver
+	kind   string    // operation name reported to Config.lockObserver
 	since  time.Time // start of the current locked segment, when observed
 }
-
-// lockObserver, when set by tests (export_test.go), receives how long each
-// locked segment of an operation held the router-wide admission lock. It is
-// nil in production: the cost is one nil check per lock and unlock. Set it
-// only while no router runs.
-var lockObserver func(kind string, held time.Duration)
 
 // enter admits an operation and returns it locked. Public calls refuse at
 // once when every slot is busy (wait false); hooks and timers wait for one.
@@ -152,13 +146,13 @@ func (r *router) enter(ctx context.Context, wait bool, kind string) (*operation,
 		return nil, ErrClosed
 	}
 	op := &operation{r: r, ctx: ctx, cancel: cancel, stop: stop, locked: true, slot: true, kind: kind}
-	if lockObserver != nil {
+	if r.config.lockObserver != nil {
 		op.since = time.Now()
 	}
 	return op, nil
 }
 func (o *operation) unlock() {
-	observe := lockObserver
+	observe := o.r.config.lockObserver
 	var held time.Duration
 	if observe != nil {
 		held = time.Since(o.since)
@@ -172,7 +166,7 @@ func (o *operation) unlock() {
 func (o *operation) lock() {
 	o.r.mu.Lock()
 	o.locked = true
-	if lockObserver != nil {
+	if o.r.config.lockObserver != nil {
 		o.since = time.Now()
 	}
 }
@@ -211,7 +205,7 @@ func (o *operation) finish() {
 }
 
 func newRouter(c Config) (Router, error) {
-	if c.Store == nil || c.Registry == nil || c.Bus == nil || c.Clock == nil {
+	if c.Store == nil || c.Registry == nil || c.Sender == nil || c.Clock == nil {
 		return nil, fmt.Errorf("calls: missing dependency")
 	}
 	defaults := []struct {
@@ -426,7 +420,7 @@ func (r *router) sweep() {
 			r.probeStore()
 		}
 		r.mu.Lock()
-		observe, since := lockObserver, time.Time{}
+		observe, since := r.config.lockObserver, time.Time{}
 		if observe != nil {
 			since = time.Now()
 		}
@@ -571,11 +565,11 @@ func (r *router) readyRoute(ctx context.Context, device, boot string) (gateway.C
 }
 
 func (r *router) sendQuery(ctx context.Context, route gateway.Connection, id string) error {
-	return r.config.Bus.Send(ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: id}}})
+	return r.config.Sender.Deliver(ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: id}}})
 }
 
 func (r *router) sendCancel(ctx context.Context, route gateway.Connection, id string) error {
-	return r.config.Bus.Send(ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: id}}})
+	return r.config.Sender.Deliver(ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: id}}})
 }
 
 // logSendFailure records a per-call command that could not be queued; the

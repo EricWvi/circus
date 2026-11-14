@@ -6,7 +6,6 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -53,7 +52,7 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 				holder.Set(id, protoreflect.ValueOfString(callID))
 			}
 			r.Set(f, protoreflect.ValueOfMessage(body))
-			class, key, err := wirepolicy.Classify(m)
+			class, key, err := wire.Classify(m)
 			expected := wire.Data
 			switch f.Name() {
 			case "heartbeat", "go_away", "call_ack":
@@ -75,7 +74,7 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 			}
 		}
 	}
-	if _, _, err := wirepolicy.Classify(&circusv1.DeviceResult{}); err == nil {
+	if _, _, err := wire.Classify(&circusv1.DeviceResult{}); err == nil {
 		t.Fatal("non-envelope classified")
 	}
 }
@@ -84,13 +83,13 @@ func TestWorkerJobOrderingIdentity(t *testing.T) {
 	event := func(device, boot string) proto.Message {
 		return &circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_JobEvent{JobEvent: &circusv1.WorkerJobEvent{Device: device, BootId: boot, Event: &circusv1.JobEvent{}}}}
 	}
-	_, first, err := wirepolicy.Classify(event(strings.Repeat("d", 2048), "boot1"))
+	_, first, err := wire.Classify(event(strings.Repeat("d", 2048), "boot1"))
 	if err != nil || len(first) > wire.MaxOrderingKeyBytes {
 		t.Fatal("unbounded job key", len(first), err)
 	}
-	_, again, _ := wirepolicy.Classify(event(strings.Repeat("d", 2048), "boot1"))
-	_, nextBoot, _ := wirepolicy.Classify(event(strings.Repeat("d", 2048), "boot2"))
-	_, otherDevice, _ := wirepolicy.Classify(event("other", "boot1"))
+	_, again, _ := wire.Classify(event(strings.Repeat("d", 2048), "boot1"))
+	_, nextBoot, _ := wire.Classify(event(strings.Repeat("d", 2048), "boot2"))
+	_, otherDevice, _ := wire.Classify(event("other", "boot1"))
 	if first != again || first == nextBoot || first == otherDevice {
 		t.Fatal("worker jobs lost device/boot ordering identity")
 	}

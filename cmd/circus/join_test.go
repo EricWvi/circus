@@ -18,6 +18,7 @@ import (
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/controlplane"
 	"github.com/EricWvi/circus/internal/credfile"
+	"github.com/EricWvi/circus/internal/loopback"
 	"github.com/EricWvi/circus/internal/machineid"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
@@ -399,7 +400,7 @@ func TestClientRefusesRedirects(t *testing.T) {
 	defer client.CloseIdleConnections()
 	req, _ := http.NewRequest(http.MethodGet, redirect.URL+"/v1/whoami", nil)
 	req.Header.Set("Authorization", "Bearer secret")
-	if _, err := client.Do(req); !errors.Is(err, errRedirect) {
+	if _, err := client.Do(req); !errors.Is(err, loopback.ErrRedirect) {
 		t.Fatalf("redirect followed or wrong error: %v", err)
 	}
 	if hit.Load() {
@@ -496,6 +497,19 @@ func TestDoctorValidatesFileURL(t *testing.T) {
 		}
 		if !ok && !strings.Contains(out.String(), "control_plane_url") {
 			t.Errorf("%s: no URL diagnosis\n%s", raw, &out)
+		}
+	}
+}
+
+// A CA file problem names the flag the operator has to fix.
+func TestClientCAFileErrorNamesFlag(t *testing.T) {
+	empty := filepath.Join(t.TempDir(), "empty.pem")
+	if err := os.WriteFile(empty, []byte("no certificate"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, ca := range []string{filepath.Join(t.TempDir(), "missing.pem"), empty} {
+		if _, err := httpClient("https://example.com", ca); err == nil || !strings.Contains(err.Error(), "--ca-file") {
+			t.Fatalf("%s: %v", ca, err)
 		}
 	}
 }

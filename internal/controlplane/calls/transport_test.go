@@ -2,16 +2,16 @@ package calls_test
 
 import (
 	"errors"
+	"strings"
+	"testing"
+	"time"
+
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"google.golang.org/protobuf/proto"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestDaemonQueueOverflowResyncF12(t *testing.T) {
@@ -26,9 +26,7 @@ func TestDaemonQueueOverflowResyncF12(t *testing.T) {
 	drain(t, f.ctx, s, 3)
 	result := &circusv1.DeviceResult{CallId: "call", Output: &circusv1.ToolOutput{Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: strings.Repeat("x", 4096)}}}}}
 	m := &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Result{Result: result}}
-	class, key, err := wirepolicy.Classify(m)
-	must(t, err)
-	if err = l.Send(f.ctx, m, class, key); !errors.Is(err, wire.ErrQueueFull) {
+	if err := l.Send(f.ctx, m); !errors.Is(err, wire.ErrQueueFull) {
 		t.Fatal(err)
 	}
 	eventually(t, func() bool { return f.registry.Stats().Connections == 0 })

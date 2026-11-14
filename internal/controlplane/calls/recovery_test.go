@@ -9,7 +9,6 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
@@ -128,9 +127,9 @@ func TestReplyFencingByDeviceAndBoot(t *testing.T) {
 		name string
 		conn gateway.Connection
 	}{
-		{"boot", gateway.Connection{Target: bus.Target{InstanceID: "instance", ConnectionID: route.Target.ConnectionID, DeviceID: "d", BootID: "other"}, UserID: "u", DeviceName: "desk"}},
+		{"boot", gateway.Connection{Target: gateway.Target{InstanceID: "instance", ConnectionID: route.Target.ConnectionID, DeviceID: "d", BootID: "other"}, UserID: "u", DeviceName: "desk"}},
 		{"user", gateway.Connection{Target: route.Target, UserID: "intruder", DeviceName: "desk"}},
-		{"device", gateway.Connection{Target: bus.Target{InstanceID: "instance", ConnectionID: "x", DeviceID: "d2", BootID: "boot"}, UserID: "u", DeviceName: "laptop"}},
+		{"device", gateway.Connection{Target: gateway.Target{InstanceID: "instance", ConnectionID: "x", DeviceID: "d2", BootID: "boot"}, UserID: "u", DeviceName: "laptop"}},
 	} {
 		must(t, f.router.OnDeviceResult(f.ctx, tc.conn, result))
 		must(t, f.router.OnCallAck(f.ctx, tc.conn, &circusv1.CallAck{CallId: "call", Outcome: &circusv1.CallAck_Rejection{Rejection: &circusv1.Rejection{Code: circusv1.Rejection_CODE_INVALID}}}))
@@ -144,7 +143,7 @@ func TestReplyFencingByDeviceAndBoot(t *testing.T) {
 			t.Fatalf("%s: stale disconnect removed the route", tc.name)
 		}
 	}
-	superseded := gateway.Connection{Target: bus.Target{InstanceID: "instance", ConnectionID: "superseded", DeviceID: "d", BootID: "boot"}, UserID: "u", DeviceName: "desk"}
+	superseded := gateway.Connection{Target: gateway.Target{InstanceID: "instance", ConnectionID: "superseded", DeviceID: "d", BootID: "boot"}, UserID: "u", DeviceName: "desk"}
 	must(t, f.router.OnDisconnected(f.ctx, superseded))
 	if f.registry.Stats().Connections != 1 {
 		t.Fatal("superseded disconnect removed the current route")
@@ -386,15 +385,15 @@ func TestDispatchReadsCurrentBootInTx(t *testing.T) {
 	}
 }
 
-// dispatchCountBus counts DispatchCall messages accepted by the underlying
-// bus. A refused send is not delivery evidence.
-type dispatchCountBus struct {
-	bus.Bus
+// dispatchCountSender counts DispatchCall messages accepted by the underlying
+// sender. A refused send is not delivery evidence.
+type dispatchCountSender struct {
+	calls.Sender
 	sent atomic.Int64
 }
 
-func (b *dispatchCountBus) Send(ctx context.Context, target bus.Target, msg *circusv1.DaemonDownlink) error {
-	err := b.Bus.Send(ctx, target, msg)
+func (b *dispatchCountSender) Deliver(ctx context.Context, target gateway.Target, msg *circusv1.DaemonDownlink) error {
+	err := b.Sender.Deliver(ctx, target, msg)
 	if err == nil && msg.GetDispatchCall() != nil {
 		b.sent.Add(1)
 	}
@@ -405,11 +404,11 @@ func (b *dispatchCountBus) Send(ctx context.Context, target bus.Target, msg *cir
 // accepted call. Dispatch evidence precedes every DispatchCall; a restart
 // never re-dispatches the old attempt.
 func TestCrashAtEverySyncWritePoint(t *testing.T) {
-	prepare := func() (*fixture, *dispatchCountBus, int) {
-		counted := &dispatchCountBus{}
+	prepare := func() (*fixture, *dispatchCountSender, int) {
+		counted := &dispatchCountSender{}
 		f := setup(t, func(c *calls.Config, _ *gateway.Config) {
-			counted.Bus = c.Bus
-			c.Bus = counted
+			counted.Sender = c.Sender
+			c.Sender = counted
 		})
 		l := f.connect("boot")
 		f.disconnect(l)

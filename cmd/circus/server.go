@@ -39,6 +39,10 @@ All daemon links share one wire.Budget; --send-pool-bytes and
 --receive-pool-bytes size its two pools (0 keeps the default, twice
 wire.MinBudget; the gateway refuses smaller values).
 
+--max-message-bytes (0 keeps the default, 64 MiB) is the link message limit.
+circus call and circus daemon cap it at 64 MiB locally, so a larger value
+makes them refuse the connection.
+
 M2 supports one long-lived worker plus one CLI connection at a time. HTTP 503
 on a worker link means both connection slots are full.`
 
@@ -78,7 +82,7 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	publicURL := fs.String("public-url", "", "base URL clients use (default: derived from each request)")
 	shutdown := fs.Duration("shutdown-timeout", controlplane.DefaultShutdownTimeout, "graceful shutdown deadline")
 	timerPoll := fs.Duration("timer-poll-interval", 0, "durable timer poll interval (default 1s)")
-	maxMessage := fs.Int("max-message-bytes", 0, "link message limit in bytes (default 64 MiB)")
+	maxMessage := fs.Int("max-message-bytes", 0, "link message limit in bytes (default 64 MiB; clients refuse more)")
 	grace := fs.Duration("device-grace", 0, "disconnected device grace (default 30s)")
 	heartbeat := fs.Duration("heartbeat-interval", 0, "link heartbeat interval (default 5s)")
 	heartbeatTimeout := fs.Duration("heartbeat-timeout", 0, "link heartbeat timeout (default 15s)")
@@ -116,11 +120,10 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	srv, err := controlplane.New(ctx, st, controlplane.Config{
 		Listen: *listen, TLSCert: *cert, TLSKey: *key, BehindProxy: *proxy, DevInsecure: *insecure,
 		PublicURL: *publicURL, ShutdownTimeout: *shutdown, TimerPollInterval: *timerPoll, LogOutput: errOut, LogLevel: level,
+		MaxMessageBytes: *maxMessage, GracePeriod: *grace, HeartbeatInterval: *heartbeat, HeartbeatTimeout: *heartbeatTimeout,
+		SendPoolBytes: *sendPool, ReceivePoolBytes: *receivePool,
 	})
 	if err != nil {
-		return err
-	}
-	if err := srv.ConfigureLinks(ctx, controlplane.LinkConfig{MaxMessageBytes: *maxMessage, GracePeriod: *grace, HeartbeatInterval: *heartbeat, HeartbeatTimeout: *heartbeatTimeout, SendPoolBytes: *sendPool, ReceivePoolBytes: *receivePool}); err != nil {
 		// The gateway keeps the validation; name the operator's flags and
 		// the minimum each pool fell below.
 		var pool *gateway.PoolError

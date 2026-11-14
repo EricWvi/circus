@@ -168,8 +168,8 @@ One router-wide admission lock orders initial dispatch, resend, cancel and
 barriers (see Deviations). Nothing waits for a daemon response or a subscriber
 while holding it; Link.Send only admits to the wire queue.
 Dispatch reads the device's current boot in the SAME Tx as the guarded A → D,
-sets its watchdog there, commits, then uses Bus.Send. The local receiver validates
-the exact generation/boot and uses `wirepolicy.Classify` for every Link.Send.
+sets its watchdog there, commits, then calls Sender.Deliver. The gateway validates
+the exact generation/boot; Link.Send classifies every message itself.
 Send success means queue admission. ListJobs and StopSessionJobs are barriers;
 there is no custom priority table and Cancel is not Control.
 
@@ -242,8 +242,8 @@ idle time with an empty queue never causes immediate overflow on a later result.
 Configure a subscription byte limit large enough for a maximum decoded result,
 not just its encoded size; otherwise that result intentionally forces Query.
 
-Bus has bounded bindings, concurrent borrowed commands and bytes, with no retry
-queue. Timers keep at most BatchSize claims and one wake hint; no in-memory heap
+Delivery has no retry queue: Sender.Deliver runs under the router lock and only
+admits to the wire queue. Timers keep at most BatchSize claims and one wake hint; no in-memory heap
 of all durable deadlines. Stats reports actual ownership, never fabricated zeroes.
 Calls.Close releases volatile state but must preserve legitimate durable recovery
 timers. Outcomes cancel watchdogs transactionally. Teardown assertions distinguish
@@ -262,7 +262,7 @@ to retained pending/subscription charges. Owned clones copy string backing stora
 | Case | Code point / invariant |
 | --- | --- |
 | duplicate submission | Service.Submit: global primary key + owner/device + deterministic request hash; no mutation on mismatch |
-| first execution | dispatch transaction: read current boot + guarded A → D + watchdog, commit before Bus.Send |
+| first execution | dispatch transaction: read current boot + guarded A → D + watchdog, commit before Sender.Deliver |
 | same-boot retransmission | OnConnected: original target_boot_id, content/hash and DispatchedAt; daemon deduplicates first, then rejects an unseen stale dispatch before shutdown or execution |
 | new daemon boot | OnConnected: LoseCalls/LoseJobs and per-call timer cancellation; never dispatch old attempt to new boot; daemon independently rejects mismatched target |
 | control-plane crash | New startup reconciliation: A → L; guarded L → A only with no recorded dispatch; dispatched attempts query after reconnect |
@@ -324,7 +324,7 @@ receive. All daemon links share that ONE NewBudget, with independent pools.
 
 Plan live wire ownership as S + R + N*(5 MiB + 64 KiB), then add pending,
 subscription buffers, at most one borrowed inbound message per admitted socket,
-bounded operation scratch, bus charges, store/SQLite, TLS/kernel buffers and GC
+bounded operation scratch, store/SQLite, TLS/kernel buffers and GC
 headroom. For 100 sockets the wire portion at 256/640 MiB is approximately
 1.37 GiB before router memory and GC. N counts handshaking/closing sockets too.
 Configure MaxConnections and GOMEMLIMIT against the deployment's full budget.

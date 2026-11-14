@@ -20,15 +20,14 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/proto"
 )
@@ -95,16 +94,16 @@ type lockHarness struct {
 
 type lockAuth struct{ h *lockHarness }
 
-func (a lockAuth) Authenticate(_ context.Context, r *http.Request) (gateway.Principal, error) {
+func (a lockAuth) Authenticate(_ context.Context, r *http.Request) (auth.Principal, error) {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	for _, d := range a.h.daemons {
 		if d.token == token {
-			return gateway.Principal{UserID: "u", DeviceID: d.id, DeviceName: "device-" + d.id, CredentialID: "cred-" + d.id}, nil
+			return auth.Principal{Kind: store.KindDevice, UserID: "u", ID: d.id, Name: "device-" + d.id, CredentialID: "cred-" + d.id}, nil
 		}
 	}
-	return gateway.Principal{}, gateway.ErrUnauthenticated
+	return auth.Principal{}, auth.ErrUnauthenticated
 }
-func (lockAuth) Recheck(context.Context, gateway.Principal) error { return nil }
+func (lockAuth) Valid(context.Context, string) (bool, error) { return true, nil }
 
 func (d *lockDaemon) connect() error {
 	h := d.h
@@ -144,10 +143,7 @@ func (d *lockDaemon) connect() error {
 }
 
 func (d *lockDaemon) send(l *wire.Link, m *circusv1.DaemonUplink) {
-	class, key, err := wirepolicy.Classify(m)
-	if err == nil {
-		_ = l.Send(context.Background(), m, class, key)
-	}
+	_ = l.Send(context.Background(), m)
 }
 
 // resultFor returns a result as large as the call's request.
@@ -244,8 +240,6 @@ func TestMeasureLockHold(t *testing.T) {
 		phases = slices.DeleteFunc(phases, func(p lockPhase) bool { return !slices.Contains(keep, p.name) })
 	}
 	samples := &lockSamples{held: make(map[string][]time.Duration)}
-	restore := calls.SetLockObserver(samples.observe)
-	defer restore()
 	var report strings.Builder
 	fmt.Fprintf(&report, "\n| size | conc. | calls | calls/s | lock busy | kind | count | p50 | p99 | max | mean | total/call |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, phase := range phases {
@@ -279,12 +273,12 @@ func runLockPhase(t *testing.T, phase lockPhase, duration time.Duration, samples
 	}
 	registry, err := gateway.NewRegistry(128)
 	must(t, err)
-	b, err := bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 4096, MaxBytes: 8 << 30})
-	must(t, err)
 	clk := clock.Real{}
-	h.router, err = calls.New(calls.Config{Store: db, Registry: registry, Bus: b, Clock: clk, Pending: calls.PendingBudget{MaxBytes: 8 << 30, MaxCalls: 4096}, MaxSubscriptionBytes: 1 << 30, MaxBufferedUpdateBytes: 8 << 30})
+	config := calls.Config{Store: db, Registry: registry, Sender: senderTo(&h.gateway), Clock: clk, Pending: calls.PendingBudget{MaxBytes: 8 << 30, MaxCalls: 4096}, MaxSubscriptionBytes: 1 << 30, MaxBufferedUpdateBytes: 8 << 30}
+	calls.WithLockObserver(&config, samples.observe)
+	h.router, err = calls.New(config)
 	must(t, err)
-	h.gateway, err = gateway.New(gateway.Config{InstanceID: "instance", Clock: clk, Auth: lockAuth{h}, Registry: registry, Bus: b, Hooks: h.router, MaxConnections: 128, SendPoolBytes: 2 << 30, ReceivePoolBytes: 4 << 30})
+	h.gateway, err = gateway.New(gateway.Config{InstanceID: "instance", Clock: clk, Auth: lockAuth{h}, Registry: registry, Hooks: h.router, MaxConnections: 128, SendPoolBytes: 2 << 30, ReceivePoolBytes: 4 << 30})
 	must(t, err)
 	h.server = httptest.NewServer(h.gateway)
 	h.runner, err = timers.New(timers.Config{Store: db, Clock: clk, InstanceID: "instance", Lease: time.Minute, PollInterval: time.Second, BatchSize: 64, Handler: h.router.HandleTimer})

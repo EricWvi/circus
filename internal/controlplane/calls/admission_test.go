@@ -10,7 +10,6 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
@@ -18,16 +17,16 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type busyBus struct{ bus.Bus }
+type busySender struct{ calls.Sender }
 
-func (b busyBus) Send(ctx context.Context, target bus.Target, msg *circusv1.DaemonDownlink) error {
+func (b busySender) Deliver(ctx context.Context, target gateway.Target, msg *circusv1.DaemonDownlink) error {
 	if msg.GetDispatchCall() != nil {
 		return wire.ErrBusy
 	}
-	return b.Bus.Send(ctx, target, msg)
+	return b.Sender.Deliver(ctx, target, msg)
 }
 func TestFirstSendBusyIsRejectedAndKeepsBootEvidence(t *testing.T) {
-	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Bus = busyBus{c.Bus} })
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Sender = busySender{c.Sender} })
 	f.connect("boot")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
 	must(t, err)
@@ -48,18 +47,18 @@ func TestFirstSendBusyIsRejectedAndKeepsBootEvidence(t *testing.T) {
 	}
 }
 
-// tooLargeBus proves that a first dispatch was too large to be queued.
-type tooLargeBus struct{ bus.Bus }
+// tooLargeSender proves that a first dispatch was too large to be queued.
+type tooLargeSender struct{ calls.Sender }
 
-func (b tooLargeBus) Send(ctx context.Context, target bus.Target, msg *circusv1.DaemonDownlink) error {
+func (b tooLargeSender) Deliver(ctx context.Context, target gateway.Target, msg *circusv1.DaemonDownlink) error {
 	if msg.GetDispatchCall() != nil {
 		return wire.ErrTooLarge
 	}
-	return b.Bus.Send(ctx, target, msg)
+	return b.Sender.Deliver(ctx, target, msg)
 }
 
 func TestFirstSendTooLargeIsRejected(t *testing.T) {
-	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Bus = tooLargeBus{c.Bus} })
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Sender = tooLargeSender{c.Sender} })
 	f.connect("boot")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
 	must(t, err)
@@ -73,24 +72,24 @@ func TestFirstSendTooLargeIsRejected(t *testing.T) {
 	}
 }
 
-type queryCountBus struct {
-	bus.Bus
+type queryCountSender struct {
+	calls.Sender
 	queries atomic.Int64
 }
 
-func (b *queryCountBus) Send(ctx context.Context, target bus.Target, msg *circusv1.DaemonDownlink) error {
+func (b *queryCountSender) Deliver(ctx context.Context, target gateway.Target, msg *circusv1.DaemonDownlink) error {
 	if msg.GetCallQuery() != nil {
 		b.queries.Add(1)
 	}
-	return b.Bus.Send(ctx, target, msg)
+	return b.Sender.Deliver(ctx, target, msg)
 }
 
 func TestQueriesCoalesceWithoutStarvingTheirReply(t *testing.T) {
-	counted := &queryCountBus{}
+	counted := &queryCountSender{}
 	f := setup(t, func(c *calls.Config, _ *gateway.Config) {
 		c.MaxOperations = 1
-		counted.Bus = c.Bus
-		c.Bus = counted
+		counted.Sender = c.Sender
+		c.Sender = counted
 	})
 	l := f.connect("boot")
 	var s *calls.Subscription
@@ -242,7 +241,7 @@ func TestEqualDuplicateAttachesWhenPendingScratchIsFull(t *testing.T) {
 	filler.GetBash().Cwd = ""
 	charge := func(c *circusv1.DeviceCall) int64 {
 		envelope := &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: "desk", Call: c}}}
-		cost, err := bus.Charge(envelope, maxMessageBytes)
+		cost, err := wire.Charge(envelope, maxMessageBytes)
 		must(t, err)
 		return cost
 	}

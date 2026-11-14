@@ -36,7 +36,7 @@ func (r *router) OnJobEvent(ctx context.Context, conn gateway.Connection, event 
 	if event.Seq != d.seq+1 && !d.snapshotPending {
 		// One coalesced ListJobs per gap; snapshotPending bounds it to one.
 		d.snapshotPending = true
-		if err = r.config.Bus.Send(op.ctx, conn.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_ListJobs{ListJobs: &circusv1.ListJobs{}}}); err != nil {
+		if err = r.config.Sender.Deliver(op.ctx, conn.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_ListJobs{ListJobs: &circusv1.ListJobs{}}}); err != nil {
 			return err
 		}
 	}

@@ -12,29 +12,14 @@ import (
 // ErrNoSuchIdentity reports that RevokeByName found no live identity.
 var ErrNoSuchIdentity = errors.New("no such identity")
 
-// Revoke removes one identity (kind and id): in one transaction it revokes
-// every unrevoked credential and soft-deletes the identity, which frees its
-// name for a new enrollment. It returns how many credentials it revoked. The
-// other role on the same machine is untouched (D43 item 8). New upgrade
+// RevokeByName removes the user's live identity of this kind and name: in
+// one transaction it revokes every unrevoked credential and soft-deletes the
+// identity, which frees its name for a new enrollment. It returns the
+// identity as it was before the revocation and how many credentials it
+// revoked. The other role on the same machine is untouched. New upgrade
 // requests with a revoked credential get ErrRevoked at once; live
 // connections learn of it through Authenticator.Valid. ErrNoSuchIdentity if
-// the identity does not exist; revoking a deleted identity again revokes
-// nothing and returns 0.
-func Revoke(ctx context.Context, st store.Store, kind store.PrincipalKind, principalID string, now time.Time) (int, error) {
-	var n int
-	err := st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
-		var err error
-		n, err = revokeIn(ctx, tx, kind, principalID, now)
-		return err
-	})
-	if errors.Is(err, store.ErrNotFound) {
-		return 0, fmt.Errorf("%w: no %s with id %q", ErrNoSuchIdentity, AdminNoun(kind), principalID)
-	}
-	return n, err
-}
-
-// RevokeByName is Revoke for the user's live identity of this kind and name.
-// It returns the identity as it was before the revocation.
+// no live identity has that name.
 func RevokeByName(ctx context.Context, st store.Store, kind store.PrincipalKind, userID, name string, now time.Time) (store.Identity, int, error) {
 	var id store.Identity
 	var n int

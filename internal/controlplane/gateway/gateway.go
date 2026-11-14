@@ -24,22 +24,21 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/wire"
 )
 
-var (
-	// ErrUnauthenticated maps to HTTP 401 before WebSocket upgrade.
-	ErrUnauthenticated = errors.New("gateway: unauthenticated")
-	// ErrRevoked maps to HTTP 403 and closes an existing authenticated link.
-	ErrRevoked = errors.New("gateway: credential revoked")
-	// ErrWrongRole reports a valid non-daemon credential without calling it revoked.
-	ErrWrongRole = errors.New("gateway: daemon role required")
-)
+// ErrNoRoute means the target connection generation is not current.
+var ErrNoRoute = errors.New("gateway: route unavailable")
+
+// Target fences delivery to one connection and boot on one control-plane
+// instance. Each field is nonempty and at most 128 bytes.
+type Target struct {
+	InstanceID, ConnectionID, DeviceID, BootID string
+}
 
 // PoolError reports send or receive pools below twice wire.MinBudget. It
 // carries the configured and smallest accepted values so the host can name
@@ -54,31 +53,11 @@ func (e *PoolError) Error() string {
 		e.Send, e.Receive, e.MinSend, e.MinReceive)
 }
 
-// Principal is the gateway-owned daemon identity, containing no bearer token.
-// All strings are nonempty, copied on retention and at most 128 bytes. The host
-// adapts its shared auth instance to this type; a worker credential must never produce it.
-type Principal struct {
-	UserID, DeviceID, DeviceName, CredentialID string
-}
-
-// Authenticator is the consumer seam implemented by the host auth adapter.
-type Authenticator interface {
-	// Authenticate checks the upgrade request, including its daemon role.
-	// Both methods must promptly honor context cancellation.
-	Authenticate(context.Context, *http.Request) (Principal, error)
-	// Recheck validates that this exact credential is still usable. Polling
-	// closes a definitively revoked link within RecheckInterval plus
-	// RecheckTimeout (F17), with per-link phase jitter. Store errors and check
-	// timeouts keep the link until RecheckMaxStale has elapsed without a valid
-	// check; that bound is then logged and enforced. No token is retained.
-	Recheck(context.Context, Principal) error
-}
-
 // Connection identifies a registry generation. Target fences superseded links;
 // UserID and DeviceName are copied strings of at most 128 bytes each. No socket
 // or request content is stored in a registry entry; InstanceID permits routing.
 type Connection struct {
-	Target             bus.Target
+	Target             Target
 	UserID, DeviceName string
 	Ready              bool // false until reconnect synchronization is enqueued
 }
@@ -143,9 +122,14 @@ type Hooks interface {
 	OnJobSnapshot(context.Context, Connection, *circusv1.JobSnapshot) error
 }
 
-// Handler serves /v1/link/daemon and owns local sockets and one bus binding.
+// Handler serves /v1/link/daemon and owns local sockets.
 type Handler interface {
 	http.Handler
+	// Deliver sends m to the exact connection generation t. It returns
+	// ErrNoRoute when t is not the device's current, live generation, and
+	// preserves wire.Link.Send errors such as wire.ErrBusy. Success means
+	// queued, not written, acknowledged or executed. It never blocks on I/O.
+	Deliver(ctx context.Context, t Target, m *circusv1.DaemonDownlink) error
 	// Shutdown stops admission, sends GoAway, calls Link.Shutdown(ctx), drains
 	// received messages and joins owned work. A deadline bounds graceful close.
 	// The join-before-return guarantee can outlast ctx after forced abort; this
@@ -156,10 +140,9 @@ type Handler interface {
 }
 
 // Config supplies dependencies and hard bounds. Zero selects 100 connections,
-// a 10s Hello timeout, 1s credential recheck interval, 5s recheck timeout, 30s
-// maximum credential staleness, version 1 and pools twice wire.MinBudget.
-// Negative values are refused;
-// MinVersion/MaxVersion form an inclusive supported range (currently 1 only).
+// the auth.RecheckPolicy defaults and pools twice wire.MinBudget. Negative
+// values are refused. Auth is the host's single authenticator: only a daemon
+// (device) credential is admitted, and Recheck revalidates it on Clock.
 // MaxConnections (1-256) includes handshakes, current and superseded sockets,
 // so replacement cannot accumulate closing links. At capacity, refuse admission.
 // One Receive value per socket may be borrowed by a hook; no extra inbox exists.
@@ -169,16 +152,12 @@ type Handler interface {
 type Config struct {
 	InstanceID                      string
 	Clock                           clock.Clock
-	Auth                            Authenticator
+	Auth                            auth.LinkAuthenticator
 	Registry                        Registry
-	Bus                             bus.Bus
 	Hooks                           Hooks
 	Logger                          *slog.Logger
-	MinVersion, MaxVersion          uint32
 	MaxConnections                  int
-	HelloTimeout                    time.Duration
-	RecheckInterval, RecheckTimeout time.Duration
-	RecheckMaxStale                 time.Duration
+	Recheck                         auth.RecheckPolicy
 	LinkOptions                     wire.Options
 	SendPoolBytes, ReceivePoolBytes int
 }
@@ -192,9 +171,8 @@ type Stats struct {
 	Budget                              wire.BudgetStats
 }
 
-// New validates bounds and binds Config.InstanceID on Bus. ServeHTTP authenticates
-// before wire.AcceptWebSocket, exchanges raw Hello and Welcome/Reject, fills
-// Welcome via wire.FillWelcome, then constructs wire.New(DaemonControlSide).
-// Every Link.Send uses wirepolicy.Classify; normal close uses Link.Shutdown.
+// New validates bounds. ServeHTTP authenticates (auth.Admit) before
+// wire.AcceptWebSocket, answers the raw Hello with wire.AcceptHello, then
+// constructs wire.New(DaemonControlSide). Normal close uses Link.Shutdown.
 // ErrBudgetExhausted/ErrConsumerStalled close the link and trigger reconnect sync.
 func New(config Config) (Handler, error) { return newHandler(config) }

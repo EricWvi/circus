@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"net/http"
 	"slices"
 	"strings"
@@ -14,11 +13,11 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
+	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/clock"
+	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
-	"github.com/EricWvi/circus/internal/wirepolicy"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/proto"
 )
 
 // handler retains at most MaxConnections peers, including raw handshakes and
@@ -28,7 +27,6 @@ type handler struct {
 	config          Config
 	peers           map[string]*peer
 	budget          *wire.Budget
-	binding         bus.Registration
 	closed          bool
 	shutdownContext context.Context
 	changed         chan struct{}
@@ -48,7 +46,7 @@ type peer struct {
 }
 
 func newHandler(c Config) (Handler, error) {
-	if c.InstanceID == "" || len(c.InstanceID) > 128 || c.Clock == nil || c.Auth == nil || c.Registry == nil || c.Bus == nil || c.Hooks == nil {
+	if c.InstanceID == "" || len(c.InstanceID) > 128 || c.Clock == nil || c.Auth == nil || c.Registry == nil || c.Hooks == nil {
 		return nil, fmt.Errorf("gateway: missing dependency")
 	}
 	c.InstanceID = strings.Clone(c.InstanceID)
@@ -61,29 +59,9 @@ func newHandler(c Config) (Handler, error) {
 	if c.MaxConnections < 1 || c.MaxConnections > 256 {
 		return nil, fmt.Errorf("gateway: invalid connection limit")
 	}
-	if c.HelloTimeout == 0 {
-		c.HelloTimeout = 10 * time.Second
-	}
-	if c.RecheckInterval == 0 {
-		c.RecheckInterval = time.Second
-	}
-	if c.RecheckTimeout == 0 {
-		c.RecheckTimeout = 5 * time.Second
-	}
-	if c.RecheckMaxStale == 0 {
-		c.RecheckMaxStale = 30 * time.Second
-	}
-	if c.HelloTimeout <= 0 || c.RecheckInterval <= 0 || c.RecheckTimeout <= 0 || c.RecheckMaxStale <= 0 {
-		return nil, fmt.Errorf("gateway: invalid duration")
-	}
-	if c.MinVersion == 0 {
-		c.MinVersion = 1
-	}
-	if c.MaxVersion == 0 {
-		c.MaxVersion = 1
-	}
-	if c.MinVersion != 1 || c.MaxVersion != 1 {
-		return nil, fmt.Errorf("gateway: unsupported configured version")
+	var err error
+	if c.Recheck, err = c.Recheck.Normalize(); err != nil {
+		return nil, err
 	}
 	if c.LinkOptions.Budget != nil {
 		return nil, fmt.Errorf("gateway: budget must be gateway-owned")
@@ -113,29 +91,9 @@ func newHandler(c Config) (Handler, error) {
 	}
 	c.LinkOptions.Budget = budget
 	h := &handler{config: c, peers: make(map[string]*peer), budget: budget, changed: make(chan struct{})}
-	h.binding, err = c.Bus.Register(c.InstanceID, h)
-	if err != nil {
-		return nil, err
-	}
 	return h, nil
 }
 func (h *handler) signal() { close(h.changed); h.changed = make(chan struct{}) }
-
-// deadline uses only the injected clock. Its helper is joined by cancel.
-func (h *handler) deadline(ctx context.Context, d time.Duration) (context.Context, func()) {
-	ctx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
-	alarm := h.config.Clock.After(d)
-	go func() {
-		defer close(done)
-		select {
-		case <-ctx.Done():
-		case <-alarm:
-			cancel()
-		}
-	}()
-	return ctx, func() { cancel(); <-done }
-}
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/v1/link/daemon" {
 		http.NotFound(w, r)
@@ -187,29 +145,18 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.mu.Unlock()
 		close(p.done)
 	}()
-	principal, err := h.config.Auth.Authenticate(ctx, r)
-	if errors.Is(err, ErrWrongRole) {
-		http.Error(w, err.Error(), http.StatusForbidden)
+	// Authenticate under the peer's context, so Shutdown can cancel it.
+	principal, ok := auth.Admit(w, r.WithContext(ctx), h.config.Auth, h.config.Logger, store.KindDevice)
+	if !ok {
 		return
 	}
-	if err != nil {
-		status := http.StatusServiceUnavailable
-		if errors.Is(err, ErrUnauthenticated) {
-			status = http.StatusUnauthorized
-		}
-		if errors.Is(err, ErrRevoked) {
-			status = http.StatusForbidden
-		}
-		http.Error(w, http.StatusText(status), status)
-		return
-	}
-	if !validConnection(Connection{Target: bus.Target{InstanceID: h.config.InstanceID, ConnectionID: id, DeviceID: principal.DeviceID, BootID: "pending"}, UserID: principal.UserID, DeviceName: principal.DeviceName}) || principal.CredentialID == "" || len(principal.CredentialID) > 128 {
+	if !validConnection(Connection{Target: Target{InstanceID: h.config.InstanceID, ConnectionID: id, DeviceID: principal.ID, BootID: "pending"}, UserID: principal.UserID, DeviceName: principal.Name}) || principal.CredentialID == "" || len(principal.CredentialID) > 128 {
 		http.Error(w, "invalid principal", http.StatusUnauthorized)
 		return
 	}
 	principal.UserID = strings.Clone(principal.UserID)
-	principal.DeviceID = strings.Clone(principal.DeviceID)
-	principal.DeviceName = strings.Clone(principal.DeviceName)
+	principal.ID = strings.Clone(principal.ID)
+	principal.Name = strings.Clone(principal.Name)
 	principal.CredentialID = strings.Clone(principal.CredentialID)
 	conn, err := wire.AcceptWebSocket(w, r, nil)
 	if err != nil {
@@ -222,52 +169,22 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if closed {
 		return
 	}
-	handshake, finish := h.deadline(ctx, h.config.HelloTimeout)
-	data, err := conn.ReadMessage(handshake)
-	if err != nil {
-		finish()
-		return
-	}
-	msg, err := wire.Decode(wire.DaemonUplink, data, wire.MaxMetadataBytes)
-	reject := func(code circusv1.Reject_Code) {
-		out := &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_Reject{Reject: &circusv1.Reject{Code: code, MinVersion: h.config.MinVersion, MaxVersion: h.config.MaxVersion}}}
-		encoded, _ := proto.Marshal(out)
-		_ = conn.WriteMessage(handshake, encoded)
-		_ = conn.Shutdown(handshake)
-	}
-	if err != nil {
-		reject(circusv1.Reject_CODE_BAD_HELLO)
-		finish()
-		return
-	}
-	hello := msg.(*circusv1.DaemonUplink).GetHello()
-	if hello == nil || hello.BootId == "" || len(hello.BootId) > 128 {
-		reject(circusv1.Reject_CODE_BAD_HELLO)
-		finish()
-		return
-	}
-	if hello.ProtocolVersion < h.config.MinVersion || hello.ProtocolVersion > h.config.MaxVersion {
-		reject(circusv1.Reject_CODE_VERSION_UNSUPPORTED)
-		finish()
-		return
-	}
-	welcome := &circusv1.Welcome{PrincipalId: principal.DeviceID, InstanceId: h.config.InstanceID, NegotiatedVersion: hello.ProtocolVersion, ServerTimeUnixMs: h.config.Clock.Now().UnixMilli()}
-	opts, err := wire.FillWelcome(welcome, h.config.LinkOptions)
-	if err != nil {
-		finish()
-		return
-	}
-	encoded, _ := proto.Marshal(&circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_Welcome{Welcome: welcome}})
-	if err = conn.WriteMessage(handshake, encoded); err != nil {
-		finish()
-		return
-	}
+	handshake, finish := clock.WithTimeout(ctx, h.config.Clock, wire.HelloTimeout)
+	hello, opts, err := wire.AcceptHello(handshake, conn, wire.DaemonUplink, h.config.LinkOptions, func(hello *circusv1.Hello) *circusv1.Welcome {
+		if hello.BootId == "" || len(hello.BootId) > 128 {
+			return nil
+		}
+		return &circusv1.Welcome{PrincipalId: principal.ID, InstanceId: h.config.InstanceID, ServerTimeUnixMs: h.config.Clock.Now().UnixMilli()}
+	})
 	finish()
+	if err != nil {
+		return
+	}
 	link, err := wire.New(conn, wire.DaemonControlSide, opts)
 	if err != nil {
 		return
 	}
-	info := Connection{Target: bus.Target{InstanceID: h.config.InstanceID, ConnectionID: id, DeviceID: principal.DeviceID, BootID: hello.BootId}, UserID: principal.UserID, DeviceName: principal.DeviceName}
+	info := Connection{Target: Target{InstanceID: h.config.InstanceID, ConnectionID: id, DeviceID: principal.ID, BootID: hello.BootId}, UserID: principal.UserID, DeviceName: principal.Name}
 	// One locked section: shutdown check, then registration under h.mu, so
 	// registration order and the set of older local peers of this device are
 	// consistent with the registry.
@@ -287,7 +204,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.registered = h.registrations
 	// Every older, not yet released peer of this device: the sync waits for
 	// all of them, not only the direct predecessor, because a predecessor
-	// that is itself superseded stops waiting for its own (review 2, M2).
+	// that is itself superseded stops waiting for its own.
 	var older []*peer // at most MaxConnections
 	for _, q := range h.peers {
 		if q != p && q.registered != 0 && q.registered < p.registered && q.info.Target.DeviceID == info.Target.DeviceID {
@@ -302,7 +219,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Unlock()
 	if previous != nil {
-		slog.Warn("daemon connection superseded", "instance_id", h.config.InstanceID, "device_id", principal.DeviceID, "boot_changed", previous.Target.BootID != hello.BootId)
+		slog.Warn("daemon connection superseded", "instance_id", h.config.InstanceID, "device_id", principal.ID, "boot_changed", previous.Target.BootID != hello.BootId)
 		if predecessor != nil {
 			h.requestClose(predecessor, circusv1.GoAway_REASON_SUPERSEDED)
 		}
@@ -313,7 +230,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	syncDone := make(chan struct{})
 	go func() {
 		defer close(syncDone)
-		// Superseded links drain their final results (D43 item 12) before
+		// Superseded links drain their final results before
 		// this generation's sync may lose them to a boot change. Each drain
 		// is bounded by its shutdown deadline and MaxConsumerStall, and the
 		// chain by MaxConnections.
@@ -357,56 +274,31 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-func (h *handler) recheck(ctx context.Context, p *peer, principal Principal) {
-	lastValid := h.config.Clock.Now()
-	// Randomize only the phase, preserving a worst-case definitive-revoke
-	// observation of one interval plus one timeout while desynchronizing links.
-	delay := time.Duration(rand.Float64() * float64(h.config.RecheckInterval))
-	for {
-		alarm := h.config.Clock.After(delay)
-		select {
-		case <-ctx.Done():
-			return
-		case <-alarm:
+func (h *handler) recheck(ctx context.Context, p *peer, principal auth.Principal) {
+	h.config.Recheck.Watch(ctx, h.config.Clock, func(ctx context.Context) (bool, error) {
+		return h.config.Auth.Valid(ctx, principal.CredentialID)
+	}, func(definitive bool, lastValid time.Time, err error) {
+		h.config.Logger.WarnContext(ctx, "daemon credential revalidation closed link", "device_id", principal.ID, "definitive_revoke", definitive, "last_valid", lastValid, "error", err)
+		h.mu.Lock()
+		link := p.link
+		h.mu.Unlock()
+		if link != nil {
+			_ = link.Close()
 		}
-		check, finish := h.deadline(ctx, h.config.RecheckTimeout)
-		err := h.config.Auth.Recheck(check, principal)
-		timedOut := check.Err() != nil
-		finish()
-		if ctx.Err() != nil {
-			return
-		}
-		if err == nil && !timedOut {
-			lastValid = h.config.Clock.Now()
-		} else {
-			definitive := !timedOut && errors.Is(err, ErrRevoked)
-			if definitive || h.config.Clock.Now().Sub(lastValid) >= h.config.RecheckMaxStale {
-				h.config.Logger.WarnContext(ctx, "daemon credential revalidation closed link", "device_id", principal.DeviceID, "definitive_revoke", definitive, "last_valid", lastValid, "error", err)
-				h.mu.Lock()
-				link := p.link
-				h.mu.Unlock()
-				if link != nil {
-					_ = link.Close()
-				}
-				return
-			}
-		}
-		delay = h.config.RecheckInterval
-	}
+	})
 }
 func (h *handler) requestClose(p *peer, reason circusv1.GoAway_Reason) {
 	p.closeOnce.Do(func() {
 		go func() {
 			defer close(p.closing)
-			ctx, finish := h.deadline(context.Background(), h.config.LinkOptions.HeartbeatTimeout)
+			ctx, finish := clock.WithTimeout(context.Background(), h.config.Clock, h.config.LinkOptions.HeartbeatTimeout)
 			defer finish()
 			h.mu.Lock()
 			link, conn := p.link, p.conn
 			h.mu.Unlock()
 			if link != nil {
 				m := &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_GoAway{GoAway: &circusv1.GoAway{Reason: reason}}}
-				class, key, _ := wirepolicy.Classify(m)
-				_ = link.Send(ctx, m, class, key)
+				_ = link.Send(ctx, m)
 				_ = link.Shutdown(ctx)
 			} else {
 				p.cancel()
@@ -417,13 +309,13 @@ func (h *handler) requestClose(p *peer, reason circusv1.GoAway_Reason) {
 		}()
 	})
 }
-func (h *handler) Deliver(ctx context.Context, t bus.Target, m *circusv1.DaemonDownlink) error {
+func (h *handler) Deliver(ctx context.Context, t Target, m *circusv1.DaemonDownlink) error {
 	route, ok, err := h.config.Registry.Lookup(ctx, t.DeviceID)
 	if err != nil {
 		return err
 	}
 	if !ok || route.Target != t {
-		return bus.ErrNoRoute
+		return ErrNoRoute
 	}
 	h.mu.Lock()
 	p := h.peers[t.ConnectionID]
@@ -433,13 +325,9 @@ func (h *handler) Deliver(ctx context.Context, t bus.Target, m *circusv1.DaemonD
 	}
 	h.mu.Unlock()
 	if link == nil {
-		return bus.ErrNoRoute
+		return ErrNoRoute
 	}
-	class, key, err := wirepolicy.Classify(m)
-	if err != nil {
-		return err
-	}
-	return link.Send(ctx, m, class, key)
+	return link.Send(ctx, m)
 }
 func (h *handler) Shutdown(ctx context.Context) error {
 	h.mu.Lock()
@@ -483,14 +371,10 @@ func (h *handler) Shutdown(ctx context.Context) error {
 	for _, p := range peers {
 		<-p.closing
 	}
-	err := h.binding.Close(context.WithoutCancel(ctx))
 	if failure != nil {
 		return failure
 	}
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	return err
+	return ctx.Err()
 }
 func (h *handler) Stats() Stats {
 	h.mu.Lock()

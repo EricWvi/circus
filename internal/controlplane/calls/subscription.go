@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/wire"
 )
 
 type queuedUpdate struct {
@@ -32,9 +32,6 @@ func resultUpdate(v *circusv1.DeviceResult) *circusv1.CallUpdate {
 }
 func lost(id, reason string) *circusv1.CallUpdate {
 	return &circusv1.CallUpdate{CallId: id, Update: &circusv1.CallUpdate_Lost_{Lost: &circusv1.CallUpdate_Lost{Reason: reason}}}
-}
-func terminal(u *circusv1.CallUpdate) bool {
-	return u.GetResult() != nil || u.GetOffline() != nil || u.GetLost() != nil || u.GetRejected() != nil || u.GetCancelled() != nil
 }
 func toolName(c *circusv1.DeviceCall) string {
 	switch c.Tool.(type) {
@@ -143,18 +140,18 @@ func (r *router) enqueue(s *Subscription, owned *circusv1.CallUpdate, cost int64
 	s.queue = append(s.queue, queuedUpdate{update: owned, cost: cost})
 	s.bytes += cost
 	r.bufferedBytes += cost
-	s.terminal = terminal(owned)
+	s.terminal = wire.Terminal(owned)
 	s.signal()
 }
 
 // own charges u and clones it once; subscribers share the immutable clone
 // while each is charged for it separately (L7).
 func (r *router) own(u *circusv1.CallUpdate) (*circusv1.CallUpdate, int64, error) {
-	cost, err := bus.Charge(u, r.config.MaxMessageBytes)
+	cost, err := wire.Charge(u, r.config.MaxMessageBytes)
 	if err != nil {
 		return nil, 0, err
 	}
-	return bus.CloneOwned(u).(*circusv1.CallUpdate), cost, nil
+	return wire.CloneOwned(u).(*circusv1.CallUpdate), cost, nil
 }
 func (r *router) publish(u *circusv1.CallUpdate) {
 	var owned *circusv1.CallUpdate

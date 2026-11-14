@@ -10,7 +10,6 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
@@ -433,21 +432,21 @@ func TestDrainWaitCoversEveryOlderConnection(t *testing.T) {
 	}
 }
 
-// gateQuery blocks the router's first CallQuery for one call inside Bus.Send,
+// gateQuery blocks the router's first CallQuery for one call inside Sender.Deliver,
 // which runs under the admission lock with the operation's slot.
 type gateQuery struct {
-	bus.Bus
+	calls.Sender
 	id               string
 	armed            atomic.Bool
 	entered, release chan struct{}
 }
 
-func (g *gateQuery) Send(ctx context.Context, target bus.Target, m *circusv1.DaemonDownlink) error {
+func (g *gateQuery) Deliver(ctx context.Context, target gateway.Target, m *circusv1.DaemonDownlink) error {
 	if m.GetCallQuery().GetCallId() == g.id && g.armed.CompareAndSwap(true, false) {
 		close(g.entered)
 		<-g.release
 	}
-	return g.Bus.Send(ctx, target, m)
+	return g.Sender.Deliver(ctx, target, m)
 }
 
 // After waiting for sync capacity (slot released), the sync re-acquires its
@@ -457,8 +456,8 @@ func TestSyncReacquiresSlotAfterWait(t *testing.T) {
 	g := &gateQuery{id: "c1", entered: make(chan struct{}), release: make(chan struct{})}
 	f := setup(t, func(c *calls.Config, _ *gateway.Config) {
 		c.MaxOperations, c.MaxSyncRequests = 1, 1
-		g.Bus = c.Bus
-		c.Bus = g
+		g.Sender = c.Sender
+		c.Sender = g
 	})
 	release := sync.OnceFunc(func() { close(g.release) })
 	t.Cleanup(release)

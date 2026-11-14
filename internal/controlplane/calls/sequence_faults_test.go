@@ -837,7 +837,7 @@ func (s seqClaims) ClaimDueTimers(ctx context.Context, now int64, instance strin
 
 // opFailSyncDispatch fails the dispatch commit of the reconnect sync of a
 // device that has accepted calls waiting: no DispatchCall may go out
-// (commit before send, checked by the evidence bus), the sync fails and a
+// (commit before send, checked by the evidence sender), the sync fails and a
 // later reconnect dispatches them.
 func (w *seqWorld) opFailSyncDispatch() bool {
 	if w.m.faultPending() {
@@ -874,7 +874,7 @@ func (w *seqWorld) opFailSyncDispatch() bool {
 	return true
 }
 
-// opBusyLink refuses one DispatchCall at the bus (a full send pool): either
+// opBusyLink refuses one DispatchCall at the sender (a full send pool): either
 // a first send, which settles Rejected{OVERLOADED} without execution, or a
 // resend after a lost dispatch, which must keep the call dispatched (the
 // first DispatchCall may have executed).

@@ -331,22 +331,15 @@ func TestRevoke(t *testing.T) {
 		t.Fatalf("worker Valid after device revoke = %v, %v", ok, err)
 	}
 
-	if n, err := auth.Revoke(ctx, f.st, store.KindWorker, wrk.Identity.ID, t0); n != 1 || err != nil {
+	if _, n, err := auth.RevokeByName(ctx, f.st, store.KindWorker, f.user.ID, "laptop", t0); n != 1 || err != nil {
 		t.Fatalf("Revoke worker = %d, %v", n, err)
 	}
 	if ok, _ := a.Valid(ctx, wrk.CredentialID); ok {
 		t.Fatal("worker still valid")
 	}
-	// Revocation deleted the identity: the name no longer resolves, and
-	// revoking it again by id revokes nothing.
+	// Revocation deleted the identity: the name no longer resolves.
 	if _, _, err := auth.RevokeByName(ctx, f.st, store.KindDevice, f.user.ID, "laptop", t0); !errors.Is(err, auth.ErrNoSuchIdentity) {
 		t.Fatalf("second revoke by name: %v", err)
-	}
-	if n, err := auth.Revoke(ctx, f.st, store.KindDevice, dev.Identity.ID, t0); n != 0 || err != nil {
-		t.Fatalf("second revoke by id = %d, %v", n, err)
-	}
-	if _, err := auth.Revoke(ctx, f.st, store.KindDevice, "ghost", t0); !errors.Is(err, auth.ErrNoSuchIdentity) {
-		t.Fatalf("revoke unknown id: %v", err)
 	}
 	if _, _, err := auth.RevokeByName(ctx, f.st, store.KindDevice, f.user.ID, "nope", t0); !errors.Is(err, auth.ErrNoSuchIdentity) {
 		t.Fatalf("revoke unknown: %v", err)
@@ -487,7 +480,7 @@ func TestRequireBeforeUpgrade(t *testing.T) {
 	dev := f.mustEnroll(t, store.KindDevice, "laptop")
 	wrk := f.mustEnroll(t, store.KindWorker, "laptop")
 	revoked := f.mustEnroll(t, store.KindDevice, "old")
-	if _, err := auth.Revoke(context.Background(), f.st, store.KindDevice, revoked.Identity.ID, t0); err != nil {
+	if _, _, err := auth.RevokeByName(context.Background(), f.st, store.KindDevice, f.user.ID, "old", t0); err != nil {
 		t.Fatal(err)
 	}
 	a := auth.NewAuthenticator(f.st, auth.Options{})
@@ -554,5 +547,61 @@ func TestRequireBeforeUpgrade(t *testing.T) {
 	f.st.Close()
 	if status, _, _ := dial(dev.Token); status != http.StatusServiceUnavailable {
 		t.Fatalf("closed store: status %d, want 503", status)
+	}
+}
+
+// Valid knows only credentials this instance accepted, sees a revocation
+// written through another store handle (the CLI process), and reports a
+// store failure as an error rather than as a revocation.
+func TestValidAcrossInstancesAndStoreFailure(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "db")
+	st, err := sqlite.Open(ctx, path, sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	user, err := auth.EnsureUser(ctx, st, "admin", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := auth.CreateEnrollToken(ctx, st, user.ID, store.KindDevice, time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := auth.Enroll(ctx, st, auth.EnrollRequest{Token: token, Kind: store.KindDevice, Name: "desk", MachineID: "machine", Hostname: "host", OS: "linux", Arch: "amd64"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := auth.NewAuthenticator(st, auth.Options{})
+	req := httptest.NewRequest("GET", "/v1/link/daemon", nil)
+	req.Header.Set("Authorization", "Bearer "+e.Token)
+	p, err := a.Authenticate(ctx, req)
+	if err != nil || p.Name != "desk" || p.CredentialID != e.CredentialID {
+		t.Fatal(p, err)
+	}
+	if ok, err := a.Valid(ctx, p.CredentialID); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	if ok, err := auth.NewAuthenticator(st, auth.Options{}).Valid(ctx, p.CredentialID); ok || err != nil {
+		t.Fatal("separate instance unexpectedly knows credential", ok, err)
+	}
+	cli, err := sqlite.Open(ctx, path, sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+	if _, _, err = auth.RevokeByName(ctx, cli, store.KindDevice, user.ID, "desk", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := a.Valid(ctx, p.CredentialID); ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	if _, err = a.Authenticate(ctx, req); !errors.Is(err, auth.ErrRevoked) {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+	if ok, err := a.Valid(ctx, p.CredentialID); ok || err == nil {
+		t.Fatal("store error not propagated", ok, err)
 	}
 }

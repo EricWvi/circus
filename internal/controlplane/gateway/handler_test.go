@@ -5,34 +5,41 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"testing"
+	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
-	"github.com/EricWvi/circus/internal/controlplane/bus"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/coder/websocket"
 	"go.uber.org/goleak"
 	"google.golang.org/protobuf/proto"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
 )
 
-type auth struct{}
+type authStub struct{}
 
-func (auth) Authenticate(_ context.Context, r *http.Request) (gateway.Principal, error) {
-	if r.Header.Get("Authorization") != "Bearer test" {
-		return gateway.Principal{}, gateway.ErrUnauthenticated
+func (authStub) Authenticate(_ context.Context, r *http.Request) (auth.Principal, error) {
+	switch r.Header.Get("Authorization") {
+	case "Bearer test":
+	case "Bearer worker":
+		return auth.Principal{Kind: store.KindWorker, UserID: "u", ID: "w", Name: "desk", CredentialID: "wcred"}, nil
+	case "Bearer revoked":
+		return auth.Principal{}, auth.ErrRevoked
+	default:
+		return auth.Principal{}, auth.ErrUnauthenticated
 	}
-	return gateway.Principal{UserID: "u", DeviceID: "d", DeviceName: "desk", CredentialID: "cred"}, nil
+	return auth.Principal{Kind: store.KindDevice, UserID: "u", ID: "d", Name: "desk", CredentialID: "cred"}, nil
 }
-func (auth) Recheck(context.Context, gateway.Principal) error { return nil }
+func (authStub) Valid(context.Context, string) (bool, error) { return true, nil }
 
 type hooks struct{ gateway.Hooks }
 
@@ -42,9 +49,8 @@ func TestHTTPAuthenticationAndRawVersionReject(t *testing.T) {
 	baseline := goleak.IgnoreCurrent()
 	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
 	c := clock.New()
-	b, _ := bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 8, MaxBytes: 8 << 20})
 	r, _ := gateway.NewRegistry(2)
-	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: c, Auth: auth{}, Registry: r, Bus: b, Hooks: hooks{}, MaxConnections: 2, LinkOptions: wire.Options{MaxMessageBytes: 1 << 20, MaxFragmentBytes: 1024}, SendPoolBytes: 4 << 20, ReceivePoolBytes: 32 << 20})
+	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: c, Auth: authStub{}, Registry: r, Hooks: hooks{}, MaxConnections: 2, LinkOptions: wire.Options{MaxMessageBytes: 1 << 20, MaxFragmentBytes: 1024}, SendPoolBytes: 4 << 20, ReceivePoolBytes: 32 << 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,13 +66,19 @@ func TestHTTPAuthenticationAndRawVersionReject(t *testing.T) {
 			t.Errorf("ownership: %+v", stats)
 		}
 	}()
-	res, err := http.Get(s.URL + "/v1/link/daemon")
-	if err != nil {
-		t.Fatal(err)
-	}
-	res.Body.Close()
-	if res.StatusCode != 401 {
-		t.Fatal(res.Status)
+	// A worker credential is a valid identity in the wrong role: 403, as is
+	// a revoked one; a missing or unknown token is 401.
+	for token, want := range map[string]int{"": 401, "unknown": 401, "worker": 403, "revoked": 403} {
+		req, _ := http.NewRequest("GET", s.URL+"/v1/link/daemon", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != want {
+			t.Fatalf("token %q: %s, want %d", token, res.Status, want)
+		}
 	}
 	// No need for a real bearer credential in the stub; this is the raw protocol seam.
 	conn, _, err := wire.DialWebSocket(ctx, "ws"+strings.TrimPrefix(s.URL, "http")+"/v1/link/daemon", dialOptions())
@@ -95,18 +107,18 @@ func dialOptions() *websocket.DialOptions {
 	return &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer test"}}}
 }
 
-// revocable fails Recheck once revoked is closed (F17).
+// revocable reports the credential invalid once revoked is closed (F17).
 type revocable struct {
-	auth
+	authStub
 	revoked chan struct{}
 }
 
-func (r revocable) Recheck(context.Context, gateway.Principal) error {
+func (r revocable) Valid(context.Context, string) (bool, error) {
 	select {
 	case <-r.revoked:
-		return gateway.ErrRevoked
+		return false, nil
 	default:
-		return nil
+		return true, nil
 	}
 }
 
@@ -147,10 +159,9 @@ func TestSupersedeAndRevocation(t *testing.T) {
 	baseline := goleak.IgnoreCurrent()
 	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
 	c := clock.New()
-	b, _ := bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 8, MaxBytes: 8 << 20})
 	r, _ := gateway.NewRegistry(2)
 	a := revocable{revoked: make(chan struct{})}
-	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: c, Auth: a, Registry: r, Bus: b, Hooks: hooks{}, MaxConnections: 4, RecheckInterval: time.Second, LinkOptions: wire.Options{MaxMessageBytes: 1 << 20, MaxFragmentBytes: 1024, DisableHeartbeat: true}})
+	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: c, Auth: a, Registry: r, Hooks: hooks{}, MaxConnections: 4, Recheck: auth.RecheckPolicy{Interval: time.Second}, LinkOptions: wire.Options{MaxMessageBytes: 1 << 20, MaxFragmentBytes: 1024, DisableHeartbeat: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,9 +197,6 @@ func TestSupersedeAndRevocation(t *testing.T) {
 	if st := h.Stats(); st.Budget.Send.Used != 0 || st.Budget.Receive.Used != 0 {
 		t.Fatalf("ownership: %+v", st)
 	}
-	if st := b.Stats(); st.Bindings != 0 || st.InFlight != 0 {
-		t.Fatalf("bus: %+v", st)
-	}
 }
 
 func waitFor(t *testing.T, p func() bool) {
@@ -197,15 +205,14 @@ func waitFor(t *testing.T, p func() bool) {
 }
 
 // A store error is retryable infrastructure failure, not invalid credentials.
-type unavailableAuth struct{ auth }
+type unavailableAuth struct{ authStub }
 
-func (unavailableAuth) Authenticate(context.Context, *http.Request) (gateway.Principal, error) {
-	return gateway.Principal{}, context.DeadlineExceeded
+func (unavailableAuth) Authenticate(context.Context, *http.Request) (auth.Principal, error) {
+	return auth.Principal{}, context.DeadlineExceeded
 }
 func TestAuthenticationStoreFailureReturns503(t *testing.T) {
-	b, _ := bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 1, MaxBytes: 1 << 20})
 	r, _ := gateway.NewRegistry(1)
-	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: clock.Real{}, Auth: unavailableAuth{}, Registry: r, Bus: b, Hooks: hooks{}})
+	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: clock.Real{}, Auth: unavailableAuth{}, Registry: r, Hooks: hooks{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,13 +225,13 @@ func TestAuthenticationStoreFailureReturns503(t *testing.T) {
 }
 
 type failingRecheck struct {
-	auth
+	authStub
 	calls atomic.Int32
 }
 
-func (a *failingRecheck) Recheck(context.Context, gateway.Principal) error {
+func (a *failingRecheck) Valid(context.Context, string) (bool, error) {
 	a.calls.Add(1)
-	return errors.New("store temporarily unavailable")
+	return false, errors.New("store temporarily unavailable")
 }
 
 type lockedLogs struct {
@@ -258,12 +265,11 @@ func (c *armedRecheckClock) After(d time.Duration) <-chan time.Time {
 
 func TestRecheckStoreErrorsUseStalenessWindow(t *testing.T) {
 	c := &armedRecheckClock{Fake: clock.New(), armed: make(chan struct{}, 64)}
-	b, _ := bus.New(bus.Limits{MaxInstances: 1, MaxInFlight: 8, MaxBytes: 8 << 20})
 	r, _ := gateway.NewRegistry(2)
 	a := &failingRecheck{}
 	logs := &lockedLogs{}
 	logger := slog.New(slog.NewJSONHandler(logs, nil)).With("test_logger", "configured")
-	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: c, Auth: a, Registry: r, Bus: b, Hooks: hooks{}, Logger: logger, RecheckInterval: time.Second, RecheckMaxStale: 30 * time.Second, LinkOptions: wire.Options{MaxMessageBytes: 1 << 20, MaxFragmentBytes: 1024, DisableHeartbeat: true}})
+	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: c, Auth: a, Registry: r, Hooks: hooks{}, Logger: logger, Recheck: auth.RecheckPolicy{Interval: time.Second, MaxStale: 30 * time.Second}, LinkOptions: wire.Options{MaxMessageBytes: 1 << 20, MaxFragmentBytes: 1024, DisableHeartbeat: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,5 +321,60 @@ func TestRecheckStoreErrorsUseStalenessWindow(t *testing.T) {
 	}
 	if got := logs.String(); !strings.Contains(got, `"test_logger":"configured"`) || !strings.Contains(got, `"msg":"daemon credential revalidation closed link"`) {
 		t.Fatalf("recheck did not use configured logger: %s", got)
+	}
+}
+
+// blockingAuth blocks Authenticate until its context ends or release closes.
+type blockingAuth struct {
+	authStub
+	entered  chan struct{}
+	release  chan struct{}
+	canceled chan error
+}
+
+func (a blockingAuth) Authenticate(ctx context.Context, _ *http.Request) (auth.Principal, error) {
+	close(a.entered)
+	select {
+	case <-ctx.Done():
+		a.canceled <- ctx.Err()
+		return auth.Principal{}, ctx.Err()
+	case <-a.release:
+		a.canceled <- nil
+		return auth.Principal{}, errors.New("released")
+	}
+}
+
+// Shutdown cancels an authentication still in progress (for example one
+// waiting on a locked store) instead of waiting for it to finish.
+func TestShutdownCancelsInProgressAuthentication(t *testing.T) {
+	baseline := goleak.IgnoreCurrent()
+	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
+	a := blockingAuth{entered: make(chan struct{}), release: make(chan struct{}), canceled: make(chan error, 1)}
+	r, _ := gateway.NewRegistry(1)
+	h, err := gateway.New(gateway.Config{InstanceID: "i", Clock: clock.Real{}, Auth: a, Registry: r, Hooks: hooks{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(h)
+	defer s.Close()
+	go func() {
+		if res, err := http.Get(s.URL + "/v1/link/daemon"); err == nil {
+			res.Body.Close()
+		}
+	}()
+	wait.Recv(t, a.entered)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- h.Shutdown(ctx) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		close(a.release)
+		<-done
+		t.Fatal("Shutdown waited for a blocked authentication")
+	}
+	if err := wait.Recv(t, a.canceled); err == nil {
+		t.Fatal("authentication did not see cancellation")
 	}
 }

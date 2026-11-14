@@ -140,8 +140,6 @@ func (b *Bash) Shutdown(ctx context.Context) error {
 // reaped or signaled. Release our files and tracker resources on that path too.
 const groupExitWait = 5 * time.Second
 
-func waitGroupEmpty(pgid int) { waitGroupEmptyWithin(pgid, groupExitWait) }
-
 func waitGroupEmptyWithin(pgid int, limit time.Duration) bool {
 	return waitGroupEmptyWith(pgid, limit, groupAlive)
 }

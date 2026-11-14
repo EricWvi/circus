@@ -14,7 +14,7 @@ import (
 // TestServerPoolFlags covers the --send-pool-bytes and --receive-pool-bytes
 // wiring of circus server: the values reach the gateway's shared wire.Budget,
 // pools below twice wire.MinBudget are rejected with the flag name and the
-// minimum, and the exact minimum is accepted (ConfigureLinks then passes and
+// minimum, and the exact minimum is accepted (controlplane.New then passes and
 // the command fails only on the deliberately unassignable listen address).
 func TestServerPoolFlags(t *testing.T) {
 	// The same defaults serverCommand passes with no --max-message-bytes.
@@ -45,7 +45,7 @@ func TestServerPoolFlags(t *testing.T) {
 
 	t.Run("exact minimum accepted", func(t *testing.T) {
 		// 192.0.2.1 is TEST-NET-1, never assigned to an interface, so the
-		// bind fails after ConfigureLinks: a pool error would surface here
+		// bind fails after controlplane.New: a pool error would surface here
 		// instead of the listen error.
 		err := serverCommand([]string{"--behind-proxy", "--listen", "192.0.2.1:8443", "--db", db,
 			"--send-pool-bytes", strconv.Itoa(2 * minSend),
