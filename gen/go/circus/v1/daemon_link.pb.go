@@ -491,9 +491,12 @@ type DispatchCall struct {
 	Call  *DeviceCall            `protobuf:"bytes,1,opt,name=call,proto3" json:"call,omitempty"`
 	// Required, equal to dispatched_boot_id committed before writing this call.
 	// A daemon with a different boot_id must reject without executing.
-	TargetBootId  string `protobuf:"bytes,2,opt,name=target_boot_id,json=targetBootId,proto3" json:"target_boot_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	TargetBootId string `protobuf:"bytes,2,opt,name=target_boot_id,json=targetBootId,proto3" json:"target_boot_id,omitempty"`
+	// Required on the daemon link: the control plane's clock at dispatch commit.
+	// A resend carries the original dispatch time, not the resend time.
+	DispatchedAtUnixMs int64 `protobuf:"varint,3,opt,name=dispatched_at_unix_ms,json=dispatchedAtUnixMs,proto3" json:"dispatched_at_unix_ms,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *DispatchCall) Reset() {
@@ -538,6 +541,13 @@ func (x *DispatchCall) GetTargetBootId() string {
 		return x.TargetBootId
 	}
 	return ""
+}
+
+func (x *DispatchCall) GetDispatchedAtUnixMs() int64 {
+	if x != nil {
+		return x.DispatchedAtUnixMs
+	}
+	return 0
 }
 
 // CallAck reports Submit's immediate outcome, not necessarily before result.
@@ -879,10 +889,11 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"call_query\x18\f \x01(\v2\x14.circus.v1.CallQueryH\x00R\tcallQuery\x122\n" +
 	"\tlist_jobs\x18\r \x01(\v2\x13.circus.v1.ListJobsH\x00R\blistJobs\x12H\n" +
 	"\x11stop_session_jobs\x18\x0e \x01(\v2\x1a.circus.v1.StopSessionJobsH\x00R\x0fstopSessionJobsB\t\n" +
-	"\apayload\"_\n" +
+	"\apayload\"\x92\x01\n" +
 	"\fDispatchCall\x12)\n" +
 	"\x04call\x18\x01 \x01(\v2\x15.circus.v1.DeviceCallR\x04call\x12$\n" +
-	"\x0etarget_boot_id\x18\x02 \x01(\tR\ftargetBootId\"\x94\x01\n" +
+	"\x0etarget_boot_id\x18\x02 \x01(\tR\ftargetBootId\x121\n" +
+	"\x15dispatched_at_unix_ms\x18\x03 \x01(\x03R\x12dispatchedAtUnixMs\"\x94\x01\n" +
 	"\aCallAck\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12/\n" +
 	"\x06status\x18\x02 \x01(\v2\x15.circus.v1.CallStatusH\x00R\x06status\x124\n" +

@@ -3,7 +3,11 @@
 // retained in memory until ResultTTL. Query then reports lost, while a tombstone
 // prevents resubmission until TombstoneTTL after completion. Restart loses all
 // records. Duplicate running or retained calls return their existing state,
-// including during shutdown; SHUTTING_DOWN applies only to unseen call IDs.
+// including during shutdown and regardless of dispatch age. An unseen call is
+// expired when its Welcome-anchored age exceeds MaxDispatchAge (12 hours by
+// default), leaving no record; a fresh unseen call gets SHUTTING_DOWN once
+// shutdown begins. MaxDispatchAge plus the link handshake timeout must remain
+// below TombstoneTTL.
 //
 // Call deadlines and cancellation belong to the daemon. Cancelling a Wait only
 // detaches that waiter. Shutdown cancels running calls. A tool that ignores its
@@ -25,8 +29,9 @@
 // bound. See daemon/link for the independently bounded outbound queue.
 //
 // Defaults: a two-minute call timeout, requests clamped to ten minutes,
-// thirty-minute result retention, twenty-four-hour tombstones, and
-// thirty-minute retention of ended background jobs.
+// thirty-minute result retention, a twelve-hour maximum dispatch age,
+// twenty-four-hour tombstones, and thirty-minute retention of ended background
+// jobs.
 //
 // Tools may register background jobs with jobs.Manager passed at construction.
 // DefaultTools takes explicit Bash Options; each Bash owns its snapshot and output stores.

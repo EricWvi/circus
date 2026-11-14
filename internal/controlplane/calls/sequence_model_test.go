@@ -230,21 +230,6 @@ func (m *seqModel) dispatchSeen(id, boot string) bool {
 	return d.dispatches[id] > 0 || dropped
 }
 
-// refusedOnlyDispatch reports whether the daemon of boot received exactly
-// one DispatchCall for id and none was lost: only then may a SHUTTING_DOWN
-// refusal settle the call as rejected: a resend or lost dispatch may have
-// executed.
-func (m *seqModel) refusedOnlyDispatch(id, boot string) bool {
-	d := m.boots[boot]
-	if d == nil {
-		return false
-	}
-	d.fmu.Lock()
-	defer d.fmu.Unlock()
-	_, dropped := d.dropped[id]
-	return d.dispatches[id] == 1 && !dropped
-}
-
 func (m *seqModel) bootDead(boot string) bool {
 	d := m.boots[boot]
 	return d != nil && d.stopped
@@ -878,8 +863,6 @@ func (m *seqModel) checkUpdate(s *seqSub, u *circusv1.CallUpdate, where string) 
 		case circusv1.CallUpdate_Rejected_CODE_DEVICE_SHUTTING_DOWN:
 			if row := m.row(c.id); current && (row == nil || !m.boots[row.DispatchedBootID].graceful) {
 				w.fail("%s of %s: DEVICE_SHUTTING_DOWN without a graceful stop of its dispatch boot", where, c.id)
-			} else if current && !m.refusedOnlyDispatch(c.id, row.DispatchedBootID) {
-				w.fail("%s of %s: DEVICE_SHUTTING_DOWN although its DispatchCall was resent or lost and may have executed", where, c.id)
 			}
 		default:
 			w.fail("%s of %s: unexpected rejection %s", where, c.id, code)
@@ -1068,9 +1051,6 @@ func (m *seqModel) checkRow(c *seqCall, row store.Call) {
 		case "DEVICE_SHUTTING_DOWN":
 			if d := m.boots[row.DispatchedBootID]; d == nil || !d.graceful {
 				w.fail("call %s rejected DEVICE_SHUTTING_DOWN without a graceful stop of %s", c.id, m.label(row.DispatchedBootID))
-			}
-			if !m.refusedOnlyDispatch(c.id, row.DispatchedBootID) {
-				w.fail("call %s rejected DEVICE_SHUTTING_DOWN although its DispatchCall was resent or lost and may have executed", c.id)
 			}
 		default:
 			w.fail("call %s rejected with unexpected reason %s", c.id, row.OutcomeReason)

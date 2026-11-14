@@ -3,7 +3,6 @@ package calls
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -122,7 +121,15 @@ func (r *router) synchronize(op *operation, conn gateway.Connection, d *deviceSt
 					delete(d.outstanding, c.CallID) // settled while waiting
 					return nil
 				}
-				return r.writeDispatch(op.ctx, c, conn, true)
+				// Capacity waits release the admission lock and can cross the
+				// horizon. Recheck now; late replay releases its content and
+				// recovers by query instead of sending another DispatchCall.
+				elapsed = r.config.Clock.Now().UnixMilli() - c.DispatchedAt
+				if elapsed >= 0 && elapsed < r.config.ResendHorizon.Milliseconds() {
+					return r.writeDispatch(op.ctx, c, conn, true)
+				}
+				r.release(c.CallID)
+				return r.sendQuery(op.ctx, conn, c.CallID)
 			})
 		}
 		if elapsed >= r.config.ResendHorizon.Milliseconds() {
@@ -422,13 +429,9 @@ func (r *router) OnCallAck(ctx context.Context, conn gateway.Connection, ack *ci
 	case circusv1.Rejection_CODE_CALL_MISMATCH:
 		reason, code = "CALL_MISMATCH", circusv1.CallUpdate_Rejected_CODE_CALL_MISMATCH
 	case circusv1.Rejection_CODE_SHUTTING_DOWN:
-		// H1: only a DispatchCall sent exactly once, by this process, on this
-		// connection, proves the daemon never saw the call. Any other refusal
-		// may follow an execution: keep D and recover by query or boot change.
-		if p := r.pending[c.CallID]; p == nil || p.resent || p.sentOn != conn.Target.ConnectionID {
-			slog.Warn("daemon shutting down refused a possibly delivered dispatch; recovering", "call_id", c.CallID, "device_id", c.DeviceID)
-			return nil
-		}
+		// The daemon deduplicates before its shutdown check and its shutdown is
+		// permanent for this boot. The age check bounds two copies below the
+		// tombstone lifetime, so a refusal of any copy proves none executed.
 		reason, code = "DEVICE_SHUTTING_DOWN", circusv1.CallUpdate_Rejected_CODE_DEVICE_SHUTTING_DOWN
 	case circusv1.Rejection_CODE_BOOT_MISMATCH:
 		to, reason = store.CallLost, "BOOT_MISMATCH"

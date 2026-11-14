@@ -12,6 +12,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/storetest"
 	"github.com/EricWvi/circus/internal/wire"
@@ -42,6 +43,7 @@ const (
 	faultHalfOpenDown seqFaultKind = "half-open-down" // downlink frames vanish until the cut
 	faultHalfOpenUp   seqFaultKind = "half-open-up"   // uplink frames vanish until the cut
 	faultCorrupt      seqFaultKind = "corrupt-target" // the DispatchCall arrives naming another boot
+	faultStaleResend  seqFaultKind = "stale-resend"   // the target call's resend arrives older than MaxDispatchAge
 	heartbeatTimeout               = 15 * time.Second // wire's default HeartbeatTimeout
 )
 
@@ -49,9 +51,10 @@ const (
 // A half-open fault belongs to the connection it was armed on: the cut that
 // ends it also ends the fault.
 type seqFault struct {
-	kind  seqFaultKind
-	since time.Time
-	conn  *seqConn
+	kind   seqFaultKind
+	since  time.Time
+	conn   *seqConn
+	target string // the only call a stale-resend fault rewrites
 }
 
 func (f *seqFault) halfOpen() bool { return f.kind == faultHalfOpenDown || f.kind == faultHalfOpenUp }
@@ -236,6 +239,18 @@ func (d *seqDaemon) onDownlink(c *seqConn, data []byte) ([]byte, bool) {
 				data = rewritten
 			}
 		}
+		if f := d.fault; f != nil && f.kind == faultStaleResend && id == f.target && p.DispatchCall.GetTargetBootId() == d.boot && d.dispatches[id] > 1 {
+			// Delay this resend in the network until it exceeds the daemon's
+			// dispatch-age limit. Other calls resent in the same sync stay fresh.
+			d.fault = nil
+			d.staled[id] = true
+			p.DispatchCall.DispatchedAtUnixMs = w.clock.Now().Add(-(daemon.DefaultMaxDispatchAge + time.Hour)).UnixMilli()
+			if rewritten, err := proto.Marshal(m); err == nil {
+				data = rewritten
+			} else {
+				w.violation(fmt.Sprintf("marshal stale resend of %s: %v", id, err))
+			}
+		}
 	case *circusv1.DaemonDownlink_CallQuery:
 		id := p.CallQuery.GetCallId()
 		if drop, ok := d.dropped[id]; ok && d.dispatches[id] == 1 && drop.incarnation == w.incarnation && drop.conn != c {
@@ -264,6 +279,22 @@ func (d *seqDaemon) onUplink(c *seqConn, data []byte) uplinkAction {
 	if ack := m.GetCallAck(); ack != nil {
 		if ack.GetStatus().GetState() == circusv1.CallStatus_STATE_RUNNING {
 			d.acked[ack.CallId] = true
+		}
+		if d.staled[ack.CallId] {
+			// The answer to a stale copy: an unseen ID is refused EXPIRED, a
+			// known one returns its status because deduplication runs first.
+			delete(d.staled, ack.CallId)
+			switch {
+			case ack.GetRejection().GetCode() == circusv1.Rejection_CODE_EXPIRED && !d.recorded[ack.CallId]:
+				w.covered("stale-resend")
+			case ack.GetStatus() != nil && d.recorded[ack.CallId]:
+				w.covered("stale-known-status")
+			default:
+				w.violation(fmt.Sprintf("stale copy of %s answered %v (known to the daemon: %v)", ack.CallId, ack, d.recorded[ack.CallId]))
+			}
+		}
+		if ack.GetStatus() != nil {
+			d.recorded[ack.CallId] = true
 		}
 		switch ack.GetRejection().GetCode() {
 		case circusv1.Rejection_CODE_BOOT_MISMATCH:
@@ -303,10 +334,23 @@ func (d *seqDaemon) onUplink(c *seqConn, data []byte) uplinkAction {
 }
 
 func (d *seqDaemon) arm(kind seqFaultKind) {
+	d.armFor(kind, "")
+}
+
+// armFor arms a fault that applies only to the given call.
+func (d *seqDaemon) armFor(kind seqFaultKind, target string) {
 	conn := d.current()
 	d.fmu.Lock()
-	d.fault = &seqFault{kind: kind, since: d.dev.w.clock.Now(), conn: conn}
+	d.fault = &seqFault{kind: kind, since: d.dev.w.clock.Now(), conn: conn, target: target}
 	d.fmu.Unlock()
+}
+
+// knows reports whether the daemon answered the call with a status, so its
+// dispatcher holds a record for it.
+func (d *seqDaemon) knows(id string) bool {
+	d.fmu.Lock()
+	defer d.fmu.Unlock()
+	return d.recorded[id]
 }
 
 func (d *seqDaemon) armed() *seqFault {
@@ -422,6 +466,35 @@ func (w *seqWorld) opFaultDispatch() bool {
 	case 2:
 		w.record("  advance 11m0s before %s reconnects", dev.name)
 		w.advance(11 * time.Minute)
+	case 3:
+		// A copy of the call is resent after it exceeded MaxDispatchAge. If
+		// the dispatch was dropped, the daemon never saw the ID and refuses it
+		// EXPIRED (Lost). If only the ack was dropped, the daemon deduplicates
+		// before checking age and returns the call's status.
+		known := dev.daemon.knows(id)
+		if w.m.faultPending() || (kind == faultDropAck && !known) {
+			break
+		}
+		w.record("  reconnect %s with a stale resend of %s (known to the daemon: %v)", dev.name, id, known)
+		dev.daemon.armFor(faultStaleResend, id)
+		dev.daemon.cut()
+		w.wait("backoff for stale resend on "+dev.name, func() bool {
+			s := dev.daemon.client.Stats()
+			return !s.Connected && s.RetryDelay > 0 && dev.daemon.clock.pending()
+		})
+		dev.daemon.kick(true)
+		w.settle("stale resend")
+		if dev.daemon.armed() != nil {
+			w.fail("stale resend of %s was not delivered", id)
+			return true
+		}
+		row := w.m.row(id)
+		switch {
+		case !known && (row == nil || row.State != store.CallLost || row.OutcomeReason != "EXPIRED"):
+			w.fail("stale resend of unseen %s ended %v, want lost EXPIRED", id, row)
+		case known && (row == nil || row.State == store.CallLost || row.State == store.CallRejected):
+			w.fail("stale resend of known %s ended %v, want its daemon status", id, row)
+		}
 	}
 	return true
 }
@@ -648,11 +721,12 @@ func (w *seqWorld) opDeferredQueryBootChange() bool {
 	return true
 }
 
-// opResendDuringShutdown covers the shutdown-refusal rule: a dispatch is lost, the
-// device reconnects with its sync held, the daemon begins a graceful
+// opResendDuringShutdown covers the shutdown-refusal rule: a dispatch is lost,
+// the device reconnects with its sync held, the daemon begins a graceful
 // shutdown that a stubborn tool keeps open, and only then the sync resends
-// the call. The daemon refuses the unseen ID with SHUTTING_DOWN, but a
-// resend may follow an execution, so the router must keep it dispatched.
+// the call. The daemon refuses the unseen ID with SHUTTING_DOWN. Deduplication
+// precedes that refusal and the age bound keeps earlier records within the
+// tombstone lifetime, so the router must reject the call as never executed.
 func (w *seqWorld) opResendDuringShutdown() bool {
 	dev := w.readyDevice()
 	if dev == nil || w.m.faultPending() {
@@ -692,14 +766,17 @@ func (w *seqWorld) opResendDuringShutdown() bool {
 	w.wait("dispatcher closed", func() bool { return e.ctx.Err() != nil })
 	gate.release()
 	refused := func() int { w.covMu.Lock(); defer w.covMu.Unlock(); return w.cov["shutting-down-after-resend"] }
-	w.wait("refusal of the resend", func() bool { return refused() > w.h1Seen })
+	w.wait("refusal of the resend", func() bool { return refused() > w.shutdownSeen })
 	if w.failed {
 		old.fmu.Lock()
 		w.t.Logf("diagnostics: %s dispatches=%d acked=%v dropped=%v; execs=%d; route=%v; gate held=%v; dials %d/%d; up %v; client=%+v", id, old.dispatches[id], old.acked[id], old.dropped[id].conn != nil, len(w.m.execsOf(w.m.byID[id])), w.m.ready(dev), gate.held(), old.dials.Load(), old.expected.Load(), dev.up.Load(), old.client.Stats())
 		old.fmu.Unlock()
 	}
-	w.h1Seen = refused()
+	w.shutdownSeen = refused()
 	w.settleHooks()
+	if row := w.m.row(id); row == nil || row.State != store.CallRejected || row.OutcomeReason != "DEVICE_SHUTTING_DOWN" {
+		w.fail("resend refused during shutdown ended %v, want rejected DEVICE_SHUTTING_DOWN", row)
+	}
 	w.m.release(e)
 	w.stopDaemon(old, true)
 	w.m.daemonStopped(old)

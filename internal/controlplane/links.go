@@ -43,12 +43,14 @@ func (s *Server) ConfigureLinks(ctx context.Context, c LinkConfig) error {
 		return err
 	}
 	b = dispatchBus(b)
-	r, err := calls.New(calls.Config{Store: s.st, Registry: registry, Bus: b, Clock: clock.Real{}, MaxMessageBytes: c.MaxMessageBytes, GracePeriod: c.GracePeriod})
+	// Dispatch commit timestamps and Welcome share one clock on the daemon link.
+	clk := clock.Real{}
+	r, err := calls.New(calls.Config{Store: s.st, Registry: registry, Bus: b, Clock: clk, MaxMessageBytes: c.MaxMessageBytes, GracePeriod: c.GracePeriod})
 	if err != nil {
 		return err
 	}
 	opts := wire.Options{MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}
-	g, err := gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clock.Real{}, Auth: daemonAuth{s.authn, s.st}, Registry: registry, Bus: b, Hooks: r, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
+	g, err := gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: daemonAuth{s.authn, s.st}, Registry: registry, Bus: b, Hooks: r, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
 	if err != nil {
 		_ = r.Close(ctx)
 		return err

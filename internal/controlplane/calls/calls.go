@@ -144,7 +144,8 @@ type PendingBudget struct {
 // 16 updates and 144 MiB per subscription, 256 MiB total buffered updates,
 // 64 MiB messages, 30s grace, 15s subscriber stall, 30s watchdog slack, 2m
 // delivery allowance, and 10m resend horizon. Negative values are refused.
-// ResendHorizon must be below the daemon's 24-hour tombstone lifetime.
+// ResendHorizon is a replay policy and request-retention bound, not a safety
+// bound: the daemon's dispatch-age check enforces at-most-once execution.
 // No request/result cache exists outside pending and subscription buffers.
 // MaxOperations bounds active public calls, hooks and timer work; each may
 // borrow one wire-bounded message. Waiting queries release their operation slot
@@ -167,7 +168,9 @@ type Config struct {
 	MaxMessageBytes                int
 	GracePeriod, SubscriberStall   time.Duration
 	WatchdogSlack, DeliveryTimeout time.Duration
-	// ResendHorizon bounds same-boot unacknowledged replay; zero means ten minutes.
+	// ResendHorizon bounds how long same-boot unacknowledged replay is preferred
+	// over a query and how long its request content is retained. It is a policy
+	// knob, not an at-most-once safety bound; zero means ten minutes.
 	ResendHorizon time.Duration
 	// MaxSyncRequests (1-256, zero means 16) bounds the reconnect sync's
 	// unanswered CallQuery, resent DispatchCall and ListJobs requests per

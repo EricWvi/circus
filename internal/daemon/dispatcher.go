@@ -20,12 +20,19 @@ import (
 var (
 	// ErrInvalidCall rejects malformed IDs or a missing tool before execution.
 	ErrInvalidCall = errors.New("invalid call")
-	// ErrCallExpired rejects a retry whose result expired but tombstone remains.
-	ErrCallExpired = errors.New("call result has expired")
+	// ErrCallExpired rejects a stale dispatch or a retry whose result expired.
+	ErrCallExpired = errors.New("call or its retained result has expired")
 	// ErrCallMismatch rejects a call_id reused with a different call.
 	ErrCallMismatch = errors.New("call_id already used with a different call")
 	// ErrShutdown rejects new work after shutdown begins.
 	ErrShutdown = errors.New("daemon is shut down")
+)
+
+const (
+	// DefaultMaxDispatchAge is the oldest unseen daemon-link dispatch accepted by default.
+	DefaultMaxDispatchAge = 12 * time.Hour
+	// DefaultTombstoneTTL is how long completed call IDs remain deduplicated by default.
+	DefaultTombstoneTTL = 24 * time.Hour
 )
 
 // Options configures a Dispatcher. Nonpositive durations use their defaults.
@@ -35,6 +42,8 @@ type Options struct {
 	MaxTimeout     time.Duration
 	ResultTTL      time.Duration
 	TombstoneTTL   time.Duration
+	// MaxDispatchAge rejects an unseen daemon-link call older than this duration.
+	MaxDispatchAge time.Duration
 	Clock          Clock
 	// ToolShutdownTimeout bounds each tool's shutdown hook; default ten seconds.
 	ToolShutdownTimeout time.Duration
@@ -91,7 +100,10 @@ func NewDispatcher(opts Options) (*Dispatcher, error) {
 		opts.ResultTTL = 30 * time.Minute
 	}
 	if opts.TombstoneTTL <= 0 {
-		opts.TombstoneTTL = 24 * time.Hour
+		opts.TombstoneTTL = DefaultTombstoneTTL
+	}
+	if opts.MaxDispatchAge <= 0 {
+		opts.MaxDispatchAge = DefaultMaxDispatchAge
 	}
 	if opts.ToolShutdownTimeout <= 0 {
 		// Inferred: bound tool cleanup independently of a caller's wait context.
@@ -184,10 +196,18 @@ func callHash(call *circusv1.DeviceCall) ([sha256.Size]byte, error) {
 	return sha256.Sum256(data), nil
 }
 
-// Submit snapshots and executes a call independently of its submitter.
-// Running and retained IDs return their existing state without executing again,
-// including during shutdown. ErrShutdown rejects only previously unseen IDs.
+// Submit snapshots and executes a local call independently of its submitter.
+// Local calls have no daemon-link dispatch age.
 func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, error) {
+	return d.SubmitDispatch(call, 0)
+}
+
+// SubmitDispatch snapshots and executes a daemon-link call independently of its
+// submitter. dispatchAge is anchored to this connection's Welcome. Running and
+// retained IDs return their existing state without executing again, including
+// during shutdown and regardless of age. Only unseen IDs are subject to the age
+// and shutdown checks.
+func (d *Dispatcher) SubmitDispatch(call *circusv1.DeviceCall, dispatchAge time.Duration) (*circusv1.CallStatus, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if call == nil || !identifier.Valid(call.GetCallId(), false) || !identifier.Valid(call.GetSessionId(), false) || !identifier.Valid(call.GetAgentId(), true) {
@@ -213,7 +233,15 @@ func (d *Dispatcher) Submit(call *circusv1.DeviceCall) (*circusv1.CallStatus, er
 			}
 			return d.status(call.CallId, existing, now), nil
 		}
-		// Older than TombstoneTTL: treat the record as absent and execute again.
+		// Older than TombstoneTTL: treat the record as absent for the checks below.
+	}
+	// Expire an unseen stale ID before shutdown can refuse it. Otherwise a
+	// SHUTTING_DOWN refusal could outlive an earlier execution's tombstone and
+	// incorrectly prove that no copy executed. Within the age bound, any earlier
+	// execution is still deduplicated above; shutdown is permanent for this boot.
+	// The refusal creates neither a call record nor a tombstone.
+	if dispatchAge > d.opts.MaxDispatchAge {
+		return nil, ErrCallExpired
 	}
 	if d.closed {
 		return nil, ErrShutdown

@@ -26,15 +26,26 @@ func TestReconnectUnackedAndCancelF1F3F9(t *testing.T) {
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
 	must(t, err)
 	defer s.Close()
-	if receive(t, f.ctx, l).GetDispatchCall() == nil {
+	first := receive(t, f.ctx, l).GetDispatchCall()
+	if first == nil {
 		t.Fatal("missing initial dispatch")
+	}
+	persisted, err := f.db.GetCall(f.ctx, "call")
+	must(t, err)
+	if first.DispatchedAtUnixMs == 0 || first.DispatchedAtUnixMs != persisted.DispatchedAt {
+		t.Fatalf("initial dispatch time %d does not match committed time %d", first.DispatchedAtUnixMs, persisted.DispatchedAt)
 	}
 	drain(t, f.ctx, s, 2)
 	f.disconnect(l)
 	must(t, f.router.Cancel(f.ctx, "u", "call"))
+	f.advance(time.Second)
 	l = f.open("boot")
-	if m := receive(t, f.ctx, l); m.GetDispatchCall() == nil || m.GetDispatchCall().TargetBootId != "boot" {
-		t.Fatal(m)
+	resent := receive(t, f.ctx, l).GetDispatchCall()
+	if resent == nil || resent.TargetBootId != "boot" {
+		t.Fatal(resent)
+	}
+	if resent.DispatchedAtUnixMs != first.DispatchedAtUnixMs {
+		t.Fatalf("resend refreshed dispatch time: first=%d resent=%d now=%d", first.DispatchedAtUnixMs, resent.DispatchedAtUnixMs, f.clock.Now().UnixMilli())
 	}
 	if m := receive(t, f.ctx, l); m.GetCancelCall().GetCallId() != "call" {
 		t.Fatal(m)

@@ -56,7 +56,7 @@ func TestRealWebSocketTLSCredentialsAndGracefulClose(t *testing.T) {
 			return
 		}
 		hellos <- m.(*circusv1.DaemonUplink).GetHello()
-		welcome := &circusv1.Welcome{PrincipalId: "tls-device", NegotiatedVersion: 1}
+		welcome := &circusv1.Welcome{PrincipalId: "tls-device", NegotiatedVersion: 1, ServerTimeUnixMs: freshDispatchAtUnixMs}
 		options, err := wire.FillWelcome(welcome, wire.Options{})
 		if err != nil {
 			_ = raw.Close()

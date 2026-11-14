@@ -117,7 +117,9 @@ export type Welcome = Message<"circus.v1.Welcome"> & {
   negotiatedVersion: number;
 
   /**
-   * Diagnostic only, never used to derive deadlines.
+   * On the daemon link, the control plane's clock when it wrote Welcome, the
+   * same clock as DispatchCall.dispatched_at_unix_ms. The daemon uses it only
+   * to anchor dispatch age. Informational on the worker link.
    *
    * @generated from field: int64 server_time_unix_ms = 8;
    */

@@ -121,7 +121,7 @@ func result(s string) proto.Message {
 	return &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Result{Result: &circusv1.DeviceResult{CallId: "c", Output: &circusv1.ToolOutput{Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: s}}}}}}}
 }
 func dispatch(id, s string) proto.Message {
-	return &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_DispatchCall{DispatchCall: &circusv1.DispatchCall{TargetBootId: "boot", Call: &circusv1.DeviceCall{CallId: id, SessionId: "s", Tool: &circusv1.DeviceCall_Write{Write: &circusv1.WriteRequest{Content: s}}}}}}
+	return &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_DispatchCall{DispatchCall: &circusv1.DispatchCall{TargetBootId: "boot", DispatchedAtUnixMs: 1, Call: &circusv1.DeviceCall{CallId: id, SessionId: "s", Tool: &circusv1.DeviceCall_Write{Write: &circusv1.WriteRequest{Content: s}}}}}}
 }
 func smallOptions() wire.Options {
 	return wire.Options{MaxFragmentBytes: 64, MaxMessageBytes: 4096, DisableHeartbeat: true}

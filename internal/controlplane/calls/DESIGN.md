@@ -38,15 +38,14 @@ no-op, except invalid input returns an error or rejection without mutation.
 | active | result or ack/status COMPLETED with result | C | Result implies ack; release pending and cancel watchdog; no output persisted |
 | D | ack rejected INVALID/CALL_MISMATCH | J | Matching rejection; release pending and cancel watchdog |
 | D | ack rejected BOOT_MISMATCH/EXPIRED | L | Lost; never retry on a new boot |
-| D | ack rejected SHUTTING_DOWN, the only DispatchCall was sent by this process on this connection | J | DEVICE_SHUTTING_DOWN; release pending, cancel watchdog; retry requires a new call ID |
-| D | ack rejected SHUTTING_DOWN after a resend, another connection's send or a restart | D | H1: the daemon may have executed it; no change, recover by query or boot change |
+| D | ack rejected SHUTTING_DOWN | J | DEVICE_SHUTTING_DOWN; release pending and cancel watchdog; deduplication before permanent shutdown plus the dispatch-age bound proves no copy executed |
 | active | same-boot query LOST | L | Lost; release pending and cancel watchdog |
 | active | cancel | same | Commit first cancel intent; send CancelCall only on a ready route, else the sync replays it after the resend/query; daemon result wins |
 | active/C | Query, route registered but unsynchronized | same | Waiter deferred to that route's sync: answered by its resend/query reply, never sent ahead of the resend (M1) |
 | A/active | disconnect | same | SetDisconnected and device_grace timer atomically; no tool cancellation |
 | D/R | grace expires | U | Unknown with call ID; preserve recovery/watchdog; discard retained request once retry horizon expires |
 | U | grace expires again | U | No regression or duplicate terminal update |
-| active | reconnect, same boot | same | Resend only unacked retained request within safe retry horizon; otherwise query; replay recorded cancel afterward |
+| active | reconnect, same boot | same | Resend only unacked retained requests within ResendHorizon, rechecked after every sync-capacity wait; otherwise query; replay recorded cancel afterward |
 | active | reconnect, different boot | L | LoseCalls; notify returned IDs and cancel their watchdogs in the same Tx; LoseJobs old boots |
 | A | reconnect, either boot | A then D | After recovery commands and ListJobs admission, activate route and dispatch by SubmittedAt then call ID |
 | active | watchdog due | same | Claim completion first; query only on a ready route of the dispatch boot; persist next recovery watchdog; never infer success from timeout |
@@ -178,11 +177,11 @@ Cancel racing before dispatch commit wins A → X. After commit it records inten
 even if the first dispatch has not yet reached Send; the lock enqueues dispatch
 first. A known first-send ErrBusy or ErrTooLarge can produce a rejection
 without any execution; an uncertain send failure cannot clear the boot or
-permit cross-boot retry. The router remembers, with the retained content, the
-connection of a call's only DispatchCall; a resend marks it possibly
-delivered. Only an unresent dispatch refused by that same connection maps
-SHUTTING_DOWN to DEVICE_SHUTTING_DOWN (H1; the daemon also deduplicates before
-its shutdown check since T3).
+permit cross-boot retry. Every DispatchCall carries the original committed
+DispatchedAt, including resends. A valid SHUTTING_DOWN refusal of any copy maps
+to DEVICE_SHUTTING_DOWN: the daemon deduplicates before its permanent shutdown
+check, and its dispatch-age bound keeps every earlier execution's record within
+the tombstone lifetime, so the refusal proves no copy executed.
 On a failed resend retain the recovery path. Wire queue failure, budget exhaustion
 and consumer stall close the link as appropriate and recover through reconnect.
 
@@ -209,13 +208,14 @@ business throughput, plus scheduling and framing margin; 30 seconds alone is not
 enough at the largest sizes. A cancel watchdog must include this allowance plus
 5 seconds and slack. No finite transport bound exists without a throughput
 assumption: an expired watchdog queries or disconnects/reconciles, never declares
-execution cancelled or sends to another boot. Resend is allowed only with retained pending content and elapsed dispatch time
-below ResendHorizon. Configuration rejects horizons >=24 hours. A queued message
-is written while its link lives or discarded when it dies; a link that stops
-progress dies through heartbeat/MaxConsumerStall. Residual assumption, NOT a proof:
-a live trickling link does not keep a queued dispatch until the daemon's 24-hour
-tombstone expires. The configured horizon plus live queue residence must remain
-below that lifetime. Query-only recovery applies outside the horizon.
+execution cancelled or sends to another boot. Resend is allowed only with
+retained pending content and elapsed dispatch time below ResendHorizon, both
+when replay is selected and immediately before its write after any sync-capacity
+wait. A late replay releases the content and sends CallQuery instead.
+ResendHorizon is a policy and request-retention knob, not a safety bound;
+configuration rejects only nonpositive values. The daemon's dispatch-age check
+provides at-most-once safety without a throughput or live-queue-residence
+assumption.
 
 ## Backpressure and memory
 
@@ -257,20 +257,62 @@ without waiting for another clock tick. SQLite keyset indexes avoid full-table
 sorts. Returned caller-owned updates and bounded operation scratch are additional
 to retained pending/subscription charges. Owned clones copy string backing storage.
 
-## At-most-once invariants and residual assumption
+## At-most-once invariants and dispatch-age proof
 
 | Case | Code point / invariant |
 | --- | --- |
 | duplicate submission | Service.Submit: global primary key + owner/device + deterministic request hash; no mutation on mismatch |
 | first execution | dispatch transaction: read current boot + guarded A → D + watchdog, commit before Bus.Send |
-| same-boot retransmission | OnConnected: original target_boot_id and content/hash; daemon deduplicates; ResendHorizon guard plus the explicit live-queue assumption |
+| same-boot retransmission | OnConnected: original target_boot_id, content/hash and DispatchedAt; daemon deduplicates first, then rejects an unseen stale dispatch before shutdown or execution |
 | new daemon boot | OnConnected: LoseCalls/LoseJobs and per-call timer cancellation; never dispatch old attempt to new boot; daemon independently rejects mismatched target |
 | control-plane crash | New startup reconciliation: A → L; guarded L → A only with no recorded dispatch; dispatched attempts query after reconnect |
 | crash between commit and write | durable boot remains; query may report lost although execution count is zero; never clear dispatch evidence |
 | cancel race | Service.Cancel and the admission lock: A → X or durable intent after D; final authoritative result wins |
-| tombstone expiry | retained store row blocks ID reuse; old attempts are not resent after safe horizon |
+| tombstone expiry | retained store row blocks ID reuse; a copy old enough to find an expired tombstone is itself beyond MaxDispatchAge and is refused without a new record |
 | power failure | existing SQLite FULL durability preserves committed dispatch evidence |
-| shutdown refusal | OnCallAck: DEVICE_SHUTTING_DOWN (terminal, "never executed, retry with a new ID") only for an unresent DispatchCall refused on the connection it was sent on; otherwise the call stays recoverable (H1) |
+| shutdown refusal | OnCallAck: DEVICE_SHUTTING_DOWN for any valid dispatched refusal; deduplication precedes permanent shutdown, and the age bound proves no earlier copy executed |
+
+The dispatch-age proof uses a per-connection time base rather than either peer's
+wall clock. The control plane stamps `DispatchedAt` and Welcome's
+`server_time_unix_ms` from the same injected clock. When the daemon reads
+Welcome it records `welcomeMono` from its own injectable monotonic clock. For a
+DispatchCall with original timestamp `D`, it computes
+`age = since(welcomeMono) + (welcomeServerMs - D)`, and passes that age to the
+dispatcher. A resend always carries the original `D`.
+
+Let δ ≥ 0 be Welcome's transit time. The handshake deadline starts before the
+control plane receives Hello, so δ < HandshakeTimeout (10 seconds by default).
+On the daemon's monotonic clock, which is also the clock that ages tombstones,
+at most `age + δ` passes between the earliest moment any copy of the dispatch
+could arrive (control-plane time `D`) and this copy's arrival: Welcome left
+`welcomeServerMs - D` after the dispatch, arrived δ later, and
+`since(welcomeMono)` has passed on that clock since. `D` and Welcome's time are
+whole milliseconds, so truncation can make `age` underestimate by less than
+1 ms; the strict inequality below leaves a gap only when Welcome's transit is
+within that millisecond of the full handshake timeout.
+Any earlier copy that executed was received at control-plane time at or after
+`DispatchedAt`, because every send follows the dispatch commit. Its record is
+retained until at least TombstoneTTL after completion. The dispatcher first
+deduplicates an existing record (including mismatch and retained-result expiry),
+then accepts an unseen ID only when `age <= MaxDispatchAge`; a stale refusal
+creates no record. Consequently two executions of one call on one boot would be
+at most `MaxDispatchAge + δ` apart, and
+`MaxDispatchAge + HandshakeTimeout < TombstoneTTL`. The second copy therefore
+finds the first copy's record instead of executing. The age check precedes the
+permanent shutdown check so a stale copy cannot turn a shutdown refusal into a
+false proof of non-execution after a tombstone has expired.
+
+This leaves two clock assumptions: the control-plane wall clock does not step
+backwards between dispatch and Welcome (a forward step can cause an honest
+EXPIRED/Lost outcome), and clock-rate drift remains at ppm level. A daemon
+monotonic clock that pauses during suspend only makes `since(welcomeMono)`
+smaller; tombstone ages use the same clock, so the inequality retains its
+direction. No link-throughput or queue-residence assumption remains.
+
+The control plane and its daemons must run the same protocol revision: an
+older daemon ignores `dispatched_at_unix_ms` and enforces no age bound, so this
+proof does not hold for it, and an older control plane sends no timestamp, so
+a current daemon refuses every dispatch as INVALID.
 
 ## Capacity planning (Q33)
 
@@ -349,9 +391,11 @@ large consumer's rate.
 5. **D43/T1 corrections implemented.** Guarded lost -> accepted resets all attempt
    columns; current boot is read in the dispatch transaction; results follow
    negotiated limits; pools are doubled; graceful Receive drains before disconnect.
-6. **Resend decision implemented.** ResendHorizon defaults to ten minutes and
-   requires retained, unacknowledged content. Otherwise query. The live trickling
-   queue assumption above replaces the earlier claim of an unconditional proof.
+6. **Resend decision and receiver-side age bound implemented.** ResendHorizon
+   defaults to ten minutes and requires retained, unacknowledged content; it is
+   rechecked after sync waits and otherwise recovery uses CallQuery. The daemon
+   rejects unseen dispatches older than twelve hours using the Welcome time
+   base, making the horizon a policy knob rather than a safety assumption.
 
 ## Deviations from the phase 1 design
 

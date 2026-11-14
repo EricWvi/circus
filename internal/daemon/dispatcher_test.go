@@ -145,6 +145,48 @@ func TestDispatcherDeduplicationAndIndependentWait(t *testing.T) {
 	}
 }
 
+func TestDispatcherDispatchAge(t *testing.T) {
+	const maxAge = time.Hour
+	clk := clock.New()
+	var runs atomic.Int32
+	d := newDispatcher(t, daemon.Options{Clock: clk, MaxDispatchAge: maxAge, ResultTTL: time.Minute, Tools: []daemon.Tool{fakeTool{"read", func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+		runs.Add(1)
+		return output("done"), nil
+	}}}})
+	call := readCall("stale")
+	if _, err := d.SubmitDispatch(call, maxAge+time.Nanosecond); !errors.Is(err, daemon.ErrCallExpired) {
+		t.Fatalf("stale unseen call: %v", err)
+	}
+	if s := d.Query(call.CallId); s.State != circusv1.CallStatus_STATE_LOST || s.Result != nil || runs.Load() != 0 {
+		t.Fatalf("stale refusal left a record or executed: %v, runs=%d", s, runs.Load())
+	}
+	if s, err := d.SubmitDispatch(call, 0); err != nil || s.State != circusv1.CallStatus_STATE_RUNNING {
+		t.Fatalf("fresh resubmit after stale refusal: %v, %v", s, err)
+	}
+	if got := resultText(completed(t, d, call.CallId)); got != "done" || runs.Load() != 1 {
+		t.Fatalf("fresh execution: %q, runs=%d", got, runs.Load())
+	}
+	if s, err := d.SubmitDispatch(call, maxAge+time.Second); err != nil || s.State != circusv1.CallStatus_STATE_COMPLETED || resultText(s.Result) != "done" || runs.Load() != 1 {
+		t.Fatalf("stale known call did not return its retained result: %v, %v", s, err)
+	}
+	mismatch := readCall(call.CallId)
+	mismatch.GetRead().Path = "/different"
+	if _, err := d.SubmitDispatch(mismatch, maxAge+time.Second); !errors.Is(err, daemon.ErrCallMismatch) {
+		t.Fatalf("stale known mismatch: %v", err)
+	}
+	clk.Advance(time.Minute)
+	if _, err := d.SubmitDispatch(call, maxAge+time.Second); !errors.Is(err, daemon.ErrCallExpired) {
+		t.Fatalf("stale known call with expired result: %v", err)
+	}
+	if s, err := d.SubmitDispatch(readCall("boundary"), maxAge); err != nil || s.State != circusv1.CallStatus_STATE_RUNNING {
+		t.Fatalf("age exactly at the boundary must be accepted: %v, %v", s, err)
+	}
+	completed(t, d, "boundary")
+	if runs.Load() != 2 {
+		t.Fatalf("runs=%d, want one fresh execution and one boundary execution", runs.Load())
+	}
+}
+
 func TestDispatcherCallIDMismatch(t *testing.T) {
 	var runs atomic.Int32
 	release := make(chan struct{})
@@ -624,6 +666,9 @@ func TestShutdownStillDeduplicatesKnownCalls(t *testing.T) {
 	}
 	if _, err := d.Submit(readCall("unseen")); !errors.Is(err, daemon.ErrShutdown) {
 		t.Fatal(err)
+	}
+	if _, err := d.SubmitDispatch(readCall("stale-unseen"), daemon.DefaultMaxDispatchAge+time.Second); !errors.Is(err, daemon.ErrCallExpired) {
+		t.Fatalf("stale unseen call during shutdown must expire before the shutdown refusal: %v", err)
 	}
 	close(release)
 }

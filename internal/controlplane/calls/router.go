@@ -71,13 +71,10 @@ type router struct {
 	unrecorded map[string]int64
 }
 
-// pendingCall is retained request content. sentOn is the connection of the
-// only DispatchCall sent so far; resent is set once a second send may exist.
+// pendingCall is retained request content and its ownership cost.
 type pendingCall struct {
-	call   *circusv1.DeviceCall
-	cost   int64
-	sentOn string
-	resent bool
+	call *circusv1.DeviceCall
+	cost int64
 }
 
 // deviceState is one current generation's sync state. outstanding holds at
@@ -253,7 +250,7 @@ func newRouter(c Config) (Router, error) {
 	if c.Pending.MaxBytes < 1 || c.MaxSubscriptionBytes < 1 || c.MaxBufferedUpdateBytes < 1 || c.MaxSyncRequests > 256 || c.MaxSyncReplyBytes < int64(c.MaxMessageBytes) {
 		return nil, fmt.Errorf("calls: invalid limits")
 	}
-	if c.GracePeriod <= 0 || c.SubscriberStall <= 0 || c.WatchdogSlack <= 0 || c.DeliveryTimeout <= 0 || c.ResendHorizon <= 0 || c.ResendHorizon >= 24*time.Hour {
+	if c.GracePeriod <= 0 || c.SubscriberStall <= 0 || c.WatchdogSlack <= 0 || c.DeliveryTimeout <= 0 || c.ResendHorizon <= 0 {
 		return nil, fmt.Errorf("calls: invalid durations")
 	}
 	ctx, cancel := context.WithCancel(context.Background())

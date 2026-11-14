@@ -96,8 +96,8 @@ func (b *evidenceBus) Send(ctx context.Context, target bus.Target, msg *circusv1
 		}
 		c, err := b.db.GetCall(context.WithoutCancel(ctx), d.GetCall().GetCallId())
 		active := c.State == store.CallDispatched || c.State == store.CallRunning || c.State == store.CallUnknown
-		if err != nil || !active || c.DispatchedBootID != d.TargetBootId {
-			b.report(fmt.Sprintf("DispatchCall for %s sent to boot %s while its row is %s on boot %q (%v): send before commit", d.GetCall().GetCallId(), d.TargetBootId, c.State, c.DispatchedBootID, err))
+		if err != nil || !active || c.DispatchedBootID != d.TargetBootId || c.DispatchedAt != d.DispatchedAtUnixMs {
+			b.report(fmt.Sprintf("DispatchCall for %s sent to boot %s at %d while its row is %s on boot %q at %d (%v): invalid dispatch evidence", d.GetCall().GetCallId(), d.TargetBootId, d.DispatchedAtUnixMs, c.State, c.DispatchedBootID, c.DispatchedAt, err))
 		}
 	}
 	return b.Bus.Send(ctx, target, msg)
@@ -231,10 +231,10 @@ func shuttingDown(id string) *circusv1.DaemonUplink {
 	return &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallAck{CallAck: &circusv1.CallAck{CallId: id, Outcome: &circusv1.CallAck_Rejection{Rejection: &circusv1.Rejection{Code: circusv1.Rejection_CODE_SHUTTING_DOWN}}}}}
 }
 
-// SHUTTING_DOWN answering a resend may follow an execution, so the call stays
-// dispatched and a later result still completes it. A refusal of the only
-// dispatch (TestAckRejections/shutdown) is a terminal rejection.
-func TestShuttingDownOnResendKeepsDispatched(t *testing.T) {
+// A SHUTTING_DOWN refusal of a resend is terminal: the daemon deduplicates
+// before its permanent shutdown check, so an executed copy would have returned
+// its existing status instead.
+func TestShuttingDownOnResendRejects(t *testing.T) {
 	o := &observer{seen: make(chan string, 8)}
 	f := setup(t, func(_ *calls.Config, g *gateway.Config) { g.Hooks = o })
 	l := f.connect("boot")
@@ -251,18 +251,19 @@ func TestShuttingDownOnResendKeepsDispatched(t *testing.T) {
 	f.finishSync(l)
 	send(t, f.ctx, l, shuttingDown("call"))
 	o.wait(t, f.ctx, "ack")
-	if c, _ := f.db.GetCall(f.ctx, "call"); c.State != store.CallDispatched {
-		t.Fatalf("resend refusal settled the call: %s/%s", c.State, c.OutcomeReason)
+	if c, _ := f.db.GetCall(f.ctx, "call"); c.State != store.CallRejected || c.OutcomeReason != "DEVICE_SHUTTING_DOWN" {
+		t.Fatalf("resend refusal did not settle rejection: %s/%s", c.State, c.OutcomeReason)
 	}
-	quiet(t, f.ctx, s)
-	f.result(l, "call")
-	nextResult(t, f.ctx, s)
-	f.waitState("call", store.CallCompleted)
+	u, err := s.Next(f.ctx)
+	must(t, err)
+	if u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_DEVICE_SHUTTING_DOWN {
+		t.Fatal(u)
+	}
 }
 
-// After a control-plane restart the router cannot prove a first send, so
-// SHUTTING_DOWN for an old dispatch keeps the call recoverable.
-func TestShuttingDownAfterRestartKeepsDispatched(t *testing.T) {
+// A control-plane restart does not weaken the daemon's deduplication and
+// dispatch-age proof: SHUTTING_DOWN still settles as a terminal rejection.
+func TestShuttingDownAfterRestartRejects(t *testing.T) {
 	o := &observer{seen: make(chan string, 8)}
 	f := setup(t, func(_ *calls.Config, g *gateway.Config) { g.Hooks = o })
 	l := f.connect("boot")
@@ -279,9 +280,10 @@ func TestShuttingDownAfterRestartKeepsDispatched(t *testing.T) {
 	before := f.hooks.acks.Load()
 	send(t, f.ctx, l, shuttingDown("call"))
 	eventually(t, func() bool { return f.hooks.acks.Load() > before })
-	if f.state("call") != store.CallDispatched {
-		t.Fatalf("refusal after restart settled the call: %s", f.state("call"))
+	if f.state("call") != store.CallRejected {
+		t.Fatalf("refusal after restart did not reject: %s", f.state("call"))
 	}
-	send(t, f.ctx, l, statusCompleted("call"))
-	f.waitState("call", store.CallCompleted)
+	if c, _ := f.db.GetCall(f.ctx, "call"); c.OutcomeReason != "DEVICE_SHUTTING_DOWN" {
+		t.Fatal(c)
+	}
 }

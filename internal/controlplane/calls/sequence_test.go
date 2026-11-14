@@ -76,7 +76,7 @@ func TestRandomSequences(t *testing.T) {
 }
 
 // seqRequiredPaths are the mid-flight paths the default seeds must reach.
-var seqRequiredPaths = []string{"resend", "horizon-query", "shutting-down-after-resend", "misdelivery-refused", "boot-mismatch-applied", "deferred-query"}
+var seqRequiredPaths = []string{"resend", "horizon-query", "stale-resend", "stale-known-status", "shutting-down-after-resend", "misdelivery-refused", "boot-mismatch-applied", "deferred-query"}
 
 // seqSeeds returns the seeds to run and whether they are the default set.
 func seqSeeds(t *testing.T) ([]uint64, bool) {
@@ -440,6 +440,8 @@ type seqDaemon struct {
 	dropped       map[string]seqDrop   // DispatchCalls that never reached the daemon
 	acked         map[string]bool      // calls the daemon acked as running
 	corrupted     map[string]bool      // calls whose DispatchCall target was rewritten
+	recorded      map[string]bool      // calls the daemon answered with a status (it holds a record)
+	staled        map[string]bool      // calls whose resend the harness made older than MaxDispatchAge
 	firstDispatch map[string]time.Time // when the first DispatchCall of a call arrived
 	lastDispatch  []byte               // the last DispatchCall frame, for misdelivery
 }
@@ -555,11 +557,11 @@ type seqWorld struct {
 	store    *seqStore    // the router's store: Faulty plus a dispatch-commit failure
 	evidence *evidenceBus // the router's bus: commit-before-send check, busy injection
 	// cov counts the mid-flight paths reached (sequence_faults_test.go).
-	covMu      sync.Mutex
-	cov        map[string]int
-	violations []string
-	h1Seen     int
-	pumps      sync.WaitGroup // seqConn pump goroutines
+	covMu        sync.Mutex
+	cov          map[string]int
+	violations   []string
+	shutdownSeen int
+	pumps        sync.WaitGroup // seqConn pump goroutines
 }
 
 // seqResult is what one seed produced.
@@ -735,7 +737,7 @@ func (w *seqWorld) restartControlPlane() {
 
 func (w *seqWorld) startDaemon(dev *seqDevice) {
 	dev.boots++
-	d := &seqDaemon{dev: dev, label: fmt.Sprintf("%s#%d", dev.name, dev.boots), clock: &seqDevClock{shared: w.clock}, done: make(chan error, 1), dispatches: make(map[string]int), dropped: make(map[string]seqDrop), acked: make(map[string]bool), corrupted: make(map[string]bool), firstDispatch: make(map[string]time.Time)}
+	d := &seqDaemon{dev: dev, label: fmt.Sprintf("%s#%d", dev.name, dev.boots), clock: &seqDevClock{shared: w.clock}, done: make(chan error, 1), dispatches: make(map[string]int), dropped: make(map[string]seqDrop), acked: make(map[string]bool), corrupted: make(map[string]bool), recorded: make(map[string]bool), staled: make(map[string]bool), firstDispatch: make(map[string]time.Time)}
 	var err error
 	d.client, err = daemonlink.New(daemonlink.Options{
 		Credentials:     credfile.File{ControlPlaneURL: "http://127.0.0.1", Role: credfile.RoleDaemon, PrincipalID: dev.id, Token: dev.token},

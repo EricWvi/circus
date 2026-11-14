@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"runtime"
@@ -73,8 +74,16 @@ func receive(t *testing.T, l *wire.Link) *circusv1.DaemonUplink {
 	}
 	return m.(*circusv1.DaemonUplink)
 }
+
+var freshDispatchAtUnixMs = clock.New().Now().UnixMilli()
+
+func dispatchAt(t *testing.T, l *wire.Link, boot string, c *circusv1.DeviceCall, dispatchedAt int64) {
+	t.Helper()
+	send(t, l, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_DispatchCall{DispatchCall: &circusv1.DispatchCall{Call: c, TargetBootId: boot, DispatchedAtUnixMs: dispatchedAt}}})
+}
 func dispatch(t *testing.T, l *wire.Link, boot string, c *circusv1.DeviceCall) {
-	send(t, l, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_DispatchCall{DispatchCall: &circusv1.DispatchCall{Call: c, TargetBootId: boot}}})
+	t.Helper()
+	dispatchAt(t, l, boot, c, freshDispatchAtUnixMs)
 }
 func ack(t *testing.T, l *wire.Link) *circusv1.CallAck {
 	t.Helper()
@@ -154,9 +163,13 @@ func start(t *testing.T, change func(*daemonlink.Options), wrap func(wire.Conn) 
 }
 func (h *harness) handshake(t *testing.T) (*wire.Link, pair, *circusv1.Hello) {
 	t.Helper()
+	return h.handshakeAt(t, h.clk.Now().UnixMilli())
+}
+func (h *harness) handshakeAt(t *testing.T, serverTimeUnixMs int64) (*wire.Link, pair, *circusv1.Hello) {
+	t.Helper()
 	p := recv(t, h.pairs)
 	hello := rawHello(t, p.server)
-	w := &circusv1.Welcome{PrincipalId: "device", NegotiatedVersion: 1}
+	w := &circusv1.Welcome{PrincipalId: "device", NegotiatedVersion: 1, ServerTimeUnixMs: serverTimeUnixMs}
 	o, err := wire.FillWelcome(w, h.opts)
 	if err != nil {
 		t.Fatal(err)
@@ -284,12 +297,127 @@ func TestInvalidIDsAndBootMismatchNeverExecute(t *testing.T) {
 			}
 		}
 	}
+	for _, at := range []int64{0, -1, math.MinInt64} {
+		dispatchAt(t, l, hello.BootId, call("invalid"), at)
+		if a := ack(t, l); a.GetRejection().GetCode() != circusv1.Rejection_CODE_INVALID {
+			t.Fatalf("dispatch time %d: %v", at, a)
+		}
+	}
 	if runs.Load() != 0 {
 		t.Fatalf("executed %d invalid calls", runs.Load())
 	}
 	send(t, l, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: "invalid"}}})
 	if m := receive(t, l); m.GetCallStatus().GetState() != circusv1.CallStatus_STATE_LOST {
 		t.Fatal(m)
+	}
+}
+
+func TestDispatchAgeWelcomeAnchorAndStaleAck(t *testing.T) {
+	var runs atomic.Int32
+	h := start(t, func(o *daemonlink.Options) {
+		o.Dispatcher.MaxDispatchAge = time.Second
+		o.Tools = func(*jobs.Manager) []daemon.Tool {
+			return []daemon.Tool{tool{func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+				runs.Add(1)
+				return result("done"), nil
+			}}}
+		}
+	}, nil)
+	// The server timestamp is deliberately unrelated to the daemon's wall clock.
+	const serverTime = int64(123456)
+	l, _, hello := h.handshakeAt(t, serverTime)
+	dispatchAt(t, l, hello.BootId, call("fresh"), serverTime)
+	if a := ack(t, l); a.GetRejection() != nil {
+		t.Fatalf("fresh dispatch rejected using wall-clock skew: %v", a)
+	}
+	eventually(t, func() bool { return runs.Load() == 1 })
+	h.clk.Advance(time.Second)
+	dispatchAt(t, l, hello.BootId, call("boundary"), serverTime)
+	if a := ack(t, l); a.GetRejection() != nil {
+		t.Fatalf("dispatch exactly at MaxDispatchAge rejected: %v", a)
+	}
+	eventually(t, func() bool { return runs.Load() == 2 })
+	h.clk.Advance(time.Millisecond)
+	dispatchAt(t, l, hello.BootId, call("stale"), serverTime)
+	if a := ack(t, l); a.GetRejection().GetCode() != circusv1.Rejection_CODE_EXPIRED {
+		t.Fatalf("monotonic time after Welcome was not included in age: %v", a)
+	}
+	if runs.Load() != 2 {
+		t.Fatalf("stale call executed; runs=%d", runs.Load())
+	}
+}
+
+func TestDispatchAgeUsesServerTimeDelta(t *testing.T) {
+	h := start(t, func(o *daemonlink.Options) { o.Dispatcher.MaxDispatchAge = time.Second }, nil)
+	const serverTime = int64(123456)
+	l, _, hello := h.handshakeAt(t, serverTime)
+	dispatchAt(t, l, hello.BootId, call("stale"), serverTime-1001)
+	if a := ack(t, l); a.GetRejection().GetCode() != circusv1.Rejection_CODE_EXPIRED {
+		t.Fatalf("stale dispatch: %v", a)
+	}
+}
+
+// Timestamps whose difference or sum exceeds time.Duration count as stale
+// instead of wrapping to an accepted age.
+func TestDispatchAgeOutOfRangeIsStale(t *testing.T) {
+	const maxMs = int64(math.MaxInt64 / time.Millisecond)
+	for _, tc := range []struct {
+		name               string
+		server, dispatched int64
+		advance            time.Duration
+	}{
+		{"difference beyond Duration", math.MaxInt64, 1, 0},
+		{"dispatch far in the future", 1, math.MaxInt64, 0},
+		{"monotonic time pushes the sum beyond Duration", maxMs + 1, 1, time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var runs atomic.Int32
+			h := start(t, func(o *daemonlink.Options) {
+				o.Tools = func(*jobs.Manager) []daemon.Tool {
+					return []daemon.Tool{tool{func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+						runs.Add(1)
+						return result("done"), nil
+					}}}
+				}
+			}, nil)
+			l, _, hello := h.handshakeAt(t, tc.server)
+			h.clk.Advance(tc.advance)
+			dispatchAt(t, l, hello.BootId, call("stale"), tc.dispatched)
+			if a := ack(t, l); a.GetRejection().GetCode() != circusv1.Rejection_CODE_EXPIRED {
+				t.Fatalf("out-of-range age: %v", a)
+			}
+			if runs.Load() != 0 {
+				t.Fatalf("stale call executed; runs=%d", runs.Load())
+			}
+		})
+	}
+}
+
+// Welcome's server time anchors dispatch age; a Welcome without it fails the
+// handshake and the client retries.
+func TestWelcomeWithoutServerTimeFailsHandshake(t *testing.T) {
+	for _, serverTime := range []int64{0, -1} {
+		t.Run(fmt.Sprint(serverTime), func(t *testing.T) {
+			h := start(t, nil, nil)
+			p := recv(t, h.pairs)
+			rawHello(t, p.server)
+			w := &circusv1.Welcome{PrincipalId: "device", NegotiatedVersion: 1, ServerTimeUnixMs: serverTime}
+			if _, err := wire.FillWelcome(w, h.opts); err != nil {
+				t.Fatal(err)
+			}
+			data, err := proto.Marshal(&circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_Welcome{Welcome: w}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = p.server.WriteMessage(context.Background(), data); err != nil {
+				t.Fatal(err)
+			}
+			h.retry(t, 500*time.Millisecond)
+			if s := h.client.Stats(); s.Connections != 0 {
+				t.Fatalf("accepted a Welcome without server time: %+v", s)
+			}
+			h.handshake(t)
+		})
 	}
 }
 
@@ -424,6 +552,34 @@ func TestMachineIDUnavailableFailsBeforeDial(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "machine ID unavailable at startup") || dials.Load() != 0 {
 			t.Fatalf("error=%v dials=%d", err, dials.Load())
 		}
+	}
+}
+
+func TestDispatchAgeAssemblyValidation(t *testing.T) {
+	credentials := credfile.File{Role: credfile.RoleDaemon, ControlPlaneURL: "http://127.0.0.1", PrincipalID: "device", Token: "secret"}
+	for _, tc := range []struct {
+		name                   string
+		maxAge, handshake, ttl time.Duration
+		ok                     bool
+	}{
+		{"default age and handshake at boundary", 0, 0, daemon.DefaultMaxDispatchAge + 10*time.Second, false},
+		{"default age and handshake just below boundary", 0, 0, daemon.DefaultMaxDispatchAge + 10*time.Second + time.Millisecond, true},
+		{"configured values at boundary", time.Hour, 2 * time.Second, time.Hour + 2*time.Second, false},
+		{"configured values just below boundary", time.Hour - time.Millisecond, 2 * time.Second, time.Hour + 2*time.Second, true},
+		{"configured values beyond boundary", 2 * time.Hour, time.Second, time.Hour, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := daemonlink.New(daemonlink.Options{Credentials: credentials, HandshakeTimeout: tc.handshake, Dispatcher: daemon.Options{MaxDispatchAge: tc.maxAge, TombstoneTTL: tc.ttl}, MachineIDSource: func(context.Context) (string, error) { return "machine", nil }})
+			if tc.ok {
+				if err != nil || c == nil {
+					t.Fatalf("valid durations rejected: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "max dispatch age") || !strings.Contains(err.Error(), "tombstone TTL") {
+				t.Fatalf("validation error: %v", err)
+			}
+		})
 	}
 }
 

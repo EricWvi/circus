@@ -237,7 +237,9 @@ type Welcome struct {
 	// Default 256 KiB; bounds Fragment.data and unfragmented envelopes.
 	MaxFragmentBytes  uint32 `protobuf:"varint,6,opt,name=max_fragment_bytes,json=maxFragmentBytes,proto3" json:"max_fragment_bytes,omitempty"`
 	NegotiatedVersion uint32 `protobuf:"varint,7,opt,name=negotiated_version,json=negotiatedVersion,proto3" json:"negotiated_version,omitempty"`
-	// Diagnostic only, never used to derive deadlines.
+	// On the daemon link, the control plane's clock when it wrote Welcome, the
+	// same clock as DispatchCall.dispatched_at_unix_ms. The daemon uses it only
+	// to anchor dispatch age. Informational on the worker link.
 	ServerTimeUnixMs int64 `protobuf:"varint,8,opt,name=server_time_unix_ms,json=serverTimeUnixMs,proto3" json:"server_time_unix_ms,omitempty"`
 	// Agreed reassembly limits in both directions, used by the sender to bound
 	// started fragmented messages. Default count 2, bytes 2 * max_message_bytes.

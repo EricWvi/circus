@@ -248,21 +248,17 @@ func (r *router) commitDispatch(ctx context.Context, tx store.Ops, c store.Call,
 	return c, true, nil
 }
 
-// writeDispatch sends DispatchCall after its commit. It records whether this
-// may be a second delivery (H1). A first send that wire or bus proves was never
-// queued settles the attempt: busy → OVERLOADED, too large → INVALID (L3).
-// Other failures (no route, closed link) keep D; sync or the watchdog recovers.
+// writeDispatch sends DispatchCall after its commit. Every send carries the
+// original committed dispatch time, including a resend. A first send that wire
+// or bus proves was never queued settles the attempt: busy → OVERLOADED, too
+// large → INVALID (L3). Other failures (no route, closed link) keep D; sync or
+// the watchdog recovers.
 func (r *router) writeDispatch(ctx context.Context, c store.Call, route gateway.Connection, resend bool) error {
 	p, ok := r.pending[c.CallID]
 	if !ok {
 		return nil
 	}
-	if !resend && p.sentOn == "" {
-		p.sentOn = route.Target.ConnectionID
-	} else {
-		p.resent = true
-	}
-	err := r.config.Bus.Send(ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_DispatchCall{DispatchCall: &circusv1.DispatchCall{Call: p.call, TargetBootId: c.DispatchedBootID}}})
+	err := r.config.Bus.Send(ctx, route.Target, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_DispatchCall{DispatchCall: &circusv1.DispatchCall{Call: p.call, TargetBootId: c.DispatchedBootID, DispatchedAtUnixMs: c.DispatchedAt}}})
 	if resend {
 		return err
 	}

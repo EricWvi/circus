@@ -497,6 +497,47 @@ func TestSyncReacquiresSlotAfterWait(t *testing.T) {
 	f.finishSync(l)
 }
 
+func TestResendHorizonRecheckedAfterSyncWait(t *testing.T) {
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) {
+		c.MaxSyncRequests = 1
+		c.ResendHorizon = time.Second
+	})
+	l := f.connect("boot")
+	for _, id := range []string{"c0", "c1"} {
+		s, err := f.router.Submit(f.ctx, "u", "desk", call(id))
+		must(t, err)
+		s.Close()
+		receive(t, f.ctx, l)
+	}
+	f.disconnect(l)
+	timers := f.clock.Waiters()
+	l = f.open("boot")
+	if m := receive(t, f.ctx, l); m.GetDispatchCall().GetCall().GetCallId() != "c0" {
+		t.Fatal(m)
+	}
+	// Wait until c1 has passed the resend check before the wait and is parked
+	// on the only sync slot: it armed the DeliveryTimeout alarm and gave up its
+	// operation slot.
+	eventually(t, func() bool { return f.clock.Waiters() > timers && f.router.Stats().Operations == 0 })
+	if s := f.router.Stats(); s.PendingCalls != 2 {
+		t.Fatalf("pending before the horizon: %+v", s)
+	}
+	// Cross the horizon before c0's reply releases the slot; c1 must recover
+	// by query rather than a late resend.
+	f.advance(2 * time.Second)
+	send(t, f.ctx, l, ackRunning("c0"))
+	if m := receive(t, f.ctx, l); m.GetCallQuery().GetCallId() != "c1" {
+		t.Fatalf("expected a query after the sync wait, got %v", m)
+	}
+	// The late replay released c1's content itself; no reply has arrived yet
+	// that would release it.
+	if s := f.router.Stats(); s.PendingCalls != 0 {
+		t.Fatalf("query-only recovery retained request content: %+v", s)
+	}
+	send(t, f.ctx, l, statusRunning("c1"))
+	f.finishSync(l)
+}
+
 // A device's sync never waits for another device's old connection.
 func TestOtherDeviceOldConnectionDoesNotDelaySync(t *testing.T) {
 	h := &holdResults{}

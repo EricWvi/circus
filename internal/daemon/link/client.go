@@ -7,6 +7,12 @@
 // zero or tiny delay cannot cause a tight reconnect loop. BootID never changes
 // on reconnect.
 //
+// A DispatchCall carries its original control-plane commit time. Each Welcome
+// anchors that timestamp to this connection's monotonic clock. The dispatcher
+// deduplicates known IDs first, then refuses an unseen call older than
+// MaxDispatchAge (12 hours by default) without recording it. This bound makes
+// same-boot retransmission safe without assuming a minimum link throughput.
+//
 // Cancellation (F21): Dispatcher.Submit starts rejecting call IDs it has never
 // seen (SHUTTING_DOWN) while resends of known IDs still report their status;
 // the Dispatcher and jobs shut down within ShutdownTimeout-FlushReserve; then
@@ -49,6 +55,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"os"
@@ -119,14 +126,16 @@ type connection struct {
 	link *wire.Link
 	// maxUplink is the largest envelope an idle link accepts; larger results
 	// become placeholders instead of failing the connection on every resync.
-	maxUplink  int
-	ctx        context.Context // ends the reader's Receive
-	cancel     context.CancelFunc
-	abort      chan struct{} // closed once, by fail
-	failOnce   sync.Once
-	failErr    error // written before abort closes
-	readerDone chan struct{}
-	started    time.Time
+	maxUplink       int
+	ctx             context.Context // ends the reader's Receive
+	cancel          context.CancelFunc
+	abort           chan struct{} // closed once, by fail
+	failOnce        sync.Once
+	failErr         error // written before abort closes
+	readerDone      chan struct{}
+	started         time.Time
+	welcomeMono     time.Time
+	welcomeServerMs int64
 }
 
 // fail asks serve to close the connection. It never blocks, so it may run
@@ -183,6 +192,18 @@ func New(o Options) (*Client, error) {
 	}
 	if o.HandshakeTimeout <= 0 {
 		o.HandshakeTimeout = 10 * time.Second
+	}
+	if o.Dispatcher.MaxDispatchAge <= 0 {
+		o.Dispatcher.MaxDispatchAge = daemon.DefaultMaxDispatchAge
+	}
+	if o.Dispatcher.TombstoneTTL <= 0 {
+		o.Dispatcher.TombstoneTTL = daemon.DefaultTombstoneTTL
+	}
+	// This constructor is the assembly point that knows the link handshake
+	// budget and both dispatcher durations. Keep two accepted copies closer
+	// together than the tombstone lifetime, including Welcome transit time.
+	if o.Dispatcher.MaxDispatchAge >= o.Dispatcher.TombstoneTTL-o.HandshakeTimeout {
+		return nil, fmt.Errorf("daemon link: max dispatch age %s plus handshake timeout %s must be less than tombstone TTL %s", o.Dispatcher.MaxDispatchAge, o.HandshakeTimeout, o.Dispatcher.TombstoneTTL)
 	}
 	if o.ShutdownTimeout <= 0 {
 		o.ShutdownTimeout = 16 * time.Second
@@ -411,6 +432,11 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 	if welcome == nil {
 		return nil, errors.New("daemon link: expected Welcome or Reject")
 	}
+	welcomeMono := c.opts.Clock.Now()
+	if welcome.ServerTimeUnixMs <= 0 {
+		// The dispatch-age anchor; without it no age bound can be enforced.
+		return nil, errors.New("daemon link: Welcome has no server time")
+	}
 	if welcome.NegotiatedVersion != 1 {
 		return nil, &terminalError{"daemon link: unsupported negotiated protocol version"}
 	}
@@ -436,13 +462,15 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 	accepted = true
 	runCtx, cancelRun := context.WithCancel(context.Background())
 	a := &connection{
-		link:       l,
-		maxUplink:  min(options.MaxMessageBytes, options.MaxQueuedBytes, max(options.MaxFragmentBytes, options.MaxInFlightBytes)),
-		ctx:        runCtx,
-		cancel:     cancelRun,
-		abort:      make(chan struct{}),
-		readerDone: make(chan struct{}),
-		started:    c.opts.Clock.Now(),
+		link:            l,
+		maxUplink:       min(options.MaxMessageBytes, options.MaxQueuedBytes, max(options.MaxFragmentBytes, options.MaxInFlightBytes)),
+		ctx:             runCtx,
+		cancel:          cancelRun,
+		abort:           make(chan struct{}),
+		readerDone:      make(chan struct{}),
+		started:         welcomeMono,
+		welcomeMono:     welcomeMono,
+		welcomeServerMs: welcome.ServerTimeUnixMs,
 	}
 	// Reset retry state before publishing a, so Stats never reports a connected
 	// link together with the previous retry delay.
@@ -471,9 +499,15 @@ func (c *Client) reader(a *connection) (time.Duration, error) {
 			switch {
 			case p.DispatchCall.GetTargetBootId() != c.bootID:
 				code = circusv1.Rejection_CODE_BOOT_MISMATCH
+			case p.DispatchCall.GetDispatchedAtUnixMs() <= 0:
+				// INVALID settles the call as never executed. That is safe:
+				// every copy of one dispatch attempt carries the same committed
+				// timestamp, so if one copy is refused here, all copies are.
+				code = circusv1.Rejection_CODE_INVALID
 			default:
 				var err error
-				status, err = c.dispatcher.Submit(p.DispatchCall.GetCall())
+				age := dispatchAge(c.opts.Clock.Now().Sub(a.welcomeMono), a.welcomeServerMs, p.DispatchCall.GetDispatchedAtUnixMs())
+				status, err = c.dispatcher.SubmitDispatch(p.DispatchCall.GetCall(), age)
 				switch {
 				case err == nil:
 				case errors.Is(err, daemon.ErrCallMismatch):
@@ -610,4 +644,24 @@ func waitDone(ctx context.Context, done <-chan struct{}) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// maxAgeMs is the largest millisecond count a time.Duration can hold.
+const maxAgeMs = int64(math.MaxInt64 / time.Millisecond)
+
+// dispatchAge is how long ago the control plane committed a dispatch: the
+// monotonic time since Welcome plus Welcome's server time minus the dispatch
+// timestamp. Both timestamps are positive, so their difference cannot wrap.
+// A result outside the range of time.Duration saturates to the maximum, which
+// is always stale.
+func dispatchAge(sinceWelcome time.Duration, welcomeServerMs, dispatchedMs int64) time.Duration {
+	diff := welcomeServerMs - dispatchedMs
+	if diff > maxAgeMs || diff < -maxAgeMs {
+		return math.MaxInt64
+	}
+	d := time.Duration(diff) * time.Millisecond
+	if (sinceWelcome > 0 && d > math.MaxInt64-sinceWelcome) || (sinceWelcome < 0 && d < math.MinInt64-sinceWelcome) {
+		return math.MaxInt64
+	}
+	return sinceWelcome + d
 }

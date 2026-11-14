@@ -59,6 +59,9 @@ message DispatchCall {
   // Required, equal to dispatched_boot_id committed before writing this call.
   // A daemon with a different boot_id must reject without executing.
   string target_boot_id = 2;
+  // Required on the daemon link: the control plane's clock at dispatch commit.
+  // A resend carries the original dispatch time, not the resend time.
+  int64 dispatched_at_unix_ms = 3;
 }
 
 // CallAck reports Submit's immediate outcome, not necessarily before result.

@@ -33,7 +33,9 @@ message Welcome {
   // Default 256 KiB; bounds Fragment.data and unfragmented envelopes.
   uint32 max_fragment_bytes = 6;
   uint32 negotiated_version = 7;
-  // Diagnostic only, never used to derive deadlines.
+  // On the daemon link, the control plane's clock when it wrote Welcome, the
+  // same clock as DispatchCall.dispatched_at_unix_ms. The daemon uses it only
+  // to anchor dispatch age. Informational on the worker link.
   int64 server_time_unix_ms = 8;
   // Agreed reassembly limits in both directions, used by the sender to bound
   // started fragmented messages. Default count 2, bytes 2 * max_message_bytes.
