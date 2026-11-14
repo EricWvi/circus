@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -600,7 +601,7 @@ func TestCallValidationAndNotFound(t *testing.T) {
 	}
 	_ = c.Close()
 	raw := h.rawWorker()
-	h.sendWorker(raw, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: "desk", Call: h.call("bad id!", "true")}}})
+	h.sendWorker(raw, &circusv1.WorkerUplink{RequestId: 1, Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: "desk", Call: h.call("bad id!", "true")}}})
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	if update, err := raw.Receive(ctx); err == nil {
@@ -645,6 +646,9 @@ func TestCLIExitCodes(t *testing.T) {
 	h.run("", 1, "call", "query", accepted.CallId)
 }
 
+// A worker can Query and Cancel a call it is watching on the same
+// connection; the Cancel reply says the intent is recorded, and the watched
+// stream still carries the real terminal update.
 func TestClientCancelWatchedCall(t *testing.T) {
 	h := newHarness(t)
 	c := h.client()
@@ -654,75 +658,144 @@ func TestClientCancelWatchedCall(t *testing.T) {
 	stream := h.submit(c, call)
 	h.trackTool(pidfile)
 	wait(t, 3*time.Second, func() bool { return markerLines(t, marker) == 1 })
-	must(t, c.Cancel(t.Context(), call.CallId))
+	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
+	defer cancel()
+	u, err := c.Query(ctx, call.CallId)
+	must(t, err)
+	if u.GetDispatched() == nil {
+		t.Fatalf("Query of a watched running call: %v", u)
+	}
+	u, err = c.Cancel(ctx, call.CallId)
+	must(t, err)
+	if u.GetDispatched() == nil {
+		t.Fatalf("Cancel of a running call did not answer intent recorded: %v", u)
+	}
 	if update := h.result(stream); update.GetResult() == nil {
 		t.Fatalf("watched stream did not carry the real terminal update: %v", update)
 	}
 }
 
+// At the cap: with 63 of the 64 slots held by watched calls, a Cancel of an
+// unknown ID takes the last slot and answers NOT_FOUND; the slot comes back,
+// so a later real Cancel still fits and answers Cancelled, and the link
+// stays open. The calls stay Accepted because the device is offline within
+// its grace period.
 func TestCancelErrorDoesNotBlockLaterCancel(t *testing.T) {
-	h := newHarness(t)
+	h := newHarness(t, "60s")
+	h.daemon.signal(t, syscall.SIGTERM)
+	must(t, h.daemon.wait(t, 3*time.Second))
+	h.offline()
 	c := h.client()
-	streams := make([]*workerclient.Updates, 4)
-	for i := range 4 {
-		pidfile := filepath.Join(h.dir, "hold-"+strconv.Itoa(i)+".pid")
-		call := h.call("hold"+strconv.Itoa(i), "printf '%s' $$ > "+shellQuote(pidfile)+"; exec sleep 20")
-		streams[i] = h.submit(c, call)
-		h.trackTool(pidfile)
+	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
+	defer cancel()
+	const slots = 64
+	streams := make([]*workerclient.Updates, slots-1)
+	for i := range streams {
+		streams[i] = h.submit(c, h.call("hold"+strconv.Itoa(i), "printf should-not-run"))
+		if u, err := streams[i].Next(ctx); err != nil || u.GetAccepted() == nil {
+			t.Fatalf("watch %d: %v %v", i, u, err)
+		}
 	}
-	must(t, c.Cancel(t.Context(), "no-such-call"))
-	must(t, c.Cancel(t.Context(), "hold0"))
-	var row store.Call
-	wait(t, 2*time.Second, func() bool {
-		var err error
-		row, err = h.st.GetCall(t.Context(), "hold0")
-		return err == nil && row.CancelRequestedAt != 0
-	})
-	if row.CancelRequestedAt == 0 {
-		t.Fatal("real Cancel stalled behind Cancel NOT_FOUND")
+	u, err := c.Cancel(ctx, "no-such-call")
+	must(t, err)
+	if u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_NOT_FOUND {
+		t.Fatalf("Cancel of an unknown call: %v", u)
 	}
-	if update := h.result(streams[0]); update.GetResult() == nil {
-		t.Fatalf("cancelled call did not publish its real result: %v", update)
+	u, err = c.Cancel(ctx, "hold0")
+	must(t, err)
+	if u.GetCancelled() == nil {
+		t.Fatalf("Cancel after a NOT_FOUND at the cap: %v", u)
 	}
-}
-
-func TestClosedStreamGhostKeepsCap(t *testing.T) {
-	h := newHarness(t)
-	c := h.client()
-	streams := make([]*workerclient.Updates, 4)
-	calls := make([]*circusv1.DeviceCall, 4)
-	for i := range 4 {
-		pidfile := filepath.Join(h.dir, "tool-"+strconv.Itoa(i)+".pid")
-		calls[i] = h.call("ghost-"+strconv.Itoa(i), "printf '%s' $$ > "+shellQuote(pidfile)+"; exec sleep 20")
-		streams[i] = h.submit(c, calls[i])
-		h.trackTool(pidfile)
-	}
-	must(t, streams[0].Close())
-	fifth := h.call("fifth", "printf fifth")
-	_, err := c.Submit(t.Context(), "desk", fifth)
-	if err == nil || errors.Is(err, workerclient.ErrSubmitSent) {
-		t.Fatalf("fifth Submit was not refused locally: %v", err)
+	if u = h.result(streams[0]); u.GetCancelled() == nil {
+		t.Fatalf("watched stream after Cancel: %v", u)
 	}
 	select {
 	case <-c.Done():
-		t.Fatal("locally refused fifth Submit closed the link")
+		t.Fatalf("link closed: %v", c.Err())
 	default:
 	}
-	if _, err = h.st.GetCall(t.Context(), fifth.CallId); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("locally refused fifth call reached the server: %v", err)
-	}
-	must(t, c.Cancel(t.Context(), calls[0].CallId))
-	h.state(calls[0].CallId, store.CallCompleted)
-	var fifthStream *workerclient.Updates
-	wait(t, 3*time.Second, func() bool {
-		fifthStream, err = c.Submit(t.Context(), "desk", fifth)
-		if err != nil && errors.Is(err, workerclient.ErrSubmitSent) {
-			t.Fatalf("fifth Submit failed on the live link: %v", err)
+}
+
+// Closing a watched stream sends Unwatch, which frees the slot at once on
+// both sides: with all 64 operation slots held by watched calls, the next
+// Submit is refused locally, and right after one stream is closed it is
+// admitted by the server; the unwatched call is not cancelled. The calls stay
+// Accepted because the device is offline within its grace period.
+func TestUnwatchFreesSlotImmediately(t *testing.T) {
+	h := newHarness(t, "60s")
+	h.daemon.signal(t, syscall.SIGTERM)
+	must(t, h.daemon.wait(t, 3*time.Second))
+	h.offline()
+	c := h.client()
+	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
+	defer cancel()
+	const slots = 64
+	streams := make([]*workerclient.Updates, slots)
+	for i := range streams {
+		streams[i] = h.submit(c, h.call("watch-"+strconv.Itoa(i), "printf should-not-run"))
+		if u, err := streams[i].Next(ctx); err != nil || u.GetAccepted() == nil {
+			t.Fatalf("watch %d: %v %v", i, u, err)
 		}
-		return err == nil
-	})
-	if update := h.result(fifthStream); output(update) != "fifth" {
-		t.Fatalf("ghost did not release after terminal update: %v", update)
+	}
+	over := h.call("over", "printf should-not-run")
+	if _, err := c.Submit(t.Context(), "desk", over); err == nil || errors.Is(err, workerclient.ErrSubmitSent) {
+		t.Fatalf("Submit over the cap was not refused locally: %v", err)
+	}
+	if _, err := h.st.GetCall(t.Context(), over.CallId); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("locally refused call reached the server: %v", err)
+	}
+	must(t, streams[0].Close())
+	if u, err := h.submit(c, over).Next(ctx); err != nil || u.GetAccepted() == nil {
+		t.Fatalf("Submit after Unwatch: %v %v", u, err)
+	}
+	select {
+	case <-c.Done():
+		t.Fatalf("Unwatch then Submit at the cap closed the link: %v", c.Err())
+	default:
+	}
+	row, err := h.st.GetCall(t.Context(), "watch-0")
+	must(t, err)
+	if row.State != store.CallAccepted || row.CancelRequestedAt != 0 {
+		t.Fatalf("Unwatch ended or cancelled the call: %+v", row)
+	}
+}
+
+// Cancel's single reply for a finished, an accepted (device offline) and an
+// unknown call.
+func TestCancelReplies(t *testing.T) {
+	h := newHarness(t)
+	c := h.client()
+	finished := h.call("finished", "printf done")
+	if output(h.result(h.submit(c, finished))) != "done" {
+		t.Fatal("finished call did not complete")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
+	defer cancel()
+	u, err := c.Cancel(ctx, finished.CallId)
+	must(t, err)
+	if output(u) != "done" {
+		t.Fatalf("Cancel of a finished call did not answer its outcome: %v", u)
+	}
+	h.daemon.signal(t, syscall.SIGTERM)
+	must(t, h.daemon.wait(t, 3*time.Second))
+	h.offline()
+	accepted := h.call("accepted", "printf should-not-run")
+	stream := h.submit(c, accepted)
+	if u, err = stream.Next(ctx); err != nil || u.GetAccepted() == nil {
+		t.Fatalf("offline Submit: %v %v", u, err)
+	}
+	u, err = c.Cancel(ctx, accepted.CallId)
+	must(t, err)
+	if u.GetCancelled() == nil {
+		t.Fatalf("Cancel before dispatch: %v", u)
+	}
+	if u = h.result(stream); u.GetCancelled() == nil {
+		t.Fatalf("watched stream after Cancel: %v", u)
+	}
+	u, err = c.Cancel(ctx, "never-submitted")
+	must(t, err)
+	if u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_NOT_FOUND {
+		t.Fatalf("Cancel of an unknown call: %v", u)
 	}
 }
 
@@ -773,9 +846,9 @@ func TestWorkerCloseSlotsAndCancelOrdering(t *testing.T) {
 	if output(final) != "close-survived" {
 		t.Fatal(final)
 	}
-	// More than four terminal calls on one connection prove terminal updates
-	// release server operation slots, not just local client streams.
-	for i := range 6 {
+	// More terminal calls on one connection than its 64 slots prove terminal
+	// updates release server operation slots, not just local client streams.
+	for i := range 66 {
 		id := "slot-" + strconv.Itoa(i)
 		u := h.result(h.submit(c, h.call(id, "printf "+id)))
 		if output(u) != id {
@@ -788,20 +861,119 @@ func TestWorkerCloseSlotsAndCancelOrdering(t *testing.T) {
 	h.offline()
 	raw := h.rawWorker()
 	accepted := h.call("cancel-ordered", "printf should-not-run")
-	h.sendWorker(raw, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: "desk", Call: accepted}}})
-	h.sendWorker(raw, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: accepted.CallId}}})
+	h.sendWorker(raw, &circusv1.WorkerUplink{RequestId: 1, Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: "desk", Call: accepted}}})
+	h.sendWorker(raw, &circusv1.WorkerUplink{RequestId: 2, Payload: &circusv1.WorkerUplink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: accepted.CallId}}})
 	cancelCtx, cancelDone := context.WithTimeout(t.Context(), testwait.Timeout)
 	defer cancelDone()
-	for {
+	// Both the Cancel reply (request 2) and the watched Submit's terminal
+	// update (request 1) are Cancelled; a Cancel that overtook its Submit
+	// would answer NOT_FOUND.
+	for done := map[uint64]bool{}; !done[1] || !done[2]; {
 		msg, err := raw.Receive(cancelCtx)
 		must(t, err)
-		u := msg.(*circusv1.WorkerDownlink).GetCallUpdate()
-		if u.GetCancelled() != nil {
-			break
+		d := msg.(*circusv1.WorkerDownlink)
+		u := d.GetCallUpdate()
+		switch {
+		case u.GetRejected() != nil:
+			t.Fatalf("Cancel overtook Submit: request %d %v", d.GetRequestId(), u)
+		case u.GetCancelled() != nil:
+			done[d.GetRequestId()] = true
+		case d.GetRequestId() != 1:
+			t.Fatalf("Cancel reply is not Cancelled: request %d %v", d.GetRequestId(), u)
 		}
-		if u.GetRejected() != nil {
-			t.Fatalf("Cancel overtook Submit: %v", u)
+	}
+}
+
+// freezingProxy forwards one TCP connection to addr until freeze, after which
+// it stops moving bytes without closing either socket: the server sees a
+// half-open connection that only its heartbeat timeout can end.
+type freezingProxy struct {
+	addr   string
+	frozen chan struct{}
+	ln     net.Listener
+}
+
+func newFreezingProxy(t *testing.T, addr string) *freezingProxy {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	must(t, err)
+	p := &freezingProxy{addr: addr, frozen: make(chan struct{}), ln: ln}
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		in, err := ln.Accept()
+		if err != nil {
+			return
 		}
+		defer in.Close()
+		out, err := net.Dial("tcp", addr)
+		if err != nil {
+			return
+		}
+		defer out.Close()
+		pipe := func(dst, src net.Conn) {
+			defer wg.Done()
+			buf := make([]byte, 32<<10)
+			for {
+				n, err := src.Read(buf)
+				select {
+				case <-p.frozen:
+					<-done // hold both sockets open, move nothing
+					return
+				default:
+				}
+				if n > 0 {
+					if _, werr := dst.Write(buf[:n]); werr != nil {
+						return
+					}
+				}
+				if err != nil {
+					return
+				}
+			}
+		}
+		wg.Add(2)
+		go pipe(out, in)
+		go pipe(in, out)
+		<-done
+	}()
+	t.Cleanup(func() { close(done); _ = ln.Close(); wg.Wait() })
+	return p
+}
+
+// A worker that restarts while its old connection is still half-open, with
+// a CLI also connected under the same credential, is admitted at once: the
+// per-credential (4) and total (8) caps leave room, so restarts and CLIs no
+// longer lock each other out.
+func TestWorkerRestartWhileHalfOpen(t *testing.T) {
+	h := newHarness(t)
+	proxy := newFreezingProxy(t, h.addr)
+	old := h.worker
+	old.ControlPlaneURL = "http://" + proxy.ln.Addr().String()
+	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
+	defer cancel()
+	stale, err := workerclient.Dial(ctx, workerclient.Options{Credentials: old})
+	must(t, err)
+	defer stale.Close()
+	close(proxy.frozen) // the old worker process "dies" without a FIN
+	marker := filepath.Join(h.dir, "marker")
+	pidfile := filepath.Join(h.dir, "tool.pid")
+	cli := h.start(nil, "", "call", "--device", "desk", "--call-id", "cli-running", "--cwd", h.dir, "bash", "printf 'run\n' >> "+shellQuote(marker)+"; printf '%s' $$ > "+shellQuote(pidfile)+"; exec sleep 20")
+	h.trackTool(pidfile)
+	wait(t, 3*time.Second, func() bool { return markerLines(t, marker) == 1 })
+	restarted := h.client() // well within the 6 s heartbeat timeout
+	if u := h.result(h.submit(restarted, h.call("after-restart", "printf restarted"))); output(u) != "restarted" {
+		t.Fatalf("restarted worker: %v", u)
+	}
+	select {
+	case <-stale.Done():
+		t.Fatal("the frozen connection ended before the test finished; the half-open window was not exercised")
+	default:
+	}
+	if cli.exited() {
+		t.Fatalf("CLI ended early: %s", cli.stderr.String())
 	}
 }
 

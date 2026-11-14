@@ -328,8 +328,11 @@ func (r *router) Cancel(ctx context.Context, user, id string) error {
 		return err
 	}
 	// An unready route's sync replays recorded intent after its resend/query.
+	// The intent is durable now: a delivery failure (no route, busy pool,
+	// full queue) is recovered by that sync or the call watchdog, so it is
+	// not the caller's error.
 	if route, ok := r.readyRoute(op.ctx, c.DeviceID, c.DispatchedBootID); ok {
-		return r.sendCancel(op.ctx, route, id)
+		logSendFailure("cancel", id, r.sendCancel(op.ctx, route, id))
 	}
 	return nil
 }
@@ -340,6 +343,32 @@ func (r *router) Query(ctx context.Context, user, id string) (*circusv1.CallUpda
 		return nil, err
 	}
 	defer op.finish()
+	return r.queryLocked(op, user, id)
+}
+
+func (r *router) QueryOnce(ctx context.Context, user, id string) (*Subscription, error) {
+	op, err := r.enter(ctx, false, "query")
+	if err != nil {
+		return nil, err
+	}
+	defer op.finish()
+	u, err := r.queryLocked(op, user, id)
+	if err != nil {
+		return nil, err
+	}
+	// Like attach for a completed duplicate Submit, the answer is handed out
+	// through a subscription; this one takes only the answer.
+	s, err := r.newSub(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	s.single = true
+	owned, cost, err := r.own(u)
+	r.enqueue(s, owned, cost, err)
+	return s, nil
+}
+
+func (r *router) queryLocked(op *operation, user, id string) (*circusv1.CallUpdate, error) {
 	if !identifier.Valid(id, false) {
 		return nil, store.ErrInvalid
 	}

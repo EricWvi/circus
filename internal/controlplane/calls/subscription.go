@@ -140,7 +140,7 @@ func (r *router) enqueue(s *Subscription, owned *circusv1.CallUpdate, cost int64
 	s.queue = append(s.queue, queuedUpdate{update: owned, cost: cost})
 	s.bytes += cost
 	r.bufferedBytes += cost
-	s.terminal = wire.Terminal(owned)
+	s.terminal = wire.Terminal(owned) || s.single
 	s.signal()
 }
 
@@ -209,6 +209,30 @@ func (s *Subscription) next(ctx context.Context) (*circusv1.CallUpdate, error) {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case <-changed:
+		}
+	}
+}
+func (s *Subscription) wait(ctx context.Context) (int64, error) {
+	if s == nil || s.owner == nil {
+		return 0, nil // Next reports ErrClosed at once
+	}
+	r := s.owner
+	for {
+		r.mu.Lock()
+		var cost int64
+		if len(s.queue) > 0 {
+			cost = s.queue[0].cost
+		}
+		ready := len(s.queue) > 0 || s.err != nil || s.terminal
+		changed := s.changed
+		r.mu.Unlock()
+		if ready {
+			return cost, nil
+		}
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
 		case <-changed:
 		}
 	}

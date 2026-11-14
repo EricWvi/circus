@@ -33,7 +33,9 @@ func classify(m proto.Message) (Class, string, error) {
 	switch name {
 	case "heartbeat", "go_away", "call_ack":
 		return Control, "", nil
-	case "list_jobs", "stop_session_jobs":
+	case "list_jobs", "stop_session_jobs", "unwatch":
+		// Unwatch frees a slot the client may reuse at once, so no later
+		// operation may overtake it.
 		return Barrier, "", nil
 	case "job_event":
 		if e, ok := m.(*circusv1.WorkerDownlink); ok {

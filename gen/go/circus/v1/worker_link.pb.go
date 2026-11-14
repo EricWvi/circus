@@ -34,9 +34,9 @@ const (
 	// The daemon refused during shutdown, without executing on that boot.
 	// Terminal rejection: a retry requires a new call_id.
 	CallUpdate_Rejected_CODE_DEVICE_SHUTTING_DOWN CallUpdate_Rejected_Code = 6
-	// No call with this id is visible to this user. Answers only this query;
-	// it says nothing about a submission of the same id still in flight elsewhere,
-	// and is not an outcome of any call.
+	// No call with this id is visible to this user. Answers only this
+	// Query or Cancel; it says nothing about a submission of the same id
+	// still in flight elsewhere, and is not an outcome of any call.
 	CallUpdate_Rejected_CODE_NOT_FOUND CallUpdate_Rejected_Code = 7
 )
 
@@ -88,13 +88,23 @@ func (x CallUpdate_Rejected_Code) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CallUpdate_Rejected_Code.Descriptor instead.
 func (CallUpdate_Rejected_Code) EnumDescriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 5, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 5, 0}
 }
 
 // WorkerUplink is the call-only worker-to-control-plane envelope.
 // Hello must be first; no business messages before Welcome. Session and lease
 // messages belong to M3. Frames are FIFO; fragment/control scheduling follows
 // Fragment's rules. A submission must precede its same-call cancellation.
+//
+// Every SubmitCall, CallQuery, CancelCall and Unwatch carries a request_id.
+// Submit, Query and Cancel each open one operation under that ID; Unwatch
+// names an open operation. The ID is chosen by the client, must be nonzero
+// and must never be reused on the connection (a per-connection counter
+// starting at 1 satisfies this): after Unwatch a late update of the old
+// operation would be routed to the new one. A zero ID, an ID of an open
+// operation on Submit/Query/Cancel, or an operation beyond the
+// per-connection cap closes the link. Hello, Heartbeat and Fragment frames
+// carry 0.
 type WorkerUplink struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -105,7 +115,10 @@ type WorkerUplink struct {
 	//	*WorkerUplink_SubmitCall
 	//	*WorkerUplink_CancelCall
 	//	*WorkerUplink_CallQuery
-	Payload       isWorkerUplink_Payload `protobuf_oneof:"payload"`
+	//	*WorkerUplink_Unwatch
+	Payload isWorkerUplink_Payload `protobuf_oneof:"payload"`
+	// Nonzero on every business payload; 0 on Hello, Heartbeat and Fragment.
+	RequestId     uint64 `protobuf:"varint,20,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -201,6 +214,22 @@ func (x *WorkerUplink) GetCallQuery() *CallQuery {
 	return nil
 }
 
+func (x *WorkerUplink) GetUnwatch() *Unwatch {
+	if x != nil {
+		if x, ok := x.Payload.(*WorkerUplink_Unwatch); ok {
+			return x.Unwatch
+		}
+	}
+	return nil
+}
+
+func (x *WorkerUplink) GetRequestId() uint64 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
 type isWorkerUplink_Payload interface {
 	isWorkerUplink_Payload()
 }
@@ -218,17 +247,32 @@ type WorkerUplink_Fragment struct {
 }
 
 type WorkerUplink_SubmitCall struct {
+	// Opens a Submit operation: every CallUpdate for this call, including the
+	// terminal one, carries its request_id. It ends at the terminal update or
+	// at Unwatch.
 	SubmitCall *SubmitCall `protobuf:"bytes,10,opt,name=submit_call,json=submitCall,proto3,oneof"`
 }
 
 type WorkerUplink_CancelCall struct {
-	// Cancellation never has a direct reply, including for unknown or invalid
-	// IDs. A watched subscription or subsequent CallQuery carries the outcome.
+	// Opens a Cancel operation, answered by exactly one CallUpdate: the call's
+	// state read after the cancellation intent was recorded. Cancelled means
+	// cancelled before dispatch; Dispatched or Unknown mean the intent is
+	// recorded and the daemon's result decides; a terminal outcome means the
+	// call had already finished; Rejected NOT_FOUND or INVALID mean no such
+	// call is visible. The reply ends the operation, never the call.
 	CancelCall *CancelCall `protobuf:"bytes,11,opt,name=cancel_call,json=cancelCall,proto3,oneof"`
 }
 
 type WorkerUplink_CallQuery struct {
+	// Opens a Query operation, answered by exactly one CallUpdate (possibly
+	// nonterminal).
 	CallQuery *CallQuery `protobuf:"bytes,12,opt,name=call_query,json=callQuery,proto3,oneof"`
+}
+
+type WorkerUplink_Unwatch struct {
+	// Ends the open operation named by request_id without a reply. It never
+	// cancels the call. Unknown or finished IDs are a no-op.
+	Unwatch *Unwatch `protobuf:"bytes,13,opt,name=unwatch,proto3,oneof"`
 }
 
 func (*WorkerUplink_Hello) isWorkerUplink_Payload() {}
@@ -243,6 +287,8 @@ func (*WorkerUplink_CancelCall) isWorkerUplink_Payload() {}
 
 func (*WorkerUplink_CallQuery) isWorkerUplink_Payload() {}
 
+func (*WorkerUplink_Unwatch) isWorkerUplink_Payload() {}
+
 // WorkerDownlink contains only the call subset.
 type WorkerDownlink struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -254,7 +300,10 @@ type WorkerDownlink struct {
 	//	*WorkerDownlink_Fragment
 	//	*WorkerDownlink_CallUpdate
 	//	*WorkerDownlink_JobEvent
-	Payload       isWorkerDownlink_Payload `protobuf_oneof:"payload"`
+	Payload isWorkerDownlink_Payload `protobuf_oneof:"payload"`
+	// On call_update: the request_id of the operation it answers. 0 otherwise.
+	// A client drops updates for request IDs it no longer has open.
+	RequestId     uint64 `protobuf:"varint,20,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -350,6 +399,13 @@ func (x *WorkerDownlink) GetJobEvent() *WorkerJobEvent {
 	return nil
 }
 
+func (x *WorkerDownlink) GetRequestId() uint64 {
+	if x != nil {
+		return x.RequestId
+	}
+	return 0
+}
+
 type isWorkerDownlink_Payload interface {
 	isWorkerDownlink_Payload()
 }
@@ -390,6 +446,46 @@ func (*WorkerDownlink_CallUpdate) isWorkerDownlink_Payload() {}
 
 func (*WorkerDownlink_JobEvent) isWorkerDownlink_Payload() {}
 
+// Unwatch stops delivery for the operation named by the envelope's
+// request_id and frees its slot immediately. It has no reply and never
+// cancels the call; updates already in flight may still arrive and are
+// dropped by the client.
+type Unwatch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Unwatch) Reset() {
+	*x = Unwatch{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Unwatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Unwatch) ProtoMessage() {}
+
+func (x *Unwatch) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Unwatch.ProtoReflect.Descriptor instead.
+func (*Unwatch) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{2}
+}
+
 // WorkerJobEvent is reserved for the worker milestone (M3): the control plane
 // does not send it yet. It supplies the global identity of a daemon job.
 // Device is the user-unique device name, boot_id is the daemon's process
@@ -406,7 +502,7 @@ type WorkerJobEvent struct {
 
 func (x *WorkerJobEvent) Reset() {
 	*x = WorkerJobEvent{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[2]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -418,7 +514,7 @@ func (x *WorkerJobEvent) String() string {
 func (*WorkerJobEvent) ProtoMessage() {}
 
 func (x *WorkerJobEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[2]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -431,7 +527,7 @@ func (x *WorkerJobEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerJobEvent.ProtoReflect.Descriptor instead.
 func (*WorkerJobEvent) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{2}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *WorkerJobEvent) GetDevice() string {
@@ -466,7 +562,7 @@ type SubmitCall struct {
 
 func (x *SubmitCall) Reset() {
 	*x = SubmitCall{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[3]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -478,7 +574,7 @@ func (x *SubmitCall) String() string {
 func (*SubmitCall) ProtoMessage() {}
 
 func (x *SubmitCall) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[3]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -491,7 +587,7 @@ func (x *SubmitCall) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitCall.ProtoReflect.Descriptor instead.
 func (*SubmitCall) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{3}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SubmitCall) GetDevice() string {
@@ -510,7 +606,7 @@ func (x *SubmitCall) GetCall() *DeviceCall {
 
 // CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
 // and cancelled are terminal call outcomes, except that Rejected NOT_FOUND only
-// answers its query operation. Unknown is NOT terminal: a reconnect of the
+// answers its Query or Cancel operation. Unknown is NOT terminal: a reconnect of the
 // same daemon boot can still yield a result; CallQuery can retrieve the latest state.
 type CallUpdate struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -533,7 +629,7 @@ type CallUpdate struct {
 
 func (x *CallUpdate) Reset() {
 	*x = CallUpdate{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[4]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +641,7 @@ func (x *CallUpdate) String() string {
 func (*CallUpdate) ProtoMessage() {}
 
 func (x *CallUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[4]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +654,7 @@ func (x *CallUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate.ProtoReflect.Descriptor instead.
 func (*CallUpdate) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CallUpdate) GetCallId() string {
@@ -708,7 +804,7 @@ type CallUpdate_Accepted struct {
 
 func (x *CallUpdate_Accepted) Reset() {
 	*x = CallUpdate_Accepted{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[5]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -720,7 +816,7 @@ func (x *CallUpdate_Accepted) String() string {
 func (*CallUpdate_Accepted) ProtoMessage() {}
 
 func (x *CallUpdate_Accepted) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[5]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -733,7 +829,7 @@ func (x *CallUpdate_Accepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Accepted.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Accepted) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 0}
 }
 
 // Dispatched means dispatch metadata was committed before sending. It also
@@ -747,7 +843,7 @@ type CallUpdate_Dispatched struct {
 
 func (x *CallUpdate_Dispatched) Reset() {
 	*x = CallUpdate_Dispatched{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[6]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -759,7 +855,7 @@ func (x *CallUpdate_Dispatched) String() string {
 func (*CallUpdate_Dispatched) ProtoMessage() {}
 
 func (x *CallUpdate_Dispatched) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[6]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -772,7 +868,7 @@ func (x *CallUpdate_Dispatched) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Dispatched.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Dispatched) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 1}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 1}
 }
 
 // DeviceOffline reports the addressed device offline, with alternatives.
@@ -785,7 +881,7 @@ type CallUpdate_DeviceOffline struct {
 
 func (x *CallUpdate_DeviceOffline) Reset() {
 	*x = CallUpdate_DeviceOffline{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[7]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -797,7 +893,7 @@ func (x *CallUpdate_DeviceOffline) String() string {
 func (*CallUpdate_DeviceOffline) ProtoMessage() {}
 
 func (x *CallUpdate_DeviceOffline) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[7]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -810,7 +906,7 @@ func (x *CallUpdate_DeviceOffline) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_DeviceOffline.ProtoReflect.Descriptor instead.
 func (*CallUpdate_DeviceOffline) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 2}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 2}
 }
 
 func (x *CallUpdate_DeviceOffline) GetOnlineDevices() []string {
@@ -830,7 +926,7 @@ type CallUpdate_Unknown struct {
 
 func (x *CallUpdate_Unknown) Reset() {
 	*x = CallUpdate_Unknown{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[8]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -842,7 +938,7 @@ func (x *CallUpdate_Unknown) String() string {
 func (*CallUpdate_Unknown) ProtoMessage() {}
 
 func (x *CallUpdate_Unknown) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[8]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -855,7 +951,7 @@ func (x *CallUpdate_Unknown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Unknown.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Unknown) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 3}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 3}
 }
 
 func (x *CallUpdate_Unknown) GetReason() string {
@@ -875,7 +971,7 @@ type CallUpdate_Lost struct {
 
 func (x *CallUpdate_Lost) Reset() {
 	*x = CallUpdate_Lost{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[9]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -887,7 +983,7 @@ func (x *CallUpdate_Lost) String() string {
 func (*CallUpdate_Lost) ProtoMessage() {}
 
 func (x *CallUpdate_Lost) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[9]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -900,7 +996,7 @@ func (x *CallUpdate_Lost) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Lost.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Lost) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 4}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 4}
 }
 
 func (x *CallUpdate_Lost) GetReason() string {
@@ -921,7 +1017,7 @@ type CallUpdate_Rejected struct {
 
 func (x *CallUpdate_Rejected) Reset() {
 	*x = CallUpdate_Rejected{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[10]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -933,7 +1029,7 @@ func (x *CallUpdate_Rejected) String() string {
 func (*CallUpdate_Rejected) ProtoMessage() {}
 
 func (x *CallUpdate_Rejected) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[10]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -946,7 +1042,7 @@ func (x *CallUpdate_Rejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Rejected.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Rejected) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 5}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 5}
 }
 
 func (x *CallUpdate_Rejected) GetCode() CallUpdate_Rejected_Code {
@@ -973,7 +1069,7 @@ type CallUpdate_Cancelled struct {
 
 func (x *CallUpdate_Cancelled) Reset() {
 	*x = CallUpdate_Cancelled{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[11]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -985,7 +1081,7 @@ func (x *CallUpdate_Cancelled) String() string {
 func (*CallUpdate_Cancelled) ProtoMessage() {}
 
 func (x *CallUpdate_Cancelled) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[11]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -998,14 +1094,14 @@ func (x *CallUpdate_Cancelled) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Cancelled.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Cancelled) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 6}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 6}
 }
 
 var File_circus_v1_worker_link_proto protoreflect.FileDescriptor
 
 const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcircus/v1/worker_link.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\"\xd7\x02\n" +
+	"\x1bcircus/v1/worker_link.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\"\xa6\x03\n" +
 	"\fWorkerUplink\x12(\n" +
 	"\x05hello\x18\x01 \x01(\v2\x10.circus.v1.HelloH\x00R\x05hello\x124\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x14.circus.v1.HeartbeatH\x00R\theartbeat\x121\n" +
@@ -1016,8 +1112,11 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\vcancel_call\x18\v \x01(\v2\x15.circus.v1.CancelCallH\x00R\n" +
 	"cancelCall\x125\n" +
 	"\n" +
-	"call_query\x18\f \x01(\v2\x14.circus.v1.CallQueryH\x00R\tcallQueryB\t\n" +
-	"\apayload\"\xd5\x02\n" +
+	"call_query\x18\f \x01(\v2\x14.circus.v1.CallQueryH\x00R\tcallQuery\x12.\n" +
+	"\aunwatch\x18\r \x01(\v2\x12.circus.v1.UnwatchH\x00R\aunwatch\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x14 \x01(\x04R\trequestIdB\t\n" +
+	"\apayload\"\xf4\x02\n" +
 	"\x0eWorkerDownlink\x12.\n" +
 	"\awelcome\x18\x01 \x01(\v2\x12.circus.v1.WelcomeH\x00R\awelcome\x12+\n" +
 	"\x06reject\x18\x02 \x01(\v2\x11.circus.v1.RejectH\x00R\x06reject\x124\n" +
@@ -1026,8 +1125,11 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\vcall_update\x18\n" +
 	" \x01(\v2\x15.circus.v1.CallUpdateH\x00R\n" +
 	"callUpdate\x128\n" +
-	"\tjob_event\x18\v \x01(\v2\x19.circus.v1.WorkerJobEventH\x00R\bjobEventB\t\n" +
-	"\apayload\"l\n" +
+	"\tjob_event\x18\v \x01(\v2\x19.circus.v1.WorkerJobEventH\x00R\bjobEvent\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x14 \x01(\x04R\trequestIdB\t\n" +
+	"\apayload\"\t\n" +
+	"\aUnwatch\"l\n" +
 	"\x0eWorkerJobEvent\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x17\n" +
 	"\aboot_id\x18\x02 \x01(\tR\x06bootId\x12)\n" +
@@ -1087,61 +1189,63 @@ func file_circus_v1_worker_link_proto_rawDescGZIP() []byte {
 }
 
 var file_circus_v1_worker_link_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_circus_v1_worker_link_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_circus_v1_worker_link_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_circus_v1_worker_link_proto_goTypes = []any{
 	(CallUpdate_Rejected_Code)(0),    // 0: circus.v1.CallUpdate.Rejected.Code
 	(*WorkerUplink)(nil),             // 1: circus.v1.WorkerUplink
 	(*WorkerDownlink)(nil),           // 2: circus.v1.WorkerDownlink
-	(*WorkerJobEvent)(nil),           // 3: circus.v1.WorkerJobEvent
-	(*SubmitCall)(nil),               // 4: circus.v1.SubmitCall
-	(*CallUpdate)(nil),               // 5: circus.v1.CallUpdate
-	(*CallUpdate_Accepted)(nil),      // 6: circus.v1.CallUpdate.Accepted
-	(*CallUpdate_Dispatched)(nil),    // 7: circus.v1.CallUpdate.Dispatched
-	(*CallUpdate_DeviceOffline)(nil), // 8: circus.v1.CallUpdate.DeviceOffline
-	(*CallUpdate_Unknown)(nil),       // 9: circus.v1.CallUpdate.Unknown
-	(*CallUpdate_Lost)(nil),          // 10: circus.v1.CallUpdate.Lost
-	(*CallUpdate_Rejected)(nil),      // 11: circus.v1.CallUpdate.Rejected
-	(*CallUpdate_Cancelled)(nil),     // 12: circus.v1.CallUpdate.Cancelled
-	(*Hello)(nil),                    // 13: circus.v1.Hello
-	(*Heartbeat)(nil),                // 14: circus.v1.Heartbeat
-	(*Fragment)(nil),                 // 15: circus.v1.Fragment
-	(*CancelCall)(nil),               // 16: circus.v1.CancelCall
-	(*CallQuery)(nil),                // 17: circus.v1.CallQuery
-	(*Welcome)(nil),                  // 18: circus.v1.Welcome
-	(*Reject)(nil),                   // 19: circus.v1.Reject
-	(*JobEvent)(nil),                 // 20: circus.v1.JobEvent
-	(*DeviceCall)(nil),               // 21: circus.v1.DeviceCall
-	(*DeviceResult)(nil),             // 22: circus.v1.DeviceResult
+	(*Unwatch)(nil),                  // 3: circus.v1.Unwatch
+	(*WorkerJobEvent)(nil),           // 4: circus.v1.WorkerJobEvent
+	(*SubmitCall)(nil),               // 5: circus.v1.SubmitCall
+	(*CallUpdate)(nil),               // 6: circus.v1.CallUpdate
+	(*CallUpdate_Accepted)(nil),      // 7: circus.v1.CallUpdate.Accepted
+	(*CallUpdate_Dispatched)(nil),    // 8: circus.v1.CallUpdate.Dispatched
+	(*CallUpdate_DeviceOffline)(nil), // 9: circus.v1.CallUpdate.DeviceOffline
+	(*CallUpdate_Unknown)(nil),       // 10: circus.v1.CallUpdate.Unknown
+	(*CallUpdate_Lost)(nil),          // 11: circus.v1.CallUpdate.Lost
+	(*CallUpdate_Rejected)(nil),      // 12: circus.v1.CallUpdate.Rejected
+	(*CallUpdate_Cancelled)(nil),     // 13: circus.v1.CallUpdate.Cancelled
+	(*Hello)(nil),                    // 14: circus.v1.Hello
+	(*Heartbeat)(nil),                // 15: circus.v1.Heartbeat
+	(*Fragment)(nil),                 // 16: circus.v1.Fragment
+	(*CancelCall)(nil),               // 17: circus.v1.CancelCall
+	(*CallQuery)(nil),                // 18: circus.v1.CallQuery
+	(*Welcome)(nil),                  // 19: circus.v1.Welcome
+	(*Reject)(nil),                   // 20: circus.v1.Reject
+	(*JobEvent)(nil),                 // 21: circus.v1.JobEvent
+	(*DeviceCall)(nil),               // 22: circus.v1.DeviceCall
+	(*DeviceResult)(nil),             // 23: circus.v1.DeviceResult
 }
 var file_circus_v1_worker_link_proto_depIdxs = []int32{
-	13, // 0: circus.v1.WorkerUplink.hello:type_name -> circus.v1.Hello
-	14, // 1: circus.v1.WorkerUplink.heartbeat:type_name -> circus.v1.Heartbeat
-	15, // 2: circus.v1.WorkerUplink.fragment:type_name -> circus.v1.Fragment
-	4,  // 3: circus.v1.WorkerUplink.submit_call:type_name -> circus.v1.SubmitCall
-	16, // 4: circus.v1.WorkerUplink.cancel_call:type_name -> circus.v1.CancelCall
-	17, // 5: circus.v1.WorkerUplink.call_query:type_name -> circus.v1.CallQuery
-	18, // 6: circus.v1.WorkerDownlink.welcome:type_name -> circus.v1.Welcome
-	19, // 7: circus.v1.WorkerDownlink.reject:type_name -> circus.v1.Reject
-	14, // 8: circus.v1.WorkerDownlink.heartbeat:type_name -> circus.v1.Heartbeat
-	15, // 9: circus.v1.WorkerDownlink.fragment:type_name -> circus.v1.Fragment
-	5,  // 10: circus.v1.WorkerDownlink.call_update:type_name -> circus.v1.CallUpdate
-	3,  // 11: circus.v1.WorkerDownlink.job_event:type_name -> circus.v1.WorkerJobEvent
-	20, // 12: circus.v1.WorkerJobEvent.event:type_name -> circus.v1.JobEvent
-	21, // 13: circus.v1.SubmitCall.call:type_name -> circus.v1.DeviceCall
-	6,  // 14: circus.v1.CallUpdate.accepted:type_name -> circus.v1.CallUpdate.Accepted
-	7,  // 15: circus.v1.CallUpdate.dispatched:type_name -> circus.v1.CallUpdate.Dispatched
-	22, // 16: circus.v1.CallUpdate.result:type_name -> circus.v1.DeviceResult
-	8,  // 17: circus.v1.CallUpdate.offline:type_name -> circus.v1.CallUpdate.DeviceOffline
-	9,  // 18: circus.v1.CallUpdate.unknown:type_name -> circus.v1.CallUpdate.Unknown
-	10, // 19: circus.v1.CallUpdate.lost:type_name -> circus.v1.CallUpdate.Lost
-	11, // 20: circus.v1.CallUpdate.rejected:type_name -> circus.v1.CallUpdate.Rejected
-	12, // 21: circus.v1.CallUpdate.cancelled:type_name -> circus.v1.CallUpdate.Cancelled
-	0,  // 22: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	14, // 0: circus.v1.WorkerUplink.hello:type_name -> circus.v1.Hello
+	15, // 1: circus.v1.WorkerUplink.heartbeat:type_name -> circus.v1.Heartbeat
+	16, // 2: circus.v1.WorkerUplink.fragment:type_name -> circus.v1.Fragment
+	5,  // 3: circus.v1.WorkerUplink.submit_call:type_name -> circus.v1.SubmitCall
+	17, // 4: circus.v1.WorkerUplink.cancel_call:type_name -> circus.v1.CancelCall
+	18, // 5: circus.v1.WorkerUplink.call_query:type_name -> circus.v1.CallQuery
+	3,  // 6: circus.v1.WorkerUplink.unwatch:type_name -> circus.v1.Unwatch
+	19, // 7: circus.v1.WorkerDownlink.welcome:type_name -> circus.v1.Welcome
+	20, // 8: circus.v1.WorkerDownlink.reject:type_name -> circus.v1.Reject
+	15, // 9: circus.v1.WorkerDownlink.heartbeat:type_name -> circus.v1.Heartbeat
+	16, // 10: circus.v1.WorkerDownlink.fragment:type_name -> circus.v1.Fragment
+	6,  // 11: circus.v1.WorkerDownlink.call_update:type_name -> circus.v1.CallUpdate
+	4,  // 12: circus.v1.WorkerDownlink.job_event:type_name -> circus.v1.WorkerJobEvent
+	21, // 13: circus.v1.WorkerJobEvent.event:type_name -> circus.v1.JobEvent
+	22, // 14: circus.v1.SubmitCall.call:type_name -> circus.v1.DeviceCall
+	7,  // 15: circus.v1.CallUpdate.accepted:type_name -> circus.v1.CallUpdate.Accepted
+	8,  // 16: circus.v1.CallUpdate.dispatched:type_name -> circus.v1.CallUpdate.Dispatched
+	23, // 17: circus.v1.CallUpdate.result:type_name -> circus.v1.DeviceResult
+	9,  // 18: circus.v1.CallUpdate.offline:type_name -> circus.v1.CallUpdate.DeviceOffline
+	10, // 19: circus.v1.CallUpdate.unknown:type_name -> circus.v1.CallUpdate.Unknown
+	11, // 20: circus.v1.CallUpdate.lost:type_name -> circus.v1.CallUpdate.Lost
+	12, // 21: circus.v1.CallUpdate.rejected:type_name -> circus.v1.CallUpdate.Rejected
+	13, // 22: circus.v1.CallUpdate.cancelled:type_name -> circus.v1.CallUpdate.Cancelled
+	0,  // 23: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
+	24, // [24:24] is the sub-list for method output_type
+	24, // [24:24] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_worker_link_proto_init() }
@@ -1158,6 +1262,7 @@ func file_circus_v1_worker_link_proto_init() {
 		(*WorkerUplink_SubmitCall)(nil),
 		(*WorkerUplink_CancelCall)(nil),
 		(*WorkerUplink_CallQuery)(nil),
+		(*WorkerUplink_Unwatch)(nil),
 	}
 	file_circus_v1_worker_link_proto_msgTypes[1].OneofWrappers = []any{
 		(*WorkerDownlink_Welcome)(nil),
@@ -1167,7 +1272,7 @@ func file_circus_v1_worker_link_proto_init() {
 		(*WorkerDownlink_CallUpdate)(nil),
 		(*WorkerDownlink_JobEvent)(nil),
 	}
-	file_circus_v1_worker_link_proto_msgTypes[4].OneofWrappers = []any{
+	file_circus_v1_worker_link_proto_msgTypes[5].OneofWrappers = []any{
 		(*CallUpdate_Accepted_)(nil),
 		(*CallUpdate_Dispatched_)(nil),
 		(*CallUpdate_Result)(nil),
@@ -1183,7 +1288,7 @@ func file_circus_v1_worker_link_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_worker_link_proto_rawDesc), len(file_circus_v1_worker_link_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

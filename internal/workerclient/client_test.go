@@ -3,8 +3,11 @@ package workerclient
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -14,7 +17,6 @@ import (
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestSubmitValidatesIDsBeforeOpeningStream(t *testing.T) {
@@ -36,74 +38,26 @@ func TestSubmitValidatesIDsBeforeOpeningStream(t *testing.T) {
 
 func TestCancelValidatesID(t *testing.T) {
 	c := &Client{}
-	if err := c.Cancel(t.Context(), ""); err == nil {
+	if _, err := c.Cancel(t.Context(), ""); err == nil {
 		t.Fatal("empty call ID was sent instead of rejected locally")
-	}
-}
-
-func TestClientStreamCapMatchesServer(t *testing.T) {
-	c := &Client{streams: make(map[string]*Updates)}
-	for i := range 4 {
-		id := string(rune('a' + i))
-		if _, err := c.open(id, false); err != nil {
-			t.Fatalf("stream %d: %v", i+1, err)
-		}
-	}
-	if _, err := c.open("fifth", false); err == nil {
-		t.Fatal("fifth stream exceeded the server operation cap")
-	}
-}
-
-func TestGhostAccounting(t *testing.T) {
-	c := &Client{streams: make(map[string]*Updates)}
-	s, err := c.open("call", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mustClose := s.Close()
-	if mustClose != nil || !s.ghost || len(c.streams) != 1 {
-		t.Fatalf("nonterminal close did not leave a ghost: %v %+v", mustClose, s)
-	}
-	if _, err = c.open("call", false); err == nil {
-		t.Fatal("ghost allowed a duplicate call ID")
-	}
-	accepted := &circusv1.CallUpdate{CallId: "call", Update: &circusv1.CallUpdate_Accepted_{Accepted: &circusv1.CallUpdate_Accepted{}}}
-	if err = c.enqueue(accepted, 1); err != nil || !s.ghost {
-		t.Fatalf("nonterminal update changed ghost: %v", err)
-	}
-	result := &circusv1.CallUpdate{CallId: "call", Update: &circusv1.CallUpdate_Result{Result: &circusv1.DeviceResult{}}}
-	if err = c.enqueue(result, 1); err != nil || len(c.streams) != 0 {
-		t.Fatalf("terminal update did not release ghost: %v", err)
-	}
-	query, err := c.open("query", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = query.Close(); err != nil || !query.ghost || len(c.streams) != 1 {
-		t.Fatalf("unanswered one-shot Query did not leave a ghost: %v", err)
-	}
-	accepted.CallId = "query"
-	if err = c.enqueue(accepted, 1); err != nil || len(c.streams) != 0 {
-		t.Fatalf("first one-shot answer did not release ghost: %v", err)
 	}
 }
 
 func TestReaderTeardownPreservesQueuedOutcome(t *testing.T) {
 	transport := errors.New("transport failure")
-	c := &Client{streams: make(map[string]*Updates), done: make(chan struct{})}
-	resultStream, err := c.open("result", false)
+	c := &Client{ops: make(map[uint64]*Updates), done: make(chan struct{})}
+	resultStream, err := c.open(false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending, err := c.open("pending", false)
+	pending, err := c.open(false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := &circusv1.CallUpdate{CallId: "result", Update: &circusv1.CallUpdate_Result{Result: &circusv1.DeviceResult{}}}
-	if err = c.enqueue(result, 1); err != nil {
+	if err = c.enqueue(resultStream.id, result, 1); err != nil {
 		t.Fatal(err)
 	}
-	c.removeGhosts()
 	c.err = transport
 	close(c.done)
 	if update, err := resultStream.Next(t.Context()); err != nil || update.GetResult() == nil {
@@ -116,13 +70,13 @@ func TestReaderTeardownPreservesQueuedOutcome(t *testing.T) {
 
 func TestTerminalNextRacingCloseReleasesStream(t *testing.T) {
 	for range 100 {
-		c := &Client{streams: make(map[string]*Updates), done: make(chan struct{})}
-		s, err := c.open("call", false)
+		c := &Client{ops: make(map[uint64]*Updates), done: make(chan struct{})}
+		s, err := c.open(false)
 		if err != nil {
 			t.Fatal(err)
 		}
 		u := &circusv1.CallUpdate{CallId: "call", Update: &circusv1.CallUpdate_Result{Result: &circusv1.DeviceResult{}}}
-		if err = c.enqueue(u, 1); err != nil {
+		if err = c.enqueue(s.id, u, 1); err != nil {
 			t.Fatal(err)
 		}
 		start := make(chan struct{})
@@ -140,26 +94,26 @@ func TestTerminalNextRacingCloseReleasesStream(t *testing.T) {
 		}()
 		close(start)
 		wg.Wait()
-		if len(c.streams) != 0 {
-			t.Fatal("terminal Next/Close race stranded a ghost")
+		if len(c.ops) != 0 || c.bytes != 0 {
+			t.Fatalf("terminal Next/Close race stranded an operation or charge: %d ops, %d bytes", len(c.ops), c.bytes)
 		}
 	}
 }
 
 func TestTerminalNextDrainsLaterQueuedUpdates(t *testing.T) {
-	c := &Client{streams: make(map[string]*Updates), done: make(chan struct{})}
-	s, err := c.open("call", false)
+	c := &Client{ops: make(map[uint64]*Updates), done: make(chan struct{})}
+	s, err := c.open(false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	result := &circusv1.CallUpdate{CallId: "call", Update: &circusv1.CallUpdate_Result{Result: &circusv1.DeviceResult{}}}
-	accepted := &circusv1.CallUpdate{CallId: "call", Update: &circusv1.CallUpdate_Accepted_{Accepted: &circusv1.CallUpdate_Accepted{}}}
-	if err = c.enqueue(result, 1); err != nil {
+	if err = c.enqueue(s.id, result, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err = c.enqueue(accepted, 1); err != nil {
-		t.Fatal(err)
-	}
+	// A stale update queued behind the terminal one (the operation already
+	// ended, so a later one is dropped) is released with it.
+	s.queue <- queued{result, 1}
+	c.bytes++
 	if _, err = s.Next(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +122,10 @@ func TestTerminalNextDrainsLaterQueuedUpdates(t *testing.T) {
 	}
 }
 
-func TestUpdateQueueOverflowFailsLink(t *testing.T) {
+// fakeServer runs script on the server side of one worker link after a real
+// handshake, then holds the socket open until the client closes it.
+func fakeServer(t *testing.T, script func(ctx context.Context, l *wire.Link), local ...wire.Options) *Client {
+	t.Helper()
 	served := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer close(served)
@@ -179,21 +136,10 @@ func TestUpdateQueueOverflowFailsLink(t *testing.T) {
 		defer conn.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
 		defer cancel()
-		data, err := conn.ReadMessage(ctx)
+		_, opts, err := wire.AcceptHello(ctx, conn, wire.WorkerUplink, wire.Options{MaxMessageBytes: 1 << 20}, func(*circusv1.Hello) *circusv1.Welcome {
+			return &circusv1.Welcome{PrincipalId: "worker", InstanceId: "instance", ServerTimeUnixMs: 1}
+		})
 		if err != nil {
-			return
-		}
-		m, err := wire.Decode(wire.WorkerUplink, data, wire.MaxMetadataBytes)
-		if err != nil || m.(*circusv1.WorkerUplink).GetHello() == nil {
-			return
-		}
-		welcome := &circusv1.Welcome{PrincipalId: "worker", InstanceId: "instance", NegotiatedVersion: 1}
-		opts, err := wire.FillWelcome(welcome, wire.Options{MaxMessageBytes: 1 << 20})
-		if err != nil {
-			return
-		}
-		data, _ = proto.Marshal(&circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_Welcome{Welcome: welcome}})
-		if err = conn.WriteMessage(ctx, data); err != nil {
 			return
 		}
 		link, err := wire.New(conn, wire.WorkerControlSide, opts)
@@ -201,27 +147,66 @@ func TestUpdateQueueOverflowFailsLink(t *testing.T) {
 			return
 		}
 		defer link.Close()
-		if _, err = link.Receive(ctx); err != nil {
-			return
-		}
-		for range 9 {
-			u := &circusv1.CallUpdate{CallId: "overflow", Update: &circusv1.CallUpdate_Accepted_{Accepted: &circusv1.CallUpdate_Accepted{}}}
-			msg := &circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_CallUpdate{CallUpdate: u}}
-			if link.Send(ctx, msg) != nil {
+		script(ctx, link)
+		// Keep the socket open until the client's own policy closes it;
+		// otherwise EOF would race and hide the client's reason.
+		for {
+			if _, err := link.Receive(ctx); err != nil {
 				return
 			}
 		}
-		// Keep the socket open until the client's overflow policy closes it;
-		// otherwise EOF would race and hide the queue-full reason.
-		_, _ = link.Receive(ctx)
 	}))
-	defer server.Close()
-	c, err := Dial(t.Context(), Options{Credentials: credfile.File{ControlPlaneURL: server.URL, Role: credfile.RoleWorker, PrincipalID: "worker", Token: "token"}})
+	t.Cleanup(func() { server.Close(); <-served })
+	o := Options{Credentials: credfile.File{ControlPlaneURL: server.URL, Role: credfile.RoleWorker, PrincipalID: "worker", Token: "token"}}
+	if len(local) > 0 {
+		o.Wire = local[0]
+	}
+	c, err := Dial(t.Context(), o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
-	_, err = c.Submit(t.Context(), "desk", &circusv1.DeviceCall{CallId: "overflow", SessionId: "session", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "true"}}})
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+func receive(t *testing.T, ctx context.Context, l *wire.Link) *circusv1.WorkerUplink {
+	t.Helper()
+	m, err := l.Receive(ctx)
+	if err != nil {
+		t.Error(err)
+		return &circusv1.WorkerUplink{}
+	}
+	return m.(*circusv1.WorkerUplink)
+}
+
+func update(rid uint64, u *circusv1.CallUpdate) *circusv1.WorkerDownlink {
+	return &circusv1.WorkerDownlink{RequestId: rid, Payload: &circusv1.WorkerDownlink_CallUpdate{CallUpdate: u}}
+}
+
+func accepted(id string) *circusv1.CallUpdate {
+	return &circusv1.CallUpdate{CallId: id, Update: &circusv1.CallUpdate_Accepted_{Accepted: &circusv1.CallUpdate_Accepted{}}}
+}
+func dispatched(id string) *circusv1.CallUpdate {
+	return &circusv1.CallUpdate{CallId: id, Update: &circusv1.CallUpdate_Dispatched_{Dispatched: &circusv1.CallUpdate_Dispatched{}}}
+}
+func result(id string) *circusv1.CallUpdate {
+	return &circusv1.CallUpdate{CallId: id, Update: &circusv1.CallUpdate_Result{Result: &circusv1.DeviceResult{}}}
+}
+
+func bash(id string) *circusv1.DeviceCall {
+	return &circusv1.DeviceCall{CallId: id, SessionId: "session", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "true"}}}
+}
+
+func TestUpdateQueueOverflowFailsLink(t *testing.T) {
+	c := fakeServer(t, func(ctx context.Context, l *wire.Link) {
+		rid := receive(t, ctx, l).GetRequestId()
+		for range 9 {
+			if l.Send(ctx, update(rid, accepted("overflow"))) != nil {
+				return
+			}
+		}
+	})
+	_, err := c.Submit(t.Context(), "desk", bash("overflow"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,9 +222,215 @@ func TestUpdateQueueOverflowFailsLink(t *testing.T) {
 	// only the recorded reader error so open reaches Send rather than failing early.
 	c.mu.Lock()
 	c.err = nil
+	c.ops = make(map[uint64]*Updates)
 	c.mu.Unlock()
-	_, err = c.Submit(t.Context(), "desk", &circusv1.DeviceCall{CallId: "send-error", SessionId: "session", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "true"}}})
+	_, err = c.Submit(t.Context(), "desk", bash("send-error"))
 	if !errors.Is(err, ErrSubmitSent) {
 		t.Fatalf("Submit send error was not wrapped in ErrSubmitSent: %v", err)
+	}
+}
+
+// The local cap mirrors the server's: one operation over it is refused without
+// sending; closing an open stream sends Unwatch for its request ID before the
+// next operation, which then reuses the freed slot under a fresh ID.
+func TestCapUnwatchAndRequestIDs(t *testing.T) {
+	got := make(chan *circusv1.WorkerUplink, maxOperations+2)
+	c := fakeServer(t, func(ctx context.Context, l *wire.Link) {
+		for range maxOperations + 2 {
+			got <- receive(t, ctx, l)
+		}
+	})
+	streams := make([]*Updates, maxOperations)
+	for i := range streams {
+		var err error
+		if streams[i], err = c.Submit(t.Context(), "desk", bash(fmt.Sprint("call", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := c.Submit(t.Context(), "desk", bash("over")); err == nil || errors.Is(err, ErrSubmitSent) {
+		t.Fatalf("operation over the cap was not refused locally: %v", err)
+	}
+	if err := streams[1].Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Submit(t.Context(), "desk", bash("over")); err != nil {
+		t.Fatalf("Close did not free the local slot at once: %v", err)
+	}
+	for i := range maxOperations {
+		m := wait.Recv(t, got)
+		if m.GetSubmitCall() == nil || m.GetRequestId() != uint64(i+1) {
+			t.Fatalf("operation %d: %v", i, m)
+		}
+	}
+	if m := wait.Recv(t, got); m.GetUnwatch() == nil || m.GetRequestId() != 2 {
+		t.Fatalf("expected Unwatch of request 2 before the next operation, got %v", m)
+	}
+	if m := wait.Recv(t, got); m.GetSubmitCall().GetCall().GetCallId() != "over" || m.GetRequestId() != maxOperations+1 {
+		t.Fatalf("reused slot did not get a fresh request ID: %v", m)
+	}
+}
+
+// Updates are routed by request ID: a Query of a watched call gets its own
+// answer, and updates for an unwatched request are dropped without harm.
+func TestRoutingByRequestID(t *testing.T) {
+	unwatched := make(chan struct{})
+	c := fakeServer(t, func(ctx context.Context, l *wire.Link) {
+		watch := receive(t, ctx, l)   // Submit "same", request 1
+		other := receive(t, ctx, l)   // Submit "other", request 2
+		query := receive(t, ctx, l)   // Query "same", request 3
+		unwatch := receive(t, ctx, l) // Unwatch 2
+		if unwatch.GetUnwatch() == nil || unwatch.GetRequestId() != other.GetRequestId() {
+			t.Errorf("expected Unwatch of %d, got %v", other.GetRequestId(), unwatch)
+		}
+		close(unwatched)
+		// A late update for the unwatched request is dropped by the client.
+		_ = l.Send(ctx, update(other.GetRequestId(), result("other")))
+		_ = l.Send(ctx, update(query.GetRequestId(), dispatched("same")))
+		_ = l.Send(ctx, update(watch.GetRequestId(), result("same")))
+	})
+	watch, err := c.Submit(t.Context(), "desk", bash("same"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := c.Submit(t.Context(), "desk", bash("other"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type answer struct {
+		u   *circusv1.CallUpdate
+		err error
+	}
+	queried := make(chan answer, 1)
+	go func() {
+		u, err := c.Query(t.Context(), "same")
+		queried <- answer{u, err}
+	}()
+	wait.For(t, func() bool { c.mu.Lock(); defer c.mu.Unlock(); return len(c.ops) == 3 })
+	if err = other.Close(); err != nil {
+		t.Fatal(err)
+	}
+	wait.Recv(t, unwatched)
+	if a := wait.Recv(t, queried); a.err != nil || a.u.GetDispatched() == nil {
+		t.Fatalf("Query of a watched call: %v %v", a.u, a.err)
+	}
+	ctx := wait.Ctx(t)
+	if u, err := watch.Next(ctx); err != nil || u.GetResult() == nil {
+		t.Fatalf("watched stream: %v %v", u, err)
+	}
+	if _, err := other.Next(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("unwatched stream received a late update: %v", err)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.err != nil || len(c.ops) != 0 {
+		t.Fatalf("link err %v, open operations %d", c.err, len(c.ops))
+	}
+}
+
+// A Query whose caller gives up unwatches it, freeing the slot at once.
+func TestAbandonedQueryUnwatches(t *testing.T) {
+	got := make(chan *circusv1.WorkerUplink, 4)
+	c := fakeServer(t, func(ctx context.Context, l *wire.Link) {
+		for range 2 {
+			got <- receive(t, ctx, l)
+		}
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() { wait.Recv(t, got); cancel() }()
+	if _, err := c.Query(ctx, "slow"); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if m := wait.Recv(t, got); m.GetUnwatch() == nil || m.GetRequestId() != 1 {
+		t.Fatalf("abandoned Query did not unwatch: %v", m)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.ops) != 0 {
+		t.Fatal("abandoned Query kept its slot")
+	}
+}
+
+// Concurrent Close and Submit at the cap never let the server see more than
+// maxOperations open operations: a slot freed by Close is reused only after
+// its Unwatch is queued.
+func TestConcurrentCloseAndSubmitStayWithinServerCap(t *testing.T) {
+	const rounds = 400
+	violation := make(chan string, 1)
+	done := make(chan struct{})
+	c := fakeServer(t, func(ctx context.Context, l *wire.Link) {
+		open := map[uint64]bool{}
+		for {
+			m, err := l.Receive(ctx)
+			if err != nil {
+				return
+			}
+			up := m.(*circusv1.WorkerUplink)
+			switch {
+			case up.GetUnwatch() != nil:
+				delete(open, up.GetRequestId())
+			case up.GetSubmitCall() != nil:
+				open[up.GetRequestId()] = true
+				if len(open) > maxOperations {
+					select {
+					case violation <- fmt.Sprintf("%d operations open at request %d", len(open), up.GetRequestId()):
+					default:
+					}
+				}
+				if up.GetSubmitCall().GetCall().GetCallId() == "last" {
+					close(done)
+				}
+			}
+		}
+	}, wire.Options{MaxQueuedMessages: 4096}) // a burst well above the default queue
+	streams := make(chan *Updates, maxOperations)
+	for i := range maxOperations {
+		s, err := c.Submit(t.Context(), "desk", bash(fmt.Sprint("fill", i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		streams <- s
+	}
+	// Closers free slots while separate submitters take them, so a Submit
+	// can only overtake a Close's Unwatch if the two are not ordered.
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range rounds / 4 {
+				_ = (<-streams).Close()
+			}
+		}()
+	}
+	for w := range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range rounds / 4 {
+				for {
+					s, err := c.Submit(t.Context(), "desk", bash(fmt.Sprint("r", w, "-", i)))
+					if err == nil {
+						streams <- s
+						break
+					}
+					if errors.Is(err, ErrSubmitSent) || c.Err() != nil {
+						t.Error(err)
+						return
+					}
+					runtime.Gosched()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	_ = (<-streams).Close()
+	if _, err := c.Submit(t.Context(), "desk", bash("last")); err != nil {
+		t.Fatal(err)
+	}
+	wait.Recv(t, done)
+	select {
+	case v := <-violation:
+		t.Fatal(v)
+	default:
 	}
 }

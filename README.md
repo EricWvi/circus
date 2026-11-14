@@ -96,9 +96,11 @@ echo "new content" | circus call --device desk write /path/to/other.txt
 circus call --device desk edit /path/to/note.txt --old circus --new circus-user
 ```
 
-Query and cancel drive the exit codes: a query of a call still running
-exits 4, cancel of a running call exits 0 with `dispatched` and interrupts
-the tool (exit code 143, `Command was interrupted`):
+Query and cancel drive the exit codes. Cancel prints the server's single
+reply, the call's state read after the cancellation was recorded: a query
+of a call still running exits 4, cancel of a running call exits 0 with
+`dispatched` and interrupts the tool (exit code 143, `Command was
+interrupted`):
 
 ```sh
 circus call --device desk --cwd /tmp --wait bash 'until [ -f /tmp/done ]; do sleep 2; done' &
@@ -119,6 +121,11 @@ codes:
   transport failure or interrupt after the submit was sent (query the call ID
   after reconnecting);
 - 4: `query` found the call still Accepted or Dispatched.
+
+A cancel of a call that had already finished answers with that outcome and
+exits as above: 0 for a result (the full tool output is printed to stdout,
+fetched from the daemon) or for an earlier cancellation, 1 for lost,
+offline or rejected.
 
 `circus doctor` checks each role's stored credential against the server, one
 line per check:
@@ -156,6 +163,14 @@ local development). `--public-url` sets the base URL handed to joining
 machines when it differs from the listen address; without it the URL is
 derived from each request. `--listen` defaults to `:8443`.
 
+Worker links: `--worker-connections N` (default 8, at least 1) bounds
+connections that use worker credentials, long-lived workers and `circus
+call` alike; one credential may hold at most 4 of them, so one busy or
+restarting worker cannot lock out other credentials. `circus call` uses the
+machine's worker credential by default, so CLIs on the same machine count
+toward the same 4 as its worker. A full cap answers HTTP 503. Each
+connection may have 64 operations open.
+
 The SQLite database defaults to `$XDG_DATA_HOME/circus/circus.db`
 (`~/.local/share/circus/circus.db`). Admin subcommands (`enroll-token`,
 `device`, `worker`) open only an existing database, so pass `--db` when it
@@ -182,12 +197,14 @@ The daemon-link pools are not the whole process budget. At the default
 | Part | Bound | Arithmetic |
 | --- | --- | --- |
 | Daemon links, wire | about 1,286 MiB | pools 256 + 524 MiB (2·Smin, 2·Rmin) plus 100 sockets × (5 MiB + 64 KiB) = 506 MiB; one borrowed inbound message per socket comes on top |
-| Worker links (own fixed budget, not configurable) | about 2,131 MiB | pools 256 + 524 MiB, 2 sockets × (5 MiB + 64 KiB) = 10 MiB, and 10 borrowed messages (2 inbound, 8 outbound) × (2·M + 6 MiB + 4 KiB) = 1,340 MiB |
+| Worker links (own fixed pools; scales with `--worker-connections`, default 8) | about 2,557 MiB | pools 256 + 524 MiB; 8 sockets × (5 MiB + 64 KiB + one borrowed inbound message of 2·M + 6 MiB + 4 KiB) = 1,112 MiB; 4 push permits shared by all worker sockets, each one large outbound message (2·M + 6 MiB + 4 KiB) = 536 MiB; small outbound updates (≤ 256 KiB charged) sent without a permit, at most one per operation: 8 × 64 × 256 KiB = 128 MiB |
 | Call router | 512 MiB | pending requests 256 MiB plus buffered updates 256 MiB |
 
-That is about 3.8 GiB before SQLite, TLS/kernel buffers, bounded operation
+That is about 4.3 GiB before SQLite, TLS/kernel buffers, bounded operation
 scratch, the runtime and GC headroom; set `GOMEMLIMIT` above it. The
-connection limits (100 daemon sockets, 2 worker sockets) are fixed. See
+daemon connection limit (100 sockets) is fixed; worker sockets default to 8
+(`--worker-connections`, at most 4 per credential), each adding about 139 MiB
+at the default message limit. See
 `internal/controlplane/gateway`, `internal/controlplane/workerlink` and
 `internal/controlplane/calls/DESIGN.md`.
 

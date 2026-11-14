@@ -44,15 +44,27 @@ metadata, marker files or bounded polling; no sleep establishes test ordering.
   Lost. A server crash after Submit exits 3 and prints the call ID
   (TestCLITransportFailureIsUnknown).
 - Worker ownership: closing a client mid-call does not cancel it; a new
-  connection obtains its Result. A same-client Cancel reaches a watched call
-  and its stream carries the real terminal update. Four running calls plus a
-  locally closed stream prove ghost accounting: a fifth is refused locally,
-  then admitted after the ghost's terminal update. Six sequential calls exceed
-  the four-slot cap and prove terminal slot release. Raw same-link Submit→Cancel
-  stays ordered and successful Cancel has no extra reply.
-- TestCancelErrorDoesNotBlockLaterCancel: with all four operation slots held
-  by running calls, a Cancel of an unknown ID does not stall a later real
-  Cancel; the cancelled call still publishes its real result.
+  connection obtains its Result. On one connection a worker can Query and
+  Cancel a call it is watching: Query answers Dispatched, Cancel answers
+  Dispatched (intent recorded) and the stream carries the real terminal update.
+  66 sequential calls exceed the 64-slot cap and prove terminal slot release.
+  Raw same-link Submit→Cancel (request IDs 1 and 2) stays ordered: both the
+  Cancel reply and the watched stream's terminal update are Cancelled.
+- TestUnwatchFreesSlotImmediately: with the device offline inside its grace
+  period, 64 Accepted watches fill one connection; the next Submit is refused
+  locally, and after closing one stream (Unwatch) it is admitted at once by
+  the server while the unwatched call stays Accepted and uncancelled.
+- TestWorkerRestartWhileHalfOpen: a worker connection goes half-open (a
+  local proxy stops moving bytes without closing), a CLI call is running on
+  the same credential, and a restarted worker still connects and gets a
+  result well inside the heartbeat timeout.
+- TestCancelReplies: Cancel of a finished call answers its result, of an
+  accepted call (device offline) Cancelled (the watched stream ends
+  Cancelled too), and of an unknown ID Rejected NOT_FOUND.
+- TestCancelErrorDoesNotBlockLaterCancel: at the cap (63 Accepted watches
+  with the device offline inside its grace period), a Cancel of an unknown ID
+  answers NOT_FOUND in the last slot and gives it back, so a later real
+  Cancel still fits and answers Cancelled; the link stays open.
 - TestDaemonCrashLeavesCallUnknown: kill the daemon during a marked Bash call; observe Unknown without ending
   the subscription (CLI query exits 3), restart with a new boot, then observe
   Lost. Equal resubmit stays Lost; the marker contains exactly one line.

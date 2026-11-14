@@ -4,16 +4,16 @@
 // loopback plaintext restrictions and redirect refusal come from loopback.Link,
 // shared with daemon/link.
 //
-// At most four streams (the server's per-connection operation cap), eight
-// updates each, and 256 MiB decoded queued updates are retained. Overflow
-// aborts the link. One reader borrows one wire message; callers own returned
-// updates. Every stream must be closed by its caller. Closing a Submit stream
-// before terminal leaves a bounded ghost that still counts against the cap,
-// discards updates, and is removed by the terminal update or link teardown.
-// Closing never cancels the call or frees its server slot early.
-// TODO(M3): send an unsubscribe message when the protocol adds one.
-// A call ID may have only one operation on a connection at a time (the
-// protocol has no request ID); query an actively watched call on another link.
+// Every Submit, Query and Cancel is one operation with its own request ID
+// (a per-connection counter from 1); updates are routed by that ID, so several
+// operations may name the same call (a worker can Query or Cancel a call it
+// is watching). At most 64 operations are open at once (the server's
+// per-connection cap), eight updates each, and 256 MiB decoded queued updates
+// are retained. Overflow aborts the link. One reader borrows one wire message;
+// callers own returned updates. Every stream must be closed by its caller.
+// Closing an operation that is still open sends Unwatch and frees its slot at
+// once; it never cancels the call. Updates that arrive for an operation no
+// longer open are dropped.
 package workerclient
 
 import (
@@ -32,7 +32,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-const maxStreams = 4
+const maxOperations = 64
 
 // ErrSubmitSent marks a transport failure after submission was attempted. The
 // call may exist and run; the caller must re-query the same ID, never assume it
@@ -48,10 +48,15 @@ type Options struct {
 
 // Client owns one link and a joined reader. Close is required even after errors.
 type Client struct {
-	link       *wire.Link
-	http       *http.Client
+	link *wire.Link
+	http *http.Client
+	// sendMu orders slot changes with their uplink messages: a slot freed by
+	// Close is reusable only after its Unwatch is queued, so the server always
+	// sees the Unwatch before the operation that reuses the slot.
+	sendMu     sync.Mutex
 	mu         sync.Mutex
-	streams    map[string]*Updates
+	ops        map[uint64]*Updates // open operations, by request ID
+	nextID     uint64
 	bytes      int64
 	err        error
 	done       chan struct{}
@@ -62,16 +67,15 @@ type queued struct {
 	bytes  int64
 }
 
-// Updates is a bounded stream. Closing it detaches locally, never cancels a call.
+// Updates is the bounded stream of one operation. Closing it detaches locally
+// and, if the operation is still open, sends Unwatch; it never cancels a call.
 type Updates struct {
 	client     *Client
-	id         string
+	id         uint64
 	queue      chan queued
 	closed     chan struct{}
-	terminal   bool
-	answered   bool
-	ghost      bool
-	oneShot    bool
+	oneShot    bool // Query or Cancel: exactly one update
+	finished   bool // the last update was consumed by Next
 	closedOnce bool
 }
 
@@ -116,13 +120,12 @@ func Dial(ctx context.Context, o Options) (*Client, error) {
 	if err != nil {
 		return fail(err)
 	}
-	c := &Client{link: l, http: h, streams: make(map[string]*Updates), done: make(chan struct{}), maxMessage: opts.MaxMessageBytes}
+	c := &Client{link: l, http: h, ops: make(map[uint64]*Updates), done: make(chan struct{}), maxMessage: opts.MaxMessageBytes}
 	go c.read()
 	return c, nil
 }
 func (c *Client) read() {
 	defer close(c.done)
-	defer c.removeGhosts()
 	for {
 		m, err := c.link.Receive(context.Background())
 		if err != nil {
@@ -140,7 +143,7 @@ func (c *Client) read() {
 		}
 		cost, err := wire.Charge(u, c.maxMessage)
 		if err == nil {
-			err = c.enqueue(u, cost)
+			err = c.enqueue(d.GetRequestId(), u, cost)
 		}
 		if err != nil {
 			c.fail(err)
@@ -150,19 +153,19 @@ func (c *Client) read() {
 }
 
 // enqueue retains one update or reports the bounded-queue failure that read
-// must use to abort the whole link. Unmatched updates are harmless and dropped.
-func (c *Client) enqueue(u *circusv1.CallUpdate, cost int64) error {
+// must use to abort the whole link. Updates for an operation that is not open
+// (unwatched, answered or never opened) are harmless and dropped. The last
+// update of an operation (a terminal update, or any one-shot reply) ends it
+// here, because the server freed its slot before sending it.
+func (c *Client) enqueue(id uint64, u *circusv1.CallUpdate, cost int64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := c.streams[u.CallId]
+	s := c.ops[id]
 	if s == nil {
 		return nil
 	}
-	if s.ghost {
-		if s.oneShot || wire.Terminal(u) {
-			delete(c.streams, u.CallId)
-		}
-		return nil
+	if s.oneShot || wire.Terminal(u) {
+		delete(c.ops, id)
 	}
 	if cost > 256<<20-c.bytes {
 		return errors.New("workerclient: update budget exhausted")
@@ -190,18 +193,43 @@ func (c *Client) send(ctx context.Context, m *circusv1.WorkerUplink) error {
 	}
 	return err
 }
-func (c *Client) open(id string, oneShot bool) (*Updates, error) {
+
+// open reserves the next request ID and a local slot. The local cap mirrors
+// the server's, so a live link never exceeds it.
+func (c *Client) open(oneShot bool) (*Updates, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.err != nil {
 		return nil, c.err
 	}
-	if len(c.streams) >= maxStreams || c.streams[id] != nil {
-		return nil, errors.New("workerclient: stream capacity (4) or duplicate call ID")
+	if len(c.ops) >= maxOperations {
+		return nil, fmt.Errorf("workerclient: %d operations already open on this connection", maxOperations)
 	}
-	s := &Updates{client: c, id: id, queue: make(chan queued, 8), closed: make(chan struct{}), oneShot: oneShot}
-	c.streams[id] = s
+	c.nextID++
+	s := &Updates{client: c, id: c.nextID, queue: make(chan queued, 8), closed: make(chan struct{}), oneShot: oneShot}
+	c.ops[s.id] = s
 	return s, nil
+}
+
+// start opens one operation and sends m for it. sent reports whether the
+// send was attempted, i.e. whether a failure leaves the outcome ambiguous.
+func (c *Client) start(ctx context.Context, oneShot bool, m *circusv1.WorkerUplink) (s *Updates, sent bool, err error) {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if s, err = c.open(oneShot); err != nil {
+		return nil, false, err
+	}
+	m.RequestId = s.id
+	if err = c.send(ctx, m); err != nil {
+		c.mu.Lock()
+		if c.ops[s.id] == s {
+			delete(c.ops, s.id)
+		}
+		closeUpdatesChannel(s)
+		c.mu.Unlock()
+		return nil, true, err
+	}
+	return s, true, nil
 }
 
 // Submit validates IDs before sending, then watches all updates, including
@@ -213,64 +241,60 @@ func (c *Client) Submit(ctx context.Context, device string, call *circusv1.Devic
 	if !identifier.Valid(call.GetSessionId(), false) {
 		return nil, errors.New("workerclient: invalid session ID")
 	}
-	s, err := c.open(call.GetCallId(), false)
-	if err != nil {
-		return nil, err
-	}
-	err = c.send(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: device, Call: call}}})
-	if err != nil {
-		_ = s.Close()
+	s, sent, err := c.start(ctx, false, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: device, Call: call}}})
+	if err != nil && sent {
 		return nil, fmt.Errorf("%w: %w", ErrSubmitSent, err)
 	}
-	return s, nil
+	return s, err
 }
 
-// Cancel sends cancellation intent without opening a stream or waiting for a
-// reply. A watched Submit stream carries the real terminal update; callers that
-// need the outcome immediately can issue Query afterward.
-func (c *Client) Cancel(ctx context.Context, id string) error {
+// Cancel records cancellation intent and returns the server's single reply:
+// the call's state read after the intent was recorded. Cancelled means it was
+// cancelled before dispatch; Dispatched or Unknown mean the daemon's result
+// decides (a watched Submit stream still carries it); a terminal outcome means
+// the call had already finished; Rejected NOT_FOUND means no such call.
+func (c *Client) Cancel(ctx context.Context, id string) (*circusv1.CallUpdate, error) {
 	if !identifier.Valid(id, false) {
-		return errors.New("workerclient: invalid call ID")
+		return nil, errors.New("workerclient: invalid call ID")
 	}
-	return c.send(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: id}}})
+	return c.oneShot(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: id}}})
 }
 
-// Query asks for the current durable/reconciled outcome of an unwatched call.
-// NOT_FOUND answers only this query and is not a call outcome.
+// Query asks for the current durable/reconciled outcome of a call, watched or
+// not. NOT_FOUND answers only this query and is not a call outcome.
 func (c *Client) Query(ctx context.Context, id string) (*circusv1.CallUpdate, error) {
-	s, err := c.open(id, true)
+	return c.oneShot(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: id}}})
+}
+
+// oneShot sends m and waits for its single reply. Giving up early (ctx)
+// unwatches the operation, which frees its slot at once.
+func (c *Client) oneShot(ctx context.Context, m *circusv1.WorkerUplink) (*circusv1.CallUpdate, error) {
+	s, _, err := c.start(ctx, true, m)
 	if err != nil {
 		return nil, err
 	}
 	defer s.Close()
-	if err = c.send(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: id}}}); err != nil {
-		return nil, err
-	}
 	return s.Next(ctx)
 }
 
 // Next transfers an immutable update to the caller; ctx only bounds this read.
+// After the operation's last update (terminal, or a one-shot reply) it
+// returns io.EOF.
 func (s *Updates) Next(ctx context.Context) (*circusv1.CallUpdate, error) {
 	s.client.mu.Lock()
-	terminal := s.terminal
+	finished := s.finished
 	s.client.mu.Unlock()
-	if terminal {
+	if finished {
 		return nil, io.EOF
 	}
 	consume := func(q queued) (*circusv1.CallUpdate, error) {
-		terminal := wire.Terminal(q.update)
+		last := s.oneShot || wire.Terminal(q.update)
 		s.client.mu.Lock()
 		s.client.bytes -= q.bytes
-		s.answered = true
-		if terminal {
-			s.terminal = true
-			if s.client.streams[s.id] == s {
-				delete(s.client.streams, s.id)
-			}
+		if last {
+			s.finished = true
 			closeUpdatesChannel(s)
-			for len(s.queue) > 0 {
-				s.client.bytes -= (<-s.queue).bytes
-			}
+			s.client.bytes -= s.drain()
 		}
 		s.client.mu.Unlock()
 		return q.update, nil
@@ -302,6 +326,22 @@ func (s *Updates) Next(ctx context.Context) (*circusv1.CallUpdate, error) {
 	}
 }
 
+// drain drops every queued update without blocking and returns their
+// charges. A concurrent Next may take an update between a length check and a
+// receive, so a blocking receive here could wait forever while holding
+// client.mu, which that Next then needs.
+func (s *Updates) drain() int64 {
+	var n int64
+	for {
+		select {
+		case q := <-s.queue:
+			n += q.bytes
+		default:
+			return n
+		}
+	}
+}
+
 // closeUpdatesChannel closes the stream channel exactly once while client.mu is held.
 func closeUpdatesChannel(s *Updates) {
 	if !s.closedOnce {
@@ -310,59 +350,37 @@ func closeUpdatesChannel(s *Updates) {
 	}
 }
 
-// Close drops unread updates and releases their byte charges. A nonterminal
-// Submit close leaves a ghost that keeps the client and server caps aligned.
+// Close drops unread updates and releases their byte charges. If the
+// operation is still open on the server, Close frees its local slot and sends
+// Unwatch before any later operation can reuse that slot; the call itself is
+// never cancelled.
 func (s *Updates) Close() error {
 	c := s.client
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.streams[s.id] != s || s.ghost {
-		return nil
+	open := c.ops[s.id] == s
+	if open {
+		delete(c.ops, s.id)
 	}
-	terminal := s.terminal
-	answered := s.answered
-	for {
-		select {
-		case q := <-s.queue:
-			c.bytes -= q.bytes
-			answered = true
-			terminal = terminal || wire.Terminal(q.update)
-		default:
-			if terminal || s.oneShot && answered {
-				delete(c.streams, s.id)
-			} else {
-				s.ghost = true
-			}
-			closeUpdatesChannel(s)
-			return nil
-		}
+	c.bytes -= s.drain()
+	closeUpdatesChannel(s)
+	live := c.err == nil
+	c.mu.Unlock()
+	if open && live {
+		// A failed send fails the whole link, which ends the operation too.
+		_ = c.send(context.Background(), &circusv1.WorkerUplink{RequestId: s.id, Payload: &circusv1.WorkerUplink_Unwatch{Unwatch: &circusv1.Unwatch{}}})
 	}
+	return nil
 }
 
-// removeGhosts releases only already-closed streams on automatic reader
-// teardown. Active streams and their queued outcomes remain available to Next;
-// explicit Client.Close is what drains those queues.
-func (c *Client) removeGhosts() {
+func (c *Client) clearOperations() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for id, s := range c.streams {
-		if s.ghost {
-			delete(c.streams, id)
-		}
-	}
-}
-
-func (c *Client) clearStreams() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for id, s := range c.streams {
-		if !s.ghost {
-			closeUpdatesChannel(s)
-		}
-		delete(c.streams, id)
-		for len(s.queue) > 0 {
-			c.bytes -= (<-s.queue).bytes
-		}
+	for id, s := range c.ops {
+		closeUpdatesChannel(s)
+		delete(c.ops, id)
+		c.bytes -= s.drain()
 	}
 	c.bytes = 0
 }
@@ -372,7 +390,7 @@ func (c *Client) Close() error {
 	c.fail(wire.ErrClosed)
 	<-c.done
 	c.http.CloseIdleConnections()
-	c.clearStreams()
+	c.clearOperations()
 	return nil
 }
 

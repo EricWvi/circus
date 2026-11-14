@@ -45,7 +45,7 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		_ = r.Close(ctx)
 		return err
 	}
-	w, err := workerlink.New(workerlink.Config{Auth: s.authn, Router: r, InstanceID: s.instanceID, Clock: clk, Wire: opts, Logger: s.logger})
+	w, err := workerlink.New(workerlink.Config{Auth: s.authn, Router: r, InstanceID: s.instanceID, Clock: clk, Wire: opts, Logger: s.logger, MaxConnections: c.WorkerConnections})
 	if err != nil {
 		_ = g.Shutdown(ctx)
 		_ = r.Close(ctx)

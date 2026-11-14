@@ -7,3 +7,10 @@ import "time"
 func WithLockObserver(c *Config, f func(kind string, held time.Duration)) {
 	c.lockObserver = f
 }
+
+// LastRead is the time the subscriber-stall sweep measures s from.
+func LastRead(s *Subscription) time.Time {
+	s.owner.mu.Lock()
+	defer s.owner.mu.Unlock()
+	return s.lastRead
+}

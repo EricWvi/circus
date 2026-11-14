@@ -18,6 +18,7 @@ import (
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/controlplane"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/store"
 )
 
@@ -26,7 +27,7 @@ const serverUsage = `usage:
                 [--public-url URL] [--shutdown-timeout 10s] [--timer-poll-interval 1s]
                 [--max-message-bytes N] [--device-grace 30s]
                 [--heartbeat-interval 5s] [--heartbeat-timeout 15s]
-                [--send-pool-bytes N] [--receive-pool-bytes N]
+                [--send-pool-bytes N] [--receive-pool-bytes N] [--worker-connections 8]
   circus server enroll-token create --role daemon|worker|both [--ttl 1h] [--url https://host:port] [--db PATH]
   circus server device list|revoke <name> [--db PATH]
   circus server worker list|revoke <name> [--db PATH]
@@ -43,9 +44,10 @@ wire.MinBudget; the gateway refuses smaller values).
 circus call and circus daemon cap it at 64 MiB locally, so a larger value
 makes them refuse the connection.
 
-At most two worker-credential connections (worker or circus call) are admitted
-at a time. HTTP 503 on a worker link means both are taken, the credential
-check failed inside the server (for example the store), or it is shutting down.`
+--worker-connections (default 8, at least 1) bounds worker-credential
+connections (workers and circus call); one credential may hold at most 4 of
+them. HTTP 503 on a worker link means a cap is full, the credential check
+failed inside the server (for example the store), or it is shutting down.`
 
 // defaultListen is the default --listen address and the port enroll-token
 // create assumes without --url.
@@ -89,6 +91,7 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	heartbeatTimeout := fs.Duration("heartbeat-timeout", 0, "link heartbeat timeout (default 15s)")
 	sendPool := fs.Int("send-pool-bytes", 0, "shared send pool bytes across all daemon links (0 = default, twice wire.MinBudget)")
 	receivePool := fs.Int("receive-pool-bytes", 0, "shared receive pool bytes across all daemon links (0 = default, twice wire.MinBudget)")
+	workerConnections := fs.Int("worker-connections", workerlink.DefaultMaxConnections, "maximum worker-credential connections (at least 1; one credential may hold at most 4)")
 	debug := fs.Bool("debug", false, "log at debug level")
 	pos, err := parseArgs(fs, args)
 	if err != nil {
@@ -96,6 +99,9 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	}
 	if len(pos) != 0 {
 		return errors.New(serverUsage)
+	}
+	if *workerConnections < 1 {
+		return errors.New("--worker-connections must be at least 1")
 	}
 	if *publicURL != "" {
 		u, err := url.Parse(*publicURL)
@@ -122,7 +128,7 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 		Listen: *listen, TLSCert: *cert, TLSKey: *key, BehindProxy: *proxy, DevInsecure: *insecure,
 		PublicURL: *publicURL, ShutdownTimeout: *shutdown, TimerPollInterval: *timerPoll, LogOutput: errOut, LogLevel: level,
 		MaxMessageBytes: *maxMessage, GracePeriod: *grace, HeartbeatInterval: *heartbeat, HeartbeatTimeout: *heartbeatTimeout,
-		SendPoolBytes: *sendPool, ReceivePoolBytes: *receivePool,
+		SendPoolBytes: *sendPool, ReceivePoolBytes: *receivePool, WorkerConnections: *workerConnections,
 	})
 	if err != nil {
 		// The gateway keeps the validation; name the operator's flags and

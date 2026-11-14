@@ -97,7 +97,9 @@ func scan(k Kind, data []byte, maxBytes, fragmentBytes int) (decodeBudget, error
 		if length < 0 {
 			return budget, protocol("invalid envelope field")
 		}
-		if field := descriptor.Fields().ByNumber(protoreflect.FieldNumber(number)); field != nil {
+		// Only members of the payload oneof are payloads; other known envelope
+		// fields (the worker link's request_id) are checked by scanMessage.
+		if field := descriptor.Fields().ByNumber(protoreflect.FieldNumber(number)); field != nil && field.ContainingOneof() != nil {
 			name = field.Name()
 			payloads++
 			if payloads > 1 || typ != protowire.BytesType || len(data) > payloadLimit(field.Name(), fragmentBytes, maxBytes) {

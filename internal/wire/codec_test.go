@@ -140,3 +140,31 @@ func TestScannerRejectsAttackShapes(t *testing.T) {
 		})
 	}
 }
+
+// The worker envelopes' request_id sits beside the payload oneof: it is
+// carried through decoding and never counts as a payload of its own.
+func TestRequestIDIsEnvelopeMetadata(t *testing.T) {
+	track(t)
+	up, err := proto.Marshal(&circusv1.WorkerUplink{RequestId: 1 << 63, Payload: &circusv1.WorkerUplink_Unwatch{Unwatch: &circusv1.Unwatch{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := wire.Decode(wire.WorkerUplink, up, wire.MaxMetadataBytes)
+	if err != nil || m.(*circusv1.WorkerUplink).GetRequestId() != 1<<63 || m.(*circusv1.WorkerUplink).GetUnwatch() == nil {
+		t.Fatalf("uplink: %v %v", m, err)
+	}
+	down, err := proto.Marshal(&circusv1.WorkerDownlink{RequestId: 9, Payload: &circusv1.WorkerDownlink_CallUpdate{CallUpdate: &circusv1.CallUpdate{CallId: "c"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err = wire.Decode(wire.WorkerDownlink, down, wire.MaxMetadataBytes); err != nil || m.(*circusv1.WorkerDownlink).GetRequestId() != 9 {
+		t.Fatalf("downlink: %v %v", m, err)
+	}
+	only, err := proto.Marshal(&circusv1.WorkerUplink{RequestId: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = wire.Decode(wire.WorkerUplink, only, wire.MaxMetadataBytes); err == nil {
+		t.Fatal("request_id alone was accepted as a payload")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"io"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -325,4 +326,175 @@ func TestUndispatchedLostResubmitRejectsWhenScratchExhausted(t *testing.T) {
 	if row.State != store.CallLost || row.DispatchedBootID != "" {
 		t.Fatalf("rejected resubmit changed the attempt: %+v", row)
 	}
+}
+
+// Wait reports readiness without consuming: it returns at once while an
+// update is queued, waits for a later one, honours ctx, returns once the
+// subscription has ended, never changes charges, and does not hold off the
+// subscriber-stall sweep.
+func TestSubscriptionWait(t *testing.T) {
+	f := setup(t)
+	l := f.connect("boot")
+	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+	must(t, err)
+	defer s.Close()
+	receive(t, f.ctx, l)
+	head := mustWait(t, f, s) // Accepted and Dispatched are already queued
+	buffered := f.router.Stats().BufferedBytes
+	if head <= 0 || head >= buffered {
+		t.Fatalf("head cost %d of %d buffered for two queued updates", head, buffered)
+	}
+	if again := mustWait(t, f, s); again != head {
+		t.Fatalf("Wait changed the head: %d -> %d", head, again)
+	}
+	if buffered == 0 || f.router.Stats().BufferedBytes != buffered {
+		t.Fatalf("Wait changed charges: %d -> %d", buffered, f.router.Stats().BufferedBytes)
+	}
+	if u, err := s.Next(f.ctx); err != nil || u.GetAccepted() == nil {
+		t.Fatalf("Wait consumed the queued update: %v %v", u, err)
+	}
+	if u, err := s.Next(f.ctx); err != nil || u.GetDispatched() == nil {
+		t.Fatalf("second queued update: %v %v", u, err)
+	}
+	cancelled, cancel := context.WithCancel(f.ctx)
+	cancel()
+	if _, err = s.Wait(cancelled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Wait with nothing queued and a cancelled ctx: %v", err)
+	}
+	ready := make(chan error, 1)
+	go func() { _, err := s.Wait(f.ctx); ready <- err }()
+	select {
+	case err := <-ready:
+		t.Fatalf("Wait returned with nothing queued: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	f.result(l, "call")
+	must(t, waitAnswer(t, ready))
+	mustWait(t, f, s)
+	if u, err := s.Next(f.ctx); err != nil || u.GetResult() == nil {
+		t.Fatalf("result after Wait: %v %v", u, err)
+	}
+	if cost := mustWait(t, f, s); cost != 0 { // terminal: ended, Next reports io.EOF
+		t.Fatalf("ended subscription reported cost %d", cost)
+	}
+	if _, err = s.Next(f.ctx); !errors.Is(err, io.EOF) {
+		t.Fatal(err)
+	}
+}
+
+func TestSubscriptionWaitKeepsStallClock(t *testing.T) {
+	f := setup(t)
+	l := f.connect("boot")
+	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+	must(t, err)
+	defer s.Close()
+	receive(t, f.ctx, l)
+	f.result(l, "call")
+	f.waitState("call", store.CallCompleted)
+	// Waiting never counts as a read: the stall clock keeps its start.
+	since := calls.LastRead(s)
+	f.clock.Advance(5 * time.Second) // still below the 15 s bound
+	mustWait(t, f, s)
+	if got := calls.LastRead(s); !got.Equal(since) {
+		t.Fatalf("Wait moved the stall clock from %v to %v", since, got)
+	}
+	// Step the clock until the sweep detaches it; a step that races the
+	// sweep re-arming its timer is simply followed by another.
+	eventually(t, func() bool { f.advance(time.Second); return f.router.Stats().Subscribers == 0 })
+	mustWait(t, f, s)
+	if _, err = s.Next(f.ctx); !errors.Is(err, calls.ErrOverflow) {
+		t.Fatalf("a waiting reader escaped the stall bound: %v", err)
+	}
+	closed, err := f.router.Submit(f.ctx, "u", "desk", call("closed"))
+	must(t, err)
+	must(t, closed.Close())
+	mustWait(t, f, closed) // ended by Close
+}
+
+func mustWait(t *testing.T, f *fixture, s *calls.Subscription) int64 {
+	t.Helper()
+	cost, err := s.Wait(f.ctx)
+	must(t, err)
+	return cost
+}
+
+// QueryOnce hands the answer out through a single-update subscription: the
+// answer stays charged until Next takes it, later call updates do not reach
+// it, and Query's errors are returned directly.
+func TestQueryOnce(t *testing.T) {
+	f := setup(t)
+	l := f.connect("boot")
+	watch, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+	must(t, err)
+	defer watch.Close()
+	receive(t, f.ctx, l)
+	for range 2 { // Accepted, Dispatched
+		if _, err = watch.Next(f.ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	answered := make(chan *calls.Subscription, 1)
+	go func() {
+		s, err := f.router.QueryOnce(f.ctx, "u", "call")
+		if err != nil {
+			t.Error(err)
+		}
+		answered <- s
+	}()
+	if m := receive(t, f.ctx, l); m.GetCallQuery().GetCallId() != "call" {
+		t.Fatal(m)
+	}
+	f.running(l, "call")
+	s := waitAnswer(t, answered)
+	if s == nil {
+		return
+	}
+	defer s.Close()
+	cost := mustWait(t, f, s)
+	if cost <= 0 || f.router.Stats().BufferedBytes < cost {
+		t.Fatalf("answer not charged while queued: cost %d, buffered %d", cost, f.router.Stats().BufferedBytes)
+	}
+	f.result(l, "call") // published to the watch, never to the answer
+	nextResult(t, f.ctx, watch)
+	if u, err := s.Next(f.ctx); err != nil || u.GetDispatched() == nil {
+		t.Fatalf("answer: %v %v", u, err)
+	}
+	if _, err := s.Next(f.ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("a single answer must end its subscription: %v", err)
+	}
+	eventually(t, func() bool { st := f.router.Stats(); return st.BufferedBytes == 0 && st.Subscribers == 0 })
+	if _, err := f.router.QueryOnce(f.ctx, "u", "missing"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown call: %v", err)
+	}
+	if _, err := f.router.QueryOnce(f.ctx, "u", "bad id!"); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("invalid id: %v", err)
+	}
+}
+
+// Once the intent is durable, a CancelCall that cannot be queued to the
+// daemon is not the caller's error: the sync or watchdog replays it.
+func TestCancelDeliveryFailureAfterIntentIsRecorded(t *testing.T) {
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) {
+		inner := c.Sender
+		c.Sender = calls.SenderFunc(func(ctx context.Context, target gateway.Target, m *circusv1.DaemonDownlink) error {
+			if m.GetCancelCall() != nil {
+				return gateway.ErrNoRoute
+			}
+			return inner.Deliver(ctx, target, m)
+		})
+	})
+	l := f.connect("boot")
+	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
+	must(t, err)
+	defer s.Close()
+	receive(t, f.ctx, l)
+	f.running(l, "call")
+	f.waitState("call", store.CallRunning)
+	must(t, f.router.Cancel(f.ctx, "u", "call"))
+	c, err := f.db.GetCall(f.ctx, "call")
+	must(t, err)
+	if c.CancelRequestedAt == 0 {
+		t.Fatal("intent not recorded")
+	}
+	f.result(l, "call")
 }

@@ -32,11 +32,13 @@ Uses worker credentials from circus join. All forms accept --credentials PATH
 and --ca-file FILE. Updates are JSON lines on stderr; tool text goes to stdout.
 Cwd is empty unless --cwd is given: relative file paths then use the daemon's
 start folder; bash requires --cwd. --wait follows a submission past Unknown until terminal or interrupt.
-Closing never cancels a call. The server admits at most two worker-credential
-connections (worker or CLI) at a time; HTTP 503 means both are taken, the
-server could not check the credential, or it is shutting down. Cancel never gets
-a reply; its following Query drives the exit code and prints unknown call id
-when the ID does not exist.
+Closing never cancels a call. The server bounds worker-credential connections
+(workers and CLIs; 8 by default, 4 per credential, and the CLI uses the
+worker credential); HTTP 503 means a cap is full, the server could not check
+the credential, or it is shutting down. cancel prints the server's single
+reply, the call's state read after the cancellation was recorded, and prints
+unknown call id when the ID does not exist; a call that had already finished
+answers with its outcome and exits accordingly.
 
 Exit codes: 0 = tool result (including is_error), or cancel answered Cancelled
 or Dispatched (intent recorded); 1 = rejected/lost/offline/cancelled before
@@ -161,12 +163,12 @@ func callCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 	}
 	defer client.Close()
 	if query || cancel {
+		var u *circusv1.CallUpdate
 		if cancel {
-			if err = client.Cancel(ctx, pos[1]); err != nil {
-				return err
-			}
+			u, err = client.Cancel(ctx, pos[1])
+		} else {
+			u, err = client.Query(ctx, pos[1])
 		}
-		u, err := client.Query(ctx, pos[1])
 		if err != nil {
 			return err
 		}

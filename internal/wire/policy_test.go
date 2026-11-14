@@ -41,6 +41,9 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 		fields := r.Descriptor().Fields()
 		for i := 0; i < fields.Len(); i++ {
 			f := fields.Get(i)
+			if f.ContainingOneof() == nil {
+				continue // envelope metadata (request_id), not a payload
+			}
 			body := r.NewField(f).Message()
 			// A distinct, nonempty call ID per payload catches a constant key.
 			callID := string(r.Descriptor().Name()) + "/" + string(f.Name())
@@ -57,7 +60,7 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 			switch f.Name() {
 			case "heartbeat", "go_away", "call_ack":
 				expected = wire.Control
-			case "list_jobs", "stop_session_jobs":
+			case "list_jobs", "stop_session_jobs", "unwatch":
 				expected = wire.Barrier
 			}
 			if class != expected {

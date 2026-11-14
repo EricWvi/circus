@@ -59,3 +59,16 @@ func TestServerPoolFlags(t *testing.T) {
 		}
 	})
 }
+
+func TestServerWorkerConnectionsFlag(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "circus.db")
+	for _, v := range []string{"0", "-1"} {
+		err := serverCommand([]string{"--dev-insecure", "--listen", "127.0.0.1:0", "--db", db, "--worker-connections", v}, io.Discard, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "--worker-connections must be at least 1") {
+			t.Fatalf("--worker-connections %s: %v", v, err)
+		}
+	}
+	if !strings.Contains(serverUsage, "--worker-connections") {
+		t.Fatal("usage lacks --worker-connections")
+	}
+}

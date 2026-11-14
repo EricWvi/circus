@@ -80,6 +80,9 @@ type Config struct {
 	// pools are refused with a *gateway.PoolError (see the sizing rule in
 	// gateway's package doc).
 	SendPoolBytes, ReceivePoolBytes int
+	// WorkerConnections bounds authenticated worker links; zero uses
+	// workerlink.DefaultMaxConnections, negative values are refused.
+	WorkerConnections int
 }
 
 func (c Config) validate() error {

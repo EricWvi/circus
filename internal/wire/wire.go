@@ -81,7 +81,7 @@ func (s Side) kinds() (Kind, Kind) {
 // Class declares scheduling, not business semantics. Data is FIFO per nonempty
 // ordering key; unrelated small messages may bypass large ones. Control can jump
 // the queue (heartbeat, GoAway, ack). Barrier waits for all earlier
-// Data/Barrier messages (ListJobs, StopSessionJobs). Send classifies every
+// Data/Barrier messages (ListJobs, StopSessionJobs, Unwatch). Send classifies every
 // message itself (see classify): every Dispatch/Submit/Query/Cancel of a call
 // shares one key, and so do the job events of a boot. Different keys may
 // complete out of enqueue order.

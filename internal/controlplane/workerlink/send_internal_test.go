@@ -79,23 +79,41 @@ func TestBusyRetryStopsAtBound(t *testing.T) {
 	}
 }
 
-func TestAcquireSendSlotWaits(t *testing.T) {
-	slots := make(chan struct{}, 1)
-	handlers := make(chan struct{}, 1)
-	handlers <- struct{}{}
-	ctx := wait.Ctx(t)
-	done := make(chan bool, 1)
-	go func() {
-		done <- acquireSendSlot(ctx, slots, handlers, func() { t.Error("logical cap was unexpectedly full") })
-	}()
-	select {
-	case got := <-done:
-		t.Fatalf("admission closed instead of waiting for a send slot: %v", got)
-	case <-time.After(25 * time.Millisecond):
+func TestOperationTable(t *testing.T) {
+	ops := newOperations(2)
+	ctx := t.Context()
+	if _, reason := ops.open(ctx, 0); reason != "zero request id" {
+		t.Fatalf("zero ID: %q", reason)
 	}
-	<-handlers
-	if got := wait.Recv(t, done); !got {
-		t.Fatal("admission failed after a send slot became available")
+	a, reason := ops.open(ctx, 1)
+	if reason != "" {
+		t.Fatal(reason)
+	}
+	if _, reason = ops.open(ctx, 1); reason != "duplicate request id" {
+		t.Fatalf("duplicate ID: %q", reason)
+	}
+	if _, reason = ops.open(ctx, 2); reason != "" {
+		t.Fatal(reason)
+	}
+	if _, reason = ops.open(ctx, 3); reason != "per-connection operation cap full" {
+		t.Fatalf("cap: %q", reason)
+	}
+	// Unwatch frees the slot at once and stops the operation's work; its own
+	// later end reports that nothing may be sent.
+	ops.unwatch(1)
+	if a.ctx.Err() == nil {
+		t.Fatal("unwatch did not cancel the operation")
+	}
+	again, reason := ops.open(ctx, 1)
+	if reason != "" {
+		t.Fatalf("slot not free after unwatch: %q", reason)
+	}
+	if ops.end(1, a) {
+		t.Fatal("unwatched operation ended a reused request ID")
+	}
+	ops.unwatch(99) // unknown: no-op
+	if !ops.end(1, again) || ops.end(1, again) {
+		t.Fatal("end must release exactly once")
 	}
 }
 

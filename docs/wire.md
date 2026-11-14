@@ -25,7 +25,7 @@ Notation: F = negotiated `max_fragment_bytes`, M = negotiated
 | Credential role | device (daemon) | worker |
 | Client sends | `DaemonUplink` | `WorkerUplink` |
 | Server sends | `DaemonDownlink` | `WorkerDownlink` |
-| Server connection cap (HTTP 503 when full) | 100 (`gateway.Config.MaxConnections`, max 256) | 2 (`workerlink.maxConnections`) |
+| Server connection cap (HTTP 503 when full) | 100 (`gateway.Config.MaxConnections`, max 256) | 8 by default (`circus server --worker-connections`, `workerlink.Config.MaxConnections`), and at most 4 per credential (`workerlink.maxPerCredential`) |
 
 **URL.** The credential file holds a base `control_plane_url` (no userinfo,
 query or fragment). The link URL is the base with its path's trailing `/`
@@ -61,7 +61,7 @@ characters of unpadded base64url encoding 32 bytes (`auth.TokenLen`,
 | --- | --- |
 | 401 (`WWW-Authenticate: Bearer`) | Missing, malformed or unknown token. Also on the daemon link for an unusable principal. |
 | 403 | Credential revoked or identity deleted; or a credential of the other role (e.g. a daemon token on the worker link). |
-| 503 | Authentication store failure; connection cap full; server shutting down. |
+| 503 | Authentication store failure; connection cap full (worker link: the total or the per-credential cap); server shutting down. |
 
 The worker link authenticates first and then checks its cap; the daemon link
 checks its cap first. After the upgrade the server re-validates the
@@ -127,8 +127,8 @@ sent: authentication failures are HTTP statuses (section 1).
 
 `FillWelcome` always writes explicit nonzero limits. Defaults below are those
 of `Options.defaults`; the control plane uses the same options for both links
-(`controlplane/links.go`; M and the heartbeat values are configurable,
-F is not).
+except `max_in_flight_messages` (`controlplane/links.go`; M and the
+heartbeat values are configurable, F is not).
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -140,7 +140,7 @@ F is not).
 | `max_fragment_bytes` (F) | 262144 = 256 KiB (`DefaultMaxFragmentBytes`) | Largest unfragmented envelope and largest `Fragment.data`. F ≤ M. |
 | `negotiated_version` | 1 | |
 | `server_time_unix_ms` | server clock | See below. |
-| `max_in_flight_messages` | 2; allowed 1..2 | Max partially transferred fragmented messages per direction. |
+| `max_in_flight_messages` | 2 on the daemon link, 1 on the worker link (`workerlink.New`); allowed 1..2 | Max partially transferred fragmented messages per direction. |
 | `max_in_flight_bytes` | 2 × M | Max sum of `total_size` of partially transferred fragmented messages per direction. |
 
 A zero limit field is read as its default (`OptionsFromWelcome`), for
@@ -193,13 +193,18 @@ Each envelope has a single `oneof payload`.
 | --- | --- |
 | `DaemonUplink` | hello 1, heartbeat 2, fragment 3, call_ack 10, result 11, call_status 12, job_event 13, job_snapshot 14 |
 | `DaemonDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, go_away 5, dispatch_call 10, cancel_call 11, call_query 12, list_jobs 13, stop_session_jobs 14 |
-| `WorkerUplink` | hello 1, heartbeat 2, fragment 3, submit_call 10, cancel_call 11, call_query 12 |
+| `WorkerUplink` | hello 1, heartbeat 2, fragment 3, submit_call 10, cancel_call 11, call_query 12, unwatch 13 |
 | `WorkerDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, call_update 10, job_event 11 |
 
-A received envelope MUST contain exactly one known payload field, encoded
-as a length-delimited field (`scan`). Unknown fields next to it are ignored,
-but an envelope whose only payload is a field number the receiver does not
-know is rejected ("missing envelope payload"), so adding a payload type is a
+Both worker envelopes also have `uint64 request_id = 20` beside the oneof
+(section 7). It is 0 (absent) on hello, welcome, reject, heartbeat and
+fragment frames; receivers ignore it there.
+
+A received envelope MUST contain exactly one field of its `payload` oneof,
+encoded as a length-delimited field (`scan`). Other known fields
+(`request_id`) and unknown fields next to it are ignored by this check, but
+an envelope whose only payload is a field number the receiver does not know
+is rejected ("missing envelope payload"), so adding a payload type is a
 breaking change for older peers.
 
 `hello`/`welcome`/`reject` are only valid in the handshake. After Welcome
@@ -216,7 +221,7 @@ scheduling metadata; nothing about them is on the wire.
 | Payload | Class | Ordering key |
 | --- | --- | --- |
 | heartbeat, go_away, call_ack | Control | none |
-| list_jobs, stop_session_jobs | Barrier | none |
+| list_jobs, stop_session_jobs, unwatch | Barrier | none |
 | dispatch_call, submit_call, cancel_call, call_query, call_update | Data | `call/<call_id>` |
 | job_event (daemon uplink) | Data | one key for the whole boot |
 | job_event (worker downlink) | Data | one key per (device, boot_id) |
@@ -369,7 +374,7 @@ closing; other senders MUST NOT send what the scan would reject.
 | dispatch_call, submit_call, result, call_status, call_ack, call_update | M |
 | job_snapshot | 8 MiB (`MaxSnapshotBytes`) |
 | fragment | F + 128 (`FrameOverhead`) |
-| everything else (hello, welcome, reject, heartbeat, go_away, cancel_call, call_query, list_jobs, stop_session_jobs, job_event) | 64 KiB (`MaxMetadataBytes`) |
+| everything else (hello, welcome, reject, heartbeat, go_away, cancel_call, call_query, unwatch, list_jobs, stop_session_jobs, job_event) | 64 KiB (`MaxMetadataBytes`) |
 
 Further size rules:
 - call_status, call_ack, call_update: envelope size minus the encoded size of
@@ -418,8 +423,9 @@ A peer can rely on:
   order (e.g. all `CallUpdate`s of one call; `SubmitCall` before a later
   `CancelCall`/`CallQuery` of the same call; job events of one boot, which
   also carry increasing `seq`).
-- **Barriers:** `ListJobs`/`StopSessionJobs` arrive after every Data/Barrier
-  message sent before them, and before every one sent after them.
+- **Barriers:** `ListJobs`/`StopSessionJobs`/`Unwatch` arrive after every
+  Data/Barrier message sent before them, and before every one sent after
+  them.
 - **Interleaving:** small messages and other messages' fragments can arrive
   between the fragments of a large message.
 
@@ -441,59 +447,101 @@ started large messages. A started fragmented control message rotates like
 any large message. A sender is conforming as long as it keeps the rules of
 sections 3.2 and 3.3; this round structure is not required.
 
-## 7. Worker link today
+## 7. Worker link operations
 
-> **This section will change.** A worker-protocol revision is planned before
-> the TypeScript worker is written: request IDs on the envelope, an
-> `Unwatch` message, exactly one reply to Cancel, and configurable
-> connection counts. This section describes the current code only; the wire
-> format of those changes is not defined yet.
+Every `SubmitCall`, `CallQuery` and `CancelCall` opens one **operation**
+named by the envelope's `request_id`; `Unwatch` names an open operation.
+`CancelCall` and `CallQuery` are the messages the daemon link uses too, so
+the ID lives only on the worker envelope.
 
-| Uplink payload | Effect | Reply |
-| --- | --- | --- |
-| `SubmitCall{device, call}` | Submit a `DeviceCall` to the user's device named `device` (1-128 bytes). `call.call_id` and `call.session_id`: 1-128 bytes of `[A-Za-z0-9_-]`; `agent_id`: empty or the same grammar; exactly one tool. | A stream of `CallUpdate`s with this `call_id`: zero or more nonterminal updates, then one terminal update (unless the link closes first). |
-| `CallQuery{call_id}` | Read the call's current state. | Exactly one `CallUpdate` (may be nonterminal). |
-| `CancelCall{call_id}` | Cancel before dispatch; after dispatch the intent is recorded and the daemon's result wins. Unknown, invalid or finished ids are no-ops. | **Never a reply.** The outcome arrives on a watched Submit stream or through a later Query. |
+**Request IDs** (`workerlink.operations`):
+- Chosen by the client: nonzero, and a client MUST NOT reuse a request id
+  on a connection. A per-connection counter starting at 1 satisfies this;
+  the Go client does exactly that.
+- Why never reuse: after `Unwatch`, an update of the old operation may
+  already be on its way (the server may have released the slot and be
+  sending the last reply, or have a Submit update past its last check).
+  Under a reused id that update would be routed to the new operation: the
+  client would treat it as the new operation's reply or terminal update and
+  end it locally while the server still holds its slot, so the client's
+  count of open operations would fall below the server's and a later
+  operation would trip the cap and close the link.
+- On Submit, Query, Cancel or Unwatch, `request_id = 0` closes the link;
+  so does a Submit, Query or Cancel whose ID names an operation that is
+  still open (the server can only detect reuse of an open id).
+- Every `CallUpdate` the server sends carries the `request_id` of the
+  operation it answers (two operations on the same call get separate
+  updates). Hello, Welcome, Reject, Heartbeat and Fragment frames carry 0.
+- A client drops a `CallUpdate` whose `request_id` is not an operation it
+  has open (unwatched, already answered, or never opened).
+
+| Uplink payload | Effect | Replies (each with the operation's `request_id`) | Operation ends |
+| --- | --- | --- | --- |
+| `SubmitCall{device, call}` | Submit a `DeviceCall` to the user's device named `device` (1-128 bytes). `call.call_id` and `call.session_id`: 1-128 bytes of `[A-Za-z0-9_-]`; `agent_id`: empty or the same grammar; exactly one tool. | A stream of `CallUpdate`s: zero or more nonterminal updates, then one terminal update (unless the link closes or the operation is unwatched first). | At its terminal update, or at Unwatch. |
+| `CallQuery{call_id}` | Read the call's current state. | Exactly one `CallUpdate` (may be nonterminal, e.g. `unknown`, or `rejected NOT_FOUND`). | At that reply (or Unwatch). |
+| `CancelCall{call_id}` | Cancel before dispatch; after dispatch record the intent (the daemon's result wins). The intent is recorded in receive order, so it cannot overtake an earlier Submit of the same call. | Exactly one `CallUpdate`: the call's state read after the intent was recorded (the call may have finished in between). `cancelled`: cancelled before dispatch. `dispatched` or `unknown`: intent recorded, the daemon's result decides. A terminal outcome (`result`, `lost`, ...): the call had already finished; `unknown` with reason `DEVICE_OFFLINE` when it finished but its result cannot be read now. `rejected NOT_FOUND`: no such call for this user; `rejected INVALID`: invalid id. | At that reply (or Unwatch). The intent stays recorded either way. |
+| `Unwatch{}` | Stop delivery for the open operation named by `request_id` (normally a Submit; on a Query or Cancel it abandons the reply). Never cancels the call. Unknown or finished ids: no-op. | **None.** Updates already in flight may still arrive and are dropped. | Immediately. |
 
 `CallUpdate` variants:
 
 | Variant | Terminal (`wire.Terminal`) |
 | --- | --- |
 | `accepted`, `dispatched` (also used for "running") | no |
-| `unknown` (dispatched, outcome open; e.g. reason `DEVICE_OFFLINE` from Query) | **no**: the stream continues; a result can still arrive |
+| `unknown` (dispatched, outcome open; e.g. reason `DEVICE_OFFLINE` from Query) | **no**: a Submit stream continues; a result can still arrive |
 | `result` (a `DeviceResult`) | yes |
 | `offline` (device offline, with the user's online device names) | yes |
 | `lost` (e.g. reason `RESULT_UNAVAILABLE`) | yes |
 | `rejected` with `INVALID`, `OVERLOADED`, `CALL_MISMATCH`, `UNKNOWN_DEVICE`, `STORE_UNAVAILABLE`, `DEVICE_SHUTTING_DOWN` | yes |
-| `rejected` with `NOT_FOUND` | **no**: it answers only that Query (no call with this id is visible to this user) and is not a call outcome |
+| `rejected` with `NOT_FOUND` | **no**: it ends only the Query or Cancel it answers (no call with this id is visible to this user) and is not a call outcome |
 | `cancelled` | yes |
 
-Semantics today:
-- **Correlation is by `call_id` only**; there is no request id. A client
-  must not have two operations on the same `call_id` open on one connection
-  (the Go client enforces this), because their updates cannot be told
-  apart. Updates for a `call_id` the client is not waiting for are dropped
-  by the Go client.
+"Terminal" is a property of the call. An operation ends at its last reply:
+for a Submit the terminal update, for a Query or Cancel its one reply,
+whatever its variant.
+
+Semantics:
 - Re-submitting the same `call_id` with identical content for the same
   device attaches to the existing call; different content or device yields
   `CALL_MISMATCH`.
-- **Per-connection operation cap: 4** (`workerlink.maxOperations`). Each
-  Submit holds a slot until its terminal update; each Query until its
-  answer; Cancel holds none. The slot is released *before* the
-  terminal/answer is sent, so a new operation may follow immediately. A
-  fifth concurrent operation **closes the link** (it is not rejected).
-- **Connections:** at most 2 authenticated worker-link connections per
-  control plane, of any kind (`workerlink.maxConnections`); the next gets
-  HTTP 503.
-- The server **closes the link** (abort, no notice) when: the operation cap
-  is exceeded; a rejection would carry an empty `call_id` (a Submit whose
-  `call_id` is invalid, or a Query with an empty one; a Query with a
-  nonempty invalid id gets `rejected INVALID`); the router reports overload
-  or an ambiguous store failure; a Submit names a `call_id` owned by another
-  user; the worker reads too slowly, so the server's send queue overflows
-  (256 messages or 2 × M bytes, `Options.defaults`) or a call's update
-  buffer overflows (16 updates, 144 MiB or a 15 s stall: `calls.Config`
-  defaults); a send stays refused by the shared memory pool for 10 s
+- **Per-connection operation cap: 64** (`workerlink.maxOperations`). Every
+  open Submit, Query and Cancel holds a slot. The server releases a slot
+  *before* sending the operation's last reply, so a client may start a new
+  operation as soon as that reply arrives. `Unwatch` releases the slot while
+  the server reads it, before it reads the next message, so an operation
+  sent after an `Unwatch` always finds that slot free. An operation beyond
+  the cap **closes the link** (it is not rejected); a client must count its
+  open operations and stay within the cap. Because the receiver processes
+  messages in arrival order, the client must make sure `Unwatch` arrives
+  before the operation that reuses its slot: it is a Barrier (section 3.2),
+  and a single FIFO send queue satisfies this.
+- **Connections:** at most 8 authenticated worker-link connections per
+  control plane by default (`--worker-connections`), of any kind (worker or
+  CLI), and at most 4 per credential; the next gets HTTP 503. CLIs that use
+  the worker's credential count toward its 4. A worker that restarts while
+  its old connection is still half-open (until the server's heartbeat
+  timeout) therefore still gets in, and one busy credential cannot lock
+  out another.
+- **Server-side flow control (informational):** updates (including Query
+  and Cancel answers) wait in the server until they can be sent. Updates
+  whose decoded size is at most 256 KiB go out at once; larger ones wait
+  for one of 4 send permits shared by all worker connections
+  (`workerlink.pushPermits`). Waiting holds the operation's slot, and
+  `Unwatch` still frees it at once. Normally this is only latency, but if
+  the server's shared send pool stays saturated (slow readers holding it),
+  a large update can wait long enough to exceed the 15 s update-buffer
+  stall below, and its connection is closed even though this worker reads
+  promptly. Recovery is the usual reconnect and `CallQuery`.
+- The server **closes the link** (abort, no notice, reason logged) when: a
+  request id is zero or names an open operation; the operation cap is
+  exceeded; a rejection would carry an empty `call_id` (a Submit whose
+  `call_id` is invalid, or a Query or Cancel with an empty one; a nonempty
+  invalid id gets `rejected INVALID`); the router reports overload or an
+  ambiguous store failure; a Submit names a `call_id` owned by another
+  user; the server's send queue overflows because the worker reads too
+  slowly (256 messages or 2 × M bytes, `Options.defaults`); a call's update
+  buffer overflows (16 updates, 144 MiB, or a 15 s stall: `calls.Config`
+  defaults), because the worker reads too slowly or because a large update
+  waited too long for a send permit (above); a send stays refused by the shared memory pool for 10 s
   (`workerlink.sendBusyLimit`); an unexpected payload arrives; or the
   credential is revoked. Recovery is always: reconnect, then `CallQuery`.
   Closing a connection never cancels a call.
@@ -502,11 +550,11 @@ Semantics today:
 
 ## 8. Minimal implementation subset
 
-Decided rule: the worker-link server will send **`max_in_flight_messages =
-1`** in Welcome. This is not in the code yet (today it sends the default 2);
-it lands with the protocol revision of section 7. A worker that relies on
-this subset MUST treat a Welcome with `max_in_flight_messages` other than 1
-as incompatible (terminal), exactly like a message-limit mismatch.
+The worker-link server sends **`max_in_flight_messages = 1`** in Welcome
+(`workerlink.New`; the daemon link keeps 2). A worker that relies on this
+subset MUST treat a Welcome with `max_in_flight_messages` other than 1 as
+incompatible (terminal), exactly like a message-limit mismatch. (The Go
+worker client accepts any valid value.)
 
 **Why this is conforming.** Welcome's limits bind both directions (section
 2), and the Go link applies them to its sender (`canStart`: at most
@@ -537,8 +585,9 @@ as incompatible (terminal), exactly like a message-limit mismatch.
    in fragments, so at most one fragmented message is in flight. Between
    two fragments the worker MAY write heartbeats, and MAY write a small
    business message from further back in the queue only if no earlier
-   unsent message has the same ordering key (section 3.2; worker uplink
-   keys are `call/<call_id>`, and there are no barriers). Never letting
+   unsent message has the same ordering key and neither it nor an earlier
+   unsent message is an `Unwatch` (section 3.2; worker uplink keys are
+   `call/<call_id>`, and `Unwatch` is the only barrier). Never letting
    business messages overtake each other is the simplest correct choice.
 4. **Heartbeats** (section 4): send every `heartbeat_interval_ms`; close
    when no frame arrives for `heartbeat_timeout_ms`.
@@ -551,11 +600,16 @@ as incompatible (terminal), exactly like a message-limit mismatch.
 7. **GoAway:** the worker link has none today. If a revision adds it,
    handle it as in section 3.4: stop new sends, flush, close with 1000,
    reconnect after the given delay.
+8. **Operations** (section 7): a per-connection request-id counter from 1;
+   a table of open operations, at most 64, routing each `CallUpdate` by
+   `request_id` and dropping unknown ids; an operation ends at its last
+   reply (terminal update for Submit, the one reply for Query/Cancel), or
+   when the worker sends `Unwatch` for it, which frees its slot at once.
 
 **What it can skip:** multiple reassembly buffers; the rotating large-message
 scheduler (round structure, up to two concurrent fragmented messages);
-barrier handling (the worker uplink has none); the per-key multi-queue
-scheduler; control priority beyond inserting heartbeats between frames; and
+barrier handling beyond FIFO order (one queue keeps `Unwatch` in place);
+the per-key multi-queue scheduler; control priority beyond inserting heartbeats between frames; and
 all Go memory accounting (decoded cost, shared budgets, link reserve,
 consumer-stall pauses). Its own memory bound is one partial message
 (≤ M) plus its receive queue.
@@ -576,4 +630,4 @@ consumer-stall pauses). Its own memory bound is one partial message
 - [ ] Sends heartbeats every `heartbeat_interval_ms` regardless of traffic; closes after `heartbeat_timeout_ms` with no received frame.
 - [ ] Never sends an envelope that violates section 5 (sizes, repeated caps, nodes, fields, depth, groups, UTF-8).
 - [ ] Shuts down by flushing and closing with 1000; treats other closes as errors.
-- [ ] Worker link: correlates by `call_id` with at most one open operation per id; keeps at most 4 Submit/Query operations open; expects no reply to Cancel; treats `unknown` and `NOT_FOUND` as nonterminal; recovers by reconnecting and querying.
+- [ ] Worker link: sends a nonzero `request_id` on every Submit/Query/Cancel/Unwatch and never reuses one on a connection (a counter from 1); routes updates by `request_id` and drops unknown ids; keeps at most 64 Submit/Query/Cancel operations open; ends an operation at its last reply (Submit: terminal update; Query and Cancel: their one reply) or by sending `Unwatch`, which frees the slot at once and gets no reply; keeps `Unwatch` before any later operation; treats `unknown` and `NOT_FOUND` as nonterminal call states; recovers by reconnecting and querying.

@@ -14,13 +14,23 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/worker_link.proto.
  */
 export const file_circus_v1_worker_link: GenFile = /*@__PURE__*/
-  fileDesc("ChtjaXJjdXMvdjEvd29ya2VyX2xpbmsucHJvdG8SCWNpcmN1cy52MSKYAgoMV29ya2VyVXBsaW5rEiEKBWhlbGxvGAEgASgLMhAuY2lyY3VzLnYxLkhlbGxvSAASKQoJaGVhcnRiZWF0GAIgASgLMhQuY2lyY3VzLnYxLkhlYXJ0YmVhdEgAEicKCGZyYWdtZW50GAMgASgLMhMuY2lyY3VzLnYxLkZyYWdtZW50SAASLAoLc3VibWl0X2NhbGwYCiABKAsyFS5jaXJjdXMudjEuU3VibWl0Q2FsbEgAEiwKC2NhbmNlbF9jYWxsGAsgASgLMhUuY2lyY3VzLnYxLkNhbmNlbENhbGxIABIqCgpjYWxsX3F1ZXJ5GAwgASgLMhQuY2lyY3VzLnYxLkNhbGxRdWVyeUgAQgkKB3BheWxvYWQimQIKDldvcmtlckRvd25saW5rEiUKB3dlbGNvbWUYASABKAsyEi5jaXJjdXMudjEuV2VsY29tZUgAEiMKBnJlamVjdBgCIAEoCzIRLmNpcmN1cy52MS5SZWplY3RIABIpCgloZWFydGJlYXQYAyABKAsyFC5jaXJjdXMudjEuSGVhcnRiZWF0SAASJwoIZnJhZ21lbnQYBCABKAsyEy5jaXJjdXMudjEuRnJhZ21lbnRIABIsCgtjYWxsX3VwZGF0ZRgKIAEoCzIVLmNpcmN1cy52MS5DYWxsVXBkYXRlSAASLgoJam9iX2V2ZW50GAsgASgLMhkuY2lyY3VzLnYxLldvcmtlckpvYkV2ZW50SABCCQoHcGF5bG9hZCJVCg5Xb3JrZXJKb2JFdmVudBIOCgZkZXZpY2UYASABKAkSDwoHYm9vdF9pZBgCIAEoCRIiCgVldmVudBgDIAEoCzITLmNpcmN1cy52MS5Kb2JFdmVudCJBCgpTdWJtaXRDYWxsEg4KBmRldmljZRgBIAEoCRIjCgRjYWxsGAIgASgLMhUuY2lyY3VzLnYxLkRldmljZUNhbGwi2AYKCkNhbGxVcGRhdGUSDwoHY2FsbF9pZBgBIAEoCRIyCghhY2NlcHRlZBgCIAEoCzIeLmNpcmN1cy52MS5DYWxsVXBkYXRlLkFjY2VwdGVkSAASNgoKZGlzcGF0Y2hlZBgDIAEoCzIgLmNpcmN1cy52MS5DYWxsVXBkYXRlLkRpc3BhdGNoZWRIABIpCgZyZXN1bHQYBCABKAsyFy5jaXJjdXMudjEuRGV2aWNlUmVzdWx0SAASNgoHb2ZmbGluZRgFIAEoCzIjLmNpcmN1cy52MS5DYWxsVXBkYXRlLkRldmljZU9mZmxpbmVIABIwCgd1bmtub3duGAYgASgLMh0uY2lyY3VzLnYxLkNhbGxVcGRhdGUuVW5rbm93bkgAEioKBGxvc3QYByABKAsyGi5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5Mb3N0SAASMgoIcmVqZWN0ZWQYCCABKAsyHi5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5SZWplY3RlZEgAEjQKCWNhbmNlbGxlZBgJIAEoCzIfLmNpcmN1cy52MS5DYWxsVXBkYXRlLkNhbmNlbGxlZEgAGgoKCEFjY2VwdGVkGgwKCkRpc3BhdGNoZWQaJwoNRGV2aWNlT2ZmbGluZRIWCg5vbmxpbmVfZGV2aWNlcxgBIAMoCRoZCgdVbmtub3duEg4KBnJlYXNvbhgBIAEoCRoWCgRMb3N0Eg4KBnJlYXNvbhgBIAEoCRqUAgoIUmVqZWN0ZWQSMQoEY29kZRgBIAEoDjIjLmNpcmN1cy52MS5DYWxsVXBkYXRlLlJlamVjdGVkLkNvZGUSDwoHbWVzc2FnZRgCIAEoCSLDAQoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASEAoMQ09ERV9JTlZBTElEEAESEwoPQ09ERV9PVkVSTE9BREVEEAISFgoSQ09ERV9DQUxMX01JU01BVENIEAMSFwoTQ09ERV9VTktOT1dOX0RFVklDRRAEEhoKFkNPREVfU1RPUkVfVU5BVkFJTEFCTEUQBRIdChlDT0RFX0RFVklDRV9TSFVUVElOR19ET1dOEAYSEgoOQ09ERV9OT1RfRk9VTkQQBxoLCglDYW5jZWxsZWRCCAoGdXBkYXRlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_link]);
+  fileDesc("ChtjaXJjdXMvdjEvd29ya2VyX2xpbmsucHJvdG8SCWNpcmN1cy52MSLTAgoMV29ya2VyVXBsaW5rEiEKBWhlbGxvGAEgASgLMhAuY2lyY3VzLnYxLkhlbGxvSAASKQoJaGVhcnRiZWF0GAIgASgLMhQuY2lyY3VzLnYxLkhlYXJ0YmVhdEgAEicKCGZyYWdtZW50GAMgASgLMhMuY2lyY3VzLnYxLkZyYWdtZW50SAASLAoLc3VibWl0X2NhbGwYCiABKAsyFS5jaXJjdXMudjEuU3VibWl0Q2FsbEgAEiwKC2NhbmNlbF9jYWxsGAsgASgLMhUuY2lyY3VzLnYxLkNhbmNlbENhbGxIABIqCgpjYWxsX3F1ZXJ5GAwgASgLMhQuY2lyY3VzLnYxLkNhbGxRdWVyeUgAEiUKB3Vud2F0Y2gYDSABKAsyEi5jaXJjdXMudjEuVW53YXRjaEgAEhIKCnJlcXVlc3RfaWQYFCABKARCCQoHcGF5bG9hZCKtAgoOV29ya2VyRG93bmxpbmsSJQoHd2VsY29tZRgBIAEoCzISLmNpcmN1cy52MS5XZWxjb21lSAASIwoGcmVqZWN0GAIgASgLMhEuY2lyY3VzLnYxLlJlamVjdEgAEikKCWhlYXJ0YmVhdBgDIAEoCzIULmNpcmN1cy52MS5IZWFydGJlYXRIABInCghmcmFnbWVudBgEIAEoCzITLmNpcmN1cy52MS5GcmFnbWVudEgAEiwKC2NhbGxfdXBkYXRlGAogASgLMhUuY2lyY3VzLnYxLkNhbGxVcGRhdGVIABIuCglqb2JfZXZlbnQYCyABKAsyGS5jaXJjdXMudjEuV29ya2VySm9iRXZlbnRIABISCgpyZXF1ZXN0X2lkGBQgASgEQgkKB3BheWxvYWQiCQoHVW53YXRjaCJVCg5Xb3JrZXJKb2JFdmVudBIOCgZkZXZpY2UYASABKAkSDwoHYm9vdF9pZBgCIAEoCRIiCgVldmVudBgDIAEoCzITLmNpcmN1cy52MS5Kb2JFdmVudCJBCgpTdWJtaXRDYWxsEg4KBmRldmljZRgBIAEoCRIjCgRjYWxsGAIgASgLMhUuY2lyY3VzLnYxLkRldmljZUNhbGwi2AYKCkNhbGxVcGRhdGUSDwoHY2FsbF9pZBgBIAEoCRIyCghhY2NlcHRlZBgCIAEoCzIeLmNpcmN1cy52MS5DYWxsVXBkYXRlLkFjY2VwdGVkSAASNgoKZGlzcGF0Y2hlZBgDIAEoCzIgLmNpcmN1cy52MS5DYWxsVXBkYXRlLkRpc3BhdGNoZWRIABIpCgZyZXN1bHQYBCABKAsyFy5jaXJjdXMudjEuRGV2aWNlUmVzdWx0SAASNgoHb2ZmbGluZRgFIAEoCzIjLmNpcmN1cy52MS5DYWxsVXBkYXRlLkRldmljZU9mZmxpbmVIABIwCgd1bmtub3duGAYgASgLMh0uY2lyY3VzLnYxLkNhbGxVcGRhdGUuVW5rbm93bkgAEioKBGxvc3QYByABKAsyGi5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5Mb3N0SAASMgoIcmVqZWN0ZWQYCCABKAsyHi5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5SZWplY3RlZEgAEjQKCWNhbmNlbGxlZBgJIAEoCzIfLmNpcmN1cy52MS5DYWxsVXBkYXRlLkNhbmNlbGxlZEgAGgoKCEFjY2VwdGVkGgwKCkRpc3BhdGNoZWQaJwoNRGV2aWNlT2ZmbGluZRIWCg5vbmxpbmVfZGV2aWNlcxgBIAMoCRoZCgdVbmtub3duEg4KBnJlYXNvbhgBIAEoCRoWCgRMb3N0Eg4KBnJlYXNvbhgBIAEoCRqUAgoIUmVqZWN0ZWQSMQoEY29kZRgBIAEoDjIjLmNpcmN1cy52MS5DYWxsVXBkYXRlLlJlamVjdGVkLkNvZGUSDwoHbWVzc2FnZRgCIAEoCSLDAQoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASEAoMQ09ERV9JTlZBTElEEAESEwoPQ09ERV9PVkVSTE9BREVEEAISFgoSQ09ERV9DQUxMX01JU01BVENIEAMSFwoTQ09ERV9VTktOT1dOX0RFVklDRRAEEhoKFkNPREVfU1RPUkVfVU5BVkFJTEFCTEUQBRIdChlDT0RFX0RFVklDRV9TSFVUVElOR19ET1dOEAYSEgoOQ09ERV9OT1RfRk9VTkQQBxoLCglDYW5jZWxsZWRCCAoGdXBkYXRlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_link]);
 
 /**
  * WorkerUplink is the call-only worker-to-control-plane envelope.
  * Hello must be first; no business messages before Welcome. Session and lease
  * messages belong to M3. Frames are FIFO; fragment/control scheduling follows
  * Fragment's rules. A submission must precede its same-call cancellation.
+ *
+ * Every SubmitCall, CallQuery, CancelCall and Unwatch carries a request_id.
+ * Submit, Query and Cancel each open one operation under that ID; Unwatch
+ * names an open operation. The ID is chosen by the client, must be nonzero
+ * and must never be reused on the connection (a per-connection counter
+ * starting at 1 satisfies this): after Unwatch a late update of the old
+ * operation would be routed to the new one. A zero ID, an ID of an open
+ * operation on Submit/Query/Cancel, or an operation beyond the
+ * per-connection cap closes the link. Hello, Heartbeat and Fragment frames
+ * carry 0.
  *
  * @generated from message circus.v1.WorkerUplink
  */
@@ -48,14 +58,22 @@ export type WorkerUplink = Message<"circus.v1.WorkerUplink"> & {
     case: "fragment";
   } | {
     /**
+     * Opens a Submit operation: every CallUpdate for this call, including the
+     * terminal one, carries its request_id. It ends at the terminal update or
+     * at Unwatch.
+     *
      * @generated from field: circus.v1.SubmitCall submit_call = 10;
      */
     value: SubmitCall;
     case: "submitCall";
   } | {
     /**
-     * Cancellation never has a direct reply, including for unknown or invalid
-     * IDs. A watched subscription or subsequent CallQuery carries the outcome.
+     * Opens a Cancel operation, answered by exactly one CallUpdate: the call's
+     * state read after the cancellation intent was recorded. Cancelled means
+     * cancelled before dispatch; Dispatched or Unknown mean the intent is
+     * recorded and the daemon's result decides; a terminal outcome means the
+     * call had already finished; Rejected NOT_FOUND or INVALID mean no such
+     * call is visible. The reply ends the operation, never the call.
      *
      * @generated from field: circus.v1.CancelCall cancel_call = 11;
      */
@@ -63,11 +81,30 @@ export type WorkerUplink = Message<"circus.v1.WorkerUplink"> & {
     case: "cancelCall";
   } | {
     /**
+     * Opens a Query operation, answered by exactly one CallUpdate (possibly
+     * nonterminal).
+     *
      * @generated from field: circus.v1.CallQuery call_query = 12;
      */
     value: CallQuery;
     case: "callQuery";
+  } | {
+    /**
+     * Ends the open operation named by request_id without a reply. It never
+     * cancels the call. Unknown or finished IDs are a no-op.
+     *
+     * @generated from field: circus.v1.Unwatch unwatch = 13;
+     */
+    value: Unwatch;
+    case: "unwatch";
   } | { case: undefined; value?: undefined };
+
+  /**
+   * Nonzero on every business payload; 0 on Hello, Heartbeat and Fragment.
+   *
+   * @generated from field: uint64 request_id = 20;
+   */
+  requestId: bigint;
 };
 
 /**
@@ -123,6 +160,14 @@ export type WorkerDownlink = Message<"circus.v1.WorkerDownlink"> & {
     value: WorkerJobEvent;
     case: "jobEvent";
   } | { case: undefined; value?: undefined };
+
+  /**
+   * On call_update: the request_id of the operation it answers. 0 otherwise.
+   * A client drops updates for request IDs it no longer has open.
+   *
+   * @generated from field: uint64 request_id = 20;
+   */
+  requestId: bigint;
 };
 
 /**
@@ -131,6 +176,24 @@ export type WorkerDownlink = Message<"circus.v1.WorkerDownlink"> & {
  */
 export const WorkerDownlinkSchema: GenMessage<WorkerDownlink> = /*@__PURE__*/
   messageDesc(file_circus_v1_worker_link, 1);
+
+/**
+ * Unwatch stops delivery for the operation named by the envelope's
+ * request_id and frees its slot immediately. It has no reply and never
+ * cancels the call; updates already in flight may still arrive and are
+ * dropped by the client.
+ *
+ * @generated from message circus.v1.Unwatch
+ */
+export type Unwatch = Message<"circus.v1.Unwatch"> & {
+};
+
+/**
+ * Describes the message circus.v1.Unwatch.
+ * Use `create(UnwatchSchema)` to create a new message.
+ */
+export const UnwatchSchema: GenMessage<Unwatch> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 2);
 
 /**
  * WorkerJobEvent is reserved for the worker milestone (M3): the control plane
@@ -163,7 +226,7 @@ export type WorkerJobEvent = Message<"circus.v1.WorkerJobEvent"> & {
  * Use `create(WorkerJobEventSchema)` to create a new message.
  */
 export const WorkerJobEventSchema: GenMessage<WorkerJobEvent> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 2);
+  messageDesc(file_circus_v1_worker_link, 3);
 
 /**
  * SubmitCall addresses a device by its user-unique name.
@@ -187,12 +250,12 @@ export type SubmitCall = Message<"circus.v1.SubmitCall"> & {
  * Use `create(SubmitCallSchema)` to create a new message.
  */
 export const SubmitCallSchema: GenMessage<SubmitCall> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 3);
+  messageDesc(file_circus_v1_worker_link, 4);
 
 /**
  * CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
  * and cancelled are terminal call outcomes, except that Rejected NOT_FOUND only
- * answers its query operation. Unknown is NOT terminal: a reconnect of the
+ * answers its Query or Cancel operation. Unknown is NOT terminal: a reconnect of the
  * same daemon boot can still yield a result; CallQuery can retrieve the latest state.
  *
  * @generated from message circus.v1.CallUpdate
@@ -264,7 +327,7 @@ export type CallUpdate = Message<"circus.v1.CallUpdate"> & {
  * Use `create(CallUpdateSchema)` to create a new message.
  */
 export const CallUpdateSchema: GenMessage<CallUpdate> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 4);
+  messageDesc(file_circus_v1_worker_link, 5);
 
 /**
  * Accepted means metadata was accepted, but execution is not yet dispatched.
@@ -279,7 +342,7 @@ export type CallUpdate_Accepted = Message<"circus.v1.CallUpdate.Accepted"> & {
  * Use `create(CallUpdate_AcceptedSchema)` to create a new message.
  */
 export const CallUpdate_AcceptedSchema: GenMessage<CallUpdate_Accepted> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 4, 0);
+  messageDesc(file_circus_v1_worker_link, 5, 0);
 
 /**
  * Dispatched means dispatch metadata was committed before sending. It also
@@ -296,7 +359,7 @@ export type CallUpdate_Dispatched = Message<"circus.v1.CallUpdate.Dispatched"> &
  * Use `create(CallUpdate_DispatchedSchema)` to create a new message.
  */
 export const CallUpdate_DispatchedSchema: GenMessage<CallUpdate_Dispatched> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 4, 1);
+  messageDesc(file_circus_v1_worker_link, 5, 1);
 
 /**
  * DeviceOffline reports the addressed device offline, with alternatives.
@@ -315,7 +378,7 @@ export type CallUpdate_DeviceOffline = Message<"circus.v1.CallUpdate.DeviceOffli
  * Use `create(CallUpdate_DeviceOfflineSchema)` to create a new message.
  */
 export const CallUpdate_DeviceOfflineSchema: GenMessage<CallUpdate_DeviceOffline> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 4, 2);
+  messageDesc(file_circus_v1_worker_link, 5, 2);
 
 /**
  * Unknown leaves open the outcome of an already dispatched call.
@@ -334,7 +397,7 @@ export type CallUpdate_Unknown = Message<"circus.v1.CallUpdate.Unknown"> & {
  * Use `create(CallUpdate_UnknownSchema)` to create a new message.
  */
 export const CallUpdate_UnknownSchema: GenMessage<CallUpdate_Unknown> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 4, 3);
+  messageDesc(file_circus_v1_worker_link, 5, 3);
 
 /**
  * Lost means the authoritative result cannot be recovered.
@@ -353,7 +416,7 @@ export type CallUpdate_Lost = Message<"circus.v1.CallUpdate.Lost"> & {
  * Use `create(CallUpdate_LostSchema)` to create a new message.
  */
 export const CallUpdate_LostSchema: GenMessage<CallUpdate_Lost> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 4, 4);
+  messageDesc(file_circus_v1_worker_link, 5, 4);
 
 /**
  * Rejected is a routing/validation failure, not a tool result.
@@ -377,7 +440,7 @@ export type CallUpdate_Rejected = Message<"circus.v1.CallUpdate.Rejected"> & {
  * Use `create(CallUpdate_RejectedSchema)` to create a new message.
  */
 export const CallUpdate_RejectedSchema: GenMessage<CallUpdate_Rejected> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 4, 5);
+  messageDesc(file_circus_v1_worker_link, 5, 5);
 
 /**
  * @generated from enum circus.v1.CallUpdate.Rejected.Code
@@ -424,9 +487,9 @@ export enum CallUpdate_Rejected_Code {
   DEVICE_SHUTTING_DOWN = 6,
 
   /**
-   * No call with this id is visible to this user. Answers only this query;
-   * it says nothing about a submission of the same id still in flight elsewhere,
-   * and is not an outcome of any call.
+   * No call with this id is visible to this user. Answers only this
+   * Query or Cancel; it says nothing about a submission of the same id
+   * still in flight elsewhere, and is not an outcome of any call.
    *
    * @generated from enum value: CODE_NOT_FOUND = 7;
    */
@@ -437,7 +500,7 @@ export enum CallUpdate_Rejected_Code {
  * Describes the enum circus.v1.CallUpdate.Rejected.Code.
  */
 export const CallUpdate_Rejected_CodeSchema: GenEnum<CallUpdate_Rejected_Code> = /*@__PURE__*/
-  enumDesc(file_circus_v1_worker_link, 4, 5, 0);
+  enumDesc(file_circus_v1_worker_link, 5, 5, 0);
 
 /**
  * Cancelled means cancellation before dispatch. After dispatch, cancellation
@@ -453,5 +516,5 @@ export type CallUpdate_Cancelled = Message<"circus.v1.CallUpdate.Cancelled"> & {
  * Use `create(CallUpdate_CancelledSchema)` to create a new message.
  */
 export const CallUpdate_CancelledSchema: GenMessage<CallUpdate_Cancelled> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 4, 6);
+  messageDesc(file_circus_v1_worker_link, 5, 6);
 

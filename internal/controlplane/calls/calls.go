@@ -52,6 +52,8 @@ type Service interface {
 	// Cancel cancels accepted calls durably, or records intent for dispatched,
 	// running and unknown calls before ordered delivery. Completion wins races;
 	// cancelling an existing terminal call is a no-op. No implicit job stop occurs.
+	// Once the intent is recorded, a failure to queue the CancelCall to the
+	// daemon is only logged: the next sync or the call watchdog replays it.
 	Cancel(ctx context.Context, userID, callID string) error
 	// Query returns an immutable update; dispatched, running, unknown and
 	// completed calls ask the dispatch boot's daemon with CallQuery (one per
@@ -62,6 +64,13 @@ type Service interface {
 	// state and a completed one ErrDeviceOffline (transient); completed
 	// metadata whose result expired returns ErrResultUnavailable (permanent).
 	Query(ctx context.Context, userID, callID string) (*circusv1.CallUpdate, error)
+	// QueryOnce is Query whose answer is handed out as a single-update
+	// Subscription instead of being returned: the answer stays charged to
+	// the buffered-update budget until Next takes it, and the subscription
+	// receives nothing else and ends after it. Errors are those of Query,
+	// plus ErrOverloaded when no subscription slot is free. ctx bounds the
+	// query and owns the subscription's lifetime, as for Submit.
+	QueryOnce(ctx context.Context, userID, callID string) (*Subscription, error)
 	// StopSessionJobs sends barriers to the user's devices with matching running
 	// jobs. It stops background jobs only, never foreground calls or future jobs.
 	// Return means command admission, not daemon completion; offline routes error.
@@ -97,6 +106,7 @@ type Subscription struct {
 	lastRead    time.Time
 	stopContext func() bool
 	contextDone bool
+	single      bool // a QueryOnce answer: ends after its first update
 }
 
 // Next transfers one immutable update, releasing its buffer charge. Updates
@@ -106,6 +116,15 @@ type Subscription struct {
 func (s *Subscription) Next(ctx context.Context) (*circusv1.CallUpdate, error) {
 	return s.next(ctx)
 }
+
+// Wait blocks until Next would return without blocking: an update is queued,
+// or the subscription ended (terminal, closed, overflow), or ctx is done (its
+// error is returned). It reports the charged cost (wire.Charge) of the update
+// Next would return next, or 0 when the subscription has ended. It consumes
+// nothing and changes no charge, so a caller can admit itself, by size,
+// before taking ownership of an update. The subscriber-stall clock keeps
+// running while the update waits; only Next resets it.
+func (s *Subscription) Wait(ctx context.Context) (int64, error) { return s.wait(ctx) }
 
 // Close idempotently detaches the subscriber and releases all queued updates.
 func (s *Subscription) Close() error { return s.close() }
