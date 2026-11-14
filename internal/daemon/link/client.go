@@ -1,7 +1,8 @@
 // Package link runs the daemon's single outbound control-plane connection.
 //
-// State: dial -> raw Hello/Welcome -> connected -> backoff -> dial. Authentication
-// and version rejection terminate Run. Ordinary failures use equal jitter in
+// State: dial -> raw Hello/Welcome -> connected -> backoff -> dial. HTTP 401/403,
+// any Reject and an incompatible Welcome (principal, version or message limit)
+// terminate Run. Ordinary failures use equal jitter in
 // [base/2, base]; base doubles from 500ms to 30s, and a connection lasting 60s
 // resets it. GoAway supplies the next delay, but never less than base/2, so a
 // zero or tiny delay cannot cause a tight reconnect loop. BootID never changes

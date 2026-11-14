@@ -11,6 +11,7 @@ debug client. The TypeScript worker is planned for M3 and not built yet.
 | Path | Purpose |
 | --- | --- |
 | `proto/circus/v1/` | Device, link, enrollment, daemon-link and worker-link protocol messages |
+| `docs/wire.md` | Language-neutral link wire protocol: transport, handshake, framing, limits |
 | `buf.yaml`, `buf.gen.yaml` | Protocol checks and local code generation |
 | `gen/go/circus/v1/` | Generated Go messages |
 | `gen/ts/` | Generated TypeScript workspace package `@circus/proto` |

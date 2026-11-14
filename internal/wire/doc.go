@@ -5,10 +5,10 @@
 // Conn cannot interrupt an already-started Close with CloseNow. For a raw Reject,
 // write it synchronously and use WebSocket.Shutdown(ctx) to close gracefully.
 //
-// Scheduling is caller-declared. Send(ctx, message, class, orderingKey) preserves
-// FIFO for each nonempty key. Use a call key for Dispatch/Submit/Query/Cancel,
+// Send(ctx, message) classifies each message itself and preserves FIFO for each
+// nonempty ordering key: a call key for Dispatch/Submit/Query/Cancel/updates,
 // one boot-wide event key for JobEvent, Barrier for ListJobs/StopSessionJobs, and
-// Control only for heartbeat/GoAway/ack. Ordering keys are cloned and capped
+// Control for heartbeat/GoAway/ack. Ordering keys are cloned and capped
 // at 1024 bytes so a short substring cannot retain an unbounded backing string.
 // Barriers fence earlier business messages; later business cannot overtake them. Different keys may interleave. At most
 // two fragmented messages start, respecting negotiated in-flight count/bytes.

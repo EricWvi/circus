@@ -16,7 +16,7 @@ export const file_circus_v1_link: GenFile = /*@__PURE__*/
  * Hello is the client's first message after authenticated HTTP upgrade. Bearer
  * credentials belong to the upgrade request, never this message. No business
  * messages may be sent by either side before Welcome. Missing Hello times out
- * and closes the connection; handshake policy is implemented by the gateway.
+ * and closes the connection; both link servers apply the same handshake rules.
  * The device fields (boot_id, os, arch, hostname, machine_id) are sent on the
  * daemon link only; a worker's Hello carries just the protocol and client
  * versions.
@@ -72,7 +72,7 @@ export const HelloSchema: GenMessage<Hello> = /*@__PURE__*/
   messageDesc(file_circus_v1_link, 0);
 
 /**
- * Welcome accepts Hello within the configured inclusive version range.
+ * Welcome accepts a Hello whose protocol_version is supported (currently only 1).
  * Limits and heartbeat values apply to this connection in both directions.
  *
  * @generated from message circus.v1.Welcome

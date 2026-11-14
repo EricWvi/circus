@@ -75,8 +75,9 @@ type Updates struct {
 	closedOnce bool
 }
 
-// Dial authenticates, exchanges Hello/Welcome within ten seconds, then starts
-// the reader. HTTP 401/403 and version rejections are returned to the caller.
+// Dial connects, authenticates and exchanges Hello/Welcome within ten seconds in
+// total, then starts the reader. Every failure, including HTTP 401/403 and
+// rejections, is returned to the caller.
 func Dial(ctx context.Context, o Options) (*Client, error) {
 	f := o.Credentials
 	if f.Role != credfile.RoleWorker || f.Token == "" || f.PrincipalID == "" {
