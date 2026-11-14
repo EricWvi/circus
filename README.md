@@ -3,10 +3,10 @@
 circus runs an agent loop in a cloud worker and executes its tools on the
 user's own machines through a small Go daemon; a Go control plane relays
 calls between them, with Protobuf messages shared by Go and TypeScript.
-Today M2 is complete: the device daemon (tool layer, dispatcher, jobs,
+Built so far: the device daemon (tool layer, dispatcher, jobs,
 outbound link), the control plane server (enrollment, daemon and worker
 links, call routing with at-most-once execution), and the `circus call`
-debug client. The TypeScript worker itself is M3 and not built yet.
+debug client. The TypeScript worker is planned for M3 and not built yet.
 
 | Path | Purpose |
 | --- | --- |
@@ -82,7 +82,9 @@ circus server enroll-token create --role both --url http://127.0.0.1:9543 --db /
 # Enroll this machine as both roles (paste the link, or pipe it in).
 circus join --name desk
 
-# Start the device daemon; it stays connected and reconnects on failure.
+# Start the device daemon. It reconnects after network and server failures,
+# but exits when the server refuses its credential (HTTP 401/403, for example
+# after revocation) or rejects its handshake (such as an unsupported version).
 circus daemon
 
 # Terminal 3: run a tool on the device. Tool text goes to stdout; JSON
@@ -105,17 +107,30 @@ circus call cancel <call-id>  # exit 0
 ```
 
 The call IDs come from the first JSON line on stderr of each submit. Exit
-codes: 0 = tool result (including `is_error` results) or a cancel that was
-accepted; 1 = rejected (including an unknown device name, or a revoked
-credential) / lost / offline / unknown call ID / usage; 3 = outcome unknown
-after submission (query the call ID after reconnecting); 4 = query found the
-call still running. `circus doctor` checks both roles' stored credentials
-against the server:
+codes:
+
+- 0: a tool result (including `is_error` results), or a cancel answered
+  Cancelled or Dispatched (intent recorded);
+- 1: rejected (including an unknown device name, or a revoked credential),
+  lost, offline, cancelled (also when `query` finds a cancelled call), an
+  unknown call ID, usage, or another local error;
+- 3: outcome unknown: an Unknown answer to a submit, `query` or `cancel`, or a
+  transport failure or interrupt after the submit was sent (query the call ID
+  after reconnecting);
+- 4: `query` found the call still Accepted or Dispatched.
+
+`circus doctor` checks each role's stored credential against the server, one
+line per check:
 
 ```sh
 circus doctor
-# [daemon] ok   reachable / ready / credential accepted
-# [worker] ok   ...
+# [daemon] control plane http://127.0.0.1:9543, principal <id>
+# [daemon] ok   reachable (healthz 200)
+# [daemon] ok   ready
+# [daemon] ok   credential accepted
+# [worker] control plane http://127.0.0.1:9543, principal <id>
+# [worker] ok   reachable (healthz 200)
+# ...
 ```
 
 `circus server device list --db ...` shows enrolled devices; `circus server
@@ -124,7 +139,7 @@ join. The daemon's local harness also still works without a server, reading
 one protojson `DeviceCall` per line from stdin:
 
 ```sh
-circus daemon call -wait=true <<'EOF'
+circus daemon call <<'EOF'
 {"callId":"read-1","sessionId":"demo","read":{"path":"/etc/hostname"}}
 {"callId":"bash-1","sessionId":"demo","bash":{"command":"echo hello from circus","cwd":"/tmp"}}
 EOF
@@ -145,7 +160,7 @@ The SQLite database defaults to `$XDG_DATA_HOME/circus/circus.db`
 `device`, `worker`) open only an existing database, so pass `--db` when it
 is not the default.
 
-Memory: all daemon links share ONE `wire.Budget`, sized by
+Memory. All daemon links share ONE `wire.Budget`, sized by
 `--send-pool-bytes` and `--receive-pool-bytes` (0 = the default, twice
 `wire.MinBudget`; the server refuses smaller pools and names the flag and
 minimum). Sizing rule: with the default 64 MiB message limit,
@@ -158,8 +173,22 @@ showed no starvation at 4/16/64 devices. `ErrBudgetExhausted` errors or
 forced reconnects on large-result links mean K exceeds what the pool was
 sized for. There is no per-link share yet: a few large transfers can delay
 or starve other devices' results when K is not bounded; a per-link cap
-(Rmin) plus a small-message reserve is planned before multi-user (M4). See
-`internal/controlplane/gateway` and `internal/controlplane/calls/DESIGN.md`.
+(Rmin) plus a small-message reserve is planned before multi-user (M4).
+
+The daemon-link pools are not the whole process budget. At the default
+64 MiB message limit (M), live ownership bounds are:
+
+| Part | Bound | Arithmetic |
+| --- | --- | --- |
+| Daemon links, wire | about 1,286 MiB | pools 256 + 524 MiB (2·Smin, 2·Rmin) plus 100 sockets × (5 MiB + 64 KiB) = 506 MiB; one borrowed inbound message per socket comes on top |
+| Worker links (own fixed budget, not configurable) | about 2,131 MiB | pools 256 + 524 MiB, 2 sockets × (5 MiB + 64 KiB) = 10 MiB, and 10 borrowed messages (2 inbound, 8 outbound) × (2·M + 6 MiB + 4 KiB) = 1,340 MiB |
+| Call router | 512 MiB | pending requests 256 MiB plus buffered updates 256 MiB |
+
+That is about 3.8 GiB before SQLite, TLS/kernel buffers, bounded operation
+scratch, the runtime and GC headroom; set `GOMEMLIMIT` above it. The
+connection limits (100 daemon sockets, 2 worker sockets) are fixed. See
+`internal/controlplane/gateway`, `internal/controlplane/workerlink` and
+`internal/controlplane/calls/DESIGN.md`.
 
 ## Testing tiers
 
@@ -181,3 +210,6 @@ only and never run in CI.
 The nightly workflow also splits the 500-seed sweep into five segments so
 a hang is attributed to one segment (`CIRCUS_ROUTER_FIRST_SEED`); replay
 one failing seed with `CIRCUS_ROUTER_SEED=<n> go test -run TestRandomSequences ./internal/controlplane/calls/`.
+The nightly sweep runs with `CIRCUS_ROUTER_TIMEOUT_SCALE=2` (it multiplies the
+sequence test's waits for slow runners); set it as well when a replayed
+failure looks timing related.

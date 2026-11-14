@@ -1,4 +1,4 @@
--- Initial control plane schema (outline 4.1, identities per D43 item 8).
+-- Initial control plane schema; identities are per machine × role.
 -- Times are Unix milliseconds; NULL means "not set". Token columns hold
 -- SHA-256 hashes. No table holds request content or tool output.
 
@@ -24,7 +24,7 @@ CREATE TABLE devices (
     created_at           INTEGER NOT NULL,
     deleted_at           INTEGER,
     -- Target of the (device_id, user_id) keys of calls and jobs: a row can
-    -- only name a device of its own user (D14 item 3).
+    -- only name a device of its own user.
     UNIQUE (id, user_id)
 ) STRICT;
 CREATE UNIQUE INDEX devices_user_name ON devices (user_id, name) WHERE deleted_at IS NULL;
@@ -104,7 +104,7 @@ CREATE INDEX calls_device_state ON calls (device_id, state);
 CREATE INDEX calls_boot_state ON calls (dispatched_boot_id, state);
 
 -- The boot a call was dispatched to is written once and never changes: a
--- call sent to one boot must never be sent to another (outline 4.4).
+-- call sent to one boot must never be sent to another.
 CREATE TRIGGER calls_boot_write_once
 BEFORE UPDATE OF dispatched_boot_id ON calls
 WHEN OLD.dispatched_boot_id IS NOT NULL AND NEW.dispatched_boot_id IS NOT OLD.dispatched_boot_id
@@ -112,7 +112,7 @@ BEGIN
     SELECT RAISE(ABORT, 'calls.dispatched_boot_id is write-once');
 END;
 
--- The daemon's short job id is unique within one boot only (D43 item 6).
+-- The daemon's short job id is unique within one boot only.
 CREATE TABLE jobs (
     device_id  TEXT    NOT NULL,
     boot_id    TEXT    NOT NULL,

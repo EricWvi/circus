@@ -131,7 +131,7 @@ func TestEnrollCreatesIdentityAndCredential(t *testing.T) {
 	}
 }
 
-// F20: reused, expired, unknown and wrong-role tokens all fail with the same
+// Reused, expired, unknown and wrong-role tokens all fail with the same
 // error value, so nothing tells the caller which case it hit.
 func TestEnrollTokenFailuresIndistinguishable(t *testing.T) {
 	f := newFixture(t)
@@ -173,7 +173,7 @@ func TestEnrollTokenValidUntilExpiry(t *testing.T) {
 	}
 }
 
-// F20: of many concurrent uses of one token exactly one succeeds.
+// Of many concurrent uses of one token exactly one succeeds.
 func TestEnrollTokenConcurrentUse(t *testing.T) {
 	f := newFixture(t)
 	tok := f.token(t, store.KindDevice, time.Hour, t0)
@@ -297,7 +297,7 @@ func TestAuthenticateRejectsBadTokens(t *testing.T) {
 	}
 }
 
-// F17, storage side: after revocation Authenticate fails with ErrRevoked and
+// Storage side of revocation: after revocation Authenticate fails with ErrRevoked and
 // Valid turns false; the worker on the same machine is untouched.
 func TestRevoke(t *testing.T) {
 	f := newFixture(t)

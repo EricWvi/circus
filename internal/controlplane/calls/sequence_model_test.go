@@ -92,9 +92,9 @@ type seqCall struct {
 	// until the next accepted attempt.
 	blocked      bool
 	blockedExecs int
-	// f19 is set when a subscriber received the attempt's result although
-	// its completion could not be committed (DESIGN.md F19).
-	f19 bool
+	// unstoredResult is set when a subscriber received the attempt's result
+	// although its completion could not be committed.
+	unstoredResult bool
 	// Last observed durable state, for monotonicity.
 	seen                 bool
 	lastState            store.CallState
@@ -543,7 +543,7 @@ func (m *seqModel) beginAttempt(c *seqCall, dev *seqDevice) {
 	c.storeFaulted = m.faultPending()
 	c.ambiguous = false
 	c.retention = false
-	c.f19 = false
+	c.unstoredResult = false
 }
 
 // submit performs one Submit and checks its immediate outcome.
@@ -844,7 +844,7 @@ func (m *seqModel) checkUpdate(s *seqSub, u *circusv1.CallUpdate, where string) 
 			if !c.storeFaulted {
 				w.fail("%s of %s: result published while the call is %v and no store fault was injected", where, c.id, row)
 			}
-			c.f19 = true
+			c.unstoredResult = true
 		}
 	case *circusv1.CallUpdate_Rejected_:
 		switch code := v.Rejected.Code; code {
@@ -1126,9 +1126,9 @@ func (m *seqModel) checkFinal() {
 		if row == nil || agrees(s.terminal, *row) {
 			continue
 		}
-		// F19 only: the result reached the subscriber while its completion
+		// Only when the result reached the subscriber while its completion
 		// could not be committed, and the call was lost afterwards.
-		if s.terminal.GetResult() != nil && c.f19 && row.State == store.CallLost {
+		if s.terminal.GetResult() != nil && c.unstoredResult && row.State == store.CallLost {
 			continue
 		}
 		w.fail("submission of %s (%s) ended %s, durable state %s/%s", c.id, s.kind, describe(s.terminal), row.State, row.OutcomeReason)

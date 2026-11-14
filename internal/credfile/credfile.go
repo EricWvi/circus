@@ -1,8 +1,8 @@
 // Package credfile reads and writes the local credential file that `circus
-// join` creates and the role commands read: `circus daemon` and `circus call`
-// (the M3 worker will read worker.json the same way).
+// join` creates and other commands read: `circus daemon`, `circus call` and
+// `circus doctor` (the M3 worker will read worker.json the same way).
 //
-// One file per machine-role principal (D43 item 8): daemon.json and
+// One file per machine-role principal: daemon.json and
 // worker.json under $XDG_CONFIG_HOME/circus (default ~/.config/circus). The
 // file holds a long-term bearer token, so it is written 0600 inside a 0700
 // directory and replaced atomically.
@@ -37,7 +37,7 @@ type File struct {
 	// Token is the long-term bearer token. Secret.
 	Token string `json:"token"`
 	// CAFile is an optional absolute path to a PEM bundle that verifies the
-	// control plane instead of the system roots (D43 item 7, --ca-file).
+	// control plane instead of the system roots (join's --ca-file).
 	CAFile string `json:"ca_file,omitempty"`
 }
 

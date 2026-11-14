@@ -1,7 +1,7 @@
 // Package machineid derives the machine id a machine reports when it enrolls
 // (EnrollRequest.machine_id) and, later, in the daemon's Hello. Both roles on
 // one machine must report the same value, so the store can link a machine's
-// device and worker identities (D43 item 8).
+// device and worker identities.
 //
 // The id is the hex SHA-256 of the OS machine id (/etc/machine-id, then
 // /var/lib/dbus/machine-id on Linux and other Unix systems, skipping an

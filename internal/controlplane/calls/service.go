@@ -27,7 +27,7 @@ type queryReply struct {
 // queryWaiter is one Query (or duplicate Submit of a completed call) awaiting
 // the daemon. conn is the connection its CallQuery was sent on; empty means
 // deferred: the device's route is synchronizing and its sync sends or answers
-// the query (M1). A disconnect of conn, or of the syncing route, fails it.
+// the query (the sync-first rule). A disconnect of conn, or of the syncing route, fails it.
 type queryWaiter struct {
 	reply    chan queryReply
 	device   string
@@ -59,7 +59,7 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 	cost, err := wire.Charge(envelope, r.config.MaxMessageBytes)
 	if err != nil {
 		if errors.Is(err, wire.ErrTooLarge) {
-			// Inferred: D43 bounds input; large Write must be split by the caller.
+			// Input is bounded by the message limit; a large Write must be split by the caller.
 			return r.once(ctx, resultUpdate(&circusv1.DeviceResult{CallId: id, Output: &circusv1.ToolOutput{IsError: true, Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: "Error: content too large; write in chunks"}}}}}))
 		}
 		return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
@@ -250,7 +250,7 @@ func (r *router) commitDispatch(ctx context.Context, tx store.Ops, c store.Call,
 // writeDispatch sends DispatchCall after its commit. Every send carries the
 // original committed dispatch time, including a resend. A first send that wire
 // proves was never queued settles the attempt: busy → OVERLOADED, too
-// large → INVALID (L3). Other failures (no route, closed link) keep D; sync or
+// large → INVALID. Other failures (no route, closed link) keep D; sync or
 // the watchdog recovers.
 func (r *router) writeDispatch(ctx context.Context, c store.Call, route gateway.Connection, resend bool) error {
 	p, ok := r.pending[c.CallID]
@@ -380,7 +380,7 @@ func (r *router) leader(id string) *queryWaiter {
 
 // query asks the dispatch boot's daemon about c and waits for the answer. At
 // most one CallQuery per call is outstanding; later waiters coalesce. On an
-// unready route the waiter is deferred to that route's sync (M1).
+// unready route the waiter is deferred to that route's sync (the sync-first rule).
 func (r *router) query(op *operation, c store.Call) (*circusv1.CallUpdate, error) {
 	route, online, err := r.config.Registry.Lookup(op.ctx, c.DeviceID)
 	if err != nil {

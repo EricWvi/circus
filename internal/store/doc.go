@@ -3,7 +3,7 @@
 //
 // The store keeps metadata only. Calls carry who, when, which device, which
 // tool, the request hash and size, the outcome and timings; request content
-// and tool output never reach it (D9 item 3, D11 item 3 as clarified by D43).
+// and tool output never reach it.
 //
 // Conventions shared by every backend:
 //
@@ -19,7 +19,7 @@
 //     ErrTokenUnusable, ErrInvalidTransition, ErrInvalid, ErrBusy), possibly
 //     wrapped. No driver type or SQL dialect crosses the interface.
 //
-// Identities are per machine × role (D43 item 8): a device (daemon role) and
+// Identities are per machine × role: a device (daemon role) and
 // a worker are separate identities in tables of the same shape, both linked to
 // the machine they run on by MachineID, each with its own credentials, so one
 // role can be revoked without the other.

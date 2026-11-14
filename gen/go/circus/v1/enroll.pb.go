@@ -72,7 +72,7 @@ func (Role) EnumDescriptor() ([]byte, []int) {
 }
 
 // EnrollRequest exchanges one role-bound token for one machine-role identity.
-// A join command may call Enroll for both roles to obtain two credentials (D43).
+// A join command may call Enroll for both roles to obtain two credentials.
 // No cross-role atomicity is implied; each token is independently single-use.
 type EnrollRequest struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`

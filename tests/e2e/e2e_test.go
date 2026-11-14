@@ -155,7 +155,8 @@ func runE2E(m *testing.M) (code int) {
 	if buildChild.err != nil {
 		return 1
 	}
-	// Adopt only this test binary's orphaned tool descendants after F4's SIGKILL.
+	// Adopt only this test binary's orphaned tool descendants after a daemon is
+	// SIGKILLed (TestDaemonCrashLeavesCallUnknown).
 	// Reaping always targets a recorded PID, never arbitrary children.
 	if _, _, errno := syscall.Syscall6(syscall.SYS_PRCTL, 36, 1, 0, 0, 0, 0); errno != 0 {
 		panic(errno)
@@ -805,7 +806,7 @@ func TestWorkerCloseSlotsAndCancelOrdering(t *testing.T) {
 }
 
 // trackTool records the exact shell PID produced by our own tool command. The
-// exec sleep in F4 keeps that PID, so no unrecorded sleep process survives.
+// exec sleep in the daemon-crash and revocation tests keeps that PID, so no unrecorded sleep process survives.
 func (h *harness) trackTool(pidfile string) int {
 	h.t.Helper()
 	var pid int
@@ -819,7 +820,7 @@ func (h *harness) trackTool(pidfile string) int {
 	})
 	h.t.Cleanup(func() {
 		_ = syscall.Kill(pid, syscall.SIGKILL)
-		// F4's daemon is already reaped, so its tool is now our adopted child.
+		// A SIGKILLed daemon is already reaped, so its tool is now our adopted child.
 		wait(h.t, 2*time.Second, func() bool {
 			_, _ = syscall.Wait4(pid, nil, syscall.WNOHANG, nil)
 			return syscall.Kill(pid, 0) == syscall.ESRCH
@@ -827,7 +828,7 @@ func (h *harness) trackTool(pidfile string) int {
 	})
 	return pid
 }
-func TestDaemonCrashF4(t *testing.T) {
+func TestDaemonCrashLeavesCallUnknown(t *testing.T) {
 	h := newHarness(t, "1s")
 	c := h.client()
 	marker := filepath.Join(h.dir, "marker")
@@ -875,7 +876,7 @@ func TestDaemonCrashF4(t *testing.T) {
 		t.Fatal("call executed twice")
 	}
 }
-func TestServerCrashAcceptedF6(t *testing.T) {
+func TestServerCrashLosesAcceptedCallThenResubmits(t *testing.T) {
 	h := newHarness(t)
 	h.daemon.signal(t, syscall.SIGTERM)
 	must(t, h.daemon.wait(t, 3*time.Second))
@@ -914,7 +915,7 @@ func TestServerCrashAcceptedF6(t *testing.T) {
 		t.Fatal(u)
 	}
 }
-func TestServerCrashRunningF6(t *testing.T) {
+func TestServerCrashWithRunningToolRecoversResult(t *testing.T) {
 	h := newHarness(t)
 	marker := filepath.Join(h.dir, "marker")
 	gate := filepath.Join(h.dir, "gate")
@@ -946,7 +947,7 @@ func TestServerCrashRunningF6(t *testing.T) {
 		t.Fatalf("barrier=%v marker lines=%d", barrier, markerLines(t, marker))
 	}
 }
-func TestDispatchCommitCrashF7(t *testing.T) {
+func TestServerCrashAfterDispatchCommitLosesCall(t *testing.T) {
 	h := newHarness(t)
 	h.server.signal(t, syscall.SIGTERM)
 	must(t, h.server.wait(t, 5*time.Second))
@@ -982,7 +983,7 @@ func TestDispatchCommitCrashF7(t *testing.T) {
 		t.Fatal("tool executed past fault point")
 	}
 }
-func TestRevocationF17(t *testing.T) {
+func TestRevocationEndsDaemon(t *testing.T) {
 	h := newHarness(t, "30s")
 	c := h.client()
 	marker := filepath.Join(h.dir, "marker")

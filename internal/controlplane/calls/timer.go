@@ -118,7 +118,8 @@ func (r *router) graceExpired(ctx context.Context, tx store.Ops, deviceID string
 // watchdogDue runs in the claim's Tx. It never infers success from time. A new
 // boot loses the call; an offline device loses it only after the
 // result-retention cutoff measured from when it went offline (for a row left
-// connected by a previous process, from this process's start: M3). Otherwise
+// connected by a previous process, from this process's start: restart offline
+// accounting, DESIGN.md). Otherwise
 // it re-arms and, on a ready route of the dispatch boot, queries after commit.
 func (r *router) watchdogDue(ctx context.Context, tx store.Ops, callID string, fx *timerEffects) error {
 	c, err := tx.GetCall(ctx, callID)

@@ -9,8 +9,8 @@ go test -race -tags e2e ./tests/e2e/ -count=1
 ```
 
 The harness builds `bin/circus` once in a per-run temporary directory under
-`.tmp/`, with `e2efault` enabled. A race-enabled test also builds a race-enabled
-binary. The build and all test temp directories share that per-run root, removed
+`.tmp/`, with `e2efault` enabled. Under `-race` the harness builds only a
+race-enabled binary instead. The build and all test temp directories share that per-run root, removed
 by a defer on normal return. Each root holds an flock for its whole lifetime;
 startup sweeps a root only when it can acquire that lock, so hard test timeouts
 are collected without relying on PID liveness or deleting an active run. Runs
@@ -26,8 +26,9 @@ Each subprocess has its own process group and Linux Pdeathsig=SIGKILL. Start and
 Wait run on one dedicated runtime.LockOSThread goroutine per child, keeping the
 creator thread alive for the whole child lifetime. Cleanup signals only recorded
 PIDs, waits for them, escalates to SIGKILL after a grace, and checks that none
-remains. The F4 tool writes its exact PID and then execs sleep; the Linux
-subreaper collects that one adopted child after killing its daemon. Child stderr
+remains. The daemon-crash and revocation tools write their exact PID and then execs sleep; the Linux
+subreaper collects that one adopted child after killing its daemon
+(TestRunDirectorySweepUsesFlock checks the run-directory lock separately). Child stderr
 is included in failed-test logs. All ordering uses protocol replies, durable
 metadata, marker files or bounded polling; no sleep establishes test ordering.
 
@@ -39,8 +40,9 @@ metadata, marker files or bounded polling; no sleep establishes test ordering.
   "unknown call id" with exit 1 without becoming a call outcome.
 - CLI exits: a running query exits 4, running cancel exits 0 with Dispatched,
   accepted cancel exits 0 with Cancelled, and querying that Cancelled state
-  exits 1. F4 also proves --wait follows Unknown to terminal Lost. A server
-  crash after Submit exits 3 and prints the call ID.
+  exits 1. The daemon-crash test also proves --wait follows Unknown to terminal
+  Lost. A server crash after Submit exits 3 and prints the call ID
+  (TestCLITransportFailureIsUnknown).
 - Worker ownership: closing a client mid-call does not cancel it; a new
   connection obtains its Result. A same-client Cancel reaches a watched call
   and its stream carries the real terminal update. Four running calls plus a
@@ -48,20 +50,23 @@ metadata, marker files or bounded polling; no sleep establishes test ordering.
   then admitted after the ghost's terminal update. Six sequential calls exceed
   the four-slot cap and prove terminal slot release. Raw same-link Submit→Cancel
   stays ordered and successful Cancel has no extra reply.
-- F4: kill the daemon during a marked Bash call; observe Unknown without ending
+- TestCancelErrorDoesNotBlockLaterCancel: with all four operation slots held
+  by running calls, a Cancel of an unknown ID does not stall a later real
+  Cancel; the cancelled call still publishes its real result.
+- TestDaemonCrashLeavesCallUnknown: kill the daemon during a marked Bash call; observe Unknown without ending
   the subscription (CLI query exits 3), restart with a new boot, then observe
   Lost. Equal resubmit stays Lost; the marker contains exactly one line.
-- F6 accepted: take the device offline within grace, persist Accepted, kill the
+- TestServerCrashLosesAcceptedCallThenResubmits: take the device offline within grace, persist Accepted, kill the
   server, and restart. Query reports Lost with no dispatch boot. Equal resubmit
   executes exactly once when the daemon returns.
-- F6 running: block a marked real tool on a FIFO, kill the server, release the
+- TestServerCrashWithRunningToolRecoversResult: block a marked real tool on a FIFO, kill the server, release the
   tool, then restart. The same daemon boot reconciles to Completed; Query
   returns the real retained output, an equal resubmit acts as a per-call ordered
   dedup barrier, and only then is the marker counted (exactly one line).
-- F7: the tagged Sender wrapper SIGKILLs the server after dispatch commit and before
-  gateway delivery. Restart queries the daemon and settles Lost. Equal retry
+- TestServerCrashAfterDispatchCommitLosesCall: the tagged Sender wrapper
+  SIGKILLs the server after dispatch commit and before gateway delivery. Restart queries the daemon and settles Lost. Equal retry
   stays Lost and the marker is absent (zero executions).
-- F17: a separate CLI process revokes the connected daemon in the same SQLite
+- TestRevocationEndsDaemon: a separate CLI process revokes the connected daemon in the same SQLite
   database. Recheck closes the link, its next upgrade receives 403, and the daemon
   exits nonzero. Revoking the worker closes its link while a call subscription
   is active; a new dial gets 403. Assertions allow the 1s recheck interval plus

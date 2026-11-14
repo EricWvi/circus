@@ -24,7 +24,10 @@ const (
 type Reject_Code int32
 
 const (
-	Reject_CODE_UNSPECIFIED         Reject_Code = 0
+	Reject_CODE_UNSPECIFIED Reject_Code = 0
+	// UNAUTHENTICATED and REVOKED are never sent: authentication fails as
+	// HTTP 401 or 403 before the WebSocket upgrade. The values are kept for
+	// wire compatibility.
 	Reject_CODE_UNAUTHENTICATED     Reject_Code = 1
 	Reject_CODE_REVOKED             Reject_Code = 2
 	Reject_CODE_VERSION_UNSUPPORTED Reject_Code = 3
@@ -129,6 +132,9 @@ func (GoAway_Reason) EnumDescriptor() ([]byte, []int) {
 // credentials belong to the upgrade request, never this message. No business
 // messages may be sent by either side before Welcome. Missing Hello times out
 // and closes the connection; handshake policy is implemented by the gateway.
+// The device fields (boot_id, os, arch, hostname, machine_id) are sent on the
+// daemon link only; a worker's Hello carries just the protocol and client
+// versions.
 type Hello struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	ProtocolVersion uint32                 `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`

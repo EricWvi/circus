@@ -133,9 +133,10 @@ export const WorkerDownlinkSchema: GenMessage<WorkerDownlink> = /*@__PURE__*/
   messageDesc(file_circus_v1_worker_link, 1);
 
 /**
- * WorkerJobEvent supplies the global identity of a daemon job. Device is the
- * user-unique device name, boot_id is the daemon's process epoch, and event.job_id
- * is unique only within that pair. LOST for an old boot is emitted by the
+ * WorkerJobEvent is reserved for the worker milestone (M3): the control plane
+ * does not send it yet. It supplies the global identity of a daemon job.
+ * Device is the user-unique device name, boot_id is the daemon's process
+ * epoch, and event.job_id is unique only within that pair. LOST for an old boot is emitted by the
  * control plane when it observes a new boot, never by the daemon.
  *
  * @generated from message circus.v1.WorkerJobEvent
@@ -191,8 +192,8 @@ export const SubmitCallSchema: GenMessage<SubmitCall> = /*@__PURE__*/
 /**
  * CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
  * and cancelled are terminal call outcomes, except that Rejected NOT_FOUND only
- * answers its query operation. Unknown is NOT terminal: reconnect with
- * daemon boot can still yield a result; CallQuery can retrieve the latest state.
+ * answers its query operation. Unknown is NOT terminal: a reconnect of the
+ * same daemon boot can still yield a result; CallQuery can retrieve the latest state.
  *
  * @generated from message circus.v1.CallUpdate
  */
@@ -281,7 +282,9 @@ export const CallUpdate_AcceptedSchema: GenMessage<CallUpdate_Accepted> = /*@__P
   messageDesc(file_circus_v1_worker_link, 4, 0);
 
 /**
- * Dispatched means dispatch metadata was committed before sending.
+ * Dispatched means dispatch metadata was committed before sending. It also
+ * reports a running call (there is no Running variant), including an
+ * Unknown call that the daemon reports running again.
  *
  * @generated from message circus.v1.CallUpdate.Dispatched
  */

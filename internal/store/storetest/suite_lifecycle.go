@@ -20,7 +20,7 @@ func transition(t testing.TB, ops store.Ops, id string, e store.CallExpect, to s
 }
 
 // createLostAfterDispatch creates call c, dispatches it to boot and loses
-// it, as when the device restarts under a running call (F4).
+// it, as when the device restarts under a running call.
 func createLostAfterDispatch(t testing.TB, ops store.Ops, c store.Call, boot string) {
 	t.Helper()
 	must(t, ops.CreateCall(t.Context(), c))
@@ -30,8 +30,8 @@ func createLostAfterDispatch(t testing.TB, ops store.Ops, c store.Call, boot str
 	}
 }
 
-// testCallResubmit: a call lost before dispatch (control plane restart, D43
-// item 5) is resubmitted as a fresh attempt, lost → accepted: it takes the
+// testCallResubmit: a call lost before dispatch (control plane restart) is
+// resubmitted as a fresh attempt, lost → accepted: it takes the
 // resubmission time, keeps nothing of the lost attempt, and then follows the
 // normal edges. A call lost after dispatch never leaves lost.
 func testCallResubmit(t *testing.T, b Backend) {

@@ -15,7 +15,7 @@ var (
 	// ErrExists reports a primary-key or unique-constraint conflict.
 	ErrExists = errors.New("store: already exists")
 	// ErrTokenUnusable reports an enroll token that is unknown, already used
-	// or expired. The three cases are deliberately indistinguishable (F20).
+	// or expired. The three cases are deliberately indistinguishable.
 	ErrTokenUnusable = errors.New("store: enroll token unusable")
 	// ErrInvalidTransition reports a TransitionCall edge that the call state
 	// machine does not have. It is a programming error, not a lost race: a
@@ -48,14 +48,15 @@ const (
 // Valid reports whether k is a known kind.
 func (k PrincipalKind) Valid() bool { return k == KindDevice || k == KindWorker }
 
-// User owns every other resource (D14 item 3).
+// User owns every other resource; a user's calls may name only that user's
+// devices.
 type User struct {
 	ID        string
 	Name      string // unique
 	CreatedAt int64
 }
 
-// Identity is one machine × role: a device or a worker (D22, D43 item 8).
+// Identity is one machine × role: a device or a worker.
 // The devices and workers tables have exactly these columns.
 type Identity struct {
 	Kind          PrincipalKind
@@ -77,8 +78,8 @@ type Identity struct {
 }
 
 // Credential is a long-term token held by one identity. Only the token's
-// SHA-256 is stored. Credentials are separate from identities so rotation
-// and revocation (D14) replace this layer only.
+// SHA-256 is stored. Credentials are separate from identities so rotation,
+// revocation and a later key-pair scheme replace this layer only.
 type Credential struct {
 	ID          string
 	Kind        PrincipalKind
@@ -94,7 +95,7 @@ func (c Credential) Revoked() bool { return c.RevokedAt != 0 }
 
 // EnrollToken is a one-time token an administrator hands to a machine. Kinds
 // lists the identities one use of it may create: a single join can claim a
-// device and a worker credential at once (D43 item 8).
+// device and a worker credential at once.
 type EnrollToken struct {
 	ID        string
 	UserID    string
@@ -140,7 +141,7 @@ func DecodeKinds(s string) ([]PrincipalKind, error) {
 	return kinds, nil
 }
 
-// CallState is the control plane's view of one call (outline 4.2).
+// CallState is the control plane's view of one call.
 //
 //	accepted ─▶ dispatched ─▶ running ─▶ completed
 //	   │            │            │
@@ -153,19 +154,18 @@ func DecodeKinds(s string) ([]PrincipalKind, error) {
 //	accepted, dispatched ─▶ rejected      (validation or daemon rejection)
 //	lost ─▶ accepted  (resubmission of a call that was never dispatched)
 //
-// A result may arrive before its ack (F22), so dispatched ─▶ completed is
+// A result may arrive before its ack, so dispatched ─▶ completed is
 // allowed. A cancel on a dispatched call only records CancelRequestedAt; the
 // daemon's result decides the final state.
 //
 // The transitions into dispatched and into accepted apply only to a call
 // that was never dispatched (DispatchedBootID unset), whatever the caller
 // expects: a call sent to one boot is never sent again, so a lost call that
-// had reached a device stays lost for good (outline 4.4 items 2 and 3, D43
-// item 5). Backends enforce this in their storage layer too, not only in
+// had reached a device stays lost for good. Backends enforce this in their storage layer too, not only in
 // CheckTransition.
 //
 // lost ─▶ accepted starts a fresh attempt of a call the control plane lost
-// before dispatching it (D43 item 5): it records the resubmission time as
+// before dispatching it: it records the resubmission time as
 // SubmittedAt and clears every per-attempt column, so nothing of the lost
 // attempt survives; from accepted the call follows the normal edges (grace
 // period, cancel, offline, dispatch).
@@ -247,7 +247,7 @@ type Call struct {
 // MaxCodeBytes bounds Call.OutcomeReason and Call.FaultCode, and the reason
 // of LoseCalls. Both hold codes or fixed short phrases chosen by the control
 // plane ("daemon restarted", "CALL_MISMATCH"), never tool output, daemon
-// error text or anything derived from the request (D9 item 3). Longer values
+// error text or anything derived from the request. Longer values
 // are refused with ErrInvalid.
 const MaxCodeBytes = 256
 
@@ -336,8 +336,8 @@ type CallExpect struct {
 // CheckTransition validates TransitionCall arguments: expect.States must be
 // non-empty and every state → to an edge of the state machine
 // (ErrInvalidTransition otherwise). The transition to dispatched must write
-// the boot in the same step (outline 3.3: record the dispatch before
-// sending it) and cannot expect one, since it leaves accepted, where none is
+// the boot in the same step (the dispatch is recorded before it is sent)
+// and cannot expect one, since it leaves accepted, where none is
 // recorded; no other transition may write the boot.
 func CheckTransition(expect CallExpect, to CallState, patch CallPatch) error {
 	if len(expect.States) == 0 {
@@ -449,7 +449,7 @@ func (s JobState) Valid() bool {
 func (s JobState) Terminal() bool { return s.Valid() && s != JobRunning }
 
 // Job is one background job, keyed by (DeviceID, BootID, JobID): the daemon's
-// short job id is unique only within one boot (D43 item 6).
+// short job id is unique only within one boot.
 type Job struct {
 	DeviceID  string
 	BootID    string
@@ -478,7 +478,7 @@ type JobFilter struct {
 	States    []JobState
 }
 
-// Timer is one durable timer (D11 item 4), unique by (Kind, SubjectID), for
+// Timer is one durable timer, unique by (Kind, SubjectID), for
 // example ("device_grace", deviceID) or ("call_watchdog", callID).
 type Timer struct {
 	Kind      string

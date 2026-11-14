@@ -179,7 +179,7 @@ func TestEnrollThenAuthenticate(t *testing.T) {
 	}
 }
 
-// F20 at the RPC boundary: reused, expired, unknown, malformed and
+// At the RPC boundary, reused, expired, unknown, malformed and
 // wrong-role tokens get byte-identical responses.
 func TestEnrollFailureResponsesIndistinguishable(t *testing.T) {
 	h := newServer(t, controlplane.Config{}, nil)
@@ -215,7 +215,7 @@ func TestEnrollFailureResponsesIndistinguishable(t *testing.T) {
 	}
 }
 
-// F20: concurrent Enroll calls with one token; exactly one succeeds.
+// Concurrent Enroll calls with one token; exactly one succeeds.
 func TestEnrollConcurrentOverRPC(t *testing.T) {
 	h := newServer(t, controlplane.Config{}, nil)
 	tok := h.token(t, store.KindWorker, time.Hour, time.Now())

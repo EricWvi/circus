@@ -1,3 +1,9 @@
+// Command circus is the circus CLI: `circus server` runs the control plane
+// and its admin subcommands, `circus join` enrolls a machine, `circus daemon`
+// runs the device daemon (and its local `daemon call` harness), `circus call`
+// is the worker-credential debug client, `circus doctor` checks the stored
+// credentials against the control plane, and `circus version` prints the
+// build version.
 package main
 
 import (

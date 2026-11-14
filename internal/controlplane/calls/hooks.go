@@ -50,7 +50,8 @@ func (r *router) OnDisconnected(ctx context.Context, c gateway.Connection) error
 		return tx.SetTimer(ctx, timers.DeviceGrace, c.Target.DeviceID, now+r.config.GracePeriod.Milliseconds())
 	})
 	if err != nil {
-		// Keep a recovery path (L1): Submit and the sweep persist it later.
+		// Keep a recovery path (the disconnect-record retry): Submit and the
+		// sweep persist it later.
 		r.storeFailed(err)
 		r.unrecorded[strings.Clone(c.Target.DeviceID)] = now
 		return err
@@ -60,7 +61,7 @@ func (r *router) OnDisconnected(ctx context.Context, c gateway.Connection) error
 }
 
 // inbound loads the call a daemon reply names. Replies are fenced by user,
-// device and dispatch boot, not by connection generation (M2): a superseded
+// device and dispatch boot, not by connection generation (boot fencing): a superseded
 // connection of the dispatch boot still delivers authoritative final results.
 func (r *router) inbound(ctx context.Context, conn gateway.Connection, id string) (store.Call, bool, error) {
 	c, err := r.config.Store.GetCall(ctx, id)
@@ -167,7 +168,8 @@ func (r *router) OnCallStatus(ctx context.Context, conn gateway.Connection, stat
 // state, a completed one reports the store failure), or the reply was
 // invalid (ErrDeviceOffline: the link closes, the daemon cannot answer).
 // Waiters on other connections keep waiting for their own reply. A result
-// already answered them (F19), so this reaches only unanswered waiters.
+// already answered them, even when its completion could not be stored, so
+// this reaches only unanswered waiters.
 func (r *router) unapplied(conn gateway.Connection, id string, err *error) {
 	if *err == nil {
 		return
@@ -271,8 +273,8 @@ func (r *router) complete(ctx context.Context, c store.Call, v *circusv1.DeviceR
 	}
 	err := r.settle(ctx, c, store.CallCompleted, patch, resultUpdate(v))
 	if err != nil {
-		// F19: the content is authoritative even while metadata storage is
-		// broken. The durable watchdog keeps a query repair path.
+		// The content is authoritative even while metadata storage is broken.
+		// The durable watchdog keeps a query repair path.
 		r.release(c.CallID)
 		u := resultUpdate(v)
 		r.publish(u)

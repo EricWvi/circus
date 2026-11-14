@@ -13,11 +13,12 @@
 // MaxDispatchAge (12 hours by default) without recording it. This bound makes
 // same-boot retransmission safe without assuming a minimum link throughput.
 //
-// Cancellation (F21): Dispatcher.Submit starts rejecting call IDs it has never
+// Cancellation (daemon shutdown): Dispatcher.Submit starts rejecting call IDs it has never
 // seen (SHUTTING_DOWN) while resends of known IDs still report their status;
 // the Dispatcher and jobs shut down within ShutdownTimeout-FlushReserve; then
 // wire.Shutdown writes what was handed to it, including the final interrupted
-// results, within the remaining budget (D43 item 12). Run returns within
+// results, within the remaining budget, so results already produced still reach the
+// control plane over a graceful close. Run returns within
 // ShutdownTimeout plus at most readerJoinTimeout.
 //
 // Uplink memory. The client keeps no uplink buffer. wire.Send only marshals
@@ -42,7 +43,7 @@
 // Neither callback blocks Dispatcher or jobs state: their queues absorb a slow
 // Send. A callback queue overflow or a refused Send (wire queue full, busy)
 // closes the connection, and the control plane resyncs by query and job
-// snapshot (D43 item 4). Reader replies follow the same rule: a CallStatus,
+// snapshot. Reader replies follow the same rule: a CallStatus,
 // CallAck or JobSnapshot that wire's send queue cannot take (default 256
 // messages or 2M bytes) closes the connection too, so the control plane must
 // bound how many CallQuery/ListJobs requests it has outstanding during resync,

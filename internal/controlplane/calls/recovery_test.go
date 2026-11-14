@@ -28,7 +28,7 @@ func (f *fixture) jobs() map[string]store.Job {
 	return out
 }
 
-// D43 item 14: an unfiltered snapshot of the current boot settles running jobs
+// An unfiltered snapshot of the current boot settles running jobs
 // it omits, unless a newer live event or the watermark itself covers them.
 func TestSnapshotOmissionLosesMissingJob(t *testing.T) {
 	f := setup(t)
@@ -210,7 +210,7 @@ func TestSubmitAfterGraceAndDeviceMismatch(t *testing.T) {
 	}
 }
 
-// F14: after overflow the submitter recovers the current state with Query.
+// After overflow the submitter recovers the current state with Query.
 func TestOverflowThenQueryRecoversState(t *testing.T) {
 	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.MaxUpdatesPerSubscription = 1 })
 	l := f.connect("boot")
@@ -569,7 +569,7 @@ func TestStaleEventBelowWatermarkDropped(t *testing.T) {
 	}
 }
 
-// A truncated snapshot never settles omissions (D43 item 14).
+// A truncated snapshot never settles omissions.
 func TestTruncatedSnapshotSettlesNothing(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")

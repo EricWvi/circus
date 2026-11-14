@@ -47,8 +47,8 @@ func HashToken(token string) []byte {
 // sameHash compares two hashes in constant time.
 func sameHash(a, b []byte) bool { return subtle.ConstantTimeCompare(a, b) == 1 }
 
-// newID returns a UUIDv7, the id of every row this package creates (D11
-// item 5).
+// newID returns a time-ordered UUIDv7, the id of every row this package
+// creates.
 func newID() (string, error) {
 	id, err := uuid.NewV7()
 	if err != nil {

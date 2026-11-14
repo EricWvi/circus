@@ -39,7 +39,7 @@ import (
 
 // TestRandomSequences drives the real router, gateway, SQLite store, daemon
 // Dispatcher and daemon link client through seeded random operation
-// sequences (M2 plan §6 item 4), including faults at message boundaries
+// sequences, including faults at message boundaries
 // (sequence_faults_test.go), and checks every step against the reference
 // model in sequence_model_test.go.
 //
@@ -758,7 +758,7 @@ func (w *seqWorld) startDaemon(dev *seqDevice) {
 
 // stopDaemon ends a daemon process. A crash cuts the socket first, so
 // nothing it does afterwards reaches the control plane; a graceful stop
-// lets the client flush its final results (D43 item 12).
+// lets the client flush its final results.
 func (w *seqWorld) stopDaemon(d *seqDaemon, graceful bool) {
 	if !graceful {
 		d.cut()
@@ -1131,7 +1131,7 @@ func (w *seqWorld) opControlPlaneCrash() bool {
 		w.fault.CrashAfterWrite(n, nil)
 		w.crashArmed = true
 		w.effect("store")
-		w.m.storeFault() // a crash point can fail a result commit (F19)
+		w.m.storeFault() // a crash point can fail a result commit
 		return true
 	}
 	w.record("control plane crashes now")

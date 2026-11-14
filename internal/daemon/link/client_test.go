@@ -639,7 +639,7 @@ func TestShutdownFlushesInterruptedResultAndRejectsNewCalls(t *testing.T) {
 	}
 	close(release)
 	// Deliberately wait for daemon shutdown before consuming its final message.
-	// D43.12 requires the peer's already-received result to survive normal close.
+	// A result the peer already received must survive a normal close.
 	if err := recv(t, h.done); err != nil {
 		t.Fatal(err)
 	}

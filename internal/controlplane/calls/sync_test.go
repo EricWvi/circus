@@ -111,7 +111,7 @@ func (d *delayResult) OnDeviceResult(ctx context.Context, c gateway.Connection, 
 
 // The old boot's final result, received before the restarted daemon's new
 // boot registers, settles the call; the new boot's sync waits for the
-// superseded link to drain before losing old-boot calls (D43 item 12).
+// superseded link to drain before losing old-boot calls.
 func TestOldBootFinalResultSurvivesRestart(t *testing.T) {
 	d := &delayResult{hold: make(chan struct{}), entered: make(chan struct{}), done: make(chan struct{})}
 	f := setup(t, func(_ *calls.Config, g *gateway.Config) { g.Hooks = d })

@@ -1,5 +1,5 @@
 // Package controlplane hosts circus server: enrollment, authentication, HTTP,
-// TLS, health checks, durable timers and the M2 call path.
+// TLS, health checks, durable timers and the call path.
 //
 // New builds enrollment and administrative HTTP endpoints, seeds a durable
 // enroll_token_expiry timer, and composes the registry, call router, daemon

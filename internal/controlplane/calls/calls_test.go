@@ -253,7 +253,7 @@ func eventually(t testing.TB, p func() bool) {
 	t.Helper()
 	wait.For(t, p)
 }
-func TestResultBeforeAckF22(t *testing.T) {
+func TestResultBeforeAck(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))

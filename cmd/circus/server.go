@@ -43,8 +43,9 @@ wire.MinBudget; the gateway refuses smaller values).
 circus call and circus daemon cap it at 64 MiB locally, so a larger value
 makes them refuse the connection.
 
-M2 supports one long-lived worker plus one CLI connection at a time. HTTP 503
-on a worker link means both connection slots are full.`
+At most two worker-credential connections (worker or circus call) are admitted
+at a time. HTTP 503 on a worker link means both are taken, the credential
+check failed inside the server (for example the store), or it is shutting down.`
 
 // defaultListen is the default --listen address and the port enroll-token
 // create assumes without --url.

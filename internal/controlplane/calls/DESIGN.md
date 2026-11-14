@@ -1,17 +1,38 @@
-# Call routing (M2-T5)
+# Call routing
 
-The implementation follows the reviewed phase 1 contracts. Durable state uses `store.CallState`; notifications use
+Durable state uses `store.CallState`; notifications use
 `circusv1.CallUpdate`. There is no durable request, result, output path, arbitrary
 daemon error text, or event outbox. OutcomeReason and FaultCode contain only
 allowlisted codes or fixed phrases of at most 256 bytes.
+
+## Named invariants
+
+Comments in this package refer to these rules by name.
+
+- **Boot fencing.** Device replies (ack, result, status) are fenced by user,
+  device and dispatch boot, not by connection generation; a superseded
+  connection of the dispatch boot still settles calls like the live one.
+- **Sync-first rule.** Per-call commands (CallQuery, CancelCall, first
+  DispatchCall) are never sent on an unready route by anything but that
+  route's sync. A Query for such a route is deferred to the sync and answered
+  by its resend or query reply, never sent ahead of the resend.
+- **Disconnect-record retry.** A disconnect whose store write failed stays in
+  memory and is persisted, with its grace timer, by the subscription sweep,
+  any Submit or any watchdog for the device, so accepted calls always get a
+  grace timer.
+- **Restart offline accounting.** A device whose row still says connected but
+  has no live route was left so by a previous process; it counts as offline
+  since max(LastDisconnectedAt, this process's start). See "Restart offline
+  accounting" under Deviations.
 
 ## State × event transition table
 
 `A/D/R/U/C/O/X/J/L` mean accepted/dispatched/running/unknown/completed/offline/
 cancelled/rejected/lost. `active` means D/R/U. A same-state action uses PatchCall,
 not TransitionCall. Device replies (ack, result, status) are fenced by user,
-device and dispatch boot, NOT by connection generation: a superseded connection
-of the dispatch boot is still authoritative (its final results, D43 item 12).
+device and dispatch boot, NOT by connection generation (boot fencing): a superseded
+connection of the dispatch boot is still authoritative (a graceful close still
+delivers its final results).
 A mismatching reply changes nothing. Job events follow the current generation. Each row below is a public-interface test obligation;
 set-valued rows expand into one case per state/event. Every unlisted pair is a
 no-op, except invalid input returns an error or rejection without mutation.
@@ -41,7 +62,7 @@ no-op, except invalid input returns an error or rejection without mutation.
 | D | ack rejected SHUTTING_DOWN | J | DEVICE_SHUTTING_DOWN; release pending and cancel watchdog; deduplication before permanent shutdown plus the dispatch-age bound proves no copy executed |
 | active | same-boot query LOST | L | Lost; release pending and cancel watchdog |
 | active | cancel | same | Commit first cancel intent; send CancelCall only on a ready route, else the sync replays it after the resend/query; daemon result wins |
-| active/C | Query, route registered but unsynchronized | same | Waiter deferred to that route's sync: answered by its resend/query reply, never sent ahead of the resend (M1) |
+| active/C | Query, route registered but unsynchronized | same | Waiter deferred to that route's sync: answered by its resend/query reply, never sent ahead of the resend (sync-first rule) |
 | A/active | disconnect | same | SetDisconnected and device_grace timer atomically; no tool cancellation |
 | D/R | grace expires | U | Unknown with call ID; preserve recovery/watchdog; discard retained request once retry horizon expires |
 | U | grace expires again | U | No regression or duplicate terminal update |
@@ -49,12 +70,12 @@ no-op, except invalid input returns an error or rejection without mutation.
 | active | reconnect, different boot | L | LoseCalls; notify returned IDs and cancel their watchdogs in the same Tx; LoseJobs old boots |
 | A | reconnect, either boot | A then D | After recovery commands and ListJobs admission, activate route and dispatch by SubmittedAt then call ID |
 | active | watchdog due | same | Claim completion first; query only on a ready route of the dispatch boot; persist next recovery watchdog; never infer success from timeout |
-| active | disconnect exceeds result-retention window | L | D43.4: result unavailable after prolonged disconnect, measured from the recorded disconnect (or this process's start, M3); never resend |
+| active | disconnect exceeds result-retention window | L | The daemon no longer keeps the result (30-minute retention), measured from the recorded disconnect (or this process's start: restart offline accounting); never resend |
 | C/O/X/J | cancel, disconnect, reconnect, late ack/result | same | Preserve terminal metadata; no new dispatch |
 | L | any event except permitted resubmit | L | Preserve loss and dispatch evidence |
 | C | Query, result not locally retained | C | Query daemon; expired/LOST returns ErrResultUnavailable, unreachable returns transient ErrDeviceOffline; preserve metadata |
 | any | reply for another user, device or dispatch boot, or duplicate terminal event | same | No mutation, no extra pending entry or timer |
-| active | result/ack/status on a superseded connection of the dispatch boot | as live | Settles like the live connection (M2) |
+| active | result/ack/status on a superseded connection of the dispatch boot | as live | Settles like the live connection (boot fencing) |
 | any | timer claim cancelled/reset/reclaimed | same | CompleteTimer false: no handler effects |
 
 Store write failure on submission prevents dispatch. CODE_STORE_UNAVAILABLE is
@@ -67,7 +88,7 @@ state transition. Duplicate terminal replies may supply content to explicit quer
 waiters without regressing metadata. A daemon reply (ack or status) that cannot
 be applied still answers the waiting queries of that call whose CallQuery went
 out on the reply's connection, instead of leaving them waiting for a reply that
-already came (T6 randomized sequence test,
+already came (found by TestRandomSequences, pinned by
 TestQueryAnsweredWhenReplyCannotPersist): after a store write or read failure
 an active call falls back to its durable state and a completed one reports
 ErrStoreUnavailable; after an invalid reply (the link closes) they are
@@ -79,8 +100,8 @@ keep waiting for their own reply.
 The gateway authenticates `/v1/link/daemon` before `wire.AcceptWebSocket`, reads
 raw Hello using the bounded wire decoder, writes raw Welcome/Reject, uses
 `wire.FillWelcome`, then creates `wire.New` with `DaemonControlSide`. Hello has
-a deadline; unsupported versions reject before any business traffic. One shared
-budget covers every link. Only daemon principals pass the auth seam. Recheck
+a deadline; unsupported versions reject before any business traffic. All daemon
+links share one budget; worker links have their own (package workerlink). Only daemon principals pass the auth seam. Recheck
 polling closes a revoked connection within interval plus check timeout; future
 upgrades receive 403. No bearer token survives authentication in gateway state.
 
@@ -90,8 +111,8 @@ through graceful EOF/Shutdown, including final results; only after drain does it
 notify disconnect. A new generation's OnConnected starts only after EVERY
 older, not yet released local peer of the same device finished draining and
 disconnecting, not just its direct predecessor: a predecessor that is itself
-superseded stops waiting for its own, so a one-level wait is not transitive
-(review 2, M2). The gateway registers under its own mutex, numbering
+superseded stops waiting for its own, so a one-level wait is not transitive.
+The gateway registers under its own mutex, numbering
 registrations, so "older" matches registry order, and waits for them in that
 order. Each drain is bounded by its shutdown deadline and MaxConsumerStall and
 the chain by MaxConnections. So a restarted daemon's new boot cannot lose a
@@ -110,8 +131,11 @@ no-op. It also fails that route's outstanding and deferred query waiters. If
 the disconnect write fails, the router keeps it in memory (one small entry per
 device until a write succeeds, so bounded by the number of distinct devices
 whose write failed, at most the device table) and the subscription sweep, any
-Submit and any watchdog for the device persist it with its grace timer (L1). Registry capacity also counts local
-closing sockets at gateway admission, preventing replacement accumulation.
+Submit and any watchdog for the device persist it with its grace timer (the
+disconnect-record retry). The registry holds one entry per device and
+overwrites it on replacement; the gateway handler's MaxConnections peer set
+counts handshaking and superseded sockets too, so replacements cannot
+accumulate closing sockets.
 
 OnConnected takes the admission lock (released between items), and owns SetConnected, comparison of
 the old boot, cancellation of device_grace, and reconciliation. New boot: the first
@@ -138,8 +162,8 @@ cost, not a correctness one. Results and job events the daemon pushes outside th
 sync share its queue; they are bounded by the daemon's own callback queues,
 not by this budget, which is the remaining overflow risk (resolved by close
 and resync). A sync waiting for capacity releases the lock AND its operation
-slot, like a waiting Query, so the replies it waits for can always enter
-(review 2, M1); a daemon answering none within DeliveryTimeout ends the sync.
+slot, like a waiting Query, so the replies it waits for can always enter;
+a daemon answering none within DeliveryTimeout ends the sync.
 From the ListJobs reservation to Activate the lock is held: recorded cancels
 are replayed after their call's resend/query, then ListJobs is sent and the
 exact route activated, so a cancel recorded during the sync cannot fall
@@ -149,7 +173,7 @@ traffic, not sync), and finally the remaining deferred queries are flushed
 within the sync bound; a new Query on the now-ready route sends directly or
 coalesces onto a deferred leader that the flush sends. Per-call
 commands (CallQuery, CancelCall, first DispatchCall) are never sent on an
-unready route by anything but its sync (M1). Inbound hooks remain runnable
+unready route by anything but its sync (sync-first rule). Inbound hooks remain runnable
 throughout. A failed sync leaves the route unready
 and ends the connection so reconnect can retry. Accepted calls survive boot
 changes because they have never been dispatched.
@@ -159,8 +183,8 @@ with per-job LastSeq guards, discard stale events at/below the snapshot watermar
 and never regress newer live events or terminal jobs. A live sequence gap requests
 one coalesced ListJobs. Events can create job metadata before a call result; never
 persist JobEvent.output_path. Unfiltered, untruncated snapshots of the current
-boot settle omissions (decision 4 below); a snapshot with `truncated` set never
-does. M2 issues no filtered ListJobs.
+boot settle omissions (implemented decision 4 below); a snapshot with `truncated` set never
+does. The router currently issues no filtered ListJobs.
 
 ## Commit, send, cancel and time
 
@@ -199,8 +223,8 @@ WatchdogSlack (normally 30 seconds), AND DeliveryTimeout allowance for queued
 transport work. Explicit-background invocation returns a job result promptly;
 its lifetime is not a foreground timeout. Query RUNNING rearms; LOST settles loss.
 Persist a follow-up watchdog before an outbound query, so a lost response cannot
-remove the recovery path. Disconnected calls use the same watchdog for the D43.4
-30-minute outage cutoff; grace expiration alone does not lose them.
+remove the recovery path. Disconnected calls use the same watchdog for the
+30-minute result-retention cutoff; grace expiration alone does not lose them.
 
 A large Dispatch followed by a barrier can delay even an unrelated Cancel or
 Query. Size DeliveryTimeout from maximum queued bytes / minimum supported effective
@@ -314,7 +338,7 @@ older daemon ignores `dispatched_at_unix_ms` and enforces no age bound, so this
 proof does not hold for it, and an older control plane sends no timestamp, so
 a current daemon refuses every dispatch as INVALID.
 
-## Capacity planning (Q33)
+## Capacity planning
 
 For normalized wire options calculate `(Smin, Rmin) = wire.MinBudget(opts)` and
 require send >= 2*Smin and receive >= 2*Rmin. With 64 MiB messages that is send
@@ -327,7 +351,12 @@ subscription buffers, at most one borrowed inbound message per admitted socket,
 bounded operation scratch, store/SQLite, TLS/kernel buffers and GC
 headroom. For 100 sockets the wire portion at 256/640 MiB is approximately
 1.37 GiB before router memory and GC. N counts handshaking/closing sockets too.
-Configure MaxConnections and GOMEMLIMIT against the deployment's full budget.
+MaxConnections is not configurable: the server fixes it at 100 daemon sockets
+(the gateway default; the registry also holds at most 100 devices) and 2
+worker-link sockets. Operators configure the daemon-link pools
+(`--send-pool-bytes`, `--receive-pool-bytes`), `--max-message-bytes` and
+GOMEMLIMIT; size GOMEMLIMIT against the deployment's full budget, including
+the worker link's own pools and the router budgets (README, Memory).
 
 A live slow consumer can retain default MaxReceiveBytes = 136 MiB in wire's
 unread queue. After Receive, a hook's borrowed value is outside that pool and
@@ -341,11 +370,11 @@ small heartbeats use per-link reserves, but large results can still starve.
 Keep Receive moving: no subscriber waits in a hook, and store work must have
 bounded latency. ErrBudgetExhausted/ErrConsumerStalled mean close and resync;
 graceful close still drains within MaxConsumerStall before reservations disappear.
-The T6 measurements (gateway/measure_test.go, TestMeasureReceivePoolShare)
-settled Q33 without a wire change for M2. Pools sized by max(2*Rmin, K*462 MiB)
+The measurements (gateway/measure_test.go, TestMeasureReceivePoolShare)
+found no wire change necessary at the current scale. Pools sized by max(2*Rmin, K*462 MiB)
 showed no starvation, budget exhaustion or stalls at 4, 16 and 64 devices;
 unconstrained large links peaked at about 250–300 MiB each, close to Rmin
-(262 MiB at 64 MiB messages). At M2 scale (4 devices, K = 1) the 524 and
+(262 MiB at 64 MiB messages). At the current scale (4 devices, K = 1) the 524 and
 640 MiB pools are fine as well. When K is not bounded (64 devices, 8 large
 senders, 524/640 MiB) ordinary 1 KiB results waited up to the 15 s stall
 bound and 25–82% were lost to forced reconnects: large links' partial
@@ -362,16 +391,21 @@ K*Rmin reaches the pool. The measurement is opt-in
     CIRCUS_MEASURE=1 CIRCUS_MEASURE_SCENARIOS=n16-k4-2min,n16-k4-640,n16-k4-k462 \
       go test -timeout 580s -count=1 -v -run TestMeasureReceivePoolShare ./internal/controlplane/gateway/
 
-Scenario names are n<devices>-none and n<devices>-k<large>-{2min,640,k462};
+Scenarios run for N = 4, 16 and 64 devices with K = min(max(1, N/4), 8)
+large senders: n<N>-none, n<N>-k<K>-2min and n<N>-k<K>-640, plus
+n<N>-k<K>-k462 when K > 1 (at K = 1 that pool equals 2*Rmin, which -2min
+already covers), so n4-k1-k462 does not exist;
 CIRCUS_MEASURE_SECONDS and CIRCUS_MEASURE_SLOW_MIBPS tune duration and the
 large consumer's rate.
 
-## Phase 2 decisions (main session, D43 items 13–15)
+## Implemented decisions
 
-1. **Rejected codes implemented.** The sole worker proto change adds
-   CODE_STORE_UNAVAILABLE and CODE_DEVICE_SHUTTING_DOWN, with generated Go/TS.
-   The former means nothing persisted/dispatched and permits a same-ID retry;
-   the latter is a terminal daemon refusal and requires a new ID to retry.
+1. **Rejected codes implemented.** The worker proto gained three rejection
+   codes, with generated Go/TS: CODE_STORE_UNAVAILABLE means nothing
+   persisted/dispatched and permits a same-ID retry; CODE_DEVICE_SHUTTING_DOWN
+   is a terminal daemon refusal and requires a new ID to retry;
+   CODE_NOT_FOUND answers only a Query for an ID this user cannot see and is
+   not a call outcome.
 2. **Enumeration implemented.** CallFilter gains UserID/Limit/After; JobFilter
    and TimerFilter provide bounded keyset pages. LoseCalls takes a capped limit
    and drains in successive transactions. Store contract tests cover ordering,
@@ -388,7 +422,7 @@ large consumer's rate.
    Jobs have no reason column, so the fixed reason `missing from daemon
    snapshot` is logged, not stored. A snapshot with `truncated` set never
    settles omissions. Values above math.MaxInt64 close the link.
-5. **D43/T1 corrections implemented.** Guarded lost -> accepted resets all attempt
+5. **Attempt and transport corrections implemented.** Guarded lost -> accepted resets all attempt
    columns; current boot is read in the dispatch transaction; results follow
    negotiated limits; pools are doubled; graceful Receive drains before disconnect.
 6. **Resend decision and receiver-side age bound implemented.** ResendHorizon
@@ -397,23 +431,23 @@ large consumer's rate.
    rejects unseen dispatches older than twelve hours using the Welcome time
    base, making the horizon a policy knob rather than a safety assumption.
 
-## Deviations from the phase 1 design
+## Deviations from the initial design
 
 - **One admission lock, not per-device gates.** All router mutations, store
   transactions and send admissions run under one mutex; long walks (sync
   replay, accepted dispatch, loss batches) release it between items so inbound
   hooks and other devices progress. It is never held while waiting for a
   daemon response, a subscriber or sync capacity. Costs that remain under the
-  lock (L7): marshalling a DispatchCall of up to MaxMessageBytes inside
+  lock: marshalling a DispatchCall of up to MaxMessageBytes inside
   Link.Send, charging (a tree walk) and cloning each update once per publish
   (subscribers and query waiters share that immutable clone, each charged),
   the final cancel replay of one device's active calls, and every store
   transaction. A slow store or a JobEvent storm from one device therefore
   delays every link's Receive and can trip MaxConsumerStall and resync on
-  other devices. Acceptable at M2 scale (single user, few devices, SQLite's
-  single writer); T6 should measure lock hold times. Per-device locks with
-  marshalling and cloning outside them are the follow-up. The T6 measurement
-  is measure_lock_test.go, TestMeasureLockHold (opt-in, about a minute; put
+  other devices. Acceptable at the current scale (single user, few devices,
+  SQLite's single writer). Per-device locks with marshalling and cloning
+  outside them are the follow-up. Lock hold times are measured by
+  measure_lock_test.go, TestMeasureLockHold (opt-in, about a minute; put
   the SQLite file on a real disk to include fsync):
 
       CIRCUS_MEASURE=1 CIRCUS_MEASURE_DIR=$PWD/.tmp \
@@ -430,24 +464,25 @@ large consumer's rate.
 - **Accepted rows without retained content** (an ambiguous failed submission
   whose row committed) become lost `REQUEST_UNAVAILABLE` when a route syncs;
   never dispatched, so an equal resubmission may start a new attempt.
-- **Control-plane restart (M3).** The router records its start time. A device
-  whose row still says connected (LastConnectedAt >= LastDisconnectedAt) but
+- **Restart offline accounting.** The router records its start time. A device
+  whose row still says connected (a recorded boot and LastConnectedAt >=
+  LastDisconnectedAt) but
   has no live route was left so by a previous process (crash, or a reversed
   shutdown order); it counts as offline since max(LastDisconnectedAt, start).
   Submit and the watchdog persist that disconnect lazily in their Tx and create
   the device_grace timer if none exists, so no device table scan is needed. A
-  submission within the grace period after the restart stays accepted (D43
-  item 9's rationale: workers often reconnect before daemons), dispatched and
+  submission within the grace period after the restart stays accepted (workers often
+  reconnect before daemons), dispatched and
   running calls go unknown at grace expiry, and the 30-minute
   result-retention cutoff counts from that time, so watchdogs firing before
   the daemon reconnects only re-arm. Composition must call gateway Shutdown
   BEFORE Router.Close (package doc), so a normal shutdown records every
-  disconnect itself. Known display-only inaccuracy (review 2, L5): a device
+  disconnect itself. Known display-only inaccuracy: a device
   that never reconnects after a crash, and has no submission or watchdog that
   would record its disconnect, keeps a row that says connected. Routing never
   reads that flag alone (offlineSince applies whenever no route exists);
   readers such as `circus doctor` or a UI must treat "no live route" as
   offline.
-- **Per-user subscription share (L8) is not implemented.** MaxSubscriptions is
-  global; one leaking worker can exhaust it. Acceptable for single-user M2;
-  recorded by the main session for M3/M4.
+- **Per-user subscription share is not implemented.** MaxSubscriptions is
+  global; one leaking worker can exhaust it. Acceptable with a single user;
+  planned for M3/M4.

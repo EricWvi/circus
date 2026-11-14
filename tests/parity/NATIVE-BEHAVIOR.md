@@ -895,7 +895,7 @@ no result at all. Timings are diagnostics in this document, never golden data.
 ```
 
 This is `is_error: true`, with no `started` output. The fixture has one step:
-no child is launched. In the two L7 recaptures, this result took
+no child is launched. In the two recaptures after the fixture simplification below, this result took
 **18.95 ms / 18.78 ms**, measured from emitting the scripted tool input to
 receiving the next primary Messages request containing its result.
 This measures preflight rejection, not shell/pipe-exit waiting: no child was
@@ -2114,7 +2114,7 @@ e0c5878b836aee2756733f85cefcd9d1c84738e1242012325ecbe7eb4ceadae0
 
 ### M1 review follow-up verification
 
-Before the L7 fixture simplification below, two complete `node capture.mjs`
+Before the fixture simplification below, two complete `node capture.mjs`
 runs on 2026-11-09 captured **95/95 cases** with
 **134 scripted tool invocations**: **133 received tool_results** (25 expected
 tool-error results) and one intentionally guarded FIFO invocation with no result.
@@ -2153,13 +2153,13 @@ termination took **10019.16 ms / 10023.38 ms**. These variable observations stay
 out of the fixtures. Automatic timeout-to-background task IDs use the existing
 `{{TASK_ID}}` placeholder, not a new placeholder type.
 
-Historical aggregate digest before L7, using the sorted path/hash format below:
+Historical aggregate digest before that simplification, using the sorted path/hash format below:
 
 ```text
 7f83706087cec1565c885a24f1250f512b0d58ea5a63e3a2a6c53b39fe26f7d6
 ```
 
-L7 removes the post-rejection process-listing step from
+The fixture simplification removes the post-rejection process-listing step from
 `bash-background-child-foreground`: it observed unrelated host processes and
 added no native child-lifetime evidence, because preflight launches no child.
 Only this fixture was recaptured, twice, with

@@ -4,8 +4,7 @@
 // Every connection runs in WAL mode with synchronous=FULL, foreign_keys=ON
 // and a busy_timeout. FULL makes each commit durable before Tx returns: if a
 // "dispatched" row were lost on power failure while the daemon also
-// restarted, the call could be sent to the new boot and run twice (outline
-// 3.4). The pool holds a single connection, so the process is the single
+// restarted, the call could be sent to the new boot and run twice. The pool holds a single connection, so the process is the single
 // writer; transactions begin IMMEDIATE, so a second process on the same file
 // (for example "circus server enroll-token create") waits for the write lock
 // up to the busy timeout instead of failing mid-transaction. Lock timeouts

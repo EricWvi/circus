@@ -23,8 +23,8 @@ const pageSize = 64
 // healthProbeTimeout bounds the single-row store read used to recover readiness.
 const healthProbeTimeout = time.Second
 
-// resultRetention is the daemon's result lifetime (D43 item 4): a dispatched
-// call whose device stays offline this long can no longer be recovered.
+// resultRetention is the daemon's result lifetime: a dispatched call whose
+// device stays offline this long can no longer be recovered, so it is lost.
 const resultRetention = 30 * time.Minute
 
 // listJobsKey marks the sync's outstanding ListJobs; it is not a valid call ID.
@@ -295,7 +295,7 @@ func (r *router) reconcileStartup(ctx context.Context) error {
 }
 
 // storeFailed records persistence health. Context endings (a link closing
-// during sync) are not store failures and leave readiness untouched (L2).
+// during sync) are not store failures and leave readiness untouched.
 func (r *router) storeFailed(err error) {
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		r.markFailed()
@@ -362,8 +362,8 @@ func (r *router) recordOffline(ctx context.Context, tx store.Ops, d store.Identi
 	return tx.SetTimer(ctx, timers.DeviceGrace, d.ID, at+r.config.GracePeriod.Milliseconds())
 }
 
-// retryDisconnects persists disconnects whose write failed (L1), so accepted
-// calls get their grace timer. Called by the sweep with mu held.
+// retryDisconnects persists disconnects whose write failed (the
+// disconnect-record retry, DESIGN.md), so accepted calls get their grace timer. Called by the sweep with mu held.
 func (r *router) retryDisconnects() {
 	for id, at := range r.unrecorded {
 		if _, online, err := r.config.Registry.Lookup(r.ctx, id); err != nil || online {
@@ -555,7 +555,7 @@ func sameConnection(a, b gateway.Connection) bool {
 
 // readyRoute returns the device's route when it is synchronized and serves
 // boot. Per-call commands (CallQuery, CancelCall, first DispatchCall) are sent
-// only on such a route; an unready route's sync owns them (M1).
+// only on such a route; an unready route's sync owns them (the sync-first rule, DESIGN.md).
 func (r *router) readyRoute(ctx context.Context, device, boot string) (gateway.Connection, bool) {
 	route, ok, err := r.config.Registry.Lookup(ctx, device)
 	if err != nil || !ok || !route.Ready || route.Target.BootID != boot {

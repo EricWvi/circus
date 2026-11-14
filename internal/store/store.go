@@ -62,7 +62,7 @@ type Ops interface {
 	// SetConnected records a connection from boot bootID at time at and
 	// returns the boot recorded before ("" if never connected), read and
 	// replaced atomically. The caller compares the two to detect a daemon
-	// restart (outline 3.3, reconnect sync step 1). ErrNotFound if absent.
+	// restart (the first step of the reconnect sync). ErrNotFound if absent.
 	SetConnected(ctx context.Context, kind PrincipalKind, id, bootID string, at int64) (prevBootID string, err error)
 	// SetDisconnected records the end of the identity's connection at time
 	// at. CurrentBootID is kept: a later SetConnected compares against it.
@@ -86,7 +86,7 @@ type Ops interface {
 	TouchCredential(ctx context.Context, id string, at int64) error
 	// RevokeCredentials revokes every unrevoked credential of one identity
 	// at time at and returns how many it revoked. Revoking a device leaves
-	// the worker on the same machine untouched (D43 item 8).
+	// the worker on the same machine untouched.
 	RevokeCredentials(ctx context.Context, kind PrincipalKind, principalID string, at int64) (int, error)
 
 	// CreateEnrollToken inserts a one-time token. ErrExists if the id or
@@ -104,7 +104,7 @@ type Ops interface {
 
 	// CreateCall inserts a call (see CheckNewCall). ErrExists if the call id
 	// is taken: the caller then reads the row and compares request hashes
-	// (outline 4.4 item 5). ErrNotFound if the user is missing or the device
+	// to tell a duplicate from a mismatch. ErrNotFound if the user is missing or the device
 	// does not exist under that user.
 	CreateCall(ctx context.Context, c Call) error
 	// GetCall returns the call, or ErrNotFound.
@@ -141,21 +141,23 @@ type Ops interface {
 	// events, and any event for a job that has ended (exited, killed, lost),
 	// return false with no change.
 	// Empty SessionID or CallID never overwrite stored values, so a job row
-	// created from an event can be completed by a later one (F22).
+	// created from an event can be completed by a later one
+	// (a job event may arrive before the call's result).
 	PutJob(ctx context.Context, j Job) (bool, error)
 	// ListJobs returns at most f.Limit rows ordered by (device_id, boot_id, job_id).
 	ListJobs(ctx context.Context, f JobFilter) ([]Job, error)
 	// LoseJobs marks every running job of the device whose boot is not
 	// keepBootID as lost at time at, and returns how many. It is called when
-	// the device connects with a new boot (outline 3.3 step 1).
+	// the device connects with a new boot, as the first step of the reconnect
+	// sync.
 	LoseJobs(ctx context.Context, deviceID, keepBootID string, at int64) (int, error)
 	// LoseCalls moves at most limit (1..MaxPageSize) dispatched, running or unknown calls of the
 	// device whose DispatchedBootID is not keepBootID to lost, sets
 	// FinishedAt = at and OutcomeReason = reason (a short code, at most
 	// MaxCodeBytes), and returns those calls with the state each left,
 	// oldest submission first. It is called with LoseJobs, in the same Tx,
-	// when the device connects with a new boot (outline 3.3 reconnect sync
-	// step 1, F4). Comparing with the new boot rather than the previous one
+	// when the device connects with a new boot (the first step of the reconnect
+	// sync, for example after the daemon restarted under a call). Comparing with the new boot rather than the previous one
 	// also catches calls dispatched to a boot that was never recorded as
 	// current. The caller uses the result to notify the calls' subscribers
 	// and to cancel their timers (call_watchdog) in the same Tx.

@@ -1,8 +1,8 @@
-// Package auth implements the M2 token layer of control-plane identity
-// (D22, D43 items 2, 7, 8): one-time enrollment tokens, the long-term bearer
-// tokens they are exchanged for, authentication of link upgrade requests and
-// revocation. D14's key pairs and challenge signatures later replace this
-// layer only; identities and their rows stay.
+// Package auth implements the current token layer of control-plane identity:
+// one-time enrollment tokens, the long-term bearer tokens they are exchanged
+// for, authentication of link upgrade requests and revocation. Per-machine key
+// pairs and challenge signatures are planned to replace this layer only;
+// identities and their rows stay.
 //
 // # Tokens
 //
@@ -14,7 +14,7 @@
 //
 // # Identities and enrollment
 //
-// Identities are per machine × role (D43 item 8): a daemon enrolls as a
+// Identities are per machine × role: a daemon enrolls as a
 // device identity (store.KindDevice), a worker as a worker identity
 // (store.KindWorker), each with its own credential, linked to the machine by
 // MachineID. Enroll runs one store transaction:
@@ -29,7 +29,7 @@
 // Any failure rolls the whole transaction back, so a rejected role or a taken
 // name does not burn the token: the caller retries with another --name. Every
 // token failure (unknown, used, expired, or issued for another role) is the
-// single error ErrEnrollRejected, so a caller cannot tell them apart (F20).
+// single error ErrEnrollRejected, so a caller cannot tell them apart.
 // The name check runs after the token check, so only a holder of a valid
 // token learns whether a name is taken.
 //
@@ -48,7 +48,7 @@
 // malformed or unknown token: 401) or ErrRevoked (revoked credential or
 // deleted identity: 403). Require wraps a handler with that check, so an
 // unauthenticated request never reaches the WebSocket upgrade. Valid lets the
-// owner of a live connection re-check its credential after revocation (F17).
+// owner of a live connection re-check its credential after revocation.
 // LastUsedAt is written at most once per TouchInterval per credential and
 // process, not on every request.
 //

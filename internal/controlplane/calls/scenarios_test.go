@@ -20,7 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestReconnectUnackedAndCancelF1F3F9(t *testing.T) {
+func TestReconnectResendsUnackedAndCancels(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
@@ -59,7 +59,7 @@ func TestReconnectUnackedAndCancelF1F3F9(t *testing.T) {
 		t.Fatal("ack did not release content")
 	}
 }
-func TestGraceExpiryAndRecoveryF2(t *testing.T) {
+func TestGraceExpiryAndRecovery(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("running"))
@@ -95,7 +95,7 @@ func TestGraceExpiryAndRecoveryF2(t *testing.T) {
 	nextResult(t, f.ctx, s)
 	f.waitState("running", store.CallCompleted)
 }
-func TestBootChangeLosesCallsAndJobsF4(t *testing.T) {
+func TestBootChangeLosesCallsAndJobs(t *testing.T) {
 	f := setup(t)
 	l := f.connect("old")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
@@ -121,7 +121,7 @@ func TestBootChangeLosesCallsAndJobsF4(t *testing.T) {
 		t.Fatal(u)
 	}
 }
-func TestWaitingCallUsesNewBootAfterSnapshotF5(t *testing.T) {
+func TestWaitingCallUsesNewBootAfterSnapshot(t *testing.T) {
 	f := setup(t)
 	l := f.connect("old")
 	f.disconnect(l)
@@ -155,7 +155,7 @@ func TestResendHorizonQueriesOnly(t *testing.T) {
 	f.finishSync(l)
 	eventually(t, func() bool { return f.router.Stats().PendingBytes == 0 })
 }
-func TestDuplicateAndOwnershipF8(t *testing.T) {
+func TestDuplicateSubmitAndOwnership(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
@@ -189,7 +189,7 @@ func TestDuplicateAndOwnershipF8(t *testing.T) {
 	nextResult(t, f.ctx, dup)
 	f.waitState("call", store.CallCompleted)
 }
-func TestCancelBeforeDispatchAndResultWinsF9(t *testing.T) {
+func TestCancelBeforeDispatchAndResultWins(t *testing.T) {
 	t.Run("before-dispatch", func(t *testing.T) {
 		f := setup(t)
 		l := f.connect("boot")
@@ -222,7 +222,7 @@ func TestCancelBeforeDispatchAndResultWinsF9(t *testing.T) {
 		f.waitState("call", store.CallCompleted)
 	})
 }
-func TestFragmentedInputOutputAndOversizeF10F11(t *testing.T) {
+func TestFragmentedInputOutputAndOversize(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")
 	v := call("call")
@@ -254,7 +254,7 @@ func TestFragmentedInputOutputAndOversizeF10F11(t *testing.T) {
 		t.Fatal("oversize input persisted", err)
 	}
 }
-func TestSubscriberOverflowF14(t *testing.T) {
+func TestSubscriberOverflow(t *testing.T) {
 	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.MaxUpdatesPerSubscription = 1 })
 	l := f.connect("boot")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
@@ -270,7 +270,7 @@ func TestSubscriberOverflowF14(t *testing.T) {
 		t.Fatal("overflow retained subscriber")
 	}
 }
-func TestReplacementF16(t *testing.T) {
+func TestReplacementByNewBootLosesCalls(t *testing.T) {
 	f := setup(t)
 	old := f.connect("old")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
@@ -286,7 +286,7 @@ func TestReplacementF16(t *testing.T) {
 		t.Fatal(route)
 	}
 }
-func TestStoreFailuresF19(t *testing.T) {
+func TestStoreFailures(t *testing.T) {
 	t.Run("submission", func(t *testing.T) {
 		f := setup(t)
 		f.connect("boot")
@@ -391,7 +391,7 @@ func TestCompletedQueryUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-func TestJobBeforeResultSnapshotAndSequenceF22(t *testing.T) {
+func TestJobBeforeResultSnapshotAndSequence(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")
 	j := &circusv1.JobEvent{JobId: "012345abcdef", SessionId: "session", CallId: "call", Seq: 1, State: circusv1.JobEvent_STATE_RUNNING}
@@ -443,7 +443,7 @@ func TestStaleTimerClaimHasNoEffects(t *testing.T) {
 func equalCall(a, b store.Call) bool {
 	return reflect.DeepEqual(a, b)
 }
-func TestCrashAfterDispatchCommitF7(t *testing.T) {
+func TestCrashAfterDispatchCommit(t *testing.T) {
 	f := setup(t)
 	f.connect("boot")
 	f.haltTimers()
@@ -490,7 +490,7 @@ func (f *fixture) restart() {
 	f.server = httptest.NewServer(f.gateway)
 	f.startTimers()
 }
-func TestRestartAndUndispatchedResubmissionF6(t *testing.T) {
+func TestRestartAndUndispatchedResubmission(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")
 	active, err := f.router.Submit(f.ctx, "u", "desk", call("active"))
@@ -624,7 +624,7 @@ func TestWatchdogRetentionCutoffAndRunningRearm(t *testing.T) {
 	})
 }
 
-func TestConcurrentCancelAndResultF9(t *testing.T) {
+func TestConcurrentCancelAndResult(t *testing.T) {
 	for i := range 8 {
 		t.Run(fmt.Sprintf("race-%d", i), func(t *testing.T) {
 			f := setup(t)

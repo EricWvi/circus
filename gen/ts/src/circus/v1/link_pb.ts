@@ -17,6 +17,9 @@ export const file_circus_v1_link: GenFile = /*@__PURE__*/
  * credentials belong to the upgrade request, never this message. No business
  * messages may be sent by either side before Welcome. Missing Hello times out
  * and closes the connection; handshake policy is implemented by the gateway.
+ * The device fields (boot_id, os, arch, hostname, machine_id) are sent on the
+ * daemon link only; a worker's Hello carries just the protocol and client
+ * versions.
  *
  * @generated from message circus.v1.Hello
  */
@@ -191,6 +194,10 @@ export enum Reject_Code {
   UNSPECIFIED = 0,
 
   /**
+   * UNAUTHENTICATED and REVOKED are never sent: authentication fails as
+   * HTTP 401 or 403 before the WebSocket upgrade. The values are kept for
+   * wire compatibility.
+   *
    * @generated from enum value: CODE_UNAUTHENTICATED = 1;
    */
   UNAUTHENTICATED = 1,

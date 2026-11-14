@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestDaemonQueueOverflowResyncF12(t *testing.T) {
+func TestDaemonQueueOverflowResync(t *testing.T) {
 	f := setup(t)
 	f.daemonBase.MaxQueuedBytes = 1024
 	l := f.connect("boot")
@@ -40,7 +40,7 @@ func TestDaemonQueueOverflowResyncF12(t *testing.T) {
 	nextResult(t, f.ctx, s)
 	f.waitState("call", store.CallCompleted)
 }
-func TestGatewayQueueOverflowResyncF13(t *testing.T) {
+func TestGatewayQueueOverflowResync(t *testing.T) {
 	f := setup(t, func(c *calls.Config, g *gateway.Config) {
 		g.LinkOptions.MaxQueuedBytes = 1024
 		c.ResendHorizon = time.Millisecond
@@ -62,7 +62,7 @@ func TestGatewayQueueOverflowResyncF13(t *testing.T) {
 	send(t, f.ctx, l, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallStatus{CallStatus: &circusv1.CallStatus{CallId: "call", State: circusv1.CallStatus_STATE_LOST}}})
 	f.waitState("call", store.CallLost)
 }
-func TestHalfOpenHeartbeatThenGraceF15(t *testing.T) {
+func TestHalfOpenHeartbeatThenGrace(t *testing.T) {
 	f := setup(t, func(_ *calls.Config, g *gateway.Config) { g.LinkOptions.DisableHeartbeat = false })
 	l := f.connect("boot")
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("call"))
@@ -76,7 +76,7 @@ func TestHalfOpenHeartbeatThenGraceF15(t *testing.T) {
 	f.advance(31 * time.Second)
 	f.waitState("call", store.CallUnknown)
 }
-func TestMalformedFragmentsCloseAndResyncF23(t *testing.T) {
+func TestMalformedFragmentsCloseAndResync(t *testing.T) {
 	for _, name := range []string{"malformed", "out-of-order", "too-large", "missing-tail"} {
 		t.Run(name, func(t *testing.T) {
 			f := setup(t)
@@ -119,7 +119,7 @@ func TestMalformedFragmentsCloseAndResyncF23(t *testing.T) {
 }
 
 // A result sent just before a graceful daemon close is processed before the
-// disconnect (D43 item 12).
+// disconnect.
 func TestGracefulCloseDrainsFinalResult(t *testing.T) {
 	f := setup(t)
 	l := f.connect("boot")

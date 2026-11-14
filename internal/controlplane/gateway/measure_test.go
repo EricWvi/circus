@@ -24,7 +24,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// TestMeasureReceivePoolShare is the Q33 measurement (calls/DESIGN.md
+// TestMeasureReceivePoolShare is the receive-pool sharing measurement (calls/DESIGN.md
 // "Capacity planning"): one shared receive pool serves every daemon link and
 // there is no per-link share. N devices connect to the real gateway; K of
 // them push large results (8-64 MiB) to a slow consumer, the others send a

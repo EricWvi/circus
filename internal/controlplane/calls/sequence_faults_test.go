@@ -210,7 +210,7 @@ func (d *seqDaemon) onDownlink(c *seqConn, data []byte) ([]byte, bool) {
 		if p.DispatchCall.GetTargetBootId() == d.boot {
 			if d.dispatches[id] > 0 {
 				w.covered("resend")
-				// Same-boot resend only inside the 10-minute horizon (D43).
+				// Same-boot resend only inside the 10-minute resend horizon.
 				if first := d.firstDispatch[id]; w.clock.Now().Sub(first) >= 10*time.Minute {
 					w.violation(fmt.Sprintf("%s resent to %s %s after its first dispatch, beyond the 10-minute horizon", id, d.label, w.clock.Now().Sub(first)))
 				}
@@ -908,7 +908,7 @@ func (w *seqWorld) opBusyLink() bool {
 	return true
 }
 
-// busyRefused records which kind of DispatchCall the bus refused.
+// busyRefused records which kind of DispatchCall the sender refused as busy.
 func (w *seqWorld) busyRefused(id, boot string) {
 	if d := w.m.boots[boot]; d != nil {
 		d.fmu.Lock()

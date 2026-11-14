@@ -2,20 +2,20 @@
 // The HTTP host supplies TLS (or explicitly allowed loopback development HTTP).
 //
 // All daemon links share ONE wire.Budget (SendPoolBytes/ReceivePoolBytes;
-// zero default: twice wire.MinBudget). Pool sizing rule (D43 item 18):
+// zero default: twice wire.MinBudget). Pool sizing rule:
 // with (Smin, Rmin) = wire.MinBudget(LinkOptions) (about 262 MiB receive
 // with the default 64 MiB message limit), pools below 2*Smin / 2*Rmin are
 // rejected (PoolError). Let K be the number of devices that may stream
 // large (8–64 MiB) results at once; size the receive pool at
 // max(2*Rmin, K*Rmin) plus headroom: large links measured about 250–300 MiB
-// each, and the conservative K*462 MiB (one link's peak receive phase)
-// showed no starvation at 4/16/64 devices (TestMeasureReceivePoolShare,
+// each, and the conservative max(2*Rmin, K*462 MiB) (462 MiB is one link's
+// peak receive phase) showed no starvation at 4/16/64 devices (TestMeasureReceivePoolShare,
 // opt-in CIRCUS_MEASURE=1). ErrBudgetExhausted or forced reconnects on
 // large-result links mean K exceeds what the pool was sized for. There is
 // no per-link share yet: a few large transfers can delay or starve other
 // devices' results when K is not bounded; a per-link cap (Rmin) plus a
 // small-message reserve is planned before multi-user (M4). See
-// calls/DESIGN.md "Capacity planning (Q33)".
+// calls/DESIGN.md "Capacity planning".
 package gateway
 
 import (
@@ -100,8 +100,9 @@ func NewRegistry(maxConnections int) (Registry, error) {
 // status) are authoritative for the user, device and dispatch boot they name,
 // even on a superseded generation; job events and sync state follow the
 // current generation only. Inbound hooks remain runnable while OnConnected
-// synchronizes. A new generation's OnConnected starts only after the
-// superseded generation of the same device has drained and disconnected.
+// synchronizes. A new generation's OnConnected starts only after every older,
+// not yet released generation of the same device has drained and
+// disconnected, waited for in registration order.
 type Hooks interface {
 	// OnConnected runs after Welcome and route registration, before new dispatch.
 	// The router owns SetConnected, boot comparison and durable reconciliation.

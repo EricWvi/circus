@@ -29,7 +29,8 @@ func KindForRole(r circusv1.Role) (store.PrincipalKind, bool) {
 // enrollService implements EnrollService.Enroll on auth.Enroll.
 //
 // Failure codes: every token failure (unknown, used, expired, wrong role) is
-// Unauthenticated with one fixed message (F20); a taken name AlreadyExists;
+// Unauthenticated with one fixed message, so a caller cannot tell them
+// apart; a taken name AlreadyExists;
 // a malformed request InvalidArgument; a busy store Unavailable; anything
 // else Internal with a fixed message, details in the log only.
 type enrollService struct{ s *Server }

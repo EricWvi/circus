@@ -125,8 +125,8 @@ func (r *router) OnJobSnapshot(ctx context.Context, conn gateway.Connection, s *
 		r.storeFailed(err)
 		return err
 	}
-	// M2 requests only unfiltered snapshots. A truncated one omitted jobs to fit
-	// its caps, so omissions prove nothing (D43 item 14).
+	// The router currently requests only unfiltered snapshots. A truncated one
+	// omitted jobs to fit its caps, so omissions prove nothing.
 	if !s.Truncated {
 		if err = r.settleOmissions(op.ctx, conn, int64(s.Seq), seen); err != nil {
 			return err
@@ -138,9 +138,9 @@ func (r *router) OnJobSnapshot(ctx context.Context, conn gateway.Connection, s *
 	return nil
 }
 
-// settleOmissions applies D43 item 14 to an unfiltered, untruncated snapshot
-// of the current boot: a stored running job with LastSeq <= seq that the
-// snapshot omits becomes lost. PutJob applies only strictly newer sequences,
+// settleOmissions settles an unfiltered, untruncated snapshot of the current
+// boot: a stored running job with LastSeq <= seq that the snapshot omits
+// becomes lost. PutJob applies only strictly newer sequences,
 // so the loss is written at seq, or at seq+1 when the job's last event is the
 // watermark itself (lost is terminal and job writes are serialized, so no
 // real event can collide). A newer live event keeps the job. The fixed reason

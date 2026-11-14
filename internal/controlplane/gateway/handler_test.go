@@ -107,7 +107,7 @@ func dialOptions() *websocket.DialOptions {
 	return &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer test"}}}
 }
 
-// revocable reports the credential invalid once revoked is closed (F17).
+// revocable reports the credential invalid once revoked is closed.
 type revocable struct {
 	authStub
 	revoked chan struct{}
@@ -152,7 +152,7 @@ func daemonLink(t *testing.T, ctx context.Context, url, boot string, c *clock.Fa
 	return l
 }
 
-// F16 and F17: a second connection with the same credential supersedes the
+// A second connection with the same credential supersedes the
 // first, which receives GoAway{SUPERSEDED}; revocation closes the live link
 // within one recheck interval. Ownership is released afterwards.
 func TestSupersedeAndRevocation(t *testing.T) {

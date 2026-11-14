@@ -12,7 +12,7 @@
 // discards updates, and is removed by the terminal update or link teardown.
 // Closing never cancels the call or frees its server slot early.
 // TODO(M3): send an unsubscribe message when the protocol adds one.
-// A call ID may have only one operation on a connection at a time (the M2
+// A call ID may have only one operation on a connection at a time (the
 // protocol has no request ID); query an actively watched call on another link.
 package workerclient
 

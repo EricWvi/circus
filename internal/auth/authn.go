@@ -156,7 +156,7 @@ func (a *Authenticator) touchCredential(ctx context.Context, credID string, hash
 
 // Valid reports whether the credential is still usable: not revoked and its
 // identity not deleted. A live connection calls it to notice a revocation
-// made after its upgrade (F17).
+// made after its upgrade.
 //
 // It must be called on the same Authenticator instance that accepted the
 // credential: the store looks credentials up by token hash only, so this

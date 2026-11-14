@@ -174,8 +174,8 @@ var pathTo = map[store.CallState][]store.CallState{
 	store.CallLost:       {store.CallLost}, // lost before dispatch; see createLostAfterDispatch
 }
 
-// wantCallEdges is the call state machine of outline 4.2 plus the
-// resubmission of a lost call that never reached a device (D43 item 5),
+// wantCallEdges is the call state machine plus the resubmission of a lost
+// call that never reached a device,
 // written out independently of the implementation's table.
 var wantCallEdges = map[store.CallState][]store.CallState{
 	store.CallAccepted:   {store.CallDispatched, store.CallOffline, store.CallCancelled, store.CallRejected, store.CallLost},

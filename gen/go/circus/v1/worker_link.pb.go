@@ -390,9 +390,10 @@ func (*WorkerDownlink_CallUpdate) isWorkerDownlink_Payload() {}
 
 func (*WorkerDownlink_JobEvent) isWorkerDownlink_Payload() {}
 
-// WorkerJobEvent supplies the global identity of a daemon job. Device is the
-// user-unique device name, boot_id is the daemon's process epoch, and event.job_id
-// is unique only within that pair. LOST for an old boot is emitted by the
+// WorkerJobEvent is reserved for the worker milestone (M3): the control plane
+// does not send it yet. It supplies the global identity of a daemon job.
+// Device is the user-unique device name, boot_id is the daemon's process
+// epoch, and event.job_id is unique only within that pair. LOST for an old boot is emitted by the
 // control plane when it observes a new boot, never by the daemon.
 type WorkerJobEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -509,8 +510,8 @@ func (x *SubmitCall) GetCall() *DeviceCall {
 
 // CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
 // and cancelled are terminal call outcomes, except that Rejected NOT_FOUND only
-// answers its query operation. Unknown is NOT terminal: reconnect with
-// daemon boot can still yield a result; CallQuery can retrieve the latest state.
+// answers its query operation. Unknown is NOT terminal: a reconnect of the
+// same daemon boot can still yield a result; CallQuery can retrieve the latest state.
 type CallUpdate struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Required: 1-128 bytes, charset [A-Za-z0-9_-].
@@ -735,7 +736,9 @@ func (*CallUpdate_Accepted) Descriptor() ([]byte, []int) {
 	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 0}
 }
 
-// Dispatched means dispatch metadata was committed before sending.
+// Dispatched means dispatch metadata was committed before sending. It also
+// reports a running call (there is no Running variant), including an
+// Unknown call that the daemon reports running again.
 type CallUpdate_Dispatched struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields

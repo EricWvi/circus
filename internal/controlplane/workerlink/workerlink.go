@@ -1,4 +1,4 @@
-// Package workerlink serves the M2 call subset at /v1/link/worker.
+// Package workerlink serves the worker call subset at /v1/link/worker.
 //
 // Router errors map as follows. store.ErrInvalid becomes Rejected INVALID.
 // During Query, store.ErrNotFound becomes Rejected NOT_FOUND with message
@@ -18,8 +18,11 @@
 // update, while a CLI can issue a subsequent Query. Closing subscriptions never
 // cancels execution.
 //
-// M2 supports one long-lived worker plus one CLI connection at a time. HTTP 503
-// means those two connection slots are full.
+// At most two worker-role connections (a long-lived worker or a `circus call`
+// CLI, both use worker credentials) are admitted at a time; an authenticated
+// connection holds its slot from before the handshake until it closes. HTTP
+// 503 means both slots are taken, the authenticator failed (for example the
+// store is unavailable), or the server is shutting down.
 //
 // Sends retry wire.ErrBusy with bounded backoff for at most 10 seconds (below
 // the router's default 15-second SubscriberStall and wire's default
@@ -325,7 +328,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			return
 		}
-		// WorkerJobEvent fanout belongs here in M3.
+		// TODO(M3): WorkerJobEvent fanout belongs here.
 	}
 }
 

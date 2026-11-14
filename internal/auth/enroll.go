@@ -14,7 +14,7 @@ import (
 var (
 	// ErrEnrollRejected is every token failure: unknown, already used,
 	// expired, or not issued for the requested role. The cases are
-	// deliberately indistinguishable (F20).
+	// deliberately indistinguishable.
 	ErrEnrollRejected = errors.New("enrollment token rejected: it is unknown, already used, expired, or not issued for this role")
 	// ErrNameTaken reports that the token's user already has a live identity
 	// of the requested role with that name. The token is not consumed.
@@ -24,8 +24,8 @@ var (
 )
 
 const (
-	// DefaultUserName is the single user M2 creates (outline 4.1); every
-	// identity and token belongs to it until logins arrive (D24, M4).
+	// DefaultUserName is the single user the control plane currently creates;
+	// every identity and token belongs to it until user logins arrive (M4).
 	DefaultUserName = "admin"
 	// DefaultEnrollTTL is the default lifetime of a one-time token.
 	DefaultEnrollTTL = time.Hour
@@ -219,8 +219,8 @@ func DefaultName(hostname string) string {
 }
 
 // ValidateName accepts 1 to MaxNameLen characters from [A-Za-z0-9._-],
-// starting with a letter or digit. Names address devices in tool calls (D3),
-// so they stay simple to type and quote.
+// starting with a letter or digit. Names address devices in tool calls, so
+// they stay simple to type and quote.
 func ValidateName(name string) error {
 	if name == "" || len(name) > MaxNameLen {
 		return fmt.Errorf("%w: name must be 1 to %d characters; pass --name", ErrInvalidRequest, MaxNameLen)

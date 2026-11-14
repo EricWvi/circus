@@ -145,7 +145,7 @@ func (r *router) enqueue(s *Subscription, owned *circusv1.CallUpdate, cost int64
 }
 
 // own charges u and clones it once; subscribers share the immutable clone
-// while each is charged for it separately (L7).
+// while each is charged for it separately.
 func (r *router) own(u *circusv1.CallUpdate) (*circusv1.CallUpdate, int64, error) {
 	cost, err := wire.Charge(u, r.config.MaxMessageBytes)
 	if err != nil {

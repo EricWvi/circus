@@ -46,13 +46,13 @@ func testCallCreate(t *testing.T, b Backend) {
 	ghost.DeviceID = "no-such-device"
 	mustIs(t, s.CreateCall(ctx, ghost), store.ErrNotFound)
 
-	// A call names a device of its own user only (D14 item 3).
+	// A call names a device of its own user only.
 	must(t, s.CreateUser(ctx, store.User{ID: "u2", Name: "other", CreatedAt: t0}))
 	foreign := newCall("foreign", f)
 	foreign.UserID = "u2"
 	mustIs(t, s.CreateCall(ctx, foreign), store.ErrNotFound)
 
-	// Outcome reason and fault code are short codes (D9 item 3).
+	// Outcome reason and fault code are short codes, never tool output.
 	long := newCall("long", f)
 	long.State, long.OutcomeReason = store.CallRejected, strings.Repeat("x", store.MaxCodeBytes)
 	must(t, s.CreateCall(ctx, long))
@@ -370,7 +370,7 @@ func testJobs(t *testing.T, b Backend) {
 		must(t, err)
 		return js
 	}
-	// An event arrives before anything else knows about the job (F22).
+	// An event arrives before anything else knows about the job.
 	j := store.Job{DeviceID: "d1", BootID: "b1", JobID: "j1", UserID: "u1", State: store.JobRunning, LastSeq: 5, StartedAt: t0, UpdatedAt: t0}
 	mustEqual(t, "insert", put(j), true)
 	mustEqual(t, "repeat", put(j), false)

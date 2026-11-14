@@ -585,7 +585,7 @@ func (o *ops) TransitionCall(ctx context.Context, callID string, expect store.Ca
 	sets, args = append([]string{"state = ?"}, sets...), append([]any{string(to)}, args...)
 	// A call is dispatched at most once: the dispatch, and the resubmission
 	// that leads to one, match only a row without a boot, even if expect
-	// would admit one (outline 4.4).
+	// would admit one.
 	undispatched := to == store.CallDispatched || to == store.CallAccepted
 	return o.updateCall(ctx, callID, expect, undispatched, sets, args)
 }

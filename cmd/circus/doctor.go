@@ -18,7 +18,7 @@ const doctorUsage = "usage: circus doctor [--role daemon|worker]"
 
 // doctorCommand checks, for each role this machine has joined as, that the
 // control plane is reachable and its TLS verifies, that it is ready, and that
-// the credential is still accepted (D31 item 7, the minimal doctor).
+// the credential is still accepted. These three checks are all it does.
 func doctorCommand(args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(errOut)

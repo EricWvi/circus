@@ -17,7 +17,7 @@
 // business burst nor one large ack can starve an already-started partial.
 //
 // Inputs and tool-output envelopes follow negotiated MaxMessageBytes (default
-// 64 MiB, D43), including DeviceResult inside CallStatus, a duplicate CallAck or
+// 64 MiB), including DeviceResult inside CallStatus, a duplicate CallAck or
 // a worker CallUpdate. Ranged Read can format 6.4 MB, and Edit failures echo
 // old_string near the input limit; wire does not impose a smaller result cap.
 // Status-only envelopes and all metadata outside embedded results stay within
@@ -61,8 +61,9 @@
 // 256 MiB and 5 MiB of fixed overhead (below): <=723 MiB+4 KiB, rounded up to
 // 736 MiB per endpoint without a Budget. This bound is deliberately
 // conservative; it does not claim every maximum can occur together. The opt-in
-// TestReceiveMemoryPhases reproduces the review's partial/decoded-waiting case
-// and logs post-GC live heap separately from peak HeapAlloc (which has garbage).
+// TestReceiveMemoryPhases reproduces partial reassemblies plus a decoded
+// message waiting for Receive, and logs post-GC live heap separately from
+// peak HeapAlloc (which has garbage).
 // Two tiny first fragments still allocate <=128 KiB, not their 128 MiB declaration.
 //
 // Fixed per-link overhead, never charged to a pool: one frame being read and

@@ -32,8 +32,9 @@ Uses worker credentials from circus join. All forms accept --credentials PATH
 and --ca-file FILE. Updates are JSON lines on stderr; tool text goes to stdout.
 Cwd is empty unless --cwd is given: relative file paths then use the daemon's
 start folder; bash requires --cwd. --wait follows a submission past Unknown until terminal or interrupt.
-Closing never cancels a call. M2 supports one long-lived worker plus one CLI
-at a time; HTTP 503 means the two connection slots are full. Cancel never gets
+Closing never cancels a call. The server admits at most two worker-credential
+connections (worker or CLI) at a time; HTTP 503 means both are taken, the
+server could not check the credential, or it is shutting down. Cancel never gets
 a reply; its following Query drives the exit code and prints unknown call id
 when the ID does not exist.
 
