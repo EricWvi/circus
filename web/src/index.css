@@ -167,7 +167,8 @@
     --sidebar-primary-foreground: oklch(0.2046 0 0);
     --sidebar-accent: oklch(0.2686 0 0);
     --sidebar-accent-foreground: oklch(0.9851 0 0);
-    --sidebar-border: oklch(1.0000 0 0);
+    /* mono ships pure white here; match --border as the light theme does. */
+    --sidebar-border: var(--border);
     --sidebar-ring: oklch(0.4386 0 0);
     --destructive-foreground: oklch(0.2686 0 0);
     --radius: 0rem;
