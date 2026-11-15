@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+package circus.v1;
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// SessionService is the user-facing session API. Authentication is a Bearer
+// credential; workers use the worker link for session operations instead.
+service SessionService {
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc WatchSession(WatchSessionRequest) returns (stream SessionEvent);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc GetSession(GetSessionRequest) returns (Session);
+  rpc ListApprovals(ListApprovalsRequest) returns (ListApprovalsResponse);
+  rpc ResolveApproval(ResolveApprovalRequest) returns (ResolveApprovalResponse);
+  rpc Interrupt(InterruptRequest) returns (InterruptResponse);
+  rpc StopSession(StopSessionRequest) returns (StopSessionResponse);
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
+  rpc RecoverSession(RecoverSessionRequest) returns (RecoverSessionResponse);
+}
+
+// SessionConfig is reused unchanged when creating a session and acquiring it.
+// Session, approval, input, message and worker ids are at most 128 bytes
+// throughout this service.
+message SessionConfig {
+  // User-unique device name (at most 128 bytes) used when a tool does not
+  // name a device.
+  string default_device = 1;
+  // Initial main-thread working directories, at most 256, one per device.
+  repeated Cwd cwds = 2;
+  // At most 128 bytes.
+  string model = 3;
+  // SDK permission mode, at most 128 bytes; empty selects auto.
+  string permission_mode = 4;
+  message Cwd {
+    // At most 128 bytes.
+    string device = 1;
+    // Absolute device path, at most 4 KiB.
+    string cwd = 2;
+  }
+}
+
+// InputPriority controls input delivery even while a turn is running.
+enum InputPriority {
+  INPUT_PRIORITY_UNSPECIFIED = 0;
+  // Default: merge into the current turn, or start one if idle.
+  INPUT_PRIORITY_NORMAL = 1;
+  // Interrupt the current turn before processing this input.
+  INPUT_PRIORITY_NOW = 2;
+}
+
+enum TurnOrigin {
+  TURN_ORIGIN_UNSPECIFIED = 0;
+  TURN_ORIGIN_INPUT = 1;
+  TURN_ORIGIN_NOTIFICATION = 2;
+  // The CLI started the turn itself, for example on subagent completion.
+  TURN_ORIGIN_CLI = 3;
+}
+
+enum TurnOutcome {
+  TURN_OUTCOME_UNSPECIFIED = 0;
+  TURN_OUTCOME_COMPLETED = 1;
+  TURN_OUTCOME_INTERRUPTED = 2;
+  TURN_OUTCOME_ERROR = 3;
+}
+
+// Session state and lease ownership are independent: an idle session can have
+// a live CLI and a lease, including while an asynchronous subagent runs.
+message Session {
+  string session_id = 1;
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_IDLE = 1;
+    // Pending input or a completed unnotified job, without a valid lease.
+    STATE_QUEUED = 2;
+    // A CLI turn of any origin is running.
+    STATE_RUNNING = 3;
+    STATE_STOPPED = 4;
+    // Transcript mirroring failed and has not been repaired. The holder may
+    // repair it; otherwise it stays broken until the user accepts the gap
+    // with RecoverSession or stops the session. In the measured cases (whole
+    // turns, single entries and the tail missing) the CLI resumes without
+    // error and silently omits the lost entries, so the session is kept from
+    // running until the gap is repaired or accepted.
+    STATE_BROKEN = 5;
+  }
+  State state = 2;
+  TurnOutcome last_turn_outcome = 3;
+  uint64 turn_count = 4;
+  int64 created_at_unix_ms = 5;
+  // Zero until stopped.
+  int64 stopped_at_unix_ms = 6;
+  // Unset in ListSessions results; GetSession returns it.
+  SessionConfig config = 7;
+  // The 64 MiB durable view filled; only turn boundaries continue to be stored.
+  bool view_truncated = 8;
+  // Empty permits scheduling on any attached worker belonging to the user.
+  string pinned_worker_id = 9;
+}
+
+// SessionEvent is the user-facing view, not the authoritative transcript.
+// Durable events have increasing seq; ephemeral events are live-only, have
+// seq = 0 and cannot be replayed. after_seq refers only to durable events.
+message SessionEvent {
+  uint64 seq = 1;
+  int64 ts_unix_ms = 2;
+  // Shared with worker-published events. TURN_STARTED payload includes origin.
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_TURN_STARTED = 1;
+    KIND_ASSISTANT = 2;
+    KIND_USER = 3;
+    KIND_TOOL_PROGRESS = 4;
+    KIND_RESULT = 5;
+    KIND_PERMISSION_DENIED = 6;
+    KIND_APPROVAL_PENDING = 7;
+    KIND_APPROVAL_RESOLVED = 8;
+    KIND_TURN_INTERRUPTED = 9;
+    KIND_SESSION_STATE = 10;
+    KIND_BGTASK_STARTED = 11;
+    KIND_BGTASK_ENDED = 12;
+    KIND_NOTIFICATION_DELIVERED = 13;
+    KIND_ERROR = 14;
+    // Recorded by the control plane only: the user accepted that the
+    // transcript has a gap. A worker batch containing it is INVALID.
+    KIND_TRANSCRIPT_GAP_ACCEPTED = 15;
+    // Published by a worker that found a hole in the loaded transcript (an
+    // unknown parentUuid) while Lease.transcript_gap_turn_no is nonzero, for
+    // the user's view only; the payload names the subpath and the unknown
+    // parents.
+    KIND_TRANSCRIPT_GAP_DETECTED = 16;
+  }
+  Kind kind = 3;
+  // Opaque SDK message JSON; durable view payloads over 256 KiB are truncated.
+  string payload_json = 4;
+  bool ephemeral = 5;
+  bool truncated = 6;
+}
+
+message CreateSessionRequest {
+  SessionConfig config = 1;
+  optional string pinned_worker_id = 2;
+}
+message CreateSessionResponse {
+  Session session = 1;
+}
+
+// At most 32 inputs per session may remain unpersisted, each at most 256 KiB.
+// Repeating (session_id, client_msg_id) returns the same input_id and event_seq
+// without inserting another input. Clients must retain identical content.
+// A stopped session refuses new messages. A broken session accepts them, but
+// they are not delivered until its transcript is repaired.
+message SendMessageRequest {
+  string session_id = 1;
+  string client_msg_id = 2;
+  string text = 3;
+  InputPriority priority = 4;
+}
+message SendMessageResponse {
+  string input_id = 1;
+  uint64 event_seq = 2;
+}
+message WatchSessionRequest {
+  string session_id = 1;
+  // Replay durable events strictly after this sequence, then follow live events.
+  uint64 after_seq = 2;
+}
+message ListSessionsRequest {
+  // Zero selects 100; maximum 1000.
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+message ListSessionsResponse {
+  // At most 1000, without config; a user may have at most 1000 sessions.
+  repeated Session sessions = 1;
+  string next_page_token = 2;
+}
+message GetSessionRequest {
+  string session_id = 1;
+}
+
+// Approval requests merge while pending by (session, tool, device, match_key),
+// ignoring display, reason and tool_use_id. match_key is the SHA-256 of the
+// matched command or path in 64 lowercase hexadecimal digits, so display is
+// what a user reads (at most 1024 bytes, as reason). Pending requests and
+// unused grants each have a cap of 32 per session and expire after ten
+// minutes.
+message SessionApproval {
+  string approval_id = 1;
+  string session_id = 2;
+  string tool_use_id = 3;
+  string agent_id = 4;
+  string tool = 5;
+  string device = 6;
+  string match_key = 7;
+  string display = 8;
+  string reason = 9;
+  int64 created_at_unix_ms = 10;
+  int64 expires_at_unix_ms = 11;
+}
+message ListApprovalsRequest {
+  string session_id = 1;
+}
+message ListApprovalsResponse {
+  // Pending approvals only, at most 32.
+  repeated SessionApproval approvals = 1;
+}
+// Resolving an already resolved approval is idempotent and creates no additional
+// grant or input. Approval of a stopped session is refused. Approving atomically
+// creates one grant and an approval input asking the model to retry.
+message ResolveApprovalRequest {
+  string approval_id = 1;
+  bool approve = 2;
+}
+message ResolveApprovalResponse {}
+// Interrupt ends the current turn without stopping the session: it raises
+// the session's interrupt level to the running turn's turn_no and hints the
+// holder. Without a running turn it changes nothing.
+message InterruptRequest {
+  string session_id = 1;
+}
+message InterruptResponse {}
+// StopSession is idempotent, prevents new turns and stops the session's jobs.
+// The holder keeps its lease until it has flushed and released it.
+message StopSessionRequest {
+  string session_id = 1;
+}
+message StopSessionResponse {}
+// DeleteSession deletes a session and everything recorded for it. It is
+// refused with FAILED_PRECONDITION, deleting nothing, unless the session is
+// stopped, holds no unexpired lease and has no non-terminal call. NOT_FOUND
+// when absent, including after a delete that already succeeded; an
+// interrupted delete is finished by calling it again.
+message DeleteSessionRequest {
+  string session_id = 1;
+}
+message DeleteSessionResponse {}
+// RecoverSession accepts a gap in a broken session's transcript. Allowed only
+// while the session is BROKEN (else FAILED_PRECONDITION); accept_transcript_gap
+// must be true (else INVALID_ARGUMENT). It first revokes any held lease
+// (LeaseRevoked; that epoch is fenced), then moves the session to IDLE, or
+// QUEUED with pending work, sets the gap mark (Lease.transcript_gap_turn_no)
+// to the turn that broke, and records a TRANSCRIPT_GAP_ACCEPTED event. The
+// mark stays set until the model has been told. The
+// next holder resumes from the transcript the control plane holds, which
+// lacks at least the failed batches. In the measured cases (whole turns,
+// single entries and the tail missing) the CLI resumes it without error or
+// signal: a hole inside the parentUuid chain is bridged (the model sees every
+// surviving entry in file order and misses only the lost ones; two user
+// turns left adjacent merge into one message), and a hole at the tail leaves
+// the last surviving conversation entry as the leaf. A hole that splits a
+// tool_use from its tool_result, holes in subagent subpaths and holes across
+// a compaction are not measured yet. The worker keeps every surviving entry,
+// publishes a TRANSCRIPT_GAP_DETECTED event for a hole it finds while the
+// mark is set, and tells the model once, in the next turn it starts with a
+// pushed message, that part of the history is missing. Without it the session stays BROKEN.
+message RecoverSessionRequest {
+  string session_id = 1;
+  bool accept_transcript_gap = 2;
+}
+message RecoverSessionResponse {}

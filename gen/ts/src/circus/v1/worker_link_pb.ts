@@ -4,31 +4,35 @@
 
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { CallQuery, CancelCall, DeviceCall, DeviceResult, JobEvent } from "./device_pb.js";
+import type { CallQuery, CancelCall, DeviceCall, DeviceResult, JobEvent_State } from "./device_pb.js";
 import { file_circus_v1_device } from "./device_pb.js";
 import type { Fragment, Heartbeat, Hello, Reject, Welcome } from "./link_pb.js";
 import { file_circus_v1_link } from "./link_pb.js";
+import type { InputPriority, SessionConfig, SessionEvent_Kind, TurnOrigin, TurnOutcome } from "./session_pb.js";
+import { file_circus_v1_session } from "./session_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file circus/v1/worker_link.proto.
  */
 export const file_circus_v1_worker_link: GenFile = /*@__PURE__*/
-  fileDesc("ChtjaXJjdXMvdjEvd29ya2VyX2xpbmsucHJvdG8SCWNpcmN1cy52MSLTAgoMV29ya2VyVXBsaW5rEiEKBWhlbGxvGAEgASgLMhAuY2lyY3VzLnYxLkhlbGxvSAASKQoJaGVhcnRiZWF0GAIgASgLMhQuY2lyY3VzLnYxLkhlYXJ0YmVhdEgAEicKCGZyYWdtZW50GAMgASgLMhMuY2lyY3VzLnYxLkZyYWdtZW50SAASLAoLc3VibWl0X2NhbGwYCiABKAsyFS5jaXJjdXMudjEuU3VibWl0Q2FsbEgAEiwKC2NhbmNlbF9jYWxsGAsgASgLMhUuY2lyY3VzLnYxLkNhbmNlbENhbGxIABIqCgpjYWxsX3F1ZXJ5GAwgASgLMhQuY2lyY3VzLnYxLkNhbGxRdWVyeUgAEiUKB3Vud2F0Y2gYDSABKAsyEi5jaXJjdXMudjEuVW53YXRjaEgAEhIKCnJlcXVlc3RfaWQYFCABKARCCQoHcGF5bG9hZCKtAgoOV29ya2VyRG93bmxpbmsSJQoHd2VsY29tZRgBIAEoCzISLmNpcmN1cy52MS5XZWxjb21lSAASIwoGcmVqZWN0GAIgASgLMhEuY2lyY3VzLnYxLlJlamVjdEgAEikKCWhlYXJ0YmVhdBgDIAEoCzIULmNpcmN1cy52MS5IZWFydGJlYXRIABInCghmcmFnbWVudBgEIAEoCzITLmNpcmN1cy52MS5GcmFnbWVudEgAEiwKC2NhbGxfdXBkYXRlGAogASgLMhUuY2lyY3VzLnYxLkNhbGxVcGRhdGVIABIuCglqb2JfZXZlbnQYCyABKAsyGS5jaXJjdXMudjEuV29ya2VySm9iRXZlbnRIABISCgpyZXF1ZXN0X2lkGBQgASgEQgkKB3BheWxvYWQiCQoHVW53YXRjaCJVCg5Xb3JrZXJKb2JFdmVudBIOCgZkZXZpY2UYASABKAkSDwoHYm9vdF9pZBgCIAEoCRIiCgVldmVudBgDIAEoCzITLmNpcmN1cy52MS5Kb2JFdmVudCJBCgpTdWJtaXRDYWxsEg4KBmRldmljZRgBIAEoCRIjCgRjYWxsGAIgASgLMhUuY2lyY3VzLnYxLkRldmljZUNhbGwi2AYKCkNhbGxVcGRhdGUSDwoHY2FsbF9pZBgBIAEoCRIyCghhY2NlcHRlZBgCIAEoCzIeLmNpcmN1cy52MS5DYWxsVXBkYXRlLkFjY2VwdGVkSAASNgoKZGlzcGF0Y2hlZBgDIAEoCzIgLmNpcmN1cy52MS5DYWxsVXBkYXRlLkRpc3BhdGNoZWRIABIpCgZyZXN1bHQYBCABKAsyFy5jaXJjdXMudjEuRGV2aWNlUmVzdWx0SAASNgoHb2ZmbGluZRgFIAEoCzIjLmNpcmN1cy52MS5DYWxsVXBkYXRlLkRldmljZU9mZmxpbmVIABIwCgd1bmtub3duGAYgASgLMh0uY2lyY3VzLnYxLkNhbGxVcGRhdGUuVW5rbm93bkgAEioKBGxvc3QYByABKAsyGi5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5Mb3N0SAASMgoIcmVqZWN0ZWQYCCABKAsyHi5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5SZWplY3RlZEgAEjQKCWNhbmNlbGxlZBgJIAEoCzIfLmNpcmN1cy52MS5DYWxsVXBkYXRlLkNhbmNlbGxlZEgAGgoKCEFjY2VwdGVkGgwKCkRpc3BhdGNoZWQaJwoNRGV2aWNlT2ZmbGluZRIWCg5vbmxpbmVfZGV2aWNlcxgBIAMoCRoZCgdVbmtub3duEg4KBnJlYXNvbhgBIAEoCRoWCgRMb3N0Eg4KBnJlYXNvbhgBIAEoCRqUAgoIUmVqZWN0ZWQSMQoEY29kZRgBIAEoDjIjLmNpcmN1cy52MS5DYWxsVXBkYXRlLlJlamVjdGVkLkNvZGUSDwoHbWVzc2FnZRgCIAEoCSLDAQoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASEAoMQ09ERV9JTlZBTElEEAESEwoPQ09ERV9PVkVSTE9BREVEEAISFgoSQ09ERV9DQUxMX01JU01BVENIEAMSFwoTQ09ERV9VTktOT1dOX0RFVklDRRAEEhoKFkNPREVfU1RPUkVfVU5BVkFJTEFCTEUQBRIdChlDT0RFX0RFVklDRV9TSFVUVElOR19ET1dOEAYSEgoOQ09ERV9OT1RfRk9VTkQQBxoLCglDYW5jZWxsZWRCCAoGdXBkYXRlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_link]);
+  fileDesc("ChtjaXJjdXMvdjEvd29ya2VyX2xpbmsucHJvdG8SCWNpcmN1cy52MSKIBAoMV29ya2VyVXBsaW5rEiEKBWhlbGxvGAEgASgLMhAuY2lyY3VzLnYxLkhlbGxvSAASKQoJaGVhcnRiZWF0GAIgASgLMhQuY2lyY3VzLnYxLkhlYXJ0YmVhdEgAEicKCGZyYWdtZW50GAMgASgLMhMuY2lyY3VzLnYxLkZyYWdtZW50SAASLAoLc3VibWl0X2NhbGwYCiABKAsyFS5jaXJjdXMudjEuU3VibWl0Q2FsbEgAEiwKC2NhbmNlbF9jYWxsGAsgASgLMhUuY2lyY3VzLnYxLkNhbmNlbENhbGxIABIqCgpjYWxsX3F1ZXJ5GAwgASgLMhQuY2lyY3VzLnYxLkNhbGxRdWVyeUgAEiUKB3Vud2F0Y2gYDSABKAsyEi5jaXJjdXMudjEuVW53YXRjaEgAEiMKBmF0dGFjaBgOIAEoCzIRLmNpcmN1cy52MS5BdHRhY2hIABIsCgdzZXNzaW9uGA8gASgLMhkuY2lyY3VzLnYxLlNlc3Npb25SZXF1ZXN0SAASMAoNcmVzdW1lX2xlYXNlcxgQIAEoCzIXLmNpcmN1cy52MS5SZXN1bWVMZWFzZXNIABIuCgxsaXN0X2RldmljZXMYESABKAsyFi5jaXJjdXMudjEuTGlzdERldmljZXNIABISCgpyZXF1ZXN0X2lkGBQgASgEQgkKB3BheWxvYWQi8AIKDldvcmtlckRvd25saW5rEiUKB3dlbGNvbWUYASABKAsyEi5jaXJjdXMudjEuV2VsY29tZUgAEiMKBnJlamVjdBgCIAEoCzIRLmNpcmN1cy52MS5SZWplY3RIABIpCgloZWFydGJlYXQYAyABKAsyFC5jaXJjdXMudjEuSGVhcnRiZWF0SAASJwoIZnJhZ21lbnQYBCABKAsyEy5jaXJjdXMudjEuRnJhZ21lbnRIABIsCgtjYWxsX3VwZGF0ZRgKIAEoCzIVLmNpcmN1cy52MS5DYWxsVXBkYXRlSAASMAoNc2Vzc2lvbl9yZXBseRgMIAEoCzIXLmNpcmN1cy52MS5TZXNzaW9uUmVwbHlIABIuCgx3b3JrZXJfZXZlbnQYDSABKAsyFi5jaXJjdXMudjEuV29ya2VyRXZlbnRIABISCgpyZXF1ZXN0X2lkGBQgASgEQgkKB3BheWxvYWRKBAgLEAxSCWpvYl9ldmVudCIJCgdVbndhdGNoIm0KClN1Ym1pdENhbGwSDgoGZGV2aWNlGAEgASgJEiMKBGNhbGwYAiABKAsyFS5jaXJjdXMudjEuRGV2aWNlQ2FsbBIVCg1zZXNzaW9uX2Vwb2NoGAMgASgEEhMKC3Rvb2xfdXNlX2lkGAQgASgJIosHCgpDYWxsVXBkYXRlEg8KB2NhbGxfaWQYASABKAkSMgoIYWNjZXB0ZWQYAiABKAsyHi5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5BY2NlcHRlZEgAEjYKCmRpc3BhdGNoZWQYAyABKAsyIC5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5EaXNwYXRjaGVkSAASKQoGcmVzdWx0GAQgASgLMhcuY2lyY3VzLnYxLkRldmljZVJlc3VsdEgAEjYKB29mZmxpbmUYBSABKAsyIy5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5EZXZpY2VPZmZsaW5lSAASMAoHdW5rbm93bhgGIAEoCzIdLmNpcmN1cy52MS5DYWxsVXBkYXRlLlVua25vd25IABIqCgRsb3N0GAcgASgLMhouY2lyY3VzLnYxLkNhbGxVcGRhdGUuTG9zdEgAEjIKCHJlamVjdGVkGAggASgLMh4uY2lyY3VzLnYxLkNhbGxVcGRhdGUuUmVqZWN0ZWRIABI0CgljYW5jZWxsZWQYCSABKAsyHy5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5DYW5jZWxsZWRIABoKCghBY2NlcHRlZBoMCgpEaXNwYXRjaGVkGicKDURldmljZU9mZmxpbmUSFgoOb25saW5lX2RldmljZXMYASADKAkaGQoHVW5rbm93bhIOCgZyZWFzb24YASABKAkaFgoETG9zdBIOCgZyZWFzb24YASABKAkaxwIKCFJlamVjdGVkEjEKBGNvZGUYASABKA4yIy5jaXJjdXMudjEuQ2FsbFVwZGF0ZS5SZWplY3RlZC5Db2RlEg8KB21lc3NhZ2UYAiABKAki9gEKBENvZGUSFAoQQ09ERV9VTlNQRUNJRklFRBAAEhAKDENPREVfSU5WQUxJRBABEhMKD0NPREVfT1ZFUkxPQURFRBACEhYKEkNPREVfQ0FMTF9NSVNNQVRDSBADEhcKE0NPREVfVU5LTk9XTl9ERVZJQ0UQBBIaChZDT0RFX1NUT1JFX1VOQVZBSUxBQkxFEAUSHQoZQ09ERV9ERVZJQ0VfU0hVVFRJTkdfRE9XThAGEhIKDkNPREVfTk9UX0ZPVU5EEAcSFwoTQ09ERV9TRVNTSU9OX0ZFTkNFRBAIEhgKFENPREVfU0VTU0lPTl9TVE9QUEVEEAkaCwoJQ2FuY2VsbGVkQggKBnVwZGF0ZSLuAgoGQXR0YWNoEhQKDG1heF9zZXNzaW9ucxgBIAEoDRITCgtzZGtfdmVyc2lvbhgCIAEoCRIWCg5jbGF1ZGVfdmVyc2lvbhgDIAEoCRIqCgdhY2NvdW50GAQgASgLMhkuY2lyY3VzLnYxLkF0dGFjaC5BY2NvdW50EjgKD2F1dG9fbW9kZV9jaGVjaxgFIAEoDjIfLmNpcmN1cy52MS5BdHRhY2guQXV0b01vZGVDaGVjaxpJCgdBY2NvdW50Eg0KBWVtYWlsGAEgASgJEhQKDG9yZ2FuaXphdGlvbhgCIAEoCRIZChFzdWJzY3JpcHRpb25fdHlwZRgDIAEoCSJwCg1BdXRvTW9kZUNoZWNrEh8KG0FVVE9fTU9ERV9DSEVDS19VTlNQRUNJRklFRBAAEh0KGUFVVE9fTU9ERV9DSEVDS19BVkFJTEFCTEUQARIfChtBVVRPX01PREVfQ0hFQ0tfVU5BVkFJTEFCTEUQAiL1AwoLV29ya2VyRXZlbnQSLQoFb2ZmZXIYASABKAsyHC5jaXJjdXMudjEuV29ya2VyRXZlbnQuT2ZmZXJIABItCgVudWRnZRgCIAEoCzIcLmNpcmN1cy52MS5Xb3JrZXJFdmVudC5OdWRnZUgAEjwKDWxlYXNlX3Jldm9rZWQYAyABKAsyIy5jaXJjdXMudjEuV29ya2VyRXZlbnQuTGVhc2VSZXZva2VkSAAaGwoFT2ZmZXISEgoKc2Vzc2lvbl9pZBgBIAEoCRrwAQoFTnVkZ2USEgoKc2Vzc2lvbl9pZBgBIAEoCRI4CgdyZWFzb25zGAIgAygOMiMuY2lyY3VzLnYxLldvcmtlckV2ZW50Lk51ZGdlLlJlYXNvbkICEAASGQoRaW50ZXJydXB0X3R1cm5fbm8YAyABKAQifgoGUmVhc29uEhYKElJFQVNPTl9VTlNQRUNJRklFRBAAEhAKDFJFQVNPTl9JTlBVVBABEg4KClJFQVNPTl9KT0IQAhIUChBSRUFTT05fSU5URVJSVVBUEAMSDwoLUkVBU09OX1NUT1AQBBITCg9SRUFTT05fQVBQUk9WQUwQBRoxCgxMZWFzZVJldm9rZWQSEgoKc2Vzc2lvbl9pZBgBIAEoCRINCgVlcG9jaBgCIAEoBEIHCgVldmVudCLqBQoOU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRINCgVlcG9jaBgCIAEoBBIwCg1hY3F1aXJlX2xlYXNlGAogASgLMhcuY2lyY3VzLnYxLkFjcXVpcmVMZWFzZUgAEjAKDXJlbGVhc2VfbGVhc2UYCyABKAsyFy5jaXJjdXMudjEuUmVsZWFzZUxlYXNlSAASNAoPbG9hZF90cmFuc2NyaXB0GAwgASgLMhkuY2lyY3VzLnYxLkxvYWRUcmFuc2NyaXB0SAASPQoUbGlzdF90cmFuc2NyaXB0X2tleXMYDSABKAsyHS5jaXJjdXMudjEuTGlzdFRyYW5zY3JpcHRLZXlzSAASOAoRYXBwZW5kX3RyYW5zY3JpcHQYDiABKAsyGy5jaXJjdXMudjEuQXBwZW5kVHJhbnNjcmlwdEgAEiwKC3Rha2VfaW5wdXRzGA8gASgLMhUuY2lyY3VzLnYxLlRha2VJbnB1dHNIABIsCgtyZXBvcnRfdHVybhgQIAEoCzIVLmNpcmN1cy52MS5SZXBvcnRUdXJuSAASMwoLcGF0Y2hfc3RhdGUYESABKAsyHC5jaXJjdXMudjEuUGF0Y2hTZXNzaW9uU3RhdGVIABIvCglnZXRfc3RhdGUYEiABKAsyGi5jaXJjdXMudjEuR2V0U2Vzc2lvblN0YXRlSAASMgoOcHVibGlzaF9ldmVudHMYEyABKAsyGC5jaXJjdXMudjEuUHVibGlzaEV2ZW50c0gAEjYKEHJlcXVlc3RfYXBwcm92YWwYFCABKAsyGi5jaXJjdXMudjEuUmVxdWVzdEFwcHJvdmFsSAASMAoNY29uc3VtZV9ncmFudBgVIAEoCzIXLmNpcmN1cy52MS5Db25zdW1lR3JhbnRIABI8ChN0cmFuc2NyaXB0X3JlcGFpcmVkGBYgASgLMh0uY2lyY3VzLnYxLlRyYW5zY3JpcHRSZXBhaXJlZEgAQgQKAm9wIh0KDEFjcXVpcmVMZWFzZRINCgVmcmVzaBgBIAEoCCKqAQoMUmVsZWFzZUxlYXNlEi4KBnJlYXNvbhgBIAEoDjIeLmNpcmN1cy52MS5SZWxlYXNlTGVhc2UuUmVhc29uImoKBlJlYXNvbhIWChJSRUFTT05fVU5TUEVDSUZJRUQQABIPCgtSRUFTT05fSURMRRABEhIKDlJFQVNPTl9TVE9QUEVEEAISEAoMUkVBU09OX0VSUk9SEAMSEQoNUkVBU09OX0ZFTkNFRBAEIkcKDkxvYWRUcmFuc2NyaXB0Eg8KB3N1YnBhdGgYASABKAkSEQoJYWZ0ZXJfc2VxGAIgASgEEhEKCW1heF9ieXRlcxgDIAEoDSIUChJMaXN0VHJhbnNjcmlwdEtleXMiYwoQQXBwZW5kVHJhbnNjcmlwdBIPCgdzdWJwYXRoGAEgASgJEhEKCWJhdGNoX3NlcRgCIAEoBBIrCgdlbnRyaWVzGAMgAygLMhouY2lyY3VzLnYxLlRyYW5zY3JpcHRFbnRyeSItCg9UcmFuc2NyaXB0RW50cnkSDAoEdXVpZBgBIAEoCRIMCgRqc29uGAIgASgJIgwKClRha2VJbnB1dHMizQMKClJlcG9ydFR1cm4SEQoJbG9jYWxfc2VxGAEgASgEEioKBXBoYXNlGAIgASgOMhsuY2lyY3VzLnYxLlJlcG9ydFR1cm4uUGhhc2USJQoGb3JpZ2luGAMgASgOMhUuY2lyY3VzLnYxLlR1cm5PcmlnaW4SJwoHb3V0Y29tZRgEIAEoDjIWLmNpcmN1cy52MS5UdXJuT3V0Y29tZRISCgp1c2FnZV9qc29uGAUgASgJEjIKCXBlcnNpc3RlZBgGIAEoCzIfLmNpcmN1cy52MS5SZXBvcnRUdXJuLlBlcnNpc3RlZBIdChV0cmFuc2NyaXB0X2luY29tcGxldGUYByABKAgahAEKCVBlcnNpc3RlZBIRCglpbnB1dF9pZHMYASADKAkSEAoIY2FsbF9pZHMYAiADKAkSHwoEam9icxgDIAMoCzIRLmNpcmN1cy52MS5Kb2JLZXkSFQoNbGF0ZV9jYWxsX2lkcxgEIAMoCRIaChJnYXBfbm90aWNlX3R1cm5fbm8YBSABKAQiQgoFUGhhc2USFQoRUEhBU0VfVU5TUEVDSUZJRUQQABIRCg1QSEFTRV9TVEFSVEVEEAESDwoLUEhBU0VfRU5ERUQQAiI8CgZKb2JLZXkSEQoJZGV2aWNlX2lkGAEgASgJEg8KB2Jvb3RfaWQYAiABKAkSDgoGam9iX2lkGAMgASgJIs4EChFQYXRjaFNlc3Npb25TdGF0ZRIuCgRjd2RzGAEgAygLMiAuY2lyY3VzLnYxLlBhdGNoU2Vzc2lvblN0YXRlLkN3ZBI2CgVmaWxlcxgCIAMoCzInLmNpcmN1cy52MS5QYXRjaFNlc3Npb25TdGF0ZS5GaWxlUmVjb3JkEhkKEXJldHVybmVkX2NhbGxfaWRzGAMgAygJEkQKD2JndGFza3Nfc3RhcnRlZBgEIAMoCzIrLmNpcmN1cy52MS5QYXRjaFNlc3Npb25TdGF0ZS5CYWNrZ3JvdW5kVGFzaxIVCg1iZ3Rhc2tzX2VuZGVkGAUgAygJEiYKC2hhbmRlZF9qb2JzGAYgAygLMhEuY2lyY3VzLnYxLkpvYktleRIyCglwZXJzaXN0ZWQYByABKAsyHy5jaXJjdXMudjEuUmVwb3J0VHVybi5QZXJzaXN0ZWQSGQoRYXdhaXRpbmdfY2FsbF9pZHMYCCADKAkaNAoDQ3dkEhAKCGFnZW50X2lkGAEgASgJEg4KBmRldmljZRgCIAEoCRILCgNjd2QYAyABKAkaUQoKRmlsZVJlY29yZBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCRIOCgZzaGEyNTYYAyABKAkSFQoNbXRpbWVfdW5peF9tcxgEIAEoAxpZCg5CYWNrZ3JvdW5kVGFzaxIPCgd0YXNrX2lkGAEgASgJEhMKC3Rvb2xfdXNlX2lkGAIgASgJEgwKBGtpbmQYAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAki4AEKD0dldFNlc3Npb25TdGF0ZRI4CghzZWN0aW9ucxgBIAMoDjIiLmNpcmN1cy52MS5HZXRTZXNzaW9uU3RhdGUuU2VjdGlvbkICEAAikgEKB1NlY3Rpb24SFwoTU0VDVElPTl9VTlNQRUNJRklFRBAAEhAKDFNFQ1RJT05fQ1dEUxABEhEKDVNFQ1RJT05fRklMRVMQAhIQCgxTRUNUSU9OX0pPQlMQAxIRCg1TRUNUSU9OX0NBTExTEAQSEgoOU0VDVElPTl9HUkFOVFMQBRIQCgxTRUNUSU9OX05PTkUQBiLTBgoMU2Vzc2lvblN0YXRlEi4KBGN3ZHMYASADKAsyIC5jaXJjdXMudjEuUGF0Y2hTZXNzaW9uU3RhdGUuQ3dkEjYKBWZpbGVzGAIgAygLMicuY2lyY3VzLnYxLlBhdGNoU2Vzc2lvblN0YXRlLkZpbGVSZWNvcmQSKQoEam9icxgDIAMoCzIbLmNpcmN1cy52MS5TZXNzaW9uU3RhdGUuSm9iEisKBWNhbGxzGAQgAygLMhwuY2lyY3VzLnYxLlNlc3Npb25TdGF0ZS5DYWxsEi0KBmdyYW50cxgFIAMoCzIdLmNpcmN1cy52MS5TZXNzaW9uU3RhdGUuR3JhbnQSDwoHc3RvcHBlZBgGIAEoCBIZChFpbnRlcnJ1cHRfdHVybl9ubxgHIAEoBBrSAQoDSm9iEh4KA2tleRgBIAEoCzIRLmNpcmN1cy52MS5Kb2JLZXkSDwoHY2FsbF9pZBgCIAEoCRITCgt0b29sX3VzZV9pZBgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRITCgtvdXRwdXRfcGF0aBgFIAEoCRIoCgVzdGF0ZRgGIAEoDjIZLmNpcmN1cy52MS5Kb2JFdmVudC5TdGF0ZRIRCglleGl0X2NvZGUYByABKAUSDgoGZGV2aWNlGAggASgJEg4KBmhhbmRlZBgJIAEoCBr8AQoEQ2FsbBIPCgdjYWxsX2lkGAEgASgJEhMKC3Rvb2xfdXNlX2lkGAIgASgJEg4KBmRldmljZRgDIAEoCRIQCghyZXR1cm5lZBgEIAEoCBIMCgR0b29sGAUgASgJEicKB291dGNvbWUYBiABKA4yFi5jaXJjdXMudjEuQ2FsbE91dGNvbWUSFgoJZXhpdF9jb2RlGAcgASgFSACIAQESEwoLbm90aWNlX293ZWQYCCABKAgSOgoNcmVqZWN0ZWRfY29kZRgJIAEoDjIjLmNpcmN1cy52MS5DYWxsVXBkYXRlLlJlamVjdGVkLkNvZGVCDAoKX2V4aXRfY29kZRpUCgVHcmFudBIMCgR0b29sGAEgASgJEg4KBmRldmljZRgCIAEoCRIRCgltYXRjaF9rZXkYAyABKAkSGgoSZXhwaXJlc19hdF91bml4X21zGAQgASgDIp0BCghSZWNvdmVyeRIrCgVjYWxscxgBIAMoCzIcLmNpcmN1cy52MS5TZXNzaW9uU3RhdGUuQ2FsbBJBCgxsb3N0X2JndGFza3MYAiADKAsyKy5jaXJjdXMudjEuUGF0Y2hTZXNzaW9uU3RhdGUuQmFja2dyb3VuZFRhc2sSIQoZcHJldmlvdXNfdHVybl9pbnRlcnJ1cHRlZBgDIAEoCCKoAQoNUHVibGlzaEV2ZW50cxIuCgZldmVudHMYASADKAsyHi5jaXJjdXMudjEuUHVibGlzaEV2ZW50cy5FdmVudBIRCgliYXRjaF9zZXEYAiABKAQaVAoFRXZlbnQSKgoEa2luZBgBIAEoDjIcLmNpcmN1cy52MS5TZXNzaW9uRXZlbnQuS2luZBIMCgRqc29uGAIgASgJEhEKCWVwaGVtZXJhbBgDIAEoCCKKAQoPUmVxdWVzdEFwcHJvdmFsEhMKC3Rvb2xfdXNlX2lkGAEgASgJEhAKCGFnZW50X2lkGAIgASgJEgwKBHRvb2wYAyABKAkSDgoGZGV2aWNlGAQgASgJEhEKCW1hdGNoX2tleRgFIAEoCRIPCgdkaXNwbGF5GAYgASgJEg4KBnJlYXNvbhgHIAEoCSJUCgxDb25zdW1lR3JhbnQSDAoEdG9vbBgBIAEoCRIOCgZkZXZpY2UYAiABKAkSEQoJbWF0Y2hfa2V5GAMgASgJEhMKC3Rvb2xfdXNlX2lkGAQgASgJIhQKElRyYW5zY3JpcHRSZXBhaXJlZCJnCgxSZXN1bWVMZWFzZXMSLAoGbGVhc2VzGAEgAygLMhwuY2lyY3VzLnYxLlJlc3VtZUxlYXNlcy5IZWxkGikKBEhlbGQSEgoKc2Vzc2lvbl9pZBgBIAEoCRINCgVlcG9jaBgCIAEoBCINCgtMaXN0RGV2aWNlcyL8EAoMU2Vzc2lvblJlcGx5EigKAm9rGAEgASgLMhouY2lyY3VzLnYxLlNlc3Npb25SZXBseS5Pa0gAEjAKBmZlbmNlZBgCIAEoCzIeLmNpcmN1cy52MS5TZXNzaW9uUmVwbHkuRmVuY2VkSAASNAoIcmVqZWN0ZWQYAyABKAsyIC5jaXJjdXMudjEuU2Vzc2lvblJlcGx5LlJlamVjdGVkSAASLgoFbGVhc2UYCiABKAsyHS5jaXJjdXMudjEuU2Vzc2lvblJlcGx5LkxlYXNlSAASQQoPdHJhbnNjcmlwdF9wYWdlGAsgASgLMiYuY2lyY3VzLnYxLlNlc3Npb25SZXBseS5UcmFuc2NyaXB0UGFnZUgAEkEKD3RyYW5zY3JpcHRfa2V5cxgMIAEoCzImLmNpcmN1cy52MS5TZXNzaW9uUmVwbHkuVHJhbnNjcmlwdEtleXNIABIwCgZpbnB1dHMYDSABKAsyHi5jaXJjdXMudjEuU2Vzc2lvblJlcGx5LklucHV0c0gAEiwKBHR1cm4YDiABKAsyHC5jaXJjdXMudjEuU2Vzc2lvblJlcGx5LlR1cm5IABI6CgVzdGF0ZRgPIAEoCzIpLmNpcmN1cy52MS5TZXNzaW9uUmVwbHkuU2Vzc2lvblN0YXRlUmVwbHlIABI0CghhcHByb3ZhbBgQIAEoCzIgLmNpcmN1cy52MS5TZXNzaW9uUmVwbHkuQXBwcm92YWxIABIuCgVncmFudBgRIAEoCzIdLmNpcmN1cy52MS5TZXNzaW9uUmVwbHkuR3JhbnRIABIyCgdkZXZpY2VzGBIgASgLMh8uY2lyY3VzLnYxLlNlc3Npb25SZXBseS5EZXZpY2VzSAASMgoHcmVzdW1lZBgTIAEoCzIfLmNpcmN1cy52MS5TZXNzaW9uUmVwbHkuUmVzdW1lZEgAGhoKAk9rEhQKDGRlZHVwbGljYXRlZBgBIAEoCBoXCgZGZW5jZWQSDQoFZXBvY2gYASABKAQagwIKCFJlamVjdGVkEjMKBGNvZGUYASABKA4yJS5jaXJjdXMudjEuU2Vzc2lvblJlcGx5LlJlamVjdGVkLkNvZGUSDwoHbWVzc2FnZRgCIAEoCSKwAQoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASEAoMQ09ERV9JTlZBTElEEAESEgoOQ09ERV9OT1RfRk9VTkQQAhIaChZDT0RFX1NUT1JFX1VOQVZBSUxBQkxFEAMSGAoUQ09ERV9UUkFOU0NSSVBUX0ZVTEwQBBIOCgpDT0RFX0xJTUlUEAUSEAoMQ09ERV9TVE9QUEVEEAYSFAoQQ09ERV9OT1RfT0ZGRVJFRBAHGvYBCgVMZWFzZRINCgVlcG9jaBgBIAEoBBIZChFjbGF1ZGVfc2Vzc2lvbl9pZBgCIAEoCRIWCg5oYXNfdHJhbnNjcmlwdBgDIAEoCBImCgVzdGF0ZRgEIAEoCzIXLmNpcmN1cy52MS5TZXNzaW9uU3RhdGUSJQoIcmVjb3ZlcnkYBSABKAsyEy5jaXJjdXMudjEuUmVjb3ZlcnkSKAoGY29uZmlnGAYgASgLMhguY2lyY3VzLnYxLlNlc3Npb25Db25maWcSEgoKcmVhdHRhY2hlZBgHIAEoCBIeChZ0cmFuc2NyaXB0X2dhcF90dXJuX25vGAggASgEGl0KDlRyYW5zY3JpcHRQYWdlEisKB2VudHJpZXMYASADKAsyGi5jaXJjdXMudjEuVHJhbnNjcmlwdEVudHJ5EhAKCG5leHRfc2VxGAIgASgEEgwKBGRvbmUYAyABKAgaIgoOVHJhbnNjcmlwdEtleXMSEAoIc3VicGF0aHMYASADKAkajQIKBklucHV0cxI0CgZpbnB1dHMYASADKAsyJC5jaXJjdXMudjEuU2Vzc2lvblJlcGx5LklucHV0cy5JbnB1dBrMAQoFSW5wdXQSEAoIaW5wdXRfaWQYASABKAkSNwoEa2luZBgCIAEoDjIpLmNpcmN1cy52MS5TZXNzaW9uUmVwbHkuSW5wdXRzLklucHV0LktpbmQSDAoEdGV4dBgDIAEoCRIqCghwcmlvcml0eRgEIAEoDjIYLmNpcmN1cy52MS5JbnB1dFByaW9yaXR5Ij4KBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEg0KCUtJTkRfVVNFUhABEhEKDUtJTkRfQVBQUk9WQUwQAhoXCgRUdXJuEg8KB3R1cm5fbm8YASABKAQaOwoRU2Vzc2lvblN0YXRlUmVwbHkSJgoFc3RhdGUYASABKAsyFy5jaXJjdXMudjEuU2Vzc2lvblN0YXRlGjUKCEFwcHJvdmFsEhMKC2FwcHJvdmFsX2lkGAEgASgJEhQKDGRlZHVwbGljYXRlZBgCIAEoCBoYCgVHcmFudBIPCgdhbGxvd2VkGAEgASgIGrEBCgdEZXZpY2VzEjcKB2RldmljZXMYASADKAsyJi5jaXJjdXMudjEuU2Vzc2lvblJlcGx5LkRldmljZXMuRGV2aWNlGm0KBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIKCgJvcxgDIAEoCRIMCgRhcmNoGAQgASgJEhAKCGhvc3RuYW1lGAUgASgJEhkKEWxhc3Rfc2Vlbl91bml4X21zGAYgASgDGo0BCgdSZXN1bWVkEjcKBmxlYXNlcxgBIAMoCzInLmNpcmN1cy52MS5TZXNzaW9uUmVwbHkuUmVzdW1lZC5PdXRjb21lGkkKB091dGNvbWUSEgoKc2Vzc2lvbl9pZBgBIAEoCRIKCgJvaxgCIAEoCBINCgVlcG9jaBgDIAEoBBIPCgdzdG9wcGVkGAQgASgIQggKBnJlc3VsdCr+AQoLQ2FsbE91dGNvbWUSHAoYQ0FMTF9PVVRDT01FX1VOU1BFQ0lGSUVEEAASGQoVQ0FMTF9PVVRDT01FX0FDQ0VQVEVEEAESGwoXQ0FMTF9PVVRDT01FX0RJU1BBVENIRUQQAhIYChRDQUxMX09VVENPTUVfVU5LTk9XThADEhcKE0NBTExfT1VUQ09NRV9SRVNVTFQQBBIYChRDQUxMX09VVENPTUVfT0ZGTElORRAFEhUKEUNBTExfT1VUQ09NRV9MT1NUEAYSGQoVQ0FMTF9PVVRDT01FX1JFSkVDVEVEEAcSGgoWQ0FMTF9PVVRDT01FX0NBTkNFTExFRBAIQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_link, file_circus_v1_session]);
 
 /**
- * WorkerUplink is the call-only worker-to-control-plane envelope.
- * Hello must be first; no business messages before Welcome. Session and lease
- * messages belong to M3. Frames are FIFO; fragment/control scheduling follows
+ * WorkerUplink is the worker-to-control-plane envelope.
+ * Hello must be first; no business messages before Welcome.
+ * Frames are FIFO; fragment/control scheduling follows
  * Fragment's rules. A submission must precede its same-call cancellation.
  *
- * Every SubmitCall, CallQuery, CancelCall and Unwatch carries a request_id.
- * Submit, Query and Cancel each open one operation under that ID; Unwatch
- * names an open operation. The ID is chosen by the client, must be nonzero
+ * Every business payload carries a request_id. Attach opens a stream, at most
+ * once per connection; SessionRequest, ResumeLeases and ListDevices each receive
+ * exactly one SessionReply. All open operations share the 64-slot cap.
+ * Submit, Query and Cancel also open operations; Unwatch names an open
+ * operation. The ID is chosen by the client, must be nonzero
  * and must never be reused on the connection (a per-connection counter
  * starting at 1 satisfies this): after Unwatch a late update of the old
  * operation would be routed to the new one. A zero ID, an ID of an open
- * operation on Submit/Query/Cancel, or an operation beyond the
+ * operation on any opening payload, or an operation beyond the
  * per-connection cap closes the link. Hello, Heartbeat and Fragment frames
  * carry 0.
  *
@@ -74,6 +78,9 @@ export type WorkerUplink = Message<"circus.v1.WorkerUplink"> & {
      * recorded and the daemon's result decides; a terminal outcome means the
      * call had already finished; Rejected NOT_FOUND or INVALID mean no such
      * call is visible. The reply ends the operation, never the call.
+     * CancelCall is not fenced by a session lease: never send it for calls of
+     * a query being closed because of fencing, lease loss, stop or release;
+     * Unwatch those instead.
      *
      * @generated from field: circus.v1.CancelCall cancel_call = 11;
      */
@@ -97,6 +104,30 @@ export type WorkerUplink = Message<"circus.v1.WorkerUplink"> & {
      */
     value: Unwatch;
     case: "unwatch";
+  } | {
+    /**
+     * @generated from field: circus.v1.Attach attach = 14;
+     */
+    value: Attach;
+    case: "attach";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionRequest session = 15;
+     */
+    value: SessionRequest;
+    case: "session";
+  } | {
+    /**
+     * @generated from field: circus.v1.ResumeLeases resume_leases = 16;
+     */
+    value: ResumeLeases;
+    case: "resumeLeases";
+  } | {
+    /**
+     * @generated from field: circus.v1.ListDevices list_devices = 17;
+     */
+    value: ListDevices;
+    case: "listDevices";
   } | { case: undefined; value?: undefined };
 
   /**
@@ -115,7 +146,7 @@ export const WorkerUplinkSchema: GenMessage<WorkerUplink> = /*@__PURE__*/
   messageDesc(file_circus_v1_worker_link, 0);
 
 /**
- * WorkerDownlink contains only the call subset.
+ * WorkerDownlink carries replies and hints for open worker operations.
  *
  * @generated from message circus.v1.WorkerDownlink
  */
@@ -155,14 +186,21 @@ export type WorkerDownlink = Message<"circus.v1.WorkerDownlink"> & {
     case: "callUpdate";
   } | {
     /**
-     * @generated from field: circus.v1.WorkerJobEvent job_event = 11;
+     * @generated from field: circus.v1.SessionReply session_reply = 12;
      */
-    value: WorkerJobEvent;
-    case: "jobEvent";
+    value: SessionReply;
+    case: "sessionReply";
+  } | {
+    /**
+     * @generated from field: circus.v1.WorkerEvent worker_event = 13;
+     */
+    value: WorkerEvent;
+    case: "workerEvent";
   } | { case: undefined; value?: undefined };
 
   /**
-   * On call_update: the request_id of the operation it answers. 0 otherwise.
+   * On business payloads: the request_id of the operation answered.
+   * WorkerEvent carries the Attach request_id; transport payloads carry 0.
    * A client drops updates for request IDs it no longer has open.
    *
    * @generated from field: uint64 request_id = 20;
@@ -196,40 +234,11 @@ export const UnwatchSchema: GenMessage<Unwatch> = /*@__PURE__*/
   messageDesc(file_circus_v1_worker_link, 2);
 
 /**
- * WorkerJobEvent is reserved for the worker milestone (M3): the control plane
- * does not send it yet. It supplies the global identity of a daemon job.
- * Device is the user-unique device name, boot_id is the daemon's process
- * epoch, and event.job_id is unique only within that pair. LOST for an old boot is emitted by the
- * control plane when it observes a new boot, never by the daemon.
- *
- * @generated from message circus.v1.WorkerJobEvent
- */
-export type WorkerJobEvent = Message<"circus.v1.WorkerJobEvent"> & {
-  /**
-   * @generated from field: string device = 1;
-   */
-  device: string;
-
-  /**
-   * @generated from field: string boot_id = 2;
-   */
-  bootId: string;
-
-  /**
-   * @generated from field: circus.v1.JobEvent event = 3;
-   */
-  event?: JobEvent | undefined;
-};
-
-/**
- * Describes the message circus.v1.WorkerJobEvent.
- * Use `create(WorkerJobEventSchema)` to create a new message.
- */
-export const WorkerJobEventSchema: GenMessage<WorkerJobEvent> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 3);
-
-/**
- * SubmitCall addresses a device by its user-unique name.
+ * SubmitCall addresses a device by its user-unique name (1-128 bytes).
+ * Resubmitting a call_id attaches to the existing call only if device, call
+ * and tool_use_id are identical; otherwise it is CALL_MISMATCH. session_epoch
+ * is not part of that identity: every submission is admitted against the
+ * lease on its own.
  *
  * @generated from message circus.v1.SubmitCall
  */
@@ -243,6 +252,23 @@ export type SubmitCall = Message<"circus.v1.SubmitCall"> & {
    * @generated from field: circus.v1.DeviceCall call = 2;
    */
   call?: DeviceCall | undefined;
+
+  /**
+   * Required, nonzero. The control plane admits the call only if
+   * call.session_id's unexpired lease is held at this epoch by this
+   * connection's worker and boot and bound to this connection, and the
+   * session is not stopped.
+   *
+   * @generated from field: uint64 session_epoch = 3;
+   */
+  sessionEpoch: bigint;
+
+  /**
+   * Required model tool_use id, opaque UTF-8, 1-128 bytes.
+   *
+   * @generated from field: string tool_use_id = 4;
+   */
+  toolUseId: string;
 };
 
 /**
@@ -250,7 +276,7 @@ export type SubmitCall = Message<"circus.v1.SubmitCall"> & {
  * Use `create(SubmitCallSchema)` to create a new message.
  */
 export const SubmitCallSchema: GenMessage<SubmitCall> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 4);
+  messageDesc(file_circus_v1_worker_link, 3);
 
 /**
  * CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
@@ -327,7 +353,7 @@ export type CallUpdate = Message<"circus.v1.CallUpdate"> & {
  * Use `create(CallUpdateSchema)` to create a new message.
  */
 export const CallUpdateSchema: GenMessage<CallUpdate> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 5);
+  messageDesc(file_circus_v1_worker_link, 4);
 
 /**
  * Accepted means metadata was accepted, but execution is not yet dispatched.
@@ -342,7 +368,7 @@ export type CallUpdate_Accepted = Message<"circus.v1.CallUpdate.Accepted"> & {
  * Use `create(CallUpdate_AcceptedSchema)` to create a new message.
  */
 export const CallUpdate_AcceptedSchema: GenMessage<CallUpdate_Accepted> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 5, 0);
+  messageDesc(file_circus_v1_worker_link, 4, 0);
 
 /**
  * Dispatched means dispatch metadata was committed before sending. It also
@@ -359,7 +385,7 @@ export type CallUpdate_Dispatched = Message<"circus.v1.CallUpdate.Dispatched"> &
  * Use `create(CallUpdate_DispatchedSchema)` to create a new message.
  */
 export const CallUpdate_DispatchedSchema: GenMessage<CallUpdate_Dispatched> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 5, 1);
+  messageDesc(file_circus_v1_worker_link, 4, 1);
 
 /**
  * DeviceOffline reports the addressed device offline, with alternatives.
@@ -378,7 +404,7 @@ export type CallUpdate_DeviceOffline = Message<"circus.v1.CallUpdate.DeviceOffli
  * Use `create(CallUpdate_DeviceOfflineSchema)` to create a new message.
  */
 export const CallUpdate_DeviceOfflineSchema: GenMessage<CallUpdate_DeviceOffline> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 5, 2);
+  messageDesc(file_circus_v1_worker_link, 4, 2);
 
 /**
  * Unknown leaves open the outcome of an already dispatched call.
@@ -397,7 +423,7 @@ export type CallUpdate_Unknown = Message<"circus.v1.CallUpdate.Unknown"> & {
  * Use `create(CallUpdate_UnknownSchema)` to create a new message.
  */
 export const CallUpdate_UnknownSchema: GenMessage<CallUpdate_Unknown> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 5, 3);
+  messageDesc(file_circus_v1_worker_link, 4, 3);
 
 /**
  * Lost means the authoritative result cannot be recovered.
@@ -416,7 +442,7 @@ export type CallUpdate_Lost = Message<"circus.v1.CallUpdate.Lost"> & {
  * Use `create(CallUpdate_LostSchema)` to create a new message.
  */
 export const CallUpdate_LostSchema: GenMessage<CallUpdate_Lost> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 5, 4);
+  messageDesc(file_circus_v1_worker_link, 4, 4);
 
 /**
  * Rejected is a routing/validation failure, not a tool result.
@@ -440,7 +466,7 @@ export type CallUpdate_Rejected = Message<"circus.v1.CallUpdate.Rejected"> & {
  * Use `create(CallUpdate_RejectedSchema)` to create a new message.
  */
 export const CallUpdate_RejectedSchema: GenMessage<CallUpdate_Rejected> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 5, 5);
+  messageDesc(file_circus_v1_worker_link, 4, 5);
 
 /**
  * @generated from enum circus.v1.CallUpdate.Rejected.Code
@@ -457,6 +483,11 @@ export enum CallUpdate_Rejected_Code {
   INVALID = 1,
 
   /**
+   * Terminal. The router is out of capacity, or the session already has
+   * 16 non-terminal calls or 1024 calls not yet persisted. For the
+   * session caps nothing is recorded and the same call_id may be
+   * submitted again later.
+   *
    * @generated from enum value: CODE_OVERLOADED = 2;
    */
   OVERLOADED = 2,
@@ -494,13 +525,31 @@ export enum CallUpdate_Rejected_Code {
    * @generated from enum value: CODE_NOT_FOUND = 7;
    */
   NOT_FOUND = 7,
+
+  /**
+   * Terminal: this connection does not hold the session's lease at
+   * session_epoch. This submission was neither recorded nor executed; a
+   * call recorded by an earlier submission of the same call_id is
+   * unaffected.
+   *
+   * @generated from enum value: CODE_SESSION_FENCED = 8;
+   */
+  SESSION_FENCED = 8,
+
+  /**
+   * Terminal: the session is stopped. This submission was neither
+   * recorded nor executed.
+   *
+   * @generated from enum value: CODE_SESSION_STOPPED = 9;
+   */
+  SESSION_STOPPED = 9,
 }
 
 /**
  * Describes the enum circus.v1.CallUpdate.Rejected.Code.
  */
 export const CallUpdate_Rejected_CodeSchema: GenEnum<CallUpdate_Rejected_Code> = /*@__PURE__*/
-  enumDesc(file_circus_v1_worker_link, 5, 5, 0);
+  enumDesc(file_circus_v1_worker_link, 4, 5, 0);
 
 /**
  * Cancelled means cancellation before dispatch. After dispatch, cancellation
@@ -516,5 +565,2267 @@ export type CallUpdate_Cancelled = Message<"circus.v1.CallUpdate.Cancelled"> & {
  * Use `create(CallUpdate_CancelledSchema)` to create a new message.
  */
 export const CallUpdate_CancelledSchema: GenMessage<CallUpdate_Cancelled> = /*@__PURE__*/
-  messageDesc(file_circus_v1_worker_link, 5, 6);
+  messageDesc(file_circus_v1_worker_link, 4, 6);
+
+/**
+ * Attach advertises worker capacity and opens a hint stream until Unwatch or
+ * disconnect. At most one Attach is allowed per connection, even after Unwatch.
+ * Account metadata is recorded only; it does not influence scheduling yet.
+ * After Attach the control plane re-sends every Offer still pending for this
+ * worker. Every string field, including Account's, is at most 256 bytes.
+ *
+ * @generated from message circus.v1.Attach
+ */
+export type Attach = Message<"circus.v1.Attach"> & {
+  /**
+   * Required, 1..64 concurrent sessions. The stream itself holds one slot.
+   *
+   * @generated from field: uint32 max_sessions = 1;
+   */
+  maxSessions: number;
+
+  /**
+   * @generated from field: string sdk_version = 2;
+   */
+  sdkVersion: string;
+
+  /**
+   * @generated from field: string claude_version = 3;
+   */
+  claudeVersion: string;
+
+  /**
+   * @generated from field: circus.v1.Attach.Account account = 4;
+   */
+  account?: Attach_Account | undefined;
+
+  /**
+   * @generated from field: circus.v1.Attach.AutoModeCheck auto_mode_check = 5;
+   */
+  autoModeCheck: Attach_AutoModeCheck;
+};
+
+/**
+ * Describes the message circus.v1.Attach.
+ * Use `create(AttachSchema)` to create a new message.
+ */
+export const AttachSchema: GenMessage<Attach> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 5);
+
+/**
+ * @generated from message circus.v1.Attach.Account
+ */
+export type Attach_Account = Message<"circus.v1.Attach.Account"> & {
+  /**
+   * @generated from field: string email = 1;
+   */
+  email: string;
+
+  /**
+   * @generated from field: string organization = 2;
+   */
+  organization: string;
+
+  /**
+   * @generated from field: string subscription_type = 3;
+   */
+  subscriptionType: string;
+};
+
+/**
+ * Describes the message circus.v1.Attach.Account.
+ * Use `create(Attach_AccountSchema)` to create a new message.
+ */
+export const Attach_AccountSchema: GenMessage<Attach_Account> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 5, 0);
+
+/**
+ * @generated from enum circus.v1.Attach.AutoModeCheck
+ */
+export enum Attach_AutoModeCheck {
+  /**
+   * @generated from enum value: AUTO_MODE_CHECK_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: AUTO_MODE_CHECK_AVAILABLE = 1;
+   */
+  AVAILABLE = 1,
+
+  /**
+   * @generated from enum value: AUTO_MODE_CHECK_UNAVAILABLE = 2;
+   */
+  UNAVAILABLE = 2,
+}
+
+/**
+ * Describes the enum circus.v1.Attach.AutoModeCheck.
+ */
+export const Attach_AutoModeCheckSchema: GenEnum<Attach_AutoModeCheck> = /*@__PURE__*/
+  enumDesc(file_circus_v1_worker_link, 5, 0);
+
+/**
+ * WorkerEvent contains level-triggered hints, not authoritative session data.
+ * Hints may be coalesced or repeated; fetch state rather than counting hints.
+ * An Offer or Nudge for a session this worker does not hold means: send
+ * AcquireLease. An Offer that arrives while the session is being released is
+ * acted on after the ReleaseLease reply.
+ *
+ * @generated from message circus.v1.WorkerEvent
+ */
+export type WorkerEvent = Message<"circus.v1.WorkerEvent"> & {
+  /**
+   * @generated from oneof circus.v1.WorkerEvent.event
+   */
+  event: {
+    /**
+     * @generated from field: circus.v1.WorkerEvent.Offer offer = 1;
+     */
+    value: WorkerEvent_Offer;
+    case: "offer";
+  } | {
+    /**
+     * @generated from field: circus.v1.WorkerEvent.Nudge nudge = 2;
+     */
+    value: WorkerEvent_Nudge;
+    case: "nudge";
+  } | {
+    /**
+     * @generated from field: circus.v1.WorkerEvent.LeaseRevoked lease_revoked = 3;
+     */
+    value: WorkerEvent_LeaseRevoked;
+    case: "leaseRevoked";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message circus.v1.WorkerEvent.
+ * Use `create(WorkerEventSchema)` to create a new message.
+ */
+export const WorkerEventSchema: GenMessage<WorkerEvent> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 6);
+
+/**
+ * @generated from message circus.v1.WorkerEvent.Offer
+ */
+export type WorkerEvent_Offer = Message<"circus.v1.WorkerEvent.Offer"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message circus.v1.WorkerEvent.Offer.
+ * Use `create(WorkerEvent_OfferSchema)` to create a new message.
+ */
+export const WorkerEvent_OfferSchema: GenMessage<WorkerEvent_Offer> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 6, 0);
+
+/**
+ * After each successful ResumeLeases outcome the control plane re-sends the
+ * session's pending reasons. INPUT and APPROVAL: TakeInputs. JOB:
+ * GetSessionState with SECTION_JOBS. STOP: stopping is permanent, so the
+ * hint suffices: close the query and ReleaseLease with REASON_STOPPED.
+ * INTERRUPT: compare interrupt_turn_no with the current turn.
+ *
+ * @generated from message circus.v1.WorkerEvent.Nudge
+ */
+export type WorkerEvent_Nudge = Message<"circus.v1.WorkerEvent.Nudge"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * At most five distinct reasons. Unpacked for bounded structural scanning.
+   *
+   * @generated from field: repeated circus.v1.WorkerEvent.Nudge.Reason reasons = 2 [packed = false];
+   */
+  reasons: WorkerEvent_Nudge_Reason[];
+
+  /**
+   * The session's interrupt level, as SessionState.interrupt_turn_no; set on
+   * every Nudge. Interrupt the current turn only if its turn_no is at most
+   * this value; a repeated or late hint therefore never interrupts a later
+   * turn. If STARTED has not been answered yet, wait for its turn_no.
+   *
+   * @generated from field: uint64 interrupt_turn_no = 3;
+   */
+  interruptTurnNo: bigint;
+};
+
+/**
+ * Describes the message circus.v1.WorkerEvent.Nudge.
+ * Use `create(WorkerEvent_NudgeSchema)` to create a new message.
+ */
+export const WorkerEvent_NudgeSchema: GenMessage<WorkerEvent_Nudge> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 6, 1);
+
+/**
+ * @generated from enum circus.v1.WorkerEvent.Nudge.Reason
+ */
+export enum WorkerEvent_Nudge_Reason {
+  /**
+   * @generated from enum value: REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: REASON_INPUT = 1;
+   */
+  INPUT = 1,
+
+  /**
+   * @generated from enum value: REASON_JOB = 2;
+   */
+  JOB = 2,
+
+  /**
+   * @generated from enum value: REASON_INTERRUPT = 3;
+   */
+  INTERRUPT = 3,
+
+  /**
+   * @generated from enum value: REASON_STOP = 4;
+   */
+  STOP = 4,
+
+  /**
+   * @generated from enum value: REASON_APPROVAL = 5;
+   */
+  APPROVAL = 5,
+}
+
+/**
+ * Describes the enum circus.v1.WorkerEvent.Nudge.Reason.
+ */
+export const WorkerEvent_Nudge_ReasonSchema: GenEnum<WorkerEvent_Nudge_Reason> = /*@__PURE__*/
+  enumDesc(file_circus_v1_worker_link, 6, 1, 0);
+
+/**
+ * @generated from message circus.v1.WorkerEvent.LeaseRevoked
+ */
+export type WorkerEvent_LeaseRevoked = Message<"circus.v1.WorkerEvent.LeaseRevoked"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: uint64 epoch = 2;
+   */
+  epoch: bigint;
+};
+
+/**
+ * Describes the message circus.v1.WorkerEvent.LeaseRevoked.
+ * Use `create(WorkerEvent_LeaseRevokedSchema)` to create a new message.
+ */
+export const WorkerEvent_LeaseRevokedSchema: GenMessage<WorkerEvent_LeaseRevoked> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 6, 2);
+
+/**
+ * SessionRequest is Data ordered by session/<session_id>. Each request opens
+ * one operation with exactly one SessionReply and carries exactly one op; a
+ * second op field closes the link. Every op except AcquireLease requires an
+ * unexpired lease at epoch held by this connection's worker and boot and
+ * bound to this connection: the fence is (session, epoch, worker, boot,
+ * connection). Checking and writing are atomic; a mismatch returns Fenced
+ * without mutation. Fencing requires closing the SDK query and its CLI
+ * process, Unwatching calls without Cancel, and discarding local session
+ * state.
+ *
+ * Every op except AppendTranscript and PublishEvents must fit 64 KiB including
+ * its envelope. That limit binds before the repeated-field caps, which are
+ * upper bounds never all reachable together; split marks across several
+ * requests instead.
+ *
+ * After the session is stopped, TakeInputs, RequestApproval and ConsumeGrant
+ * return Rejected STOPPED (SubmitCall: CODE_SESSION_STOPPED); AppendTranscript,
+ * ReportTurn, PatchSessionState, PublishEvents, TranscriptRepaired, the reads
+ * and ReleaseLease are still accepted so the holder can flush. On any STOPPED
+ * the worker closes the query and sends ReleaseLease with REASON_STOPPED.
+ *
+ * @generated from message circus.v1.SessionRequest
+ */
+export type SessionRequest = Message<"circus.v1.SessionRequest"> & {
+  /**
+   * Required, 1-128 bytes, charset [A-Za-z0-9_-].
+   *
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * Zero only for AcquireLease; nonzero for every other operation.
+   *
+   * @generated from field: uint64 epoch = 2;
+   */
+  epoch: bigint;
+
+  /**
+   * @generated from oneof circus.v1.SessionRequest.op
+   */
+  op: {
+    /**
+     * @generated from field: circus.v1.AcquireLease acquire_lease = 10;
+     */
+    value: AcquireLease;
+    case: "acquireLease";
+  } | {
+    /**
+     * @generated from field: circus.v1.ReleaseLease release_lease = 11;
+     */
+    value: ReleaseLease;
+    case: "releaseLease";
+  } | {
+    /**
+     * @generated from field: circus.v1.LoadTranscript load_transcript = 12;
+     */
+    value: LoadTranscript;
+    case: "loadTranscript";
+  } | {
+    /**
+     * @generated from field: circus.v1.ListTranscriptKeys list_transcript_keys = 13;
+     */
+    value: ListTranscriptKeys;
+    case: "listTranscriptKeys";
+  } | {
+    /**
+     * @generated from field: circus.v1.AppendTranscript append_transcript = 14;
+     */
+    value: AppendTranscript;
+    case: "appendTranscript";
+  } | {
+    /**
+     * @generated from field: circus.v1.TakeInputs take_inputs = 15;
+     */
+    value: TakeInputs;
+    case: "takeInputs";
+  } | {
+    /**
+     * @generated from field: circus.v1.ReportTurn report_turn = 16;
+     */
+    value: ReportTurn;
+    case: "reportTurn";
+  } | {
+    /**
+     * @generated from field: circus.v1.PatchSessionState patch_state = 17;
+     */
+    value: PatchSessionState;
+    case: "patchState";
+  } | {
+    /**
+     * @generated from field: circus.v1.GetSessionState get_state = 18;
+     */
+    value: GetSessionState;
+    case: "getState";
+  } | {
+    /**
+     * @generated from field: circus.v1.PublishEvents publish_events = 19;
+     */
+    value: PublishEvents;
+    case: "publishEvents";
+  } | {
+    /**
+     * @generated from field: circus.v1.RequestApproval request_approval = 20;
+     */
+    value: RequestApproval;
+    case: "requestApproval";
+  } | {
+    /**
+     * @generated from field: circus.v1.ConsumeGrant consume_grant = 21;
+     */
+    value: ConsumeGrant;
+    case: "consumeGrant";
+  } | {
+    /**
+     * @generated from field: circus.v1.TranscriptRepaired transcript_repaired = 22;
+     */
+    value: TranscriptRepaired;
+    case: "transcriptRepaired";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message circus.v1.SessionRequest.
+ * Use `create(SessionRequestSchema)` to create a new message.
+ */
+export const SessionRequestSchema: GenMessage<SessionRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 7);
+
+/**
+ * AcquireLease is idempotent for the holder. If this worker and boot already
+ * hold the session's unexpired lease and fresh is false, it skips the Offer
+ * check, keeps the epoch, rebinds the lease to this connection and returns the
+ * same lease with reattached set. Otherwise it requires a current Offer to
+ * this connection unless this worker and boot hold the lease (else
+ * NOT_OFFERED), refuses a stopped session (STOPPED; a fresh acquisition by
+ * the holder of a stopped session also releases that lease atomically),
+ * atomically advances the epoch, binds the lease to worker, boot and connection for 60 seconds and
+ * applies recovery. The control plane extends every lease bound to a live
+ * connection every 20 seconds; a lease bound to a closed connection expires
+ * naturally. After a control-plane start, no lease expires sooner than one
+ * lease lifetime later. A worker sends at most one AcquireLease per session at
+ * a time; a session with an AcquireLease in flight counts as held, and hints
+ * for it are ignored until the reply arrives.
+ *
+ * @generated from message circus.v1.AcquireLease
+ */
+export type AcquireLease = Message<"circus.v1.AcquireLease"> & {
+  /**
+   * Set whenever the worker holds no local state for the session (no epoch,
+   * local_seq or batch_seq counters, no pushed-input set). A holder's fresh
+   * acquisition advances the epoch and requeues like a new holder's, so new
+   * counters starting at 1 never collide with the old epoch's.
+   *
+   * @generated from field: bool fresh = 1;
+   */
+  fresh: boolean;
+};
+
+/**
+ * Describes the message circus.v1.AcquireLease.
+ * Use `create(AcquireLeaseSchema)` to create a new message.
+ */
+export const AcquireLeaseSchema: GenMessage<AcquireLease> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 8);
+
+/**
+ * ReleaseLease relinquishes ownership. Close the SDK query and confirm its CLI
+ * has exited before releasing. Repeating it at the released epoch returns
+ * ok.deduplicated=true until another epoch is acquired, Fenced afterwards;
+ * both mean the lease is gone.
+ *
+ * @generated from message circus.v1.ReleaseLease
+ */
+export type ReleaseLease = Message<"circus.v1.ReleaseLease"> & {
+  /**
+   * @generated from field: circus.v1.ReleaseLease.Reason reason = 1;
+   */
+  reason: ReleaseLease_Reason;
+};
+
+/**
+ * Describes the message circus.v1.ReleaseLease.
+ * Use `create(ReleaseLeaseSchema)` to create a new message.
+ */
+export const ReleaseLeaseSchema: GenMessage<ReleaseLease> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 9);
+
+/**
+ * @generated from enum circus.v1.ReleaseLease.Reason
+ */
+export enum ReleaseLease_Reason {
+  /**
+   * @generated from enum value: REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: REASON_IDLE = 1;
+   */
+  IDLE = 1,
+
+  /**
+   * @generated from enum value: REASON_STOPPED = 2;
+   */
+  STOPPED = 2,
+
+  /**
+   * @generated from enum value: REASON_ERROR = 3;
+   */
+  ERROR = 3,
+
+  /**
+   * @generated from enum value: REASON_FENCED = 4;
+   */
+  FENCED = 4,
+}
+
+/**
+ * Describes the enum circus.v1.ReleaseLease.Reason.
+ */
+export const ReleaseLease_ReasonSchema: GenEnum<ReleaseLease_Reason> = /*@__PURE__*/
+  enumDesc(file_circus_v1_worker_link, 9, 0);
+
+/**
+ * LoadTranscript reads entries strictly after after_seq. Empty subpath is the
+ * main thread; other subpaths are opaque SDK keys of at most 1024 bytes. Pages
+ * contain at least one entry when available, even if that single entry
+ * exceeds max_bytes (up to M).
+ *
+ * @generated from message circus.v1.LoadTranscript
+ */
+export type LoadTranscript = Message<"circus.v1.LoadTranscript"> & {
+  /**
+   * @generated from field: string subpath = 1;
+   */
+  subpath: string;
+
+  /**
+   * @generated from field: uint64 after_seq = 2;
+   */
+  afterSeq: bigint;
+
+  /**
+   * Required, 1..8 MiB; a single oversized entry is returned alone.
+   *
+   * @generated from field: uint32 max_bytes = 3;
+   */
+  maxBytes: number;
+};
+
+/**
+ * Describes the message circus.v1.LoadTranscript.
+ * Use `create(LoadTranscriptSchema)` to create a new message.
+ */
+export const LoadTranscriptSchema: GenMessage<LoadTranscript> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 10);
+
+/**
+ * @generated from message circus.v1.ListTranscriptKeys
+ */
+export type ListTranscriptKeys = Message<"circus.v1.ListTranscriptKeys"> & {
+};
+
+/**
+ * Describes the message circus.v1.ListTranscriptKeys.
+ * Use `create(ListTranscriptKeysSchema)` to create a new message.
+ */
+export const ListTranscriptKeysSchema: GenMessage<ListTranscriptKeys> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 11);
+
+/**
+ * AppendTranscript is atomic. Batches are at most 8 MiB of encoded entries,
+ * or a single oversized entry fitting M with its envelope. batch_seq starts at
+ * 1 per (epoch, subpath) and increases by one; only an ok reply consumes it.
+ * A sequence <= the last committed one is acknowledged with deduplicated=true
+ * and no write, including entries without uuid. A sequence beyond the last
+ * committed one plus one is INVALID. Until a batch is acknowledged, every later
+ * append (including SDK retries) first resends that batch with the same
+ * batch_seq and content. An INVALID or LIMIT rejection is a failed append: the
+ * adapter reports it to the SDK, drops that batch, and gives the next content
+ * its unconsumed batch_seq; the turn follows the mirror_error path to BROKEN.
+ * Nonempty uuid also deduplicates per (session,
+ * subpath), across epochs. A session has at most 1024 subpaths; an append to a
+ * new one beyond that returns LIMIT. Transcript storage defaults to 256 MiB per
+ * session and 20 GiB per user, counting each entry as json + uuid + 64 bytes;
+ * exceeding it returns TRANSCRIPT_FULL and stops the session.
+ *
+ * @generated from message circus.v1.AppendTranscript
+ */
+export type AppendTranscript = Message<"circus.v1.AppendTranscript"> & {
+  /**
+   * At most 1024 bytes.
+   *
+   * @generated from field: string subpath = 1;
+   */
+  subpath: string;
+
+  /**
+   * @generated from field: uint64 batch_seq = 2;
+   */
+  batchSeq: bigint;
+
+  /**
+   * Byte-bounded; structural node/field caps also apply.
+   *
+   * @generated from field: repeated circus.v1.TranscriptEntry entries = 3;
+   */
+  entries: TranscriptEntry[];
+};
+
+/**
+ * Describes the message circus.v1.AppendTranscript.
+ * Use `create(AppendTranscriptSchema)` to create a new message.
+ */
+export const AppendTranscriptSchema: GenMessage<AppendTranscript> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 12);
+
+/**
+ * @generated from message circus.v1.TranscriptEntry
+ */
+export type TranscriptEntry = Message<"circus.v1.TranscriptEntry"> & {
+  /**
+   * At most 128 bytes. May be empty; otherwise used for durable entry
+   * deduplication.
+   *
+   * @generated from field: string uuid = 1;
+   */
+  uuid: string;
+
+  /**
+   * Opaque JSON, never parsed by the control plane.
+   *
+   * @generated from field: string json = 2;
+   */
+  json: string;
+};
+
+/**
+ * Describes the message circus.v1.TranscriptEntry.
+ * Use `create(TranscriptEntrySchema)` to create a new message.
+ */
+export const TranscriptEntrySchema: GenMessage<TranscriptEntry> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 13);
+
+/**
+ * TakeInputs atomically takes pending inputs and returns all inputs taken in
+ * this epoch but not yet persisted, including those returned by earlier calls.
+ * At most 32. Push each to the SDK with uuid=input_id; do not push it twice
+ * within an epoch. While the session is broken it takes no new input and
+ * returns only those already taken. A new epoch first returns inputs taken by
+ * any earlier epoch to pending, except those whose uuid is already in the
+ * transcript, which are marked persisted.
+ *
+ * @generated from message circus.v1.TakeInputs
+ */
+export type TakeInputs = Message<"circus.v1.TakeInputs"> & {
+};
+
+/**
+ * Describes the message circus.v1.TakeInputs.
+ * Use `create(TakeInputsSchema)` to create a new message.
+ */
+export const TakeInputsSchema: GenMessage<TakeInputs> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 14);
+
+/**
+ * ReportTurn is idempotent by (epoch, local_seq, phase); repeats retain the
+ * same turn_no and never increment turn_count or apply persistence twice.
+ * STARTED must use the next local_seq; it makes the session RUNNING and
+ * increments its turn count. A STARTED whose predecessor never ENDED closes
+ * that turn as INTERRUPTED; a later ENDED for it still applies its persisted
+ * marks. ENDED for a local_seq never STARTED is INVALID. ENDED follows the SDK
+ * result and makes the session IDLE (or QUEUED with work and no lease). Lease
+ * loss during a turn records INTERRUPTED without automatically resuming.
+ *
+ * @generated from message circus.v1.ReportTurn
+ */
+export type ReportTurn = Message<"circus.v1.ReportTurn"> & {
+  /**
+   * Starts at 1 and increases by one per turn within the epoch.
+   *
+   * @generated from field: uint64 local_seq = 1;
+   */
+  localSeq: bigint;
+
+  /**
+   * @generated from field: circus.v1.ReportTurn.Phase phase = 2;
+   */
+  phase: ReportTurn_Phase;
+
+  /**
+   * @generated from field: circus.v1.TurnOrigin origin = 3;
+   */
+  origin: TurnOrigin;
+
+  /**
+   * ENDED only.
+   *
+   * @generated from field: circus.v1.TurnOutcome outcome = 4;
+   */
+  outcome: TurnOutcome;
+
+  /**
+   * ENDED only: opaque SDK result usage JSON, at most 4 KiB.
+   *
+   * @generated from field: string usage_json = 5;
+   */
+  usageJson: string;
+
+  /**
+   * ENDED only: items delivered before this turn's SDK result and not yet
+   * marked through PatchSessionState.persisted. Omit after mirror_error or a
+   * CLI failure.
+   *
+   * @generated from field: circus.v1.ReportTurn.Persisted persisted = 6;
+   */
+  persisted?: ReportTurn_Persisted | undefined;
+
+  /**
+   * ENDED only: the transcript lacks batches of this turn (mirror_error). The
+   * session becomes BROKEN until TranscriptRepaired. A CLI failure without
+   * mirror_error is ERROR without this flag.
+   *
+   * @generated from field: bool transcript_incomplete = 7;
+   */
+  transcriptIncomplete: boolean;
+};
+
+/**
+ * Describes the message circus.v1.ReportTurn.
+ * Use `create(ReportTurnSchema)` to create a new message.
+ */
+export const ReportTurnSchema: GenMessage<ReportTurn> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 15);
+
+/**
+ * Persisted marks are idempotent; marking an unknown or already persisted
+ * item is a no-op. Ids are at most 128 bytes.
+ *
+ * @generated from message circus.v1.ReportTurn.Persisted
+ */
+export type ReportTurn_Persisted = Message<"circus.v1.ReportTurn.Persisted"> & {
+  /**
+   * At most 32 inputs, 1024 calls and 1024 job notifications per request.
+   *
+   * @generated from field: repeated string input_ids = 1;
+   */
+  inputIds: string[];
+
+  /**
+   * @generated from field: repeated string call_ids = 2;
+   */
+  callIds: string[];
+
+  /**
+   * @generated from field: repeated circus.v1.JobKey jobs = 3;
+   */
+  jobs: JobKey[];
+
+  /**
+   * At most 16. Calls whose owed completion notice has now been delivered;
+   * clears their notice_owed mark.
+   *
+   * @generated from field: repeated string late_call_ids = 4;
+   */
+  lateCallIds: string[];
+
+  /**
+   * The Lease.transcript_gap_turn_no value whose missing-history reminder
+   * this turn delivered. The control plane clears the stored mark only if
+   * it still equals this value; 0 acknowledges nothing.
+   *
+   * @generated from field: uint64 gap_notice_turn_no = 5;
+   */
+  gapNoticeTurnNo: bigint;
+};
+
+/**
+ * Describes the message circus.v1.ReportTurn.Persisted.
+ * Use `create(ReportTurn_PersistedSchema)` to create a new message.
+ */
+export const ReportTurn_PersistedSchema: GenMessage<ReportTurn_Persisted> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 15, 0);
+
+/**
+ * @generated from enum circus.v1.ReportTurn.Phase
+ */
+export enum ReportTurn_Phase {
+  /**
+   * @generated from enum value: PHASE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PHASE_STARTED = 1;
+   */
+  STARTED = 1,
+
+  /**
+   * @generated from enum value: PHASE_ENDED = 2;
+   */
+  ENDED = 2,
+}
+
+/**
+ * Describes the enum circus.v1.ReportTurn.Phase.
+ */
+export const ReportTurn_PhaseSchema: GenEnum<ReportTurn_Phase> = /*@__PURE__*/
+  enumDesc(file_circus_v1_worker_link, 15, 0);
+
+/**
+ * JobKey is globally unique; a daemon's job_id alone is not. Each part is at
+ * most 128 bytes.
+ *
+ * @generated from message circus.v1.JobKey
+ */
+export type JobKey = Message<"circus.v1.JobKey"> & {
+  /**
+   * @generated from field: string device_id = 1;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: string boot_id = 2;
+   */
+  bootId: string;
+
+  /**
+   * @generated from field: string job_id = 3;
+   */
+  jobId: string;
+};
+
+/**
+ * Describes the message circus.v1.JobKey.
+ * Use `create(JobKeySchema)` to create a new message.
+ */
+export const JobKeySchema: GenMessage<JobKey> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 16);
+
+/**
+ * PatchSessionState is an idempotent upsert/mark operation. Cwds are keyed by
+ * (agent_id, device), files by (device, path), background tasks by task_id.
+ * Handed jobs are not persisted until marked persisted; a new epoch requeues
+ * notices handed by any earlier epoch and not persisted.
+ *
+ * @generated from message circus.v1.PatchSessionState
+ */
+export type PatchSessionState = Message<"circus.v1.PatchSessionState"> & {
+  /**
+   * At most 256; the stored table has the same cap.
+   *
+   * @generated from field: repeated circus.v1.PatchSessionState.Cwd cwds = 1;
+   */
+  cwds: PatchSessionState_Cwd[];
+
+  /**
+   * At most 4096. The stored table evicts its oldest records at capacity.
+   *
+   * @generated from field: repeated circus.v1.PatchSessionState.FileRecord files = 2;
+   */
+  files: PatchSessionState_FileRecord[];
+
+  /**
+   * At most 1024. Mark as soon as MCP returns to the SDK, before persistence.
+   *
+   * @generated from field: repeated string returned_call_ids = 3;
+   */
+  returnedCallIds: string[];
+
+  /**
+   * At most 64 live CLI background tasks per session.
+   *
+   * @generated from field: repeated circus.v1.PatchSessionState.BackgroundTask bgtasks_started = 4;
+   */
+  bgtasksStarted: PatchSessionState_BackgroundTask[];
+
+  /**
+   * Task ids. Also acknowledges a lost task from Recovery once the turn that
+   * delivered its failure notice has had its items marked persisted.
+   *
+   * @generated from field: repeated string bgtasks_ended = 5;
+   */
+  bgtasksEnded: string[];
+
+  /**
+   * At most 1024 jobs per session.
+   *
+   * @generated from field: repeated circus.v1.JobKey handed_jobs = 6;
+   */
+  handedJobs: JobKey[];
+
+  /**
+   * Splits the persisted set of a turn whose SDK result the worker has seen
+   * (reported ENDED, or about to be). Never marks items of a turn whose
+   * transcript is incomplete until it has been repaired.
+   *
+   * @generated from field: circus.v1.ReportTurn.Persisted persisted = 7;
+   */
+  persisted?: ReportTurn_Persisted | undefined;
+
+  /**
+   * At most 16 per request and per session (else LIMIT). Calls returned to the
+   * model with a nonterminal outcome whose completion notice is owed. Mark the
+   * call before returning it; after LIMIT, return it with a final "result
+   * unavailable" text instead of promising a notice. They
+   * stay in SessionState.calls and Recovery.calls with notice_owed, even
+   * after persisted, until Persisted.late_call_ids clears them.
+   *
+   * @generated from field: repeated string awaiting_call_ids = 8;
+   */
+  awaitingCallIds: string[];
+};
+
+/**
+ * Describes the message circus.v1.PatchSessionState.
+ * Use `create(PatchSessionStateSchema)` to create a new message.
+ */
+export const PatchSessionStateSchema: GenMessage<PatchSessionState> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 17);
+
+/**
+ * @generated from message circus.v1.PatchSessionState.Cwd
+ */
+export type PatchSessionState_Cwd = Message<"circus.v1.PatchSessionState.Cwd"> & {
+  /**
+   * Empty for the main thread; at most 128 bytes.
+   *
+   * @generated from field: string agent_id = 1;
+   */
+  agentId: string;
+
+  /**
+   * At most 128 bytes.
+   *
+   * @generated from field: string device = 2;
+   */
+  device: string;
+
+  /**
+   * Absolute device path, at most 4 KiB.
+   *
+   * @generated from field: string cwd = 3;
+   */
+  cwd: string;
+};
+
+/**
+ * Describes the message circus.v1.PatchSessionState.Cwd.
+ * Use `create(PatchSessionState_CwdSchema)` to create a new message.
+ */
+export const PatchSessionState_CwdSchema: GenMessage<PatchSessionState_Cwd> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 17, 0);
+
+/**
+ * @generated from message circus.v1.PatchSessionState.FileRecord
+ */
+export type PatchSessionState_FileRecord = Message<"circus.v1.PatchSessionState.FileRecord"> & {
+  /**
+   * At most 128 bytes.
+   *
+   * @generated from field: string device = 1;
+   */
+  device: string;
+
+  /**
+   * Device path, at most 4 KiB.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * Empty forgets this record; otherwise 64 hexadecimal digits of SHA-256.
+   *
+   * @generated from field: string sha256 = 3;
+   */
+  sha256: string;
+
+  /**
+   * @generated from field: int64 mtime_unix_ms = 4;
+   */
+  mtimeUnixMs: bigint;
+};
+
+/**
+ * Describes the message circus.v1.PatchSessionState.FileRecord.
+ * Use `create(PatchSessionState_FileRecordSchema)` to create a new message.
+ */
+export const PatchSessionState_FileRecordSchema: GenMessage<PatchSessionState_FileRecord> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 17, 1);
+
+/**
+ * @generated from message circus.v1.PatchSessionState.BackgroundTask
+ */
+export type PatchSessionState_BackgroundTask = Message<"circus.v1.PatchSessionState.BackgroundTask"> & {
+  /**
+   * At most 128 bytes each: task_id, tool_use_id and kind.
+   *
+   * @generated from field: string task_id = 1;
+   */
+  taskId: string;
+
+  /**
+   * @generated from field: string tool_use_id = 2;
+   */
+  toolUseId: string;
+
+  /**
+   * SDK task kind, currently agent.
+   *
+   * @generated from field: string kind = 3;
+   */
+  kind: string;
+
+  /**
+   * At most 1024 bytes.
+   *
+   * @generated from field: string description = 4;
+   */
+  description: string;
+};
+
+/**
+ * Describes the message circus.v1.PatchSessionState.BackgroundTask.
+ * Use `create(PatchSessionState_BackgroundTaskSchema)` to create a new message.
+ */
+export const PatchSessionState_BackgroundTaskSchema: GenMessage<PatchSessionState_BackgroundTask> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 17, 2);
+
+/**
+ * @generated from message circus.v1.GetSessionState
+ */
+export type GetSessionState = Message<"circus.v1.GetSessionState"> & {
+  /**
+   * Empty requests all sections; otherwise at most five distinct sections.
+   * SECTION_NONE, which must be alone, returns only the scalar fields.
+   *
+   * @generated from field: repeated circus.v1.GetSessionState.Section sections = 1 [packed = false];
+   */
+  sections: GetSessionState_Section[];
+};
+
+/**
+ * Describes the message circus.v1.GetSessionState.
+ * Use `create(GetSessionStateSchema)` to create a new message.
+ */
+export const GetSessionStateSchema: GenMessage<GetSessionState> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 18);
+
+/**
+ * @generated from enum circus.v1.GetSessionState.Section
+ */
+export enum GetSessionState_Section {
+  /**
+   * @generated from enum value: SECTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SECTION_CWDS = 1;
+   */
+  CWDS = 1,
+
+  /**
+   * @generated from enum value: SECTION_FILES = 2;
+   */
+  FILES = 2,
+
+  /**
+   * @generated from enum value: SECTION_JOBS = 3;
+   */
+  JOBS = 3,
+
+  /**
+   * @generated from enum value: SECTION_CALLS = 4;
+   */
+  CALLS = 4,
+
+  /**
+   * @generated from enum value: SECTION_GRANTS = 5;
+   */
+  GRANTS = 5,
+
+  /**
+   * @generated from enum value: SECTION_NONE = 6;
+   */
+  NONE = 6,
+}
+
+/**
+ * Describes the enum circus.v1.GetSessionState.Section.
+ */
+export const GetSessionState_SectionSchema: GenEnum<GetSessionState_Section> = /*@__PURE__*/
+  enumDesc(file_circus_v1_worker_link, 18, 0);
+
+/**
+ * SessionState is returned on acquisition or by selected sections. It carries
+ * metadata, never full call output; use CallQuery for authoritative outcomes.
+ * stopped and interrupt_turn_no are set whatever the sections; SECTION_NONE
+ * returns only them.
+ *
+ * @generated from message circus.v1.SessionState
+ */
+export type SessionState = Message<"circus.v1.SessionState"> & {
+  /**
+   * At most 256.
+   *
+   * @generated from field: repeated circus.v1.PatchSessionState.Cwd cwds = 1;
+   */
+  cwds: PatchSessionState_Cwd[];
+
+  /**
+   * At most 4096.
+   *
+   * @generated from field: repeated circus.v1.PatchSessionState.FileRecord files = 2;
+   */
+  files: PatchSessionState_FileRecord[];
+
+  /**
+   * At most 1024 unpersisted job notifications.
+   *
+   * @generated from field: repeated circus.v1.SessionState.Job jobs = 3;
+   */
+  jobs: SessionState_Job[];
+
+  /**
+   * At most 1040: up to 1024 calls not yet persisted plus up to 16 persisted
+   * calls with notice_owed.
+   *
+   * @generated from field: repeated circus.v1.SessionState.Call calls = 4;
+   */
+  calls: SessionState_Call[];
+
+  /**
+   * At most 32 unused, unexpired grants.
+   *
+   * @generated from field: repeated circus.v1.SessionState.Grant grants = 5;
+   */
+  grants: SessionState_Grant[];
+
+  /**
+   * The user stopped the session; the holder flushes and releases.
+   *
+   * @generated from field: bool stopped = 6;
+   */
+  stopped: boolean;
+
+  /**
+   * The highest turn_no the user asked to interrupt, or zero.
+   *
+   * @generated from field: uint64 interrupt_turn_no = 7;
+   */
+  interruptTurnNo: bigint;
+};
+
+/**
+ * Describes the message circus.v1.SessionState.
+ * Use `create(SessionStateSchema)` to create a new message.
+ */
+export const SessionStateSchema: GenMessage<SessionState> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 19);
+
+/**
+ * @generated from message circus.v1.SessionState.Job
+ */
+export type SessionState_Job = Message<"circus.v1.SessionState.Job"> & {
+  /**
+   * @generated from field: circus.v1.JobKey key = 1;
+   */
+  key?: JobKey | undefined;
+
+  /**
+   * At most 128 bytes each: call_id, tool_use_id and device.
+   *
+   * @generated from field: string call_id = 2;
+   */
+  callId: string;
+
+  /**
+   * @generated from field: string tool_use_id = 3;
+   */
+  toolUseId: string;
+
+  /**
+   * At most 1024 bytes; the control plane truncates longer descriptions.
+   *
+   * @generated from field: string description = 4;
+   */
+  description: string;
+
+  /**
+   * At most 4 KiB.
+   *
+   * @generated from field: string output_path = 5;
+   */
+  outputPath: string;
+
+  /**
+   * @generated from field: circus.v1.JobEvent.State state = 6;
+   */
+  state: JobEvent_State;
+
+  /**
+   * @generated from field: int32 exit_code = 7;
+   */
+  exitCode: number;
+
+  /**
+   * @generated from field: string device = 8;
+   */
+  device: string;
+
+  /**
+   * Handed to the SDK but not yet marked persisted.
+   *
+   * @generated from field: bool handed = 9;
+   */
+  handed: boolean;
+};
+
+/**
+ * Describes the message circus.v1.SessionState.Job.
+ * Use `create(SessionState_JobSchema)` to create a new message.
+ */
+export const SessionState_JobSchema: GenMessage<SessionState_Job> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 19, 0);
+
+/**
+ * @generated from message circus.v1.SessionState.Call
+ */
+export type SessionState_Call = Message<"circus.v1.SessionState.Call"> & {
+  /**
+   * At most 128 bytes each: call_id, tool_use_id and device.
+   *
+   * @generated from field: string call_id = 1;
+   */
+  callId: string;
+
+  /**
+   * @generated from field: string tool_use_id = 2;
+   */
+  toolUseId: string;
+
+  /**
+   * @generated from field: string device = 3;
+   */
+  device: string;
+
+  /**
+   * MCP returned; its result may already be in the transcript.
+   *
+   * @generated from field: bool returned = 4;
+   */
+  returned: boolean;
+
+  /**
+   * At most 256 bytes.
+   *
+   * @generated from field: string tool = 5;
+   */
+  tool: string;
+
+  /**
+   * Latest outcome, without output. Query calls whose returned is false.
+   *
+   * @generated from field: circus.v1.CallOutcome outcome = 6;
+   */
+  outcome: CallOutcome;
+
+  /**
+   * Present only if a terminal process result has an exit code.
+   *
+   * @generated from field: optional int32 exit_code = 7;
+   */
+  exitCode?: number | undefined;
+
+  /**
+   * The model was told a completion notice would follow; poll the call and
+   * deliver that notice, then mark it in Persisted.late_call_ids.
+   *
+   * @generated from field: bool notice_owed = 8;
+   */
+  noticeOwed: boolean;
+
+  /**
+   * Set only when outcome is CALL_OUTCOME_REJECTED.
+   *
+   * @generated from field: circus.v1.CallUpdate.Rejected.Code rejected_code = 9;
+   */
+  rejectedCode: CallUpdate_Rejected_Code;
+};
+
+/**
+ * Describes the message circus.v1.SessionState.Call.
+ * Use `create(SessionState_CallSchema)` to create a new message.
+ */
+export const SessionState_CallSchema: GenMessage<SessionState_Call> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 19, 1);
+
+/**
+ * @generated from message circus.v1.SessionState.Grant
+ */
+export type SessionState_Grant = Message<"circus.v1.SessionState.Grant"> & {
+  /**
+   * At most 256 bytes.
+   *
+   * @generated from field: string tool = 1;
+   */
+  tool: string;
+
+  /**
+   * At most 128 bytes.
+   *
+   * @generated from field: string device = 2;
+   */
+  device: string;
+
+  /**
+   * 64 lowercase hexadecimal digits, as RequestApproval.match_key.
+   *
+   * @generated from field: string match_key = 3;
+   */
+  matchKey: string;
+
+  /**
+   * @generated from field: int64 expires_at_unix_ms = 4;
+   */
+  expiresAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message circus.v1.SessionState.Grant.
+ * Use `create(SessionState_GrantSchema)` to create a new message.
+ */
+export const SessionState_GrantSchema: GenMessage<SessionState_Grant> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 19, 2);
+
+/**
+ * Recovery lists every item not yet acknowledged, whichever epoch produced
+ * it; it is never computed relative to the previous epoch, so an idempotent
+ * reacquisition returns the same items. Returned calls receive only a short
+ * tool/device/status summary; unreturned calls are queried and full results
+ * injected, never reexecuted. Calls with notice_owed are polled and their
+ * completion notice delivered. At most 16 calls may still be in flight. Lost
+ * background tasks receive failed notifications with their original
+ * tool_use_id. Inject recovery before the next user input, never auto-run it.
+ *
+ * @generated from message circus.v1.Recovery
+ */
+export type Recovery = Message<"circus.v1.Recovery"> & {
+  /**
+   * Every call not yet persisted and every call with notice_owed; at most 1040.
+   *
+   * @generated from field: repeated circus.v1.SessionState.Call calls = 1;
+   */
+  calls: SessionState_Call[];
+
+  /**
+   * CLI background tasks started by an earlier epoch and never ended; at most
+   * 64. Acknowledged by PatchSessionState.bgtasks_ended.
+   *
+   * @generated from field: repeated circus.v1.PatchSessionState.BackgroundTask lost_bgtasks = 2;
+   */
+  lostBgtasks: PatchSessionState_BackgroundTask[];
+
+  /**
+   * The most recent turn was closed without ENDED, for example by lease loss,
+   * and no turn has started since.
+   *
+   * @generated from field: bool previous_turn_interrupted = 3;
+   */
+  previousTurnInterrupted: boolean;
+};
+
+/**
+ * Describes the message circus.v1.Recovery.
+ * Use `create(RecoverySchema)` to create a new message.
+ */
+export const RecoverySchema: GenMessage<Recovery> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 20);
+
+/**
+ * PublishEvents sends at most 128 events per batch, normally every 100 ms.
+ * Ephemeral stream fragments are live-only. Other events form a 64 MiB view;
+ * payloads over 256 KiB are truncated, with only turn boundaries stored when
+ * the view fills.
+ *
+ * @generated from message circus.v1.PublishEvents
+ */
+export type PublishEvents = Message<"circus.v1.PublishEvents"> & {
+  /**
+   * @generated from field: repeated circus.v1.PublishEvents.Event events = 1;
+   */
+  events: PublishEvents_Event[];
+
+  /**
+   * Starts at 1 per epoch and increases by one. A sequence <= the last
+   * consumed one is acknowledged with deduplicated=true and no write; one
+   * beyond the last plus one is INVALID and consumes nothing. ok consumes it;
+   * so does a batch at the next sequence that fails validation (an over-cap
+   * field, or a kind only the control plane records such as
+   * TRANSCRIPT_GAP_ACCEPTED): it is recorded as dropped and answered INVALID,
+   * and the worker continues with the next sequence. A worker treats every
+   * INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
+   * and Fenced consume nothing. Retrying must preserve content.
+   *
+   * @generated from field: uint64 batch_seq = 2;
+   */
+  batchSeq: bigint;
+};
+
+/**
+ * Describes the message circus.v1.PublishEvents.
+ * Use `create(PublishEventsSchema)` to create a new message.
+ */
+export const PublishEventsSchema: GenMessage<PublishEvents> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 21);
+
+/**
+ * @generated from message circus.v1.PublishEvents.Event
+ */
+export type PublishEvents_Event = Message<"circus.v1.PublishEvents.Event"> & {
+  /**
+   * @generated from field: circus.v1.SessionEvent.Kind kind = 1;
+   */
+  kind: SessionEvent_Kind;
+
+  /**
+   * @generated from field: string json = 2;
+   */
+  json: string;
+
+  /**
+   * @generated from field: bool ephemeral = 3;
+   */
+  ephemeral: boolean;
+};
+
+/**
+ * Describes the message circus.v1.PublishEvents.Event.
+ * Use `create(PublishEvents_EventSchema)` to create a new message.
+ */
+export const PublishEvents_EventSchema: GenMessage<PublishEvents_Event> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 21, 0);
+
+/**
+ * RequestApproval merges pending requests by (session, tool, device, match_key).
+ * Display, reason and tool_use_id do not change the matching key. There are
+ * at most 32 pending requests per session, expiring in ten minutes.
+ *
+ * @generated from message circus.v1.RequestApproval
+ */
+export type RequestApproval = Message<"circus.v1.RequestApproval"> & {
+  /**
+   * Model tool_use id, opaque, 1-128 bytes.
+   *
+   * @generated from field: string tool_use_id = 1;
+   */
+  toolUseId: string;
+
+  /**
+   * Empty for the main thread; at most 128 bytes.
+   *
+   * @generated from field: string agent_id = 2;
+   */
+  agentId: string;
+
+  /**
+   * At most 256 bytes.
+   *
+   * @generated from field: string tool = 3;
+   */
+  tool: string;
+
+  /**
+   * At most 128 bytes.
+   *
+   * @generated from field: string device = 4;
+   */
+  device: string;
+
+  /**
+   * 64 lowercase hexadecimal digits: the SHA-256 of the UTF-8 bash command
+   * verbatim, or of the path for write/edit. Description and timeout are not
+   * part of it.
+   *
+   * @generated from field: string match_key = 5;
+   */
+  matchKey: string;
+
+  /**
+   * At most 1024 bytes each; truncate longer text at a UTF-8 boundary.
+   *
+   * @generated from field: string display = 6;
+   */
+  display: string;
+
+  /**
+   * @generated from field: string reason = 7;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message circus.v1.RequestApproval.
+ * Use `create(RequestApprovalSchema)` to create a new message.
+ */
+export const RequestApprovalSchema: GenMessage<RequestApproval> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 22);
+
+/**
+ * ConsumeGrant atomically finds and consumes one unexpired matching grant for
+ * tool_use_id. Repeating it with the same tool_use_id and the same (tool,
+ * device, match_key) while the consumed grant would still be unexpired replays
+ * allowed=true without consuming another; the same tool_use_id with another
+ * key gets allowed=false. Only allowed=true permits the hook to allow a tool.
+ *
+ * @generated from message circus.v1.ConsumeGrant
+ */
+export type ConsumeGrant = Message<"circus.v1.ConsumeGrant"> & {
+  /**
+   * At most 256 bytes.
+   *
+   * @generated from field: string tool = 1;
+   */
+  tool: string;
+
+  /**
+   * At most 128 bytes.
+   *
+   * @generated from field: string device = 2;
+   */
+  device: string;
+
+  /**
+   * As RequestApproval.match_key.
+   *
+   * @generated from field: string match_key = 3;
+   */
+  matchKey: string;
+
+  /**
+   * Required model tool_use id, opaque, 1-128 bytes.
+   *
+   * @generated from field: string tool_use_id = 4;
+   */
+  toolUseId: string;
+};
+
+/**
+ * Describes the message circus.v1.ConsumeGrant.
+ * Use `create(ConsumeGrantSchema)` to create a new message.
+ */
+export const ConsumeGrantSchema: GenMessage<ConsumeGrant> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 23);
+
+/**
+ * TranscriptRepaired reports that the holder re-imported the batches missing
+ * from a broken session's transcript. It moves BROKEN to IDLE, or QUEUED with
+ * pending work; it never touches Lease.transcript_gap_turn_no. On any other
+ * state it is ok with no change. Mark the repaired turn's items with
+ * PatchSessionState.persisted before sending it.
+ *
+ * @generated from message circus.v1.TranscriptRepaired
+ */
+export type TranscriptRepaired = Message<"circus.v1.TranscriptRepaired"> & {
+};
+
+/**
+ * Describes the message circus.v1.TranscriptRepaired.
+ * Use `create(TranscriptRepairedSchema)` to create a new message.
+ */
+export const TranscriptRepairedSchema: GenMessage<TranscriptRepaired> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 24);
+
+/**
+ * ResumeLeases reconnects at most 64 leases for the same worker boot before
+ * expiry, retaining epoch and rebinding each resumed lease to this
+ * connection. Failure for one lease does not reject the others. A stopped
+ * session still resumes, with stopped set, so the holder can flush and
+ * release.
+ *
+ * @generated from message circus.v1.ResumeLeases
+ */
+export type ResumeLeases = Message<"circus.v1.ResumeLeases"> & {
+  /**
+   * @generated from field: repeated circus.v1.ResumeLeases.Held leases = 1;
+   */
+  leases: ResumeLeases_Held[];
+};
+
+/**
+ * Describes the message circus.v1.ResumeLeases.
+ * Use `create(ResumeLeasesSchema)` to create a new message.
+ */
+export const ResumeLeasesSchema: GenMessage<ResumeLeases> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 25);
+
+/**
+ * @generated from message circus.v1.ResumeLeases.Held
+ */
+export type ResumeLeases_Held = Message<"circus.v1.ResumeLeases.Held"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: uint64 epoch = 2;
+   */
+  epoch: bigint;
+};
+
+/**
+ * Describes the message circus.v1.ResumeLeases.Held.
+ * Use `create(ResumeLeases_HeldSchema)` to create a new message.
+ */
+export const ResumeLeases_HeldSchema: GenMessage<ResumeLeases_Held> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 25, 0);
+
+/**
+ * @generated from message circus.v1.ListDevices
+ */
+export type ListDevices = Message<"circus.v1.ListDevices"> & {
+};
+
+/**
+ * Describes the message circus.v1.ListDevices.
+ * Use `create(ListDevicesSchema)` to create a new message.
+ */
+export const ListDevicesSchema: GenMessage<ListDevices> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 26);
+
+/**
+ * SessionReply ends one SessionRequest, ResumeLeases or ListDevices operation.
+ * Fenced or Rejected can replace any successful result. Attach uses WorkerEvent
+ * instead. Replies are Data without ordering keys, correlated by request_id.
+ *
+ * @generated from message circus.v1.SessionReply
+ */
+export type SessionReply = Message<"circus.v1.SessionReply"> & {
+  /**
+   * @generated from oneof circus.v1.SessionReply.result
+   */
+  result: {
+    /**
+     * @generated from field: circus.v1.SessionReply.Ok ok = 1;
+     */
+    value: SessionReply_Ok;
+    case: "ok";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.Fenced fenced = 2;
+     */
+    value: SessionReply_Fenced;
+    case: "fenced";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.Rejected rejected = 3;
+     */
+    value: SessionReply_Rejected;
+    case: "rejected";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.Lease lease = 10;
+     */
+    value: SessionReply_Lease;
+    case: "lease";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.TranscriptPage transcript_page = 11;
+     */
+    value: SessionReply_TranscriptPage;
+    case: "transcriptPage";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.TranscriptKeys transcript_keys = 12;
+     */
+    value: SessionReply_TranscriptKeys;
+    case: "transcriptKeys";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.Inputs inputs = 13;
+     */
+    value: SessionReply_Inputs;
+    case: "inputs";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.Turn turn = 14;
+     */
+    value: SessionReply_Turn;
+    case: "turn";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.SessionStateReply state = 15;
+     */
+    value: SessionReply_SessionStateReply;
+    case: "state";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.Approval approval = 16;
+     */
+    value: SessionReply_Approval;
+    case: "approval";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.Grant grant = 17;
+     */
+    value: SessionReply_Grant;
+    case: "grant";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.Devices devices = 18;
+     */
+    value: SessionReply_Devices;
+    case: "devices";
+  } | {
+    /**
+     * @generated from field: circus.v1.SessionReply.Resumed resumed = 19;
+     */
+    value: SessionReply_Resumed;
+    case: "resumed";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.
+ * Use `create(SessionReplySchema)` to create a new message.
+ */
+export const SessionReplySchema: GenMessage<SessionReply> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27);
+
+/**
+ * @generated from message circus.v1.SessionReply.Ok
+ */
+export type SessionReply_Ok = Message<"circus.v1.SessionReply.Ok"> & {
+  /**
+   * @generated from field: bool deduplicated = 1;
+   */
+  deduplicated: boolean;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Ok.
+ * Use `create(SessionReply_OkSchema)` to create a new message.
+ */
+export const SessionReply_OkSchema: GenMessage<SessionReply_Ok> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 0);
+
+/**
+ * @generated from message circus.v1.SessionReply.Fenced
+ */
+export type SessionReply_Fenced = Message<"circus.v1.SessionReply.Fenced"> & {
+  /**
+   * Current epoch; none of the requested mutation was applied.
+   *
+   * @generated from field: uint64 epoch = 1;
+   */
+  epoch: bigint;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Fenced.
+ * Use `create(SessionReply_FencedSchema)` to create a new message.
+ */
+export const SessionReply_FencedSchema: GenMessage<SessionReply_Fenced> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 1);
+
+/**
+ * @generated from message circus.v1.SessionReply.Rejected
+ */
+export type SessionReply_Rejected = Message<"circus.v1.SessionReply.Rejected"> & {
+  /**
+   * @generated from field: circus.v1.SessionReply.Rejected.Code code = 1;
+   */
+  code: SessionReply_Rejected_Code;
+
+  /**
+   * At most 1024 bytes, diagnostic only.
+   *
+   * @generated from field: string message = 2;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Rejected.
+ * Use `create(SessionReply_RejectedSchema)` to create a new message.
+ */
+export const SessionReply_RejectedSchema: GenMessage<SessionReply_Rejected> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 2);
+
+/**
+ * @generated from enum circus.v1.SessionReply.Rejected.Code
+ */
+export enum SessionReply_Rejected_Code {
+  /**
+   * @generated from enum value: CODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CODE_INVALID = 1;
+   */
+  INVALID = 1,
+
+  /**
+   * @generated from enum value: CODE_NOT_FOUND = 2;
+   */
+  NOT_FOUND = 2,
+
+  /**
+   * Retryable: nothing was written.
+   *
+   * @generated from enum value: CODE_STORE_UNAVAILABLE = 3;
+   */
+  STORE_UNAVAILABLE = 3,
+
+  /**
+   * Not retryable: the control plane stopped the session atomically; the
+   * worker releases with REASON_STOPPED rather than dropping entries.
+   *
+   * @generated from enum value: CODE_TRANSCRIPT_FULL = 4;
+   */
+  TRANSCRIPT_FULL = 4,
+
+  /**
+   * @generated from enum value: CODE_LIMIT = 5;
+   */
+  LIMIT = 5,
+
+  /**
+   * @generated from enum value: CODE_STOPPED = 6;
+   */
+  STOPPED = 6,
+
+  /**
+   * @generated from enum value: CODE_NOT_OFFERED = 7;
+   */
+  NOT_OFFERED = 7,
+}
+
+/**
+ * Describes the enum circus.v1.SessionReply.Rejected.Code.
+ */
+export const SessionReply_Rejected_CodeSchema: GenEnum<SessionReply_Rejected_Code> = /*@__PURE__*/
+  enumDesc(file_circus_v1_worker_link, 27, 2, 0);
+
+/**
+ * At most 25.5 MiB with every cap reached. state carries every section
+ * except calls, which recovery carries: with calls in both, a Lease at the
+ * caps exceeds the 8192-node decode limit and the worker closes the link.
+ *
+ * @generated from message circus.v1.SessionReply.Lease
+ */
+export type SessionReply_Lease = Message<"circus.v1.SessionReply.Lease"> & {
+  /**
+   * @generated from field: uint64 epoch = 1;
+   */
+  epoch: bigint;
+
+  /**
+   * At most 128 bytes.
+   *
+   * @generated from field: string claude_session_id = 2;
+   */
+  claudeSessionId: string;
+
+  /**
+   * @generated from field: bool has_transcript = 3;
+   */
+  hasTranscript: boolean;
+
+  /**
+   * @generated from field: circus.v1.SessionState state = 4;
+   */
+  state?: SessionState | undefined;
+
+  /**
+   * @generated from field: circus.v1.Recovery recovery = 5;
+   */
+  recovery?: Recovery | undefined;
+
+  /**
+   * @generated from field: circus.v1.SessionConfig config = 6;
+   */
+  config?: SessionConfig | undefined;
+
+  /**
+   * This worker and boot already held the lease; the epoch is unchanged.
+   *
+   * @generated from field: bool reattached = 7;
+   */
+  reattached: boolean;
+
+  /**
+   * A gap the user accepted and the model has not been told: set only by
+   * RecoverSession, to the turn_no of the turn that broke; 0 when none. An
+   * unaccepted break is the BROKEN state, not this mark. While nonzero,
+   * inject the missing-history reminder in the next turn started with a
+   * pushed message (a CLI-originated turn cannot carry it) and acknowledge
+   * it with Persisted.gap_notice_turn_no; only an acknowledgement of the
+   * equal value clears it.
+   *
+   * @generated from field: uint64 transcript_gap_turn_no = 8;
+   */
+  transcriptGapTurnNo: bigint;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Lease.
+ * Use `create(SessionReply_LeaseSchema)` to create a new message.
+ */
+export const SessionReply_LeaseSchema: GenMessage<SessionReply_Lease> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 3);
+
+/**
+ * @generated from message circus.v1.SessionReply.TranscriptPage
+ */
+export type SessionReply_TranscriptPage = Message<"circus.v1.SessionReply.TranscriptPage"> & {
+  /**
+   * Byte-bounded as LoadTranscript; structural node/field caps also apply.
+   *
+   * @generated from field: repeated circus.v1.TranscriptEntry entries = 1;
+   */
+  entries: TranscriptEntry[];
+
+  /**
+   * @generated from field: uint64 next_seq = 2;
+   */
+  nextSeq: bigint;
+
+  /**
+   * @generated from field: bool done = 3;
+   */
+  done: boolean;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.TranscriptPage.
+ * Use `create(SessionReply_TranscriptPageSchema)` to create a new message.
+ */
+export const SessionReply_TranscriptPageSchema: GenMessage<SessionReply_TranscriptPage> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 4);
+
+/**
+ * @generated from message circus.v1.SessionReply.TranscriptKeys
+ */
+export type SessionReply_TranscriptKeys = Message<"circus.v1.SessionReply.TranscriptKeys"> & {
+  /**
+   * At most 1024.
+   *
+   * @generated from field: repeated string subpaths = 1;
+   */
+  subpaths: string[];
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.TranscriptKeys.
+ * Use `create(SessionReply_TranscriptKeysSchema)` to create a new message.
+ */
+export const SessionReply_TranscriptKeysSchema: GenMessage<SessionReply_TranscriptKeys> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 5);
+
+/**
+ * @generated from message circus.v1.SessionReply.Inputs
+ */
+export type SessionReply_Inputs = Message<"circus.v1.SessionReply.Inputs"> & {
+  /**
+   * At most 32.
+   *
+   * @generated from field: repeated circus.v1.SessionReply.Inputs.Input inputs = 1;
+   */
+  inputs: SessionReply_Inputs_Input[];
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Inputs.
+ * Use `create(SessionReply_InputsSchema)` to create a new message.
+ */
+export const SessionReply_InputsSchema: GenMessage<SessionReply_Inputs> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 6);
+
+/**
+ * @generated from message circus.v1.SessionReply.Inputs.Input
+ */
+export type SessionReply_Inputs_Input = Message<"circus.v1.SessionReply.Inputs.Input"> & {
+  /**
+   * At most 128 bytes.
+   *
+   * @generated from field: string input_id = 1;
+   */
+  inputId: string;
+
+  /**
+   * @generated from field: circus.v1.SessionReply.Inputs.Input.Kind kind = 2;
+   */
+  kind: SessionReply_Inputs_Input_Kind;
+
+  /**
+   * At most 256 KiB.
+   *
+   * @generated from field: string text = 3;
+   */
+  text: string;
+
+  /**
+   * @generated from field: circus.v1.InputPriority priority = 4;
+   */
+  priority: InputPriority;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Inputs.Input.
+ * Use `create(SessionReply_Inputs_InputSchema)` to create a new message.
+ */
+export const SessionReply_Inputs_InputSchema: GenMessage<SessionReply_Inputs_Input> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 6, 0);
+
+/**
+ * @generated from enum circus.v1.SessionReply.Inputs.Input.Kind
+ */
+export enum SessionReply_Inputs_Input_Kind {
+  /**
+   * @generated from enum value: KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: KIND_USER = 1;
+   */
+  USER = 1,
+
+  /**
+   * @generated from enum value: KIND_APPROVAL = 2;
+   */
+  APPROVAL = 2,
+}
+
+/**
+ * Describes the enum circus.v1.SessionReply.Inputs.Input.Kind.
+ */
+export const SessionReply_Inputs_Input_KindSchema: GenEnum<SessionReply_Inputs_Input_Kind> = /*@__PURE__*/
+  enumDesc(file_circus_v1_worker_link, 27, 6, 0, 0);
+
+/**
+ * Both STARTED and ENDED ReportTurn return the same assigned turn_no.
+ *
+ * @generated from message circus.v1.SessionReply.Turn
+ */
+export type SessionReply_Turn = Message<"circus.v1.SessionReply.Turn"> & {
+  /**
+   * @generated from field: uint64 turn_no = 1;
+   */
+  turnNo: bigint;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Turn.
+ * Use `create(SessionReply_TurnSchema)` to create a new message.
+ */
+export const SessionReply_TurnSchema: GenMessage<SessionReply_Turn> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 7);
+
+/**
+ * @generated from message circus.v1.SessionReply.SessionStateReply
+ */
+export type SessionReply_SessionStateReply = Message<"circus.v1.SessionReply.SessionStateReply"> & {
+  /**
+   * @generated from field: circus.v1.SessionState state = 1;
+   */
+  state?: SessionState | undefined;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.SessionStateReply.
+ * Use `create(SessionReply_SessionStateReplySchema)` to create a new message.
+ */
+export const SessionReply_SessionStateReplySchema: GenMessage<SessionReply_SessionStateReply> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 8);
+
+/**
+ * @generated from message circus.v1.SessionReply.Approval
+ */
+export type SessionReply_Approval = Message<"circus.v1.SessionReply.Approval"> & {
+  /**
+   * At most 128 bytes.
+   *
+   * @generated from field: string approval_id = 1;
+   */
+  approvalId: string;
+
+  /**
+   * @generated from field: bool deduplicated = 2;
+   */
+  deduplicated: boolean;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Approval.
+ * Use `create(SessionReply_ApprovalSchema)` to create a new message.
+ */
+export const SessionReply_ApprovalSchema: GenMessage<SessionReply_Approval> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 9);
+
+/**
+ * @generated from message circus.v1.SessionReply.Grant
+ */
+export type SessionReply_Grant = Message<"circus.v1.SessionReply.Grant"> & {
+  /**
+   * @generated from field: bool allowed = 1;
+   */
+  allowed: boolean;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Grant.
+ * Use `create(SessionReply_GrantSchema)` to create a new message.
+ */
+export const SessionReply_GrantSchema: GenMessage<SessionReply_Grant> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 10);
+
+/**
+ * @generated from message circus.v1.SessionReply.Devices
+ */
+export type SessionReply_Devices = Message<"circus.v1.SessionReply.Devices"> & {
+  /**
+   * At most 256.
+   *
+   * @generated from field: repeated circus.v1.SessionReply.Devices.Device devices = 1;
+   */
+  devices: SessionReply_Devices_Device[];
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Devices.
+ * Use `create(SessionReply_DevicesSchema)` to create a new message.
+ */
+export const SessionReply_DevicesSchema: GenMessage<SessionReply_Devices> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 11);
+
+/**
+ * @generated from message circus.v1.SessionReply.Devices.Device
+ */
+export type SessionReply_Devices_Device = Message<"circus.v1.SessionReply.Devices.Device"> & {
+  /**
+   * At most 128 bytes; os, arch and hostname at most 256 bytes each.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: bool online = 2;
+   */
+  online: boolean;
+
+  /**
+   * @generated from field: string os = 3;
+   */
+  os: string;
+
+  /**
+   * @generated from field: string arch = 4;
+   */
+  arch: string;
+
+  /**
+   * @generated from field: string hostname = 5;
+   */
+  hostname: string;
+
+  /**
+   * @generated from field: int64 last_seen_unix_ms = 6;
+   */
+  lastSeenUnixMs: bigint;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Devices.Device.
+ * Use `create(SessionReply_Devices_DeviceSchema)` to create a new message.
+ */
+export const SessionReply_Devices_DeviceSchema: GenMessage<SessionReply_Devices_Device> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 11, 0);
+
+/**
+ * @generated from message circus.v1.SessionReply.Resumed
+ */
+export type SessionReply_Resumed = Message<"circus.v1.SessionReply.Resumed"> & {
+  /**
+   * At most 64, one per requested lease.
+   *
+   * @generated from field: repeated circus.v1.SessionReply.Resumed.Outcome leases = 1;
+   */
+  leases: SessionReply_Resumed_Outcome[];
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Resumed.
+ * Use `create(SessionReply_ResumedSchema)` to create a new message.
+ */
+export const SessionReply_ResumedSchema: GenMessage<SessionReply_Resumed> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 12);
+
+/**
+ * @generated from message circus.v1.SessionReply.Resumed.Outcome
+ */
+export type SessionReply_Resumed_Outcome = Message<"circus.v1.SessionReply.Resumed.Outcome"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: bool ok = 2;
+   */
+  ok: boolean;
+
+  /**
+   * Retained epoch on success; current epoch when fenced.
+   *
+   * @generated from field: uint64 epoch = 3;
+   */
+  epoch: bigint;
+
+  /**
+   * Resumed, but the session is stopped: flush and release.
+   *
+   * @generated from field: bool stopped = 4;
+   */
+  stopped: boolean;
+};
+
+/**
+ * Describes the message circus.v1.SessionReply.Resumed.Outcome.
+ * Use `create(SessionReply_Resumed_OutcomeSchema)` to create a new message.
+ */
+export const SessionReply_Resumed_OutcomeSchema: GenMessage<SessionReply_Resumed_Outcome> = /*@__PURE__*/
+  messageDesc(file_circus_v1_worker_link, 27, 12, 0);
+
+/**
+ * CallOutcome is the latest worker-visible outcome of a recorded call, the
+ * state a CallUpdate would report now. ACCEPTED, DISPATCHED and UNKNOWN are
+ * not terminal; the others are.
+ *
+ * @generated from enum circus.v1.CallOutcome
+ */
+export enum CallOutcome {
+  /**
+   * @generated from enum value: CALL_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CALL_OUTCOME_ACCEPTED = 1;
+   */
+  ACCEPTED = 1,
+
+  /**
+   * @generated from enum value: CALL_OUTCOME_DISPATCHED = 2;
+   */
+  DISPATCHED = 2,
+
+  /**
+   * @generated from enum value: CALL_OUTCOME_UNKNOWN = 3;
+   */
+  UNKNOWN = 3,
+
+  /**
+   * @generated from enum value: CALL_OUTCOME_RESULT = 4;
+   */
+  RESULT = 4,
+
+  /**
+   * @generated from enum value: CALL_OUTCOME_OFFLINE = 5;
+   */
+  OFFLINE = 5,
+
+  /**
+   * @generated from enum value: CALL_OUTCOME_LOST = 6;
+   */
+  LOST = 6,
+
+  /**
+   * @generated from enum value: CALL_OUTCOME_REJECTED = 7;
+   */
+  REJECTED = 7,
+
+  /**
+   * @generated from enum value: CALL_OUTCOME_CANCELLED = 8;
+   */
+  CANCELLED = 8,
+}
+
+/**
+ * Describes the enum circus.v1.CallOutcome.
+ */
+export const CallOutcomeSchema: GenEnum<CallOutcome> = /*@__PURE__*/
+  enumDesc(file_circus_v1_worker_link, 0);
 

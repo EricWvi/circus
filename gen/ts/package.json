@@ -4,13 +4,35 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./circus/v1/device_pb": "./src/circus/v1/device_pb.ts",
-    "./circus/v1/link_pb": "./src/circus/v1/link_pb.ts",
-    "./circus/v1/daemon_link_pb": "./src/circus/v1/daemon_link_pb.ts",
-    "./circus/v1/worker_link_pb": "./src/circus/v1/worker_link_pb.ts",
-    "./circus/v1/enroll_pb": "./src/circus/v1/enroll_pb.ts"
+    "./circus/v1/device_pb": {
+      "types": "./dist/circus/v1/device_pb.d.ts",
+      "default": "./dist/circus/v1/device_pb.js"
+    },
+    "./circus/v1/link_pb": {
+      "types": "./dist/circus/v1/link_pb.d.ts",
+      "default": "./dist/circus/v1/link_pb.js"
+    },
+    "./circus/v1/daemon_link_pb": {
+      "types": "./dist/circus/v1/daemon_link_pb.d.ts",
+      "default": "./dist/circus/v1/daemon_link_pb.js"
+    },
+    "./circus/v1/worker_link_pb": {
+      "types": "./dist/circus/v1/worker_link_pb.d.ts",
+      "default": "./dist/circus/v1/worker_link_pb.js"
+    },
+    "./circus/v1/enroll_pb": {
+      "types": "./dist/circus/v1/enroll_pb.d.ts",
+      "default": "./dist/circus/v1/enroll_pb.js"
+    },
+    "./circus/v1/session_pb": {
+      "types": "./dist/circus/v1/session_pb.d.ts",
+      "default": "./dist/circus/v1/session_pb.js"
+    }
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.17.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
   }
 }

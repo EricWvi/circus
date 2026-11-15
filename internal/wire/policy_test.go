@@ -1,7 +1,6 @@
 package wire_test
 
 import (
-	"strings"
 	"testing"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -13,9 +12,8 @@ import (
 func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 	// codec.go charges 256 bytes/node and 64 bytes/field. Packed scalars and
 	// maps require element-aware costs; update those constants/scan before adding
-	// either. New repeated fields need an explicit element limit as well.
+	// either. Repeated-limit coverage is checked in TestRepeatedLimitsMatchSchema.
 	seen := map[protoreflect.FullName]bool{}
-	repeated := map[protoreflect.FullName]bool{"circus.v1.JobSnapshot.jobs": true, "circus.v1.ToolOutput.content": true, "circus.v1.BashRequest.working_dirs": true, "circus.v1.CallUpdate.DeviceOffline.online_devices": true}
 	var walk func(protoreflect.MessageDescriptor)
 	walk = func(d protoreflect.MessageDescriptor) {
 		if seen[d.FullName()] {
@@ -26,9 +24,6 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 			f := d.Fields().Get(i)
 			if f.IsMap() || f.IsPacked() {
 				t.Errorf("update scanner cost for %s", f.FullName())
-			}
-			if f.IsList() && !repeated[f.FullName()] {
-				t.Errorf("add scanner limit for %s", f.FullName())
 			}
 			if f.Message() != nil {
 				walk(f.Message())
@@ -54,19 +49,30 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 			if id := holder.Descriptor().Fields().ByName("call_id"); id != nil {
 				holder.Set(id, protoreflect.ValueOfString(callID))
 			}
+			if id := body.Descriptor().Fields().ByName("session_id"); f.Name() == "session" && id != nil {
+				body.Set(id, protoreflect.ValueOfString(callID))
+			}
 			r.Set(f, protoreflect.ValueOfMessage(body))
 			class, key, err := wire.Classify(m)
 			expected := wire.Data
 			switch f.Name() {
 			case "heartbeat", "go_away", "call_ack":
 				expected = wire.Control
-			case "list_jobs", "stop_session_jobs", "unwatch":
+			case "list_jobs", "stop_session_jobs", "unwatch", "attach", "resume_leases":
 				expected = wire.Barrier
 			}
 			if class != expected {
 				t.Errorf("class for %s: %v", f.FullName(), class)
 			}
 			switch f.Name() {
+			case "session":
+				if key != "session/"+callID {
+					t.Errorf("session ordering key for %s: %q", f.FullName(), key)
+				}
+			case "attach", "resume_leases", "list_devices", "session_reply", "worker_event":
+				if key != "" {
+					t.Errorf("unexpected ordering key for %s: %q", f.FullName(), key)
+				}
 			case "dispatch_call", "submit_call", "cancel_call", "call_query", "call_update":
 				if key != "call/"+callID {
 					t.Errorf("call ordering key for %s: %q, want %q", f.FullName(), key, "call/"+callID)
@@ -79,21 +85,5 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 	}
 	if _, _, err := wire.Classify(&circusv1.DeviceResult{}); err == nil {
 		t.Fatal("non-envelope classified")
-	}
-}
-
-func TestWorkerJobOrderingIdentity(t *testing.T) {
-	event := func(device, boot string) proto.Message {
-		return &circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_JobEvent{JobEvent: &circusv1.WorkerJobEvent{Device: device, BootId: boot, Event: &circusv1.JobEvent{}}}}
-	}
-	_, first, err := wire.Classify(event(strings.Repeat("d", 2048), "boot1"))
-	if err != nil || len(first) > wire.MaxOrderingKeyBytes {
-		t.Fatal("unbounded job key", len(first), err)
-	}
-	_, again, _ := wire.Classify(event(strings.Repeat("d", 2048), "boot1"))
-	_, nextBoot, _ := wire.Classify(event(strings.Repeat("d", 2048), "boot2"))
-	_, otherDevice, _ := wire.Classify(event("other", "boot1"))
-	if first != again || first == nextBoot || first == otherDevice {
-		t.Fatal("worker jobs lost device/boot ordering identity")
 	}
 }

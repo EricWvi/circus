@@ -488,7 +488,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.cfg.Logger.WarnContext(ctx, "worker protocol error closed link", "reason", "unexpected payload")
 			return
 		}
-		// TODO(M3): WorkerJobEvent fanout belongs here.
 	}
 }
 

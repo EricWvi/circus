@@ -17,9 +17,8 @@ export const file_circus_v1_link: GenFile = /*@__PURE__*/
  * credentials belong to the upgrade request, never this message. No business
  * messages may be sent by either side before Welcome. Missing Hello times out
  * and closes the connection; both link servers apply the same handshake rules.
- * The device fields (boot_id, os, arch, hostname, machine_id) are sent on the
- * daemon link only; a worker's Hello carries just the protocol and client
- * versions.
+ * Both roles require boot_id. The worker sends protocol and client versions
+ * too; os, arch, hostname and machine_id are daemon metadata.
  *
  * @generated from message circus.v1.Hello
  */
@@ -30,7 +29,8 @@ export type Hello = Message<"circus.v1.Hello"> & {
   protocolVersion: number;
 
   /**
-   * Fresh process-start ULID/UUIDv7, kept only in memory, not across restarts.
+   * Required, 1-128 bytes: fresh UUIDv7 per process, retained across reconnects.
+   * A new worker boot releases leases held by its previous process.
    *
    * @generated from field: string boot_id = 2;
    */

@@ -574,16 +574,16 @@ func TestBlockedWritesCancel(t *testing.T) {
 	}
 }
 
-func TestWorkerJobIdentityAndProtoEnums(t *testing.T) {
+func TestWorkerEventsAndProtoEnums(t *testing.T) {
 	track(t)
 	a, b := wiretest.Pipe(wiretest.Options{})
 	s := newLink(t, a, wire.WorkerUplink, wire.WorkerDownlink, wire.Options{})
 	r := newLink(t, b, wire.WorkerDownlink, wire.WorkerUplink, wire.Options{})
-	for _, device := range []string{"laptop", "desktop"} {
-		m := &circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_JobEvent{JobEvent: &circusv1.WorkerJobEvent{Device: device, BootId: "boot", Event: &circusv1.JobEvent{JobId: "012345abcdef", State: circusv1.JobEvent_STATE_LOST}}}}
+	for _, session := range []string{"session-a", "session-b"} {
+		m := &circusv1.WorkerDownlink{RequestId: 1, Payload: &circusv1.WorkerDownlink_WorkerEvent{WorkerEvent: &circusv1.WorkerEvent{Event: &circusv1.WorkerEvent_LeaseRevoked_{LeaseRevoked: &circusv1.WorkerEvent_LeaseRevoked{SessionId: session, Epoch: 7}}}}}
 		send(t, s, m)
 		if !proto.Equal(receive(t, r), m) {
-			t.Fatal("job machine/boot identity lost")
+			t.Fatal("session/epoch identity lost")
 		}
 	}
 	m := &circusv1.WorkerDownlink{Payload: &circusv1.WorkerDownlink_CallUpdate{CallUpdate: &circusv1.CallUpdate{CallId: "c", Update: &circusv1.CallUpdate_Rejected_{Rejected: &circusv1.CallUpdate_Rejected{Code: circusv1.CallUpdate_Rejected_CODE_UNKNOWN_DEVICE, Message: "unknown"}}}}}

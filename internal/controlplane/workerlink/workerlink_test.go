@@ -1,9 +1,11 @@
 package workerlink_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -1171,4 +1173,45 @@ func TestCancelReplyWaitsForRecordedIntent(t *testing.T) {
 		t.Fatal(m)
 	}
 	wait.Recv(t, queried)
+}
+
+// reasonLog records whether any log record written so far contains want.
+// slog handlers write each record with one Write call.
+type reasonLog struct {
+	mu    sync.Mutex
+	want  []byte
+	found chan struct{}
+}
+
+func (w *reasonLog) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.found != nil && bytes.Contains(p, w.want) {
+		close(w.found)
+		w.found = nil
+	}
+	return len(p), nil
+}
+
+// Session dispatch is deliberately absent until the session service is wired
+// in: every new uplink payload takes the unexpected-payload close.
+func TestSessionPayloadsCloseLinkAsUnexpectedPayload(t *testing.T) {
+	for name, m := range map[string]*circusv1.WorkerUplink{
+		"attach":        {RequestId: 1, Payload: &circusv1.WorkerUplink_Attach{Attach: &circusv1.Attach{MaxSessions: 1}}},
+		"session":       {RequestId: 1, Payload: &circusv1.WorkerUplink_Session{Session: &circusv1.SessionRequest{SessionId: "session", Epoch: 1, Op: &circusv1.SessionRequest_TakeInputs{TakeInputs: &circusv1.TakeInputs{}}}}},
+		"resume_leases": {RequestId: 1, Payload: &circusv1.WorkerUplink_ResumeLeases{ResumeLeases: &circusv1.ResumeLeases{Leases: []*circusv1.ResumeLeases_Held{{SessionId: "session", Epoch: 1}}}}},
+		"list_devices":  {RequestId: 1, Payload: &circusv1.WorkerUplink_ListDevices{ListDevices: &circusv1.ListDevices{}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			found := make(chan struct{})
+			logs := &reasonLog{want: []byte(`"reason":"unexpected payload"`), found: found}
+			f := setup(t, func(cfg *workerlink.Config) {
+				cfg.Logger = slog.New(slog.NewJSONHandler(logs, nil))
+			})
+			l := linked(t, f)
+			send(t, l, m)
+			closed(t, l)
+			wait.Recv(t, (<-chan struct{})(found))
+		})
+	}
 }

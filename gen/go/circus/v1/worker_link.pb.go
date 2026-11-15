@@ -21,11 +21,85 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// CallOutcome is the latest worker-visible outcome of a recorded call, the
+// state a CallUpdate would report now. ACCEPTED, DISPATCHED and UNKNOWN are
+// not terminal; the others are.
+type CallOutcome int32
+
+const (
+	CallOutcome_CALL_OUTCOME_UNSPECIFIED CallOutcome = 0
+	CallOutcome_CALL_OUTCOME_ACCEPTED    CallOutcome = 1
+	CallOutcome_CALL_OUTCOME_DISPATCHED  CallOutcome = 2
+	CallOutcome_CALL_OUTCOME_UNKNOWN     CallOutcome = 3
+	CallOutcome_CALL_OUTCOME_RESULT      CallOutcome = 4
+	CallOutcome_CALL_OUTCOME_OFFLINE     CallOutcome = 5
+	CallOutcome_CALL_OUTCOME_LOST        CallOutcome = 6
+	CallOutcome_CALL_OUTCOME_REJECTED    CallOutcome = 7
+	CallOutcome_CALL_OUTCOME_CANCELLED   CallOutcome = 8
+)
+
+// Enum value maps for CallOutcome.
+var (
+	CallOutcome_name = map[int32]string{
+		0: "CALL_OUTCOME_UNSPECIFIED",
+		1: "CALL_OUTCOME_ACCEPTED",
+		2: "CALL_OUTCOME_DISPATCHED",
+		3: "CALL_OUTCOME_UNKNOWN",
+		4: "CALL_OUTCOME_RESULT",
+		5: "CALL_OUTCOME_OFFLINE",
+		6: "CALL_OUTCOME_LOST",
+		7: "CALL_OUTCOME_REJECTED",
+		8: "CALL_OUTCOME_CANCELLED",
+	}
+	CallOutcome_value = map[string]int32{
+		"CALL_OUTCOME_UNSPECIFIED": 0,
+		"CALL_OUTCOME_ACCEPTED":    1,
+		"CALL_OUTCOME_DISPATCHED":  2,
+		"CALL_OUTCOME_UNKNOWN":     3,
+		"CALL_OUTCOME_RESULT":      4,
+		"CALL_OUTCOME_OFFLINE":     5,
+		"CALL_OUTCOME_LOST":        6,
+		"CALL_OUTCOME_REJECTED":    7,
+		"CALL_OUTCOME_CANCELLED":   8,
+	}
+)
+
+func (x CallOutcome) Enum() *CallOutcome {
+	p := new(CallOutcome)
+	*p = x
+	return p
+}
+
+func (x CallOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CallOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_worker_link_proto_enumTypes[0].Descriptor()
+}
+
+func (CallOutcome) Type() protoreflect.EnumType {
+	return &file_circus_v1_worker_link_proto_enumTypes[0]
+}
+
+func (x CallOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CallOutcome.Descriptor instead.
+func (CallOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{0}
+}
+
 type CallUpdate_Rejected_Code int32
 
 const (
-	CallUpdate_Rejected_CODE_UNSPECIFIED    CallUpdate_Rejected_Code = 0
-	CallUpdate_Rejected_CODE_INVALID        CallUpdate_Rejected_Code = 1
+	CallUpdate_Rejected_CODE_UNSPECIFIED CallUpdate_Rejected_Code = 0
+	CallUpdate_Rejected_CODE_INVALID     CallUpdate_Rejected_Code = 1
+	// Terminal. The router is out of capacity, or the session already has
+	// 16 non-terminal calls or 1024 calls not yet persisted. For the
+	// session caps nothing is recorded and the same call_id may be
+	// submitted again later.
 	CallUpdate_Rejected_CODE_OVERLOADED     CallUpdate_Rejected_Code = 2
 	CallUpdate_Rejected_CODE_CALL_MISMATCH  CallUpdate_Rejected_Code = 3
 	CallUpdate_Rejected_CODE_UNKNOWN_DEVICE CallUpdate_Rejected_Code = 4
@@ -38,6 +112,14 @@ const (
 	// Query or Cancel; it says nothing about a submission of the same id
 	// still in flight elsewhere, and is not an outcome of any call.
 	CallUpdate_Rejected_CODE_NOT_FOUND CallUpdate_Rejected_Code = 7
+	// Terminal: this connection does not hold the session's lease at
+	// session_epoch. This submission was neither recorded nor executed; a
+	// call recorded by an earlier submission of the same call_id is
+	// unaffected.
+	CallUpdate_Rejected_CODE_SESSION_FENCED CallUpdate_Rejected_Code = 8
+	// Terminal: the session is stopped. This submission was neither
+	// recorded nor executed.
+	CallUpdate_Rejected_CODE_SESSION_STOPPED CallUpdate_Rejected_Code = 9
 )
 
 // Enum value maps for CallUpdate_Rejected_Code.
@@ -51,6 +133,8 @@ var (
 		5: "CODE_STORE_UNAVAILABLE",
 		6: "CODE_DEVICE_SHUTTING_DOWN",
 		7: "CODE_NOT_FOUND",
+		8: "CODE_SESSION_FENCED",
+		9: "CODE_SESSION_STOPPED",
 	}
 	CallUpdate_Rejected_Code_value = map[string]int32{
 		"CODE_UNSPECIFIED":          0,
@@ -61,6 +145,8 @@ var (
 		"CODE_STORE_UNAVAILABLE":    5,
 		"CODE_DEVICE_SHUTTING_DOWN": 6,
 		"CODE_NOT_FOUND":            7,
+		"CODE_SESSION_FENCED":       8,
+		"CODE_SESSION_STOPPED":      9,
 	}
 )
 
@@ -75,11 +161,11 @@ func (x CallUpdate_Rejected_Code) String() string {
 }
 
 func (CallUpdate_Rejected_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_worker_link_proto_enumTypes[0].Descriptor()
+	return file_circus_v1_worker_link_proto_enumTypes[1].Descriptor()
 }
 
 func (CallUpdate_Rejected_Code) Type() protoreflect.EnumType {
-	return &file_circus_v1_worker_link_proto_enumTypes[0]
+	return &file_circus_v1_worker_link_proto_enumTypes[1]
 }
 
 func (x CallUpdate_Rejected_Code) Number() protoreflect.EnumNumber {
@@ -88,21 +174,411 @@ func (x CallUpdate_Rejected_Code) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CallUpdate_Rejected_Code.Descriptor instead.
 func (CallUpdate_Rejected_Code) EnumDescriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 5, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 5, 0}
 }
 
-// WorkerUplink is the call-only worker-to-control-plane envelope.
-// Hello must be first; no business messages before Welcome. Session and lease
-// messages belong to M3. Frames are FIFO; fragment/control scheduling follows
+type Attach_AutoModeCheck int32
+
+const (
+	Attach_AUTO_MODE_CHECK_UNSPECIFIED Attach_AutoModeCheck = 0
+	Attach_AUTO_MODE_CHECK_AVAILABLE   Attach_AutoModeCheck = 1
+	Attach_AUTO_MODE_CHECK_UNAVAILABLE Attach_AutoModeCheck = 2
+)
+
+// Enum value maps for Attach_AutoModeCheck.
+var (
+	Attach_AutoModeCheck_name = map[int32]string{
+		0: "AUTO_MODE_CHECK_UNSPECIFIED",
+		1: "AUTO_MODE_CHECK_AVAILABLE",
+		2: "AUTO_MODE_CHECK_UNAVAILABLE",
+	}
+	Attach_AutoModeCheck_value = map[string]int32{
+		"AUTO_MODE_CHECK_UNSPECIFIED": 0,
+		"AUTO_MODE_CHECK_AVAILABLE":   1,
+		"AUTO_MODE_CHECK_UNAVAILABLE": 2,
+	}
+)
+
+func (x Attach_AutoModeCheck) Enum() *Attach_AutoModeCheck {
+	p := new(Attach_AutoModeCheck)
+	*p = x
+	return p
+}
+
+func (x Attach_AutoModeCheck) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Attach_AutoModeCheck) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_worker_link_proto_enumTypes[2].Descriptor()
+}
+
+func (Attach_AutoModeCheck) Type() protoreflect.EnumType {
+	return &file_circus_v1_worker_link_proto_enumTypes[2]
+}
+
+func (x Attach_AutoModeCheck) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Attach_AutoModeCheck.Descriptor instead.
+func (Attach_AutoModeCheck) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 0}
+}
+
+type WorkerEvent_Nudge_Reason int32
+
+const (
+	WorkerEvent_Nudge_REASON_UNSPECIFIED WorkerEvent_Nudge_Reason = 0
+	WorkerEvent_Nudge_REASON_INPUT       WorkerEvent_Nudge_Reason = 1
+	WorkerEvent_Nudge_REASON_JOB         WorkerEvent_Nudge_Reason = 2
+	WorkerEvent_Nudge_REASON_INTERRUPT   WorkerEvent_Nudge_Reason = 3
+	WorkerEvent_Nudge_REASON_STOP        WorkerEvent_Nudge_Reason = 4
+	WorkerEvent_Nudge_REASON_APPROVAL    WorkerEvent_Nudge_Reason = 5
+)
+
+// Enum value maps for WorkerEvent_Nudge_Reason.
+var (
+	WorkerEvent_Nudge_Reason_name = map[int32]string{
+		0: "REASON_UNSPECIFIED",
+		1: "REASON_INPUT",
+		2: "REASON_JOB",
+		3: "REASON_INTERRUPT",
+		4: "REASON_STOP",
+		5: "REASON_APPROVAL",
+	}
+	WorkerEvent_Nudge_Reason_value = map[string]int32{
+		"REASON_UNSPECIFIED": 0,
+		"REASON_INPUT":       1,
+		"REASON_JOB":         2,
+		"REASON_INTERRUPT":   3,
+		"REASON_STOP":        4,
+		"REASON_APPROVAL":    5,
+	}
+)
+
+func (x WorkerEvent_Nudge_Reason) Enum() *WorkerEvent_Nudge_Reason {
+	p := new(WorkerEvent_Nudge_Reason)
+	*p = x
+	return p
+}
+
+func (x WorkerEvent_Nudge_Reason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (WorkerEvent_Nudge_Reason) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_worker_link_proto_enumTypes[3].Descriptor()
+}
+
+func (WorkerEvent_Nudge_Reason) Type() protoreflect.EnumType {
+	return &file_circus_v1_worker_link_proto_enumTypes[3]
+}
+
+func (x WorkerEvent_Nudge_Reason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use WorkerEvent_Nudge_Reason.Descriptor instead.
+func (WorkerEvent_Nudge_Reason) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{6, 1, 0}
+}
+
+type ReleaseLease_Reason int32
+
+const (
+	ReleaseLease_REASON_UNSPECIFIED ReleaseLease_Reason = 0
+	ReleaseLease_REASON_IDLE        ReleaseLease_Reason = 1
+	ReleaseLease_REASON_STOPPED     ReleaseLease_Reason = 2
+	ReleaseLease_REASON_ERROR       ReleaseLease_Reason = 3
+	ReleaseLease_REASON_FENCED      ReleaseLease_Reason = 4
+)
+
+// Enum value maps for ReleaseLease_Reason.
+var (
+	ReleaseLease_Reason_name = map[int32]string{
+		0: "REASON_UNSPECIFIED",
+		1: "REASON_IDLE",
+		2: "REASON_STOPPED",
+		3: "REASON_ERROR",
+		4: "REASON_FENCED",
+	}
+	ReleaseLease_Reason_value = map[string]int32{
+		"REASON_UNSPECIFIED": 0,
+		"REASON_IDLE":        1,
+		"REASON_STOPPED":     2,
+		"REASON_ERROR":       3,
+		"REASON_FENCED":      4,
+	}
+)
+
+func (x ReleaseLease_Reason) Enum() *ReleaseLease_Reason {
+	p := new(ReleaseLease_Reason)
+	*p = x
+	return p
+}
+
+func (x ReleaseLease_Reason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ReleaseLease_Reason) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_worker_link_proto_enumTypes[4].Descriptor()
+}
+
+func (ReleaseLease_Reason) Type() protoreflect.EnumType {
+	return &file_circus_v1_worker_link_proto_enumTypes[4]
+}
+
+func (x ReleaseLease_Reason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ReleaseLease_Reason.Descriptor instead.
+func (ReleaseLease_Reason) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{9, 0}
+}
+
+type ReportTurn_Phase int32
+
+const (
+	ReportTurn_PHASE_UNSPECIFIED ReportTurn_Phase = 0
+	ReportTurn_PHASE_STARTED     ReportTurn_Phase = 1
+	ReportTurn_PHASE_ENDED       ReportTurn_Phase = 2
+)
+
+// Enum value maps for ReportTurn_Phase.
+var (
+	ReportTurn_Phase_name = map[int32]string{
+		0: "PHASE_UNSPECIFIED",
+		1: "PHASE_STARTED",
+		2: "PHASE_ENDED",
+	}
+	ReportTurn_Phase_value = map[string]int32{
+		"PHASE_UNSPECIFIED": 0,
+		"PHASE_STARTED":     1,
+		"PHASE_ENDED":       2,
+	}
+)
+
+func (x ReportTurn_Phase) Enum() *ReportTurn_Phase {
+	p := new(ReportTurn_Phase)
+	*p = x
+	return p
+}
+
+func (x ReportTurn_Phase) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ReportTurn_Phase) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_worker_link_proto_enumTypes[5].Descriptor()
+}
+
+func (ReportTurn_Phase) Type() protoreflect.EnumType {
+	return &file_circus_v1_worker_link_proto_enumTypes[5]
+}
+
+func (x ReportTurn_Phase) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ReportTurn_Phase.Descriptor instead.
+func (ReportTurn_Phase) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{15, 0}
+}
+
+type GetSessionState_Section int32
+
+const (
+	GetSessionState_SECTION_UNSPECIFIED GetSessionState_Section = 0
+	GetSessionState_SECTION_CWDS        GetSessionState_Section = 1
+	GetSessionState_SECTION_FILES       GetSessionState_Section = 2
+	GetSessionState_SECTION_JOBS        GetSessionState_Section = 3
+	GetSessionState_SECTION_CALLS       GetSessionState_Section = 4
+	GetSessionState_SECTION_GRANTS      GetSessionState_Section = 5
+	GetSessionState_SECTION_NONE        GetSessionState_Section = 6
+)
+
+// Enum value maps for GetSessionState_Section.
+var (
+	GetSessionState_Section_name = map[int32]string{
+		0: "SECTION_UNSPECIFIED",
+		1: "SECTION_CWDS",
+		2: "SECTION_FILES",
+		3: "SECTION_JOBS",
+		4: "SECTION_CALLS",
+		5: "SECTION_GRANTS",
+		6: "SECTION_NONE",
+	}
+	GetSessionState_Section_value = map[string]int32{
+		"SECTION_UNSPECIFIED": 0,
+		"SECTION_CWDS":        1,
+		"SECTION_FILES":       2,
+		"SECTION_JOBS":        3,
+		"SECTION_CALLS":       4,
+		"SECTION_GRANTS":      5,
+		"SECTION_NONE":        6,
+	}
+)
+
+func (x GetSessionState_Section) Enum() *GetSessionState_Section {
+	p := new(GetSessionState_Section)
+	*p = x
+	return p
+}
+
+func (x GetSessionState_Section) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GetSessionState_Section) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_worker_link_proto_enumTypes[6].Descriptor()
+}
+
+func (GetSessionState_Section) Type() protoreflect.EnumType {
+	return &file_circus_v1_worker_link_proto_enumTypes[6]
+}
+
+func (x GetSessionState_Section) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GetSessionState_Section.Descriptor instead.
+func (GetSessionState_Section) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{18, 0}
+}
+
+type SessionReply_Rejected_Code int32
+
+const (
+	SessionReply_Rejected_CODE_UNSPECIFIED SessionReply_Rejected_Code = 0
+	SessionReply_Rejected_CODE_INVALID     SessionReply_Rejected_Code = 1
+	SessionReply_Rejected_CODE_NOT_FOUND   SessionReply_Rejected_Code = 2
+	// Retryable: nothing was written.
+	SessionReply_Rejected_CODE_STORE_UNAVAILABLE SessionReply_Rejected_Code = 3
+	// Not retryable: the control plane stopped the session atomically; the
+	// worker releases with REASON_STOPPED rather than dropping entries.
+	SessionReply_Rejected_CODE_TRANSCRIPT_FULL SessionReply_Rejected_Code = 4
+	SessionReply_Rejected_CODE_LIMIT           SessionReply_Rejected_Code = 5
+	SessionReply_Rejected_CODE_STOPPED         SessionReply_Rejected_Code = 6
+	SessionReply_Rejected_CODE_NOT_OFFERED     SessionReply_Rejected_Code = 7
+)
+
+// Enum value maps for SessionReply_Rejected_Code.
+var (
+	SessionReply_Rejected_Code_name = map[int32]string{
+		0: "CODE_UNSPECIFIED",
+		1: "CODE_INVALID",
+		2: "CODE_NOT_FOUND",
+		3: "CODE_STORE_UNAVAILABLE",
+		4: "CODE_TRANSCRIPT_FULL",
+		5: "CODE_LIMIT",
+		6: "CODE_STOPPED",
+		7: "CODE_NOT_OFFERED",
+	}
+	SessionReply_Rejected_Code_value = map[string]int32{
+		"CODE_UNSPECIFIED":       0,
+		"CODE_INVALID":           1,
+		"CODE_NOT_FOUND":         2,
+		"CODE_STORE_UNAVAILABLE": 3,
+		"CODE_TRANSCRIPT_FULL":   4,
+		"CODE_LIMIT":             5,
+		"CODE_STOPPED":           6,
+		"CODE_NOT_OFFERED":       7,
+	}
+)
+
+func (x SessionReply_Rejected_Code) Enum() *SessionReply_Rejected_Code {
+	p := new(SessionReply_Rejected_Code)
+	*p = x
+	return p
+}
+
+func (x SessionReply_Rejected_Code) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SessionReply_Rejected_Code) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_worker_link_proto_enumTypes[7].Descriptor()
+}
+
+func (SessionReply_Rejected_Code) Type() protoreflect.EnumType {
+	return &file_circus_v1_worker_link_proto_enumTypes[7]
+}
+
+func (x SessionReply_Rejected_Code) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SessionReply_Rejected_Code.Descriptor instead.
+func (SessionReply_Rejected_Code) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 2, 0}
+}
+
+type SessionReply_Inputs_Input_Kind int32
+
+const (
+	SessionReply_Inputs_Input_KIND_UNSPECIFIED SessionReply_Inputs_Input_Kind = 0
+	SessionReply_Inputs_Input_KIND_USER        SessionReply_Inputs_Input_Kind = 1
+	SessionReply_Inputs_Input_KIND_APPROVAL    SessionReply_Inputs_Input_Kind = 2
+)
+
+// Enum value maps for SessionReply_Inputs_Input_Kind.
+var (
+	SessionReply_Inputs_Input_Kind_name = map[int32]string{
+		0: "KIND_UNSPECIFIED",
+		1: "KIND_USER",
+		2: "KIND_APPROVAL",
+	}
+	SessionReply_Inputs_Input_Kind_value = map[string]int32{
+		"KIND_UNSPECIFIED": 0,
+		"KIND_USER":        1,
+		"KIND_APPROVAL":    2,
+	}
+)
+
+func (x SessionReply_Inputs_Input_Kind) Enum() *SessionReply_Inputs_Input_Kind {
+	p := new(SessionReply_Inputs_Input_Kind)
+	*p = x
+	return p
+}
+
+func (x SessionReply_Inputs_Input_Kind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SessionReply_Inputs_Input_Kind) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_worker_link_proto_enumTypes[8].Descriptor()
+}
+
+func (SessionReply_Inputs_Input_Kind) Type() protoreflect.EnumType {
+	return &file_circus_v1_worker_link_proto_enumTypes[8]
+}
+
+func (x SessionReply_Inputs_Input_Kind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SessionReply_Inputs_Input_Kind.Descriptor instead.
+func (SessionReply_Inputs_Input_Kind) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 6, 0, 0}
+}
+
+// WorkerUplink is the worker-to-control-plane envelope.
+// Hello must be first; no business messages before Welcome.
+// Frames are FIFO; fragment/control scheduling follows
 // Fragment's rules. A submission must precede its same-call cancellation.
 //
-// Every SubmitCall, CallQuery, CancelCall and Unwatch carries a request_id.
-// Submit, Query and Cancel each open one operation under that ID; Unwatch
-// names an open operation. The ID is chosen by the client, must be nonzero
+// Every business payload carries a request_id. Attach opens a stream, at most
+// once per connection; SessionRequest, ResumeLeases and ListDevices each receive
+// exactly one SessionReply. All open operations share the 64-slot cap.
+// Submit, Query and Cancel also open operations; Unwatch names an open
+// operation. The ID is chosen by the client, must be nonzero
 // and must never be reused on the connection (a per-connection counter
 // starting at 1 satisfies this): after Unwatch a late update of the old
 // operation would be routed to the new one. A zero ID, an ID of an open
-// operation on Submit/Query/Cancel, or an operation beyond the
+// operation on any opening payload, or an operation beyond the
 // per-connection cap closes the link. Hello, Heartbeat and Fragment frames
 // carry 0.
 type WorkerUplink struct {
@@ -116,6 +592,10 @@ type WorkerUplink struct {
 	//	*WorkerUplink_CancelCall
 	//	*WorkerUplink_CallQuery
 	//	*WorkerUplink_Unwatch
+	//	*WorkerUplink_Attach
+	//	*WorkerUplink_Session
+	//	*WorkerUplink_ResumeLeases
+	//	*WorkerUplink_ListDevices
 	Payload isWorkerUplink_Payload `protobuf_oneof:"payload"`
 	// Nonzero on every business payload; 0 on Hello, Heartbeat and Fragment.
 	RequestId     uint64 `protobuf:"varint,20,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -223,6 +703,42 @@ func (x *WorkerUplink) GetUnwatch() *Unwatch {
 	return nil
 }
 
+func (x *WorkerUplink) GetAttach() *Attach {
+	if x != nil {
+		if x, ok := x.Payload.(*WorkerUplink_Attach); ok {
+			return x.Attach
+		}
+	}
+	return nil
+}
+
+func (x *WorkerUplink) GetSession() *SessionRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*WorkerUplink_Session); ok {
+			return x.Session
+		}
+	}
+	return nil
+}
+
+func (x *WorkerUplink) GetResumeLeases() *ResumeLeases {
+	if x != nil {
+		if x, ok := x.Payload.(*WorkerUplink_ResumeLeases); ok {
+			return x.ResumeLeases
+		}
+	}
+	return nil
+}
+
+func (x *WorkerUplink) GetListDevices() *ListDevices {
+	if x != nil {
+		if x, ok := x.Payload.(*WorkerUplink_ListDevices); ok {
+			return x.ListDevices
+		}
+	}
+	return nil
+}
+
 func (x *WorkerUplink) GetRequestId() uint64 {
 	if x != nil {
 		return x.RequestId
@@ -260,6 +776,9 @@ type WorkerUplink_CancelCall struct {
 	// recorded and the daemon's result decides; a terminal outcome means the
 	// call had already finished; Rejected NOT_FOUND or INVALID mean no such
 	// call is visible. The reply ends the operation, never the call.
+	// CancelCall is not fenced by a session lease: never send it for calls of
+	// a query being closed because of fencing, lease loss, stop or release;
+	// Unwatch those instead.
 	CancelCall *CancelCall `protobuf:"bytes,11,opt,name=cancel_call,json=cancelCall,proto3,oneof"`
 }
 
@@ -273,6 +792,22 @@ type WorkerUplink_Unwatch struct {
 	// Ends the open operation named by request_id without a reply. It never
 	// cancels the call. Unknown or finished IDs are a no-op.
 	Unwatch *Unwatch `protobuf:"bytes,13,opt,name=unwatch,proto3,oneof"`
+}
+
+type WorkerUplink_Attach struct {
+	Attach *Attach `protobuf:"bytes,14,opt,name=attach,proto3,oneof"`
+}
+
+type WorkerUplink_Session struct {
+	Session *SessionRequest `protobuf:"bytes,15,opt,name=session,proto3,oneof"`
+}
+
+type WorkerUplink_ResumeLeases struct {
+	ResumeLeases *ResumeLeases `protobuf:"bytes,16,opt,name=resume_leases,json=resumeLeases,proto3,oneof"`
+}
+
+type WorkerUplink_ListDevices struct {
+	ListDevices *ListDevices `protobuf:"bytes,17,opt,name=list_devices,json=listDevices,proto3,oneof"`
 }
 
 func (*WorkerUplink_Hello) isWorkerUplink_Payload() {}
@@ -289,7 +824,15 @@ func (*WorkerUplink_CallQuery) isWorkerUplink_Payload() {}
 
 func (*WorkerUplink_Unwatch) isWorkerUplink_Payload() {}
 
-// WorkerDownlink contains only the call subset.
+func (*WorkerUplink_Attach) isWorkerUplink_Payload() {}
+
+func (*WorkerUplink_Session) isWorkerUplink_Payload() {}
+
+func (*WorkerUplink_ResumeLeases) isWorkerUplink_Payload() {}
+
+func (*WorkerUplink_ListDevices) isWorkerUplink_Payload() {}
+
+// WorkerDownlink carries replies and hints for open worker operations.
 type WorkerDownlink struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -299,9 +842,11 @@ type WorkerDownlink struct {
 	//	*WorkerDownlink_Heartbeat
 	//	*WorkerDownlink_Fragment
 	//	*WorkerDownlink_CallUpdate
-	//	*WorkerDownlink_JobEvent
+	//	*WorkerDownlink_SessionReply
+	//	*WorkerDownlink_WorkerEvent
 	Payload isWorkerDownlink_Payload `protobuf_oneof:"payload"`
-	// On call_update: the request_id of the operation it answers. 0 otherwise.
+	// On business payloads: the request_id of the operation answered.
+	// WorkerEvent carries the Attach request_id; transport payloads carry 0.
 	// A client drops updates for request IDs it no longer has open.
 	RequestId     uint64 `protobuf:"varint,20,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -390,10 +935,19 @@ func (x *WorkerDownlink) GetCallUpdate() *CallUpdate {
 	return nil
 }
 
-func (x *WorkerDownlink) GetJobEvent() *WorkerJobEvent {
+func (x *WorkerDownlink) GetSessionReply() *SessionReply {
 	if x != nil {
-		if x, ok := x.Payload.(*WorkerDownlink_JobEvent); ok {
-			return x.JobEvent
+		if x, ok := x.Payload.(*WorkerDownlink_SessionReply); ok {
+			return x.SessionReply
+		}
+	}
+	return nil
+}
+
+func (x *WorkerDownlink) GetWorkerEvent() *WorkerEvent {
+	if x != nil {
+		if x, ok := x.Payload.(*WorkerDownlink_WorkerEvent); ok {
+			return x.WorkerEvent
 		}
 	}
 	return nil
@@ -430,8 +984,12 @@ type WorkerDownlink_CallUpdate struct {
 	CallUpdate *CallUpdate `protobuf:"bytes,10,opt,name=call_update,json=callUpdate,proto3,oneof"`
 }
 
-type WorkerDownlink_JobEvent struct {
-	JobEvent *WorkerJobEvent `protobuf:"bytes,11,opt,name=job_event,json=jobEvent,proto3,oneof"`
+type WorkerDownlink_SessionReply struct {
+	SessionReply *SessionReply `protobuf:"bytes,12,opt,name=session_reply,json=sessionReply,proto3,oneof"`
+}
+
+type WorkerDownlink_WorkerEvent struct {
+	WorkerEvent *WorkerEvent `protobuf:"bytes,13,opt,name=worker_event,json=workerEvent,proto3,oneof"`
 }
 
 func (*WorkerDownlink_Welcome) isWorkerDownlink_Payload() {}
@@ -444,7 +1002,9 @@ func (*WorkerDownlink_Fragment) isWorkerDownlink_Payload() {}
 
 func (*WorkerDownlink_CallUpdate) isWorkerDownlink_Payload() {}
 
-func (*WorkerDownlink_JobEvent) isWorkerDownlink_Payload() {}
+func (*WorkerDownlink_SessionReply) isWorkerDownlink_Payload() {}
+
+func (*WorkerDownlink_WorkerEvent) isWorkerDownlink_Payload() {}
 
 // Unwatch stops delivery for the operation named by the envelope's
 // request_id and frees its slot immediately. It has no reply and never
@@ -486,83 +1046,29 @@ func (*Unwatch) Descriptor() ([]byte, []int) {
 	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{2}
 }
 
-// WorkerJobEvent is reserved for the worker milestone (M3): the control plane
-// does not send it yet. It supplies the global identity of a daemon job.
-// Device is the user-unique device name, boot_id is the daemon's process
-// epoch, and event.job_id is unique only within that pair. LOST for an old boot is emitted by the
-// control plane when it observes a new boot, never by the daemon.
-type WorkerJobEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Device        string                 `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
-	BootId        string                 `protobuf:"bytes,2,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
-	Event         *JobEvent              `protobuf:"bytes,3,opt,name=event,proto3" json:"event,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WorkerJobEvent) Reset() {
-	*x = WorkerJobEvent{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WorkerJobEvent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WorkerJobEvent) ProtoMessage() {}
-
-func (x *WorkerJobEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WorkerJobEvent.ProtoReflect.Descriptor instead.
-func (*WorkerJobEvent) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *WorkerJobEvent) GetDevice() string {
-	if x != nil {
-		return x.Device
-	}
-	return ""
-}
-
-func (x *WorkerJobEvent) GetBootId() string {
-	if x != nil {
-		return x.BootId
-	}
-	return ""
-}
-
-func (x *WorkerJobEvent) GetEvent() *JobEvent {
-	if x != nil {
-		return x.Event
-	}
-	return nil
-}
-
-// SubmitCall addresses a device by its user-unique name.
+// SubmitCall addresses a device by its user-unique name (1-128 bytes).
+// Resubmitting a call_id attaches to the existing call only if device, call
+// and tool_use_id are identical; otherwise it is CALL_MISMATCH. session_epoch
+// is not part of that identity: every submission is admitted against the
+// lease on its own.
 type SubmitCall struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Device        string                 `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
-	Call          *DeviceCall            `protobuf:"bytes,2,opt,name=call,proto3" json:"call,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Device string                 `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	Call   *DeviceCall            `protobuf:"bytes,2,opt,name=call,proto3" json:"call,omitempty"`
+	// Required, nonzero. The control plane admits the call only if
+	// call.session_id's unexpired lease is held at this epoch by this
+	// connection's worker and boot and bound to this connection, and the
+	// session is not stopped.
+	SessionEpoch uint64 `protobuf:"varint,3,opt,name=session_epoch,json=sessionEpoch,proto3" json:"session_epoch,omitempty"`
+	// Required model tool_use id, opaque UTF-8, 1-128 bytes.
+	ToolUseId     string `protobuf:"bytes,4,opt,name=tool_use_id,json=toolUseId,proto3" json:"tool_use_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SubmitCall) Reset() {
 	*x = SubmitCall{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[4]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -574,7 +1080,7 @@ func (x *SubmitCall) String() string {
 func (*SubmitCall) ProtoMessage() {}
 
 func (x *SubmitCall) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[4]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -587,7 +1093,7 @@ func (x *SubmitCall) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitCall.ProtoReflect.Descriptor instead.
 func (*SubmitCall) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SubmitCall) GetDevice() string {
@@ -602,6 +1108,20 @@ func (x *SubmitCall) GetCall() *DeviceCall {
 		return x.Call
 	}
 	return nil
+}
+
+func (x *SubmitCall) GetSessionEpoch() uint64 {
+	if x != nil {
+		return x.SessionEpoch
+	}
+	return 0
+}
+
+func (x *SubmitCall) GetToolUseId() string {
+	if x != nil {
+		return x.ToolUseId
+	}
+	return ""
 }
 
 // CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
@@ -629,7 +1149,7 @@ type CallUpdate struct {
 
 func (x *CallUpdate) Reset() {
 	*x = CallUpdate{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[5]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -641,7 +1161,7 @@ func (x *CallUpdate) String() string {
 func (*CallUpdate) ProtoMessage() {}
 
 func (x *CallUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[5]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -654,7 +1174,7 @@ func (x *CallUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate.ProtoReflect.Descriptor instead.
 func (*CallUpdate) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CallUpdate) GetCallId() string {
@@ -795,6 +1315,2015 @@ func (*CallUpdate_Rejected_) isCallUpdate_Update() {}
 
 func (*CallUpdate_Cancelled_) isCallUpdate_Update() {}
 
+// Attach advertises worker capacity and opens a hint stream until Unwatch or
+// disconnect. At most one Attach is allowed per connection, even after Unwatch.
+// Account metadata is recorded only; it does not influence scheduling yet.
+// After Attach the control plane re-sends every Offer still pending for this
+// worker. Every string field, including Account's, is at most 256 bytes.
+type Attach struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Required, 1..64 concurrent sessions. The stream itself holds one slot.
+	MaxSessions   uint32               `protobuf:"varint,1,opt,name=max_sessions,json=maxSessions,proto3" json:"max_sessions,omitempty"`
+	SdkVersion    string               `protobuf:"bytes,2,opt,name=sdk_version,json=sdkVersion,proto3" json:"sdk_version,omitempty"`
+	ClaudeVersion string               `protobuf:"bytes,3,opt,name=claude_version,json=claudeVersion,proto3" json:"claude_version,omitempty"`
+	Account       *Attach_Account      `protobuf:"bytes,4,opt,name=account,proto3" json:"account,omitempty"`
+	AutoModeCheck Attach_AutoModeCheck `protobuf:"varint,5,opt,name=auto_mode_check,json=autoModeCheck,proto3,enum=circus.v1.Attach_AutoModeCheck" json:"auto_mode_check,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Attach) Reset() {
+	*x = Attach{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Attach) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Attach) ProtoMessage() {}
+
+func (x *Attach) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Attach.ProtoReflect.Descriptor instead.
+func (*Attach) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Attach) GetMaxSessions() uint32 {
+	if x != nil {
+		return x.MaxSessions
+	}
+	return 0
+}
+
+func (x *Attach) GetSdkVersion() string {
+	if x != nil {
+		return x.SdkVersion
+	}
+	return ""
+}
+
+func (x *Attach) GetClaudeVersion() string {
+	if x != nil {
+		return x.ClaudeVersion
+	}
+	return ""
+}
+
+func (x *Attach) GetAccount() *Attach_Account {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *Attach) GetAutoModeCheck() Attach_AutoModeCheck {
+	if x != nil {
+		return x.AutoModeCheck
+	}
+	return Attach_AUTO_MODE_CHECK_UNSPECIFIED
+}
+
+// WorkerEvent contains level-triggered hints, not authoritative session data.
+// Hints may be coalesced or repeated; fetch state rather than counting hints.
+// An Offer or Nudge for a session this worker does not hold means: send
+// AcquireLease. An Offer that arrives while the session is being released is
+// acted on after the ReleaseLease reply.
+type WorkerEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Event:
+	//
+	//	*WorkerEvent_Offer_
+	//	*WorkerEvent_Nudge_
+	//	*WorkerEvent_LeaseRevoked_
+	Event         isWorkerEvent_Event `protobuf_oneof:"event"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkerEvent) Reset() {
+	*x = WorkerEvent{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerEvent) ProtoMessage() {}
+
+func (x *WorkerEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerEvent.ProtoReflect.Descriptor instead.
+func (*WorkerEvent) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *WorkerEvent) GetEvent() isWorkerEvent_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *WorkerEvent) GetOffer() *WorkerEvent_Offer {
+	if x != nil {
+		if x, ok := x.Event.(*WorkerEvent_Offer_); ok {
+			return x.Offer
+		}
+	}
+	return nil
+}
+
+func (x *WorkerEvent) GetNudge() *WorkerEvent_Nudge {
+	if x != nil {
+		if x, ok := x.Event.(*WorkerEvent_Nudge_); ok {
+			return x.Nudge
+		}
+	}
+	return nil
+}
+
+func (x *WorkerEvent) GetLeaseRevoked() *WorkerEvent_LeaseRevoked {
+	if x != nil {
+		if x, ok := x.Event.(*WorkerEvent_LeaseRevoked_); ok {
+			return x.LeaseRevoked
+		}
+	}
+	return nil
+}
+
+type isWorkerEvent_Event interface {
+	isWorkerEvent_Event()
+}
+
+type WorkerEvent_Offer_ struct {
+	Offer *WorkerEvent_Offer `protobuf:"bytes,1,opt,name=offer,proto3,oneof"`
+}
+
+type WorkerEvent_Nudge_ struct {
+	Nudge *WorkerEvent_Nudge `protobuf:"bytes,2,opt,name=nudge,proto3,oneof"`
+}
+
+type WorkerEvent_LeaseRevoked_ struct {
+	LeaseRevoked *WorkerEvent_LeaseRevoked `protobuf:"bytes,3,opt,name=lease_revoked,json=leaseRevoked,proto3,oneof"`
+}
+
+func (*WorkerEvent_Offer_) isWorkerEvent_Event() {}
+
+func (*WorkerEvent_Nudge_) isWorkerEvent_Event() {}
+
+func (*WorkerEvent_LeaseRevoked_) isWorkerEvent_Event() {}
+
+// SessionRequest is Data ordered by session/<session_id>. Each request opens
+// one operation with exactly one SessionReply and carries exactly one op; a
+// second op field closes the link. Every op except AcquireLease requires an
+// unexpired lease at epoch held by this connection's worker and boot and
+// bound to this connection: the fence is (session, epoch, worker, boot,
+// connection). Checking and writing are atomic; a mismatch returns Fenced
+// without mutation. Fencing requires closing the SDK query and its CLI
+// process, Unwatching calls without Cancel, and discarding local session
+// state.
+//
+// Every op except AppendTranscript and PublishEvents must fit 64 KiB including
+// its envelope. That limit binds before the repeated-field caps, which are
+// upper bounds never all reachable together; split marks across several
+// requests instead.
+//
+// After the session is stopped, TakeInputs, RequestApproval and ConsumeGrant
+// return Rejected STOPPED (SubmitCall: CODE_SESSION_STOPPED); AppendTranscript,
+// ReportTurn, PatchSessionState, PublishEvents, TranscriptRepaired, the reads
+// and ReleaseLease are still accepted so the holder can flush. On any STOPPED
+// the worker closes the query and sends ReleaseLease with REASON_STOPPED.
+type SessionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Required, 1-128 bytes, charset [A-Za-z0-9_-].
+	SessionId string `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// Zero only for AcquireLease; nonzero for every other operation.
+	Epoch uint64 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// Types that are valid to be assigned to Op:
+	//
+	//	*SessionRequest_AcquireLease
+	//	*SessionRequest_ReleaseLease
+	//	*SessionRequest_LoadTranscript
+	//	*SessionRequest_ListTranscriptKeys
+	//	*SessionRequest_AppendTranscript
+	//	*SessionRequest_TakeInputs
+	//	*SessionRequest_ReportTurn
+	//	*SessionRequest_PatchState
+	//	*SessionRequest_GetState
+	//	*SessionRequest_PublishEvents
+	//	*SessionRequest_RequestApproval
+	//	*SessionRequest_ConsumeGrant
+	//	*SessionRequest_TranscriptRepaired
+	Op            isSessionRequest_Op `protobuf_oneof:"op"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionRequest) Reset() {
+	*x = SessionRequest{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionRequest) ProtoMessage() {}
+
+func (x *SessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionRequest.ProtoReflect.Descriptor instead.
+func (*SessionRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *SessionRequest) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *SessionRequest) GetOp() isSessionRequest_Op {
+	if x != nil {
+		return x.Op
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetAcquireLease() *AcquireLease {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_AcquireLease); ok {
+			return x.AcquireLease
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetReleaseLease() *ReleaseLease {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_ReleaseLease); ok {
+			return x.ReleaseLease
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetLoadTranscript() *LoadTranscript {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_LoadTranscript); ok {
+			return x.LoadTranscript
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetListTranscriptKeys() *ListTranscriptKeys {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_ListTranscriptKeys); ok {
+			return x.ListTranscriptKeys
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetAppendTranscript() *AppendTranscript {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_AppendTranscript); ok {
+			return x.AppendTranscript
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetTakeInputs() *TakeInputs {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_TakeInputs); ok {
+			return x.TakeInputs
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetReportTurn() *ReportTurn {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_ReportTurn); ok {
+			return x.ReportTurn
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetPatchState() *PatchSessionState {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_PatchState); ok {
+			return x.PatchState
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetGetState() *GetSessionState {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_GetState); ok {
+			return x.GetState
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetPublishEvents() *PublishEvents {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_PublishEvents); ok {
+			return x.PublishEvents
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetRequestApproval() *RequestApproval {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_RequestApproval); ok {
+			return x.RequestApproval
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetConsumeGrant() *ConsumeGrant {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_ConsumeGrant); ok {
+			return x.ConsumeGrant
+		}
+	}
+	return nil
+}
+
+func (x *SessionRequest) GetTranscriptRepaired() *TranscriptRepaired {
+	if x != nil {
+		if x, ok := x.Op.(*SessionRequest_TranscriptRepaired); ok {
+			return x.TranscriptRepaired
+		}
+	}
+	return nil
+}
+
+type isSessionRequest_Op interface {
+	isSessionRequest_Op()
+}
+
+type SessionRequest_AcquireLease struct {
+	AcquireLease *AcquireLease `protobuf:"bytes,10,opt,name=acquire_lease,json=acquireLease,proto3,oneof"`
+}
+
+type SessionRequest_ReleaseLease struct {
+	ReleaseLease *ReleaseLease `protobuf:"bytes,11,opt,name=release_lease,json=releaseLease,proto3,oneof"`
+}
+
+type SessionRequest_LoadTranscript struct {
+	LoadTranscript *LoadTranscript `protobuf:"bytes,12,opt,name=load_transcript,json=loadTranscript,proto3,oneof"`
+}
+
+type SessionRequest_ListTranscriptKeys struct {
+	ListTranscriptKeys *ListTranscriptKeys `protobuf:"bytes,13,opt,name=list_transcript_keys,json=listTranscriptKeys,proto3,oneof"`
+}
+
+type SessionRequest_AppendTranscript struct {
+	AppendTranscript *AppendTranscript `protobuf:"bytes,14,opt,name=append_transcript,json=appendTranscript,proto3,oneof"`
+}
+
+type SessionRequest_TakeInputs struct {
+	TakeInputs *TakeInputs `protobuf:"bytes,15,opt,name=take_inputs,json=takeInputs,proto3,oneof"`
+}
+
+type SessionRequest_ReportTurn struct {
+	ReportTurn *ReportTurn `protobuf:"bytes,16,opt,name=report_turn,json=reportTurn,proto3,oneof"`
+}
+
+type SessionRequest_PatchState struct {
+	PatchState *PatchSessionState `protobuf:"bytes,17,opt,name=patch_state,json=patchState,proto3,oneof"`
+}
+
+type SessionRequest_GetState struct {
+	GetState *GetSessionState `protobuf:"bytes,18,opt,name=get_state,json=getState,proto3,oneof"`
+}
+
+type SessionRequest_PublishEvents struct {
+	PublishEvents *PublishEvents `protobuf:"bytes,19,opt,name=publish_events,json=publishEvents,proto3,oneof"`
+}
+
+type SessionRequest_RequestApproval struct {
+	RequestApproval *RequestApproval `protobuf:"bytes,20,opt,name=request_approval,json=requestApproval,proto3,oneof"`
+}
+
+type SessionRequest_ConsumeGrant struct {
+	ConsumeGrant *ConsumeGrant `protobuf:"bytes,21,opt,name=consume_grant,json=consumeGrant,proto3,oneof"`
+}
+
+type SessionRequest_TranscriptRepaired struct {
+	TranscriptRepaired *TranscriptRepaired `protobuf:"bytes,22,opt,name=transcript_repaired,json=transcriptRepaired,proto3,oneof"`
+}
+
+func (*SessionRequest_AcquireLease) isSessionRequest_Op() {}
+
+func (*SessionRequest_ReleaseLease) isSessionRequest_Op() {}
+
+func (*SessionRequest_LoadTranscript) isSessionRequest_Op() {}
+
+func (*SessionRequest_ListTranscriptKeys) isSessionRequest_Op() {}
+
+func (*SessionRequest_AppendTranscript) isSessionRequest_Op() {}
+
+func (*SessionRequest_TakeInputs) isSessionRequest_Op() {}
+
+func (*SessionRequest_ReportTurn) isSessionRequest_Op() {}
+
+func (*SessionRequest_PatchState) isSessionRequest_Op() {}
+
+func (*SessionRequest_GetState) isSessionRequest_Op() {}
+
+func (*SessionRequest_PublishEvents) isSessionRequest_Op() {}
+
+func (*SessionRequest_RequestApproval) isSessionRequest_Op() {}
+
+func (*SessionRequest_ConsumeGrant) isSessionRequest_Op() {}
+
+func (*SessionRequest_TranscriptRepaired) isSessionRequest_Op() {}
+
+// AcquireLease is idempotent for the holder. If this worker and boot already
+// hold the session's unexpired lease and fresh is false, it skips the Offer
+// check, keeps the epoch, rebinds the lease to this connection and returns the
+// same lease with reattached set. Otherwise it requires a current Offer to
+// this connection unless this worker and boot hold the lease (else
+// NOT_OFFERED), refuses a stopped session (STOPPED; a fresh acquisition by
+// the holder of a stopped session also releases that lease atomically),
+// atomically advances the epoch, binds the lease to worker, boot and connection for 60 seconds and
+// applies recovery. The control plane extends every lease bound to a live
+// connection every 20 seconds; a lease bound to a closed connection expires
+// naturally. After a control-plane start, no lease expires sooner than one
+// lease lifetime later. A worker sends at most one AcquireLease per session at
+// a time; a session with an AcquireLease in flight counts as held, and hints
+// for it are ignored until the reply arrives.
+type AcquireLease struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Set whenever the worker holds no local state for the session (no epoch,
+	// local_seq or batch_seq counters, no pushed-input set). A holder's fresh
+	// acquisition advances the epoch and requeues like a new holder's, so new
+	// counters starting at 1 never collide with the old epoch's.
+	Fresh         bool `protobuf:"varint,1,opt,name=fresh,proto3" json:"fresh,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcquireLease) Reset() {
+	*x = AcquireLease{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcquireLease) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcquireLease) ProtoMessage() {}
+
+func (x *AcquireLease) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcquireLease.ProtoReflect.Descriptor instead.
+func (*AcquireLease) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AcquireLease) GetFresh() bool {
+	if x != nil {
+		return x.Fresh
+	}
+	return false
+}
+
+// ReleaseLease relinquishes ownership. Close the SDK query and confirm its CLI
+// has exited before releasing. Repeating it at the released epoch returns
+// ok.deduplicated=true until another epoch is acquired, Fenced afterwards;
+// both mean the lease is gone.
+type ReleaseLease struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reason        ReleaseLease_Reason    `protobuf:"varint,1,opt,name=reason,proto3,enum=circus.v1.ReleaseLease_Reason" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReleaseLease) Reset() {
+	*x = ReleaseLease{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReleaseLease) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReleaseLease) ProtoMessage() {}
+
+func (x *ReleaseLease) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReleaseLease.ProtoReflect.Descriptor instead.
+func (*ReleaseLease) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ReleaseLease) GetReason() ReleaseLease_Reason {
+	if x != nil {
+		return x.Reason
+	}
+	return ReleaseLease_REASON_UNSPECIFIED
+}
+
+// LoadTranscript reads entries strictly after after_seq. Empty subpath is the
+// main thread; other subpaths are opaque SDK keys of at most 1024 bytes. Pages
+// contain at least one entry when available, even if that single entry
+// exceeds max_bytes (up to M).
+type LoadTranscript struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Subpath  string                 `protobuf:"bytes,1,opt,name=subpath,proto3" json:"subpath,omitempty"`
+	AfterSeq uint64                 `protobuf:"varint,2,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
+	// Required, 1..8 MiB; a single oversized entry is returned alone.
+	MaxBytes      uint32 `protobuf:"varint,3,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadTranscript) Reset() {
+	*x = LoadTranscript{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadTranscript) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadTranscript) ProtoMessage() {}
+
+func (x *LoadTranscript) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadTranscript.ProtoReflect.Descriptor instead.
+func (*LoadTranscript) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *LoadTranscript) GetSubpath() string {
+	if x != nil {
+		return x.Subpath
+	}
+	return ""
+}
+
+func (x *LoadTranscript) GetAfterSeq() uint64 {
+	if x != nil {
+		return x.AfterSeq
+	}
+	return 0
+}
+
+func (x *LoadTranscript) GetMaxBytes() uint32 {
+	if x != nil {
+		return x.MaxBytes
+	}
+	return 0
+}
+
+type ListTranscriptKeys struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTranscriptKeys) Reset() {
+	*x = ListTranscriptKeys{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTranscriptKeys) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTranscriptKeys) ProtoMessage() {}
+
+func (x *ListTranscriptKeys) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTranscriptKeys.ProtoReflect.Descriptor instead.
+func (*ListTranscriptKeys) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{11}
+}
+
+// AppendTranscript is atomic. Batches are at most 8 MiB of encoded entries,
+// or a single oversized entry fitting M with its envelope. batch_seq starts at
+// 1 per (epoch, subpath) and increases by one; only an ok reply consumes it.
+// A sequence <= the last committed one is acknowledged with deduplicated=true
+// and no write, including entries without uuid. A sequence beyond the last
+// committed one plus one is INVALID. Until a batch is acknowledged, every later
+// append (including SDK retries) first resends that batch with the same
+// batch_seq and content. An INVALID or LIMIT rejection is a failed append: the
+// adapter reports it to the SDK, drops that batch, and gives the next content
+// its unconsumed batch_seq; the turn follows the mirror_error path to BROKEN.
+// Nonempty uuid also deduplicates per (session,
+// subpath), across epochs. A session has at most 1024 subpaths; an append to a
+// new one beyond that returns LIMIT. Transcript storage defaults to 256 MiB per
+// session and 20 GiB per user, counting each entry as json + uuid + 64 bytes;
+// exceeding it returns TRANSCRIPT_FULL and stops the session.
+type AppendTranscript struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 1024 bytes.
+	Subpath  string `protobuf:"bytes,1,opt,name=subpath,proto3" json:"subpath,omitempty"`
+	BatchSeq uint64 `protobuf:"varint,2,opt,name=batch_seq,json=batchSeq,proto3" json:"batch_seq,omitempty"`
+	// Byte-bounded; structural node/field caps also apply.
+	Entries       []*TranscriptEntry `protobuf:"bytes,3,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppendTranscript) Reset() {
+	*x = AppendTranscript{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppendTranscript) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppendTranscript) ProtoMessage() {}
+
+func (x *AppendTranscript) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppendTranscript.ProtoReflect.Descriptor instead.
+func (*AppendTranscript) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *AppendTranscript) GetSubpath() string {
+	if x != nil {
+		return x.Subpath
+	}
+	return ""
+}
+
+func (x *AppendTranscript) GetBatchSeq() uint64 {
+	if x != nil {
+		return x.BatchSeq
+	}
+	return 0
+}
+
+func (x *AppendTranscript) GetEntries() []*TranscriptEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+type TranscriptEntry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 128 bytes. May be empty; otherwise used for durable entry
+	// deduplication.
+	Uuid string `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`
+	// Opaque JSON, never parsed by the control plane.
+	Json          string `protobuf:"bytes,2,opt,name=json,proto3" json:"json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TranscriptEntry) Reset() {
+	*x = TranscriptEntry{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TranscriptEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TranscriptEntry) ProtoMessage() {}
+
+func (x *TranscriptEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TranscriptEntry.ProtoReflect.Descriptor instead.
+func (*TranscriptEntry) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *TranscriptEntry) GetUuid() string {
+	if x != nil {
+		return x.Uuid
+	}
+	return ""
+}
+
+func (x *TranscriptEntry) GetJson() string {
+	if x != nil {
+		return x.Json
+	}
+	return ""
+}
+
+// TakeInputs atomically takes pending inputs and returns all inputs taken in
+// this epoch but not yet persisted, including those returned by earlier calls.
+// At most 32. Push each to the SDK with uuid=input_id; do not push it twice
+// within an epoch. While the session is broken it takes no new input and
+// returns only those already taken. A new epoch first returns inputs taken by
+// any earlier epoch to pending, except those whose uuid is already in the
+// transcript, which are marked persisted.
+type TakeInputs struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TakeInputs) Reset() {
+	*x = TakeInputs{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TakeInputs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TakeInputs) ProtoMessage() {}
+
+func (x *TakeInputs) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TakeInputs.ProtoReflect.Descriptor instead.
+func (*TakeInputs) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{14}
+}
+
+// ReportTurn is idempotent by (epoch, local_seq, phase); repeats retain the
+// same turn_no and never increment turn_count or apply persistence twice.
+// STARTED must use the next local_seq; it makes the session RUNNING and
+// increments its turn count. A STARTED whose predecessor never ENDED closes
+// that turn as INTERRUPTED; a later ENDED for it still applies its persisted
+// marks. ENDED for a local_seq never STARTED is INVALID. ENDED follows the SDK
+// result and makes the session IDLE (or QUEUED with work and no lease). Lease
+// loss during a turn records INTERRUPTED without automatically resuming.
+type ReportTurn struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Starts at 1 and increases by one per turn within the epoch.
+	LocalSeq uint64           `protobuf:"varint,1,opt,name=local_seq,json=localSeq,proto3" json:"local_seq,omitempty"`
+	Phase    ReportTurn_Phase `protobuf:"varint,2,opt,name=phase,proto3,enum=circus.v1.ReportTurn_Phase" json:"phase,omitempty"`
+	Origin   TurnOrigin       `protobuf:"varint,3,opt,name=origin,proto3,enum=circus.v1.TurnOrigin" json:"origin,omitempty"`
+	// ENDED only.
+	Outcome TurnOutcome `protobuf:"varint,4,opt,name=outcome,proto3,enum=circus.v1.TurnOutcome" json:"outcome,omitempty"`
+	// ENDED only: opaque SDK result usage JSON, at most 4 KiB.
+	UsageJson string `protobuf:"bytes,5,opt,name=usage_json,json=usageJson,proto3" json:"usage_json,omitempty"`
+	// ENDED only: items delivered before this turn's SDK result and not yet
+	// marked through PatchSessionState.persisted. Omit after mirror_error or a
+	// CLI failure.
+	Persisted *ReportTurn_Persisted `protobuf:"bytes,6,opt,name=persisted,proto3" json:"persisted,omitempty"`
+	// ENDED only: the transcript lacks batches of this turn (mirror_error). The
+	// session becomes BROKEN until TranscriptRepaired. A CLI failure without
+	// mirror_error is ERROR without this flag.
+	TranscriptIncomplete bool `protobuf:"varint,7,opt,name=transcript_incomplete,json=transcriptIncomplete,proto3" json:"transcript_incomplete,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ReportTurn) Reset() {
+	*x = ReportTurn{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportTurn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportTurn) ProtoMessage() {}
+
+func (x *ReportTurn) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportTurn.ProtoReflect.Descriptor instead.
+func (*ReportTurn) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ReportTurn) GetLocalSeq() uint64 {
+	if x != nil {
+		return x.LocalSeq
+	}
+	return 0
+}
+
+func (x *ReportTurn) GetPhase() ReportTurn_Phase {
+	if x != nil {
+		return x.Phase
+	}
+	return ReportTurn_PHASE_UNSPECIFIED
+}
+
+func (x *ReportTurn) GetOrigin() TurnOrigin {
+	if x != nil {
+		return x.Origin
+	}
+	return TurnOrigin_TURN_ORIGIN_UNSPECIFIED
+}
+
+func (x *ReportTurn) GetOutcome() TurnOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return TurnOutcome_TURN_OUTCOME_UNSPECIFIED
+}
+
+func (x *ReportTurn) GetUsageJson() string {
+	if x != nil {
+		return x.UsageJson
+	}
+	return ""
+}
+
+func (x *ReportTurn) GetPersisted() *ReportTurn_Persisted {
+	if x != nil {
+		return x.Persisted
+	}
+	return nil
+}
+
+func (x *ReportTurn) GetTranscriptIncomplete() bool {
+	if x != nil {
+		return x.TranscriptIncomplete
+	}
+	return false
+}
+
+// JobKey is globally unique; a daemon's job_id alone is not. Each part is at
+// most 128 bytes.
+type JobKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	BootId        string                 `protobuf:"bytes,2,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
+	JobId         string                 `protobuf:"bytes,3,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobKey) Reset() {
+	*x = JobKey{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobKey) ProtoMessage() {}
+
+func (x *JobKey) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobKey.ProtoReflect.Descriptor instead.
+func (*JobKey) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *JobKey) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *JobKey) GetBootId() string {
+	if x != nil {
+		return x.BootId
+	}
+	return ""
+}
+
+func (x *JobKey) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+// PatchSessionState is an idempotent upsert/mark operation. Cwds are keyed by
+// (agent_id, device), files by (device, path), background tasks by task_id.
+// Handed jobs are not persisted until marked persisted; a new epoch requeues
+// notices handed by any earlier epoch and not persisted.
+type PatchSessionState struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 256; the stored table has the same cap.
+	Cwds []*PatchSessionState_Cwd `protobuf:"bytes,1,rep,name=cwds,proto3" json:"cwds,omitempty"`
+	// At most 4096. The stored table evicts its oldest records at capacity.
+	Files []*PatchSessionState_FileRecord `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty"`
+	// At most 1024. Mark as soon as MCP returns to the SDK, before persistence.
+	ReturnedCallIds []string `protobuf:"bytes,3,rep,name=returned_call_ids,json=returnedCallIds,proto3" json:"returned_call_ids,omitempty"`
+	// At most 64 live CLI background tasks per session.
+	BgtasksStarted []*PatchSessionState_BackgroundTask `protobuf:"bytes,4,rep,name=bgtasks_started,json=bgtasksStarted,proto3" json:"bgtasks_started,omitempty"`
+	// Task ids. Also acknowledges a lost task from Recovery once the turn that
+	// delivered its failure notice has had its items marked persisted.
+	BgtasksEnded []string `protobuf:"bytes,5,rep,name=bgtasks_ended,json=bgtasksEnded,proto3" json:"bgtasks_ended,omitempty"`
+	// At most 1024 jobs per session.
+	HandedJobs []*JobKey `protobuf:"bytes,6,rep,name=handed_jobs,json=handedJobs,proto3" json:"handed_jobs,omitempty"`
+	// Splits the persisted set of a turn whose SDK result the worker has seen
+	// (reported ENDED, or about to be). Never marks items of a turn whose
+	// transcript is incomplete until it has been repaired.
+	Persisted *ReportTurn_Persisted `protobuf:"bytes,7,opt,name=persisted,proto3" json:"persisted,omitempty"`
+	// At most 16 per request and per session (else LIMIT). Calls returned to the
+	// model with a nonterminal outcome whose completion notice is owed. Mark the
+	// call before returning it; after LIMIT, return it with a final "result
+	// unavailable" text instead of promising a notice. They
+	// stay in SessionState.calls and Recovery.calls with notice_owed, even
+	// after persisted, until Persisted.late_call_ids clears them.
+	AwaitingCallIds []string `protobuf:"bytes,8,rep,name=awaiting_call_ids,json=awaitingCallIds,proto3" json:"awaiting_call_ids,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PatchSessionState) Reset() {
+	*x = PatchSessionState{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PatchSessionState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PatchSessionState) ProtoMessage() {}
+
+func (x *PatchSessionState) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PatchSessionState.ProtoReflect.Descriptor instead.
+func (*PatchSessionState) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *PatchSessionState) GetCwds() []*PatchSessionState_Cwd {
+	if x != nil {
+		return x.Cwds
+	}
+	return nil
+}
+
+func (x *PatchSessionState) GetFiles() []*PatchSessionState_FileRecord {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *PatchSessionState) GetReturnedCallIds() []string {
+	if x != nil {
+		return x.ReturnedCallIds
+	}
+	return nil
+}
+
+func (x *PatchSessionState) GetBgtasksStarted() []*PatchSessionState_BackgroundTask {
+	if x != nil {
+		return x.BgtasksStarted
+	}
+	return nil
+}
+
+func (x *PatchSessionState) GetBgtasksEnded() []string {
+	if x != nil {
+		return x.BgtasksEnded
+	}
+	return nil
+}
+
+func (x *PatchSessionState) GetHandedJobs() []*JobKey {
+	if x != nil {
+		return x.HandedJobs
+	}
+	return nil
+}
+
+func (x *PatchSessionState) GetPersisted() *ReportTurn_Persisted {
+	if x != nil {
+		return x.Persisted
+	}
+	return nil
+}
+
+func (x *PatchSessionState) GetAwaitingCallIds() []string {
+	if x != nil {
+		return x.AwaitingCallIds
+	}
+	return nil
+}
+
+type GetSessionState struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Empty requests all sections; otherwise at most five distinct sections.
+	// SECTION_NONE, which must be alone, returns only the scalar fields.
+	Sections      []GetSessionState_Section `protobuf:"varint,1,rep,name=sections,proto3,enum=circus.v1.GetSessionState_Section" json:"sections,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSessionState) Reset() {
+	*x = GetSessionState{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionState) ProtoMessage() {}
+
+func (x *GetSessionState) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionState.ProtoReflect.Descriptor instead.
+func (*GetSessionState) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GetSessionState) GetSections() []GetSessionState_Section {
+	if x != nil {
+		return x.Sections
+	}
+	return nil
+}
+
+// SessionState is returned on acquisition or by selected sections. It carries
+// metadata, never full call output; use CallQuery for authoritative outcomes.
+// stopped and interrupt_turn_no are set whatever the sections; SECTION_NONE
+// returns only them.
+type SessionState struct {
+	state protoimpl.MessageState          `protogen:"open.v1"`
+	Cwds  []*PatchSessionState_Cwd        `protobuf:"bytes,1,rep,name=cwds,proto3" json:"cwds,omitempty"`   // At most 256.
+	Files []*PatchSessionState_FileRecord `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty"` // At most 4096.
+	Jobs  []*SessionState_Job             `protobuf:"bytes,3,rep,name=jobs,proto3" json:"jobs,omitempty"`   // At most 1024 unpersisted job notifications.
+	// At most 1040: up to 1024 calls not yet persisted plus up to 16 persisted
+	// calls with notice_owed.
+	Calls  []*SessionState_Call  `protobuf:"bytes,4,rep,name=calls,proto3" json:"calls,omitempty"`
+	Grants []*SessionState_Grant `protobuf:"bytes,5,rep,name=grants,proto3" json:"grants,omitempty"` // At most 32 unused, unexpired grants.
+	// The user stopped the session; the holder flushes and releases.
+	Stopped bool `protobuf:"varint,6,opt,name=stopped,proto3" json:"stopped,omitempty"`
+	// The highest turn_no the user asked to interrupt, or zero.
+	InterruptTurnNo uint64 `protobuf:"varint,7,opt,name=interrupt_turn_no,json=interruptTurnNo,proto3" json:"interrupt_turn_no,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SessionState) Reset() {
+	*x = SessionState{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionState) ProtoMessage() {}
+
+func (x *SessionState) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionState.ProtoReflect.Descriptor instead.
+func (*SessionState) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *SessionState) GetCwds() []*PatchSessionState_Cwd {
+	if x != nil {
+		return x.Cwds
+	}
+	return nil
+}
+
+func (x *SessionState) GetFiles() []*PatchSessionState_FileRecord {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *SessionState) GetJobs() []*SessionState_Job {
+	if x != nil {
+		return x.Jobs
+	}
+	return nil
+}
+
+func (x *SessionState) GetCalls() []*SessionState_Call {
+	if x != nil {
+		return x.Calls
+	}
+	return nil
+}
+
+func (x *SessionState) GetGrants() []*SessionState_Grant {
+	if x != nil {
+		return x.Grants
+	}
+	return nil
+}
+
+func (x *SessionState) GetStopped() bool {
+	if x != nil {
+		return x.Stopped
+	}
+	return false
+}
+
+func (x *SessionState) GetInterruptTurnNo() uint64 {
+	if x != nil {
+		return x.InterruptTurnNo
+	}
+	return 0
+}
+
+// Recovery lists every item not yet acknowledged, whichever epoch produced
+// it; it is never computed relative to the previous epoch, so an idempotent
+// reacquisition returns the same items. Returned calls receive only a short
+// tool/device/status summary; unreturned calls are queried and full results
+// injected, never reexecuted. Calls with notice_owed are polled and their
+// completion notice delivered. At most 16 calls may still be in flight. Lost
+// background tasks receive failed notifications with their original
+// tool_use_id. Inject recovery before the next user input, never auto-run it.
+type Recovery struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Every call not yet persisted and every call with notice_owed; at most 1040.
+	Calls []*SessionState_Call `protobuf:"bytes,1,rep,name=calls,proto3" json:"calls,omitempty"`
+	// CLI background tasks started by an earlier epoch and never ended; at most
+	// 64. Acknowledged by PatchSessionState.bgtasks_ended.
+	LostBgtasks []*PatchSessionState_BackgroundTask `protobuf:"bytes,2,rep,name=lost_bgtasks,json=lostBgtasks,proto3" json:"lost_bgtasks,omitempty"`
+	// The most recent turn was closed without ENDED, for example by lease loss,
+	// and no turn has started since.
+	PreviousTurnInterrupted bool `protobuf:"varint,3,opt,name=previous_turn_interrupted,json=previousTurnInterrupted,proto3" json:"previous_turn_interrupted,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *Recovery) Reset() {
+	*x = Recovery{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Recovery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Recovery) ProtoMessage() {}
+
+func (x *Recovery) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Recovery.ProtoReflect.Descriptor instead.
+func (*Recovery) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *Recovery) GetCalls() []*SessionState_Call {
+	if x != nil {
+		return x.Calls
+	}
+	return nil
+}
+
+func (x *Recovery) GetLostBgtasks() []*PatchSessionState_BackgroundTask {
+	if x != nil {
+		return x.LostBgtasks
+	}
+	return nil
+}
+
+func (x *Recovery) GetPreviousTurnInterrupted() bool {
+	if x != nil {
+		return x.PreviousTurnInterrupted
+	}
+	return false
+}
+
+// PublishEvents sends at most 128 events per batch, normally every 100 ms.
+// Ephemeral stream fragments are live-only. Other events form a 64 MiB view;
+// payloads over 256 KiB are truncated, with only turn boundaries stored when
+// the view fills.
+type PublishEvents struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Events []*PublishEvents_Event `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	// Starts at 1 per epoch and increases by one. A sequence <= the last
+	// consumed one is acknowledged with deduplicated=true and no write; one
+	// beyond the last plus one is INVALID and consumes nothing. ok consumes it;
+	// so does a batch at the next sequence that fails validation (an over-cap
+	// field, or a kind only the control plane records such as
+	// TRANSCRIPT_GAP_ACCEPTED): it is recorded as dropped and answered INVALID,
+	// and the worker continues with the next sequence. A worker treats every
+	// INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
+	// and Fenced consume nothing. Retrying must preserve content.
+	BatchSeq      uint64 `protobuf:"varint,2,opt,name=batch_seq,json=batchSeq,proto3" json:"batch_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublishEvents) Reset() {
+	*x = PublishEvents{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublishEvents) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublishEvents) ProtoMessage() {}
+
+func (x *PublishEvents) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublishEvents.ProtoReflect.Descriptor instead.
+func (*PublishEvents) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *PublishEvents) GetEvents() []*PublishEvents_Event {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *PublishEvents) GetBatchSeq() uint64 {
+	if x != nil {
+		return x.BatchSeq
+	}
+	return 0
+}
+
+// RequestApproval merges pending requests by (session, tool, device, match_key).
+// Display, reason and tool_use_id do not change the matching key. There are
+// at most 32 pending requests per session, expiring in ten minutes.
+type RequestApproval struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Model tool_use id, opaque, 1-128 bytes.
+	ToolUseId string `protobuf:"bytes,1,opt,name=tool_use_id,json=toolUseId,proto3" json:"tool_use_id,omitempty"`
+	// Empty for the main thread; at most 128 bytes.
+	AgentId string `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	// At most 256 bytes.
+	Tool string `protobuf:"bytes,3,opt,name=tool,proto3" json:"tool,omitempty"`
+	// At most 128 bytes.
+	Device string `protobuf:"bytes,4,opt,name=device,proto3" json:"device,omitempty"`
+	// 64 lowercase hexadecimal digits: the SHA-256 of the UTF-8 bash command
+	// verbatim, or of the path for write/edit. Description and timeout are not
+	// part of it.
+	MatchKey string `protobuf:"bytes,5,opt,name=match_key,json=matchKey,proto3" json:"match_key,omitempty"`
+	// At most 1024 bytes each; truncate longer text at a UTF-8 boundary.
+	Display       string `protobuf:"bytes,6,opt,name=display,proto3" json:"display,omitempty"`
+	Reason        string `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestApproval) Reset() {
+	*x = RequestApproval{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestApproval) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestApproval) ProtoMessage() {}
+
+func (x *RequestApproval) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestApproval.ProtoReflect.Descriptor instead.
+func (*RequestApproval) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *RequestApproval) GetToolUseId() string {
+	if x != nil {
+		return x.ToolUseId
+	}
+	return ""
+}
+
+func (x *RequestApproval) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *RequestApproval) GetTool() string {
+	if x != nil {
+		return x.Tool
+	}
+	return ""
+}
+
+func (x *RequestApproval) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *RequestApproval) GetMatchKey() string {
+	if x != nil {
+		return x.MatchKey
+	}
+	return ""
+}
+
+func (x *RequestApproval) GetDisplay() string {
+	if x != nil {
+		return x.Display
+	}
+	return ""
+}
+
+func (x *RequestApproval) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// ConsumeGrant atomically finds and consumes one unexpired matching grant for
+// tool_use_id. Repeating it with the same tool_use_id and the same (tool,
+// device, match_key) while the consumed grant would still be unexpired replays
+// allowed=true without consuming another; the same tool_use_id with another
+// key gets allowed=false. Only allowed=true permits the hook to allow a tool.
+type ConsumeGrant struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 256 bytes.
+	Tool string `protobuf:"bytes,1,opt,name=tool,proto3" json:"tool,omitempty"`
+	// At most 128 bytes.
+	Device string `protobuf:"bytes,2,opt,name=device,proto3" json:"device,omitempty"`
+	// As RequestApproval.match_key.
+	MatchKey string `protobuf:"bytes,3,opt,name=match_key,json=matchKey,proto3" json:"match_key,omitempty"`
+	// Required model tool_use id, opaque, 1-128 bytes.
+	ToolUseId     string `protobuf:"bytes,4,opt,name=tool_use_id,json=toolUseId,proto3" json:"tool_use_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsumeGrant) Reset() {
+	*x = ConsumeGrant{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsumeGrant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsumeGrant) ProtoMessage() {}
+
+func (x *ConsumeGrant) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsumeGrant.ProtoReflect.Descriptor instead.
+func (*ConsumeGrant) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ConsumeGrant) GetTool() string {
+	if x != nil {
+		return x.Tool
+	}
+	return ""
+}
+
+func (x *ConsumeGrant) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *ConsumeGrant) GetMatchKey() string {
+	if x != nil {
+		return x.MatchKey
+	}
+	return ""
+}
+
+func (x *ConsumeGrant) GetToolUseId() string {
+	if x != nil {
+		return x.ToolUseId
+	}
+	return ""
+}
+
+// TranscriptRepaired reports that the holder re-imported the batches missing
+// from a broken session's transcript. It moves BROKEN to IDLE, or QUEUED with
+// pending work; it never touches Lease.transcript_gap_turn_no. On any other
+// state it is ok with no change. Mark the repaired turn's items with
+// PatchSessionState.persisted before sending it.
+type TranscriptRepaired struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TranscriptRepaired) Reset() {
+	*x = TranscriptRepaired{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TranscriptRepaired) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TranscriptRepaired) ProtoMessage() {}
+
+func (x *TranscriptRepaired) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TranscriptRepaired.ProtoReflect.Descriptor instead.
+func (*TranscriptRepaired) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{24}
+}
+
+// ResumeLeases reconnects at most 64 leases for the same worker boot before
+// expiry, retaining epoch and rebinding each resumed lease to this
+// connection. Failure for one lease does not reject the others. A stopped
+// session still resumes, with stopped set, so the holder can flush and
+// release.
+type ResumeLeases struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Leases        []*ResumeLeases_Held   `protobuf:"bytes,1,rep,name=leases,proto3" json:"leases,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResumeLeases) Reset() {
+	*x = ResumeLeases{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResumeLeases) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResumeLeases) ProtoMessage() {}
+
+func (x *ResumeLeases) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResumeLeases.ProtoReflect.Descriptor instead.
+func (*ResumeLeases) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ResumeLeases) GetLeases() []*ResumeLeases_Held {
+	if x != nil {
+		return x.Leases
+	}
+	return nil
+}
+
+type ListDevices struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDevices) Reset() {
+	*x = ListDevices{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDevices) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDevices) ProtoMessage() {}
+
+func (x *ListDevices) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDevices.ProtoReflect.Descriptor instead.
+func (*ListDevices) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{26}
+}
+
+// SessionReply ends one SessionRequest, ResumeLeases or ListDevices operation.
+// Fenced or Rejected can replace any successful result. Attach uses WorkerEvent
+// instead. Replies are Data without ordering keys, correlated by request_id.
+type SessionReply struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Result:
+	//
+	//	*SessionReply_Ok_
+	//	*SessionReply_Fenced_
+	//	*SessionReply_Rejected_
+	//	*SessionReply_Lease_
+	//	*SessionReply_TranscriptPage_
+	//	*SessionReply_TranscriptKeys_
+	//	*SessionReply_Inputs_
+	//	*SessionReply_Turn_
+	//	*SessionReply_State
+	//	*SessionReply_Approval_
+	//	*SessionReply_Grant_
+	//	*SessionReply_Devices_
+	//	*SessionReply_Resumed_
+	Result        isSessionReply_Result `protobuf_oneof:"result"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply) Reset() {
+	*x = SessionReply{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply) ProtoMessage() {}
+
+func (x *SessionReply) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply.ProtoReflect.Descriptor instead.
+func (*SessionReply) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *SessionReply) GetResult() isSessionReply_Result {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+func (x *SessionReply) GetOk() *SessionReply_Ok {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Ok_); ok {
+			return x.Ok
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetFenced() *SessionReply_Fenced {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Fenced_); ok {
+			return x.Fenced
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetRejected() *SessionReply_Rejected {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Rejected_); ok {
+			return x.Rejected
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetLease() *SessionReply_Lease {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Lease_); ok {
+			return x.Lease
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetTranscriptPage() *SessionReply_TranscriptPage {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_TranscriptPage_); ok {
+			return x.TranscriptPage
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetTranscriptKeys() *SessionReply_TranscriptKeys {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_TranscriptKeys_); ok {
+			return x.TranscriptKeys
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetInputs() *SessionReply_Inputs {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Inputs_); ok {
+			return x.Inputs
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetTurn() *SessionReply_Turn {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Turn_); ok {
+			return x.Turn
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetState() *SessionReply_SessionStateReply {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_State); ok {
+			return x.State
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetApproval() *SessionReply_Approval {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Approval_); ok {
+			return x.Approval
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetGrant() *SessionReply_Grant {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Grant_); ok {
+			return x.Grant
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetDevices() *SessionReply_Devices {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Devices_); ok {
+			return x.Devices
+		}
+	}
+	return nil
+}
+
+func (x *SessionReply) GetResumed() *SessionReply_Resumed {
+	if x != nil {
+		if x, ok := x.Result.(*SessionReply_Resumed_); ok {
+			return x.Resumed
+		}
+	}
+	return nil
+}
+
+type isSessionReply_Result interface {
+	isSessionReply_Result()
+}
+
+type SessionReply_Ok_ struct {
+	Ok *SessionReply_Ok `protobuf:"bytes,1,opt,name=ok,proto3,oneof"`
+}
+
+type SessionReply_Fenced_ struct {
+	Fenced *SessionReply_Fenced `protobuf:"bytes,2,opt,name=fenced,proto3,oneof"`
+}
+
+type SessionReply_Rejected_ struct {
+	Rejected *SessionReply_Rejected `protobuf:"bytes,3,opt,name=rejected,proto3,oneof"`
+}
+
+type SessionReply_Lease_ struct {
+	Lease *SessionReply_Lease `protobuf:"bytes,10,opt,name=lease,proto3,oneof"`
+}
+
+type SessionReply_TranscriptPage_ struct {
+	TranscriptPage *SessionReply_TranscriptPage `protobuf:"bytes,11,opt,name=transcript_page,json=transcriptPage,proto3,oneof"`
+}
+
+type SessionReply_TranscriptKeys_ struct {
+	TranscriptKeys *SessionReply_TranscriptKeys `protobuf:"bytes,12,opt,name=transcript_keys,json=transcriptKeys,proto3,oneof"`
+}
+
+type SessionReply_Inputs_ struct {
+	Inputs *SessionReply_Inputs `protobuf:"bytes,13,opt,name=inputs,proto3,oneof"`
+}
+
+type SessionReply_Turn_ struct {
+	Turn *SessionReply_Turn `protobuf:"bytes,14,opt,name=turn,proto3,oneof"`
+}
+
+type SessionReply_State struct {
+	State *SessionReply_SessionStateReply `protobuf:"bytes,15,opt,name=state,proto3,oneof"`
+}
+
+type SessionReply_Approval_ struct {
+	Approval *SessionReply_Approval `protobuf:"bytes,16,opt,name=approval,proto3,oneof"`
+}
+
+type SessionReply_Grant_ struct {
+	Grant *SessionReply_Grant `protobuf:"bytes,17,opt,name=grant,proto3,oneof"`
+}
+
+type SessionReply_Devices_ struct {
+	Devices *SessionReply_Devices `protobuf:"bytes,18,opt,name=devices,proto3,oneof"`
+}
+
+type SessionReply_Resumed_ struct {
+	Resumed *SessionReply_Resumed `protobuf:"bytes,19,opt,name=resumed,proto3,oneof"`
+}
+
+func (*SessionReply_Ok_) isSessionReply_Result() {}
+
+func (*SessionReply_Fenced_) isSessionReply_Result() {}
+
+func (*SessionReply_Rejected_) isSessionReply_Result() {}
+
+func (*SessionReply_Lease_) isSessionReply_Result() {}
+
+func (*SessionReply_TranscriptPage_) isSessionReply_Result() {}
+
+func (*SessionReply_TranscriptKeys_) isSessionReply_Result() {}
+
+func (*SessionReply_Inputs_) isSessionReply_Result() {}
+
+func (*SessionReply_Turn_) isSessionReply_Result() {}
+
+func (*SessionReply_State) isSessionReply_Result() {}
+
+func (*SessionReply_Approval_) isSessionReply_Result() {}
+
+func (*SessionReply_Grant_) isSessionReply_Result() {}
+
+func (*SessionReply_Devices_) isSessionReply_Result() {}
+
+func (*SessionReply_Resumed_) isSessionReply_Result() {}
+
 // Accepted means metadata was accepted, but execution is not yet dispatched.
 type CallUpdate_Accepted struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -804,7 +3333,7 @@ type CallUpdate_Accepted struct {
 
 func (x *CallUpdate_Accepted) Reset() {
 	*x = CallUpdate_Accepted{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[6]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -816,7 +3345,7 @@ func (x *CallUpdate_Accepted) String() string {
 func (*CallUpdate_Accepted) ProtoMessage() {}
 
 func (x *CallUpdate_Accepted) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[6]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -829,7 +3358,7 @@ func (x *CallUpdate_Accepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Accepted.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Accepted) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 0}
 }
 
 // Dispatched means dispatch metadata was committed before sending. It also
@@ -843,7 +3372,7 @@ type CallUpdate_Dispatched struct {
 
 func (x *CallUpdate_Dispatched) Reset() {
 	*x = CallUpdate_Dispatched{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[7]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -855,7 +3384,7 @@ func (x *CallUpdate_Dispatched) String() string {
 func (*CallUpdate_Dispatched) ProtoMessage() {}
 
 func (x *CallUpdate_Dispatched) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[7]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -868,7 +3397,7 @@ func (x *CallUpdate_Dispatched) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Dispatched.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Dispatched) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 1}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 1}
 }
 
 // DeviceOffline reports the addressed device offline, with alternatives.
@@ -881,7 +3410,7 @@ type CallUpdate_DeviceOffline struct {
 
 func (x *CallUpdate_DeviceOffline) Reset() {
 	*x = CallUpdate_DeviceOffline{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[8]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -893,7 +3422,7 @@ func (x *CallUpdate_DeviceOffline) String() string {
 func (*CallUpdate_DeviceOffline) ProtoMessage() {}
 
 func (x *CallUpdate_DeviceOffline) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[8]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -906,7 +3435,7 @@ func (x *CallUpdate_DeviceOffline) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_DeviceOffline.ProtoReflect.Descriptor instead.
 func (*CallUpdate_DeviceOffline) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 2}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 2}
 }
 
 func (x *CallUpdate_DeviceOffline) GetOnlineDevices() []string {
@@ -926,7 +3455,7 @@ type CallUpdate_Unknown struct {
 
 func (x *CallUpdate_Unknown) Reset() {
 	*x = CallUpdate_Unknown{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[9]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -938,7 +3467,7 @@ func (x *CallUpdate_Unknown) String() string {
 func (*CallUpdate_Unknown) ProtoMessage() {}
 
 func (x *CallUpdate_Unknown) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[9]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -951,7 +3480,7 @@ func (x *CallUpdate_Unknown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Unknown.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Unknown) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 3}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 3}
 }
 
 func (x *CallUpdate_Unknown) GetReason() string {
@@ -971,7 +3500,7 @@ type CallUpdate_Lost struct {
 
 func (x *CallUpdate_Lost) Reset() {
 	*x = CallUpdate_Lost{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[10]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -983,7 +3512,7 @@ func (x *CallUpdate_Lost) String() string {
 func (*CallUpdate_Lost) ProtoMessage() {}
 
 func (x *CallUpdate_Lost) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[10]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -996,7 +3525,7 @@ func (x *CallUpdate_Lost) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Lost.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Lost) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 4}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 4}
 }
 
 func (x *CallUpdate_Lost) GetReason() string {
@@ -1017,7 +3546,7 @@ type CallUpdate_Rejected struct {
 
 func (x *CallUpdate_Rejected) Reset() {
 	*x = CallUpdate_Rejected{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[11]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1029,7 +3558,7 @@ func (x *CallUpdate_Rejected) String() string {
 func (*CallUpdate_Rejected) ProtoMessage() {}
 
 func (x *CallUpdate_Rejected) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[11]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1042,7 +3571,7 @@ func (x *CallUpdate_Rejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Rejected.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Rejected) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 5}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 5}
 }
 
 func (x *CallUpdate_Rejected) GetCode() CallUpdate_Rejected_Code {
@@ -1069,7 +3598,7 @@ type CallUpdate_Cancelled struct {
 
 func (x *CallUpdate_Cancelled) Reset() {
 	*x = CallUpdate_Cancelled{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[12]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1081,7 +3610,7 @@ func (x *CallUpdate_Cancelled) String() string {
 func (*CallUpdate_Cancelled) ProtoMessage() {}
 
 func (x *CallUpdate_Cancelled) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[12]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1094,14 +3623,1842 @@ func (x *CallUpdate_Cancelled) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallUpdate_Cancelled.ProtoReflect.Descriptor instead.
 func (*CallUpdate_Cancelled) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 6}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{4, 6}
+}
+
+type Attach_Account struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Email            string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Organization     string                 `protobuf:"bytes,2,opt,name=organization,proto3" json:"organization,omitempty"`
+	SubscriptionType string                 `protobuf:"bytes,3,opt,name=subscription_type,json=subscriptionType,proto3" json:"subscription_type,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *Attach_Account) Reset() {
+	*x = Attach_Account{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Attach_Account) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Attach_Account) ProtoMessage() {}
+
+func (x *Attach_Account) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Attach_Account.ProtoReflect.Descriptor instead.
+func (*Attach_Account) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{5, 0}
+}
+
+func (x *Attach_Account) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *Attach_Account) GetOrganization() string {
+	if x != nil {
+		return x.Organization
+	}
+	return ""
+}
+
+func (x *Attach_Account) GetSubscriptionType() string {
+	if x != nil {
+		return x.SubscriptionType
+	}
+	return ""
+}
+
+type WorkerEvent_Offer struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkerEvent_Offer) Reset() {
+	*x = WorkerEvent_Offer{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerEvent_Offer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerEvent_Offer) ProtoMessage() {}
+
+func (x *WorkerEvent_Offer) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerEvent_Offer.ProtoReflect.Descriptor instead.
+func (*WorkerEvent_Offer) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{6, 0}
+}
+
+func (x *WorkerEvent_Offer) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+// After each successful ResumeLeases outcome the control plane re-sends the
+// session's pending reasons. INPUT and APPROVAL: TakeInputs. JOB:
+// GetSessionState with SECTION_JOBS. STOP: stopping is permanent, so the
+// hint suffices: close the query and ReleaseLease with REASON_STOPPED.
+// INTERRUPT: compare interrupt_turn_no with the current turn.
+type WorkerEvent_Nudge struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// At most five distinct reasons. Unpacked for bounded structural scanning.
+	Reasons []WorkerEvent_Nudge_Reason `protobuf:"varint,2,rep,name=reasons,proto3,enum=circus.v1.WorkerEvent_Nudge_Reason" json:"reasons,omitempty"`
+	// The session's interrupt level, as SessionState.interrupt_turn_no; set on
+	// every Nudge. Interrupt the current turn only if its turn_no is at most
+	// this value; a repeated or late hint therefore never interrupts a later
+	// turn. If STARTED has not been answered yet, wait for its turn_no.
+	InterruptTurnNo uint64 `protobuf:"varint,3,opt,name=interrupt_turn_no,json=interruptTurnNo,proto3" json:"interrupt_turn_no,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *WorkerEvent_Nudge) Reset() {
+	*x = WorkerEvent_Nudge{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerEvent_Nudge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerEvent_Nudge) ProtoMessage() {}
+
+func (x *WorkerEvent_Nudge) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerEvent_Nudge.ProtoReflect.Descriptor instead.
+func (*WorkerEvent_Nudge) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{6, 1}
+}
+
+func (x *WorkerEvent_Nudge) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *WorkerEvent_Nudge) GetReasons() []WorkerEvent_Nudge_Reason {
+	if x != nil {
+		return x.Reasons
+	}
+	return nil
+}
+
+func (x *WorkerEvent_Nudge) GetInterruptTurnNo() uint64 {
+	if x != nil {
+		return x.InterruptTurnNo
+	}
+	return 0
+}
+
+type WorkerEvent_LeaseRevoked struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Epoch         uint64                 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkerEvent_LeaseRevoked) Reset() {
+	*x = WorkerEvent_LeaseRevoked{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerEvent_LeaseRevoked) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerEvent_LeaseRevoked) ProtoMessage() {}
+
+func (x *WorkerEvent_LeaseRevoked) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerEvent_LeaseRevoked.ProtoReflect.Descriptor instead.
+func (*WorkerEvent_LeaseRevoked) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{6, 2}
+}
+
+func (x *WorkerEvent_LeaseRevoked) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *WorkerEvent_LeaseRevoked) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+// Persisted marks are idempotent; marking an unknown or already persisted
+// item is a no-op. Ids are at most 128 bytes.
+type ReportTurn_Persisted struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 32 inputs, 1024 calls and 1024 job notifications per request.
+	InputIds []string  `protobuf:"bytes,1,rep,name=input_ids,json=inputIds,proto3" json:"input_ids,omitempty"`
+	CallIds  []string  `protobuf:"bytes,2,rep,name=call_ids,json=callIds,proto3" json:"call_ids,omitempty"`
+	Jobs     []*JobKey `protobuf:"bytes,3,rep,name=jobs,proto3" json:"jobs,omitempty"`
+	// At most 16. Calls whose owed completion notice has now been delivered;
+	// clears their notice_owed mark.
+	LateCallIds []string `protobuf:"bytes,4,rep,name=late_call_ids,json=lateCallIds,proto3" json:"late_call_ids,omitempty"`
+	// The Lease.transcript_gap_turn_no value whose missing-history reminder
+	// this turn delivered. The control plane clears the stored mark only if
+	// it still equals this value; 0 acknowledges nothing.
+	GapNoticeTurnNo uint64 `protobuf:"varint,5,opt,name=gap_notice_turn_no,json=gapNoticeTurnNo,proto3" json:"gap_notice_turn_no,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ReportTurn_Persisted) Reset() {
+	*x = ReportTurn_Persisted{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportTurn_Persisted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportTurn_Persisted) ProtoMessage() {}
+
+func (x *ReportTurn_Persisted) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportTurn_Persisted.ProtoReflect.Descriptor instead.
+func (*ReportTurn_Persisted) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{15, 0}
+}
+
+func (x *ReportTurn_Persisted) GetInputIds() []string {
+	if x != nil {
+		return x.InputIds
+	}
+	return nil
+}
+
+func (x *ReportTurn_Persisted) GetCallIds() []string {
+	if x != nil {
+		return x.CallIds
+	}
+	return nil
+}
+
+func (x *ReportTurn_Persisted) GetJobs() []*JobKey {
+	if x != nil {
+		return x.Jobs
+	}
+	return nil
+}
+
+func (x *ReportTurn_Persisted) GetLateCallIds() []string {
+	if x != nil {
+		return x.LateCallIds
+	}
+	return nil
+}
+
+func (x *ReportTurn_Persisted) GetGapNoticeTurnNo() uint64 {
+	if x != nil {
+		return x.GapNoticeTurnNo
+	}
+	return 0
+}
+
+type PatchSessionState_Cwd struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Empty for the main thread; at most 128 bytes.
+	AgentId string `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	// At most 128 bytes.
+	Device string `protobuf:"bytes,2,opt,name=device,proto3" json:"device,omitempty"`
+	// Absolute device path, at most 4 KiB.
+	Cwd           string `protobuf:"bytes,3,opt,name=cwd,proto3" json:"cwd,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PatchSessionState_Cwd) Reset() {
+	*x = PatchSessionState_Cwd{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PatchSessionState_Cwd) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PatchSessionState_Cwd) ProtoMessage() {}
+
+func (x *PatchSessionState_Cwd) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PatchSessionState_Cwd.ProtoReflect.Descriptor instead.
+func (*PatchSessionState_Cwd) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{17, 0}
+}
+
+func (x *PatchSessionState_Cwd) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *PatchSessionState_Cwd) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *PatchSessionState_Cwd) GetCwd() string {
+	if x != nil {
+		return x.Cwd
+	}
+	return ""
+}
+
+type PatchSessionState_FileRecord struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 128 bytes.
+	Device string `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	// Device path, at most 4 KiB.
+	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	// Empty forgets this record; otherwise 64 hexadecimal digits of SHA-256.
+	Sha256        string `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	MtimeUnixMs   int64  `protobuf:"varint,4,opt,name=mtime_unix_ms,json=mtimeUnixMs,proto3" json:"mtime_unix_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PatchSessionState_FileRecord) Reset() {
+	*x = PatchSessionState_FileRecord{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PatchSessionState_FileRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PatchSessionState_FileRecord) ProtoMessage() {}
+
+func (x *PatchSessionState_FileRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PatchSessionState_FileRecord.ProtoReflect.Descriptor instead.
+func (*PatchSessionState_FileRecord) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{17, 1}
+}
+
+func (x *PatchSessionState_FileRecord) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *PatchSessionState_FileRecord) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *PatchSessionState_FileRecord) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *PatchSessionState_FileRecord) GetMtimeUnixMs() int64 {
+	if x != nil {
+		return x.MtimeUnixMs
+	}
+	return 0
+}
+
+type PatchSessionState_BackgroundTask struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 128 bytes each: task_id, tool_use_id and kind.
+	TaskId    string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	ToolUseId string `protobuf:"bytes,2,opt,name=tool_use_id,json=toolUseId,proto3" json:"tool_use_id,omitempty"`
+	// SDK task kind, currently agent.
+	Kind string `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	// At most 1024 bytes.
+	Description   string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PatchSessionState_BackgroundTask) Reset() {
+	*x = PatchSessionState_BackgroundTask{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PatchSessionState_BackgroundTask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PatchSessionState_BackgroundTask) ProtoMessage() {}
+
+func (x *PatchSessionState_BackgroundTask) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PatchSessionState_BackgroundTask.ProtoReflect.Descriptor instead.
+func (*PatchSessionState_BackgroundTask) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{17, 2}
+}
+
+func (x *PatchSessionState_BackgroundTask) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *PatchSessionState_BackgroundTask) GetToolUseId() string {
+	if x != nil {
+		return x.ToolUseId
+	}
+	return ""
+}
+
+func (x *PatchSessionState_BackgroundTask) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *PatchSessionState_BackgroundTask) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type SessionState_Job struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Key   *JobKey                `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// At most 128 bytes each: call_id, tool_use_id and device.
+	CallId    string `protobuf:"bytes,2,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	ToolUseId string `protobuf:"bytes,3,opt,name=tool_use_id,json=toolUseId,proto3" json:"tool_use_id,omitempty"`
+	// At most 1024 bytes; the control plane truncates longer descriptions.
+	Description string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	// At most 4 KiB.
+	OutputPath string         `protobuf:"bytes,5,opt,name=output_path,json=outputPath,proto3" json:"output_path,omitempty"`
+	State      JobEvent_State `protobuf:"varint,6,opt,name=state,proto3,enum=circus.v1.JobEvent_State" json:"state,omitempty"`
+	ExitCode   int32          `protobuf:"varint,7,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	Device     string         `protobuf:"bytes,8,opt,name=device,proto3" json:"device,omitempty"`
+	// Handed to the SDK but not yet marked persisted.
+	Handed        bool `protobuf:"varint,9,opt,name=handed,proto3" json:"handed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionState_Job) Reset() {
+	*x = SessionState_Job{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionState_Job) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionState_Job) ProtoMessage() {}
+
+func (x *SessionState_Job) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionState_Job.ProtoReflect.Descriptor instead.
+func (*SessionState_Job) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{19, 0}
+}
+
+func (x *SessionState_Job) GetKey() *JobKey {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *SessionState_Job) GetCallId() string {
+	if x != nil {
+		return x.CallId
+	}
+	return ""
+}
+
+func (x *SessionState_Job) GetToolUseId() string {
+	if x != nil {
+		return x.ToolUseId
+	}
+	return ""
+}
+
+func (x *SessionState_Job) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *SessionState_Job) GetOutputPath() string {
+	if x != nil {
+		return x.OutputPath
+	}
+	return ""
+}
+
+func (x *SessionState_Job) GetState() JobEvent_State {
+	if x != nil {
+		return x.State
+	}
+	return JobEvent_STATE_UNSPECIFIED
+}
+
+func (x *SessionState_Job) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *SessionState_Job) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *SessionState_Job) GetHanded() bool {
+	if x != nil {
+		return x.Handed
+	}
+	return false
+}
+
+type SessionState_Call struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 128 bytes each: call_id, tool_use_id and device.
+	CallId    string `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	ToolUseId string `protobuf:"bytes,2,opt,name=tool_use_id,json=toolUseId,proto3" json:"tool_use_id,omitempty"`
+	Device    string `protobuf:"bytes,3,opt,name=device,proto3" json:"device,omitempty"`
+	// MCP returned; its result may already be in the transcript.
+	Returned bool `protobuf:"varint,4,opt,name=returned,proto3" json:"returned,omitempty"`
+	// At most 256 bytes.
+	Tool string `protobuf:"bytes,5,opt,name=tool,proto3" json:"tool,omitempty"`
+	// Latest outcome, without output. Query calls whose returned is false.
+	Outcome CallOutcome `protobuf:"varint,6,opt,name=outcome,proto3,enum=circus.v1.CallOutcome" json:"outcome,omitempty"`
+	// Present only if a terminal process result has an exit code.
+	ExitCode *int32 `protobuf:"varint,7,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`
+	// The model was told a completion notice would follow; poll the call and
+	// deliver that notice, then mark it in Persisted.late_call_ids.
+	NoticeOwed bool `protobuf:"varint,8,opt,name=notice_owed,json=noticeOwed,proto3" json:"notice_owed,omitempty"`
+	// Set only when outcome is CALL_OUTCOME_REJECTED.
+	RejectedCode  CallUpdate_Rejected_Code `protobuf:"varint,9,opt,name=rejected_code,json=rejectedCode,proto3,enum=circus.v1.CallUpdate_Rejected_Code" json:"rejected_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionState_Call) Reset() {
+	*x = SessionState_Call{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionState_Call) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionState_Call) ProtoMessage() {}
+
+func (x *SessionState_Call) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionState_Call.ProtoReflect.Descriptor instead.
+func (*SessionState_Call) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{19, 1}
+}
+
+func (x *SessionState_Call) GetCallId() string {
+	if x != nil {
+		return x.CallId
+	}
+	return ""
+}
+
+func (x *SessionState_Call) GetToolUseId() string {
+	if x != nil {
+		return x.ToolUseId
+	}
+	return ""
+}
+
+func (x *SessionState_Call) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *SessionState_Call) GetReturned() bool {
+	if x != nil {
+		return x.Returned
+	}
+	return false
+}
+
+func (x *SessionState_Call) GetTool() string {
+	if x != nil {
+		return x.Tool
+	}
+	return ""
+}
+
+func (x *SessionState_Call) GetOutcome() CallOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return CallOutcome_CALL_OUTCOME_UNSPECIFIED
+}
+
+func (x *SessionState_Call) GetExitCode() int32 {
+	if x != nil && x.ExitCode != nil {
+		return *x.ExitCode
+	}
+	return 0
+}
+
+func (x *SessionState_Call) GetNoticeOwed() bool {
+	if x != nil {
+		return x.NoticeOwed
+	}
+	return false
+}
+
+func (x *SessionState_Call) GetRejectedCode() CallUpdate_Rejected_Code {
+	if x != nil {
+		return x.RejectedCode
+	}
+	return CallUpdate_Rejected_CODE_UNSPECIFIED
+}
+
+type SessionState_Grant struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 256 bytes.
+	Tool string `protobuf:"bytes,1,opt,name=tool,proto3" json:"tool,omitempty"`
+	// At most 128 bytes.
+	Device string `protobuf:"bytes,2,opt,name=device,proto3" json:"device,omitempty"`
+	// 64 lowercase hexadecimal digits, as RequestApproval.match_key.
+	MatchKey        string `protobuf:"bytes,3,opt,name=match_key,json=matchKey,proto3" json:"match_key,omitempty"`
+	ExpiresAtUnixMs int64  `protobuf:"varint,4,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SessionState_Grant) Reset() {
+	*x = SessionState_Grant{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionState_Grant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionState_Grant) ProtoMessage() {}
+
+func (x *SessionState_Grant) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionState_Grant.ProtoReflect.Descriptor instead.
+func (*SessionState_Grant) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{19, 2}
+}
+
+func (x *SessionState_Grant) GetTool() string {
+	if x != nil {
+		return x.Tool
+	}
+	return ""
+}
+
+func (x *SessionState_Grant) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *SessionState_Grant) GetMatchKey() string {
+	if x != nil {
+		return x.MatchKey
+	}
+	return ""
+}
+
+func (x *SessionState_Grant) GetExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+type PublishEvents_Event struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          SessionEvent_Kind      `protobuf:"varint,1,opt,name=kind,proto3,enum=circus.v1.SessionEvent_Kind" json:"kind,omitempty"`
+	Json          string                 `protobuf:"bytes,2,opt,name=json,proto3" json:"json,omitempty"`
+	Ephemeral     bool                   `protobuf:"varint,3,opt,name=ephemeral,proto3" json:"ephemeral,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublishEvents_Event) Reset() {
+	*x = PublishEvents_Event{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublishEvents_Event) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublishEvents_Event) ProtoMessage() {}
+
+func (x *PublishEvents_Event) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublishEvents_Event.ProtoReflect.Descriptor instead.
+func (*PublishEvents_Event) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{21, 0}
+}
+
+func (x *PublishEvents_Event) GetKind() SessionEvent_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return SessionEvent_KIND_UNSPECIFIED
+}
+
+func (x *PublishEvents_Event) GetJson() string {
+	if x != nil {
+		return x.Json
+	}
+	return ""
+}
+
+func (x *PublishEvents_Event) GetEphemeral() bool {
+	if x != nil {
+		return x.Ephemeral
+	}
+	return false
+}
+
+type ResumeLeases_Held struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Epoch         uint64                 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResumeLeases_Held) Reset() {
+	*x = ResumeLeases_Held{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResumeLeases_Held) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResumeLeases_Held) ProtoMessage() {}
+
+func (x *ResumeLeases_Held) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResumeLeases_Held.ProtoReflect.Descriptor instead.
+func (*ResumeLeases_Held) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{25, 0}
+}
+
+func (x *ResumeLeases_Held) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ResumeLeases_Held) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+type SessionReply_Ok struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deduplicated  bool                   `protobuf:"varint,1,opt,name=deduplicated,proto3" json:"deduplicated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Ok) Reset() {
+	*x = SessionReply_Ok{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Ok) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Ok) ProtoMessage() {}
+
+func (x *SessionReply_Ok) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Ok.ProtoReflect.Descriptor instead.
+func (*SessionReply_Ok) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 0}
+}
+
+func (x *SessionReply_Ok) GetDeduplicated() bool {
+	if x != nil {
+		return x.Deduplicated
+	}
+	return false
+}
+
+type SessionReply_Fenced struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Current epoch; none of the requested mutation was applied.
+	Epoch         uint64 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Fenced) Reset() {
+	*x = SessionReply_Fenced{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Fenced) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Fenced) ProtoMessage() {}
+
+func (x *SessionReply_Fenced) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Fenced.ProtoReflect.Descriptor instead.
+func (*SessionReply_Fenced) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 1}
+}
+
+func (x *SessionReply_Fenced) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+type SessionReply_Rejected struct {
+	state protoimpl.MessageState     `protogen:"open.v1"`
+	Code  SessionReply_Rejected_Code `protobuf:"varint,1,opt,name=code,proto3,enum=circus.v1.SessionReply_Rejected_Code" json:"code,omitempty"`
+	// At most 1024 bytes, diagnostic only.
+	Message       string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Rejected) Reset() {
+	*x = SessionReply_Rejected{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Rejected) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Rejected) ProtoMessage() {}
+
+func (x *SessionReply_Rejected) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Rejected.ProtoReflect.Descriptor instead.
+func (*SessionReply_Rejected) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 2}
+}
+
+func (x *SessionReply_Rejected) GetCode() SessionReply_Rejected_Code {
+	if x != nil {
+		return x.Code
+	}
+	return SessionReply_Rejected_CODE_UNSPECIFIED
+}
+
+func (x *SessionReply_Rejected) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+// At most 25.5 MiB with every cap reached. state carries every section
+// except calls, which recovery carries: with calls in both, a Lease at the
+// caps exceeds the 8192-node decode limit and the worker closes the link.
+type SessionReply_Lease struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Epoch uint64                 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// At most 128 bytes.
+	ClaudeSessionId string         `protobuf:"bytes,2,opt,name=claude_session_id,json=claudeSessionId,proto3" json:"claude_session_id,omitempty"`
+	HasTranscript   bool           `protobuf:"varint,3,opt,name=has_transcript,json=hasTranscript,proto3" json:"has_transcript,omitempty"`
+	State           *SessionState  `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	Recovery        *Recovery      `protobuf:"bytes,5,opt,name=recovery,proto3" json:"recovery,omitempty"`
+	Config          *SessionConfig `protobuf:"bytes,6,opt,name=config,proto3" json:"config,omitempty"`
+	// This worker and boot already held the lease; the epoch is unchanged.
+	Reattached bool `protobuf:"varint,7,opt,name=reattached,proto3" json:"reattached,omitempty"`
+	// A gap the user accepted and the model has not been told: set only by
+	// RecoverSession, to the turn_no of the turn that broke; 0 when none. An
+	// unaccepted break is the BROKEN state, not this mark. While nonzero,
+	// inject the missing-history reminder in the next turn started with a
+	// pushed message (a CLI-originated turn cannot carry it) and acknowledge
+	// it with Persisted.gap_notice_turn_no; only an acknowledgement of the
+	// equal value clears it.
+	TranscriptGapTurnNo uint64 `protobuf:"varint,8,opt,name=transcript_gap_turn_no,json=transcriptGapTurnNo,proto3" json:"transcript_gap_turn_no,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *SessionReply_Lease) Reset() {
+	*x = SessionReply_Lease{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Lease) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Lease) ProtoMessage() {}
+
+func (x *SessionReply_Lease) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Lease.ProtoReflect.Descriptor instead.
+func (*SessionReply_Lease) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 3}
+}
+
+func (x *SessionReply_Lease) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *SessionReply_Lease) GetClaudeSessionId() string {
+	if x != nil {
+		return x.ClaudeSessionId
+	}
+	return ""
+}
+
+func (x *SessionReply_Lease) GetHasTranscript() bool {
+	if x != nil {
+		return x.HasTranscript
+	}
+	return false
+}
+
+func (x *SessionReply_Lease) GetState() *SessionState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+func (x *SessionReply_Lease) GetRecovery() *Recovery {
+	if x != nil {
+		return x.Recovery
+	}
+	return nil
+}
+
+func (x *SessionReply_Lease) GetConfig() *SessionConfig {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+func (x *SessionReply_Lease) GetReattached() bool {
+	if x != nil {
+		return x.Reattached
+	}
+	return false
+}
+
+func (x *SessionReply_Lease) GetTranscriptGapTurnNo() uint64 {
+	if x != nil {
+		return x.TranscriptGapTurnNo
+	}
+	return 0
+}
+
+type SessionReply_TranscriptPage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Byte-bounded as LoadTranscript; structural node/field caps also apply.
+	Entries       []*TranscriptEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	NextSeq       uint64             `protobuf:"varint,2,opt,name=next_seq,json=nextSeq,proto3" json:"next_seq,omitempty"`
+	Done          bool               `protobuf:"varint,3,opt,name=done,proto3" json:"done,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_TranscriptPage) Reset() {
+	*x = SessionReply_TranscriptPage{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_TranscriptPage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_TranscriptPage) ProtoMessage() {}
+
+func (x *SessionReply_TranscriptPage) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_TranscriptPage.ProtoReflect.Descriptor instead.
+func (*SessionReply_TranscriptPage) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 4}
+}
+
+func (x *SessionReply_TranscriptPage) GetEntries() []*TranscriptEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *SessionReply_TranscriptPage) GetNextSeq() uint64 {
+	if x != nil {
+		return x.NextSeq
+	}
+	return 0
+}
+
+func (x *SessionReply_TranscriptPage) GetDone() bool {
+	if x != nil {
+		return x.Done
+	}
+	return false
+}
+
+type SessionReply_TranscriptKeys struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Subpaths      []string               `protobuf:"bytes,1,rep,name=subpaths,proto3" json:"subpaths,omitempty"` // At most 1024.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_TranscriptKeys) Reset() {
+	*x = SessionReply_TranscriptKeys{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_TranscriptKeys) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_TranscriptKeys) ProtoMessage() {}
+
+func (x *SessionReply_TranscriptKeys) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_TranscriptKeys.ProtoReflect.Descriptor instead.
+func (*SessionReply_TranscriptKeys) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 5}
+}
+
+func (x *SessionReply_TranscriptKeys) GetSubpaths() []string {
+	if x != nil {
+		return x.Subpaths
+	}
+	return nil
+}
+
+type SessionReply_Inputs struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	Inputs        []*SessionReply_Inputs_Input `protobuf:"bytes,1,rep,name=inputs,proto3" json:"inputs,omitempty"` // At most 32.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Inputs) Reset() {
+	*x = SessionReply_Inputs{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Inputs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Inputs) ProtoMessage() {}
+
+func (x *SessionReply_Inputs) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Inputs.ProtoReflect.Descriptor instead.
+func (*SessionReply_Inputs) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 6}
+}
+
+func (x *SessionReply_Inputs) GetInputs() []*SessionReply_Inputs_Input {
+	if x != nil {
+		return x.Inputs
+	}
+	return nil
+}
+
+// Both STARTED and ENDED ReportTurn return the same assigned turn_no.
+type SessionReply_Turn struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TurnNo        uint64                 `protobuf:"varint,1,opt,name=turn_no,json=turnNo,proto3" json:"turn_no,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Turn) Reset() {
+	*x = SessionReply_Turn{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Turn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Turn) ProtoMessage() {}
+
+func (x *SessionReply_Turn) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Turn.ProtoReflect.Descriptor instead.
+func (*SessionReply_Turn) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 7}
+}
+
+func (x *SessionReply_Turn) GetTurnNo() uint64 {
+	if x != nil {
+		return x.TurnNo
+	}
+	return 0
+}
+
+type SessionReply_SessionStateReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         *SessionState          `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_SessionStateReply) Reset() {
+	*x = SessionReply_SessionStateReply{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_SessionStateReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_SessionStateReply) ProtoMessage() {}
+
+func (x *SessionReply_SessionStateReply) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_SessionStateReply.ProtoReflect.Descriptor instead.
+func (*SessionReply_SessionStateReply) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 8}
+}
+
+func (x *SessionReply_SessionStateReply) GetState() *SessionState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+type SessionReply_Approval struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 128 bytes.
+	ApprovalId    string `protobuf:"bytes,1,opt,name=approval_id,json=approvalId,proto3" json:"approval_id,omitempty"`
+	Deduplicated  bool   `protobuf:"varint,2,opt,name=deduplicated,proto3" json:"deduplicated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Approval) Reset() {
+	*x = SessionReply_Approval{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Approval) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Approval) ProtoMessage() {}
+
+func (x *SessionReply_Approval) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Approval.ProtoReflect.Descriptor instead.
+func (*SessionReply_Approval) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 9}
+}
+
+func (x *SessionReply_Approval) GetApprovalId() string {
+	if x != nil {
+		return x.ApprovalId
+	}
+	return ""
+}
+
+func (x *SessionReply_Approval) GetDeduplicated() bool {
+	if x != nil {
+		return x.Deduplicated
+	}
+	return false
+}
+
+type SessionReply_Grant struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Allowed       bool                   `protobuf:"varint,1,opt,name=allowed,proto3" json:"allowed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Grant) Reset() {
+	*x = SessionReply_Grant{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Grant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Grant) ProtoMessage() {}
+
+func (x *SessionReply_Grant) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Grant.ProtoReflect.Descriptor instead.
+func (*SessionReply_Grant) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 10}
+}
+
+func (x *SessionReply_Grant) GetAllowed() bool {
+	if x != nil {
+		return x.Allowed
+	}
+	return false
+}
+
+type SessionReply_Devices struct {
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	Devices       []*SessionReply_Devices_Device `protobuf:"bytes,1,rep,name=devices,proto3" json:"devices,omitempty"` // At most 256.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Devices) Reset() {
+	*x = SessionReply_Devices{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Devices) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Devices) ProtoMessage() {}
+
+func (x *SessionReply_Devices) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Devices.ProtoReflect.Descriptor instead.
+func (*SessionReply_Devices) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 11}
+}
+
+func (x *SessionReply_Devices) GetDevices() []*SessionReply_Devices_Device {
+	if x != nil {
+		return x.Devices
+	}
+	return nil
+}
+
+type SessionReply_Resumed struct {
+	state         protoimpl.MessageState          `protogen:"open.v1"`
+	Leases        []*SessionReply_Resumed_Outcome `protobuf:"bytes,1,rep,name=leases,proto3" json:"leases,omitempty"` // At most 64, one per requested lease.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Resumed) Reset() {
+	*x = SessionReply_Resumed{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Resumed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Resumed) ProtoMessage() {}
+
+func (x *SessionReply_Resumed) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Resumed.ProtoReflect.Descriptor instead.
+func (*SessionReply_Resumed) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 12}
+}
+
+func (x *SessionReply_Resumed) GetLeases() []*SessionReply_Resumed_Outcome {
+	if x != nil {
+		return x.Leases
+	}
+	return nil
+}
+
+type SessionReply_Inputs_Input struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 128 bytes.
+	InputId string                         `protobuf:"bytes,1,opt,name=input_id,json=inputId,proto3" json:"input_id,omitempty"`
+	Kind    SessionReply_Inputs_Input_Kind `protobuf:"varint,2,opt,name=kind,proto3,enum=circus.v1.SessionReply_Inputs_Input_Kind" json:"kind,omitempty"`
+	// At most 256 KiB.
+	Text          string        `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	Priority      InputPriority `protobuf:"varint,4,opt,name=priority,proto3,enum=circus.v1.InputPriority" json:"priority,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Inputs_Input) Reset() {
+	*x = SessionReply_Inputs_Input{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Inputs_Input) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Inputs_Input) ProtoMessage() {}
+
+func (x *SessionReply_Inputs_Input) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Inputs_Input.ProtoReflect.Descriptor instead.
+func (*SessionReply_Inputs_Input) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 6, 0}
+}
+
+func (x *SessionReply_Inputs_Input) GetInputId() string {
+	if x != nil {
+		return x.InputId
+	}
+	return ""
+}
+
+func (x *SessionReply_Inputs_Input) GetKind() SessionReply_Inputs_Input_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return SessionReply_Inputs_Input_KIND_UNSPECIFIED
+}
+
+func (x *SessionReply_Inputs_Input) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *SessionReply_Inputs_Input) GetPriority() InputPriority {
+	if x != nil {
+		return x.Priority
+	}
+	return InputPriority_INPUT_PRIORITY_UNSPECIFIED
+}
+
+type SessionReply_Devices_Device struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 128 bytes; os, arch and hostname at most 256 bytes each.
+	Name           string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Online         bool   `protobuf:"varint,2,opt,name=online,proto3" json:"online,omitempty"`
+	Os             string `protobuf:"bytes,3,opt,name=os,proto3" json:"os,omitempty"`
+	Arch           string `protobuf:"bytes,4,opt,name=arch,proto3" json:"arch,omitempty"`
+	Hostname       string `protobuf:"bytes,5,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	LastSeenUnixMs int64  `protobuf:"varint,6,opt,name=last_seen_unix_ms,json=lastSeenUnixMs,proto3" json:"last_seen_unix_ms,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SessionReply_Devices_Device) Reset() {
+	*x = SessionReply_Devices_Device{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Devices_Device) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Devices_Device) ProtoMessage() {}
+
+func (x *SessionReply_Devices_Device) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Devices_Device.ProtoReflect.Descriptor instead.
+func (*SessionReply_Devices_Device) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 11, 0}
+}
+
+func (x *SessionReply_Devices_Device) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SessionReply_Devices_Device) GetOnline() bool {
+	if x != nil {
+		return x.Online
+	}
+	return false
+}
+
+func (x *SessionReply_Devices_Device) GetOs() string {
+	if x != nil {
+		return x.Os
+	}
+	return ""
+}
+
+func (x *SessionReply_Devices_Device) GetArch() string {
+	if x != nil {
+		return x.Arch
+	}
+	return ""
+}
+
+func (x *SessionReply_Devices_Device) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *SessionReply_Devices_Device) GetLastSeenUnixMs() int64 {
+	if x != nil {
+		return x.LastSeenUnixMs
+	}
+	return 0
+}
+
+type SessionReply_Resumed_Outcome struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Ok        bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	// Retained epoch on success; current epoch when fenced.
+	Epoch uint64 `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// Resumed, but the session is stopped: flush and release.
+	Stopped       bool `protobuf:"varint,4,opt,name=stopped,proto3" json:"stopped,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionReply_Resumed_Outcome) Reset() {
+	*x = SessionReply_Resumed_Outcome{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionReply_Resumed_Outcome) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionReply_Resumed_Outcome) ProtoMessage() {}
+
+func (x *SessionReply_Resumed_Outcome) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionReply_Resumed_Outcome.ProtoReflect.Descriptor instead.
+func (*SessionReply_Resumed_Outcome) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27, 12, 0}
+}
+
+func (x *SessionReply_Resumed_Outcome) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *SessionReply_Resumed_Outcome) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *SessionReply_Resumed_Outcome) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *SessionReply_Resumed_Outcome) GetStopped() bool {
+	if x != nil {
+		return x.Stopped
+	}
+	return false
 }
 
 var File_circus_v1_worker_link_proto protoreflect.FileDescriptor
 
 const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcircus/v1/worker_link.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\"\xa6\x03\n" +
+	"\x1bcircus/v1/worker_link.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\x1a\x17circus/v1/session.proto\"\x87\x05\n" +
 	"\fWorkerUplink\x12(\n" +
 	"\x05hello\x18\x01 \x01(\v2\x10.circus.v1.HelloH\x00R\x05hello\x124\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x14.circus.v1.HeartbeatH\x00R\theartbeat\x121\n" +
@@ -1113,10 +5470,14 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"cancelCall\x125\n" +
 	"\n" +
 	"call_query\x18\f \x01(\v2\x14.circus.v1.CallQueryH\x00R\tcallQuery\x12.\n" +
-	"\aunwatch\x18\r \x01(\v2\x12.circus.v1.UnwatchH\x00R\aunwatch\x12\x1d\n" +
+	"\aunwatch\x18\r \x01(\v2\x12.circus.v1.UnwatchH\x00R\aunwatch\x12+\n" +
+	"\x06attach\x18\x0e \x01(\v2\x11.circus.v1.AttachH\x00R\x06attach\x125\n" +
+	"\asession\x18\x0f \x01(\v2\x19.circus.v1.SessionRequestH\x00R\asession\x12>\n" +
+	"\rresume_leases\x18\x10 \x01(\v2\x17.circus.v1.ResumeLeasesH\x00R\fresumeLeases\x12;\n" +
+	"\flist_devices\x18\x11 \x01(\v2\x16.circus.v1.ListDevicesH\x00R\vlistDevices\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x14 \x01(\x04R\trequestIdB\t\n" +
-	"\apayload\"\xf4\x02\n" +
+	"\apayload\"\xc8\x03\n" +
 	"\x0eWorkerDownlink\x12.\n" +
 	"\awelcome\x18\x01 \x01(\v2\x12.circus.v1.WelcomeH\x00R\awelcome\x12+\n" +
 	"\x06reject\x18\x02 \x01(\v2\x11.circus.v1.RejectH\x00R\x06reject\x124\n" +
@@ -1124,20 +5485,19 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\bfragment\x18\x04 \x01(\v2\x13.circus.v1.FragmentH\x00R\bfragment\x128\n" +
 	"\vcall_update\x18\n" +
 	" \x01(\v2\x15.circus.v1.CallUpdateH\x00R\n" +
-	"callUpdate\x128\n" +
-	"\tjob_event\x18\v \x01(\v2\x19.circus.v1.WorkerJobEventH\x00R\bjobEvent\x12\x1d\n" +
+	"callUpdate\x12>\n" +
+	"\rsession_reply\x18\f \x01(\v2\x17.circus.v1.SessionReplyH\x00R\fsessionReply\x12;\n" +
+	"\fworker_event\x18\r \x01(\v2\x16.circus.v1.WorkerEventH\x00R\vworkerEvent\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x14 \x01(\x04R\trequestIdB\t\n" +
-	"\apayload\"\t\n" +
-	"\aUnwatch\"l\n" +
-	"\x0eWorkerJobEvent\x12\x16\n" +
-	"\x06device\x18\x01 \x01(\tR\x06device\x12\x17\n" +
-	"\aboot_id\x18\x02 \x01(\tR\x06bootId\x12)\n" +
-	"\x05event\x18\x03 \x01(\v2\x13.circus.v1.JobEventR\x05event\"O\n" +
+	"\apayloadJ\x04\b\v\x10\fR\tjob_event\"\t\n" +
+	"\aUnwatch\"\x94\x01\n" +
 	"\n" +
 	"SubmitCall\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12)\n" +
-	"\x04call\x18\x02 \x01(\v2\x15.circus.v1.DeviceCallR\x04call\"\xd9\a\n" +
+	"\x04call\x18\x02 \x01(\v2\x15.circus.v1.DeviceCallR\x04call\x12#\n" +
+	"\rsession_epoch\x18\x03 \x01(\x04R\fsessionEpoch\x12\x1e\n" +
+	"\vtool_use_id\x18\x04 \x01(\tR\ttoolUseId\"\x8c\b\n" +
 	"\n" +
 	"CallUpdate\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12<\n" +
@@ -1160,10 +5520,10 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\aUnknown\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\x1a\x1e\n" +
 	"\x04Lost\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\x1a\xa3\x02\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\x1a\xd6\x02\n" +
 	"\bRejected\x127\n" +
 	"\x04code\x18\x01 \x01(\x0e2#.circus.v1.CallUpdate.Rejected.CodeR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xc3\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xf6\x01\n" +
 	"\x04Code\x12\x14\n" +
 	"\x10CODE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fCODE_INVALID\x10\x01\x12\x13\n" +
@@ -1172,9 +5532,323 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\x13CODE_UNKNOWN_DEVICE\x10\x04\x12\x1a\n" +
 	"\x16CODE_STORE_UNAVAILABLE\x10\x05\x12\x1d\n" +
 	"\x19CODE_DEVICE_SHUTTING_DOWN\x10\x06\x12\x12\n" +
-	"\x0eCODE_NOT_FOUND\x10\a\x1a\v\n" +
+	"\x0eCODE_NOT_FOUND\x10\a\x12\x17\n" +
+	"\x13CODE_SESSION_FENCED\x10\b\x12\x18\n" +
+	"\x14CODE_SESSION_STOPPED\x10\t\x1a\v\n" +
 	"\tCancelledB\b\n" +
-	"\x06updateB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
+	"\x06update\"\xd5\x03\n" +
+	"\x06Attach\x12!\n" +
+	"\fmax_sessions\x18\x01 \x01(\rR\vmaxSessions\x12\x1f\n" +
+	"\vsdk_version\x18\x02 \x01(\tR\n" +
+	"sdkVersion\x12%\n" +
+	"\x0eclaude_version\x18\x03 \x01(\tR\rclaudeVersion\x123\n" +
+	"\aaccount\x18\x04 \x01(\v2\x19.circus.v1.Attach.AccountR\aaccount\x12G\n" +
+	"\x0fauto_mode_check\x18\x05 \x01(\x0e2\x1f.circus.v1.Attach.AutoModeCheckR\rautoModeCheck\x1ap\n" +
+	"\aAccount\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\"\n" +
+	"\forganization\x18\x02 \x01(\tR\forganization\x12+\n" +
+	"\x11subscription_type\x18\x03 \x01(\tR\x10subscriptionType\"p\n" +
+	"\rAutoModeCheck\x12\x1f\n" +
+	"\x1bAUTO_MODE_CHECK_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19AUTO_MODE_CHECK_AVAILABLE\x10\x01\x12\x1f\n" +
+	"\x1bAUTO_MODE_CHECK_UNAVAILABLE\x10\x02\"\xd3\x04\n" +
+	"\vWorkerEvent\x124\n" +
+	"\x05offer\x18\x01 \x01(\v2\x1c.circus.v1.WorkerEvent.OfferH\x00R\x05offer\x124\n" +
+	"\x05nudge\x18\x02 \x01(\v2\x1c.circus.v1.WorkerEvent.NudgeH\x00R\x05nudge\x12J\n" +
+	"\rlease_revoked\x18\x03 \x01(\v2#.circus.v1.WorkerEvent.LeaseRevokedH\x00R\fleaseRevoked\x1a&\n" +
+	"\x05Offer\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x1a\x95\x02\n" +
+	"\x05Nudge\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12A\n" +
+	"\areasons\x18\x02 \x03(\x0e2#.circus.v1.WorkerEvent.Nudge.ReasonB\x02\x10\x00R\areasons\x12*\n" +
+	"\x11interrupt_turn_no\x18\x03 \x01(\x04R\x0finterruptTurnNo\"~\n" +
+	"\x06Reason\x12\x16\n" +
+	"\x12REASON_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fREASON_INPUT\x10\x01\x12\x0e\n" +
+	"\n" +
+	"REASON_JOB\x10\x02\x12\x14\n" +
+	"\x10REASON_INTERRUPT\x10\x03\x12\x0f\n" +
+	"\vREASON_STOP\x10\x04\x12\x13\n" +
+	"\x0fREASON_APPROVAL\x10\x05\x1aC\n" +
+	"\fLeaseRevoked\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05epoch\x18\x02 \x01(\x04R\x05epochB\a\n" +
+	"\x05event\"\xbe\a\n" +
+	"\x0eSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\x12>\n" +
+	"\racquire_lease\x18\n" +
+	" \x01(\v2\x17.circus.v1.AcquireLeaseH\x00R\facquireLease\x12>\n" +
+	"\rrelease_lease\x18\v \x01(\v2\x17.circus.v1.ReleaseLeaseH\x00R\freleaseLease\x12D\n" +
+	"\x0fload_transcript\x18\f \x01(\v2\x19.circus.v1.LoadTranscriptH\x00R\x0eloadTranscript\x12Q\n" +
+	"\x14list_transcript_keys\x18\r \x01(\v2\x1d.circus.v1.ListTranscriptKeysH\x00R\x12listTranscriptKeys\x12J\n" +
+	"\x11append_transcript\x18\x0e \x01(\v2\x1b.circus.v1.AppendTranscriptH\x00R\x10appendTranscript\x128\n" +
+	"\vtake_inputs\x18\x0f \x01(\v2\x15.circus.v1.TakeInputsH\x00R\n" +
+	"takeInputs\x128\n" +
+	"\vreport_turn\x18\x10 \x01(\v2\x15.circus.v1.ReportTurnH\x00R\n" +
+	"reportTurn\x12?\n" +
+	"\vpatch_state\x18\x11 \x01(\v2\x1c.circus.v1.PatchSessionStateH\x00R\n" +
+	"patchState\x129\n" +
+	"\tget_state\x18\x12 \x01(\v2\x1a.circus.v1.GetSessionStateH\x00R\bgetState\x12A\n" +
+	"\x0epublish_events\x18\x13 \x01(\v2\x18.circus.v1.PublishEventsH\x00R\rpublishEvents\x12G\n" +
+	"\x10request_approval\x18\x14 \x01(\v2\x1a.circus.v1.RequestApprovalH\x00R\x0frequestApproval\x12>\n" +
+	"\rconsume_grant\x18\x15 \x01(\v2\x17.circus.v1.ConsumeGrantH\x00R\fconsumeGrant\x12P\n" +
+	"\x13transcript_repaired\x18\x16 \x01(\v2\x1d.circus.v1.TranscriptRepairedH\x00R\x12transcriptRepairedB\x04\n" +
+	"\x02op\"$\n" +
+	"\fAcquireLease\x12\x14\n" +
+	"\x05fresh\x18\x01 \x01(\bR\x05fresh\"\xb2\x01\n" +
+	"\fReleaseLease\x126\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x1e.circus.v1.ReleaseLease.ReasonR\x06reason\"j\n" +
+	"\x06Reason\x12\x16\n" +
+	"\x12REASON_UNSPECIFIED\x10\x00\x12\x0f\n" +
+	"\vREASON_IDLE\x10\x01\x12\x12\n" +
+	"\x0eREASON_STOPPED\x10\x02\x12\x10\n" +
+	"\fREASON_ERROR\x10\x03\x12\x11\n" +
+	"\rREASON_FENCED\x10\x04\"d\n" +
+	"\x0eLoadTranscript\x12\x18\n" +
+	"\asubpath\x18\x01 \x01(\tR\asubpath\x12\x1b\n" +
+	"\tafter_seq\x18\x02 \x01(\x04R\bafterSeq\x12\x1b\n" +
+	"\tmax_bytes\x18\x03 \x01(\rR\bmaxBytes\"\x14\n" +
+	"\x12ListTranscriptKeys\"\x7f\n" +
+	"\x10AppendTranscript\x12\x18\n" +
+	"\asubpath\x18\x01 \x01(\tR\asubpath\x12\x1b\n" +
+	"\tbatch_seq\x18\x02 \x01(\x04R\bbatchSeq\x124\n" +
+	"\aentries\x18\x03 \x03(\v2\x1a.circus.v1.TranscriptEntryR\aentries\"9\n" +
+	"\x0fTranscriptEntry\x12\x12\n" +
+	"\x04uuid\x18\x01 \x01(\tR\x04uuid\x12\x12\n" +
+	"\x04json\x18\x02 \x01(\tR\x04json\"\f\n" +
+	"\n" +
+	"TakeInputs\"\xd2\x04\n" +
+	"\n" +
+	"ReportTurn\x12\x1b\n" +
+	"\tlocal_seq\x18\x01 \x01(\x04R\blocalSeq\x121\n" +
+	"\x05phase\x18\x02 \x01(\x0e2\x1b.circus.v1.ReportTurn.PhaseR\x05phase\x12-\n" +
+	"\x06origin\x18\x03 \x01(\x0e2\x15.circus.v1.TurnOriginR\x06origin\x120\n" +
+	"\aoutcome\x18\x04 \x01(\x0e2\x16.circus.v1.TurnOutcomeR\aoutcome\x12\x1d\n" +
+	"\n" +
+	"usage_json\x18\x05 \x01(\tR\tusageJson\x12=\n" +
+	"\tpersisted\x18\x06 \x01(\v2\x1f.circus.v1.ReportTurn.PersistedR\tpersisted\x123\n" +
+	"\x15transcript_incomplete\x18\a \x01(\bR\x14transcriptIncomplete\x1a\xbb\x01\n" +
+	"\tPersisted\x12\x1b\n" +
+	"\tinput_ids\x18\x01 \x03(\tR\binputIds\x12\x19\n" +
+	"\bcall_ids\x18\x02 \x03(\tR\acallIds\x12%\n" +
+	"\x04jobs\x18\x03 \x03(\v2\x11.circus.v1.JobKeyR\x04jobs\x12\"\n" +
+	"\rlate_call_ids\x18\x04 \x03(\tR\vlateCallIds\x12+\n" +
+	"\x12gap_notice_turn_no\x18\x05 \x01(\x04R\x0fgapNoticeTurnNo\"B\n" +
+	"\x05Phase\x12\x15\n" +
+	"\x11PHASE_UNSPECIFIED\x10\x00\x12\x11\n" +
+	"\rPHASE_STARTED\x10\x01\x12\x0f\n" +
+	"\vPHASE_ENDED\x10\x02\"U\n" +
+	"\x06JobKey\x12\x1b\n" +
+	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12\x17\n" +
+	"\aboot_id\x18\x02 \x01(\tR\x06bootId\x12\x15\n" +
+	"\x06job_id\x18\x03 \x01(\tR\x05jobId\"\x91\x06\n" +
+	"\x11PatchSessionState\x124\n" +
+	"\x04cwds\x18\x01 \x03(\v2 .circus.v1.PatchSessionState.CwdR\x04cwds\x12=\n" +
+	"\x05files\x18\x02 \x03(\v2'.circus.v1.PatchSessionState.FileRecordR\x05files\x12*\n" +
+	"\x11returned_call_ids\x18\x03 \x03(\tR\x0freturnedCallIds\x12T\n" +
+	"\x0fbgtasks_started\x18\x04 \x03(\v2+.circus.v1.PatchSessionState.BackgroundTaskR\x0ebgtasksStarted\x12#\n" +
+	"\rbgtasks_ended\x18\x05 \x03(\tR\fbgtasksEnded\x122\n" +
+	"\vhanded_jobs\x18\x06 \x03(\v2\x11.circus.v1.JobKeyR\n" +
+	"handedJobs\x12=\n" +
+	"\tpersisted\x18\a \x01(\v2\x1f.circus.v1.ReportTurn.PersistedR\tpersisted\x12*\n" +
+	"\x11awaiting_call_ids\x18\b \x03(\tR\x0fawaitingCallIds\x1aJ\n" +
+	"\x03Cwd\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
+	"\x06device\x18\x02 \x01(\tR\x06device\x12\x10\n" +
+	"\x03cwd\x18\x03 \x01(\tR\x03cwd\x1at\n" +
+	"\n" +
+	"FileRecord\x12\x16\n" +
+	"\x06device\x18\x01 \x01(\tR\x06device\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
+	"\x06sha256\x18\x03 \x01(\tR\x06sha256\x12\"\n" +
+	"\rmtime_unix_ms\x18\x04 \x01(\x03R\vmtimeUnixMs\x1a\x7f\n" +
+	"\x0eBackgroundTask\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1e\n" +
+	"\vtool_use_id\x18\x02 \x01(\tR\ttoolUseId\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\"\xea\x01\n" +
+	"\x0fGetSessionState\x12B\n" +
+	"\bsections\x18\x01 \x03(\x0e2\".circus.v1.GetSessionState.SectionB\x02\x10\x00R\bsections\"\x92\x01\n" +
+	"\aSection\x12\x17\n" +
+	"\x13SECTION_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fSECTION_CWDS\x10\x01\x12\x11\n" +
+	"\rSECTION_FILES\x10\x02\x12\x10\n" +
+	"\fSECTION_JOBS\x10\x03\x12\x11\n" +
+	"\rSECTION_CALLS\x10\x04\x12\x12\n" +
+	"\x0eSECTION_GRANTS\x10\x05\x12\x10\n" +
+	"\fSECTION_NONE\x10\x06\"\xe2\b\n" +
+	"\fSessionState\x124\n" +
+	"\x04cwds\x18\x01 \x03(\v2 .circus.v1.PatchSessionState.CwdR\x04cwds\x12=\n" +
+	"\x05files\x18\x02 \x03(\v2'.circus.v1.PatchSessionState.FileRecordR\x05files\x12/\n" +
+	"\x04jobs\x18\x03 \x03(\v2\x1b.circus.v1.SessionState.JobR\x04jobs\x122\n" +
+	"\x05calls\x18\x04 \x03(\v2\x1c.circus.v1.SessionState.CallR\x05calls\x125\n" +
+	"\x06grants\x18\x05 \x03(\v2\x1d.circus.v1.SessionState.GrantR\x06grants\x12\x18\n" +
+	"\astopped\x18\x06 \x01(\bR\astopped\x12*\n" +
+	"\x11interrupt_turn_no\x18\a \x01(\x04R\x0finterruptTurnNo\x1a\xa4\x02\n" +
+	"\x03Job\x12#\n" +
+	"\x03key\x18\x01 \x01(\v2\x11.circus.v1.JobKeyR\x03key\x12\x17\n" +
+	"\acall_id\x18\x02 \x01(\tR\x06callId\x12\x1e\n" +
+	"\vtool_use_id\x18\x03 \x01(\tR\ttoolUseId\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x1f\n" +
+	"\voutput_path\x18\x05 \x01(\tR\n" +
+	"outputPath\x12/\n" +
+	"\x05state\x18\x06 \x01(\x0e2\x19.circus.v1.JobEvent.StateR\x05state\x12\x1b\n" +
+	"\texit_code\x18\a \x01(\x05R\bexitCode\x12\x16\n" +
+	"\x06device\x18\b \x01(\tR\x06device\x12\x16\n" +
+	"\x06handed\x18\t \x01(\bR\x06handed\x1a\xd4\x02\n" +
+	"\x04Call\x12\x17\n" +
+	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x1e\n" +
+	"\vtool_use_id\x18\x02 \x01(\tR\ttoolUseId\x12\x16\n" +
+	"\x06device\x18\x03 \x01(\tR\x06device\x12\x1a\n" +
+	"\breturned\x18\x04 \x01(\bR\breturned\x12\x12\n" +
+	"\x04tool\x18\x05 \x01(\tR\x04tool\x120\n" +
+	"\aoutcome\x18\x06 \x01(\x0e2\x16.circus.v1.CallOutcomeR\aoutcome\x12 \n" +
+	"\texit_code\x18\a \x01(\x05H\x00R\bexitCode\x88\x01\x01\x12\x1f\n" +
+	"\vnotice_owed\x18\b \x01(\bR\n" +
+	"noticeOwed\x12H\n" +
+	"\rrejected_code\x18\t \x01(\x0e2#.circus.v1.CallUpdate.Rejected.CodeR\frejectedCodeB\f\n" +
+	"\n" +
+	"_exit_code\x1a}\n" +
+	"\x05Grant\x12\x12\n" +
+	"\x04tool\x18\x01 \x01(\tR\x04tool\x12\x16\n" +
+	"\x06device\x18\x02 \x01(\tR\x06device\x12\x1b\n" +
+	"\tmatch_key\x18\x03 \x01(\tR\bmatchKey\x12+\n" +
+	"\x12expires_at_unix_ms\x18\x04 \x01(\x03R\x0fexpiresAtUnixMs\"\xca\x01\n" +
+	"\bRecovery\x122\n" +
+	"\x05calls\x18\x01 \x03(\v2\x1c.circus.v1.SessionState.CallR\x05calls\x12N\n" +
+	"\flost_bgtasks\x18\x02 \x03(\v2+.circus.v1.PatchSessionState.BackgroundTaskR\vlostBgtasks\x12:\n" +
+	"\x19previous_turn_interrupted\x18\x03 \x01(\bR\x17previousTurnInterrupted\"\xd1\x01\n" +
+	"\rPublishEvents\x126\n" +
+	"\x06events\x18\x01 \x03(\v2\x1e.circus.v1.PublishEvents.EventR\x06events\x12\x1b\n" +
+	"\tbatch_seq\x18\x02 \x01(\x04R\bbatchSeq\x1ak\n" +
+	"\x05Event\x120\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x1c.circus.v1.SessionEvent.KindR\x04kind\x12\x12\n" +
+	"\x04json\x18\x02 \x01(\tR\x04json\x12\x1c\n" +
+	"\tephemeral\x18\x03 \x01(\bR\tephemeral\"\xc7\x01\n" +
+	"\x0fRequestApproval\x12\x1e\n" +
+	"\vtool_use_id\x18\x01 \x01(\tR\ttoolUseId\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x12\n" +
+	"\x04tool\x18\x03 \x01(\tR\x04tool\x12\x16\n" +
+	"\x06device\x18\x04 \x01(\tR\x06device\x12\x1b\n" +
+	"\tmatch_key\x18\x05 \x01(\tR\bmatchKey\x12\x18\n" +
+	"\adisplay\x18\x06 \x01(\tR\adisplay\x12\x16\n" +
+	"\x06reason\x18\a \x01(\tR\x06reason\"w\n" +
+	"\fConsumeGrant\x12\x12\n" +
+	"\x04tool\x18\x01 \x01(\tR\x04tool\x12\x16\n" +
+	"\x06device\x18\x02 \x01(\tR\x06device\x12\x1b\n" +
+	"\tmatch_key\x18\x03 \x01(\tR\bmatchKey\x12\x1e\n" +
+	"\vtool_use_id\x18\x04 \x01(\tR\ttoolUseId\"\x14\n" +
+	"\x12TranscriptRepaired\"\x81\x01\n" +
+	"\fResumeLeases\x124\n" +
+	"\x06leases\x18\x01 \x03(\v2\x1c.circus.v1.ResumeLeases.HeldR\x06leases\x1a;\n" +
+	"\x04Held\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\"\r\n" +
+	"\vListDevices\"\xd4\x14\n" +
+	"\fSessionReply\x12,\n" +
+	"\x02ok\x18\x01 \x01(\v2\x1a.circus.v1.SessionReply.OkH\x00R\x02ok\x128\n" +
+	"\x06fenced\x18\x02 \x01(\v2\x1e.circus.v1.SessionReply.FencedH\x00R\x06fenced\x12>\n" +
+	"\brejected\x18\x03 \x01(\v2 .circus.v1.SessionReply.RejectedH\x00R\brejected\x125\n" +
+	"\x05lease\x18\n" +
+	" \x01(\v2\x1d.circus.v1.SessionReply.LeaseH\x00R\x05lease\x12Q\n" +
+	"\x0ftranscript_page\x18\v \x01(\v2&.circus.v1.SessionReply.TranscriptPageH\x00R\x0etranscriptPage\x12Q\n" +
+	"\x0ftranscript_keys\x18\f \x01(\v2&.circus.v1.SessionReply.TranscriptKeysH\x00R\x0etranscriptKeys\x128\n" +
+	"\x06inputs\x18\r \x01(\v2\x1e.circus.v1.SessionReply.InputsH\x00R\x06inputs\x122\n" +
+	"\x04turn\x18\x0e \x01(\v2\x1c.circus.v1.SessionReply.TurnH\x00R\x04turn\x12A\n" +
+	"\x05state\x18\x0f \x01(\v2).circus.v1.SessionReply.SessionStateReplyH\x00R\x05state\x12>\n" +
+	"\bapproval\x18\x10 \x01(\v2 .circus.v1.SessionReply.ApprovalH\x00R\bapproval\x125\n" +
+	"\x05grant\x18\x11 \x01(\v2\x1d.circus.v1.SessionReply.GrantH\x00R\x05grant\x12;\n" +
+	"\adevices\x18\x12 \x01(\v2\x1f.circus.v1.SessionReply.DevicesH\x00R\adevices\x12;\n" +
+	"\aresumed\x18\x13 \x01(\v2\x1f.circus.v1.SessionReply.ResumedH\x00R\aresumed\x1a(\n" +
+	"\x02Ok\x12\"\n" +
+	"\fdeduplicated\x18\x01 \x01(\bR\fdeduplicated\x1a\x1e\n" +
+	"\x06Fenced\x12\x14\n" +
+	"\x05epoch\x18\x01 \x01(\x04R\x05epoch\x1a\x92\x02\n" +
+	"\bRejected\x129\n" +
+	"\x04code\x18\x01 \x01(\x0e2%.circus.v1.SessionReply.Rejected.CodeR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xb0\x01\n" +
+	"\x04Code\x12\x14\n" +
+	"\x10CODE_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fCODE_INVALID\x10\x01\x12\x12\n" +
+	"\x0eCODE_NOT_FOUND\x10\x02\x12\x1a\n" +
+	"\x16CODE_STORE_UNAVAILABLE\x10\x03\x12\x18\n" +
+	"\x14CODE_TRANSCRIPT_FULL\x10\x04\x12\x0e\n" +
+	"\n" +
+	"CODE_LIMIT\x10\x05\x12\x10\n" +
+	"\fCODE_STOPPED\x10\x06\x12\x14\n" +
+	"\x10CODE_NOT_OFFERED\x10\a\x1a\xd7\x02\n" +
+	"\x05Lease\x12\x14\n" +
+	"\x05epoch\x18\x01 \x01(\x04R\x05epoch\x12*\n" +
+	"\x11claude_session_id\x18\x02 \x01(\tR\x0fclaudeSessionId\x12%\n" +
+	"\x0ehas_transcript\x18\x03 \x01(\bR\rhasTranscript\x12-\n" +
+	"\x05state\x18\x04 \x01(\v2\x17.circus.v1.SessionStateR\x05state\x12/\n" +
+	"\brecovery\x18\x05 \x01(\v2\x13.circus.v1.RecoveryR\brecovery\x120\n" +
+	"\x06config\x18\x06 \x01(\v2\x18.circus.v1.SessionConfigR\x06config\x12\x1e\n" +
+	"\n" +
+	"reattached\x18\a \x01(\bR\n" +
+	"reattached\x123\n" +
+	"\x16transcript_gap_turn_no\x18\b \x01(\x04R\x13transcriptGapTurnNo\x1au\n" +
+	"\x0eTranscriptPage\x124\n" +
+	"\aentries\x18\x01 \x03(\v2\x1a.circus.v1.TranscriptEntryR\aentries\x12\x19\n" +
+	"\bnext_seq\x18\x02 \x01(\x04R\anextSeq\x12\x12\n" +
+	"\x04done\x18\x03 \x01(\bR\x04done\x1a,\n" +
+	"\x0eTranscriptKeys\x12\x1a\n" +
+	"\bsubpaths\x18\x01 \x03(\tR\bsubpaths\x1a\xb4\x02\n" +
+	"\x06Inputs\x12<\n" +
+	"\x06inputs\x18\x01 \x03(\v2$.circus.v1.SessionReply.Inputs.InputR\x06inputs\x1a\xeb\x01\n" +
+	"\x05Input\x12\x19\n" +
+	"\binput_id\x18\x01 \x01(\tR\ainputId\x12=\n" +
+	"\x04kind\x18\x02 \x01(\x0e2).circus.v1.SessionReply.Inputs.Input.KindR\x04kind\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\x124\n" +
+	"\bpriority\x18\x04 \x01(\x0e2\x18.circus.v1.InputPriorityR\bpriority\">\n" +
+	"\x04Kind\x12\x14\n" +
+	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
+	"\tKIND_USER\x10\x01\x12\x11\n" +
+	"\rKIND_APPROVAL\x10\x02\x1a\x1f\n" +
+	"\x04Turn\x12\x17\n" +
+	"\aturn_no\x18\x01 \x01(\x04R\x06turnNo\x1aB\n" +
+	"\x11SessionStateReply\x12-\n" +
+	"\x05state\x18\x01 \x01(\v2\x17.circus.v1.SessionStateR\x05state\x1aO\n" +
+	"\bApproval\x12\x1f\n" +
+	"\vapproval_id\x18\x01 \x01(\tR\n" +
+	"approvalId\x12\"\n" +
+	"\fdeduplicated\x18\x02 \x01(\bR\fdeduplicated\x1a!\n" +
+	"\x05Grant\x12\x18\n" +
+	"\aallowed\x18\x01 \x01(\bR\aallowed\x1a\xed\x01\n" +
+	"\aDevices\x12@\n" +
+	"\adevices\x18\x01 \x03(\v2&.circus.v1.SessionReply.Devices.DeviceR\adevices\x1a\x9f\x01\n" +
+	"\x06Device\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06online\x18\x02 \x01(\bR\x06online\x12\x0e\n" +
+	"\x02os\x18\x03 \x01(\tR\x02os\x12\x12\n" +
+	"\x04arch\x18\x04 \x01(\tR\x04arch\x12\x1a\n" +
+	"\bhostname\x18\x05 \x01(\tR\bhostname\x12)\n" +
+	"\x11last_seen_unix_ms\x18\x06 \x01(\x03R\x0elastSeenUnixMs\x1a\xb4\x01\n" +
+	"\aResumed\x12?\n" +
+	"\x06leases\x18\x01 \x03(\v2'.circus.v1.SessionReply.Resumed.OutcomeR\x06leases\x1ah\n" +
+	"\aOutcome\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x0e\n" +
+	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x14\n" +
+	"\x05epoch\x18\x03 \x01(\x04R\x05epoch\x12\x18\n" +
+	"\astopped\x18\x04 \x01(\bR\astoppedB\b\n" +
+	"\x06result*\xfe\x01\n" +
+	"\vCallOutcome\x12\x1c\n" +
+	"\x18CALL_OUTCOME_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15CALL_OUTCOME_ACCEPTED\x10\x01\x12\x1b\n" +
+	"\x17CALL_OUTCOME_DISPATCHED\x10\x02\x12\x18\n" +
+	"\x14CALL_OUTCOME_UNKNOWN\x10\x03\x12\x17\n" +
+	"\x13CALL_OUTCOME_RESULT\x10\x04\x12\x18\n" +
+	"\x14CALL_OUTCOME_OFFLINE\x10\x05\x12\x15\n" +
+	"\x11CALL_OUTCOME_LOST\x10\x06\x12\x19\n" +
+	"\x15CALL_OUTCOME_REJECTED\x10\a\x12\x1a\n" +
+	"\x16CALL_OUTCOME_CANCELLED\x10\bB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 
 var (
 	file_circus_v1_worker_link_proto_rawDescOnce sync.Once
@@ -1188,64 +5862,202 @@ func file_circus_v1_worker_link_proto_rawDescGZIP() []byte {
 	return file_circus_v1_worker_link_proto_rawDescData
 }
 
-var file_circus_v1_worker_link_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_circus_v1_worker_link_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_circus_v1_worker_link_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
+var file_circus_v1_worker_link_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
 var file_circus_v1_worker_link_proto_goTypes = []any{
-	(CallUpdate_Rejected_Code)(0),    // 0: circus.v1.CallUpdate.Rejected.Code
-	(*WorkerUplink)(nil),             // 1: circus.v1.WorkerUplink
-	(*WorkerDownlink)(nil),           // 2: circus.v1.WorkerDownlink
-	(*Unwatch)(nil),                  // 3: circus.v1.Unwatch
-	(*WorkerJobEvent)(nil),           // 4: circus.v1.WorkerJobEvent
-	(*SubmitCall)(nil),               // 5: circus.v1.SubmitCall
-	(*CallUpdate)(nil),               // 6: circus.v1.CallUpdate
-	(*CallUpdate_Accepted)(nil),      // 7: circus.v1.CallUpdate.Accepted
-	(*CallUpdate_Dispatched)(nil),    // 8: circus.v1.CallUpdate.Dispatched
-	(*CallUpdate_DeviceOffline)(nil), // 9: circus.v1.CallUpdate.DeviceOffline
-	(*CallUpdate_Unknown)(nil),       // 10: circus.v1.CallUpdate.Unknown
-	(*CallUpdate_Lost)(nil),          // 11: circus.v1.CallUpdate.Lost
-	(*CallUpdate_Rejected)(nil),      // 12: circus.v1.CallUpdate.Rejected
-	(*CallUpdate_Cancelled)(nil),     // 13: circus.v1.CallUpdate.Cancelled
-	(*Hello)(nil),                    // 14: circus.v1.Hello
-	(*Heartbeat)(nil),                // 15: circus.v1.Heartbeat
-	(*Fragment)(nil),                 // 16: circus.v1.Fragment
-	(*CancelCall)(nil),               // 17: circus.v1.CancelCall
-	(*CallQuery)(nil),                // 18: circus.v1.CallQuery
-	(*Welcome)(nil),                  // 19: circus.v1.Welcome
-	(*Reject)(nil),                   // 20: circus.v1.Reject
-	(*JobEvent)(nil),                 // 21: circus.v1.JobEvent
-	(*DeviceCall)(nil),               // 22: circus.v1.DeviceCall
-	(*DeviceResult)(nil),             // 23: circus.v1.DeviceResult
+	(CallOutcome)(0),                         // 0: circus.v1.CallOutcome
+	(CallUpdate_Rejected_Code)(0),            // 1: circus.v1.CallUpdate.Rejected.Code
+	(Attach_AutoModeCheck)(0),                // 2: circus.v1.Attach.AutoModeCheck
+	(WorkerEvent_Nudge_Reason)(0),            // 3: circus.v1.WorkerEvent.Nudge.Reason
+	(ReleaseLease_Reason)(0),                 // 4: circus.v1.ReleaseLease.Reason
+	(ReportTurn_Phase)(0),                    // 5: circus.v1.ReportTurn.Phase
+	(GetSessionState_Section)(0),             // 6: circus.v1.GetSessionState.Section
+	(SessionReply_Rejected_Code)(0),          // 7: circus.v1.SessionReply.Rejected.Code
+	(SessionReply_Inputs_Input_Kind)(0),      // 8: circus.v1.SessionReply.Inputs.Input.Kind
+	(*WorkerUplink)(nil),                     // 9: circus.v1.WorkerUplink
+	(*WorkerDownlink)(nil),                   // 10: circus.v1.WorkerDownlink
+	(*Unwatch)(nil),                          // 11: circus.v1.Unwatch
+	(*SubmitCall)(nil),                       // 12: circus.v1.SubmitCall
+	(*CallUpdate)(nil),                       // 13: circus.v1.CallUpdate
+	(*Attach)(nil),                           // 14: circus.v1.Attach
+	(*WorkerEvent)(nil),                      // 15: circus.v1.WorkerEvent
+	(*SessionRequest)(nil),                   // 16: circus.v1.SessionRequest
+	(*AcquireLease)(nil),                     // 17: circus.v1.AcquireLease
+	(*ReleaseLease)(nil),                     // 18: circus.v1.ReleaseLease
+	(*LoadTranscript)(nil),                   // 19: circus.v1.LoadTranscript
+	(*ListTranscriptKeys)(nil),               // 20: circus.v1.ListTranscriptKeys
+	(*AppendTranscript)(nil),                 // 21: circus.v1.AppendTranscript
+	(*TranscriptEntry)(nil),                  // 22: circus.v1.TranscriptEntry
+	(*TakeInputs)(nil),                       // 23: circus.v1.TakeInputs
+	(*ReportTurn)(nil),                       // 24: circus.v1.ReportTurn
+	(*JobKey)(nil),                           // 25: circus.v1.JobKey
+	(*PatchSessionState)(nil),                // 26: circus.v1.PatchSessionState
+	(*GetSessionState)(nil),                  // 27: circus.v1.GetSessionState
+	(*SessionState)(nil),                     // 28: circus.v1.SessionState
+	(*Recovery)(nil),                         // 29: circus.v1.Recovery
+	(*PublishEvents)(nil),                    // 30: circus.v1.PublishEvents
+	(*RequestApproval)(nil),                  // 31: circus.v1.RequestApproval
+	(*ConsumeGrant)(nil),                     // 32: circus.v1.ConsumeGrant
+	(*TranscriptRepaired)(nil),               // 33: circus.v1.TranscriptRepaired
+	(*ResumeLeases)(nil),                     // 34: circus.v1.ResumeLeases
+	(*ListDevices)(nil),                      // 35: circus.v1.ListDevices
+	(*SessionReply)(nil),                     // 36: circus.v1.SessionReply
+	(*CallUpdate_Accepted)(nil),              // 37: circus.v1.CallUpdate.Accepted
+	(*CallUpdate_Dispatched)(nil),            // 38: circus.v1.CallUpdate.Dispatched
+	(*CallUpdate_DeviceOffline)(nil),         // 39: circus.v1.CallUpdate.DeviceOffline
+	(*CallUpdate_Unknown)(nil),               // 40: circus.v1.CallUpdate.Unknown
+	(*CallUpdate_Lost)(nil),                  // 41: circus.v1.CallUpdate.Lost
+	(*CallUpdate_Rejected)(nil),              // 42: circus.v1.CallUpdate.Rejected
+	(*CallUpdate_Cancelled)(nil),             // 43: circus.v1.CallUpdate.Cancelled
+	(*Attach_Account)(nil),                   // 44: circus.v1.Attach.Account
+	(*WorkerEvent_Offer)(nil),                // 45: circus.v1.WorkerEvent.Offer
+	(*WorkerEvent_Nudge)(nil),                // 46: circus.v1.WorkerEvent.Nudge
+	(*WorkerEvent_LeaseRevoked)(nil),         // 47: circus.v1.WorkerEvent.LeaseRevoked
+	(*ReportTurn_Persisted)(nil),             // 48: circus.v1.ReportTurn.Persisted
+	(*PatchSessionState_Cwd)(nil),            // 49: circus.v1.PatchSessionState.Cwd
+	(*PatchSessionState_FileRecord)(nil),     // 50: circus.v1.PatchSessionState.FileRecord
+	(*PatchSessionState_BackgroundTask)(nil), // 51: circus.v1.PatchSessionState.BackgroundTask
+	(*SessionState_Job)(nil),                 // 52: circus.v1.SessionState.Job
+	(*SessionState_Call)(nil),                // 53: circus.v1.SessionState.Call
+	(*SessionState_Grant)(nil),               // 54: circus.v1.SessionState.Grant
+	(*PublishEvents_Event)(nil),              // 55: circus.v1.PublishEvents.Event
+	(*ResumeLeases_Held)(nil),                // 56: circus.v1.ResumeLeases.Held
+	(*SessionReply_Ok)(nil),                  // 57: circus.v1.SessionReply.Ok
+	(*SessionReply_Fenced)(nil),              // 58: circus.v1.SessionReply.Fenced
+	(*SessionReply_Rejected)(nil),            // 59: circus.v1.SessionReply.Rejected
+	(*SessionReply_Lease)(nil),               // 60: circus.v1.SessionReply.Lease
+	(*SessionReply_TranscriptPage)(nil),      // 61: circus.v1.SessionReply.TranscriptPage
+	(*SessionReply_TranscriptKeys)(nil),      // 62: circus.v1.SessionReply.TranscriptKeys
+	(*SessionReply_Inputs)(nil),              // 63: circus.v1.SessionReply.Inputs
+	(*SessionReply_Turn)(nil),                // 64: circus.v1.SessionReply.Turn
+	(*SessionReply_SessionStateReply)(nil),   // 65: circus.v1.SessionReply.SessionStateReply
+	(*SessionReply_Approval)(nil),            // 66: circus.v1.SessionReply.Approval
+	(*SessionReply_Grant)(nil),               // 67: circus.v1.SessionReply.Grant
+	(*SessionReply_Devices)(nil),             // 68: circus.v1.SessionReply.Devices
+	(*SessionReply_Resumed)(nil),             // 69: circus.v1.SessionReply.Resumed
+	(*SessionReply_Inputs_Input)(nil),        // 70: circus.v1.SessionReply.Inputs.Input
+	(*SessionReply_Devices_Device)(nil),      // 71: circus.v1.SessionReply.Devices.Device
+	(*SessionReply_Resumed_Outcome)(nil),     // 72: circus.v1.SessionReply.Resumed.Outcome
+	(*Hello)(nil),                            // 73: circus.v1.Hello
+	(*Heartbeat)(nil),                        // 74: circus.v1.Heartbeat
+	(*Fragment)(nil),                         // 75: circus.v1.Fragment
+	(*CancelCall)(nil),                       // 76: circus.v1.CancelCall
+	(*CallQuery)(nil),                        // 77: circus.v1.CallQuery
+	(*Welcome)(nil),                          // 78: circus.v1.Welcome
+	(*Reject)(nil),                           // 79: circus.v1.Reject
+	(*DeviceCall)(nil),                       // 80: circus.v1.DeviceCall
+	(*DeviceResult)(nil),                     // 81: circus.v1.DeviceResult
+	(TurnOrigin)(0),                          // 82: circus.v1.TurnOrigin
+	(TurnOutcome)(0),                         // 83: circus.v1.TurnOutcome
+	(JobEvent_State)(0),                      // 84: circus.v1.JobEvent.State
+	(SessionEvent_Kind)(0),                   // 85: circus.v1.SessionEvent.Kind
+	(*SessionConfig)(nil),                    // 86: circus.v1.SessionConfig
+	(InputPriority)(0),                       // 87: circus.v1.InputPriority
 }
 var file_circus_v1_worker_link_proto_depIdxs = []int32{
-	14, // 0: circus.v1.WorkerUplink.hello:type_name -> circus.v1.Hello
-	15, // 1: circus.v1.WorkerUplink.heartbeat:type_name -> circus.v1.Heartbeat
-	16, // 2: circus.v1.WorkerUplink.fragment:type_name -> circus.v1.Fragment
-	5,  // 3: circus.v1.WorkerUplink.submit_call:type_name -> circus.v1.SubmitCall
-	17, // 4: circus.v1.WorkerUplink.cancel_call:type_name -> circus.v1.CancelCall
-	18, // 5: circus.v1.WorkerUplink.call_query:type_name -> circus.v1.CallQuery
-	3,  // 6: circus.v1.WorkerUplink.unwatch:type_name -> circus.v1.Unwatch
-	19, // 7: circus.v1.WorkerDownlink.welcome:type_name -> circus.v1.Welcome
-	20, // 8: circus.v1.WorkerDownlink.reject:type_name -> circus.v1.Reject
-	15, // 9: circus.v1.WorkerDownlink.heartbeat:type_name -> circus.v1.Heartbeat
-	16, // 10: circus.v1.WorkerDownlink.fragment:type_name -> circus.v1.Fragment
-	6,  // 11: circus.v1.WorkerDownlink.call_update:type_name -> circus.v1.CallUpdate
-	4,  // 12: circus.v1.WorkerDownlink.job_event:type_name -> circus.v1.WorkerJobEvent
-	21, // 13: circus.v1.WorkerJobEvent.event:type_name -> circus.v1.JobEvent
-	22, // 14: circus.v1.SubmitCall.call:type_name -> circus.v1.DeviceCall
-	7,  // 15: circus.v1.CallUpdate.accepted:type_name -> circus.v1.CallUpdate.Accepted
-	8,  // 16: circus.v1.CallUpdate.dispatched:type_name -> circus.v1.CallUpdate.Dispatched
-	23, // 17: circus.v1.CallUpdate.result:type_name -> circus.v1.DeviceResult
-	9,  // 18: circus.v1.CallUpdate.offline:type_name -> circus.v1.CallUpdate.DeviceOffline
-	10, // 19: circus.v1.CallUpdate.unknown:type_name -> circus.v1.CallUpdate.Unknown
-	11, // 20: circus.v1.CallUpdate.lost:type_name -> circus.v1.CallUpdate.Lost
-	12, // 21: circus.v1.CallUpdate.rejected:type_name -> circus.v1.CallUpdate.Rejected
-	13, // 22: circus.v1.CallUpdate.cancelled:type_name -> circus.v1.CallUpdate.Cancelled
-	0,  // 23: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
-	24, // [24:24] is the sub-list for method output_type
-	24, // [24:24] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	73, // 0: circus.v1.WorkerUplink.hello:type_name -> circus.v1.Hello
+	74, // 1: circus.v1.WorkerUplink.heartbeat:type_name -> circus.v1.Heartbeat
+	75, // 2: circus.v1.WorkerUplink.fragment:type_name -> circus.v1.Fragment
+	12, // 3: circus.v1.WorkerUplink.submit_call:type_name -> circus.v1.SubmitCall
+	76, // 4: circus.v1.WorkerUplink.cancel_call:type_name -> circus.v1.CancelCall
+	77, // 5: circus.v1.WorkerUplink.call_query:type_name -> circus.v1.CallQuery
+	11, // 6: circus.v1.WorkerUplink.unwatch:type_name -> circus.v1.Unwatch
+	14, // 7: circus.v1.WorkerUplink.attach:type_name -> circus.v1.Attach
+	16, // 8: circus.v1.WorkerUplink.session:type_name -> circus.v1.SessionRequest
+	34, // 9: circus.v1.WorkerUplink.resume_leases:type_name -> circus.v1.ResumeLeases
+	35, // 10: circus.v1.WorkerUplink.list_devices:type_name -> circus.v1.ListDevices
+	78, // 11: circus.v1.WorkerDownlink.welcome:type_name -> circus.v1.Welcome
+	79, // 12: circus.v1.WorkerDownlink.reject:type_name -> circus.v1.Reject
+	74, // 13: circus.v1.WorkerDownlink.heartbeat:type_name -> circus.v1.Heartbeat
+	75, // 14: circus.v1.WorkerDownlink.fragment:type_name -> circus.v1.Fragment
+	13, // 15: circus.v1.WorkerDownlink.call_update:type_name -> circus.v1.CallUpdate
+	36, // 16: circus.v1.WorkerDownlink.session_reply:type_name -> circus.v1.SessionReply
+	15, // 17: circus.v1.WorkerDownlink.worker_event:type_name -> circus.v1.WorkerEvent
+	80, // 18: circus.v1.SubmitCall.call:type_name -> circus.v1.DeviceCall
+	37, // 19: circus.v1.CallUpdate.accepted:type_name -> circus.v1.CallUpdate.Accepted
+	38, // 20: circus.v1.CallUpdate.dispatched:type_name -> circus.v1.CallUpdate.Dispatched
+	81, // 21: circus.v1.CallUpdate.result:type_name -> circus.v1.DeviceResult
+	39, // 22: circus.v1.CallUpdate.offline:type_name -> circus.v1.CallUpdate.DeviceOffline
+	40, // 23: circus.v1.CallUpdate.unknown:type_name -> circus.v1.CallUpdate.Unknown
+	41, // 24: circus.v1.CallUpdate.lost:type_name -> circus.v1.CallUpdate.Lost
+	42, // 25: circus.v1.CallUpdate.rejected:type_name -> circus.v1.CallUpdate.Rejected
+	43, // 26: circus.v1.CallUpdate.cancelled:type_name -> circus.v1.CallUpdate.Cancelled
+	44, // 27: circus.v1.Attach.account:type_name -> circus.v1.Attach.Account
+	2,  // 28: circus.v1.Attach.auto_mode_check:type_name -> circus.v1.Attach.AutoModeCheck
+	45, // 29: circus.v1.WorkerEvent.offer:type_name -> circus.v1.WorkerEvent.Offer
+	46, // 30: circus.v1.WorkerEvent.nudge:type_name -> circus.v1.WorkerEvent.Nudge
+	47, // 31: circus.v1.WorkerEvent.lease_revoked:type_name -> circus.v1.WorkerEvent.LeaseRevoked
+	17, // 32: circus.v1.SessionRequest.acquire_lease:type_name -> circus.v1.AcquireLease
+	18, // 33: circus.v1.SessionRequest.release_lease:type_name -> circus.v1.ReleaseLease
+	19, // 34: circus.v1.SessionRequest.load_transcript:type_name -> circus.v1.LoadTranscript
+	20, // 35: circus.v1.SessionRequest.list_transcript_keys:type_name -> circus.v1.ListTranscriptKeys
+	21, // 36: circus.v1.SessionRequest.append_transcript:type_name -> circus.v1.AppendTranscript
+	23, // 37: circus.v1.SessionRequest.take_inputs:type_name -> circus.v1.TakeInputs
+	24, // 38: circus.v1.SessionRequest.report_turn:type_name -> circus.v1.ReportTurn
+	26, // 39: circus.v1.SessionRequest.patch_state:type_name -> circus.v1.PatchSessionState
+	27, // 40: circus.v1.SessionRequest.get_state:type_name -> circus.v1.GetSessionState
+	30, // 41: circus.v1.SessionRequest.publish_events:type_name -> circus.v1.PublishEvents
+	31, // 42: circus.v1.SessionRequest.request_approval:type_name -> circus.v1.RequestApproval
+	32, // 43: circus.v1.SessionRequest.consume_grant:type_name -> circus.v1.ConsumeGrant
+	33, // 44: circus.v1.SessionRequest.transcript_repaired:type_name -> circus.v1.TranscriptRepaired
+	4,  // 45: circus.v1.ReleaseLease.reason:type_name -> circus.v1.ReleaseLease.Reason
+	22, // 46: circus.v1.AppendTranscript.entries:type_name -> circus.v1.TranscriptEntry
+	5,  // 47: circus.v1.ReportTurn.phase:type_name -> circus.v1.ReportTurn.Phase
+	82, // 48: circus.v1.ReportTurn.origin:type_name -> circus.v1.TurnOrigin
+	83, // 49: circus.v1.ReportTurn.outcome:type_name -> circus.v1.TurnOutcome
+	48, // 50: circus.v1.ReportTurn.persisted:type_name -> circus.v1.ReportTurn.Persisted
+	49, // 51: circus.v1.PatchSessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
+	50, // 52: circus.v1.PatchSessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
+	51, // 53: circus.v1.PatchSessionState.bgtasks_started:type_name -> circus.v1.PatchSessionState.BackgroundTask
+	25, // 54: circus.v1.PatchSessionState.handed_jobs:type_name -> circus.v1.JobKey
+	48, // 55: circus.v1.PatchSessionState.persisted:type_name -> circus.v1.ReportTurn.Persisted
+	6,  // 56: circus.v1.GetSessionState.sections:type_name -> circus.v1.GetSessionState.Section
+	49, // 57: circus.v1.SessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
+	50, // 58: circus.v1.SessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
+	52, // 59: circus.v1.SessionState.jobs:type_name -> circus.v1.SessionState.Job
+	53, // 60: circus.v1.SessionState.calls:type_name -> circus.v1.SessionState.Call
+	54, // 61: circus.v1.SessionState.grants:type_name -> circus.v1.SessionState.Grant
+	53, // 62: circus.v1.Recovery.calls:type_name -> circus.v1.SessionState.Call
+	51, // 63: circus.v1.Recovery.lost_bgtasks:type_name -> circus.v1.PatchSessionState.BackgroundTask
+	55, // 64: circus.v1.PublishEvents.events:type_name -> circus.v1.PublishEvents.Event
+	56, // 65: circus.v1.ResumeLeases.leases:type_name -> circus.v1.ResumeLeases.Held
+	57, // 66: circus.v1.SessionReply.ok:type_name -> circus.v1.SessionReply.Ok
+	58, // 67: circus.v1.SessionReply.fenced:type_name -> circus.v1.SessionReply.Fenced
+	59, // 68: circus.v1.SessionReply.rejected:type_name -> circus.v1.SessionReply.Rejected
+	60, // 69: circus.v1.SessionReply.lease:type_name -> circus.v1.SessionReply.Lease
+	61, // 70: circus.v1.SessionReply.transcript_page:type_name -> circus.v1.SessionReply.TranscriptPage
+	62, // 71: circus.v1.SessionReply.transcript_keys:type_name -> circus.v1.SessionReply.TranscriptKeys
+	63, // 72: circus.v1.SessionReply.inputs:type_name -> circus.v1.SessionReply.Inputs
+	64, // 73: circus.v1.SessionReply.turn:type_name -> circus.v1.SessionReply.Turn
+	65, // 74: circus.v1.SessionReply.state:type_name -> circus.v1.SessionReply.SessionStateReply
+	66, // 75: circus.v1.SessionReply.approval:type_name -> circus.v1.SessionReply.Approval
+	67, // 76: circus.v1.SessionReply.grant:type_name -> circus.v1.SessionReply.Grant
+	68, // 77: circus.v1.SessionReply.devices:type_name -> circus.v1.SessionReply.Devices
+	69, // 78: circus.v1.SessionReply.resumed:type_name -> circus.v1.SessionReply.Resumed
+	1,  // 79: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
+	3,  // 80: circus.v1.WorkerEvent.Nudge.reasons:type_name -> circus.v1.WorkerEvent.Nudge.Reason
+	25, // 81: circus.v1.ReportTurn.Persisted.jobs:type_name -> circus.v1.JobKey
+	25, // 82: circus.v1.SessionState.Job.key:type_name -> circus.v1.JobKey
+	84, // 83: circus.v1.SessionState.Job.state:type_name -> circus.v1.JobEvent.State
+	0,  // 84: circus.v1.SessionState.Call.outcome:type_name -> circus.v1.CallOutcome
+	1,  // 85: circus.v1.SessionState.Call.rejected_code:type_name -> circus.v1.CallUpdate.Rejected.Code
+	85, // 86: circus.v1.PublishEvents.Event.kind:type_name -> circus.v1.SessionEvent.Kind
+	7,  // 87: circus.v1.SessionReply.Rejected.code:type_name -> circus.v1.SessionReply.Rejected.Code
+	28, // 88: circus.v1.SessionReply.Lease.state:type_name -> circus.v1.SessionState
+	29, // 89: circus.v1.SessionReply.Lease.recovery:type_name -> circus.v1.Recovery
+	86, // 90: circus.v1.SessionReply.Lease.config:type_name -> circus.v1.SessionConfig
+	22, // 91: circus.v1.SessionReply.TranscriptPage.entries:type_name -> circus.v1.TranscriptEntry
+	70, // 92: circus.v1.SessionReply.Inputs.inputs:type_name -> circus.v1.SessionReply.Inputs.Input
+	28, // 93: circus.v1.SessionReply.SessionStateReply.state:type_name -> circus.v1.SessionState
+	71, // 94: circus.v1.SessionReply.Devices.devices:type_name -> circus.v1.SessionReply.Devices.Device
+	72, // 95: circus.v1.SessionReply.Resumed.leases:type_name -> circus.v1.SessionReply.Resumed.Outcome
+	8,  // 96: circus.v1.SessionReply.Inputs.Input.kind:type_name -> circus.v1.SessionReply.Inputs.Input.Kind
+	87, // 97: circus.v1.SessionReply.Inputs.Input.priority:type_name -> circus.v1.InputPriority
+	98, // [98:98] is the sub-list for method output_type
+	98, // [98:98] is the sub-list for method input_type
+	98, // [98:98] is the sub-list for extension type_name
+	98, // [98:98] is the sub-list for extension extendee
+	0,  // [0:98] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_worker_link_proto_init() }
@@ -1255,6 +6067,7 @@ func file_circus_v1_worker_link_proto_init() {
 	}
 	file_circus_v1_device_proto_init()
 	file_circus_v1_link_proto_init()
+	file_circus_v1_session_proto_init()
 	file_circus_v1_worker_link_proto_msgTypes[0].OneofWrappers = []any{
 		(*WorkerUplink_Hello)(nil),
 		(*WorkerUplink_Heartbeat)(nil),
@@ -1263,6 +6076,10 @@ func file_circus_v1_worker_link_proto_init() {
 		(*WorkerUplink_CancelCall)(nil),
 		(*WorkerUplink_CallQuery)(nil),
 		(*WorkerUplink_Unwatch)(nil),
+		(*WorkerUplink_Attach)(nil),
+		(*WorkerUplink_Session)(nil),
+		(*WorkerUplink_ResumeLeases)(nil),
+		(*WorkerUplink_ListDevices)(nil),
 	}
 	file_circus_v1_worker_link_proto_msgTypes[1].OneofWrappers = []any{
 		(*WorkerDownlink_Welcome)(nil),
@@ -1270,9 +6087,10 @@ func file_circus_v1_worker_link_proto_init() {
 		(*WorkerDownlink_Heartbeat)(nil),
 		(*WorkerDownlink_Fragment)(nil),
 		(*WorkerDownlink_CallUpdate)(nil),
-		(*WorkerDownlink_JobEvent)(nil),
+		(*WorkerDownlink_SessionReply)(nil),
+		(*WorkerDownlink_WorkerEvent)(nil),
 	}
-	file_circus_v1_worker_link_proto_msgTypes[5].OneofWrappers = []any{
+	file_circus_v1_worker_link_proto_msgTypes[4].OneofWrappers = []any{
 		(*CallUpdate_Accepted_)(nil),
 		(*CallUpdate_Dispatched_)(nil),
 		(*CallUpdate_Result)(nil),
@@ -1282,13 +6100,49 @@ func file_circus_v1_worker_link_proto_init() {
 		(*CallUpdate_Rejected_)(nil),
 		(*CallUpdate_Cancelled_)(nil),
 	}
+	file_circus_v1_worker_link_proto_msgTypes[6].OneofWrappers = []any{
+		(*WorkerEvent_Offer_)(nil),
+		(*WorkerEvent_Nudge_)(nil),
+		(*WorkerEvent_LeaseRevoked_)(nil),
+	}
+	file_circus_v1_worker_link_proto_msgTypes[7].OneofWrappers = []any{
+		(*SessionRequest_AcquireLease)(nil),
+		(*SessionRequest_ReleaseLease)(nil),
+		(*SessionRequest_LoadTranscript)(nil),
+		(*SessionRequest_ListTranscriptKeys)(nil),
+		(*SessionRequest_AppendTranscript)(nil),
+		(*SessionRequest_TakeInputs)(nil),
+		(*SessionRequest_ReportTurn)(nil),
+		(*SessionRequest_PatchState)(nil),
+		(*SessionRequest_GetState)(nil),
+		(*SessionRequest_PublishEvents)(nil),
+		(*SessionRequest_RequestApproval)(nil),
+		(*SessionRequest_ConsumeGrant)(nil),
+		(*SessionRequest_TranscriptRepaired)(nil),
+	}
+	file_circus_v1_worker_link_proto_msgTypes[27].OneofWrappers = []any{
+		(*SessionReply_Ok_)(nil),
+		(*SessionReply_Fenced_)(nil),
+		(*SessionReply_Rejected_)(nil),
+		(*SessionReply_Lease_)(nil),
+		(*SessionReply_TranscriptPage_)(nil),
+		(*SessionReply_TranscriptKeys_)(nil),
+		(*SessionReply_Inputs_)(nil),
+		(*SessionReply_Turn_)(nil),
+		(*SessionReply_State)(nil),
+		(*SessionReply_Approval_)(nil),
+		(*SessionReply_Grant_)(nil),
+		(*SessionReply_Devices_)(nil),
+		(*SessionReply_Resumed_)(nil),
+	}
+	file_circus_v1_worker_link_proto_msgTypes[44].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_worker_link_proto_rawDesc), len(file_circus_v1_worker_link_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   13,
+			NumEnums:      9,
+			NumMessages:   64,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

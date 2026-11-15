@@ -41,6 +41,9 @@ const (
 	MaxSnapshotJobs  = 4096
 	MaxDecodeNodes   = 8192
 	MaxDecodeFields  = 65536
+	// MaxTranscriptBatchBytes bounds the encoded entries of one
+	// AppendTranscript batch, unless the batch is a single larger entry.
+	MaxTranscriptBatchBytes = 8 << 20
 )
 
 // Decode is for a bounded raw handshake or envelope. It scans wire structure
@@ -56,6 +59,9 @@ type decodeBudget struct {
 	nodes, fields int
 	repeated      [len(repeatedLimits)]int
 	resultBytes   int
+	sessionOp     protoreflect.Name
+	appendBytes   int
+	appendEntries int
 }
 
 func (b decodeBudget) cost(n int) int {
@@ -67,7 +73,7 @@ func maxMessageCost(n int) int {
 
 func payloadLimit(name protoreflect.Name, fragmentBytes, messageBytes int) int {
 	switch name {
-	case "dispatch_call", "submit_call", "result", "call_status", "call_ack", "call_update":
+	case "dispatch_call", "submit_call", "result", "call_status", "call_ack", "call_update", "session", "session_reply":
 		return messageBytes
 	case "job_snapshot":
 		return MaxSnapshotBytes
@@ -114,6 +120,15 @@ func scan(k Kind, data []byte, maxBytes, fragmentBytes int) (decodeBudget, error
 	if err := scanMessage(descriptor, data, 0, &budget); err != nil {
 		return budget, err
 	}
+	if name == "session" {
+		// Only transcript appends and event batches may exceed metadata size.
+		if budget.sessionOp != "append_transcript" && budget.sessionOp != "publish_events" && len(data) > MaxMetadataBytes {
+			return budget, protocol("session metadata size limit")
+		}
+		if budget.appendBytes > MaxTranscriptBatchBytes && budget.appendEntries != 1 {
+			return budget, protocol("transcript batch size limit")
+		}
+	}
 	switch name {
 	case "call_status", "call_ack", "call_update":
 		// Completed statuses, duplicate acks and worker updates may contain a
@@ -146,7 +161,24 @@ func scanMessage(d protoreflect.MessageDescriptor, data []byte, depth int, b *de
 			return protocol("malformed protobuf field")
 		}
 		if field != nil {
+			if d.FullName() == "circus.v1.SessionRequest" && field.ContainingOneof() != nil {
+				// Exactly one op: protobuf would let a later op replace an
+				// earlier one, so an oversized patch could pass as an append.
+				if b.sessionOp != "" {
+					return protocol("multiple session operations")
+				}
+				b.sessionOp = field.Name()
+			}
+			if field.FullName() == "circus.v1.AppendTranscript.entries" {
+				b.appendEntries++
+				b.appendBytes += n + size
+			}
 			if field.IsList() {
+				// Generated enums are unpacked. Reject packed input too, rather
+				// than counting a whole packed vector as one element.
+				if field.Kind() == protoreflect.EnumKind && typ != protowire.VarintType {
+					return protocol("packed repeated enum is not supported")
+				}
 				if slot, limit := repeatedLimit(field.FullName()); slot >= 0 {
 					b.repeated[slot]++
 					if b.repeated[slot] > limit {

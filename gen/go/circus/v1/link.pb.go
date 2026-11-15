@@ -132,13 +132,13 @@ func (GoAway_Reason) EnumDescriptor() ([]byte, []int) {
 // credentials belong to the upgrade request, never this message. No business
 // messages may be sent by either side before Welcome. Missing Hello times out
 // and closes the connection; both link servers apply the same handshake rules.
-// The device fields (boot_id, os, arch, hostname, machine_id) are sent on the
-// daemon link only; a worker's Hello carries just the protocol and client
-// versions.
+// Both roles require boot_id. The worker sends protocol and client versions
+// too; os, arch, hostname and machine_id are daemon metadata.
 type Hello struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	ProtocolVersion uint32                 `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
-	// Fresh process-start ULID/UUIDv7, kept only in memory, not across restarts.
+	// Required, 1-128 bytes: fresh UUIDv7 per process, retained across reconnects.
+	// A new worker boot releases leases held by its previous process.
 	BootId        string `protobuf:"bytes,2,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
 	ClientVersion string `protobuf:"bytes,3,opt,name=client_version,json=clientVersion,proto3" json:"client_version,omitempty"`
 	Os            string `protobuf:"bytes,4,opt,name=os,proto3" json:"os,omitempty"`

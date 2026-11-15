@@ -4,21 +4,24 @@ package circus.v1;
 
 import "circus/v1/device.proto";
 import "circus/v1/link.proto";
+import "circus/v1/session.proto";
 
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
-// WorkerUplink is the call-only worker-to-control-plane envelope.
-// Hello must be first; no business messages before Welcome. Session and lease
-// messages belong to M3. Frames are FIFO; fragment/control scheduling follows
+// WorkerUplink is the worker-to-control-plane envelope.
+// Hello must be first; no business messages before Welcome.
+// Frames are FIFO; fragment/control scheduling follows
 // Fragment's rules. A submission must precede its same-call cancellation.
 //
-// Every SubmitCall, CallQuery, CancelCall and Unwatch carries a request_id.
-// Submit, Query and Cancel each open one operation under that ID; Unwatch
-// names an open operation. The ID is chosen by the client, must be nonzero
+// Every business payload carries a request_id. Attach opens a stream, at most
+// once per connection; SessionRequest, ResumeLeases and ListDevices each receive
+// exactly one SessionReply. All open operations share the 64-slot cap.
+// Submit, Query and Cancel also open operations; Unwatch names an open
+// operation. The ID is chosen by the client, must be nonzero
 // and must never be reused on the connection (a per-connection counter
 // starting at 1 satisfies this): after Unwatch a late update of the old
 // operation would be routed to the new one. A zero ID, an ID of an open
-// operation on Submit/Query/Cancel, or an operation beyond the
+// operation on any opening payload, or an operation beyond the
 // per-connection cap closes the link. Hello, Heartbeat and Fragment frames
 // carry 0.
 message WorkerUplink {
@@ -36,6 +39,9 @@ message WorkerUplink {
     // recorded and the daemon's result decides; a terminal outcome means the
     // call had already finished; Rejected NOT_FOUND or INVALID mean no such
     // call is visible. The reply ends the operation, never the call.
+    // CancelCall is not fenced by a session lease: never send it for calls of
+    // a query being closed because of fencing, lease loss, stop or release;
+    // Unwatch those instead.
     CancelCall cancel_call = 11;
     // Opens a Query operation, answered by exactly one CallUpdate (possibly
     // nonterminal).
@@ -43,22 +49,30 @@ message WorkerUplink {
     // Ends the open operation named by request_id without a reply. It never
     // cancels the call. Unknown or finished IDs are a no-op.
     Unwatch unwatch = 13;
+    Attach attach = 14;
+    SessionRequest session = 15;
+    ResumeLeases resume_leases = 16;
+    ListDevices list_devices = 17;
   }
   // Nonzero on every business payload; 0 on Hello, Heartbeat and Fragment.
   uint64 request_id = 20;
 }
 
-// WorkerDownlink contains only the call subset.
+// WorkerDownlink carries replies and hints for open worker operations.
 message WorkerDownlink {
+  reserved 11;
+  reserved "job_event";
   oneof payload {
     Welcome welcome = 1;
     Reject reject = 2;
     Heartbeat heartbeat = 3;
     Fragment fragment = 4;
     CallUpdate call_update = 10;
-    WorkerJobEvent job_event = 11;
+    SessionReply session_reply = 12;
+    WorkerEvent worker_event = 13;
   }
-  // On call_update: the request_id of the operation it answers. 0 otherwise.
+  // On business payloads: the request_id of the operation answered.
+  // WorkerEvent carries the Attach request_id; transport payloads carry 0.
   // A client drops updates for request IDs it no longer has open.
   uint64 request_id = 20;
 }
@@ -69,21 +83,21 @@ message WorkerDownlink {
 // dropped by the client.
 message Unwatch {}
 
-// WorkerJobEvent is reserved for the worker milestone (M3): the control plane
-// does not send it yet. It supplies the global identity of a daemon job.
-// Device is the user-unique device name, boot_id is the daemon's process
-// epoch, and event.job_id is unique only within that pair. LOST for an old boot is emitted by the
-// control plane when it observes a new boot, never by the daemon.
-message WorkerJobEvent {
-  string device = 1;
-  string boot_id = 2;
-  JobEvent event = 3;
-}
-
-// SubmitCall addresses a device by its user-unique name.
+// SubmitCall addresses a device by its user-unique name (1-128 bytes).
+// Resubmitting a call_id attaches to the existing call only if device, call
+// and tool_use_id are identical; otherwise it is CALL_MISMATCH. session_epoch
+// is not part of that identity: every submission is admitted against the
+// lease on its own.
 message SubmitCall {
   string device = 1;
   DeviceCall call = 2;
+  // Required, nonzero. The control plane admits the call only if
+  // call.session_id's unexpired lease is held at this epoch by this
+  // connection's worker and boot and bound to this connection, and the
+  // session is not stopped.
+  uint64 session_epoch = 3;
+  // Required model tool_use id, opaque UTF-8, 1-128 bytes.
+  string tool_use_id = 4;
 }
 
 // CallUpdate is a call lifecycle notification. Result, offline, lost, rejected
@@ -126,6 +140,10 @@ message CallUpdate {
     enum Code {
       CODE_UNSPECIFIED = 0;
       CODE_INVALID = 1;
+      // Terminal. The router is out of capacity, or the session already has
+      // 16 non-terminal calls or 1024 calls not yet persisted. For the
+      // session caps nothing is recorded and the same call_id may be
+      // submitted again later.
       CODE_OVERLOADED = 2;
       CODE_CALL_MISMATCH = 3;
       CODE_UNKNOWN_DEVICE = 4;
@@ -138,6 +156,14 @@ message CallUpdate {
       // Query or Cancel; it says nothing about a submission of the same id
       // still in flight elsewhere, and is not an outcome of any call.
       CODE_NOT_FOUND = 7;
+      // Terminal: this connection does not hold the session's lease at
+      // session_epoch. This submission was neither recorded nor executed; a
+      // call recorded by an earlier submission of the same call_id is
+      // unaffected.
+      CODE_SESSION_FENCED = 8;
+      // Terminal: the session is stopped. This submission was neither
+      // recorded nor executed.
+      CODE_SESSION_STOPPED = 9;
     }
     Code code = 1;
     string message = 2;
@@ -145,4 +171,636 @@ message CallUpdate {
   // Cancelled means cancellation before dispatch. After dispatch, cancellation
   // is recorded and the daemon's final result (including interrupted) wins.
   message Cancelled {}
+}
+
+
+// CallOutcome is the latest worker-visible outcome of a recorded call, the
+// state a CallUpdate would report now. ACCEPTED, DISPATCHED and UNKNOWN are
+// not terminal; the others are.
+enum CallOutcome {
+  CALL_OUTCOME_UNSPECIFIED = 0;
+  CALL_OUTCOME_ACCEPTED = 1;
+  CALL_OUTCOME_DISPATCHED = 2;
+  CALL_OUTCOME_UNKNOWN = 3;
+  CALL_OUTCOME_RESULT = 4;
+  CALL_OUTCOME_OFFLINE = 5;
+  CALL_OUTCOME_LOST = 6;
+  CALL_OUTCOME_REJECTED = 7;
+  CALL_OUTCOME_CANCELLED = 8;
+}
+
+// Attach advertises worker capacity and opens a hint stream until Unwatch or
+// disconnect. At most one Attach is allowed per connection, even after Unwatch.
+// Account metadata is recorded only; it does not influence scheduling yet.
+// After Attach the control plane re-sends every Offer still pending for this
+// worker. Every string field, including Account's, is at most 256 bytes.
+message Attach {
+  // Required, 1..64 concurrent sessions. The stream itself holds one slot.
+  uint32 max_sessions = 1;
+  string sdk_version = 2;
+  string claude_version = 3;
+  Account account = 4;
+  AutoModeCheck auto_mode_check = 5;
+  message Account {
+    string email = 1;
+    string organization = 2;
+    string subscription_type = 3;
+  }
+  enum AutoModeCheck {
+    AUTO_MODE_CHECK_UNSPECIFIED = 0;
+    AUTO_MODE_CHECK_AVAILABLE = 1;
+    AUTO_MODE_CHECK_UNAVAILABLE = 2;
+  }
+}
+
+// WorkerEvent contains level-triggered hints, not authoritative session data.
+// Hints may be coalesced or repeated; fetch state rather than counting hints.
+// An Offer or Nudge for a session this worker does not hold means: send
+// AcquireLease. An Offer that arrives while the session is being released is
+// acted on after the ReleaseLease reply.
+message WorkerEvent {
+  oneof event {
+    Offer offer = 1;
+    Nudge nudge = 2;
+    LeaseRevoked lease_revoked = 3;
+  }
+  message Offer {
+    string session_id = 1;
+  }
+  // After each successful ResumeLeases outcome the control plane re-sends the
+  // session's pending reasons. INPUT and APPROVAL: TakeInputs. JOB:
+  // GetSessionState with SECTION_JOBS. STOP: stopping is permanent, so the
+  // hint suffices: close the query and ReleaseLease with REASON_STOPPED.
+  // INTERRUPT: compare interrupt_turn_no with the current turn.
+  message Nudge {
+    string session_id = 1;
+    // At most five distinct reasons. Unpacked for bounded structural scanning.
+    repeated Reason reasons = 2 [packed = false];
+    // The session's interrupt level, as SessionState.interrupt_turn_no; set on
+    // every Nudge. Interrupt the current turn only if its turn_no is at most
+    // this value; a repeated or late hint therefore never interrupts a later
+    // turn. If STARTED has not been answered yet, wait for its turn_no.
+    uint64 interrupt_turn_no = 3;
+    enum Reason {
+      REASON_UNSPECIFIED = 0;
+      REASON_INPUT = 1;
+      REASON_JOB = 2;
+      REASON_INTERRUPT = 3;
+      REASON_STOP = 4;
+      REASON_APPROVAL = 5;
+    }
+  }
+  message LeaseRevoked {
+    string session_id = 1;
+    uint64 epoch = 2;
+  }
+}
+
+// SessionRequest is Data ordered by session/<session_id>. Each request opens
+// one operation with exactly one SessionReply and carries exactly one op; a
+// second op field closes the link. Every op except AcquireLease requires an
+// unexpired lease at epoch held by this connection's worker and boot and
+// bound to this connection: the fence is (session, epoch, worker, boot,
+// connection). Checking and writing are atomic; a mismatch returns Fenced
+// without mutation. Fencing requires closing the SDK query and its CLI
+// process, Unwatching calls without Cancel, and discarding local session
+// state.
+//
+// Every op except AppendTranscript and PublishEvents must fit 64 KiB including
+// its envelope. That limit binds before the repeated-field caps, which are
+// upper bounds never all reachable together; split marks across several
+// requests instead.
+//
+// After the session is stopped, TakeInputs, RequestApproval and ConsumeGrant
+// return Rejected STOPPED (SubmitCall: CODE_SESSION_STOPPED); AppendTranscript,
+// ReportTurn, PatchSessionState, PublishEvents, TranscriptRepaired, the reads
+// and ReleaseLease are still accepted so the holder can flush. On any STOPPED
+// the worker closes the query and sends ReleaseLease with REASON_STOPPED.
+message SessionRequest {
+  // Required, 1-128 bytes, charset [A-Za-z0-9_-].
+  string session_id = 1;
+  // Zero only for AcquireLease; nonzero for every other operation.
+  uint64 epoch = 2;
+  oneof op {
+    AcquireLease acquire_lease = 10;
+    ReleaseLease release_lease = 11;
+    LoadTranscript load_transcript = 12;
+    ListTranscriptKeys list_transcript_keys = 13;
+    AppendTranscript append_transcript = 14;
+    TakeInputs take_inputs = 15;
+    ReportTurn report_turn = 16;
+    PatchSessionState patch_state = 17;
+    GetSessionState get_state = 18;
+    PublishEvents publish_events = 19;
+    RequestApproval request_approval = 20;
+    ConsumeGrant consume_grant = 21;
+    TranscriptRepaired transcript_repaired = 22;
+  }
+}
+
+// AcquireLease is idempotent for the holder. If this worker and boot already
+// hold the session's unexpired lease and fresh is false, it skips the Offer
+// check, keeps the epoch, rebinds the lease to this connection and returns the
+// same lease with reattached set. Otherwise it requires a current Offer to
+// this connection unless this worker and boot hold the lease (else
+// NOT_OFFERED), refuses a stopped session (STOPPED; a fresh acquisition by
+// the holder of a stopped session also releases that lease atomically),
+// atomically advances the epoch, binds the lease to worker, boot and connection for 60 seconds and
+// applies recovery. The control plane extends every lease bound to a live
+// connection every 20 seconds; a lease bound to a closed connection expires
+// naturally. After a control-plane start, no lease expires sooner than one
+// lease lifetime later. A worker sends at most one AcquireLease per session at
+// a time; a session with an AcquireLease in flight counts as held, and hints
+// for it are ignored until the reply arrives.
+message AcquireLease {
+  // Set whenever the worker holds no local state for the session (no epoch,
+  // local_seq or batch_seq counters, no pushed-input set). A holder's fresh
+  // acquisition advances the epoch and requeues like a new holder's, so new
+  // counters starting at 1 never collide with the old epoch's.
+  bool fresh = 1;
+}
+
+// ReleaseLease relinquishes ownership. Close the SDK query and confirm its CLI
+// has exited before releasing. Repeating it at the released epoch returns
+// ok.deduplicated=true until another epoch is acquired, Fenced afterwards;
+// both mean the lease is gone.
+message ReleaseLease {
+  Reason reason = 1;
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_IDLE = 1;
+    REASON_STOPPED = 2;
+    REASON_ERROR = 3;
+    REASON_FENCED = 4;
+  }
+}
+
+// LoadTranscript reads entries strictly after after_seq. Empty subpath is the
+// main thread; other subpaths are opaque SDK keys of at most 1024 bytes. Pages
+// contain at least one entry when available, even if that single entry
+// exceeds max_bytes (up to M).
+message LoadTranscript {
+  string subpath = 1;
+  uint64 after_seq = 2;
+  // Required, 1..8 MiB; a single oversized entry is returned alone.
+  uint32 max_bytes = 3;
+}
+message ListTranscriptKeys {}
+
+// AppendTranscript is atomic. Batches are at most 8 MiB of encoded entries,
+// or a single oversized entry fitting M with its envelope. batch_seq starts at
+// 1 per (epoch, subpath) and increases by one; only an ok reply consumes it.
+// A sequence <= the last committed one is acknowledged with deduplicated=true
+// and no write, including entries without uuid. A sequence beyond the last
+// committed one plus one is INVALID. Until a batch is acknowledged, every later
+// append (including SDK retries) first resends that batch with the same
+// batch_seq and content. An INVALID or LIMIT rejection is a failed append: the
+// adapter reports it to the SDK, drops that batch, and gives the next content
+// its unconsumed batch_seq; the turn follows the mirror_error path to BROKEN.
+// Nonempty uuid also deduplicates per (session,
+// subpath), across epochs. A session has at most 1024 subpaths; an append to a
+// new one beyond that returns LIMIT. Transcript storage defaults to 256 MiB per
+// session and 20 GiB per user, counting each entry as json + uuid + 64 bytes;
+// exceeding it returns TRANSCRIPT_FULL and stops the session.
+message AppendTranscript {
+  // At most 1024 bytes.
+  string subpath = 1;
+  uint64 batch_seq = 2;
+  // Byte-bounded; structural node/field caps also apply.
+  repeated TranscriptEntry entries = 3;
+}
+message TranscriptEntry {
+  // At most 128 bytes. May be empty; otherwise used for durable entry
+  // deduplication.
+  string uuid = 1;
+  // Opaque JSON, never parsed by the control plane.
+  string json = 2;
+}
+
+// TakeInputs atomically takes pending inputs and returns all inputs taken in
+// this epoch but not yet persisted, including those returned by earlier calls.
+// At most 32. Push each to the SDK with uuid=input_id; do not push it twice
+// within an epoch. While the session is broken it takes no new input and
+// returns only those already taken. A new epoch first returns inputs taken by
+// any earlier epoch to pending, except those whose uuid is already in the
+// transcript, which are marked persisted.
+message TakeInputs {}
+
+// ReportTurn is idempotent by (epoch, local_seq, phase); repeats retain the
+// same turn_no and never increment turn_count or apply persistence twice.
+// STARTED must use the next local_seq; it makes the session RUNNING and
+// increments its turn count. A STARTED whose predecessor never ENDED closes
+// that turn as INTERRUPTED; a later ENDED for it still applies its persisted
+// marks. ENDED for a local_seq never STARTED is INVALID. ENDED follows the SDK
+// result and makes the session IDLE (or QUEUED with work and no lease). Lease
+// loss during a turn records INTERRUPTED without automatically resuming.
+message ReportTurn {
+  // Starts at 1 and increases by one per turn within the epoch.
+  uint64 local_seq = 1;
+  Phase phase = 2;
+  TurnOrigin origin = 3;
+  // ENDED only.
+  TurnOutcome outcome = 4;
+  // ENDED only: opaque SDK result usage JSON, at most 4 KiB.
+  string usage_json = 5;
+  // ENDED only: items delivered before this turn's SDK result and not yet
+  // marked through PatchSessionState.persisted. Omit after mirror_error or a
+  // CLI failure.
+  Persisted persisted = 6;
+  // ENDED only: the transcript lacks batches of this turn (mirror_error). The
+  // session becomes BROKEN until TranscriptRepaired. A CLI failure without
+  // mirror_error is ERROR without this flag.
+  bool transcript_incomplete = 7;
+  enum Phase {
+    PHASE_UNSPECIFIED = 0;
+    PHASE_STARTED = 1;
+    PHASE_ENDED = 2;
+  }
+  // Persisted marks are idempotent; marking an unknown or already persisted
+  // item is a no-op. Ids are at most 128 bytes.
+  message Persisted {
+    // At most 32 inputs, 1024 calls and 1024 job notifications per request.
+    repeated string input_ids = 1;
+    repeated string call_ids = 2;
+    repeated JobKey jobs = 3;
+    // At most 16. Calls whose owed completion notice has now been delivered;
+    // clears their notice_owed mark.
+    repeated string late_call_ids = 4;
+    // The Lease.transcript_gap_turn_no value whose missing-history reminder
+    // this turn delivered. The control plane clears the stored mark only if
+    // it still equals this value; 0 acknowledges nothing.
+    uint64 gap_notice_turn_no = 5;
+  }
+}
+
+// JobKey is globally unique; a daemon's job_id alone is not. Each part is at
+// most 128 bytes.
+message JobKey {
+  string device_id = 1;
+  string boot_id = 2;
+  string job_id = 3;
+}
+
+// PatchSessionState is an idempotent upsert/mark operation. Cwds are keyed by
+// (agent_id, device), files by (device, path), background tasks by task_id.
+// Handed jobs are not persisted until marked persisted; a new epoch requeues
+// notices handed by any earlier epoch and not persisted.
+message PatchSessionState {
+  // At most 256; the stored table has the same cap.
+  repeated Cwd cwds = 1;
+  // At most 4096. The stored table evicts its oldest records at capacity.
+  repeated FileRecord files = 2;
+  // At most 1024. Mark as soon as MCP returns to the SDK, before persistence.
+  repeated string returned_call_ids = 3;
+  // At most 64 live CLI background tasks per session.
+  repeated BackgroundTask bgtasks_started = 4;
+  // Task ids. Also acknowledges a lost task from Recovery once the turn that
+  // delivered its failure notice has had its items marked persisted.
+  repeated string bgtasks_ended = 5;
+  // At most 1024 jobs per session.
+  repeated JobKey handed_jobs = 6;
+  // Splits the persisted set of a turn whose SDK result the worker has seen
+  // (reported ENDED, or about to be). Never marks items of a turn whose
+  // transcript is incomplete until it has been repaired.
+  ReportTurn.Persisted persisted = 7;
+  // At most 16 per request and per session (else LIMIT). Calls returned to the
+  // model with a nonterminal outcome whose completion notice is owed. Mark the
+  // call before returning it; after LIMIT, return it with a final "result
+  // unavailable" text instead of promising a notice. They
+  // stay in SessionState.calls and Recovery.calls with notice_owed, even
+  // after persisted, until Persisted.late_call_ids clears them.
+  repeated string awaiting_call_ids = 8;
+  message Cwd {
+    // Empty for the main thread; at most 128 bytes.
+    string agent_id = 1;
+    // At most 128 bytes.
+    string device = 2;
+    // Absolute device path, at most 4 KiB.
+    string cwd = 3;
+  }
+  message FileRecord {
+    // At most 128 bytes.
+    string device = 1;
+    // Device path, at most 4 KiB.
+    string path = 2;
+    // Empty forgets this record; otherwise 64 hexadecimal digits of SHA-256.
+    string sha256 = 3;
+    int64 mtime_unix_ms = 4;
+  }
+  message BackgroundTask {
+    // At most 128 bytes each: task_id, tool_use_id and kind.
+    string task_id = 1;
+    string tool_use_id = 2;
+    // SDK task kind, currently agent.
+    string kind = 3;
+    // At most 1024 bytes.
+    string description = 4;
+  }
+}
+
+message GetSessionState {
+  // Empty requests all sections; otherwise at most five distinct sections.
+  // SECTION_NONE, which must be alone, returns only the scalar fields.
+  repeated Section sections = 1 [packed = false];
+  enum Section {
+    SECTION_UNSPECIFIED = 0;
+    SECTION_CWDS = 1;
+    SECTION_FILES = 2;
+    SECTION_JOBS = 3;
+    SECTION_CALLS = 4;
+    SECTION_GRANTS = 5;
+    SECTION_NONE = 6;
+  }
+}
+
+// SessionState is returned on acquisition or by selected sections. It carries
+// metadata, never full call output; use CallQuery for authoritative outcomes.
+// stopped and interrupt_turn_no are set whatever the sections; SECTION_NONE
+// returns only them.
+message SessionState {
+  repeated PatchSessionState.Cwd cwds = 1; // At most 256.
+  repeated PatchSessionState.FileRecord files = 2; // At most 4096.
+  repeated Job jobs = 3; // At most 1024 unpersisted job notifications.
+  // At most 1040: up to 1024 calls not yet persisted plus up to 16 persisted
+  // calls with notice_owed.
+  repeated Call calls = 4;
+  repeated Grant grants = 5; // At most 32 unused, unexpired grants.
+  // The user stopped the session; the holder flushes and releases.
+  bool stopped = 6;
+  // The highest turn_no the user asked to interrupt, or zero.
+  uint64 interrupt_turn_no = 7;
+  message Job {
+    JobKey key = 1;
+    // At most 128 bytes each: call_id, tool_use_id and device.
+    string call_id = 2;
+    string tool_use_id = 3;
+    // At most 1024 bytes; the control plane truncates longer descriptions.
+    string description = 4;
+    // At most 4 KiB.
+    string output_path = 5;
+    JobEvent.State state = 6;
+    int32 exit_code = 7;
+    string device = 8;
+    // Handed to the SDK but not yet marked persisted.
+    bool handed = 9;
+  }
+  message Call {
+    // At most 128 bytes each: call_id, tool_use_id and device.
+    string call_id = 1;
+    string tool_use_id = 2;
+    string device = 3;
+    // MCP returned; its result may already be in the transcript.
+    bool returned = 4;
+    // At most 256 bytes.
+    string tool = 5;
+    // Latest outcome, without output. Query calls whose returned is false.
+    CallOutcome outcome = 6;
+    // Present only if a terminal process result has an exit code.
+    optional int32 exit_code = 7;
+    // The model was told a completion notice would follow; poll the call and
+    // deliver that notice, then mark it in Persisted.late_call_ids.
+    bool notice_owed = 8;
+    // Set only when outcome is CALL_OUTCOME_REJECTED.
+    CallUpdate.Rejected.Code rejected_code = 9;
+  }
+  message Grant {
+    // At most 256 bytes.
+    string tool = 1;
+    // At most 128 bytes.
+    string device = 2;
+    // 64 lowercase hexadecimal digits, as RequestApproval.match_key.
+    string match_key = 3;
+    int64 expires_at_unix_ms = 4;
+  }
+}
+
+// Recovery lists every item not yet acknowledged, whichever epoch produced
+// it; it is never computed relative to the previous epoch, so an idempotent
+// reacquisition returns the same items. Returned calls receive only a short
+// tool/device/status summary; unreturned calls are queried and full results
+// injected, never reexecuted. Calls with notice_owed are polled and their
+// completion notice delivered. At most 16 calls may still be in flight. Lost
+// background tasks receive failed notifications with their original
+// tool_use_id. Inject recovery before the next user input, never auto-run it.
+message Recovery {
+  // Every call not yet persisted and every call with notice_owed; at most 1040.
+  repeated SessionState.Call calls = 1;
+  // CLI background tasks started by an earlier epoch and never ended; at most
+  // 64. Acknowledged by PatchSessionState.bgtasks_ended.
+  repeated PatchSessionState.BackgroundTask lost_bgtasks = 2;
+  // The most recent turn was closed without ENDED, for example by lease loss,
+  // and no turn has started since.
+  bool previous_turn_interrupted = 3;
+}
+
+// PublishEvents sends at most 128 events per batch, normally every 100 ms.
+// Ephemeral stream fragments are live-only. Other events form a 64 MiB view;
+// payloads over 256 KiB are truncated, with only turn boundaries stored when
+// the view fills.
+message PublishEvents {
+  repeated Event events = 1;
+  // Starts at 1 per epoch and increases by one. A sequence <= the last
+  // consumed one is acknowledged with deduplicated=true and no write; one
+  // beyond the last plus one is INVALID and consumes nothing. ok consumes it;
+  // so does a batch at the next sequence that fails validation (an over-cap
+  // field, or a kind only the control plane records such as
+  // TRANSCRIPT_GAP_ACCEPTED): it is recorded as dropped and answered INVALID,
+  // and the worker continues with the next sequence. A worker treats every
+  // INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
+  // and Fenced consume nothing. Retrying must preserve content.
+  uint64 batch_seq = 2;
+  message Event {
+    SessionEvent.Kind kind = 1;
+    string json = 2;
+    bool ephemeral = 3;
+  }
+}
+
+// RequestApproval merges pending requests by (session, tool, device, match_key).
+// Display, reason and tool_use_id do not change the matching key. There are
+// at most 32 pending requests per session, expiring in ten minutes.
+message RequestApproval {
+  // Model tool_use id, opaque, 1-128 bytes.
+  string tool_use_id = 1;
+  // Empty for the main thread; at most 128 bytes.
+  string agent_id = 2;
+  // At most 256 bytes.
+  string tool = 3;
+  // At most 128 bytes.
+  string device = 4;
+  // 64 lowercase hexadecimal digits: the SHA-256 of the UTF-8 bash command
+  // verbatim, or of the path for write/edit. Description and timeout are not
+  // part of it.
+  string match_key = 5;
+  // At most 1024 bytes each; truncate longer text at a UTF-8 boundary.
+  string display = 6;
+  string reason = 7;
+}
+
+// ConsumeGrant atomically finds and consumes one unexpired matching grant for
+// tool_use_id. Repeating it with the same tool_use_id and the same (tool,
+// device, match_key) while the consumed grant would still be unexpired replays
+// allowed=true without consuming another; the same tool_use_id with another
+// key gets allowed=false. Only allowed=true permits the hook to allow a tool.
+message ConsumeGrant {
+  // At most 256 bytes.
+  string tool = 1;
+  // At most 128 bytes.
+  string device = 2;
+  // As RequestApproval.match_key.
+  string match_key = 3;
+  // Required model tool_use id, opaque, 1-128 bytes.
+  string tool_use_id = 4;
+}
+
+// TranscriptRepaired reports that the holder re-imported the batches missing
+// from a broken session's transcript. It moves BROKEN to IDLE, or QUEUED with
+// pending work; it never touches Lease.transcript_gap_turn_no. On any other
+// state it is ok with no change. Mark the repaired turn's items with
+// PatchSessionState.persisted before sending it.
+message TranscriptRepaired {}
+
+// ResumeLeases reconnects at most 64 leases for the same worker boot before
+// expiry, retaining epoch and rebinding each resumed lease to this
+// connection. Failure for one lease does not reject the others. A stopped
+// session still resumes, with stopped set, so the holder can flush and
+// release.
+message ResumeLeases {
+  repeated Held leases = 1;
+  message Held {
+    string session_id = 1;
+    uint64 epoch = 2;
+  }
+}
+message ListDevices {}
+
+// SessionReply ends one SessionRequest, ResumeLeases or ListDevices operation.
+// Fenced or Rejected can replace any successful result. Attach uses WorkerEvent
+// instead. Replies are Data without ordering keys, correlated by request_id.
+message SessionReply {
+  oneof result {
+    Ok ok = 1;
+    Fenced fenced = 2;
+    Rejected rejected = 3;
+    Lease lease = 10;
+    TranscriptPage transcript_page = 11;
+    TranscriptKeys transcript_keys = 12;
+    Inputs inputs = 13;
+    Turn turn = 14;
+    SessionStateReply state = 15;
+    Approval approval = 16;
+    Grant grant = 17;
+    Devices devices = 18;
+    Resumed resumed = 19;
+  }
+  message Ok {
+    bool deduplicated = 1;
+  }
+  message Fenced {
+    // Current epoch; none of the requested mutation was applied.
+    uint64 epoch = 1;
+  }
+  message Rejected {
+    Code code = 1;
+    // At most 1024 bytes, diagnostic only.
+    string message = 2;
+    enum Code {
+      CODE_UNSPECIFIED = 0;
+      CODE_INVALID = 1;
+      CODE_NOT_FOUND = 2;
+      // Retryable: nothing was written.
+      CODE_STORE_UNAVAILABLE = 3;
+      // Not retryable: the control plane stopped the session atomically; the
+      // worker releases with REASON_STOPPED rather than dropping entries.
+      CODE_TRANSCRIPT_FULL = 4;
+      CODE_LIMIT = 5;
+      CODE_STOPPED = 6;
+      CODE_NOT_OFFERED = 7;
+    }
+  }
+  // At most 25.5 MiB with every cap reached. state carries every section
+  // except calls, which recovery carries: with calls in both, a Lease at the
+  // caps exceeds the 8192-node decode limit and the worker closes the link.
+  message Lease {
+    uint64 epoch = 1;
+    // At most 128 bytes.
+    string claude_session_id = 2;
+    bool has_transcript = 3;
+    SessionState state = 4;
+    Recovery recovery = 5;
+    SessionConfig config = 6;
+    // This worker and boot already held the lease; the epoch is unchanged.
+    bool reattached = 7;
+    // A gap the user accepted and the model has not been told: set only by
+    // RecoverSession, to the turn_no of the turn that broke; 0 when none. An
+    // unaccepted break is the BROKEN state, not this mark. While nonzero,
+    // inject the missing-history reminder in the next turn started with a
+    // pushed message (a CLI-originated turn cannot carry it) and acknowledge
+    // it with Persisted.gap_notice_turn_no; only an acknowledgement of the
+    // equal value clears it.
+    uint64 transcript_gap_turn_no = 8;
+  }
+  message TranscriptPage {
+    // Byte-bounded as LoadTranscript; structural node/field caps also apply.
+    repeated TranscriptEntry entries = 1;
+    uint64 next_seq = 2;
+    bool done = 3;
+  }
+  message TranscriptKeys {
+    repeated string subpaths = 1; // At most 1024.
+  }
+  message Inputs {
+    repeated Input inputs = 1; // At most 32.
+    message Input {
+      // At most 128 bytes.
+      string input_id = 1;
+      Kind kind = 2;
+      // At most 256 KiB.
+      string text = 3;
+      InputPriority priority = 4;
+      enum Kind {
+        KIND_UNSPECIFIED = 0;
+        KIND_USER = 1;
+        KIND_APPROVAL = 2;
+      }
+    }
+  }
+  // Both STARTED and ENDED ReportTurn return the same assigned turn_no.
+  message Turn {
+    uint64 turn_no = 1;
+  }
+  message SessionStateReply {
+    SessionState state = 1;
+  }
+  message Approval {
+    // At most 128 bytes.
+    string approval_id = 1;
+    bool deduplicated = 2;
+  }
+  message Grant {
+    bool allowed = 1;
+  }
+  message Devices {
+    repeated Device devices = 1; // At most 256.
+    message Device {
+      // At most 128 bytes; os, arch and hostname at most 256 bytes each.
+      string name = 1;
+      bool online = 2;
+      string os = 3;
+      string arch = 4;
+      string hostname = 5;
+      int64 last_seen_unix_ms = 6;
+    }
+  }
+  message Resumed {
+    repeated Outcome leases = 1; // At most 64, one per requested lease.
+    message Outcome {
+      string session_id = 1;
+      bool ok = 2;
+      // Retained epoch on success; current epoch when fenced.
+      uint64 epoch = 3;
+      // Resumed, but the session is stopped: flush and release.
+      bool stopped = 4;
+    }
+  }
 }
