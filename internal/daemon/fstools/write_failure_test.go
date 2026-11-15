@@ -10,10 +10,16 @@ import (
 )
 
 func TestFailedRenameCleansUpTemporaryFile(t *testing.T) {
-	if err := os.MkdirAll(".tmp", 0o777); err != nil {
+	// Scratch lives under the repository's .tmp like the other tests, never
+	// inside the package directory, so the suite also runs on a read-only tree.
+	base, err := filepath.Abs("../../../.tmp")
+	if err != nil {
 		t.Fatal(err)
 	}
-	dir, err := os.MkdirTemp(".tmp", "failed-write-*")
+	if err := os.MkdirAll(base, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp(base, "failed-write-*")
 	if err != nil {
 		t.Fatal(err)
 	}

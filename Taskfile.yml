@@ -6,6 +6,8 @@ vars:
   FUZZTIME: "30s"
   CIRCUS_ROUTER_SEEDS: "500"
   CIRCUS_ROUTER_FIRST_SEED: "1"
+  MUTATE_TIMEOUT: "30s"
+  MUTATE_OUT: ".tmp/mutation/report.json"
 
 tasks:
   gen:
@@ -26,6 +28,11 @@ tasks:
     desc: Run Go tests
     cmds:
       - go test ./...
+
+  mutate:
+    desc: Run sandboxed syntax mutations against one Go package
+    cmds:
+      - go run ./tools/mutate -timeout '{{.MUTATE_TIMEOUT}}' -out '{{.MUTATE_OUT}}'{{if .MUTATE_WORKERS}} -workers '{{.MUTATE_WORKERS}}'{{end}} '{{.PKG}}'
 
   race:
     desc: Run Go tests with the race detector
