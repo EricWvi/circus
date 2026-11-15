@@ -24,9 +24,11 @@ jobs:
       - uses: bufbuild/buf-setup-action@v1
         with:
           version: 1.73.0
+          github_token: ${{ github.token }}
       - uses: go-task/setup-task@v1
         with:
           version: 3.x
+          repo-token: ${{ github.token }}
       - run: task lint test check-gen
       - run: npx tsc --noEmit -p gen/ts
       # The e2e harness builds bin/circus itself; Go, Bash and coreutils are
@@ -46,4 +48,5 @@ jobs:
       - uses: go-task/setup-task@v1
         with:
           version: 3.x
+          repo-token: ${{ github.token }}
       - run: task race

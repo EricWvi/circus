@@ -31,6 +31,7 @@ jobs:
       - uses: go-task/setup-task@v1
         with:
           version: 3.x
+          repo-token: ${{ github.token }}
       - name: seeds from ${{ matrix.first-seed }}
         run: task seeds CIRCUS_ROUTER_SEEDS=100 CIRCUS_ROUTER_FIRST_SEED=${{ matrix.first-seed }}
 
@@ -45,4 +46,5 @@ jobs:
       - uses: go-task/setup-task@v1
         with:
           version: 3.x
+          repo-token: ${{ github.token }}
       - run: task e2e-race
