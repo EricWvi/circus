@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-signal-term",
+  "description": "A shell ended by SIGTERM reports exit code 144.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "kill -TERM $$",
+        "description": "Pin a native Bash rule"
+      },
+      "result": {
+        "is_error": true,
+        "content": "Exit code 144\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

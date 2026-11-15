@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-utf8-bom-new-string-bom",
+  "description": "A new_string starting with a BOM follows the file BOM.",
+  "setup": {
+    "files": {
+      "a.txt": {
+        "base64": "77u/YWIK"
+      }
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\tab\n2\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "ab",
+        "new_string": "﻿AB"
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "﻿﻿AB\n"
+  }
+}

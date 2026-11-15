@@ -23,6 +23,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/paritypath"
 )
 
 type fixtureInput struct {
@@ -102,7 +103,7 @@ func tempDir(t *testing.T) string {
 	if err := os.MkdirAll(base, 0755); err != nil {
 		t.Fatal(err)
 	}
-	dir, err := os.MkdirTemp(base, "fstools-test-*")
+	dir, err := paritypath.Mkdir(base, "fstools-test-", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,16 +448,31 @@ func (w *simulatedWorker) call(t *testing.T, tool string, input fixtureInput) *c
 		t.Fatalf("expected one text block: %v", result)
 	}
 	if !result.Output.IsError {
+		key := filepath.Clean(path)
 		switch {
 		case result.GetRead() != nil:
-			w.reads[filepath.Clean(path)] = result.GetRead().Sha256
+			if !w.trackMutations || fullRead(input.Offset, input.Limit, result.GetRead().TotalLines) {
+				w.reads[key] = result.GetRead().Sha256
+			} else {
+				delete(w.reads, key)
+			}
 		case w.trackMutations && result.GetWrite() != nil:
-			w.reads[filepath.Clean(path)] = result.GetWrite().Sha256
-		case w.trackMutations && result.GetEdit() != nil:
-			w.reads[filepath.Clean(path)] = result.GetEdit().Sha256
+			w.reads[key] = result.GetWrite().Sha256
+		case w.trackMutations && result.GetEdit() != nil && (expected != nil || result.GetEdit().Created):
+			w.reads[key] = result.GetEdit().Sha256
 		}
 	}
 	return result
+}
+
+// fullRead reports whether a Read puts the whole file in context, so that a
+// later Edit reports the file state as current. A limit must exceed the line
+// count (an empty file counts one line); an Edit of a never-read file, or of
+// one last read partially, does not put the file in context either. Only
+// external replays, which follow native context state across steps, apply
+// this; committed tests keep every successful Read as the expected hash.
+func fullRead(offset *uint32, limit, totalLines uint32) bool {
+	return (offset == nil || *offset <= 1) && (limit == 0 || limit > max(totalLines, 1))
 }
 
 var tokenSuffix = regexp.MustCompile(`\n\n<system-reminder>\n<total_tokens>[0-9]+ tokens left</total_tokens>\n</system-reminder>$`)

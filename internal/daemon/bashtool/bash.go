@@ -208,6 +208,7 @@ waitForeground:
 					if formatErr != nil {
 						return nil, formatErr
 					}
+					body = textutil.TrimJS(body)
 					// Inferred: promotion starts a fresh remaining background lifetime,
 					// default 30 minutes, capped at two hours (independent of foreground timeout).
 					var stat os.FileInfo
@@ -236,34 +237,42 @@ waitForeground:
 	if finishErr != nil {
 		return nil, finishErr
 	}
-	detail := &circusv1.BashResult{ExitCode: int32(outcome.code), Cwd: startFolder(req)}
+	timedOut, interrupted := errors.Is(outcome.err, context.DeadlineExceeded), errors.Is(outcome.err, context.Canceled)
+	if outcome.signal != 0 && !outcome.terminationRequested && !timedOut && !interrupted {
+		outcome.code = signalStatus(outcome.signal)
+	}
+	detail := &circusv1.BashResult{ExitCode: int32(outcome.code), Cwd: startFolder(req), TimedOut: timedOut, Interrupted: interrupted}
 	body, err := b.outputs.formatOutput(out, detail)
 	if err != nil {
 		return nil, err
 	}
+	trailer := ""
 	switch {
-	case errors.Is(outcome.err, context.DeadlineExceeded):
-		detail.TimedOut = true
+	case timedOut:
 		body = appendLine("Command timed out after "+timeoutText(duration), body)
-	case errors.Is(outcome.err, context.Canceled):
-		detail.Interrupted = true
+	case interrupted:
 		// Inferred: cancellation preserves collected output and appends this line.
-		body = appendLine(body, "Command was interrupted")
-	default:
-		if outcome.code == 0 {
-			if cwd, err := os.ReadFile(cwdPath); err == nil && len(cwd) > 0 {
-				next := strings.TrimSuffix(textutil.NodeUTF8(cwd), "\n")
-				if allowedCwd(next, req) {
-					detail.Cwd = next
-				} else {
-					body = appendLine(body, "Shell cwd was reset to "+detail.Cwd)
-				}
+		trailer = "Command was interrupted"
+	case outcome.code == 0:
+		if cwd, err := os.ReadFile(cwdPath); err == nil && len(cwd) > 0 {
+			next := strings.TrimSuffix(textutil.NodeUTF8(cwd), "\n")
+			if allowedCwd(next, req) {
+				detail.Cwd = next
+			} else {
+				trailer = "Shell cwd was reset to " + detail.Cwd
 			}
 		}
 	}
-	if outcome.code != 0 && !detail.Interrupted {
+	failed := outcome.code != 0
+	if !timedOut && !interrupted && !outcome.terminationRequested {
+		failed = exitFailed(req.Command, outcome.code)
+	}
+	if failed && !interrupted {
 		body = appendLine(fmt.Sprintf("Exit code %d", outcome.code), body)
 	}
+	// Surrounding whitespace is trimmed after the status lines are added, so
+	// output keeps its leading blank lines after "Exit code N" but not alone.
+	body = appendLine(textutil.TrimJS(body), trailer)
 	if body == "" {
 		body = "(Bash completed with no output)"
 	}
@@ -280,12 +289,23 @@ waitForeground:
 			return nil, err
 		}
 	}
-	return result(body, outcome.code != 0, detail), nil
+	return result(body, failed, detail), nil
 }
 
+// inlineOutputLimit is the largest raw output, in bytes, returned inline.
+const inlineOutputLimit = 30000
+
+// previewUnits is the preview length in UTF-16 code units.
+const previewUnits = 2000
+
+// formatOutput returns inline output without trimming, or the persisted-output
+// envelope when the raw output exceeds inlineOutputLimit bytes. The preview
+// comes from the first inlineOutputLimit bytes with leading blank lines and
+// trailing whitespace removed. Inferred: that source prefix is counted in raw
+// bytes; the captured probes are ASCII.
 func (s *outputStore) formatOutput(out *os.File, detail *circusv1.BashResult) (string, error) {
 	// Read a bounded prefix even if descendants are still writing the file.
-	raw := make([]byte, 30001)
+	raw := make([]byte, inlineOutputLimit+1)
 	var n int
 	err := s.effects.attempt("format-read", func() error { var err error; n, err = out.ReadAt(raw, 0); return err })
 	if err != nil && err != io.EOF {
@@ -297,25 +317,45 @@ func (s *outputStore) formatOutput(out *os.File, detail *circusv1.BashResult) (s
 	if err != nil {
 		return "", err
 	}
-	if len(raw) <= 30000 && stat.Size() <= 30000 {
-		return strings.TrimRight(textutil.NodeUTF8(raw), "\n"), nil
+	if len(raw) <= inlineOutputLimit && stat.Size() <= inlineOutputLimit {
+		return textutil.NodeUTF8(raw), nil
 	}
-	preview := textutil.NodeUTF8(raw)
-	units, end := 0, 0
-	for i, r := range preview {
+	source := textutil.NodeUTF8(raw[:min(len(raw), inlineOutputLimit)])
+	preview, more := outputPreview(textutil.TrimJSRight(textutil.StripLeadingBlankLines(source)))
+	if more {
+		preview += "\n..."
+	}
+	detail.OutputTruncated, detail.OutputPath = true, out.Name()
+	return fmt.Sprintf("<persisted-output>\nOutput too large (%s). Full output saved to: %s\n\nPreview (first 2KB):\n%s\n</persisted-output>", textutil.FormatSize(stat.Size()), out.Name(), preview), nil
+}
+
+// outputPreview returns text up to previewUnits UTF-16 code units, without
+// splitting a surrogate pair, and whether text continues beyond it. When the
+// last LF inside that limit lies beyond its first half, the preview ends just
+// before that LF instead.
+func outputPreview(text string) (string, bool) {
+	units, end, newline, newlineUnits := 0, len(text), -1, 0
+	for i, r := range text {
 		width := 1
 		if r > 0xffff {
 			width = 2
 		}
-		if units+width > 2000 {
+		if units+width > previewUnits {
 			end = i
 			break
 		}
+		if r == '\n' {
+			newline, newlineUnits = i, units
+		}
 		units += width
-		end = i + len(string(r))
 	}
-	detail.OutputTruncated, detail.OutputPath = true, out.Name()
-	return fmt.Sprintf("<persisted-output>\nOutput too large (%.1fKB). Full output saved to: %s\n\nPreview (first 2KB):\n%s\n...\n</persisted-output>", float64(stat.Size())/1024, out.Name(), strings.TrimRight(preview[:end], "\n")), nil
+	if end == len(text) {
+		return text, false
+	}
+	if newline >= 0 && newlineUnits > previewUnits/2 {
+		end = newline
+	}
+	return text[:end], true
 }
 
 func appendLine(body, line string) string {

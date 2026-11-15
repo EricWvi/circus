@@ -16,7 +16,17 @@ const (
 	EncodingUTF8 Encoding = iota
 	// EncodingUTF16LE identifies UTF-16LE bytes with a byte-order mark.
 	EncodingUTF16LE
+	// EncodingUTF8BOM identifies UTF-8 bytes behind the UTF-8 byte-order mark.
+	EncodingUTF8BOM
 )
+
+// UTF8BOM is the UTF-8 byte-order mark, U+FEFF encoded as UTF-8.
+const UTF8BOM = "\ufeff"
+
+// HasUTF8BOM reports whether data starts with the UTF-8 byte-order mark.
+func HasUTF8BOM(data []byte) bool {
+	return strings.HasPrefix(string(data[:min(len(data), 3)]), UTF8BOM)
+}
 
 // Decoded is file text together with its original encoding and decoding validity.
 type Decoded struct {
@@ -31,8 +41,14 @@ func HasUTF16LEBOM(data []byte) bool {
 	return len(data) >= 2 && data[0] == 0xff && data[1] == 0xfe
 }
 
-// Decode converts UTF-8 or BOM-marked UTF-16LE bytes to UTF-8 text.
+// Decode converts UTF-8 or BOM-marked UTF-16LE bytes to UTF-8 text. A leading
+// byte-order mark is an encoding marker, not text: Text excludes it.
 func Decode(data []byte) Decoded {
+	if HasUTF8BOM(data) {
+		// Only the first BOM is a marker; a second one stays text.
+		rest := data[3:]
+		return Decoded{Text: NodeUTF8(rest), Encoding: EncodingUTF8BOM, InvalidUTF8: !utf8.Valid(rest)}
+	}
 	if HasUTF16LEBOM(data) {
 		// Inferred: UTF-16BE and other BOMs are treated as non-UTF-8 until captured.
 		return Decoded{
@@ -45,10 +61,14 @@ func Decode(data []byte) Decoded {
 	return Decoded{Text: NodeUTF8(data), Encoding: EncodingUTF8, InvalidUTF8: !utf8.Valid(data)}
 }
 
-// Encode converts UTF-8 text back to the decoded file's original encoding.
+// Encode converts UTF-8 text back to the decoded file's original encoding,
+// including its byte-order mark.
 func (d Decoded) Encode(text string) []byte {
-	if d.Encoding != EncodingUTF16LE {
+	switch d.Encoding {
+	case EncodingUTF8:
 		return []byte(text)
+	case EncodingUTF8BOM:
+		return []byte(UTF8BOM + text)
 	}
 	size := 2
 	for _, r := range text {

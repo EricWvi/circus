@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-utf8-bom-range",
+  "description": "Ranged reads hide a leading UTF-8 BOM.",
+  "setup": {
+    "files": {
+      "a.txt": {
+        "base64": "77u/YWIKY2QK"
+      }
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "limit": 1
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\tab\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "﻿ab\ncd\n"
+  }
+}

@@ -52,8 +52,9 @@ func TestUTF16LEBOMOnlyReadMatchesDefaultAndRanged(t *testing.T) {
 			if result.Output.IsError {
 				t.Fatalf("Read failed: %v", result)
 			}
-			compareText(t, "BOM-only body", "1", result.Output.Content[0].GetText())
-			if result.GetRead().TotalLines != 1 || result.GetRead().Sha256 != fmt.Sprintf("%x", sha256.Sum256(raw)) {
+			// Native reports a BOM-only file as empty (read-utf16-bom-only*).
+			compareText(t, "BOM-only body", "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>", result.Output.Content[0].GetText())
+			if result.GetRead().TotalLines != 0 || result.GetRead().Sha256 != fmt.Sprintf("%x", sha256.Sum256(raw)) {
 				t.Fatalf("BOM-only metadata: %v", result.GetRead())
 			}
 		})

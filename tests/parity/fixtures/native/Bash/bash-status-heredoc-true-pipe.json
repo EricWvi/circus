@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-status-heredoc-true-pipe",
+  "description": "The command before the heredoc operator decides when a pipe follows.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "true <<EOF | grep -q zzz\nabc\nEOF",
+        "description": "Pin a native Bash rule"
+      },
+      "result": {
+        "is_error": true,
+        "content": "Exit code 1\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

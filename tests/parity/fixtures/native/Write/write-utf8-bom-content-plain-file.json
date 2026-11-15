@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "write-utf8-bom-content-plain-file",
+  "description": "Write content starting with a BOM keeps it on a file without one.",
+  "setup": {
+    "files": {
+      "a.txt": "ab\n"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\tab\n2\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "content": "﻿xy\n"
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "﻿xy\n"
+  }
+}

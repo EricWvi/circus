@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-cr-range",
+  "description": "Ranged reads remove the extra CR.",
+  "setup": {
+    "files": {
+      "a.txt": "a\r\r\nb\r\r\nc\r"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "offset": 2,
+        "limit": 2
+      },
+      "result": {
+        "is_error": false,
+        "content": "2\tb\n3\tc\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "a\r\r\nb\r\r\nc\r"
+  }
+}

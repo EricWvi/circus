@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-preview-line-cut",
+  "description": "The preview ends before the last LF within 2000 units.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "printf \"a\\r\\n'%.0s\" {1..8001}",
+        "description": "Pin a native Bash rule"
+      },
+      "result": {
+        "is_error": false,
+        "content": "<persisted-output>\nOutput too large (31.3KB). Full output saved to: {{OUTPUT_PATH}}\n\nPreview (first 2KB):\na\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n'a\r\n...\n</persisted-output>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-dev-null-offset-past",
+  "description": "An offset past /dev/null reports one line.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "/dev/null",
+        "offset": 2
+      },
+      "result": {
+        "is_error": false,
+        "content": "<system-reminder>Warning: the file exists but is shorter than the provided offset (2). The file has 1 lines.</system-reminder>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

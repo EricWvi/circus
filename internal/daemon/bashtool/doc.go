@@ -18,8 +18,14 @@
 // terminal. Group signals still target -pid. Collection has a ten-second limit
 // and retries without -i on failure. Non-bash login shells fall back to /bin/bash
 // with a warning. Its clean environment contains HOME, USER, LOGNAME, SHELL,
-// PATH=/usr/local/bin:/usr/bin:/bin, TERM=dumb and the daemon's LANG when set.
-// Login startup files run normally; .bashrc is also sourced independently.
+// PATH=/usr/local/bin:/usr/bin:/bin, TERM=dumb, an empty PS1 and the daemon's
+// LANG when set. Login startup files run with that empty prompt, like
+// native's noninteractive collector, so sections gated on a non-empty PS1 are
+// skipped: on Debian, Ubuntu and Arch, /etc/profile then does not source
+// /etc/bash.bashrc, and PS1-gated parts of the user's own login files are
+// skipped too. The collector then unsets PS1, restores Bash's default prompt
+// when interactive, and sources .bashrc independently, so interactive system
+// files reached from .bashrc (Fedora's /etc/bashrc) still run.
 // Exports are captured as NUL-delimited records. The snapshot serializes user
 // functions, non-exported variables, shopt/set options and aliases. Extglob is
 // enabled while loading functions, then disabled in the command wrapper. The
@@ -66,8 +72,18 @@
 // tracked by this mechanism and may outlive the daemon.
 // At most 30001 bytes are read. Up to 30000 raw bytes are inlined and the file
 // removed once no process holds it; larger output stays on disk with a preview
-// of at most 2000 UTF-16 code units, without splitting surrogate pairs. All
-// model-facing bytes are decoded like Node UTF-8, replacing invalid subparts.
+// of at most 2000 UTF-16 code units, without splitting surrogate pairs, taken
+// from the first 30000 bytes without leading blank lines or trailing
+// whitespace and cut before its last LF when that LF lies beyond unit 1000.
+// The size label uses KB or MB with one decimal rounded half up, without a
+// trailing ".0". All model-facing bytes are decoded like Node UTF-8, replacing
+// invalid subparts.
+//
+// A failed command's body starts with "Exit code N"; the body is then trimmed
+// of JavaScript whitespace at both ends, before the cwd-reset or interruption
+// line is appended. A shell that a signal ended on its own reports 144 for
+// SIGTERM and 1 for other signals. Status 1 is not a failure when the last
+// command of the line is grep, egrep, fgrep, rg, find, diff, test or [.
 //
 // The pre-execution sleep guard blocks an initial unwrapped sleep with a plain
 // numeric argument >=25 in foreground mode. Separators and a following command
@@ -122,10 +138,13 @@
 // shutdown contexts are bounded (default ten seconds per tool).
 //
 // Deliberate differences from the captured native CLI:
-//   - Interactive reconstruction preserves profile exports, interactive bashrc
-//     branches and bashrc PATH changes that native's SDK snapshot may discard.
+//   - Interactive reconstruction preserves profile exports outside PS1-gated
+//     sections, interactive bashrc branches and bashrc PATH changes that
+//     native's SDK snapshot may discard. Login-file sections gated on a
+//     non-empty PS1 are skipped, as natively.
 //   - Native binary shims for rg, find/bfs, grep/ugrep and the pkill guard are
-//     omitted; commands use installed system tools and user definitions.
+//     omitted; commands use installed system tools and user definitions. Exit
+//     statuses still follow native's status-1 rule above.
 //   - SDK/session/socket variables are not synthesized; only the three command
 //     environment additions above are forced.
 //   - Storage uses daemon directories instead of Claude config/project paths.

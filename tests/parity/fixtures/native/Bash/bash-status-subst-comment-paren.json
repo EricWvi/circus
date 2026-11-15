@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-status-subst-comment-paren",
+  "description": "A ) in a comment does not close a command substitution.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "test $(echo 1 # )\n) = 2",
+        "description": "Pin a native Bash rule"
+      },
+      "result": {
+        "is_error": false,
+        "content": "(Bash completed with no output)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

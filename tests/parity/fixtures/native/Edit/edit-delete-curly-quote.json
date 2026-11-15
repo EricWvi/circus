@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-delete-curly-quote",
+  "description": "Quote-tolerant deletion also takes the following LF.",
+  "setup": {
+    "files": {
+      "a.txt": "x\nsay “hi”\ny\n"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\tx\n2\tsay “hi”\n3\ty\n4\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "say \"hi\"",
+        "new_string": ""
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "x\ny\n"
+  }
+}

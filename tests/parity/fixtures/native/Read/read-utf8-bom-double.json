@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-utf8-bom-double",
+  "description": "Only the first UTF-8 BOM is hidden.",
+  "setup": {
+    "files": {
+      "a.txt": {
+        "base64": "77u/77u/YWIK"
+      }
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\t﻿ab\n2\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "﻿﻿ab\n"
+  }
+}

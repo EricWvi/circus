@@ -108,7 +108,7 @@ function compact(output) {
   return output.split('\n').filter(line => !/^(=== |--- |\s*--- |PASS$|FAIL$|\s*$)/.test(line)).join('\n').slice(0, 6000);
 }
 
-async function replay(definition, expected, runDir) {
+async function replay(definition, expected, runDir, cwdLength) {
   const mixed = definition.steps.some(s => ['Bash', 'TaskStop'].includes(s.tool));
   const pkg = mixed ? 'bashtool' : 'fstools';
   const tool = definition.steps[0].tool;
@@ -116,7 +116,9 @@ async function replay(definition, expected, runDir) {
     '-test.run', `^TestNativeParity$/${tool}$/${definition.id}$`, '-test.v', '-test.parallel=1', '-test.timeout=120s',
   ], { cwd: join(repo, 'internal/daemon', pkg), quiet: true, env: {
     PATH: '/usr/local/bin:/usr/bin:/bin', HOME: homedir(), LANG: 'C.UTF-8',
-    CIRCUS_PARITY_ARTIFACT_DIR: join(runDir, 'daemon'), CIRCUS_PARITY_DIR: expected, CIRCUS_PARITY_TMPDIR: join(process.env.TMPDIR ?? '/tmp', 'circus-diff-replay'),
+    CIRCUS_PARITY_ARTIFACT_DIR: join(runDir, 'daemon'), CIRCUS_PARITY_DIR: expected, CIRCUS_PARITY_TMPDIR: join(process.env.TMPDIR ?? '/tmp', 'replay'),
+    // A short scratch root leaves room to match the native cwd length exactly.
+    CIRCUS_PARITY_CWD_LENGTH: String(cwdLength),
   } });
   await writeFile(join(runDir, 'replay', `${definition.id}.txt`), result.output, { mode: 0o600 });
   const ran = result.output.includes(`=== RUN   TestNativeParity/${tool}/${definition.id}\n`);
@@ -184,7 +186,7 @@ async function worker(options, runDir) {
       await mkdir(resolve(path, '..'), { recursive: true });
       await writeFile(path, json(first.fixture), { mode: 0o600 });
       console.log(`[${index + 1}/${definitions.length}] ${definition.id}: daemon replay`);
-      Object.assign(entry, await replay(definition, expected, runDir));
+      Object.assign(entry, await replay(definition, expected, runDir, first.cwd_length));
       if (definition.id === 'self-check' && (!first.fixture.steps[0].result.content.startsWith('NETWORK_BLOCKED') || entry.status !== 'matched')) throw new Error('Isolation self-check failed');
     }
     entry.elapsed_ms = Math.round(performance.now() - caseStart);

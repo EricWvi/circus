@@ -4,8 +4,9 @@ Ground truth: Claude Agent SDK **0.3.319**, bundled Claude Code **2.1.319**,
 Node 24.20.0, Linux x64, `/bin/bash`, bypass permissions, fresh isolated HOME and
 config, no settings sources or MCP servers. The fake model emits exactly one
 tool per turn; evidence is the next Messages API request, not SDK display text.
-The 125 cases comprise 40 Read, 14 Write, 25 Edit, 44 Bash and 2 TaskStop-category
-cases; the Bash stop case also exercises TaskStop. All cases are in
+The 297 cases comprise 80 Read, 33 Write, 61 Edit, 121 Bash and 2 TaskStop-category
+cases; the Bash stop case also exercises TaskStop. The 172 cases added from the
+differential runner are described in [Differential-runner rules](#differential-runner-rules). All cases are in
 [`fixtures/native`](fixtures/native/), with exact setups, inputs, side effects,
 results and final file bytes. See [`native-capture/README.md`](native-capture/README.md)
 for reproduction, routing and every normalization placeholder.
@@ -108,7 +109,8 @@ Directory (`is_error: true`, also unwrapped):
 EISDIR: illegal operation on a directory, read '{{CWD}}/sub'
 ```
 
-NUL-containing `.bin` input (`is_error: true`):
+NUL-containing `.bin` input (`is_error: true`; the refusal depends on the
+extension, not the NUL, see [Differential-runner rules](#differential-runner-rules)):
 
 ```text
 <tool_use_error>This tool cannot read binary files. The file appears to be a binary .bin file. Use a skill for this file type if one is available, or a shell command or script that can read the format.</tool_use_error>
@@ -383,7 +385,9 @@ Cases: [`Write/`](fixtures/native/Write/). Required string inputs are
 `file_path` and `content`. The exact schema and description appear below.
 
 New files succeed, and nonexistent parent directories are created recursively.
-The input content is written exactly. The creation body is:
+The input content is written as given, except that trailing whitespace on each
+line is removed outside Markdown (see [Differential-runner rules](#differential-runner-rules)).
+The creation body is:
 
 ```text
 File created successfully at: {{CWD}}/a.txt (file state is current in your context — no need to Read it back)
@@ -590,7 +594,8 @@ are **advertised**, not boundary-tested here.
 ### Output and status
 
 `echo hello` returns `hello`, with the command's terminal newline removed before
-the shared suffix. `true` returns this exact successful body:
+the shared suffix (the complete trimming rule is in
+[Differential-runner rules](#differential-runner-rules)). `true` returns this exact successful body:
 
 ```text
 (Bash completed with no output)
@@ -671,8 +676,9 @@ full command output inline. The actual persistence path structure is:
 
 The follow-up bisections in Thresholds establish the exact inline/persisted
 cutoff: 30000 raw UTF-8 output bytes remain inline, and 30001 ASCII bytes persist.
-The marker's printed size uses KB with one decimal place; **inferred:** binary
-1024-byte units. The CJK preview is 2000 characters / 6000 UTF-8 bytes even though
+The marker's printed size uses binary 1024-byte units with one decimal place,
+rounded half up, without a trailing `.0`, and MB from 1048576 bytes (see
+[Differential-runner rules](#differential-runner-rules)). The CJK preview is 2000 characters / 6000 UTF-8 bytes even though
 the printed label says "2KB"; the persistence cutoff and preview length use
 different units. The review follow-up confirms the preview counts UTF-16 code
 units rather than Unicode code points.
@@ -1092,7 +1098,8 @@ Both preceding Reads return exactly `"1\tdon’t\n2"` before the common suffix.
 `"1\ta\n2\tb\n3\tc\n4"`. Edit replaces `b\nc` with `B\nC`; final bytes are
 **`a\r\nB\r\nC\r\n`**, hex `61 0d 0a 42 0d 0a 43 0d 0a`.
 The original lone LF is converted to CRLF, not preserved as a mixed-EOL region.
-The general choice rule for every mixed-EOL layout is unmeasured.
+The general rule, a majority count in the first 4096 bytes, is in
+[Differential-runner rules](#differential-runner-rules).
 
 All three Edit steps return the same exact successful body:
 
@@ -2020,6 +2027,259 @@ the golden's environment-specific PID table; their existence/count is explicit.
 Every CLI in this matrix exited with code 0 and signal null. For the primary, the harness rechecked the same process before/after the 22-second delay; it was absent afterward. No native cleanup action is inferred from the later harness-generated `cleanup_signals`.
 
 <!-- amp-huge-evidence-end -->
+
+## Differential-runner rules
+
+The differential runner (`diff/run.mjs`) compared generated cases with the
+daemon and found rules that the fixed case list above did not pin down. Each
+rule below was established with probe cases in
+[`diff/probe-cases.json`](diff/probe-cases.json) (IDs in parentheses), and the
+listed fixtures in `fixtures/native` keep it fixed.
+
+### Bash status, trimming and large output
+
+- **Signals.** A shell ended by a signal reports `Exit code 144` for SIGTERM
+  and `Exit code 1` for every other signal tested (INT, HUP, PIPE, KILL, USR1);
+  an explicit `exit 143` stays 143 (`probe-sig-*`, `probe-exit-14*`). Fixtures
+  `bash-signal-term`, `bash-signal-int`, `bash-exit-143`. Timeout bodies keep
+  their measured `Exit code 143`.
+- **Status 1 of search and comparison commands.** When the last command of the
+  line is `grep`, `egrep`, `fgrep`, `rg`, `find`, `diff`, `test` or `[`, exit
+  status 1 is not an error: no `Exit code` line and `is_error: false`; status 2
+  remains an error. `zgrep`, `ugrep`, `ag`, `ack`, `cmp`, `pgrep`, `which`,
+  `expr`, `bfs`, `fd`, `git` and others keep status 1 as an error, and so do
+  `/usr/bin/grep`, `\grep`, `command grep`, `LC_ALL=C grep` and `time grep`,
+  since only the literal first word counts. The last command follows unquoted
+  `;`, newline, `&&`, `||`, `|` and a backgrounding `&`; redirections such as
+  `2>&1` and `&>/dev/null` do not separate commands; `(cd x && grep y)` and
+  `{ cd x && grep y; }` end with `)` and `}` (`probe-g-*`, `probe-sem-*`).
+  `$(...)`, `$((...))`, `<(...)` and `>(...)` stay part of their word up to
+  the matching parenthesis, so `test $(echo 1) = 2`, `test $((1+1)) -eq 3` and
+  `diff <(echo a) <(echo b)` end with `test` and `diff`. `$'...'` is ANSI-C
+  quoting in which `\'` does not end the quote, a backslash-newline joins
+  lines, and `#` starts a comment only at the start of a word (`echo a#b; grep
+  ...` ends with `grep`). A `<<WORD` or `<<-WORD` heredoc operator is dropped
+  together with the rest of its line and its body (quoted words, `<< WORD`, a
+  body line `EOF x` that is not the delimiter, and an unterminated body that
+  runs to the end included). Whatever follows the operator on its line, `&&`,
+  `||`, `;`, `|`, `&` or a redirection, the command before the operator
+  decides: `grep -q zzz <<EOF && echo hit` counts as `grep`, while
+  `true <<EOF | grep -q zzz` and `cat <<EOF; grep -q zzz /dev/null` count as
+  `true` and `cat`; lines after the delimiter count again (`h3-*`). With two
+  heredoc operators on one line (`<<A <<B`, `<<A 3<<B`, `<<-A <<B`, the same
+  word twice) native kept status 1 an error even when a quiet command followed
+  the bodies (`h2-*`); heredocs on separate lines are each skipped. Native's
+  rule for several operators on one line was not pinned: `cat <<A; cat <<B`
+  with bodies and a final `grep` was quiet natively (`h2-two-sep-cmds`), so the
+  daemon keeps status 1 an error whenever a top-level line has more than one
+  heredoc operator, which can show an error native hides but never hides one.
+  The check covers top-level lines only, not operators inside `$( )`; native
+  refuses those commands before running them (see the unterminated-substitution
+  open group). Inside
+  `$( )`, comments, `case` patterns (with or without a leading `(`) and
+  heredoc bodies do not close the substitution, and in arithmetic `(( ))` a
+  `<<` is a shift (`r5-*`, `r7-*` in the review runs). This,
+  not the bundled grep shim, explains `cd missing && grep x` returning only
+  the `cd` diagnostic. Fixtures `bash-status-*`.
+- **Trimming.** The body is trimmed at both ends with JavaScript whitespace
+  (including NBSP, U+3000 and U+FEFF, not NEL or U+200B) after `Exit code N`
+  and the timeout line are prepended, so output keeps its leading blank lines
+  after `Exit code N` but loses them otherwise; `Shell cwd was reset to ...`
+  follows the trimmed output (`probe-ws-*`, `probe-ws2-*`). Fixtures
+  `bash-trim-*`.
+- **Size label.** `32768` bytes print `32KB`, `30771` print `30KB`, `30772` print
+  `30.1KB`, `30976` (an exact half) prints `30.3KB`, `1048575` prints `1024KB`,
+  `1048576` prints `1MB` and `1572864` prints `1.5MB` (`probe-size-*`). Read's
+  size error uses the same format: a 262400-byte file is `256.3KB`. Fixtures
+  `bash-large-size-*`, `read-size-half-up`.
+- **Preview.** The preview source is the first 30000 output bytes without
+  leading blank lines and trailing whitespace; leading spaces of the first
+  non-blank line stay. The preview is the first 2000 UTF-16 units of that
+  source, cut just before the last LF when that LF lies beyond unit 1000 (an LF
+  at unit 1000 does not cut, one at 1001 does); a cut keeps an earlier LF. When
+  the whole source fits, the `...` line is omitted, so a blank source gives an
+  empty preview (`probe-prev-*`, `probe-ws2-spaces-*`, `probe-prev3-*`).
+  Fixtures `bash-preview-*`. **Inferred:** the 30000-byte source prefix counts
+  raw bytes; the probes are ASCII.
+- **Snapshot.** Native's noninteractive collector never sources
+  `/etc/bash.bashrc`, so a missing command gets Bash's own diagnostic rather
+  than the system `command_not_found_handle` (`bash-missing-command`).
+
+### Read
+
+- **Binary refusal by extension.** Read refuses a file as binary from its
+  extension alone, whatever the content (an empty `a.bin` is refused), naming
+  the lower-case extension (`a.ZIP` reports `.zip`); a dotfile such as `.bin`
+  is refused but, like Node's `path.extname`, names an empty extension
+  (`a binary  file`). Measured refused extensions:
+  bin dat data exe dll so dylib o a obj lib app msi deb rpm apk node wasm rlib
+  class jar war ear pyc pyo whl zip tar gz tgz bz2 xz z 7z rar iso dmg lz4 zst
+  mp3 wav ogg flac aac m4a wma aiff opus mp4 mov avi mkv webm wmv flv m4v mpeg
+  mpg bmp ico tiff tif heic heif avif psd ai eps sketch fig xd blend 3ds max doc docx
+  docm xls xlsx xlsm xlsb ppt pptx pptm odt ods odp epub numbers ttf otf woff woff2 eot db
+  sqlite sqlite3 mdb idx lockb npy npz parquet feather pickle swf fla. Measured
+  accepted extensions include csv json lock log pkl svg ts rtf h5 onnx pt
+  safetensors cab pages key img pack pdb snap; unmeasured ones are read as text
+  (`probe-ext-*`, `probe-ext3-*`). PNG, JPEG, GIF and WebP go to an image reader
+  and PDF to a PDF reader. Fixtures `read-binary-empty`,
+  `read-binary-extension-case`, `read-text-extension`.
+- **NUL bytes.** Any other file is read as text, NUL bytes included. When the
+  first 8000 raw bytes contain NUL (offset 7999 counts, 8000 does not), the body
+  ends with two LF and the notice below instead of the malformed-UTF-8 notice, also for
+  ranged and past-the-end reads, and the final empty line shows a Tab after its
+  number, as for malformed UTF-8 (`probe-nul-*`, `probe-nul2-*`, `probe-nul3-*`).
+  BOM-marked UTF-16LE is not affected. Fixtures `read-nul-*`.
+
+  ```text
+  [This file has NUL bytes in its first 8 KB: binary data, UTF-16/UTF-32 without a byte-order mark, or text with embedded NULs. Edit and Write will refuse it: change it with a shell command that keeps its encoding, or ask the user whether to convert it to UTF-8.]
+  ```
+
+- **CR before a line ending.** Lines end at LF or CRLF; one further CR at the
+  end of a line is not shown, nor are up to two CRs ending the last line of a
+  file without a final LF: `a\r\r\nb\r` reads as `a` and `b`, `a\r\r\r\n` as
+  `a\r`, `a\xff\r\r` as `a\uFFFD` and `a\xff\r\r\r` as `a\uFFFD\r` before
+  their notice, and a last line holding only CR is shown like a final empty
+  line. Without a notice the body's trailing-whitespace trim hides any further
+  CRs. CR inside a line stays (`probe-cr-*`, `probe-cr2-*`, `probe-f-*`).
+  Fixtures `read-terminal-cr`, `read-cr-*`.
+- **Offset past an empty file.** The offset check precedes the empty-file
+  warning and counts an empty file as one line: offset 2 reports `shorter than
+  the provided offset (2). The file has 1 lines.`, while no offset, offset 1 or
+  a limit alone report the empty-file warning (`probe-f-empty-*`). Fixtures
+  `read-empty-offset-past*`.
+- **UTF-8 byte-order mark.** A leading UTF-8 BOM is an encoding marker in
+  every file tool, like the UTF-16LE BOM. Read does not show it, in full and
+  ranged reads, and a BOM-only file reads as empty (an offset past it reports
+  one line); a second BOM is ordinary text. Write over a BOM file keeps the
+  BOM, except that content already starting with U+FEFF is not given a second
+  one and empty content leaves an empty file; a BOM-only file is updated, not
+  created. Edit never sees the BOM: an `old_string` starting with U+FEFF is not
+  found, an empty `old_string` on a BOM-only file writes the BOM and the text,
+  deleting all text leaves the BOM, and a `new_string` starting with U+FEFF
+  follows the file's BOM. The NUL window counts raw bytes including the BOM, and
+  Edit's line-ending window counts the BOM as one code unit (`r6-*`, `r8-bom-*`,
+  `bp-*` in the review runs). Fixtures `read-utf8-bom*`, `write-utf8-bom*`,
+  `edit-utf8-bom*`, `edit-eol-utf8-bom-*`. `r8-bom-edit-old-with-bom` is not a
+  fixture: native also appends the `\uXXXX` note of the open group below.
+  A BOM-only UTF-16LE file behaves the same way: Read reports it as empty in
+  full and ranged reads (an offset past it reports one line), an empty
+  `old_string` writes the BOM and the text, and Write reports an update
+  (`edit-utf16-bom-only-*`, `read-utf16-bom-only*`).
+- **Trailing whitespace of the body.** The complete body, notice included, loses
+  trailing JavaScript whitespace: the last displayed line drops trailing
+  spaces, Tabs and NBSP, also in ranged reads, and a final empty line shows
+  only its number; with a notice after it, that line keeps its Tab
+  (`probe-rt-*`). Fixtures `read-trailing-*`.
+
+### Write and Edit
+
+- **NUL guard.** Write and Edit refuse an existing file whose first 8000 raw
+  bytes contain NUL, before the malformed-UTF-8 check and also after a Read,
+  with the body below (unwrapped for Write, in `<tool_use_error>` for Edit). An
+  empty `old_string` on such a file fails earlier, as already existing. Writing
+  NUL in new content is allowed. Fixtures `write-nul-*`, `edit-nul-*`.
+
+  ```text
+  File has NUL bytes in its first 8 KB: binary data, UTF-16/UTF-32 without a byte-order mark, or text with embedded NULs. These tools write UTF-8 (or UTF-16LE behind its byte-order mark) and never convert a file's encoding on their own, so nothing was written. If the file is text, make the change with a shell command that reads and writes it in its own encoding (iconv, or PowerShell Get-Content/Set-Content -Encoding), or ask the user whether to convert it to UTF-8 first. To replace the whole file with new UTF-8 text anyway, delete it first, then Write it.
+  ```
+
+- **Trailing whitespace.** Write content and Edit `new_string` lose trailing
+  JavaScript whitespace on every line (CRLF, LF and lone CR end lines and are
+  kept), except for `.md` and `.mdx` paths in any letter case; `.markdown` is
+  stripped. Edit text that creates a missing file is kept verbatim, while text
+  filling an existing empty file is stripped; `old_string` is never stripped
+  (`probe-ww-*`, `probe-ed-*`, `probe-ed3-*`). Fixtures `write-line-whitespace`,
+  `write-whitespace-*`, `edit-strip-*`, `edit-create-keeps-whitespace`,
+  `edit-existing-empty-strips`.
+- **Deleting text.** When the replacement is empty (also after stripping), the
+  old string does not end in LF, and the file contains it followed by LF, that
+  LF is deleted too, even mid-line (`ab\nc\n` minus `b` gives `ac\n`). The match
+  count still uses the old string alone; with `replace_all` only occurrences
+  followed by LF are deleted (`b\nab\nb` gives `ab`). Quote-tolerant matches
+  behave the same. Fixtures `edit-delete-*`.
+- **Quote-tolerant matches.** A quote-tolerant edit uses the file's own text
+  of the first match: only occurrences identical to it are counted and
+  replaced, so in `say “hi”\nsay ”hi“\n` replacing `say "hi"` changes only the
+  first line, with or without `replace_all`
+  (`rv4-quote-replace-all-variants`, `r5-quote-mixed-no-replace-all`).
+  Fixtures `edit-quote-replace-all-variants`, `edit-quote-mixed-no-replace-all`.
+- **CRLF in old_string and new_string.** The file is normalized to LF for
+  matching, but `old_string` and `new_string` are used as given: an
+  `old_string` containing CRLF is not found, and CRLF in `new_string` survives in
+  a file written with LF (`probe-ecr-*`). Fixtures `edit-crlf-*`.
+- **Line endings.** Edit writes CRLF when CRLF endings outnumber lone LF endings
+  in the first 4096 UTF-16 code units of the decoded text and LF otherwise,
+  ties included: an LF at code unit 4095 is counted, one at 4096 is not. A CJK
+  character counts one unit, an emoji two, and a BOM-marked UTF-16LE file
+  counts its decoded text without the BOM (`probe-eol-*`, `probe-eol2-*`,
+  `rv-eol-*`, `rv2-eol-*`).
+  The file is normalized by replacing CRLF with LF first, so `a\r\r\nb\n` keeps
+  `a\r` as content in an LF result, while a CRLF result turns every LF or CRLF
+  into CRLF, so CR CR LF becomes CRLF. Fixtures `edit-eol-*`.
+- **Validation order.** An empty `old_string` on a non-empty file reports
+  `Cannot create new file - file already exists.` before any encoding or NUL
+  check (`edit-empty-old-encoding-order`).
+- **Creation wording.** Write reports `File created successfully at: ...` when
+  the existing file is empty, as for a missing file; a BOM-only UTF-16LE file is
+  not empty and is updated (`probe-wee-*`). Fixtures `write-existing-empty`,
+  `write-bom-only`.
+- **Context-current parenthetical.** An Edit adds `(file state is current in
+  your context — ...)` only when the session holds the whole file: after a Read
+  without offset beyond line 1 whose limit, if any, exceeds the line count (an
+  empty file counts one line), a Write, an Edit that created the file, or an
+  Edit of a file already held. A partial Read replaces an earlier full one, and
+  an Edit of a never-read file leaves it not held (`probe-ctx-*`,
+  `probe-ctx2-*`). The daemon receives only `expected_sha256`, so this is
+  worker state; the runner's replay follows these rules. Committed fixtures
+  keep the original replay, which records every successful Read.
+
+### Open groups
+
+These differences were found and are not matched yet; each has a minimal probe.
+
+- **Failed command with large output** (`probe-ws2-exit-large`): with a
+  non-zero status, native does not persist output over 30000 bytes; it returns
+  `Exit code N` and the output with its middle replaced by
+  `... [N characters truncated] ...`, about 10000 characters in total.
+- **Context after an Edit or Read whose stored text differs from the file**
+  (`probe-ctx4-extra-cr-edit-edit`, `probe-f-ctx-read-cr`): native keeps the
+  text it showed or wrote and omits the context-current parenthetical when that
+  text no longer equals the re-read LF-normalized file, for example after CR
+  CR LF collapses or a hidden final CR. Worker state with `expected_sha256`
+  cannot express this.
+- **`\uXXXX` escape swapping in Edit** (`probe-f-notfound-cjk`): for an
+  `old_string` with non-ASCII characters or `\uXXXX` escapes, native also tries
+  the swapped form and, when neither matches, appends
+  `\n(note: Edit also tried swapping \uXXXX escapes and their characters; neither form matched, so the mismatch is likely elsewhere in old_string. Re-read the file and copy the exact surrounding text.)`
+  to the not-found error.
+
+- **Control characters in a command** (`rv-sem-crlf-command`): native rejects
+  a Bash command containing CR with an `InputValidationError` about control
+  characters; the daemon runs it.
+- **Commands refused by native's rm-safety check**: native refuses, with
+  "could not be checked for dangerous rm operations … requires explicit
+  approval", commands it cannot parse; the daemon runs them. Probes:
+  `r5-unterminated-subst` (`test $(echo 1 = 2`; the daemon reports Bash's syntax
+  error, exit 2), `r8-hd-in-subst-two-ops` (`x=$(cat <<A <<B …); grep …`),
+  `r8-hd-two-ops-subst-then-ls`, `r8-subshell-nested-nospace`
+  (`((cd missing && grep x) )`) and `r8-subst-arith-like-subshell`
+  (`test $((echo 1) ) = 2`).
+
+### Intended deviations
+
+- The daemon has no image or PDF reader, so it refuses `png`, `jpg`, `jpeg`,
+  `gif`, `webp` and `pdf` as binary instead of rendering them.
+- The interactive snapshot collector keeps the user's interactive `~/.bashrc`
+  branches (see Profile sourcing). Login files run with an empty `PS1`, as in
+  native's noninteractive collector, so every section gated on a non-empty
+  `PS1` is skipped: on Debian, Ubuntu and Arch, `/etc/profile` does not source
+  `/etc/bash.bashrc`, and PS1-gated parts of the user's `~/.bash_profile` or
+  `~/.profile` (for example a `direnv` hook) are skipped too. Bash's default
+  prompt is restored before `~/.bashrc` is sourced, so interactive system files
+  reached from `~/.bashrc`, such as Fedora's `/etc/bashrc`, still run there.
+- Native's bundled grep shim is not shipped. Only the diagnostic-prefix
+  difference of missing-path warnings is a deviation; exit statuses follow the
+  status-1 rule above.
 
 ## Reproducibility
 

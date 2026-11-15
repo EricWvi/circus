@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-preview-blank-prefix",
+  "description": "Blank first 30000 bytes give an empty preview without an ellipsis.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "printf ' %.0s' {1..30000}; head -c 40000 /dev/zero | tr '\\0' x",
+        "description": "Pin a native Bash rule"
+      },
+      "result": {
+        "is_error": false,
+        "content": "<persisted-output>\nOutput too large (68.4KB). Full output saved to: {{OUTPUT_PATH}}\n\nPreview (first 2KB):\n\n</persisted-output>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

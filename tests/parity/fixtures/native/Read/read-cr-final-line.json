@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-cr-final-line",
+  "description": "A final line holding only CR shows as a final empty line.",
+  "setup": {
+    "files": {
+      "a.txt": "a\n\r"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\ta\n2\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "a\n\r"
+  }
+}

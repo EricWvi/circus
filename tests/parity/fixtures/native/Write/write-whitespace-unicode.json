@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "write-whitespace-unicode",
+  "description": "Stripping uses JavaScript whitespace: NBSP, U+3000 and BOM, not NEL or ZWSP.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "content": "a \nb　\nc﻿\nd\ne​\n"
+      },
+      "result": {
+        "is_error": false,
+        "content": "File created successfully at: {{CWD}}/a.txt (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "a\nb\nc\nd\ne​\n"
+  }
+}

@@ -46,29 +46,45 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 		// Inferred: uncaptured Edit filesystem errors use tool-use-error with OS text.
 		return toolError(err.Error()), nil
 	}
+	// An empty old_string on a non-empty file fails before any encoding check.
+	// Byte-order marks do not count: a UTF-8 or UTF-16LE BOM-only file is empty.
 	decoded := textutil.Decode(data)
+	if r.GetOldString() == "" && len(decoded.Text) != 0 {
+		return toolError("Cannot create new file - file already exists."), nil
+	}
+	// The NUL window counts raw bytes, a UTF-8 byte-order mark included.
+	if decoded.Encoding != textutil.EncodingUTF16LE && hasNULPrefix(data) {
+		return toolError(nulError), nil
+	}
 	// Inferred: Edit refuses malformed UTF-16LE because re-encoding would
 	// rewrite invalid code units; native captured valid UTF-16 and invalid UTF-8.
 	if decoded.InvalidUTF8 || decoded.InvalidUTF16 {
 		return toolError(encodingError), nil
 	}
 	modified := changed(r.ExpectedSha256, data)
-	old := strings.ReplaceAll(r.GetOldString(), "\r\n", "\n")
-	replacement := strings.ReplaceAll(r.GetNewString(), "\r\n", "\n")
+	newString := r.GetNewString()
+	if !created {
+		// Replacement text for an existing file loses trailing line whitespace
+		// like Write content; text creating a missing file is kept verbatim.
+		newString = stripForWrite(r.GetPath(), newString)
+	}
+	// The file is normalized to LF for matching, but old_string and new_string
+	// are used as given: an old_string with CRLF does not match, and CRLF in
+	// new_string survives in an LF file. The complete result is written with
+	// the ending chosen by lineEnding.
+	old, replacement := r.GetOldString(), newString
 	shownOld := textutil.NodeUTF8([]byte(r.GetOldString()))
 	text := strings.ReplaceAll(decoded.Text, "\r\n", "\n")
-	eol := "\n"
-	if i := strings.Index(decoded.Text, "\n"); i > 0 && decoded.Text[i-1] == '\r' {
-		eol = "\r\n"
+	// The line-ending window counts a UTF-8 byte-order mark as one code unit,
+	// though matching and the written text exclude it; Encode writes it back.
+	window := decoded.Text
+	if decoded.Encoding == textutil.EncodingUTF8BOM {
+		window = textutil.UTF8BOM + window
 	}
-	// Inferred: mixed-EOL files are normalized to LF for matching, then the
-	// complete result uses the file's first line ending.
+	eol := lineEnding(window)
 	var content string
 	var resultSize int64
 	if old == "" {
-		if len(data) != 0 {
-			return toolError("Cannot create new file - file already exists."), nil
-		}
 		if modified {
 			return toolError(modifiedError), nil
 		}
@@ -96,7 +112,9 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 		return toolError(wholeFileSizeError), nil
 	}
 	if eol == "\r\n" {
-		content = strings.ReplaceAll(content, "\n", eol)
+		// Every LF or CRLF becomes CRLF, so a CR left before an LF by the
+		// normalization (from CR CR LF) is not doubled.
+		content = strings.ReplaceAll(strings.ReplaceAll(content, "\r\n", "\n"), "\n", eol)
 	}
 	raw := decoded.Encode(content)
 	if err := writeFile(ctx, path, raw, info); err != nil {
@@ -119,10 +137,48 @@ func (*Edit) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 	return result, nil
 }
 
+// lineEndingWindowUnits is the decoded prefix, in UTF-16 code units, whose
+// line endings decide Edit's output ending: an LF at code unit 4095 counts,
+// one at 4096 does not. A CJK character is one unit and an emoji two; a
+// UTF-16LE file counts its decoded text without the byte-order mark.
+const lineEndingWindowUnits = 4096
+
+// lineEnding returns CRLF when CRLF endings outnumber lone LF endings in the
+// first 4096 UTF-16 code units of the decoded text, and LF otherwise, ties
+// included.
+func lineEnding(text string) string {
+	crlf, lf, units := 0, 0, 0
+	previous := rune(0)
+	for _, r := range text {
+		units++
+		if r > 0xffff {
+			units++
+		}
+		if units > lineEndingWindowUnits {
+			break
+		}
+		if r == '\n' {
+			if previous == '\r' {
+				crlf++
+			} else {
+				lf++
+			}
+		}
+		previous = r
+	}
+	if crlf > lf {
+		return "\r\n"
+	}
+	return "\n"
+}
+
 func editDiskSize(content, eol string, encoding textutil.Encoding) int64 {
 	var size int64
-	if encoding == textutil.EncodingUTF16LE {
+	switch encoding {
+	case textutil.EncodingUTF16LE:
 		size = 2 // byte-order mark
+	case textutil.EncodingUTF8BOM:
+		size = 3
 	}
 	for _, r := range content {
 		if encoding == textutil.EncodingUTF16LE {
@@ -152,13 +208,41 @@ func editedSize(contentLength, oldLength, replacementLength, count int, replaceA
 	return int64(contentLength) + int64(replacements)*(int64(replacementLength)-int64(oldLength))
 }
 
+// deletionPattern extends a deleted old_string with its following LF: when
+// the replacement is empty, old_string does not end in LF and the content holds
+// old_string followed by LF, that longer text is what gets replaced, so a
+// deleted line takes its line ending along. Matching and the match count still
+// use old_string alone; with replace_all, occurrences without a following LF
+// are then left in place.
+func deletionPattern(content, old, replacement string) string {
+	if replacement == "" && !strings.HasSuffix(old, "\n") && strings.Contains(content, old+"\n") {
+		return old + "\n"
+	}
+	return old
+}
+
+func replaceLiteral(content, pattern, replacement string, replaceAll bool) (string, int64) {
+	count := 1
+	if replaceAll {
+		count = strings.Count(content, pattern)
+	}
+	resultSize := editedSize(len(content), len(pattern), len(replacement), count, true)
+	if resultSize > wholeFileSizeLimitBytes {
+		return "", resultSize
+	}
+	if replaceAll {
+		return strings.ReplaceAll(content, pattern, replacement), resultSize
+	}
+	return strings.Replace(content, pattern, replacement, 1), resultSize
+}
+
 func replaceText(ctx context.Context, content, old, replacement string, replaceAll bool) (string, int, int64, error) {
 	if count := strings.Count(content, old); count > 0 {
-		resultSize := editedSize(len(content), len(old), len(replacement), count, replaceAll)
-		if count > 1 && !replaceAll || resultSize > wholeFileSizeLimitBytes {
-			return "", count, resultSize, nil
+		if count > 1 && !replaceAll {
+			return "", count, editedSize(len(content), len(old), len(replacement), count, false), nil
 		}
-		return strings.ReplaceAll(content, old, replacement), count, resultSize, nil
+		result, resultSize := replaceLiteral(content, deletionPattern(content, old, replacement), replacement, replaceAll)
+		return result, count, resultSize, nil
 	}
 	if !strings.ContainsAny(old, "\"'“”‘’") {
 		return "", 0, 0, nil
@@ -171,39 +255,29 @@ func replaceText(ctx context.Context, content, old, replacement string, replaceA
 		return "", 0, 0, err
 	}
 	count := 0
-	resultSize := int64(len(content))
+	firstStart, firstEnd := 0, 0
 	err = scanQuoteMatches(ctx, content, pattern, failure, func(start, end int) {
 		count++
-		if !replaceAll && count > 1 {
-			return
+		if count == 1 {
+			firstStart, firstEnd = start, end
 		}
-		matched := content[start:end]
-		replacementLength := len(replacement)
-		if strings.ContainsAny(matched, "“”") {
-			replacementLength += 2 * strings.Count(replacement, "\"")
-		}
-		if strings.ContainsAny(matched, "‘’") {
-			replacementLength += 2 * strings.Count(replacement, "'")
-		}
-		resultSize += int64(replacementLength - (end - start))
 	})
-	if err != nil || count == 0 || count > 1 && !replaceAll || resultSize > wholeFileSizeLimitBytes {
-		return "", count, resultSize, err
+	if err != nil || count == 0 {
+		return "", count, int64(len(content)), err
 	}
-
-	var b strings.Builder
-	b.Grow(int(resultSize))
-	last := 0
-	err = scanQuoteMatches(ctx, content, pattern, failure, func(start, end int) {
-		b.WriteString(content[last:start])
-		b.WriteString(quoteReplacement(content[start:end], replacement))
-		last = end
-	})
-	if err != nil {
-		return "", count, resultSize, err
+	// The edit uses the file's own text of the first match: only occurrences
+	// identical to it count and are replaced, also with replace_all, so another
+	// curly variant of the same words neither makes the match ambiguous nor
+	// changes. A deletion extends that text by the following LF when the
+	// content holds one after it.
+	actual := content[firstStart:firstEnd]
+	count = strings.Count(content, actual)
+	if count > 1 && !replaceAll {
+		return "", count, int64(len(content)), nil
 	}
-	b.WriteString(content[last:])
-	return b.String(), count, resultSize, nil
+	pattern, text := deletionPattern(content, actual, replacement), quoteReplacement(actual, replacement)
+	result, resultSize := replaceLiteral(content, pattern, text, replaceAll)
+	return result, count, resultSize, nil
 }
 
 func normalizeQuote(r rune) rune {

@@ -116,7 +116,7 @@ func (b *Bash) startCapture(reqCmd *exec.Cmd, out *os.File, cwdPath string, leas
 		b.effects.pause("wait-shell")
 		err := reqCmd.Wait()
 		b.effects.pause("shell-exited")
-		waited <- processOutcome{code: exitCode(reqCmd), err: err}
+		waited <- waitOutcome(reqCmd, err)
 	}()
 	if b.effects.started != nil {
 		b.effects.started(c)

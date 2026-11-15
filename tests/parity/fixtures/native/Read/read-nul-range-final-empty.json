@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-nul-range-final-empty",
+  "description": "A ranged read with a NUL notice shows a Tab on the final empty line.",
+  "setup": {
+    "files": {
+      "a.txt": {
+        "base64": "YQBiCg=="
+      }
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "limit": 5
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\ta\u0000b\n2\t\n\n[This file has NUL bytes in its first 8 KB: binary data, UTF-16/UTF-32 without a byte-order mark, or text with embedded NULs. Edit and Write will refuse it: change it with a shell command that keeps its encoding, or ask the user whether to convert it to UTF-8.]\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": {
+      "base64": "YQBiCg=="
+    }
+  }
+}

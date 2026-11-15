@@ -11,14 +11,16 @@ import (
 )
 
 type processOutcome struct {
-	code                 int
+	code int
+	// signal is the signal that ended the shell, or zero after a normal exit.
+	signal               syscall.Signal
 	err                  error
 	terminationRequested bool
 }
 
 func startWait(cmd *exec.Cmd) <-chan processOutcome {
 	waited := make(chan processOutcome, 1)
-	go func() { err := cmd.Wait(); waited <- processOutcome{code: exitCode(cmd), err: err} }()
+	go func() { err := cmd.Wait(); waited <- waitOutcome(cmd, err) }()
 	return waited
 }
 
@@ -34,11 +36,13 @@ func waitProcess(ctx context.Context, cmd *exec.Cmd) (int, error) {
 	}
 }
 
-func exitCode(cmd *exec.Cmd) int {
+// waitOutcome reports a signal death as 128 plus the signal number, the
+// shell convention used internally for timeouts and stops.
+func waitOutcome(cmd *exec.Cmd, err error) processOutcome {
 	if status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-		return 128 + int(status.Signal())
+		return processOutcome{code: 128 + int(status.Signal()), signal: status.Signal(), err: err}
 	}
-	return cmd.ProcessState.ExitCode()
+	return processOutcome{code: cmd.ProcessState.ExitCode(), err: err}
 }
 
 func stopProcess(cmd *exec.Cmd, waited <-chan processOutcome) processOutcome {

@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-status-heredoc-unterminated",
+  "description": "An unterminated heredoc body runs to the end.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "grep -q zzz <<EOF\nabc",
+        "description": "Pin a native Bash rule"
+      },
+      "result": {
+        "is_error": false,
+        "content": "/bin/bash: line 2: warning: here-document at line 1 delimited by end-of-file (wanted `EOF')\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

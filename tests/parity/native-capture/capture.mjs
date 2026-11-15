@@ -322,7 +322,8 @@ export async function capture(definition, { persist = true, diagnosticsDir = joi
         step.result.content = summarize(Buffer.from(step.result.content));
       }
     }
-    if (!persist) return { fixture, tools: normalize(tools) };
+    // The cwd length lets a replay give output containing the path the same size.
+    if (!persist) return { fixture, tools: normalize(tools), cwd_length: Buffer.byteLength(cwd) };
     const category = definition.id.startsWith('taskstop-') ? 'TaskStop' : definition.id.split('-')[0].replace(/^./, s => s.toUpperCase());
     const path = join(fixtures, category, `${definition.id}.json`);
     await mkdir(resolve(path, '..'), { recursive: true });

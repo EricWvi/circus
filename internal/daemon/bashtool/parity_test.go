@@ -19,6 +19,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/fstools"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/paritypath"
 	"sync/atomic"
 )
 
@@ -74,7 +75,8 @@ func tempDir(t *testing.T) string {
 	if err = os.MkdirAll(base, 0700); err != nil {
 		t.Fatal(err)
 	}
-	dir, err := os.MkdirTemp(base, "bashtool-test-")
+	// Workers use dir/project as their working directory.
+	dir, err := paritypath.Mkdir(base, "bashtool-test-", "/project")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,13 +247,23 @@ func (w *worker) call(t *testing.T, call *circusv1.DeviceCall) *circusv1.DeviceR
 			if !filepath.IsAbs(path) {
 				path = filepath.Join(w.cwd, path)
 			}
+			key := filepath.Clean(path)
+			// External replays follow the fstools replay's native context rules:
+			// only a Read covering every line, a Write, or an Edit of a file
+			// already in context or created by it leaves the file in context.
+			external := os.Getenv("CIRCUS_PARITY_DIR") != ""
 			switch {
 			case r.GetRead() != nil:
-				w.reads[filepath.Clean(path)] = r.GetRead().Sha256
+				read := call.GetRead()
+				if !external || (read.Offset == nil || read.GetOffset() <= 1) && (read.Limit == 0 || read.Limit > max(r.GetRead().TotalLines, 1)) {
+					w.reads[key] = r.GetRead().Sha256
+				} else {
+					delete(w.reads, key)
+				}
 			case r.GetWrite() != nil:
-				w.reads[filepath.Clean(path)] = r.GetWrite().Sha256
-			case r.GetEdit() != nil:
-				w.reads[filepath.Clean(path)] = r.GetEdit().Sha256
+				w.reads[key] = r.GetWrite().Sha256
+			case r.GetEdit() != nil && (!external || call.GetEdit().ExpectedSha256 != nil || r.GetEdit().Created):
+				w.reads[key] = r.GetEdit().Sha256
 			}
 		}
 	}

@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-existing-empty-strips",
+  "description": "Text filling an existing empty file is stripped.",
+  "setup": {
+    "files": {
+      "a.txt": ""
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "",
+        "new_string": "x  \ny "
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully.\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "x\ny"
+  }
+}

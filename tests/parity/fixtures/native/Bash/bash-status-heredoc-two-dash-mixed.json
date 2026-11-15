@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-status-heredoc-two-dash-mixed",
+  "description": "A <<- and a << heredoc on one line keep status 1 an error.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "cat <<-A <<B\n\ta\n\tA\nb\nB\ngrep -q x /dev/null",
+        "description": "Pin a native Bash rule"
+      },
+      "result": {
+        "is_error": true,
+        "content": "Exit code 1\nb\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

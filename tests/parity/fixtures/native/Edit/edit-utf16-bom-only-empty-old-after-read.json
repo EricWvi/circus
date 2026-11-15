@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-utf16-bom-only-empty-old-after-read",
+  "description": "An empty old_string on a BOM-only UTF-16LE file after a Read.",
+  "setup": {
+    "files": {
+      "a.txt": {
+        "base64": "//4="
+      }
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "",
+        "new_string": "x"
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": {
+      "base64": "//54AA=="
+    }
+  }
+}

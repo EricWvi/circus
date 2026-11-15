@@ -286,7 +286,15 @@ func (e *snapshotStore) collect(ctx context.Context, refreshing bool) (string, [
 	if u, err := user.Current(); err == nil {
 		name = u.Username
 	}
-	clean := []string{"HOME=" + home, "USER=" + name, "LOGNAME=" + name, "SHELL=" + shell, "PATH=/usr/local/bin:/usr/bin:/bin", "TERM=dumb"}
+	// Login files run with an empty PS1, as in native's noninteractive
+	// collector, so every section they gate on a non-empty PS1 is skipped. On
+	// Debian, Ubuntu and Arch this keeps /etc/profile from sourcing
+	// /etc/bash.bashrc (and its command_not_found_handle); it equally skips
+	// PS1-gated sections of the user's ~/.bash_profile or ~/.profile. Systems
+	// whose interactive system file is reached through ~/.bashrc, such as
+	// Fedora's /etc/bashrc, still run it, because the collector restores the
+	// default prompt before sourcing ~/.bashrc.
+	clean := []string{"HOME=" + home, "USER=" + name, "LOGNAME=" + name, "SHELL=" + shell, "PATH=/usr/local/bin:/usr/bin:/bin", "TERM=dumb", "PS1="}
 	if lang, ok := os.LookupEnv("LANG"); ok {
 		clean = append(clean, "LANG="+lang)
 	}
@@ -303,7 +311,10 @@ func (e *snapshotStore) collect(ctx context.Context, refreshing bool) (string, [
 	snapshot, exports := filepath.Join(dir, "snapshot.sh"), filepath.Join(dir, "environment")
 	// Source .bashrc independently: login profiles need not source it. Serialize
 	// non-exported user variables too, without restoring Bash's process-local state.
-	collector := `if [ -f "$HOME/.bashrc" ]; then source "$HOME/.bashrc"; fi
+	// Unsetting PS1 drops the export attribute it got from the environment; an
+	// interactive collector then gets Bash's default prompt back.
+	collector := `unset PS1; case $- in *i*) PS1='\s-\v\$ ';; esac
+if [ -f "$HOME/.bashrc" ]; then source "$HOME/.bashrc"; fi
 command env -0 > ` + quote(exports) + `
 {
 printf '%s\n' '# Snapshot file' 'unalias -a 2>/dev/null || true' 'shopt -s expand_aliases' 'shopt -s extglob'

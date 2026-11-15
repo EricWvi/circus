@@ -65,3 +65,22 @@ func TestUTF16LERoundTrip(t *testing.T) {
 		t.Fatalf("UTF-16LE encode: expected %v, got %v", want, encoded)
 	}
 }
+
+func TestUTF8BOM(t *testing.T) {
+	decoded := Decode([]byte("\xef\xbb\xbf\xef\xbb\xbfab"))
+	if decoded.Encoding != EncodingUTF8BOM || decoded.Text != UTF8BOM+"ab" || decoded.InvalidUTF8 {
+		t.Fatalf("decoded %+v", decoded)
+	}
+	if got := string(decoded.Encode("x")); got != UTF8BOM+"x" {
+		t.Fatalf("encoded %q", got)
+	}
+	if bom := Decode([]byte("\xef\xbb\xbf")); bom.Text != "" || bom.Encoding != EncodingUTF8BOM {
+		t.Fatalf("BOM-only %+v", bom)
+	}
+	if invalid := Decode([]byte("\xef\xbb\xbfa\xff")); !invalid.InvalidUTF8 {
+		t.Fatal("invalid UTF-8 after the BOM not reported")
+	}
+	if partial := Decode([]byte("\xef\xbb")); partial.Encoding != EncodingUTF8 {
+		t.Fatalf("partial BOM %+v", partial)
+	}
+}

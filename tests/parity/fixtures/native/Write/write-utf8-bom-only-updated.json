@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "write-utf8-bom-only-updated",
+  "description": "Write over a BOM-only file reports an update and keeps the BOM.",
+  "setup": {
+    "files": {
+      "a.txt": {
+        "base64": "77u/"
+      }
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "content": "x"
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated successfully. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "﻿x"
+  }
+}

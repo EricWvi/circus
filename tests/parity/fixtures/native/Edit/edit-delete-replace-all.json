@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-delete-replace-all",
+  "description": "With replace_all only occurrences followed by LF are deleted.",
+  "setup": {
+    "files": {
+      "a.txt": "b\nab\nb"
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt"
+      },
+      "result": {
+        "is_error": false,
+        "content": "1\tb\n2\tab\n3\tb\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    },
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "b",
+        "new_string": "",
+        "replace_all": true
+      },
+      "result": {
+        "is_error": false,
+        "content": "The file {{CWD}}/a.txt has been updated. All occurrences were successfully replaced. (file state is current in your context — no need to Read it back)\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": "ab"
+  }
+}

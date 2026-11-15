@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "bash-missing-command",
+  "description": "Missing commands use the shell diagnostic, without a system handler.",
+  "setup": {
+    "files": {},
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Bash",
+      "input": {
+        "command": "circus_missing_command",
+        "description": "Pin a native Bash rule"
+      },
+      "result": {
+        "is_error": true,
+        "content": "Exit code 127\n/bin/bash: line 1: circus_missing_command: command not found\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {}
+}

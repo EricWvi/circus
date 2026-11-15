@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "edit-empty-old-encoding-order",
+  "description": "An empty old_string on a non-empty file fails before the encoding check.",
+  "setup": {
+    "files": {
+      "a.txt": {
+        "base64": "/w=="
+      }
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "old_string": "",
+        "new_string": "x"
+      },
+      "result": {
+        "is_error": true,
+        "content": "<tool_use_error>Cannot create new file - file already exists.</tool_use_error>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": {
+      "base64": "/w=="
+    }
+  }
+}

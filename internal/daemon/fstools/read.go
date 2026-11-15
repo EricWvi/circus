@@ -2,7 +2,6 @@ package fstools
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -45,11 +43,6 @@ func NewRead() *Read { return &Read{} }
 // Name returns the device call tool name.
 func (*Read) Name() string { return "read" }
 
-func binaryReadError(path string) *circusv1.DeviceResult {
-	// Inferred: any NUL byte identifies binary content; the extension is used only in the message.
-	return toolError(fmt.Sprintf("This tool cannot read binary files. The file appears to be a binary %s file. Use a skill for this file type if one is available, or a shell command or script that can read the format.", filepath.Ext(path)))
-}
-
 func readFailure(path, cwd string, err error) *circusv1.DeviceResult {
 	if os.IsNotExist(err) {
 		return output(missing(cwd), true)
@@ -79,6 +72,11 @@ func (*Read) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 	if info.IsDir() {
 		return readFailure(path, cwd, directoryError(path)), nil
 	}
+	// Inferred: the extension check follows the existence and directory checks
+	// and precedes the size guard.
+	if ext, binary := binaryExtension(path); binary {
+		return binaryReadError(ext), nil
+	}
 
 	// A positive limit bypasses the raw-byte guard; offset alone does not.
 	guarded := r.GetLimit() == 0
@@ -103,9 +101,9 @@ func (*Read) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 				return readFailure(path, cwd, readErr), nil
 			}
 			if !textutil.HasUTF16LEBOM(prefix[:n]) {
-				return streamReadRange(ctx, f, path, info, r, false)
+				return streamReadRange(ctx, f, info, r, false)
 			}
-			return streamReadRange(ctx, f, path, info, r, true)
+			return streamReadRange(ctx, f, info, r, true)
 		}
 		var reader io.Reader = f
 		if guarded {
@@ -126,20 +124,49 @@ func (*Read) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.Devi
 		}
 		return output(readSizeError(size), true), nil
 	}
-	return readComplete(data, info, path, r), nil
+	return readComplete(data, info, r), nil
 }
 
 const invalidUTF8Notice = "\n\n[This file is not valid UTF-8: it uses a legacy encoding such as Windows-1252, Shift-JIS or GBK, or it is binary. Its undecodable bytes show above as U+FFFD. Edit and Write will refuse it: change it with a shell command that keeps its encoding, or ask the user whether to convert it to UTF-8.]"
 
-func readComplete(data []byte, info os.FileInfo, path string, r *circusv1.ReadRequest) *circusv1.DeviceResult {
-	decoded := textutil.Decode(data)
-	if decoded.Encoding == textutil.EncodingUTF8 && bytes.ContainsRune(data, 0) {
-		return binaryReadError(path)
+// readNotice returns the note appended to a Read of non-UTF-8 text. NUL bytes
+// in the first 8000 raw bytes take precedence over malformed UTF-8. A noted
+// file also shows a Tab after the number of its final empty line.
+func readNotice(nul, invalidUTF8 bool) string {
+	switch {
+	case nul:
+		return nulReadNotice
+	case invalidUTF8:
+		return invalidUTF8Notice
 	}
+	return ""
+}
+
+// readBody appends the notice and removes trailing JavaScript whitespace from
+// the whole body: the last displayed line loses trailing spaces and Tabs, and
+// a final empty line shows only its number, unless a notice follows it.
+func readBody(lines, notice string) string {
+	return textutil.TrimJSRight(lines + notice)
+}
+
+func readComplete(data []byte, info os.FileInfo, r *circusv1.ReadRequest) *circusv1.DeviceResult {
+	decoded := textutil.Decode(data)
+	// The NUL window counts raw bytes, a UTF-8 byte-order mark included.
+	notice := readNotice(decoded.Encoding != textutil.EncodingUTF16LE && hasNULPrefix(data), decoded.InvalidUTF8)
+	// Lines end at LF or CRLF; one further CR before that ending is not shown,
+	// nor are up to two CRs ending the last line: a\r\r\r\nb\r\r\r displays as
+	// "a\r" and "b\r".
+	// A UTF-8 byte-order mark is an encoding marker and not displayed.
 	lines := strings.Split(strings.ReplaceAll(decoded.Text, "\r\n", "\n"), "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSuffix(line, "\r")
+	}
+	lines[len(lines)-1] = strings.TrimSuffix(lines[len(lines)-1], "\r")
 	// Inferred: an empty file has zero total lines in structured metadata.
 	total := len(lines)
-	if len(data) == 0 {
+	// A file holding only a UTF-8 or UTF-16LE byte-order mark is empty too.
+	empty := len(data) == 0 || decoded.Encoding != textutil.EncodingUTF8 && decoded.Text == ""
+	if empty {
 		total = 0
 	}
 	start := uint64(1)
@@ -152,10 +179,13 @@ func readComplete(data []byte, info os.FileInfo, path string, r *circusv1.ReadRe
 	}
 	var body string
 	switch {
-	case len(data) == 0:
+	case start > uint64(max(total, 1)):
+		// The offset check comes first and counts an empty file as one line.
+		// Regular files with an offset or limit use streamReadRange; only a
+		// character device such as /dev/null reaches this case with an offset.
+		body = fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", start, max(total, 1))
+	case empty:
 		body = "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>"
-	case start > uint64(total):
-		body = fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", start, total)
 	default:
 		end := uint64(total)
 		if r.GetLimit() > 0 && first+uint64(r.GetLimit()) < end {
@@ -167,17 +197,14 @@ func readComplete(data []byte, info os.FileInfo, path string, r *circusv1.ReadRe
 				b.WriteByte('\n')
 			}
 			fmt.Fprint(&b, start+i-first)
-			if i != uint64(total-1) || lines[i] != "" || decoded.InvalidUTF8 {
+			if i != uint64(total-1) || lines[i] != "" || notice != "" {
 				b.WriteByte('\t')
 				b.WriteString(lines[i])
 			}
 		}
 		body = b.String()
 	}
-	if decoded.InvalidUTF8 {
-		body += invalidUTF8Notice
-	}
-	result := output(body, false)
+	result := output(readBody(body, notice), false)
 	result.Detail = &circusv1.DeviceResult_Read{Read: &circusv1.ReadResult{
 		Sha256: hash(data), MtimeUnixMs: info.ModTime().UnixMilli(), TotalLines: uint32(total),
 	}}
@@ -246,7 +273,7 @@ func (v *streamingUTF8) finish() {
 // streamReadRange hashes and counts the entire file while retaining only the
 // requested lines. ReadSlice fragments prevent an unrequested long line from
 // being accumulated. Selected payload is capped independently of file size.
-func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileInfo, r *circusv1.ReadRequest, utf16le bool) (*circusv1.DeviceResult, error) {
+func streamReadRange(ctx context.Context, f *os.File, info os.FileInfo, r *circusv1.ReadRequest, utf16le bool) (*circusv1.DeviceResult, error) {
 	start := uint64(1)
 	if r.Offset != nil {
 		start = uint64(r.GetOffset())
@@ -262,13 +289,22 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 
 	hasher := sha256.New()
 	validity := &streamingUTF8{}
+	nul := &nulWatcher{}
 	var source io.Reader
 	if utf16le {
 		source = textutil.NewUTF16LEDecoder(io.TeeReader(f, hasher))
 	} else {
-		source = io.TeeReader(f, io.MultiWriter(hasher, validity))
+		source = io.TeeReader(f, io.MultiWriter(hasher, validity, nul))
 	}
+	noted := func() bool { return nul.found || validity.invalid }
 	reader := bufio.NewReaderSize(source, streamReadBufferSize)
+	if !utf16le {
+		// Skip a UTF-8 byte-order mark; it is still hashed and counted by the
+		// NUL window.
+		if prefix, _ := reader.Peek(3); textutil.HasUTF8BOM(prefix) {
+			_, _ = reader.Discard(3)
+		}
+	}
 	body := &strings.Builder{}
 	var total uint64
 	var selectedBytes int64
@@ -284,7 +320,7 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 		if !finalEmpty {
 			text = textutil.NodeUTF8(raw)
 			extra += 1 + len(text)
-		} else if validity.invalid {
+		} else if noted() {
 			extra++
 		}
 		// Deviation: native behavior for huge numbers of short lines was not
@@ -308,7 +344,7 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 		if !finalEmpty {
 			body.WriteByte('\t')
 			body.WriteString(text)
-		} else if validity.invalid {
+		} else if noted() {
 			body.WriteByte('\t')
 		}
 		return true
@@ -357,9 +393,6 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 			}
 			if len(fragment) > 0 {
 				hadData = true
-				if !utf16le && bytes.IndexByte(fragment, 0) >= 0 {
-					return binaryReadError(path), nil
-				}
 				if selected(total) {
 					// Inferred: the cap counts selected line-content bytes before Read
 					// numbering (decoded UTF-8 bytes for UTF-16LE). Line numbers, Tabs,
@@ -387,8 +420,18 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 		index := total
 		total++
 		sawAny, lastNewline = true, endedNewline
+		// One CR before the line ending, or up to two CRs ending the last line,
+		// are not shown; the selected-payload cap has already counted them.
+		hidden := 1
+		if eof && !endedNewline {
+			hidden = 2
+		}
+		for ; hidden > 0 && len(raw) > 0 && raw[len(raw)-1] == '\r'; hidden-- {
+			raw = raw[:len(raw)-1]
+		}
 		if selected(index) {
-			if !appendLine(index, raw, false) {
+			// A last line holding only that CR displays like a final empty line.
+			if !appendLine(index, raw, eof && !endedNewline && len(raw) == 0) {
 				return output(nativeReadRangeSizeError, true), nil
 			}
 		}
@@ -397,13 +440,6 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 		}
 	}
 	validity.finish()
-	if total == 0 && utf16le && info.Size() > 0 {
-		// A BOM-only file decodes to one empty line, matching readComplete.
-		total = 1
-		if selected(0) && !appendLine(0, nil, true) {
-			return output(nativeReadRangeSizeError, true), nil
-		}
-	}
 	if sawAny && lastNewline {
 		index := total
 		total++
@@ -416,17 +452,15 @@ func streamReadRange(ctx context.Context, f *os.File, path string, info os.FileI
 
 	var text string
 	switch {
+	case start > max(total, 1):
+		// The offset check comes first and counts an empty file as one line.
+		text = fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", start, max(total, 1))
 	case total == 0:
 		text = "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>"
-	case start > total:
-		text = fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", start, total)
 	default:
 		text = body.String()
 	}
-	if validity.invalid {
-		text += invalidUTF8Notice
-	}
-	result := output(text, false)
+	result := output(readBody(text, readNotice(nul.found, validity.invalid)), false)
 	result.Detail = &circusv1.DeviceResult_Read{Read: &circusv1.ReadResult{
 		Sha256: hex.EncodeToString(hasher.Sum(nil)), MtimeUnixMs: info.ModTime().UnixMilli(), TotalLines: uint32(total),
 	}}
@@ -449,10 +483,7 @@ func readSize(size int64) string {
 	if size >= nativeReadSizeTextBoundBytes {
 		size = 512 * 1024
 	}
-	// Inferred: binary units rounded to whole KB or one decimal MB reproduce
-	// the boundary fixtures and the larger probe documented in the native spec.
-	if size >= 1024*1024 {
-		return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(size)/(1024*1024)), ".0") + "MB"
-	}
-	return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(size)/1024), ".0") + "KB"
+	// Bash's large-output marker uses the same format; a 262400-byte file
+	// reports 256.3KB, rounding the exact half up.
+	return textutil.FormatSize(size)
 }

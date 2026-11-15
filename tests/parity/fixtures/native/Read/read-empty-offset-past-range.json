@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "claude_code_version": "2.1.319",
+    "sdk_version": "0.3.319",
+    "captured_at": "{{TIME}}"
+  },
+  "case": "read-empty-offset-past-range",
+  "description": "Ranged reads past an empty file report one line.",
+  "setup": {
+    "files": {
+      "a.txt": ""
+    },
+    "dirs": []
+  },
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "{{CWD}}/a.txt",
+        "offset": 2,
+        "limit": 3
+      },
+      "result": {
+        "is_error": false,
+        "content": "<system-reminder>Warning: the file exists but is shorter than the provided offset (2). The file has 1 lines.</system-reminder>\n\n<system-reminder>\n<total_tokens>14999965 tokens left</total_tokens>\n</system-reminder>"
+      },
+      "attachments": []
+    }
+  ],
+  "files_after": {
+    "a.txt": ""
+  }
+}

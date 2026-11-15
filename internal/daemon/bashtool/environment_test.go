@@ -259,3 +259,45 @@ func TestStateRootDefaultsIgnoreRelativeXDG(t *testing.T) {
 		})
 	}
 }
+
+// System profiles gate their interactive part on a non-empty PS1, as
+// /etc/profile does for /etc/bash.bashrc. The collector hides the prompt from
+// login files, then restores Bash's default for ~/.bashrc.
+func TestCollectorHidesPromptFromLoginFiles(t *testing.T) {
+	t.Parallel()
+	root := unitTempDir(t)
+	e := &snapshotStore{options: snapshotOptions{Home: root, StateDir: filepath.Join(root, "state"), Shell: "/bin/bash"}}
+	t.Cleanup(e.releaseInstance)
+	files := map[string]string{
+		".bash_profile": "if [ -n \"${PS1-}\" ]; then system_interactive_mark() { :; }; fi\nprofile_mark() { :; }\n",
+		".bashrc":       "case $- in *i*) interactive_mark() { :; }; prompt_mark=\"[$PS1]\";; esac\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot, env, lease, err := e.load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.release()
+	data, err := os.ReadFile(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{"profile_mark ()", "interactive_mark ()", `prompt_mark="[\\s-\\v\\\$ ]"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("snapshot lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "system_interactive_mark") {
+		t.Errorf("snapshot kept a function defined only for a non-empty login prompt:\n%s", text)
+	}
+	for _, value := range env {
+		if strings.HasPrefix(value, "PS1=") {
+			t.Errorf("collected environment exports %q", value)
+		}
+	}
+}

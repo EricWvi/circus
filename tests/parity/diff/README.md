@@ -89,7 +89,8 @@ sandbox starts its fake Messages API on its own loopback interface. There is no
 real model call. Every capture still creates its own HOME, project, configuration,
 and TMPDIR under tmpfs, and restores its process-wide umask after cleanup.
 Captures are sequential. Go replay scratch files and leak-check HOME also use
-the sandbox's `/tmp` through `CIRCUS_PARITY_TMPDIR`.
+the sandbox's `/tmp` through `CIRCUS_PARITY_TMPDIR`, and `CIRCUS_PARITY_CWD_LENGTH`
+sizes the replay's working directory like the native one.
 
 The self-check runs the same Bash case through both native and daemon tools:
 it touches `$HOME/escape` and `/tmp/escape`, and requires an HTTPS request to
@@ -146,32 +147,47 @@ from the daemon protocol also require manual classification. Sibling native
 attachments and Bash filesystem metadata are captured as evidence but are not
 additional daemon comparisons in the existing replay contract.
 
-## Investigating known mismatches
+## Known mismatches and probes
 
-`known-mismatches.json` contains synthetic, small case definitions for observed
-daemon and replay differences. Run them without updating daemon code:
+`known-mismatches.json` contains synthetic, small case definitions for daemon
+and replay differences that the runner once reported. They all match now and
+serve as a regression set:
 
 ```bash
 node tests/parity/diff/run.mjs --cases tests/parity/diff/known-mismatches.json
 ```
 
-These cases intentionally report mismatches. They cover the grep-sensitive
-failure status following a failed cd, signal statuses, the system missing-command
-handler, whitespace/CR/EOL policies, NUL validation, empty-file Write wording,
-large-output formatting, partial-read context and path-sensitive previews.
-The latter two are replay limitations, rather than established daemon defects:
-SHA-256 state alone does not describe whether native has the complete file in
-context, and replacing a path after rendering cannot undo its effect on a byte
-size or preview budget. Grouped classifications require reviewing the report;
-the runner does not infer a root cause from a case ID.
+They cover the status-1 rule for grep-like commands after a failed cd, signal
+statuses, the system missing-command handler, whitespace/CR/EOL policies, NUL
+validation, empty-file Write wording, large-output formatting, partial-read
+context and path-sensitive previews. `probe-cases.json` holds the probes that
+established each rule; `NATIVE-BEHAVIOR.md` lists them by ID prefix. Some
+probes still report differences on purpose: image and PDF Reads are an intended
+deviation, and the open groups listed in `NATIVE-BEHAVIOR.md` keep their
+minimal probes. Two runner-side effects also remain: when one case persists
+several large outputs, capture normalizes only the last path to
+`{{OUTPUT_PATH}}`, and commands whose concurrent pipeline members both write
+stderr can order those lines differently between native and daemon runs.
+Grouped classifications require reviewing the report; the runner does not
+infer a root cause from a case ID.
 
-On the measured Linux host, `/etc/bash.bashrc` defines
-`command_not_found_handle` only for interactive shells. The daemon's `bash -l
--i -c` collector serializes it via `declare -f`; a fresh native snapshot with
-an empty HOME does not contain it. Explicitly defining the function in the
-isolated HOME's `.bashrc` makes both snapshots retain it. This system-function
-leak is a parity defect, not an accepted deviation. Snapshots and step results
-in the run directory are the evidence; personal shell files are never used.
+Two of these were replay limitations rather than daemon defects, and the
+replay now models them. Native adds the context-current parenthetical to an
+Edit only when the session holds the whole file; external replays therefore
+forget a file after a Read that does not cover every line, and after an Edit of
+a file that was not held. Committed fixtures keep recording every successful
+Read. Output that contains the working directory has a size and preview cut
+that depend on the path length, so the runner exports the native capture's cwd
+length as `CIRCUS_PARITY_CWD_LENGTH`, and external replays create their working
+directory with exactly that length below the short `CIRCUS_PARITY_TMPDIR`
+(`$TMPDIR/replay`).
+
+On the measured Linux host, `/etc/profile` sources `/etc/bash.bashrc`, which
+defines `command_not_found_handle`, only for a non-empty `PS1`. Native's
+noninteractive collector never has one; the daemon's interactive collector now
+starts with an empty `PS1`, so its snapshot no longer serializes that system
+function. Snapshots and step results in the run directory are the evidence;
+personal shell files are never used.
 
 Promotion is explicit and copies only one stable expected fixture:
 
