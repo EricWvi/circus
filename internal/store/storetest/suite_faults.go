@@ -196,7 +196,55 @@ func crashScript(f fixture) []crashStep {
 			_, err := s.RevokeCredentials(ctx, store.KindDevice, "d1", t0+4)
 			return err
 		}},
+		{"session", 1, func(ctx context.Context, s store.Store) error {
+			return s.CreateSession(ctx, newSession("s1", f), []store.SessionCwd{{DeviceID: "d1", Cwd: "/w"}}, 10)
+		}},
+		{"lease", 1, func(ctx context.Context, s store.Store) error {
+			_, err := s.AcquireLease(ctx, store.LeaseRequest{SessionID: "s1", WorkerID: "w1", BootID: "wb1", ConnID: "wc1", Now: t0 + 10, ExpiresAt: t0 + 10 + ttl})
+			return err
+		}},
+		{"append", 1, func(ctx context.Context, s store.Store) error {
+			_, err := s.AppendTranscript(ctx, crashFence, store.TranscriptBatch{BatchSeq: 1, Entries: []store.TranscriptEntry{entry("s1-in1", `{"user":1}`)}}, quota)
+			return err
+		}},
+		{"input", 1, func(ctx context.Context, s store.Store) error {
+			_, err := s.SubmitInput(ctx, newInput("s1", 1))
+			return err
+		}},
+		{"take", 1, func(ctx context.Context, s store.Store) error {
+			_, err := s.TakeInputs(ctx, crashFence)
+			return err
+		}},
+		{"turn and call", 3, tx(func(ctx context.Context, tx store.Ops) error {
+			if _, err := tx.ReportTurn(ctx, crashFence, store.TurnReport{LocalSeq: 1, Phase: store.TurnStarted, Origin: store.TurnFromInput, At: t0 + 11}); err != nil {
+				return err
+			}
+			if err := tx.AdmitSessionCall(ctx, crashFence, sessionCallRow.CallID, store.DefaultMaxActiveSessionCalls); err != nil {
+				return err
+			}
+			return tx.CreateCall(ctx, sessionCallRow)
+		})},
+		{"interrupt", 1, func(ctx context.Context, s store.Store) error {
+			_, _, _, err := s.InterruptSession(ctx, "s1", t0+11)
+			return err
+		}},
+		{"await", 1, func(ctx context.Context, s store.Store) error {
+			return s.PatchSessionRecords(ctx, crashFence, store.RecordsPatch{ReturnedCallIDs: []string{"c2"}, AwaitingCallIDs: []string{"c2"}})
+		}},
+		{"end", 1, func(ctx context.Context, s store.Store) error {
+			_, err := s.ReportTurn(ctx, crashFence, store.TurnReport{LocalSeq: 1, Phase: store.TurnEnded, Outcome: store.TurnCompleted, At: t0 + 12,
+				Persisted: store.TurnPersisted{InputIDs: []string{"s1-in1"}, CallIDs: []string{"c2"}}})
+			return err
+		}},
 	}
+}
+
+// crashFence is the crash script's lease on session s1.
+var crashFence = store.Fence{SessionID: "s1", Epoch: 1, WorkerID: "w1", BootID: "wb1", ConnID: "wc1", Now: t0 + 11}
+
+var sessionCallRow = store.Call{
+	CallID: "c2", UserID: "u1", DeviceID: "d1", SessionID: "s1", Tool: "bash", RequestHash: hash("c2"),
+	RequestBytes: 1, State: store.CallAccepted, SubmittedAt: t0 + 11, ToolUseID: "tu-c2",
 }
 
 // snapshot is every row the crash script touches.
@@ -207,6 +255,10 @@ type snapshot struct {
 	Calls            []store.Call
 	Jobs             []store.Job
 	Timers           []store.Timer
+	Sessions         []store.Session
+	Leases           []store.Lease
+	Turns            []store.Turn
+	Transcript       []store.TranscriptEntry
 }
 
 func takeSnapshot(t testing.TB, s store.Ops) snapshot {
@@ -237,6 +289,20 @@ func takeSnapshot(t testing.TB, s store.Ops) snapshot {
 	for i := range snap.Timers {
 		snap.Timers[i].Token = "" // random per claim
 	}
+	snap.Sessions, err = s.ListSessions(ctx, store.SessionFilter{Limit: store.MaxPageSize})
+	must(t, err)
+	if l, err := s.GetLease(ctx, "s1"); err == nil {
+		snap.Leases = append(snap.Leases, l)
+		if l.WorkerID != "" {
+			page, err := s.LoadTranscript(ctx, crashFence, store.TranscriptPageRequest{Limit: 100, MaxBytes: 1 << 20})
+			must(t, err)
+			snap.Transcript = page.Entries
+		}
+	} else {
+		mustIs(t, err, store.ErrNotFound)
+	}
+	snap.Turns, err = s.ListTurns(ctx, store.TurnFilter{SessionID: "s1", Limit: store.MaxPageSize})
+	must(t, err)
 	return snap
 }
 

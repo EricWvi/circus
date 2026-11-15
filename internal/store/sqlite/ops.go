@@ -182,8 +182,8 @@ func (o *ops) CreateUser(ctx context.Context, u store.User) error {
 
 func (o *ops) getUser(ctx context.Context, where string, arg string) (store.User, error) {
 	var u store.User
-	err := o.q.QueryRow(ctx, `SELECT id, name, created_at FROM users WHERE `+where+` = ?`, arg).
-		Scan(&u.ID, &u.Name, &u.CreatedAt)
+	err := o.q.QueryRow(ctx, `SELECT id, name, created_at, transcript_bytes FROM users WHERE `+where+` = ?`, arg).
+		Scan(&u.ID, &u.Name, &u.CreatedAt, &u.TranscriptBytes)
 	return u, mapErr(err)
 }
 
@@ -436,7 +436,7 @@ func (o *ops) PurgeEnrollTokens(ctx context.Context, now int64) (int, error) {
 
 const callCols = `call_id, user_id, device_id, session_id, agent_id, tool, request_hash, request_bytes,
 	state, dispatched_boot_id, submitted_at, dispatched_at, acked_at, finished_at, cancel_requested_at,
-	exit_code, is_error, fault_code, job_id, outcome_reason`
+	exit_code, is_error, fault_code, job_id, outcome_reason, tool_use_id, returned_at, persisted_at, notice_owed`
 
 func scanCall(s scanner) (store.Call, error) {
 	var c store.Call
@@ -445,7 +445,8 @@ func scanCall(s scanner) (store.Call, error) {
 	err := s.Scan(&c.CallID, &c.UserID, &c.DeviceID, &c.SessionID, nullStr{&c.AgentID}, &c.Tool,
 		&c.RequestHash, &c.RequestBytes, &state, nullStr{&c.DispatchedBootID}, &c.SubmittedAt,
 		nullInt{&c.DispatchedAt}, nullInt{&c.AckedAt}, nullInt{&c.FinishedAt}, nullInt{&c.CancelRequestedAt},
-		nullExit{&c.ExitCode}, &isError, nullStr{&c.FaultCode}, nullStr{&c.JobID}, nullStr{&c.OutcomeReason})
+		nullExit{&c.ExitCode}, &isError, nullStr{&c.FaultCode}, nullStr{&c.JobID}, nullStr{&c.OutcomeReason},
+		nullStr{&c.ToolUseID}, nullInt{&c.ReturnedAt}, nullInt{&c.PersistedAt}, &c.NoticeOwed)
 	c.State = store.CallState(state)
 	c.IsError = isError != 0
 	return c, mapErr(err)
@@ -455,10 +456,11 @@ func (o *ops) CreateCall(ctx context.Context, c store.Call) error {
 	if err := store.CheckNewCall(c); err != nil {
 		return err
 	}
-	_, err := o.exec(ctx, `INSERT INTO calls (`+callCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := o.exec(ctx, `INSERT INTO calls (`+callCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
 		c.CallID, c.UserID, c.DeviceID, c.SessionID, nstr(c.AgentID), c.Tool, c.RequestHash, c.RequestBytes,
 		string(c.State), nil, c.SubmittedAt, nil, nint(c.AckedAt), nint(c.FinishedAt), nint(c.CancelRequestedAt),
-		nexit(c.ExitCode), b2i(c.IsError), nstr(c.FaultCode), nstr(c.JobID), nstr(c.OutcomeReason))
+		nexit(c.ExitCode), b2i(c.IsError), nstr(c.FaultCode), nstr(c.JobID), nstr(c.OutcomeReason),
+		nstr(c.ToolUseID), nil, nil)
 	return err
 }
 
@@ -483,6 +485,15 @@ func (o *ops) ListCalls(ctx context.Context, f store.CallFilter) ([]store.Call, 
 	}
 	if f.DispatchedBootID != "" {
 		where, args = append(where, "dispatched_boot_id = ?"), append(args, f.DispatchedBootID)
+	}
+	if f.SessionID != "" {
+		where, args = append(where, "session_id = ?"), append(args, f.SessionID)
+	}
+	if f.NotPersisted {
+		where = append(where, "persisted_at IS NULL")
+	}
+	if f.Recovery {
+		where = append(where, "(persisted_at IS NULL OR notice_owed = 1)")
 	}
 	if len(f.States) > 9 {
 		return nil, invalid("too many call states")

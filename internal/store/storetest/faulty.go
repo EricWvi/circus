@@ -18,7 +18,9 @@ var ErrCrashed = errors.New("storetest: store crashed")
 // Faulty wraps a Store and injects faults at write points.
 //
 // A write point is each call of a mutating Ops method (every method except
-// the Get*, List* and LookupCredential reads), inside or outside a Tx, and
+// the Get*, List*, LookupCredential, CheckFence, AdmitSessionCall,
+// LoadTranscript, HasTranscriptUUID and ReadEvents reads), inside or
+// outside a Tx, and
 // each Tx commit (reached when fn returns nil). Points are numbered from 1
 // in the order they happen; Writes reports how many have happened.
 //

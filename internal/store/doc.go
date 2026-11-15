@@ -16,8 +16,17 @@
 //   - Token columns hold SHA-256 hashes; plaintext tokens never reach the
 //     store.
 //   - Errors are this package's Err* sentinels (ErrNotFound, ErrExists,
-//     ErrTokenUnusable, ErrInvalidTransition, ErrInvalid, ErrBusy), possibly
-//     wrapped. No driver type or SQL dialect crosses the interface.
+//     ErrTokenUnusable, ErrInvalidTransition, ErrInvalid, ErrBusy, and for
+//     sessions ErrFenced, ErrLeaseHeld, ErrTranscriptFull, ErrLimit,
+//     ErrStopped, ErrBroken, ErrSessionActive, ErrTooManyCalls), possibly
+//     wrapped; a fenced operation returns *FencedError, which matches
+//     ErrFenced. No driver type or SQL dialect crosses the interface.
+//
+// Sessions (SessionOps) add leases with a monotonic epoch, bound to one
+// connection: every worker operation carries a Fence checked in its own
+// transaction, and every session table and string has a bound the store
+// enforces. The rules are on
+// SessionOps.
 //
 // Identities are per machine × role: a device (daemon role) and
 // a worker are separate identities in tables of the same shape, both linked to

@@ -47,6 +47,10 @@ type Options struct {
 type DB struct {
 	ops
 	sqldb *sql.DB
+	// afterDeleteChunk, set only by this package's tests on their own
+	// handle, runs between DeleteSession's transactions; an error stops the
+	// delete there, as a crash would.
+	afterDeleteChunk func() error
 }
 
 var _ store.Store = (*DB)(nil)

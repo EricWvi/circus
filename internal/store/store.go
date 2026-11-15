@@ -29,6 +29,13 @@ type Store interface {
 	//
 	// The error is fn's error, or the commit's. A transaction that cannot
 	// start or commit because of lock contention returns ErrBusy.
+	//
+	// fn must return any error an Ops method returns to it unless it means
+	// to commit without that method's effect: a session method that fails
+	// leaves nothing of itself, but whatever fn wrote before it stays. A
+	// cancelled ctx can make the backend abandon the whole transaction
+	// (SQLite rolls back on an interrupted statement), after which the
+	// commit fails; never commit after a ctx error.
 	Tx(ctx context.Context, fn func(ctx context.Context, tx Ops) error) error
 
 	// Close releases the database. Calls after Close fail.
@@ -41,6 +48,10 @@ type Store interface {
 // Methods return ErrInvalid for malformed arguments before reading or
 // writing anything.
 type Ops interface {
+	// SessionOps holds the session operations (sessions.go). They are part
+	// of Ops so a session write and a call write can share one Tx.
+	SessionOps
+
 	// CreateUser inserts a user. ErrExists if the id or name is taken.
 	CreateUser(ctx context.Context, u User) error
 	// GetUser returns the user with this id, or ErrNotFound.
@@ -105,11 +116,16 @@ type Ops interface {
 	// CreateCall inserts a call (see CheckNewCall). ErrExists if the call id
 	// is taken: the caller then reads the row and compares request hashes
 	// to tell a duplicate from a mismatch. ErrNotFound if the user is missing or the device
-	// does not exist under that user.
+	// does not exist under that user. ToolUseID is stored as given;
+	// ReturnedAt and PersistedAt must be zero. A call made for a session
+	// worker is admitted by AdmitSessionCall in the same Tx; CreateCall
+	// itself does not require the session to exist.
 	CreateCall(ctx context.Context, c Call) error
 	// GetCall returns the call, or ErrNotFound.
 	GetCall(ctx context.Context, callID string) (Call, error)
 	// ListCalls returns at most f.Limit rows ordered by (submitted_at, call_id).
+	// With SessionID and NotPersisted it lists a session's recovery
+	// candidates.
 	ListCalls(ctx context.Context, f CallFilter) ([]Call, error)
 	// TransitionCall moves the call to state to and applies patch, only if
 	// the call matches expect (see CallExpect). Otherwise it returns false
