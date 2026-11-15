@@ -647,8 +647,9 @@ func TestCLIExitCodes(t *testing.T) {
 }
 
 // A worker can Query and Cancel a call it is watching on the same
-// connection; the Cancel reply says the intent is recorded, and the watched
-// stream still carries the real terminal update.
+// connection; the Cancel reply follows the recorded intent (it says the
+// intent is recorded, or already carries the interrupted result), and the
+// watched stream still carries the real terminal update.
 func TestClientCancelWatchedCall(t *testing.T) {
 	h := newHarness(t)
 	c := h.client()
@@ -667,8 +668,10 @@ func TestClientCancelWatchedCall(t *testing.T) {
 	}
 	u, err = c.Cancel(ctx, call.CallId)
 	must(t, err)
-	if u.GetDispatched() == nil {
-		t.Fatalf("Cancel of a running call did not answer intent recorded: %v", u)
+	// The reply is the state read after the intent was recorded; the daemon
+	// may already have interrupted the command by then.
+	if u.GetDispatched() == nil && !u.GetResult().GetBash().GetInterrupted() {
+		t.Fatalf("Cancel of a running call answered neither intent recorded nor the interrupted result: %v", u)
 	}
 	row, err := h.st.GetCall(ctx, call.CallId)
 	must(t, err)
