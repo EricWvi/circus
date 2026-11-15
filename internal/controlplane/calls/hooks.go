@@ -237,9 +237,10 @@ func (r *router) status(ctx context.Context, c store.Call, s *circusv1.CallStatu
 		r.markHealthy()
 		r.release(c.CallID)
 		if c.State != store.CallRunning {
-			r.publish(dispatched(c.CallID))
+			r.publishAndAnswer(dispatched(c.CallID))
+		} else {
+			r.answer(c.CallID, dispatched(c.CallID), nil)
 		}
-		r.answer(c.CallID, dispatched(c.CallID), nil)
 		return nil
 	default:
 		return protocol("invalid call status")
@@ -277,8 +278,7 @@ func (r *router) complete(ctx context.Context, c store.Call, v *circusv1.DeviceR
 		// The durable watchdog keeps a query repair path.
 		r.release(c.CallID)
 		u := resultUpdate(v)
-		r.publish(u)
-		r.answer(c.CallID, u, nil)
+		r.publishAndAnswer(u)
 	}
 	return err
 }

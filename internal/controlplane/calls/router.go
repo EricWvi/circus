@@ -533,8 +533,7 @@ func (r *router) settle(ctx context.Context, c store.Call, to store.CallState, p
 	r.markHealthy()
 	if changed {
 		r.release(c.CallID)
-		r.publish(u)
-		r.answer(c.CallID, u, nil)
+		r.publishAndAnswer(u)
 	}
 	return nil
 }
@@ -576,6 +575,10 @@ func (r *router) sendCancel(ctx context.Context, route gateway.Connection, id st
 // durable watchdog or the next sync recovers it.
 func logSendFailure(kind, id string, err error) {
 	if err != nil {
+		if kind == "cancel" {
+			slog.Warn("cancel intent recorded; delivery will be retried by sync or watchdog", "call_id", id, "error", err)
+			return
+		}
 		slog.Debug("daemon command not queued", "kind", kind, "call_id", id, "error", err)
 	}
 }

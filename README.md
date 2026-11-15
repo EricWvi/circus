@@ -198,7 +198,7 @@ The daemon-link pools are not the whole process budget. At the default
 | --- | --- | --- |
 | Daemon links, wire | about 1,286 MiB | pools 256 + 524 MiB (2·Smin, 2·Rmin) plus 100 sockets × (5 MiB + 64 KiB) = 506 MiB; one borrowed inbound message per socket comes on top |
 | Worker links (own fixed pools; scales with `--worker-connections`, default 8) | about 2,557 MiB | pools 256 + 524 MiB; 8 sockets × (5 MiB + 64 KiB + one borrowed inbound message of 2·M + 6 MiB + 4 KiB) = 1,112 MiB; 4 push permits shared by all worker sockets, each one large outbound message (2·M + 6 MiB + 4 KiB) = 536 MiB; small outbound updates (≤ 256 KiB charged) sent without a permit, at most one per operation: 8 × 64 × 256 KiB = 128 MiB |
-| Call router | 512 MiB | pending requests 256 MiB plus buffered updates 256 MiB |
+| Call router | 512 MiB | pending requests 256 MiB plus distinct buffered updates 256 MiB (one global charge per shared immutable clone) |
 
 That is about 4.3 GiB before SQLite, TLS/kernel buffers, bounded operation
 scratch, the runtime and GC headroom; set `GOMEMLIMIT` above it. The

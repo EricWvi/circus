@@ -12,7 +12,7 @@ import (
 
 type queuedUpdate struct {
 	update *circusv1.CallUpdate
-	cost   int64
+	charge *charge
 }
 
 func rejected(id string, code circusv1.CallUpdate_Rejected_Code) *circusv1.CallUpdate {
@@ -105,7 +105,9 @@ func (r *router) detach(s *Subscription, err error) {
 		return
 	}
 	delete(r.subs, s)
-	r.bufferedBytes -= s.bytes
+	for _, q := range s.queue {
+		r.releaseCharge(q.charge)
+	}
 	s.bytes = 0
 	s.queue = nil
 	s.err = err
@@ -126,49 +128,94 @@ func (r *router) finishContext(s *Subscription) {
 
 // enqueue charges and queues one owned, immutable update. An update that does
 // not fit detaches only this subscriber with ErrOverflow.
-func (r *router) enqueue(s *Subscription, owned *circusv1.CallUpdate, cost int64, chargeErr error) {
+func (r *router) enqueue(s *Subscription, owned *circusv1.CallUpdate, c *charge, chargeErr error) {
 	if _, ok := r.subs[s]; !ok || s.terminal {
 		return
 	}
-	if chargeErr != nil || len(s.queue) >= r.config.MaxUpdatesPerSubscription || cost > r.config.MaxSubscriptionBytes-s.bytes || cost > r.config.MaxBufferedUpdateBytes-r.bufferedBytes {
+	if chargeErr != nil || len(s.queue) >= r.config.MaxUpdatesPerSubscription || c.cost > r.config.MaxSubscriptionBytes-s.bytes || !r.acquireCharge(c) {
 		r.detach(s, ErrOverflow)
 		return
 	}
 	if len(s.queue) == 0 {
 		s.lastRead = r.config.Clock.Now()
 	}
-	s.queue = append(s.queue, queuedUpdate{update: owned, cost: cost})
-	s.bytes += cost
-	r.bufferedBytes += cost
+	s.queue = append(s.queue, queuedUpdate{update: owned, charge: c})
+	s.bytes += c.cost
 	s.terminal = wire.Terminal(owned) || s.single
 	s.signal()
 }
 
-// own charges u and clones it once; subscribers share the immutable clone
-// while each is charged for it separately.
-func (r *router) own(u *circusv1.CallUpdate) (*circusv1.CallUpdate, int64, error) {
+// charge is the global buffer charge of one owned, immutable update,
+// shared by queued subscription entries and unconsumed query replies.
+// Its refs and the router's shared total are protected by r.mu.
+type charge struct {
+	cost int64
+	refs int
+}
+
+func (r *router) acquireCharge(c *charge) bool {
+	if c.refs == 0 {
+		if c.cost > r.config.MaxBufferedUpdateBytes-r.bufferedBytes {
+			return false
+		}
+		r.bufferedBytes += c.cost
+	}
+	c.refs++
+	return true
+}
+
+func (r *router) releaseCharge(c *charge) {
+	if c == nil {
+		return
+	}
+	c.refs--
+	if c.refs == 0 {
+		r.bufferedBytes -= c.cost
+	}
+}
+
+// own computes u's charge and clones it once. Router-side holders share the
+// immutable clone and one global charge; subscription limits count each holder.
+func (r *router) own(u *circusv1.CallUpdate) (*circusv1.CallUpdate, *charge, error) {
 	cost, err := wire.Charge(u, r.config.MaxMessageBytes)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	return wire.CloneOwned(u).(*circusv1.CallUpdate), cost, nil
+	return wire.CloneOwned(u).(*circusv1.CallUpdate), &charge{cost: cost}, nil
 }
 func (r *router) publish(u *circusv1.CallUpdate) {
-	var owned *circusv1.CallUpdate
-	var cost int64
-	var err error
-	charged := false
 	for s := range r.subs {
-		if s.callID != u.CallId {
-			continue
+		if s.callID == u.CallId {
+			owned, c, err := r.own(u)
+			r.publishOwned(u.CallId, owned, c, err)
+			return
 		}
-		if !charged {
-			owned, cost, err = r.own(u)
-			charged = true
-		}
-		r.enqueue(s, owned, cost, err)
 	}
 }
+
+func (r *router) publishOwned(id string, owned *circusv1.CallUpdate, c *charge, err error) {
+	for s := range r.subs {
+		if s.callID == id {
+			r.enqueue(s, owned, c, err)
+		}
+	}
+}
+
+// publishAndAnswer shares one clone and global charge across subscriptions and
+// query waiters of this update. With no holders, it avoids cloning entirely.
+func (r *router) publishAndAnswer(u *circusv1.CallUpdate) {
+	if r.leader(u.CallId) == nil {
+		r.publish(u)
+		return
+	}
+	owned, c, err := r.own(u)
+	r.publishOwned(u.CallId, owned, c, err)
+	if err != nil {
+		err = ErrOverflow
+	}
+	r.answerOwned(u.CallId, owned, c, err)
+}
+
 func (r *router) once(ctx context.Context, u *circusv1.CallUpdate) (*Subscription, error) {
 	s, err := r.newSub(ctx, u.CallId)
 	if err != nil {
@@ -189,8 +236,8 @@ func (s *Subscription) next(ctx context.Context) (*circusv1.CallUpdate, error) {
 			q := s.queue[0]
 			s.queue[0] = queuedUpdate{}
 			s.queue = s.queue[1:]
-			s.bytes -= q.cost
-			r.bufferedBytes -= q.cost
+			s.bytes -= q.charge.cost
+			r.releaseCharge(q.charge)
 			s.lastRead = r.config.Clock.Now()
 			if len(s.queue) == 0 && s.terminal {
 				r.detach(s, nil)
@@ -222,7 +269,7 @@ func (s *Subscription) wait(ctx context.Context) (int64, error) {
 		r.mu.Lock()
 		var cost int64
 		if len(s.queue) > 0 {
-			cost = s.queue[0].cost
+			cost = s.queue[0].charge.cost
 		}
 		ready := len(s.queue) > 0 || s.err != nil || s.terminal
 		changed := s.changed

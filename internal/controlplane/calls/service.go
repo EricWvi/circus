@@ -21,7 +21,7 @@ import (
 type queryReply struct {
 	update *circusv1.CallUpdate
 	err    error
-	cost   int64
+	charge *charge
 }
 
 // queryWaiter is one Query (or duplicate Submit of a completed call) awaiting
@@ -196,11 +196,11 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 // starts a new execution. A completed call fetches its result like Query.
 func (r *router) attach(op *operation, ctx context.Context, old store.Call) (*Subscription, error) {
 	if old.State == store.CallCompleted {
-		u, err := r.query(op, old)
+		u, c, err := r.query(op, old)
 		if err != nil {
 			return nil, err
 		}
-		return r.once(ctx, u)
+		return r.onceAnswer(ctx, old.CallID, u, c)
 	}
 	s, err := r.once(ctx, r.update(op.ctx, old))
 	if err == nil && isActive(old.State) {
@@ -343,7 +343,9 @@ func (r *router) Query(ctx context.Context, user, id string) (*circusv1.CallUpda
 		return nil, err
 	}
 	defer op.finish()
-	return r.queryLocked(op, user, id)
+	u, c, err := r.queryLocked(op, user, id)
+	r.releaseCharge(c)
+	return u, err
 }
 
 func (r *router) QueryOnce(ctx context.Context, user, id string) (*Subscription, error) {
@@ -352,49 +354,62 @@ func (r *router) QueryOnce(ctx context.Context, user, id string) (*Subscription,
 		return nil, err
 	}
 	defer op.finish()
-	u, err := r.queryLocked(op, user, id)
+	u, c, err := r.queryLocked(op, user, id)
 	if err != nil {
 		return nil, err
 	}
-	// Like attach for a completed duplicate Submit, the answer is handed out
-	// through a subscription; this one takes only the answer.
+	return r.onceAnswer(ctx, id, u, c)
+}
+
+// onceAnswer transfers a query reply to a single-update subscription while
+// keeping its shared charge held continuously under r.mu.
+func (r *router) onceAnswer(ctx context.Context, id string, u *circusv1.CallUpdate, c *charge) (*Subscription, error) {
+	defer r.releaseCharge(c)
+	if u == nil {
+		return nil, fmt.Errorf("calls: missing query answer for %q", id)
+	}
 	s, err := r.newSub(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	s.single = true
-	owned, cost, err := r.own(u)
-	r.enqueue(s, owned, cost, err)
+	if c == nil {
+		u, c, err = r.own(u)
+	}
+	r.enqueue(s, u, c, err)
 	return s, nil
 }
 
-func (r *router) queryLocked(op *operation, user, id string) (*circusv1.CallUpdate, error) {
+func (r *router) queryLocked(op *operation, user, id string) (*circusv1.CallUpdate, *charge, error) {
 	if !identifier.Valid(id, false) {
-		return nil, store.ErrInvalid
+		return nil, nil, store.ErrInvalid
 	}
 	c, err := r.config.Store.GetCall(op.ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if c.UserID != user {
-		return nil, store.ErrNotFound
+		return nil, nil, store.ErrNotFound
 	}
 	if c.State == store.CallAccepted || (c.State.Terminal() && c.State != store.CallCompleted) {
-		return r.update(op.ctx, c), nil
+		return r.update(op.ctx, c), nil, nil
 	}
 	return r.query(op, c)
 }
 
 // unreachable answers when the daemon cannot be asked now: a completed call
 // reports the transient ErrDeviceOffline, others their durable state.
-func (r *router) unreachable(ctx context.Context, c store.Call, cause error) (*circusv1.CallUpdate, error) {
+func (r *router) unreachable(ctx context.Context, c store.Call, cause error) (*circusv1.CallUpdate, *charge, error) {
 	if c.State == store.CallCompleted {
-		return nil, errors.Join(ErrDeviceOffline, cause)
+		return nil, nil, errors.Join(ErrDeviceOffline, cause)
 	}
 	if current, err := r.config.Store.GetCall(ctx, c.CallID); err == nil {
 		c = current
 	}
-	return r.update(ctx, c), nil
+	if c.State == store.CallCompleted {
+		return nil, nil, errors.Join(ErrDeviceOffline, cause)
+	}
+	return r.update(ctx, c), nil, nil
 }
 
 // leader returns the unanswered waiter whose query later waiters share.
@@ -410,16 +425,16 @@ func (r *router) leader(id string) *queryWaiter {
 // query asks the dispatch boot's daemon about c and waits for the answer. At
 // most one CallQuery per call is outstanding; later waiters coalesce. On an
 // unready route the waiter is deferred to that route's sync (the sync-first rule).
-func (r *router) query(op *operation, c store.Call) (*circusv1.CallUpdate, error) {
+func (r *router) query(op *operation, c store.Call) (*circusv1.CallUpdate, *charge, error) {
 	route, online, err := r.config.Registry.Lookup(op.ctx, c.DeviceID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !online || route.Target.BootID != c.DispatchedBootID {
 		return r.unreachable(op.ctx, c, nil)
 	}
 	if r.queryCount+r.callbackCount >= r.config.MaxSubscriptions {
-		return nil, ErrOverloaded
+		return nil, nil, ErrOverloaded
 	}
 	q := &queryWaiter{reply: make(chan queryReply, 1), device: strings.Clone(c.DeviceID), boot: strings.Clone(c.DispatchedBootID)}
 	if lead := r.leader(c.CallID); lead != nil {
@@ -445,23 +460,26 @@ func (r *router) query(op *operation, c store.Call) (*circusv1.CallUpdate, error
 	}
 	op.lock()
 	// If cancellation raced a delivered reply, release the queued ownership too.
-	if response.cost == 0 {
+	if response.charge == nil {
 		select {
 		case queued := <-q.reply:
-			r.bufferedBytes -= queued.cost
+			r.releaseCharge(queued.charge)
 		default:
 		}
-	} else {
-		r.bufferedBytes -= response.cost
 	}
 	r.removeWaiter(c.CallID, q)
 	if r.closed {
-		return nil, ErrClosed
+		r.releaseCharge(response.charge)
+		return nil, nil, ErrClosed
+	}
+	if response.err != nil {
+		r.releaseCharge(response.charge)
+		response.charge = nil
 	}
 	if errors.Is(response.err, ErrDeviceOffline) || (errors.Is(response.err, ErrStoreUnavailable) && c.State != store.CallCompleted) {
 		return r.unreachable(op.ctx, c, nil)
 	}
-	return response.update, response.err
+	return response.update, response.charge, response.err
 }
 func (r *router) removeWaiter(id string, q *queryWaiter) {
 	list := r.queries[id]
@@ -496,27 +514,34 @@ func (r *router) failQueries(device, conn string, current bool) {
 
 // answer replies to every waiter of id with one shared, immutable update.
 func (r *router) answer(id string, u *circusv1.CallUpdate, err error) {
-	var owned *circusv1.CallUpdate
-	var cost int64
-	var chargeErr error
-	charged := false
+	if r.leader(id) == nil {
+		return
+	}
+	var c *charge
+	if u != nil {
+		var ownErr error
+		u, c, ownErr = r.own(u)
+		if ownErr != nil {
+			err = ErrOverflow
+		}
+	}
+	r.answerOwned(id, u, c, err)
+}
+
+// answerOwned gives each unanswered waiter a reference to the same owned update.
+func (r *router) answerOwned(id string, owned *circusv1.CallUpdate, c *charge, err error) {
 	for _, q := range r.queries[id] {
 		if q.answered {
 			continue
 		}
 		q.answered = true
 		response := queryReply{err: err}
-		if u != nil {
-			if !charged {
-				owned, cost, chargeErr = r.own(u)
-				charged = true
-			}
-			if chargeErr != nil || cost > r.config.MaxBufferedUpdateBytes-r.bufferedBytes {
+		if owned != nil {
+			if !r.acquireCharge(c) {
 				response.err = ErrOverflow
 			} else {
 				response.update = owned
-				response.cost = cost
-				r.bufferedBytes += cost
+				response.charge = c
 			}
 		}
 		q.reply <- response

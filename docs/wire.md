@@ -523,14 +523,18 @@ Semantics:
   out another.
 - **Server-side flow control (informational):** updates (including Query
   and Cancel answers) wait in the server until they can be sent. Updates
-  whose decoded size is at most 256 KiB go out at once; larger ones wait
-  for one of 4 send permits shared by all worker connections
+  whose decoded cost (section 5) is at most 256 KiB go out at once; larger
+  ones wait for one of 4 send permits shared by all worker connections
   (`workerlink.pushPermits`). Waiting holds the operation's slot, and
   `Unwatch` still frees it at once. Normally this is only latency, but if
   the server's shared send pool stays saturated (slow readers holding it),
   a large update can wait long enough to exceed the 15 s update-buffer
   stall below, and its connection is closed even though this worker reads
-  promptly. Recovery is the usual reconnect and `CallQuery`.
+  promptly. Every router-side holder of one settled or published update,
+  including subscribers and query waiters, shares one immutable clone and
+  one charge toward the router's global 256 MiB buffered-update budget.
+  Each subscription still has its own limits.
+  Recovery is the usual reconnect and `CallQuery`.
 - The server **closes the link** (abort, no notice, reason logged) when: a
   request id is zero or names an open operation; the operation cap is
   exceeded; a rejection would carry an empty `call_id` (a Submit whose

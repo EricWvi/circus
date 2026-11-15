@@ -91,7 +91,8 @@ type Service interface {
 
 // Subscription is a bounded per-call update stream. It retains at most
 // MaxUpdatesPerSubscription entries and MaxSubscriptionBytes, also charged to
-// MaxBufferedUpdateBytes globally. It stores no result after delivery to Next.
+// MaxBufferedUpdateBytes globally once per distinct immutable update. It stores
+// no result after delivery to Next.
 // Overflow or SubscriberStall drops queued updates, releases ownership and ends
 // with ErrOverflow; it never blocks the daemon reader or cancels the call.
 // The caller must Close or cancel Submit's ctx. Exactly one Next may be active.
@@ -109,7 +110,7 @@ type Subscription struct {
 	single      bool // a QueryOnce answer: ends after its first update
 }
 
-// Next transfers one immutable update, releasing its buffer charge. Updates
+// Next transfers one immutable update, releasing its router-side reference. Updates
 // may be shared between subscribers: callers must not modify them.
 // After a terminal update it returns io.EOF. Context cancellation only interrupts
 // this read; subscription lifetime remains tied to Submit's ctx or Close.
@@ -235,7 +236,8 @@ type Config struct {
 // Stats is a constant-size snapshot of actual ownership. SyncRequests counts
 // outstanding sync requests; UnrecordedDisconnects counts disconnects whose
 // store write failed and awaits retry. PendingBytes includes
-// pending scratch; BufferedBytes includes queued updates; QueryWaiters counts
+// pending scratch; BufferedBytes counts the charged decoded cost of distinct
+// owned updates held by queues or unconsumed query replies. QueryWaiters counts
 // coalesced query consumers. DurableTimers counts router-owned durable timers,
 // including claimed ones; StoreHealthy is false after persistence failure and
 // may also be false solely because Stats' own timer walk failed. Healthy instead

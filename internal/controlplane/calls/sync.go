@@ -211,8 +211,7 @@ func (r *router) connectAndLose(op *operation, conn gateway.Connection, d *devic
 		for _, l := range losses {
 			r.release(l.CallID)
 			u := lost(l.CallID, "DAEMON_RESTARTED")
-			r.publish(u)
-			r.answer(l.CallID, u, nil)
+			r.publishAndAnswer(u)
 		}
 		first = false
 		if len(losses) < pageSize {

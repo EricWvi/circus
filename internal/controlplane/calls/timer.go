@@ -51,8 +51,7 @@ func (r *router) HandleTimer(ctx context.Context, claim store.Timer) error {
 			r.release(c.CallID)
 		}
 		u := r.update(op.ctx, c)
-		r.publish(u)
-		r.answer(c.CallID, u, nil)
+		r.publishAndAnswer(u)
 	}
 	if fx.query != nil {
 		// The follow-up watchdog is already durable, so a lost reply only

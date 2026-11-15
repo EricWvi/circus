@@ -252,10 +252,12 @@ An equal existing call attaches without new pending ownership; a Lost resubmit
 then passes the new-attempt scratch check before allocation. Direct Submit
 enforces wire structural limits. Per-device sync cursors, public operations, query waiters, subscriptions and
 subscription buffers have explicit limits. No terminal-result cache exists.
-Next hands out an immutable update (one clone shared by every subscriber and
-query waiter of the publish, each charged separately) and decrements charges;
-exposing a buffered channel
-would hide consumption from accounting. Overflow/stall detaches only that
+Every router-side holder of one settled or published update, including
+subscribers and query waiters, shares one immutable clone and one global charge.
+The global budget charges its decoded cost once until the last router-side
+holder releases it. Subscription byte limits charge every queued entry in full.
+Next releases the queue entry's reference; exposing a buffered channel would hide
+consumption from accounting. Overflow/stall detaches only that
 subscriber, discards its queue, and reports ErrOverflow. Its execution continues;
 it can Query again. Context cancellation and Close release subscription state. Context callbacks
 are separately counted against MaxSubscriptions and joined by Close; waiting
@@ -440,7 +442,7 @@ large consumer's rate.
   daemon response, a subscriber or sync capacity. Costs that remain under the
   lock: marshalling a DispatchCall of up to MaxMessageBytes inside
   Link.Send, charging (a tree walk) and cloning each update once per publish
-  (subscribers and query waiters share that immutable clone, each charged),
+  (subscribers and query waiters share that immutable clone and global charge),
   the final cancel replay of one device's active calls, and every store
   transaction. A slow store or a JobEvent storm from one device therefore
   delays every link's Receive and can trip MaxConsumerStall and resync on

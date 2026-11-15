@@ -1130,3 +1130,45 @@ func TestSubmitFailureDoesNotBlockReceiveLoop(t *testing.T) {
 		t.Fatal(m)
 	}
 }
+
+func TestCancelReplyWaitsForRecordedIntent(t *testing.T) {
+	f := setup(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var released sync.Once
+	resume := func() { released.Do(func() { close(release) }) }
+	defer resume()
+	var recorded atomic.Bool
+	f.svc.cancel = func(ctx context.Context, _ string) error {
+		close(entered)
+		select {
+		case <-release:
+			recorded.Store(true)
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	queried := make(chan struct{}, 1)
+	f.svc.query = func(_ context.Context, id string) (*circusv1.CallUpdate, error) {
+		if !recorded.Load() {
+			t.Error("Cancel reply state read before intent was recorded")
+		}
+		queried <- struct{}{}
+		return &circusv1.CallUpdate{CallId: id, Update: &circusv1.CallUpdate_Dispatched_{Dispatched: &circusv1.CallUpdate_Dispatched{}}}, nil
+	}
+	l := linked(t, f)
+	send(t, l, cancelCall(3, "running"))
+	wait.Recv(t, entered)
+	quiet(t, l)
+	select {
+	case <-queried:
+		t.Fatal("Cancel queried its reply before returning")
+	default:
+	}
+	resume()
+	m := receiveDownlink(t, l)
+	if m.GetRequestId() != 3 || m.GetCallUpdate().GetDispatched() == nil {
+		t.Fatal(m)
+	}
+	wait.Recv(t, queried)
+}

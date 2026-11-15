@@ -670,6 +670,11 @@ func TestClientCancelWatchedCall(t *testing.T) {
 	if u.GetDispatched() == nil {
 		t.Fatalf("Cancel of a running call did not answer intent recorded: %v", u)
 	}
+	row, err := h.st.GetCall(ctx, call.CallId)
+	must(t, err)
+	if row.CancelRequestedAt == 0 {
+		t.Fatal("Cancel replied before recording intent")
+	}
 	if update := h.result(stream); update.GetResult() == nil {
 		t.Fatalf("watched stream did not carry the real terminal update: %v", update)
 	}
