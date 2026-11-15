@@ -103,3 +103,20 @@ tasks:
       - node tests/parity/diff/run.mjs --sessions .tmp/diff-corpus/sessions.jsonl --limit {{.LIMIT}}
     vars:
       LIMIT: '{{default "60" .LIMIT}}'
+
+  web:dev:
+    desc: Start the Web UI dev server
+    cmds:
+      - npm -w @circus/web run dev
+
+  web:build:
+    desc: Build the Web UI into web/dist
+    cmds:
+      - npm -w @circus/web run build
+
+  web:check:
+    desc: Typecheck, lint and test the Web UI
+    cmds:
+      - npm -w @circus/web run typecheck
+      - npm -w @circus/web run lint
+      - npm -w @circus/web run test

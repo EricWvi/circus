@@ -31,6 +31,10 @@ jobs:
           repo-token: ${{ github.token }}
       - run: task lint test check-gen
       - run: npx tsc --noEmit -p gen/ts
+      - run: npm -w @circus/web run typecheck
+      - run: npm -w @circus/web run lint
+      - run: npm -w @circus/web run test
+      - run: npm -w @circus/web run build
       # The e2e harness builds bin/circus itself; Go, Bash and coreutils are
       # enough for it.
       - run: task e2e
