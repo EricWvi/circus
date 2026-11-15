@@ -91,7 +91,10 @@ every emitted tool result arrive. No SDK-facing pretty-print is used as evidence
 
 `capture()` is also importable. `capture(definition, { persist: false })` runs
 the identical native loop and returns the normalized fixture in memory without
-writing a golden fixture. `measure-thresholds.mjs` uses it for independent-session
+writing a golden fixture. An optional `diagnosticsDir` redirects local diagnostics
+(default: this harness's `.tmp/`), allowing a read-only harness installation.
+The [differential runner](../diff/README.md) uses this hook for isolated runs.
+`measure-thresholds.mjs` uses it for independent-session
 integer bisection, widening the initial bracket if necessary and stopping only
 when the passing and failing sizes differ by one unit. Its probe outcomes and
 boundary sizes are written to ignored `.tmp/threshold-results.json`; when families

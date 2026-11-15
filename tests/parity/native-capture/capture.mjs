@@ -23,8 +23,8 @@ const replaceData = (value, fn) => typeof value === 'string' ? fn(value) : Array
   ? value.map(v => replaceData(v, fn)) : value && typeof value === 'object'
     ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, replaceData(v, fn)])) : value;
 
-export async function capture(definition, { persist = true } = {}) {
-  await mkdir(join(root, '.tmp'), { recursive: true });
+export async function capture(definition, { persist = true, diagnosticsDir = join(root, '.tmp') } = {}) {
+  await mkdir(diagnosticsDir, { recursive: true });
   const base = await mkdtemp(join(tmpdir(), 'circus-native-'));
   const cwd = join(base, 'project');
   const home = join(base, 'home');
@@ -157,7 +157,7 @@ export async function capture(definition, { persist = true } = {}) {
           attachments: message.content.filter(b => b !== result),
           ...(!route.main ? { delivery: route.compaction ? 'compaction' : 'auxiliary' } : {}),
         });
-        await writeFile(join(root, '.tmp', `${definition.id}-steps.json`), json(normalize(steps)));
+        await writeFile(join(diagnosticsDir, `${definition.id}-steps.json`), json(normalize(steps)));
         pending = null;
       }
     }, onTurn: async body => {
@@ -241,7 +241,7 @@ export async function capture(definition, { persist = true } = {}) {
       }
     } catch (error) { if (!guardExpired) throw error; }
     fake.check();
-    if (definition.observe_native) await writeFile(join(root, '.tmp', `${definition.id}-wire.json`), json(fake.records.map(r => ({
+    if (definition.observe_native) await writeFile(join(diagnosticsDir, `${definition.id}-wire.json`), json(fake.records.map(r => ({
       main: r.main, model: r.body.model, tools: r.body.tools?.map(t => t.name), messages: r.body.messages?.map(m => ({
         role: m.role, content: typeof m.content === 'string' ? { length: m.content.length, head: normalizeString(m.content.slice(0, 100)) }
           : m.content.map(b => ({ type: b.type, length: typeof b.content === 'string' ? b.content.length : b.text?.length,
@@ -259,7 +259,7 @@ export async function capture(definition, { persist = true } = {}) {
     } else if (final?.subtype !== 'success' || final.result !== 'Native capture complete.' || pending || !steps.length) {
       throw new Error(`Incomplete capture (${final?.subtype ?? 'no final result'}, final=${JSON.stringify(final?.result)}, pending=${pending?.tool}, steps=${steps.length})`);
     }
-    await writeFile(join(root, '.tmp', `${definition.id}-timings.json`), json(timings));
+    await writeFile(join(diagnosticsDir, `${definition.id}-timings.json`), json(timings));
     if (!version || !tools) throw new Error('Missing CLI version or tool schemas');
     if (observer) { await sdk.return(); await observer.afterExit(); }
     const filesAfter = {};
@@ -339,8 +339,8 @@ export async function capture(definition, { persist = true } = {}) {
     return { case: definition.id, sha256: digest(output), comparison: previous === undefined ? 'new' : previous === output ? 'identical' : 'changed', steps: steps.length, notes };
   } catch (error) {
     try { fake?.check(); } catch (fakeError) { error = fakeError; }
-    // Diagnostics stay under tests/parity and are redacted before persistence.
-    await writeFile(join(root, '.tmp', `${definition.id}-failure.txt`), normalizeString(`${error.stack}\n${stderr}`));
+    // Diagnostics stay in the caller-selected local directory and are redacted before persistence.
+    await writeFile(join(diagnosticsDir, `${definition.id}-failure.txt`), normalizeString(`${error.stack}\n${stderr}`));
     throw error;
   } finally {
     clearTimeout(timer);
@@ -352,7 +352,7 @@ export async function capture(definition, { persist = true } = {}) {
     } finally {
       try {
         await observer?.cleanup();
-        if (observer) await writeFile(join(root, '.tmp', `${definition.id}-observations.json`), json({ ...observer.data, cwd, base, config, temp }));
+        if (observer) await writeFile(join(diagnosticsDir, `${definition.id}-observations.json`), json({ ...observer.data, cwd, base, config, temp }));
         await fake?.close();
         await rm(base, { recursive: true, force: true, maxRetries: 5 });
       } finally {

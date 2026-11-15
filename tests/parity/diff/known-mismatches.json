@@ -1,0 +1,353 @@
+[
+  {
+    "id": "failed-cd-relative",
+    "description": "Compare native and daemon behavior for failed-cd-relative.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Bash",
+        "input": {
+          "command": "cd missing && grep x",
+          "description": "Exercise a minimal parity difference"
+        }
+      }
+    ]
+  },
+  {
+    "id": "failed-cd-absolute",
+    "description": "Compare native and daemon behavior for failed-cd-absolute.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Bash",
+        "input": {
+          "command": "cd \"{{CWD}}/missing\" && grep x",
+          "description": "Exercise a minimal parity difference"
+        }
+      }
+    ]
+  },
+  {
+    "id": "signal-term",
+    "description": "Compare native and daemon behavior for signal-term.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Bash",
+        "input": {
+          "command": "kill -TERM $$",
+          "description": "Exercise a minimal parity difference"
+        }
+      }
+    ]
+  },
+  {
+    "id": "missing-command-handler",
+    "description": "Compare native and daemon behavior for missing-command-handler.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Bash",
+        "input": {
+          "command": "circus_missing_command",
+          "description": "Exercise a minimal parity difference"
+        }
+      }
+    ]
+  },
+  {
+    "id": "bash-edge-whitespace",
+    "description": "Compare the minimal bash-edge-whitespace behavior.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Bash",
+        "input": {
+          "command": "printf ' \\tx\\r\\n'",
+          "description": "Compare a composed-run difference"
+        }
+      }
+    ]
+  },
+  {
+    "id": "bash-integral-size",
+    "description": "Compare the minimal bash-integral-size behavior.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Bash",
+        "input": {
+          "command": "head -c 32768 /dev/zero | tr '\\0' x",
+          "description": "Compare a composed-run difference"
+        }
+      }
+    ]
+  },
+  {
+    "id": "bash-preview-line-boundary",
+    "description": "Compare the minimal bash-preview-line-boundary behavior.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Bash",
+        "input": {
+          "command": "printf \"a\\r\\n'%.0s\" {1..8001}",
+          "description": "Compare a composed-run difference"
+        }
+      }
+    ]
+  },
+  {
+    "id": "signal-int",
+    "description": "Compare the minimal signal-int behavior.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Bash",
+        "input": {
+          "command": "kill -INT $$",
+          "description": "Compare a composed-run difference"
+        }
+      }
+    ]
+  },
+  {
+    "id": "path-sensitive-preview",
+    "description": "Compare the minimal path-sensitive-preview behavior.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Bash",
+        "input": {
+          "command": "pwd; head -c 30001 /dev/zero",
+          "description": "Compare a composed-run difference"
+        }
+      }
+    ]
+  },
+  {
+    "id": "read-nul-text",
+    "description": "Compare the minimal read-nul-text behavior.",
+    "setup": {
+      "files": {
+        "a.txt": {
+          "base64": "YQBi"
+        }
+      },
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Read",
+        "input": {
+          "file_path": "{{CWD}}/a.txt"
+        }
+      }
+    ]
+  },
+  {
+    "id": "write-nul-guard",
+    "description": "Compare the minimal write-nul-guard behavior.",
+    "setup": {
+      "files": {
+        "a.txt": {
+          "base64": "YQBi"
+        }
+      },
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Write",
+        "input": {
+          "file_path": "{{CWD}}/a.txt",
+          "content": "x"
+        }
+      }
+    ]
+  },
+  {
+    "id": "read-terminal-cr",
+    "description": "Compare the minimal read-terminal-cr behavior.",
+    "setup": {
+      "files": {
+        "a.txt": "a\r\r\nb\r"
+      },
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Read",
+        "input": {
+          "file_path": "{{CWD}}/a.txt"
+        }
+      }
+    ]
+  },
+  {
+    "id": "write-line-whitespace",
+    "description": "Compare whitespace before line endings in a new file.",
+    "setup": {
+      "files": {},
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Write",
+        "input": {
+          "file_path": "{{CWD}}/a.txt",
+          "content": "a \rb\t\nc \r\nd\t"
+        }
+      }
+    ]
+  },
+  {
+    "id": "edit-mixed-eol",
+    "description": "Compare the minimal edit-mixed-eol behavior.",
+    "setup": {
+      "files": {
+        "a.txt": "a\r\nb\nc\n"
+      },
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Read",
+        "input": {
+          "file_path": "{{CWD}}/a.txt"
+        }
+      },
+      {
+        "tool": "Edit",
+        "input": {
+          "file_path": "{{CWD}}/a.txt",
+          "old_string": "b",
+          "new_string": "B"
+        }
+      }
+    ]
+  },
+  {
+    "id": "edit-empty-old-encoding-order",
+    "description": "Compare the minimal edit-empty-old-encoding-order behavior.",
+    "setup": {
+      "files": {
+        "a.txt": {
+          "base64": "/w=="
+        }
+      },
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Edit",
+        "input": {
+          "file_path": "{{CWD}}/a.txt",
+          "old_string": "",
+          "new_string": "x"
+        }
+      }
+    ]
+  },
+  {
+    "id": "partial-read-edit-context",
+    "description": "Compare the minimal partial-read-edit-context behavior.",
+    "setup": {
+      "files": {
+        "a.txt": "a\nb\n"
+      },
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Read",
+        "input": {
+          "file_path": "{{CWD}}/a.txt",
+          "limit": 1
+        }
+      },
+      {
+        "tool": "Edit",
+        "input": {
+          "file_path": "{{CWD}}/a.txt",
+          "old_string": "b",
+          "new_string": "B"
+        }
+      }
+    ]
+  },
+  {
+    "id": "edit-chain-context",
+    "description": "Compare the minimal edit-chain-context behavior.",
+    "setup": {
+      "files": {
+        "a.txt": "a\nb\n"
+      },
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Edit",
+        "input": {
+          "file_path": "{{CWD}}/a.txt",
+          "old_string": "a",
+          "new_string": "A"
+        }
+      },
+      {
+        "tool": "Edit",
+        "input": {
+          "file_path": "{{CWD}}/a.txt",
+          "old_string": "b",
+          "new_string": "B"
+        }
+      }
+    ]
+  },
+  {
+    "id": "write-existing-empty",
+    "description": "Compare creation wording when overwriting an existing empty file.",
+    "setup": {
+      "files": {
+        "a.txt": ""
+      },
+      "dirs": []
+    },
+    "steps": [
+      {
+        "tool": "Write",
+        "input": {
+          "file_path": "{{CWD}}/a.txt",
+          "content": "x"
+        }
+      }
+    ]
+  }
+]

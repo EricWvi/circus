@@ -701,6 +701,9 @@ func isolateHome() (string, error) {
 		dir = parent
 	}
 	base := filepath.Join(dir, ".tmp")
+	if override := os.Getenv("CIRCUS_PARITY_TMPDIR"); override != "" {
+		base = override
+	}
 	if err := os.MkdirAll(base, 0o700); err != nil {
 		return "", err
 	}

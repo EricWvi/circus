@@ -78,3 +78,21 @@ tasks:
         # gives a slow-CI safety factor while bounding a hang.
         CIRCUS_ROUTER_SEEDS="$seeds" CIRCUS_ROUTER_FIRST_SEED="{{.CIRCUS_ROUTER_FIRST_SEED}}" \
           go test -run '^TestRandomSequences$' -count=1 -timeout "$((seeds * 10))s" ./internal/controlplane/calls/
+
+  parity-diff:
+    desc: Compare generated native and daemon tool scenarios inside bubblewrap
+    cmds:
+      - node tests/parity/diff/run.mjs --generated --mode combo --seed {{.SEED}} --count {{.COUNT}}
+      - node tests/parity/diff/run.mjs --generated --mode deck --seed {{.SEED}} --count {{.DECK_COUNT}}
+    vars:
+      SEED: '{{default "1" .SEED}}'
+      COUNT: '{{default "200" .COUNT}}'
+      DECK_COUNT: '{{default "70" .DECK_COUNT}}'
+
+  parity-diff-sessions:
+    desc: Extract local tool inputs and compare them inside bubblewrap
+    cmds:
+      - node tests/parity/diff/extract-sessions.mjs
+      - node tests/parity/diff/run.mjs --sessions .tmp/diff-corpus/sessions.jsonl --limit {{.LIMIT}}
+    vars:
+      LIMIT: '{{default "60" .LIMIT}}'

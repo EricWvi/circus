@@ -96,6 +96,9 @@ func repoRoot(t *testing.T) string {
 func tempDir(t *testing.T) string {
 	t.Helper()
 	base := filepath.Join(repoRoot(t), ".tmp")
+	if override := os.Getenv("CIRCUS_PARITY_TMPDIR"); override != "" {
+		base = override
+	}
 	if err := os.MkdirAll(base, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -377,10 +380,11 @@ func verifyFSAfter(t *testing.T, cwd string, f fixture) {
 // simulatedWorker owns session read state; the production dispatcher and tools
 // never retain it. Paths are resolved before using them as read-state keys.
 type simulatedWorker struct {
-	d     *daemon.Dispatcher
-	cwd   string
-	reads map[string]string
-	next  int
+	d              *daemon.Dispatcher
+	cwd            string
+	reads          map[string]string
+	next           int
+	trackMutations bool
 }
 
 func newWorker(t *testing.T, cwd string) *simulatedWorker {
@@ -442,8 +446,15 @@ func (w *simulatedWorker) call(t *testing.T, tool string, input fixtureInput) *c
 	if _, ok := result.Output.Content[0].Block.(*circusv1.ContentBlock_Text); !ok {
 		t.Fatalf("expected one text block: %v", result)
 	}
-	if !result.Output.IsError && result.GetRead() != nil {
-		w.reads[filepath.Clean(path)] = result.GetRead().Sha256
+	if !result.Output.IsError {
+		switch {
+		case result.GetRead() != nil:
+			w.reads[filepath.Clean(path)] = result.GetRead().Sha256
+		case w.trackMutations && result.GetWrite() != nil:
+			w.reads[filepath.Clean(path)] = result.GetWrite().Sha256
+		case w.trackMutations && result.GetEdit() != nil:
+			w.reads[filepath.Clean(path)] = result.GetEdit().Sha256
+		}
 	}
 	return result
 }
@@ -463,15 +474,27 @@ func compareText(t *testing.T, label, want, got string) {
 	for i < len(want) && i < len(got) && want[i] == got[i] {
 		i++
 	}
+	if os.Getenv("CIRCUS_PARITY_DIR") != "" {
+		start := max(0, i-80)
+		t.Errorf("%s differs at byte %d; expected len=%d got len=%d\nexpected: %q\n     got: %q", label, i, len(want), len(got), want[start:min(len(want), i+240)], got[start:min(len(got), i+240)])
+		return
+	}
 	t.Errorf("%s differs at byte %d\nexpected: %q\n     got: %q", label, i, want, got)
 }
 
 func TestNativeParity(t *testing.T) {
 	root := filepath.Join(repoRoot(t), "tests", "parity", "fixtures", "native")
+	external := os.Getenv("CIRCUS_PARITY_DIR") != ""
+	if external {
+		root = os.Getenv("CIRCUS_PARITY_DIR")
+		if !filepath.IsAbs(root) {
+			root = filepath.Join(repoRoot(t), root)
+		}
+	}
 	count, steps := 0, 0
 	for _, tool := range []string{"Read", "Write", "Edit"} {
 		paths, err := filepath.Glob(filepath.Join(root, tool, "*.json"))
-		if err != nil || len(paths) == 0 {
+		if err != nil || (!external && len(paths) == 0) {
 			t.Fatalf("no %s fixtures: %v", tool, err)
 		}
 		for _, path := range paths {
@@ -492,6 +515,13 @@ func TestNativeParity(t *testing.T) {
 				var f fixture
 				if err := json.Unmarshal(raw, &f); err != nil {
 					t.Fatal(err)
+				}
+				if external {
+					for _, step := range f.Steps {
+						if step.Tool == "Bash" || step.Tool == "TaskStop" {
+							t.Skip("shell case is replayed by bashtool")
+						}
+					}
 				}
 				for _, dir := range f.Setup.Dirs {
 					if err := os.MkdirAll(filepath.Join(cwd, dir), 0o777); err != nil {
@@ -531,6 +561,7 @@ func TestNativeParity(t *testing.T) {
 					}
 				}
 				w := newWorker(t, cwd)
+				w.trackMutations = external
 				for i, step := range f.Steps {
 					steps++
 					if step.Before != nil {
@@ -539,8 +570,19 @@ func TestNativeParity(t *testing.T) {
 					if step.Result == nil {
 						// Deliberate deviation: native blocks forever on this FIFO;
 						// circus rejects the special file without opening it.
-						if f.Case != "read-fifo" {
+						fifo := false
+						path := step.Input.Path
+						if !filepath.IsAbs(path) {
+							path = filepath.Join(cwd, path)
+						}
+						for _, name := range f.Setup.Fifos {
+							fifo = fifo || filepath.Clean(path) == filepath.Join(cwd, name)
+						}
+						if step.Tool != "Read" || !fifo {
 							t.Fatalf("step %d unexpectedly has no native result", i+1)
+						}
+						if external {
+							t.Logf("DEVIATION step %d: native blocks on FIFO; daemon rejects special files", i+1)
 						}
 						r := w.call(t, step.Tool, step.Input)
 						if !r.Output.IsError {
