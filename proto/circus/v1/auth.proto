@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package circus.v1;
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// AuthService authenticates people using browser sessions.
+service AuthService {
+  // Missing or invalid cookies are reported as state, never authentication errors.
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
+  // Checks the setup token before validating email and password.
+  rpc Setup(SetupRequest) returns (SetupResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  // Deletes the current session and clears its cookie; idempotent.
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+}
+
+message User {
+  enum Role {
+    ROLE_UNSPECIFIED = 0;
+    ROLE_USER = 1;
+    ROLE_SUPER = 2;
+  }
+  string user_id = 1;
+  string email = 2;
+  Role role = 3;
+}
+
+message LoginMethods {
+  message OidcMethod {
+    string display_name = 1;
+  }
+  bool password = 1;
+  OidcMethod oidc = 2;
+}
+
+message WhoAmIRequest {}
+message WhoAmIResponse {
+  message NeedsSetup {}
+  message SignedOut {}
+  oneof state {
+    NeedsSetup needs_setup = 1;
+    SignedOut signed_out = 2;
+    User user = 3;
+  }
+  LoginMethods methods = 4;
+}
+message SetupRequest {
+  string token = 1;
+  string email = 2;
+  string password = 3;
+}
+message SetupResponse {
+  User user = 1;
+}
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+message LoginResponse {
+  User user = 1;
+}
+message LogoutRequest {}
+message LogoutResponse {}

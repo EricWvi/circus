@@ -530,7 +530,7 @@ func listenAs(t *testing.T, ip string) (func(network, addr string) (net.Listener
 	}, fake
 }
 
-// --dev-insecure re-checks the address actually bound; "localhost"
+// dev_insecure re-checks the address actually bound; "localhost"
 // resolving elsewhere must not serve plaintext.
 func TestDevInsecureChecksBoundAddress(t *testing.T) {
 	st := openStore(t)
@@ -554,7 +554,7 @@ func TestDevInsecureChecksBoundAddress(t *testing.T) {
 	}
 }
 
-// --behind-proxy on a non-loopback address starts but warns.
+// behind_proxy on a non-loopback address starts but warns.
 func TestBehindProxyWarnsOffLoopback(t *testing.T) {
 	for _, c := range []struct {
 		ip   string
@@ -581,7 +581,7 @@ func TestBehindProxyWarnsOffLoopback(t *testing.T) {
 			if err := json.Unmarshal([]byte(line), &rec); err != nil {
 				t.Fatalf("%s: log line is not JSON: %q: %v", c.ip, line, err)
 			}
-			if rec.Level == "WARN" && strings.HasPrefix(rec.Msg, "--behind-proxy serves plaintext") {
+			if rec.Level == "WARN" && strings.HasPrefix(rec.Msg, "behind_proxy serves plaintext") {
 				warned = true
 			}
 		}
@@ -824,5 +824,21 @@ func TestComposedLinksCleanupWithoutListener(t *testing.T) {
 			}
 		}
 		cancel()
+	}
+}
+
+func TestProxyHeaderWarningOnPublicRoutes(t *testing.T) {
+	h := newServer(t, controlplane.Config{BehindProxy: true, BcryptCost: 4}, nil)
+	for range 3 {
+		if code, _ := h.get(t, "/healthz", ""); code != http.StatusOK {
+			t.Fatal(code)
+		}
+	}
+	// Machine authentication shares the host's proxy observation too.
+	if code, _ := h.get(t, "/v1/whoami", ""); code != http.StatusUnauthorized {
+		t.Fatal(code)
+	}
+	if got := strings.Count(h.logs.String(), "without X-Forwarded-For"); got != 1 {
+		t.Fatalf("proxy warning count = %d, want 1", got)
 	}
 }

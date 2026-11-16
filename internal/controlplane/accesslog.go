@@ -16,6 +16,9 @@ import (
 func (s *Server) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		if s.webAuth != nil {
+			s.webAuth.ObserveProxyRequest(r)
+		}
 		rec := &statusRecorder{ResponseWriter: w}
 		next.ServeHTTP(rec, r)
 		level := slog.LevelInfo

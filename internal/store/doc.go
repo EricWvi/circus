@@ -33,6 +33,11 @@
 // the machine they run on by MachineID, each with its own credentials, so one
 // role can be revoked without the other.
 //
+// Human users extend the existing owner rows with email, role and a password
+// hash. UserIdentity binds OIDC issuer/subject pairs; WebSession contains only
+// a cookie token hash, with caller-supplied idle and maximum deadlines. The
+// legacy machine owner has no human email or role and cannot sign in.
+//
 // Package storetest holds the contract suite every implementation must pass
 // plus fault-injection and crash-restart harnesses; package sqlite is the
 // SQLite backend.

@@ -28,7 +28,7 @@ Notation: F = negotiated `max_fragment_bytes`, M = negotiated
 | Credential role | device (daemon) | worker |
 | Client sends | `DaemonUplink` | `WorkerUplink` |
 | Server sends | `DaemonDownlink` | `WorkerDownlink` |
-| Server connection cap (HTTP 503 when full) | 100 (`gateway.Config.MaxConnections`, max 256) | 8 by default (`circus server --worker-connections`, `workerlink.Config.MaxConnections`), and at most 4 per credential (`workerlink.maxPerCredential`) |
+| Server connection cap (HTTP 503 when full) | 100 (`gateway.Config.MaxConnections`, max 256) | 8 by default (`worker_connections` in the server config, `workerlink.Config.MaxConnections`), and at most 4 per credential (`workerlink.maxPerCredential`) |
 
 **URL.** The credential file holds a base `control_plane_url` (no userinfo,
 query or fragment). The link URL is the base with its path's trailing `/`
@@ -583,7 +583,7 @@ Semantics:
   long tool calls can hold every slot, transcript appends wait past the SDK's
   retry budget, and the session becomes BROKEN.
 - **Connections:** at most 8 authenticated worker-link connections per
-  control plane by default (`--worker-connections`), of any kind (worker or
+  control plane by default (`worker_connections` in the server config), of any kind (worker or
   CLI), and at most 4 per credential; the next gets HTTP 503. CLIs that use
   the worker's credential count toward its 4. A worker that restarts while
   its old connection is still half-open (until the server's heartbeat

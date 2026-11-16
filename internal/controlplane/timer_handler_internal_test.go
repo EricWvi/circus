@@ -111,3 +111,92 @@ func TestUnhandledTimerCompleted(t *testing.T) {
 		})
 	}
 }
+
+func TestPeriodicCleanupPurgesWebSessions(t *testing.T) {
+	var logs bytes.Buffer
+	s, st := purgeTestServer(t, &logs)
+	now := time.Now()
+	u, err := st.GetUserByName(t.Context(), auth.DefaultUserName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := now.Add(-store.WebSessionIdleTimeout - time.Second).UnixMilli()
+	expired := store.WebSession{TokenHash: auth.HashToken("expired"), UserID: u.ID, CreatedAt: created, LastUsedAt: created, ExpiresAt: now.Add(-time.Second).UnixMilli()}
+	active := store.WebSession{TokenHash: auth.HashToken("active"), UserID: u.ID, CreatedAt: now.UnixMilli(), LastUsedAt: now.UnixMilli(), ExpiresAt: now.Add(store.WebSessionIdleTimeout).UnixMilli()}
+	for _, sess := range []store.WebSession{expired, active} {
+		if err := st.CreateWebSession(t.Context(), sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claims, err := st.ClaimDueTimers(t.Context(), now.UnixMilli(), "cleanup", 10000, 1)
+	if err != nil || len(claims) != 1 {
+		t.Fatalf("claims: %v %v", claims, err)
+	}
+	if err = s.handleTimer(t.Context(), claims[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.CreateWebSession(t.Context(), expired); err != nil {
+		t.Fatal("expired row was not physically deleted", err)
+	}
+	if _, err = st.UseWebSession(t.Context(), active.TokenHash, now.UnixMilli()); err != nil {
+		t.Fatal("cleanup removed active session", err)
+	}
+	if !strings.Contains(logs.String(), "purged expired web sessions") {
+		t.Fatal("cleanup count was not logged")
+	}
+	// Reusing the completed timer claim cannot purge a row inserted afterward.
+	if err = s.handleTimer(t.Context(), claims[0]); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := st.PurgeWebSessions(t.Context(), now.UnixMilli()); err != nil || n != 1 {
+		t.Fatalf("stale timer had effects: %d %v", n, err)
+	}
+}
+
+func TestSetupBannerFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name, listen string
+		proxy        bool
+		wantPrefix   string
+		wantHint     bool
+	}{
+		{"tls empty host", ":8443", false, "https://localhost:8443/setup?token=", false},
+		{"proxy empty host", ":8443", true, "/setup?token=", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			var logs bytes.Buffer
+			cfg := Config{Listen: tc.listen, BehindProxy: tc.proxy, LogOutput: &logs, BcryptCost: 4}
+			if !tc.proxy {
+				cfg.TLSCert = "not-opened.pem"
+				cfg.TLSKey = "not-opened-key.pem"
+			}
+			s, err := New(t.Context(), st, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Shutdown(context.Background())
+			found := false
+			for line := range strings.Lines(logs.String()) {
+				var rec struct{ URL, Hint string }
+				if json.Unmarshal([]byte(line), &rec) != nil || rec.URL == "" {
+					continue
+				}
+				found = true
+				if !strings.HasPrefix(rec.URL, tc.wantPrefix) {
+					t.Fatal("wrong setup link fallback (token redacted)")
+				}
+				if strings.Contains(rec.Hint, "public_url") != tc.wantHint {
+					t.Fatal("missing public_url hint for proxy")
+				}
+			}
+			if !found {
+				t.Fatal("no setup banner")
+			}
+		})
+	}
+}

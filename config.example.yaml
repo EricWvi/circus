@@ -1,0 +1,41 @@
+# All circus server settings live in this file. Start with:
+#   circus server --config config.yaml
+# A missing file or unknown key is an error. Relative paths use the working directory.
+listen: ":8443"
+# Empty uses $XDG_DATA_HOME/circus/circus.db (or ~/.local/share/circus/circus.db).
+db: ""
+
+# Choose exactly one transport mode: tls_cert + tls_key, behind_proxy, or dev_insecure.
+tls_cert: ""
+tls_key: ""
+# Plaintext behind a TLS reverse proxy; prefer a loopback listen address.
+# Limiters trust the rightmost X-Forwarded-For entry; the proxy must append or replace it.
+behind_proxy: true
+# Development plaintext on loopback only; also disables Secure on browser cookies.
+dev_insecure: false
+# Browser origin; required for OIDC and used for Origin checks and setup links.
+# Paths other than /, queries and fragments are rejected.
+public_url: "https://circus.example.com"
+
+# Durations use Go syntax. Zero/absent selects the current default.
+shutdown_timeout: 10s
+timer_poll_interval: 1s
+max_message_bytes: 0 # Default 64 MiB; daemon and CLI clients cap at 64 MiB.
+device_grace: 30s
+heartbeat_interval: 5s
+heartbeat_timeout: 15s
+# Zero uses twice wire.MinBudget; smaller pools are refused.
+send_pool_bytes: 0
+receive_pool_bytes: 0
+worker_connections: 8 # At least 1; zero selects 8. Each credential can hold at most 4.
+debug: false # --debug overrides this key.
+
+# Optional. Register <public_url>/auth/oidc/callback at the provider.
+# Omit this block to disable OIDC; password login stays enabled.
+# Trust assumption: the IdP marks email verified only when the account owns it.
+# Email auto-binding is allowed only before the user has an identity at that issuer.
+# oidc:
+#   issuer: "https://auth.example.com"
+#   client_id: "circus"
+#   client_secret: "" # Non-empty CIRCUS_OIDC_CLIENT_SECRET overrides this value.
+#   display_name: "Authelia"

@@ -2,7 +2,10 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/storetest"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
@@ -295,5 +299,59 @@ func TestCheckSettingsBusyTimeout(t *testing.T) {
 	if d, err := Open(t.Context(), filepath.Join(t.TempDir(), dbName), Options{BusyTimeout: time.Microsecond}); err == nil {
 		d.Close()
 		t.Fatal("sub-millisecond busy timeout accepted")
+	}
+}
+
+// Upgrading the existing database leaves legacy machine ownership and bearer
+// credentials intact; only rows explicitly created as humans can sign in.
+func TestWebAuthMigrationKeepsMachineCredentials(t *testing.T) {
+	path := filepath.Join(t.TempDir(), dbName)
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	ms, err := migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms[:3] {
+		if _, err = raw.ExecContext(t.Context(), m.sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = raw.ExecContext(t.Context(), `CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
+ INSERT INTO schema_migrations VALUES (1,1),(2,1),(3,1);
+ INSERT INTO users(id,name,created_at) VALUES ('legacy','admin',1);
+ INSERT INTO devices(id,user_id,name,machine_id,created_at) VALUES ('device','legacy','laptop','machine',1);`); err != nil {
+		t.Fatal(err)
+	}
+	token, err := auth.NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = raw.ExecContext(t.Context(), `INSERT INTO credentials(id,principal_kind,principal_id,token_hash,created_at) VALUES ('credential','device','device',?,1)`, auth.HashToken(token)); err != nil {
+		t.Fatal(err)
+	}
+	if err = raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(t.Context(), path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	u, err := st.GetUserByName(t.Context(), "admin")
+	if err != nil || u.Email != "" || u.Role != "" || u.ID != "legacy" {
+		t.Fatalf("legacy user: %+v %v", u, err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v1/whoami", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	principal, err := auth.NewAuthenticator(st, auth.Options{}).Authenticate(t.Context(), req)
+	if err != nil || principal.UserID != "legacy" || principal.ID != "device" {
+		t.Fatalf("legacy credential: %+v %v", principal, err)
+	}
+	if _, err = st.GetSuperUser(t.Context()); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("legacy owner became super: %v", err)
 	}
 }

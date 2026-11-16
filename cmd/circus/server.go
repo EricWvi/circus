@@ -16,40 +16,23 @@ import (
 	"time"
 
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/config"
 	"github.com/EricWvi/circus/internal/controlplane"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
-	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/store"
 )
 
 const serverUsage = `usage:
-  circus server [--db PATH] [--listen HOST:PORT] (--tls-cert FILE --tls-key FILE | --behind-proxy | --dev-insecure)
-                [--public-url URL] [--shutdown-timeout 10s] [--timer-poll-interval 1s]
-                [--max-message-bytes N] [--device-grace 30s]
-                [--heartbeat-interval 5s] [--heartbeat-timeout 15s]
-                [--send-pool-bytes N] [--receive-pool-bytes N] [--worker-connections 8]
-  circus server enroll-token create --role daemon|worker|both [--ttl 1h] [--url https://host:port] [--db PATH]
-  circus server device list|revoke <name> [--db PATH]
-  circus server worker list|revoke <name> [--db PATH]
+  circus server [--config config.yaml] [--debug]
+  circus server enroll-token create --role daemon|worker|both [--ttl 1h] [--url https://host:port] [--config config.yaml]
+  circus server device list|revoke <name> [--config config.yaml]
+  circus server worker list|revoke <name> [--config config.yaml]
 
-revoke revokes the identity's credentials and deletes it, freeing the name
-for a new join. The admin commands open only an existing database: pass the
-server's --db when it is not the default.
+All server settings, including worker_connections and the database path,
+are read from the YAML file. See config.example.yaml. Admin commands open
+only an existing database. Revoke frees the identity's name for a new join.`
 
-All daemon links share one wire.Budget; --send-pool-bytes and
---receive-pool-bytes size its two pools (0 keeps the default, twice
-wire.MinBudget; the gateway refuses smaller values).
-
---max-message-bytes (0 keeps the default, 64 MiB) is the link message limit.
-circus call and circus daemon cap it at 64 MiB locally, so a larger value
-makes them refuse the connection.
-
---worker-connections (default 8, at least 1) bounds worker-credential
-connections (workers and circus call); one credential may hold at most 4 of
-them. HTTP 503 on a worker link means a cap is full, the credential check
-failed inside the server (for example the store), or it is shutting down.`
-
-// defaultListen is the default --listen address and the port enroll-token
+// defaultListen is the default listen address and the port enroll-token
 // create assumes without --url.
 const (
 	defaultListen = ":8443"
@@ -76,23 +59,8 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	fs.Usage = func() { fmt.Fprintln(errOut, serverUsage); fs.PrintDefaults() }
-	db := fs.String("db", defaultDBPath(), "SQLite database file")
-	listen := fs.String("listen", defaultListen, "listen address host:port")
-	cert := fs.String("tls-cert", "", "TLS certificate chain (PEM)")
-	key := fs.String("tls-key", "", "TLS private key (PEM)")
-	proxy := fs.Bool("behind-proxy", false, "serve plaintext behind a TLS-terminating reverse proxy")
-	insecure := fs.Bool("dev-insecure", false, "serve plaintext; loopback addresses only")
-	publicURL := fs.String("public-url", "", "base URL clients use (default: derived from each request)")
-	shutdown := fs.Duration("shutdown-timeout", controlplane.DefaultShutdownTimeout, "graceful shutdown deadline")
-	timerPoll := fs.Duration("timer-poll-interval", 0, "durable timer poll interval (default 1s)")
-	maxMessage := fs.Int("max-message-bytes", 0, "link message limit in bytes (default 64 MiB; clients refuse more)")
-	grace := fs.Duration("device-grace", 0, "disconnected device grace (default 30s)")
-	heartbeat := fs.Duration("heartbeat-interval", 0, "link heartbeat interval (default 5s)")
-	heartbeatTimeout := fs.Duration("heartbeat-timeout", 0, "link heartbeat timeout (default 15s)")
-	sendPool := fs.Int("send-pool-bytes", 0, "shared send pool bytes across all daemon links (0 = default, twice wire.MinBudget)")
-	receivePool := fs.Int("receive-pool-bytes", 0, "shared receive pool bytes across all daemon links (0 = default, twice wire.MinBudget)")
-	workerConnections := fs.Int("worker-connections", workerlink.DefaultMaxConnections, "maximum worker-credential connections (at least 1; one credential may hold at most 4)")
-	debug := fs.Bool("debug", false, "log at debug level")
+	configPath := fs.String("config", "config.yaml", "YAML configuration file")
+	debug := fs.Bool("debug", false, "log at debug level (overrides config)")
 	pos, err := parseArgs(fs, args)
 	if err != nil {
 		return err
@@ -100,47 +68,41 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	if len(pos) != 0 {
 		return errors.New(serverUsage)
 	}
-	if *workerConnections < 1 {
-		return errors.New("--worker-connections must be at least 1")
+	cfg, err := loadServerConfig(*configPath)
+	if err != nil {
+		return err
 	}
-	if *publicURL != "" {
-		u, err := url.Parse(*publicURL)
-		if err != nil {
-			return fmt.Errorf("--public-url: %w", err)
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "debug" {
+			cfg.Debug = *debug
 		}
-		if *publicURL, err = checkBaseURL(u); err != nil {
-			return fmt.Errorf("--public-url: %w", err)
-		}
-	}
+	})
 	level := slog.LevelInfo
-	if *debug {
+	if cfg.Debug {
 		level = slog.LevelDebug
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	st, err := openStore(ctx, *db)
+	st, err := openStore(ctx, cfg.DB)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
-	srv, err := controlplane.New(ctx, st, controlplane.Config{
-		Listen: *listen, TLSCert: *cert, TLSKey: *key, BehindProxy: *proxy, DevInsecure: *insecure,
-		PublicURL: *publicURL, ShutdownTimeout: *shutdown, TimerPollInterval: *timerPoll, LogOutput: errOut, LogLevel: level,
-		MaxMessageBytes: *maxMessage, GracePeriod: *grace, HeartbeatInterval: *heartbeat, HeartbeatTimeout: *heartbeatTimeout,
-		SendPoolBytes: *sendPool, ReceivePoolBytes: *receivePool, WorkerConnections: *workerConnections,
-	})
+	serverCfg := cfg.Server()
+	serverCfg.LogOutput, serverCfg.LogLevel = errOut, level
+	srv, err := controlplane.New(ctx, st, serverCfg)
 	if err != nil {
-		// The gateway keeps the validation; name the operator's flags and
+		// The gateway keeps the validation; name the config keys and
 		// the minimum each pool fell below.
 		var pool *gateway.PoolError
 		if errors.As(err, &pool) {
 			var parts []string
 			if pool.Send < pool.MinSend {
-				parts = append(parts, fmt.Sprintf("--send-pool-bytes %d is below the minimum %d", pool.Send, pool.MinSend))
+				parts = append(parts, fmt.Sprintf("send_pool_bytes %d is below the minimum %d", pool.Send, pool.MinSend))
 			}
 			if pool.Receive < pool.MinReceive {
-				parts = append(parts, fmt.Sprintf("--receive-pool-bytes %d is below the minimum %d", pool.Receive, pool.MinReceive))
+				parts = append(parts, fmt.Sprintf("receive_pool_bytes %d is below the minimum %d", pool.Receive, pool.MinReceive))
 			}
 			return errors.New(strings.Join(parts, "; ") + " (twice wire.MinBudget)")
 		}
@@ -152,7 +114,7 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 func enrollTokenCreate(args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("server enroll-token create", flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	db := fs.String("db", defaultDBPath(), "SQLite database file")
+	configPath := fs.String("config", "config.yaml", "YAML configuration file")
 	role := fs.String("role", "", "role the link enrolls: daemon, worker or both (one token per role)")
 	ttl := fs.Duration("ttl", auth.DefaultEnrollTTL, "token lifetime")
 	base := fs.String("url", "", "public base URL of the control plane (default https://<hostname>:"+defaultPort+")")
@@ -194,7 +156,11 @@ func enrollTokenCreate(args []string, out, errOut io.Writer) error {
 	}
 
 	ctx := context.Background()
-	st, err := openExistingStore(ctx, *db, errOut)
+	cfg, err := loadServerConfig(*configPath)
+	if err != nil {
+		return err
+	}
+	st, err := openExistingStore(ctx, cfg.DB, errOut)
 	if err != nil {
 		return err
 	}
@@ -235,7 +201,7 @@ func identityCommand(kind store.PrincipalKind, args []string, out, errOut io.Wri
 	sub := args[0]
 	fs := flag.NewFlagSet("server "+auth.AdminNoun(kind)+" "+sub, flag.ContinueOnError)
 	fs.SetOutput(errOut)
-	db := fs.String("db", defaultDBPath(), "SQLite database file")
+	configPath := fs.String("config", "config.yaml", "YAML configuration file")
 	pos, err := parseArgs(fs, args[1:])
 	if err != nil {
 		return err
@@ -244,7 +210,11 @@ func identityCommand(kind store.PrincipalKind, args []string, out, errOut io.Wri
 		return errors.New(serverUsage)
 	}
 	ctx := context.Background()
-	st, err := openExistingStore(ctx, *db, errOut)
+	cfg, err := loadServerConfig(*configPath)
+	if err != nil {
+		return err
+	}
+	st, err := openExistingStore(ctx, cfg.DB, errOut)
 	if err != nil {
 		return err
 	}
@@ -289,4 +259,15 @@ func formatMillis(ms int64) string {
 		return "never"
 	}
 	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
+}
+
+func loadServerConfig(path string) (config.Config, error) {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return cfg, err
+	}
+	if cfg.DB == "" {
+		cfg.DB = defaultDBPath()
+	}
+	return cfg, nil
 }

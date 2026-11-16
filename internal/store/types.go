@@ -99,9 +99,12 @@ func (k PrincipalKind) Valid() bool { return k == KindDevice || k == KindWorker 
 // User owns every other resource; a user's calls may name only that user's
 // devices.
 type User struct {
-	ID        string
-	Name      string // unique
-	CreatedAt int64
+	Email        string
+	Role         UserRole
+	PasswordHash string
+	ID           string
+	Name         string // unique; retained for machine owners
+	CreatedAt    int64
 	// TranscriptBytes is the sum of the transcript bytes of the user's
 	// sessions, kept by AppendTranscript and DeleteSession for the per-user
 	// cap. CreateUser ignores it.

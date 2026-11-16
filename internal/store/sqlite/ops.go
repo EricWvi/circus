@@ -173,18 +173,23 @@ func anys[T ~string](vs []T) []any {
 // Users.
 
 func (o *ops) CreateUser(ctx context.Context, u store.User) error {
-	if u.ID == "" || u.Name == "" {
-		return invalid("user needs id and name")
+	if u.Role == store.RoleSuper {
+		return invalid("use CreateSuperUser for the super role")
 	}
-	_, err := o.exec(ctx, `INSERT INTO users (id, name, created_at) VALUES (?, ?, ?)`, u.ID, u.Name, u.CreatedAt)
-	return err
+	return o.insertUser(ctx, u)
 }
 
-func (o *ops) getUser(ctx context.Context, where string, arg string) (store.User, error) {
+const userCols = `id, name, created_at, transcript_bytes, email, role, password_hash`
+
+func scanUser(s scanner) (store.User, error) {
 	var u store.User
-	err := o.q.QueryRow(ctx, `SELECT id, name, created_at, transcript_bytes FROM users WHERE `+where+` = ?`, arg).
-		Scan(&u.ID, &u.Name, &u.CreatedAt, &u.TranscriptBytes)
+	var role string
+	err := s.Scan(&u.ID, &u.Name, &u.CreatedAt, &u.TranscriptBytes, nullStr{&u.Email}, nullStr{&role}, nullStr{&u.PasswordHash})
+	u.Role = store.UserRole(role)
 	return u, mapErr(err)
+}
+func (o *ops) getUser(ctx context.Context, where string, arg string) (store.User, error) {
+	return scanUser(o.q.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE `+where+` = ?`, arg))
 }
 
 func (o *ops) GetUser(ctx context.Context, id string) (store.User, error) {

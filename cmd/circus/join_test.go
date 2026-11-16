@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -33,6 +34,7 @@ type joinHarness struct {
 	st     *sqlite.DB
 	base   string
 	cfgDir string
+	config string
 }
 
 func newJoinHarness(t *testing.T) *joinHarness {
@@ -46,6 +48,7 @@ func newJoinHarness(t *testing.T) *joinHarness {
 	}
 	t.Cleanup(func() { st.Close() })
 	h.st = st
+	h.config = writeServerTestConfig(t, fmt.Sprintf("db: %q\n", h.db))
 	srv, err := controlplane.New(context.Background(), st, controlplane.Config{Listen: "127.0.0.1:0", DevInsecure: true, LogOutput: io.Discard})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +70,7 @@ func newJoinHarness(t *testing.T) *joinHarness {
 func (h *joinHarness) link(role string) string {
 	h.t.Helper()
 	var out, errOut bytes.Buffer
-	if err := enrollTokenCreate([]string{"--role", role, "--url", h.base, "--db", h.db}, &out, &errOut); err != nil {
+	if err := enrollTokenCreate([]string{"--role", role, "--url", h.base, "--config", h.config}, &out, &errOut); err != nil {
 		h.t.Fatalf("enroll-token create --role %s: %v", role, err)
 	}
 	return strings.TrimSpace(out.String())
@@ -84,10 +87,10 @@ func (h *joinHarness) joinStdin(stdin string, args ...string) (string, error) {
 	return out.String(), err
 }
 
-// admin runs `circus server <args> --db <harness db>`.
+// admin runs `circus server <args> --config <harness config>`.
 func (h *joinHarness) admin(args ...string) (string, string, error) {
 	var out, errOut bytes.Buffer
-	err := serverCommand(append(args, "--db", h.db), &out, &errOut)
+	err := serverCommand(append(args, "--config", h.config), &out, &errOut)
 	return out.String(), errOut.String(), err
 }
 
@@ -342,7 +345,7 @@ func TestAdminCommandsNeedExistingDatabase(t *testing.T) {
 		{"worker", "list"},
 	} {
 		var out, errOut bytes.Buffer
-		err := serverCommand(append(args, "--db", missing), &out, &errOut)
+		err := serverCommand(append(args, "--config", writeServerTestConfig(t, fmt.Sprintf("db: %q\n", missing))), &out, &errOut)
 		if err == nil || !strings.Contains(err.Error(), missing) {
 			t.Errorf("%v: %v", args, err)
 		}

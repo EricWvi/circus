@@ -24,8 +24,8 @@ var (
 )
 
 const (
-	// DefaultUserName is the single user the control plane currently creates;
-	// every identity and token belongs to it until user logins arrive (M4).
+	// DefaultUserName is the legacy machine owner. Human login users are
+	// separate rows, so existing machine credentials keep their ownership.
 	DefaultUserName = "admin"
 	// DefaultEnrollTTL is the default lifetime of a one-time token.
 	DefaultEnrollTTL = time.Hour

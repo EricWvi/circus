@@ -27,6 +27,10 @@
     "./circus/v1/session_pb": {
       "types": "./dist/circus/v1/session_pb.d.ts",
       "default": "./dist/circus/v1/session_pb.js"
+    },
+    "./circus/v1/auth_pb": {
+      "types": "./dist/circus/v1/auth_pb.d.ts",
+      "default": "./dist/circus/v1/auth_pb.js"
     }
   },
   "dependencies": {

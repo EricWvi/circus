@@ -20,7 +20,7 @@ import (
 )
 
 // parseArgs parses flags that may appear before, between or after
-// positional arguments ("revoke laptop --db x") and returns the positionals.
+// positional arguments ("revoke laptop --config config.yaml") and returns the positionals.
 func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 	var pos []string
 	for {
@@ -60,7 +60,7 @@ func openStore(ctx context.Context, path string) (*sqlite.DB, error) {
 }
 
 // openExistingStore opens the control plane database for an admin command.
-// Unlike openStore it never creates one: a mistyped --db, or a database
+// Unlike openStore it never creates one: a mistyped db config key, or a database
 // that belongs to another user's HOME, would otherwise get tokens or
 // revocations the server never sees. It reports the path it used on errOut.
 func openExistingStore(ctx context.Context, path string, errOut io.Writer) (*sqlite.DB, error) {
@@ -69,7 +69,7 @@ func openExistingStore(ctx context.Context, path string, errOut io.Writer) (*sql
 	}
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("no control plane database at %s; pass --db with the path the server uses", path)
+			return nil, fmt.Errorf("no control plane database at %s; set db in --config to the path the server uses", path)
 		}
 		return nil, err
 	}

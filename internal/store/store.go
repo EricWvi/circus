@@ -48,11 +48,14 @@ type Store interface {
 // Methods return ErrInvalid for malformed arguments before reading or
 // writing anything.
 type Ops interface {
+	WebAuthOps
 	// SessionOps holds the session operations (sessions.go). They are part
 	// of Ops so a session write and a call write can share one Tx.
 	SessionOps
 
-	// CreateUser inserts a user. ErrExists if the id or name is taken.
+	// CreateUser inserts a regular human user or legacy machine owner.
+	// Human email is normalized; an empty name becomes the id. Super users
+	// must use CreateSuperUser. ErrExists if id, name or email is taken.
 	CreateUser(ctx context.Context, u User) error
 	// GetUser returns the user with this id, or ErrNotFound.
 	GetUser(ctx context.Context, id string) (User, error)

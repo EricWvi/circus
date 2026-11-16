@@ -1,4 +1,4 @@
-// Package auth implements the current token layer of control-plane identity:
+// Package auth implements machine credentials and human Web authentication:
 // one-time enrollment tokens, the long-term bearer tokens they are exchanged
 // for, authentication of link upgrade requests and revocation. Per-machine key
 // pairs and challenge signatures are planned to replace this layer only;
@@ -9,8 +9,8 @@
 // Every token, one-time or long-term, is TokenBytes random bytes encoded as
 // unpadded base64url (TokenLen characters). The store keeps only HashToken,
 // the SHA-256 of the token text; lookups go by hash and the hash read back is
-// compared again in constant time. Tokens never appear in logs or error
-// strings.
+// compared again in constant time. Machine tokens never appear in logs or
+// error strings. The process-local human setup token is logged once at startup.
 //
 // # Identities and enrollment
 //
@@ -58,4 +58,18 @@
 // the identity in one transaction, so the name can be enrolled again (a
 // re-join after revocation, or after a join whose credential file was never
 // written).
+//
+// # Human authentication
+//
+// WebService adds password and optional OIDC login, a process-local setup
+// token and durable cookie sessions. The single super user is enforced in
+// the store transaction. OIDC discovery is lazy; state, nonce and PKCE bind
+// the flow to a signed, expiring browser cookie. Verified UserInfo email may
+// bind an identity to an existing human user only before that user has an
+// identity at the issuer; issuer/subject bindings take precedence later. Session hashes share neither the machine
+// credential table nor its authentication middleware.
+//
+// Future browser Connect services install WebService.Interceptor and use
+// WebUser to require a signed-in user. RequireWeb supplies the equivalent
+// check for plain HTTP handlers. Both reject cross-origin mutations.
 package auth

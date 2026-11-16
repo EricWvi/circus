@@ -25,21 +25,29 @@ func (s *Server) handleTimer(ctx context.Context, claim store.Timer) error {
 	case timers.DeviceGrace, timers.CallWatchdog:
 		return s.router.HandleTimer(ctx, claim)
 	case timers.EnrollTokenExpiry:
-		var purged int
+		var purged, webPurged int
 		err := s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
 			ok, err := tx.CompleteTimer(ctx, claim)
 			if err != nil || !ok {
 				return err
 			}
-			n, err := tx.PurgeEnrollTokens(ctx, s.now().UnixMilli())
+			now := s.now()
+			n, err := tx.PurgeEnrollTokens(ctx, now.UnixMilli())
 			if err != nil {
 				return err
 			}
 			purged = n
-			return tx.SetTimer(ctx, timers.EnrollTokenExpiry, "purge", s.now().Add(enrollmentCleanupPeriod).UnixMilli())
+			webPurged, err = tx.PurgeWebSessions(ctx, now.UnixMilli())
+			if err != nil {
+				return err
+			}
+			return tx.SetTimer(ctx, timers.EnrollTokenExpiry, "purge", now.Add(enrollmentCleanupPeriod).UnixMilli())
 		})
 		if err == nil && purged > 0 {
 			s.logger.InfoContext(ctx, "purged expired enroll tokens", "count", purged)
+		}
+		if err == nil && webPurged > 0 {
+			s.logger.InfoContext(ctx, "purged expired web sessions", "count", webPurged)
 		}
 		return err
 	default:

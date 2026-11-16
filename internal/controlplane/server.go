@@ -22,6 +22,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/loopback"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/wire"
 	"github.com/google/uuid"
 )
 
@@ -83,13 +84,20 @@ type Config struct {
 	// WorkerConnections bounds authenticated worker links; zero uses
 	// workerlink.DefaultMaxConnections, negative values are refused.
 	WorkerConnections int
+	// OIDC optionally enables human login through an identity provider.
+	OIDC *auth.OIDCConfig
+	// BcryptCost is a test hook; zero uses cost 12.
+	BcryptCost int
 }
 
 func (c Config) validate() error {
+	if c.OIDC != nil && c.PublicURL == "" {
+		return errors.New("oidc requires public_url")
+	}
 	modes := 0
 	if c.TLSCert != "" || c.TLSKey != "" {
 		if c.TLSCert == "" || c.TLSKey == "" {
-			return errors.New("--tls-cert and --tls-key must be given together")
+			return errors.New("tls_cert and tls_key must be given together")
 		}
 		modes++
 	}
@@ -100,17 +108,29 @@ func (c Config) validate() error {
 		modes++
 	}
 	if modes != 1 {
-		return errors.New("choose exactly one of --tls-cert/--tls-key, --behind-proxy, or --dev-insecure (loopback only)")
+		return errors.New("choose exactly one of tls_cert/tls_key, behind_proxy, or dev_insecure (loopback only)")
 	}
 	host, _, err := net.SplitHostPort(c.Listen)
 	if err != nil {
 		return fmt.Errorf("listen address %q: %w", c.Listen, err)
 	}
 	if c.DevInsecure && !loopback.Host(host) {
-		return fmt.Errorf("--dev-insecure serves plaintext and is allowed only on a loopback address (127.0.0.1, ::1, localhost), not %q", c.Listen)
+		return fmt.Errorf("dev_insecure serves plaintext and is allowed only on a loopback address (127.0.0.1, ::1, localhost), not %q", c.Listen)
 	}
 	if c.ShutdownTimeout < 0 || c.TimerPollInterval < 0 {
-		return errors.New("negative timeout or interval")
+		return errors.New("shutdown_timeout and timer_poll_interval must not be negative")
+	}
+	if c.GracePeriod < 0 {
+		return errors.New("device_grace must not be negative")
+	}
+	if c.WorkerConnections < 0 {
+		return errors.New("worker_connections must be at least 1 (0 uses the default)")
+	}
+	if c.SendPoolBytes < 0 || c.ReceivePoolBytes < 0 {
+		return errors.New("send_pool_bytes and receive_pool_bytes must not be negative")
+	}
+	if _, _, err := wire.MinBudget(wire.Options{MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}); err != nil {
+		return fmt.Errorf("max_message_bytes, heartbeat_interval, heartbeat_timeout: %w", err)
 	}
 	return nil
 }
@@ -143,6 +163,7 @@ type Server struct {
 	logger     *slog.Logger
 	authn      *auth.Authenticator
 	user       store.User
+	webAuth    *auth.WebService
 	mux        *http.ServeMux
 	now        func() time.Time
 	listen     func(network, addr string) (net.Listener, error) // net.Listen; tests replace it
@@ -223,6 +244,29 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	if err := s.buildCallPlane(ctx); err != nil {
 		return nil, err
 	}
+	host, port, _ := net.SplitHostPort(cfg.Listen)
+	if host == "" {
+		host = "localhost"
+	}
+	setupURL := ""
+	if !cfg.BehindProxy {
+		scheme := "https"
+		if cfg.DevInsecure {
+			scheme = "http"
+		}
+		setupURL = scheme + "://" + net.JoinHostPort(host, port)
+	}
+	s.webAuth, err = auth.NewWebService(ctx, st, auth.WebConfig{
+		PublicURL: cfg.PublicURL, DevInsecure: cfg.DevInsecure, SetupURL: setupURL,
+		OIDC: cfg.OIDC, Now: now, BcryptCost: cfg.BcryptCost, Logger: s.logger, BehindProxy: cfg.BehindProxy,
+	})
+	if err != nil {
+		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		return nil, errors.Join(err, s.Shutdown(cleanup))
+	}
+	s.webAuth.Register(s.mux)
+
 	return s, nil
 }
 
@@ -250,10 +294,10 @@ func (s *Server) Start() error {
 	// resolver; check what was really bound.
 	if s.cfg.DevInsecure && !loopback.Addr(ln.Addr()) {
 		ln.Close()
-		return fmt.Errorf("controlplane: --dev-insecure bound non-loopback address %v", ln.Addr())
+		return fmt.Errorf("controlplane: dev_insecure bound non-loopback address %v", ln.Addr())
 	}
 	if s.cfg.BehindProxy && !loopback.Addr(ln.Addr()) {
-		s.logger.Warn("--behind-proxy serves plaintext on a non-loopback address; clients that bypass the proxy send tokens unencrypted. Listen on 127.0.0.1 unless the path to the proxy is trusted",
+		s.logger.Warn("behind_proxy serves plaintext on a non-loopback address; clients that bypass the proxy send tokens unencrypted. Listen on 127.0.0.1 unless the path to the proxy is trusted",
 			"addr", ln.Addr().String())
 	}
 	mode := "tls"

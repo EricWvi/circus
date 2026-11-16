@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -75,6 +76,17 @@ type processEnv struct {
 }
 
 func (p *processEnv) command(ctx context.Context, args ...string) *exec.Cmd {
+	if len(args) > 0 && args[0] == "server" {
+		hasConfig := false
+		for _, arg := range args {
+			if arg == "--config" {
+				hasConfig = true
+			}
+		}
+		if !hasConfig {
+			args = append(args, "--config", filepath.Join(p.dir, "config.yaml"))
+		}
+	}
 	cmd := exec.CommandContext(ctx, p.bin, args...)
 	cmd.Env, cmd.Dir = p.env, p.dir
 	return cmd
@@ -158,7 +170,8 @@ func TestServerJoinProcess(t *testing.T) {
 	defer func() { t.Logf("process test took %v", time.Since(began)) }()
 
 	t.Run("dev-insecure refused off loopback", func(t *testing.T) {
-		_, stderr, err := p.run("server", "--dev-insecure", "--listen", "0.0.0.0:0")
+		path := writeServerTestConfig(t, "dev_insecure: true\nlisten: 0.0.0.0:0\n")
+		_, stderr, err := p.run("server", "--config", path)
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) || !strings.Contains(stderr, "loopback") {
 			t.Fatalf("err %v, stderr %q", err, stderr)
@@ -172,8 +185,10 @@ func TestServerJoinProcess(t *testing.T) {
 	})
 
 	// Start the server and stop exactly that PID at the end.
-	srv := p.command(context.Background(), "server", "--listen", "127.0.0.1:0",
-		"--tls-cert", certFile, "--tls-key", keyFile, "--shutdown-timeout", "3s")
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte(fmt.Sprintf("listen: 127.0.0.1:0\ntls_cert: %q\ntls_key: %q\nshutdown_timeout: 3s\n", certFile, keyFile)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := p.command(context.Background(), "server")
 	stderr, err := srv.StderrPipe()
 	if err != nil {
 		t.Fatal(err)

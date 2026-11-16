@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -247,7 +248,7 @@ func newHarness(t *testing.T, grace ...string) *harness {
 	h.db = filepath.Join(h.dir, "db")
 	h.env = append(os.Environ(), "HOME="+h.dir, "XDG_CONFIG_HOME="+filepath.Join(h.dir, "config"), "XDG_DATA_HOME="+filepath.Join(h.dir, "data"), "XDG_CACHE_HOME="+filepath.Join(h.dir, "cache"), "CIRCUS_E2E_CRASH_DISPATCH=0", "GORACE=atexit_sleep_ms=0")
 	h.startServer(false)
-	link := h.run("", 0, "server", "enroll-token", "create", "--db", h.db, "--role", "both", "--url", h.base)
+	link := h.run("", 0, "server", "enroll-token", "create", "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"), "--role", "both", "--url", h.base)
 	h.run(link, 0, "join", "--name", "desk")
 	var err error
 	h.worker, err = credfile.Load(filepath.Join(h.dir, "config/circus/worker.json"))
@@ -333,7 +334,9 @@ func (h *harness) startServer(fault bool) {
 	if fault {
 		extra = append(extra, "CIRCUS_E2E_CRASH_DISPATCH=1")
 	}
-	h.server = h.start(extra, "", "server", "--db", h.db, "--listen", listen, "--dev-insecure", "--device-grace", h.grace, "--timer-poll-interval", "50ms", "--heartbeat-interval", "1s", "--heartbeat-timeout", "6s", "--shutdown-timeout", "4s", "--max-message-bytes", "8388608")
+	configPath := filepath.Join(filepath.Dir(h.db), "server.yaml")
+	must(h.t, os.WriteFile(configPath, []byte(fmt.Sprintf("db: %q\nlisten: %q\ndev_insecure: true\ndevice_grace: %s\ntimer_poll_interval: 50ms\nheartbeat_interval: 1s\nheartbeat_timeout: 6s\nshutdown_timeout: 4s\nmax_message_bytes: 8388608\n", h.db, listen, h.grace)), 0o600))
+	h.server = h.start(extra, "", "server", "--config", configPath)
 	wait(h.t, 5*time.Second, func() bool {
 		if h.server.exited() {
 			h.t.Fatalf("server exited: %s", h.server.stderr.String())
@@ -1172,7 +1175,7 @@ func TestRevocationEndsDaemon(t *testing.T) {
 	h.submit(c, active)
 	h.trackTool(pidfile)
 	wait(t, 3*time.Second, func() bool { return markerLines(t, marker) == 1 })
-	h.run("", 0, "server", "device", "revoke", "desk", "--db", h.db)
+	h.run("", 0, "server", "device", "revoke", "desk", "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"))
 	// Access logging happens only after ServeHTTP released the live link.
 	wait(t, 6*time.Second, func() bool {
 		for line := range strings.Lines(h.server.stderr.String()) {
@@ -1212,7 +1215,7 @@ func TestRevocationEndsDaemon(t *testing.T) {
 	default:
 	}
 	// The subscription started before either revocation is still live here.
-	h.run("", 0, "server", "worker", "revoke", "desk", "--db", h.db)
+	h.run("", 0, "server", "worker", "revoke", "desk", "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"))
 	// An active client notices revocation through its joined reader.
 	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
 	defer cancel()

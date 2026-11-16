@@ -32,7 +32,8 @@ debug client. The TypeScript worker is planned for M3 and not built yet.
 | `internal/store/` | Control-plane domain types and the Store interface |
 | `internal/store/sqlite/` | SQLite store backend (WAL, synchronous=FULL, embedded migrations) |
 | `internal/store/storetest/` | Store contract suite, fault injection and crash-restart harness |
-| `internal/auth/` | One-time enrollment tokens, long-term bearer tokens, revocation, link credential rechecks |
+| `internal/auth/` | Machine credentials, password and OIDC human login, setup tokens and browser sessions |
+| `internal/config/` | Strict server YAML configuration and OIDC secret override |
 | `internal/credfile/` | Local credential files written by `circus join` |
 | `internal/machineid/` | Machine identity reported at enrollment |
 | `internal/identifier/` | Wire grammar for call, session and agent IDs |
@@ -59,8 +60,8 @@ task check-gen
 ./bin/circus version
 ```
 
-Generated files are checked in. `task check-gen` requires a clean `gen/` tree
-after generation. Breaking checks are configured but will enter CI after there
+Generated files are checked in. `task check-gen` regenerates into `.tmp` and
+compares the outputs with the current `gen/` tree, including uncommitted files. Breaking checks are configured but will enter CI after there
 is a release to compare against. Set the CLI version at build time with
 `go build -ldflags "-X main.version=1.0.0" -o bin/circus ./cmd/circus`.
 
@@ -71,13 +72,19 @@ loopback, an enrolled device daemon, and `circus call`. `circus` below is
 `./bin/circus` from `task build`; all commands were verified end to end.
 
 ```sh
-# Terminal 1: the control plane (plaintext, loopback only; --db defaults to
-# $XDG_DATA_HOME/circus/circus.db).
-circus server --dev-insecure --listen 127.0.0.1:9543 --db /tmp/circus/circus.db
+# Terminal 1: write a local server config (plaintext, loopback only).
+mkdir -p .tmp
+cat > .tmp/config.yaml <<'YAML'
+listen: 127.0.0.1:9543
+db: .tmp/circus.db
+dev_insecure: true
+public_url: http://127.0.0.1:9543
+YAML
+circus server --config .tmp/config.yaml
 
 # Terminal 2: create an enrollment link (one token per role; both in one link).
 # The URL must match the server's listen address.
-circus server enroll-token create --role both --url http://127.0.0.1:9543 --db /tmp/circus/circus.db
+circus server enroll-token create --role both --url http://127.0.0.1:9543 --config .tmp/config.yaml
 # -> http://127.0.0.1:9543/join#<daemonToken>.<workerToken>
 
 # Enroll this machine as both roles (paste the link, or pipe it in).
@@ -141,8 +148,8 @@ circus doctor
 # ...
 ```
 
-`circus server device list --db ...` shows enrolled devices; `circus server
-device revoke <name> --db ...` revokes one and frees its name for a new
+`circus server device list --config config.yaml` shows enrolled devices; `circus server
+device revoke <name> --config config.yaml` revokes one and frees its name for a new
 join. The daemon's local harness also still works without a server, reading
 one protojson `DeviceCall` per line from stdin:
 
@@ -155,30 +162,67 @@ EOF
 
 ## Operating the server
 
-`circus server` requires exactly one transport mode: `--tls-cert FILE
---tls-key FILE` (TLS, the production mode), `--behind-proxy` (plaintext
-behind a TLS-terminating reverse proxy; a non-loopback listener logs a
-warning), or `--dev-insecure` (plaintext, loopback addresses only, for
-local development). `--public-url` sets the base URL handed to joining
-machines when it differs from the listen address; without it the URL is
-derived from each request. `--listen` defaults to `:8443`.
+`circus server --config config.yaml` reads a required YAML file (default:
+`config.yaml` in the working directory). Unknown keys are errors. Copy
+[config.example.yaml](config.example.yaml) and choose exactly one transport
+mode: `tls_cert` plus `tls_key`, `behind_proxy` for a TLS reverse proxy, or
+`dev_insecure` for plaintext on loopback only. The only other server flag is
+`--debug`; when supplied it overrides the `debug` key, including `--debug=false`.
+`listen` defaults to `:8443`. `public_url` is the browser origin and the base
+URL handed to joining machines; without it enrollment uses the request URL.
+`public_url` must be an origin: URLs with a path (other than `/`), query or
+fragment are rejected. Behind a proxy without `public_url`, the setup banner
+prints a relative path and a hint to configure the browser origin.
 
-Worker links: `--worker-connections N` (default 8, at least 1) bounds
-connections that use worker credentials, long-lived workers and `circus
-call` alike; one credential may hold at most 4 of them, so one busy or
-restarting worker cannot lock out other credentials. `circus call` uses the
-machine's worker credential by default, so CLIs on the same machine count
-toward the same 4 as its worker. A full cap answers HTTP 503. Each
-connection may have 64 operations open.
+On each start without a super user, the JSON log prints one setup banner
+with a `/setup?token=...` link. This is the only logged secret: treat the log
+as sensitive until setup is complete. The token exists only as a hash in
+memory, changes on restart, and becomes unusable after setup. `AuthService.Setup`
+creates the super user using email and an 8–72 byte password; `Login`,
+`Logout` and `WhoAmI` serve browser sessions. Password hashes use bcrypt cost
+12. Session cookies are HttpOnly, SameSite=Lax and Secure unless `dev_insecure`
+is enabled. Idle sessions expire after 7 days; all sessions expire after
+30 days. Expired sessions are deleted by the periodic cleanup. Failed password
+attempts reserve both an email/IP bucket and an independent IP bucket before
+bcrypt. The IP limit is 50 failures per 10 minutes, even when emails change.
+Four password comparisons run concurrently; requests queue for at most 3 seconds
+or until their context ends. Queue timeout returns `RESOURCE_EXHAUSTED`.
+With `behind_proxy`, limiters use the
+rightmost `X-Forwarded-For` entry when it is a valid IP, falling back to the
+peer address otherwise. The proxy must append or replace that header. The
+first request without this header logs one warning per server run. State-changing requests reject an
+Origin different from `public_url`;
+non-browser requests without Origin are accepted, as in homepage.
+
+OIDC is optional. Configure `oidc.issuer`, `oidc.client_id`, and optionally
+`oidc.client_secret` (prefer `CIRCUS_OIDC_CLIENT_SECRET`, which overrides the file value only when
+non-empty), plus `oidc.display_name`. OIDC requires `public_url`; register
+`<public_url>/auth/oidc/callback` with the provider. Login starts at
+`/auth/oidc/login?next=/`; setup via OIDC also supplies `setup_token`.
+Discovery is lazy so the server starts while the provider is offline.
+PKCE, state and nonce protect the flow. Normal OIDC login is disabled until
+the super user has been created. Verified UserInfo email can bind an existing
+account only if it has no identity at that issuer yet; a different subject at
+the same issuer is rejected as `account_conflict`. A password-created super
+user can therefore bind its first OIDC identity. This trusts the configured
+IdP to mark an email verified only when that account owns the address.
+Existing issuer/subject identities continue to identify their original user.
+Human accounts coexist with the
+legacy machine owner; machine credentials and `GET /v1/whoami` keep working.
+The frontend is outside this change; these endpoints provide its auth API.
+
+`worker_connections` (default 8, at least 1; zero selects the default) bounds
+worker-credential connections; one credential may hold at most 4. A full cap
+answers HTTP 503. Each connection may have 64 operations open.
 
 The SQLite database defaults to `$XDG_DATA_HOME/circus/circus.db`
 (`~/.local/share/circus/circus.db`). Admin subcommands (`enroll-token`,
-`device`, `worker`) open only an existing database, so pass `--db` when it
-is not the default.
+`device`, `worker`) also accept `--config` and read its `db` key; they open
+only an existing database.
 
 Memory. All daemon links share ONE `wire.Budget`, sized by
-`--send-pool-bytes` and `--receive-pool-bytes` (0 = the default, twice
-`wire.MinBudget`; the server refuses smaller pools and names the flag and
+`send_pool_bytes` and `receive_pool_bytes` (0 = the default, twice
+`wire.MinBudget`; the server refuses smaller pools and names the key and
 minimum). Sizing rule: with the default 64 MiB message limit,
 one link's minimum is about 262 MiB receive (4·M + 6 MiB + 4 KiB), so the
 pools start at twice that. Let K be the number of devices that may stream
@@ -197,13 +241,13 @@ The daemon-link pools are not the whole process budget. At the default
 | Part | Bound | Arithmetic |
 | --- | --- | --- |
 | Daemon links, wire | about 1,286 MiB | pools 256 + 524 MiB (2·Smin, 2·Rmin) plus 100 sockets × (5 MiB + 64 KiB) = 506 MiB; one borrowed inbound message per socket comes on top |
-| Worker links (own fixed pools; scales with `--worker-connections`, default 8) | about 2,557 MiB | pools 256 + 524 MiB; 8 sockets × (5 MiB + 64 KiB + one borrowed inbound message of 2·M + 6 MiB + 4 KiB) = 1,112 MiB; 4 push permits shared by all worker sockets, each one large outbound message (2·M + 6 MiB + 4 KiB) = 536 MiB; small outbound updates (≤ 256 KiB charged) sent without a permit, at most one per operation: 8 × 64 × 256 KiB = 128 MiB |
+| Worker links (own fixed pools; scales with `worker_connections`, default 8) | about 2,557 MiB | pools 256 + 524 MiB; 8 sockets × (5 MiB + 64 KiB + one borrowed inbound message of 2·M + 6 MiB + 4 KiB) = 1,112 MiB; 4 push permits shared by all worker sockets, each one large outbound message (2·M + 6 MiB + 4 KiB) = 536 MiB; small outbound updates (≤ 256 KiB charged) sent without a permit, at most one per operation: 8 × 64 × 256 KiB = 128 MiB |
 | Call router | 512 MiB | pending requests 256 MiB plus distinct buffered updates 256 MiB (one global charge per shared immutable clone) |
 
 That is about 4.3 GiB before SQLite, TLS/kernel buffers, bounded operation
 scratch, the runtime and GC headroom; set `GOMEMLIMIT` above it. The
 daemon connection limit (100 sockets) is fixed; worker sockets default to 8
-(`--worker-connections`, at most 4 per credential), each adding about 139 MiB
+(`worker_connections`, at most 4 per credential), each adding about 139 MiB
 at the default message limit. See
 `internal/controlplane/gateway`, `internal/controlplane/workerlink` and
 `internal/controlplane/calls/DESIGN.md`.
