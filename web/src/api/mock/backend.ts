@@ -1,19 +1,35 @@
 import { nanoid } from "nanoid"
 
 import { ApiError } from "@/api/errors"
-import type { CircusClient, Location, Project, SessionSummary, User } from "@/api/types"
+import type {
+  AuthState,
+  CircusClient,
+  Location,
+  LoginMethods,
+  Project,
+  SessionSummary,
+  User,
+} from "@/api/types"
 import {
   isAbsolutePath,
+  normalizeEmail,
   normalizePath,
   sameLocation,
   sameProjectName,
+  validateEmail,
   validatePassword,
   validateProjectName,
-  validateUsername,
 } from "@/api/validation"
 import type { ConversationStore, SessionEvent } from "@/lib/types"
 
-import { settleSession, type MockState } from "./state"
+import {
+  MOCK_LOGIN_METHODS,
+  OIDC_SETUP_EMAIL,
+  SEED_SUPER_EMAIL,
+  settleSession,
+  type MockState,
+  type MockUser,
+} from "./state"
 
 export interface MockBackend {
   client: CircusClient
@@ -59,7 +75,15 @@ export interface MockBackendOptions {
   now?: () => number
   /** Identifies the tab writing transcripts and session progress. */
   tabId?: string
+  /** Receives notes about what the mock does in place of the real server. */
+  note?: (message: string) => void
+  /** Whether an OIDC provider is configured (default true). */
+  oidc?: boolean
 }
+
+/** Failed sign-ins per email within the window before further tries are refused. */
+export const MAX_LOGIN_FAILURES = 5
+export const LOGIN_FAILURE_WINDOW_MS = 60_000
 
 const invalid = (message: string, field?: string) =>
   new ApiError("invalid_argument", message, field)
@@ -71,7 +95,14 @@ export function createMockBackend({
   latency = () => 100 + Math.random() * 200,
   now = Date.now,
   tabId = "",
+  note = () => {},
+  oidc = true,
 }: MockBackendOptions): MockBackend {
+  const methods = (): LoginMethods =>
+    oidc ? structuredClone(MOCK_LOGIN_METHODS) : { password: MOCK_LOGIN_METHODS.password }
+  const checkOidc = () => {
+    if (!oidc) throw new ApiError("failed_precondition", "OIDC is not configured.")
+  }
   const changed = () => onChange?.(state)
   const stamp = (sessionId: string) => {
     state.writtenAtMs[sessionId] = now()
@@ -98,10 +129,52 @@ export function createMockBackend({
     }
   }
 
+  /** The signed-in user's id. */
   function currentUser(): string {
-    const user = state.users.find((u) => u.username === state.cookie)
+    const user = state.users.find((u) => u.userId === state.cookie)
     if (!user) throw new ApiError("unauthenticated", "Sign in to continue.")
-    return user.username
+    return user.userId
+  }
+
+  const hasSuper = () => state.users.some((u) => u.role === "super")
+  const publicUser = ({ userId, email, role }: MockUser): User => ({ userId, email, role })
+
+  function signIn(user: MockUser): User {
+    state.cookie = user.userId
+    changed()
+    return publicUser(user)
+  }
+
+  // The token is checked before anything else, so a stale link learns nothing.
+  function checkSetup(token: unknown) {
+    if (typeof token !== "string" || token === "") {
+      throw invalid("Open the setup link printed in the server log.", "token")
+    }
+    if (state.setupToken === null || token !== state.setupToken) {
+      throw new ApiError("permission_denied", "This setup link is not valid.")
+    }
+    if (hasSuper()) throw new ApiError("already_exists", "Circus is already set up.")
+  }
+
+  function createSuper(email: string, password: string | null): User {
+    const user: MockUser = { userId: `user-${nanoid(8)}`, email, password, role: "super" }
+    state.users.push(user)
+    return signIn(user)
+  }
+
+  // Recent failed sign-ins by email. Kept in memory only: a reload resets it.
+  const loginFailures = new Map<string, number[]>()
+
+  /** Throws once the email has too many recent failures; returns them otherwise. */
+  function recentFailures(email: string): number[] {
+    const recent = (loginFailures.get(email) ?? []).filter(
+      (at) => now() - at < LOGIN_FAILURE_WINDOW_MS,
+    )
+    loginFailures.set(email, recent)
+    if (recent.length >= MAX_LOGIN_FAILURES) {
+      throw new ApiError("resource_exhausted", "Too many attempts. Try again in a minute.")
+    }
+    return recent
   }
 
   function ownedProject(owner: string, projectId: string) {
@@ -155,46 +228,59 @@ export function createMockBackend({
 
   const client: CircusClient = {
     auth: {
-      whoAmI: call(() => {
-        if (state.users.length === 0) return { kind: "needs_setup" as const }
-        const user = state.users.find((u) => u.username === state.cookie)
+      whoAmI: call((): AuthState => {
+        if (!hasSuper()) return { kind: "needs_setup", methods: methods() }
+        const user = state.users.find((u) => u.userId === state.cookie)
         return user
-          ? { kind: "signed_in" as const, user: { username: user.username } }
-          : { kind: "signed_out" as const }
+          ? { kind: "signed_in", user: publicUser(user) }
+          : { kind: "signed_out", methods: methods() }
       }),
 
-      setup: call((req: { token: string; username: string; password: string }): User => {
-        if (state.users.length > 0) {
-          throw new ApiError("failed_precondition", "The server is already set up.")
-        }
-        if (state.setupToken === null || req.token !== state.setupToken) {
-          throw new ApiError("permission_denied", "This setup link is not valid.")
-        }
-        const problem = validateUsername(req.username) ?? validatePassword(req.password)
-        if (problem) throw invalid(problem)
-        state.users.push({ username: req.username, password: req.password })
-        state.setupToken = null
-        state.cookie = req.username
-        changed()
-        return { username: req.username }
+      setup: call((req: { token: string; email: string; password: string }): User => {
+        checkSetup(req.token)
+        const problem = validateEmail(req.email)
+        if (problem) throw invalid(problem, "email")
+        const passwordProblem = validatePassword(req.password)
+        if (passwordProblem) throw invalid(passwordProblem, "password")
+        return createSuper(normalizeEmail(req.email), req.password)
       }),
 
-      login: call((req: { username: string; password: string }): User => {
-        if (state.users.length === 0) {
-          throw new ApiError("failed_precondition", "The server is not set up yet.")
+      login: call((req: { email: string; password: string }): User => {
+        if (!hasSuper()) throw new ApiError("failed_precondition", "Circus is not set up yet.")
+        const email = normalizeEmail(req.email)
+        const failures = recentFailures(email)
+        const user = state.users.find((u) => u.email === email)
+        if (!user || user.password === null || user.password !== req.password) {
+          failures.push(now())
+          throw new ApiError("unauthenticated", "Wrong email or password.")
         }
-        const user = state.users.find(
-          (u) => u.username === req.username && u.password === req.password,
-        )
-        if (!user) throw new ApiError("unauthenticated", "Wrong username or password.")
-        state.cookie = user.username
-        changed()
-        return { username: user.username }
+        loginFailures.delete(email)
+        return signIn(user)
       }),
 
       logout: call(() => {
         state.cookie = null
         changed()
+      }),
+    },
+
+    // Without a provider to redirect to, the mock signs in on the spot.
+    oidc: {
+      startLogin: call((next?: string) => {
+        checkOidc()
+        if (!hasSuper()) throw new ApiError("failed_precondition", "Circus is not set up yet.")
+        const user =
+          state.users.find((u) => u.email === SEED_SUPER_EMAIL) ??
+          state.users.find((u) => u.role === "super")!
+        note(`Mock OIDC: signed in as ${user.email} instead of redirecting to the provider${next ? ` (next: ${next})` : ""}.`)
+        signIn(user)
+      }),
+
+      startSetup: call((token: string) => {
+        checkOidc()
+        checkSetup(token)
+        note(`Mock OIDC: created the super user ${OIDC_SETUP_EMAIL} instead of redirecting to the provider.`)
+        createSuper(OIDC_SETUP_EMAIL, null)
       }),
     },
 

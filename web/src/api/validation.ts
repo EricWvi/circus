@@ -3,30 +3,50 @@
 
 import type { Location } from "./types"
 
-export const USERNAME_MAX = 32
+export const EMAIL_MAX = 254
+/** Bytes of UTF-8. */
 export const PASSWORD_MIN = 8
-export const PASSWORD_MAX = 128
+export const PASSWORD_MAX = 72
 export const PROJECT_NAME_MAX = 64
 
-const usernamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 // oxlint-disable-next-line no-control-regex
 const controlChars = /[\u0000-\u001f\u007f]/
+// C0, DEL and C1 controls, as the server rejects in emails.
+// oxlint-disable-next-line no-control-regex
+const emailControlChars = /[\u0000-\u001f\u007f-\u009f]/
 
-export function validateUsername(username: string): string | null {
-  if (username === "") return "Enter a username."
-  if (username.length > USERNAME_MAX || !usernamePattern.test(username)) {
-    return `Usernames use letters, digits, ".", "_" and "-", up to ${USERNAME_MAX} characters.`
+/** The form emails are stored and compared in. */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase()
+}
+
+const utf8Length = (text: string) => new TextEncoder().encode(text).length
+
+/**
+ * Checks an email after normalizing. Deliberately loose, like the server: one
+ * "@" between non-empty parts, no whitespace or control characters, at most
+ * 254 bytes of UTF-8.
+ */
+export function validateEmail(email: string): string | null {
+  const normalized = normalizeEmail(email)
+  if (normalized === "") return "Enter an email address."
+  const parts = normalized.split("@")
+  if (
+    utf8Length(normalized) > EMAIL_MAX ||
+    parts.length !== 2 ||
+    parts.some((part) => part === "") ||
+    /\s/.test(normalized) ||
+    emailControlChars.test(normalized)
+  ) {
+    return "Enter a valid email address."
   }
   return null
 }
 
 export function validatePassword(password: string): string | null {
-  if (password.length < PASSWORD_MIN) {
-    return `Password must be at least ${PASSWORD_MIN} characters.`
-  }
-  if (password.length > PASSWORD_MAX) {
-    return `Password must be at most ${PASSWORD_MAX} characters.`
-  }
+  const bytes = utf8Length(password)
+  if (bytes < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters.`
+  if (bytes > PASSWORD_MAX) return `Password is too long (at most ${PASSWORD_MAX} bytes).`
   return null
 }
 

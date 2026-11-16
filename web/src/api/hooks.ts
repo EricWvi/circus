@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useEffect } from "react"
 
 import { useClient } from "./context"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
-import type { Location, Project, SessionSummary } from "./types"
+import type { Location, Project, SessionSummary, User } from "./types"
 
 export function useAuth() {
   const client = useClient()
@@ -14,6 +15,13 @@ export function useAuth() {
     staleTime: Infinity,
     refetchOnWindowFocus: "always",
   })
+}
+
+/** The signed-in user, or null while signed out. */
+export function useCurrentUser(): { user: User | null; isSuper: boolean } {
+  const auth = useAuth()
+  const user = auth.data?.kind === "signed_in" ? auth.data.user : null
+  return { user, isSuper: user?.role === "super" }
 }
 
 export function useProjects() {
@@ -44,7 +52,7 @@ export function useLogin() {
   const client = useClient()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (req: { username: string; password: string }) => client.auth.login(req),
+    mutationFn: (req: { email: string; password: string }) => client.auth.login(req),
     onSuccess: (user) => {
       resetAuth(queryClient, { kind: "signed_in", user })
       announceAuthChange()
@@ -56,7 +64,7 @@ export function useSetup() {
   const client = useClient()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (req: { token: string; username: string; password: string }) =>
+    mutationFn: (req: { token: string; email: string; password: string }) =>
       client.auth.setup(req),
     onSuccess: (user) => {
       resetAuth(queryClient, { kind: "signed_in", user })
@@ -65,13 +73,72 @@ export function useSetup() {
   })
 }
 
+/**
+ * Starts signing in through the OIDC provider. With a real server the page
+ * navigates away and the mutation stays pending; otherwise the new auth
+ * state is fetched once the flow resolves.
+ */
+export function useOidcLogin() {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useResetOnBackForward(useMutation({
+    mutationFn: async (next?: string) => {
+      await client.oidc.startLogin(next)
+      return client.auth.whoAmI()
+    },
+    onSuccess: (auth) => {
+      resetAuth(queryClient, auth)
+      announceAuthChange()
+    },
+  }))
+}
+
+/** Starts setup through the OIDC provider; see `useOidcLogin`. */
+export function useOidcSetup() {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useResetOnBackForward(useMutation({
+    mutationFn: async (token: string) => {
+      await client.oidc.startSetup(token)
+      return client.auth.whoAmI()
+    },
+    onSuccess: (auth) => {
+      resetAuth(queryClient, auth)
+      announceAuthChange()
+    },
+  }))
+}
+
+/**
+ * Leaving for the provider keeps the mutation pending. Coming back with the
+ * browser's back button can restore the page from the back/forward cache in
+ * that state, so it is reset then.
+ */
+function useResetOnBackForward<T extends { reset: () => void }>(mutation: T): T {
+  const { reset } = mutation
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) reset()
+    }
+    window.addEventListener("pageshow", onPageShow)
+    return () => window.removeEventListener("pageshow", onPageShow)
+  }, [reset])
+  return mutation
+}
+
 export function useLogout() {
   const client = useClient()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => client.auth.logout(),
-    onSuccess: () => {
-      resetAuth(queryClient, { kind: "signed_out", afterSignOut: true })
+    mutationFn: async () => {
+      await client.auth.logout()
+      // The sign-in page needs the login methods; if this fails, the cache
+      // refetches them.
+      const auth = await client.auth.whoAmI().catch(() => null)
+      return auth?.kind === "signed_out" ? auth.methods : undefined
+    },
+    onSuccess: (methods) => {
+      resetAuth(queryClient, { kind: "signed_out", methods, afterSignOut: true })
       announceAuthChange()
     },
   })

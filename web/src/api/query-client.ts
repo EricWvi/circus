@@ -1,15 +1,17 @@
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query"
 
 import { isApiError } from "./errors"
-import type { AuthState } from "./types"
+import type { AuthState, LoginMethods } from "./types"
 
 /**
  * The cached auth state. `afterSignOut` marks an explicit sign-out, so the
  * guard sends the user to a plain /login instead of carrying the page along.
+ * `methods` is missing while unknown, after a request found the user signed
+ * out; the auth query is then refetched to learn them.
  */
 export type CachedAuth =
   | Exclude<AuthState, { kind: "signed_out" }>
-  | { kind: "signed_out"; afterSignOut?: boolean }
+  | { kind: "signed_out"; methods?: LoginMethods; afterSignOut?: boolean }
 
 export const queryKeys = {
   auth: ["auth"] as const,
@@ -30,11 +32,14 @@ export function resetAuth(queryClient: QueryClient, auth: CachedAuth) {
   void queryClient.cancelQueries({ queryKey: queryKeys.auth }, { revert: false, silent: true })
   queryClient.removeQueries({ predicate: (q) => !isAuthQuery(q) })
   queryClient.setQueryData<CachedAuth>(queryKeys.auth, auth)
+  if (auth.kind === "signed_out" && !auth.methods) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.auth })
+  }
 }
 
 /** Who the cached auth state belongs to, for spotting a change of user. */
 const identity = (auth: CachedAuth | undefined) =>
-  auth?.kind === "signed_in" ? `user:${auth.user.username}` : (auth?.kind ?? "")
+  auth?.kind === "signed_in" ? `user:${auth.user.userId}` : (auth?.kind ?? "")
 
 export function createQueryClient(): QueryClient {
   // A request rejected as unauthenticated means the cookie expired or was

@@ -54,13 +54,19 @@ export function authRedirect(
 ): string | null {
   const page = canonicalPath(pathname)
   switch (auth.kind) {
-    case "needs_setup":
-      if (page !== "/setup") return "/setup"
+    case "needs_setup": {
+      if (page !== "/setup") {
+        // A failed OIDC setup can come back to /login; keep its error.
+        const error = page === "/login" ? new URLSearchParams(search).get("error") : null
+        return error ? `/setup?${new URLSearchParams({ error })}` : "/setup"
+      }
       // Keep the token when moving a variant such as "/Setup/" to "/setup".
       return pathname === "/setup" ? null : `/setup${search}`
+    }
     case "signed_out":
-      if (page === "/login") return null
-      if (page === "/" || page === "/setup" || auth.afterSignOut) return "/login"
+      // The setup page tells a signed-out user the server is already set up.
+      if (page === "/login" || page === "/setup") return null
+      if (page === "/" || auth.afterSignOut) return "/login"
       return `/login?next=${encodeURIComponent(pathname + search)}`
     case "signed_in":
       if (page === "/login") return safeNext(new URLSearchParams(search).get("next"))

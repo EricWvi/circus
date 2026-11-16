@@ -10,7 +10,10 @@ import {
   type CachedAuth,
 } from "./query-client"
 
-const signedIn = (username: string): CachedAuth => ({ kind: "signed_in", user: { username } })
+const signedIn = (userId: string): CachedAuth => ({
+  kind: "signed_in",
+  user: { userId, email: `${userId}@example.com`, role: "user" },
+})
 
 describe("createQueryClient", () => {
   it("signs out when a request is rejected as unauthenticated", async () => {

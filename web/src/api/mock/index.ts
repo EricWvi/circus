@@ -47,12 +47,16 @@ function save(state: MockState) {
 
 /**
  * Starts the mock backend from persisted state. `?mock=fresh` resets it to
- * an uninitialized server and `?mock=reset` restores the demo seed; the
- * query parameter is removed afterwards.
+ * an uninitialized server and `?mock=reset` restores the demo seed;
+ * `?mock=nooidc` turns the OIDC provider off until the next page load.
+ * Modes combine with commas (`?mock=reset,nooidc`); the query parameter is
+ * removed afterwards.
  */
 export function startMockBackend(): MockBackend {
   const url = new URL(window.location.href)
-  const mode = url.searchParams.get("mock")
+  const mock = url.searchParams.get("mock")
+  const modes = new Set(mock?.split(",") ?? [])
+  const mode = modes.has("fresh") ? "fresh" : modes.has("reset") ? "reset" : null
   const tab = tabId()
   let state: MockState
   if (mode === "fresh") state = freshState()
@@ -63,18 +67,24 @@ export function startMockBackend(): MockBackend {
     state = loaded ?? seedState()
   }
 
-  if (mode !== null) {
+  if (mock !== null) {
     url.searchParams.delete("mock")
     window.history.replaceState(window.history.state, "", url)
   }
   save(state)
 
-  if (state.setupToken !== null) {
+  if (state.setupToken !== null && !state.users.some((u) => u.role === "super")) {
     const link = new URL(`/setup?token=${encodeURIComponent(state.setupToken)}`, url.origin)
-    console.info(`circus is not set up yet. Open this link to create the first user:\n\n  ${link}\n`)
+    console.info(`Circus is not set up yet. Open this link to create the super user:\n\n  ${link}\n`)
   }
 
-  const backend = createMockBackend({ state, onChange: save, tabId: tab })
+  const backend = createMockBackend({
+    state,
+    onChange: save,
+    tabId: tab,
+    note: (message) => console.info(message),
+    oidc: !modes.has("nooidc"),
+  })
 
   // Another tab changed the store: adopt its state so this tab's next write
   // doesn't overwrite it, and tell the conversations which transcripts moved.

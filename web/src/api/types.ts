@@ -7,22 +7,47 @@
 
 import type { SessionState } from "@/lib/types"
 
+export type Role = "user" | "super"
+
 export interface User {
-  username: string
+  userId: string
+  /** Normalized: trimmed and lower case. The identity users sign in with. */
+  email: string
+  role: Role
+}
+
+/** How users can sign in on this server. */
+export interface LoginMethods {
+  password: boolean
+  /** Present when an OpenID Connect provider is configured. */
+  oidc?: { displayName: string }
 }
 
 export type AuthState =
-  /** The server has no user yet; the first one is created through /setup. */
-  | { kind: "needs_setup" }
-  | { kind: "signed_out" }
+  /** No super user exists yet; the first one is created through /setup. */
+  | { kind: "needs_setup"; methods: LoginMethods }
+  | { kind: "signed_out"; methods: LoginMethods }
   | { kind: "signed_in"; user: User }
 
 export interface AuthService {
   whoAmI(): Promise<AuthState>
-  /** Creates the first user with the setup token and signs them in. */
-  setup(req: { token: string; username: string; password: string }): Promise<User>
-  login(req: { username: string; password: string }): Promise<User>
+  /** Creates the super user with the setup token and signs them in. */
+  setup(req: { token: string; email: string; password: string }): Promise<User>
+  login(req: { email: string; password: string }): Promise<User>
   logout(): Promise<void>
+}
+
+/**
+ * Sign-in through the OpenID Connect provider. Not RPCs: the browser leaves
+ * the app and the server redirects back (see `oidc.ts`), so in a real client
+ * the returned promise never settles. The mock signs in on the spot and
+ * resolves once it has, or rejects the way `setup` would.
+ */
+export interface OidcFlow {
+  /** `next` is the page to return to after signing in. */
+  startLogin(next?: string): Promise<void>
+  /** Creates the super user from the provider's account. */
+  startSetup(token: string): Promise<void>
 }
 
 export interface Location {
@@ -91,6 +116,7 @@ export interface SessionService {
 
 export interface CircusClient {
   auth: AuthService
+  oidc: OidcFlow
   projects: ProjectService
   machines: MachineService
   sessions: SessionService

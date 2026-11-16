@@ -3,24 +3,35 @@ import { describe, expect, it } from "vitest"
 import { ApiError, type ErrorCode } from "@/api/errors"
 import type { CircusClient } from "@/api/types"
 
-import { createMockBackend, MAX_KEPT_ATTACHMENT_URL } from "./backend"
+import {
+  createMockBackend,
+  LOGIN_FAILURE_WINDOW_MS,
+  MAX_KEPT_ATTACHMENT_URL,
+  MAX_LOGIN_FAILURES,
+} from "./backend"
 import { parsePersisted, serialize, VERSION } from "./persist"
 import {
   DEV_SETUP_TOKEN,
   freshState,
+  MOCK_LOGIN_METHODS,
+  OIDC_SETUP_EMAIL,
   seedState,
   settleInFlight,
   STALE_AFTER_MS,
   type MockState,
 } from "./state"
 
-function backend(state: MockState = seedState()) {
-  return createMockBackend({ state, latency: () => 0 })
+function backend(state: MockState = seedState(), now?: () => number) {
+  return createMockBackend({ state, latency: () => 0, now })
 }
+
+const eric = { email: "eric@example.com", password: "circus" }
+const dev = { email: "dev@example.com", password: "circus" }
+const methods = MOCK_LOGIN_METHODS
 
 async function signedIn(): Promise<CircusClient> {
   const { client } = backend()
-  await client.auth.login({ username: "eric", password: "circus" })
+  await client.auth.login(eric)
   return client
 }
 
@@ -33,59 +44,121 @@ async function expectCode(promise: Promise<unknown>, code: ErrorCode) {
   expect((error as ApiError).code).toBe(code)
 }
 
+/** The field a rejected call's error names. */
+async function fieldOf(promise: Promise<unknown>) {
+  const error = await promise.then(
+    () => undefined,
+    (e: unknown) => e,
+  )
+  expect(error).toBeInstanceOf(ApiError)
+  return (error as ApiError).field
+}
+
 const mbp = (path: string) => ({ device: "eric-mbp", path })
 
 describe("auth", () => {
-  it("reports needs_setup until the first user exists", async () => {
+  const setupReq = { token: DEV_SETUP_TOKEN, email: "Admin@Example.com ", password: "password1" }
+
+  it("reports needs_setup until a super user exists", async () => {
     const { client } = backend(freshState())
-    expect(await client.auth.whoAmI()).toEqual({ kind: "needs_setup" })
+    expect(await client.auth.whoAmI()).toEqual({ kind: "needs_setup", methods })
   })
 
-  it("rejects a wrong setup token", async () => {
+  it("checks the setup token before anything else", async () => {
     const { client } = backend(freshState())
     await expectCode(
-      client.auth.setup({ token: "nope", username: "eric", password: "password1" }),
+      client.auth.setup({ token: "nope", email: "not an email", password: "x" }),
       "permission_denied",
     )
-    expect(await client.auth.whoAmI()).toEqual({ kind: "needs_setup" })
+    expect(await fieldOf(client.auth.setup({ ...setupReq, token: "" }))).toBe("token")
+    expect(await client.auth.whoAmI()).toEqual({ kind: "needs_setup", methods })
   })
 
-  it("signs in with setup", async () => {
+  it("creates the super user with a normalized email and signs them in", async () => {
     const { client } = backend(freshState())
-    const req = { token: DEV_SETUP_TOKEN, username: "eric", password: "password1" }
-    expect(await client.auth.setup(req)).toEqual({ username: "eric" })
-    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_in", user: { username: "eric" } })
-    await expectCode(client.auth.setup({ ...req, username: "other" }), "failed_precondition")
+    const user = await client.auth.setup(setupReq)
+    expect(user).toMatchObject({ email: "admin@example.com", role: "super" })
+    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_in", user })
   })
 
-  it("consumes the setup token", async () => {
-    const state = freshState()
-    const { client } = backend(state)
-    const req = { token: DEV_SETUP_TOKEN, username: "eric", password: "password1" }
-    await client.auth.setup(req)
-    expect(state.setupToken).toBeNull()
-    // Even with the users gone, the same token is no longer accepted.
-    state.users = []
-    await expectCode(client.auth.setup({ ...req, username: "other" }), "permission_denied")
-  })
-
-  it("validates the first user", async () => {
+  it("allows a single super user", async () => {
     const { client } = backend(freshState())
-    await expectCode(
-      client.auth.setup({ token: DEV_SETUP_TOKEN, username: "eric", password: "short" }),
-      "invalid_argument",
-    )
-    await expectCode(
-      client.auth.setup({ token: DEV_SETUP_TOKEN, username: "", password: "password1" }),
-      "invalid_argument",
-    )
+    await client.auth.setup(setupReq)
+    await expectCode(client.auth.setup({ ...setupReq, email: "other@example.com" }), "already_exists")
+    // A wrong token still learns nothing.
+    await expectCode(client.auth.setup({ ...setupReq, token: "nope" }), "permission_denied")
+  })
+
+  it("names the invalid field", async () => {
+    const { client } = backend(freshState())
+    await expectCode(client.auth.setup({ ...setupReq, email: "" }), "invalid_argument")
+    for (const email of ["", "no-at", "a@@b", "@b", "a@", "a b@c", `${"a".repeat(250)}@b.cd`]) {
+      expect(await fieldOf(client.auth.setup({ ...setupReq, email }))).toBe("email")
+    }
+    for (const password of ["short", "x".repeat(73)]) {
+      expect(await fieldOf(client.auth.setup({ ...setupReq, password }))).toBe("password")
+    }
+  })
+
+  it("signs in by email with the user's role", async () => {
+    const { client } = backend()
+    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out", methods })
+    expect(await client.auth.login({ ...dev, email: " DEV@example.com" })).toMatchObject({
+      email: "dev@example.com",
+      role: "user",
+    })
+    await client.auth.logout()
+    expect(await client.auth.login(eric)).toMatchObject({ role: "super" })
   })
 
   it("rejects wrong credentials", async () => {
     const { client } = backend()
-    await expectCode(client.auth.login({ username: "eric", password: "wrong" }), "unauthenticated")
-    await expectCode(client.auth.login({ username: "nobody", password: "circus" }), "unauthenticated")
-    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out" })
+    await expectCode(client.auth.login({ ...eric, password: "wrong" }), "unauthenticated")
+    await expectCode(client.auth.login({ ...eric, email: "nobody@example.com" }), "unauthenticated")
+    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out", methods })
+  })
+
+  it("limits failed sign-ins per email", async () => {
+    let at = 0
+    const { client } = backend(seedState(), () => at)
+    for (let i = 0; i < MAX_LOGIN_FAILURES; i++) {
+      await expectCode(client.auth.login({ ...eric, password: "wrong" }), "unauthenticated")
+    }
+    await expectCode(client.auth.login(eric), "resource_exhausted")
+    expect(await client.auth.login(dev)).toMatchObject({ email: dev.email })
+    at += LOGIN_FAILURE_WINDOW_MS
+    expect(await client.auth.login(eric)).toMatchObject({ email: eric.email })
+  })
+
+  it("keeps each user's data to themselves", async () => {
+    const { client } = backend()
+    await client.auth.login(dev)
+    expect(await client.projects.listProjects()).toEqual([])
+    await expectCode(client.projects.getProject({ projectId: "circus" }), "not_found")
+  })
+
+  it("signs in through the mock OIDC provider", async () => {
+    const notes: string[] = []
+    const { client } = createMockBackend({ state: seedState(), latency: () => 0, note: (n) => notes.push(n) })
+    await client.oidc.startLogin("/p/circus")
+    expect(await client.auth.whoAmI()).toMatchObject({ user: { email: eric.email, role: "super" } })
+    expect(notes).toHaveLength(1)
+  })
+
+  it("can run without an OIDC provider", async () => {
+    const { client } = createMockBackend({ state: seedState(), latency: () => 0, oidc: false })
+    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out", methods: { password: true } })
+    await expectCode(client.oidc.startLogin(), "failed_precondition")
+  })
+
+  it("sets up through the mock OIDC provider with the same token rules", async () => {
+    const { client } = backend(freshState())
+    await expectCode(client.oidc.startSetup("nope"), "permission_denied")
+    await client.oidc.startSetup(DEV_SETUP_TOKEN)
+    expect(await client.auth.whoAmI()).toMatchObject({
+      user: { email: OIDC_SETUP_EMAIL, role: "super" },
+    })
+    await expectCode(client.oidc.startSetup(DEV_SETUP_TOKEN), "already_exists")
   })
 
   it("rejects every non-auth call when signed out", async () => {
@@ -100,7 +173,7 @@ describe("auth", () => {
   it("signs out", async () => {
     const client = await signedIn()
     await client.auth.logout()
-    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out" })
+    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out", methods })
     await expectCode(client.projects.listProjects(), "unauthenticated")
   })
 })
@@ -164,11 +237,6 @@ describe("projects", () => {
 
   it("names the field each validation error is about", async () => {
     const client = await signedIn()
-    const fieldOf = (promise: Promise<unknown>) =>
-      promise.then(
-        () => undefined,
-        (e: unknown) => (e as ApiError).field,
-      )
     expect(await fieldOf(client.projects.createProject({ name: "", locations: [mbp("/a")] }))).toBe("name")
     expect(await fieldOf(client.projects.createProject({ name: "circus", locations: [mbp("/a")] }))).toBe("name")
     expect(await fieldOf(client.projects.createProject({ name: "n", locations: [] }))).toBe("locations")
@@ -218,7 +286,7 @@ describe("projects", () => {
     const state = seedState()
     for (const s of state.sessions) if (s.projectId === "toolbox") s.state = "stopped"
     const { client } = backend(state)
-    await client.auth.login({ username: "eric", password: "circus" })
+    await client.auth.login(eric)
     await client.projects.deleteProject({ projectId: "toolbox" })
     await expectCode(client.projects.getProject({ projectId: "toolbox" }), "not_found")
     const sessions = await client.sessions.listSessions({})
@@ -259,7 +327,7 @@ describe("sessions", () => {
 
   it("records simulated activity", async () => {
     const mock = backend()
-    await mock.client.auth.login({ username: "eric", password: "circus" })
+    await mock.client.auth.login(eric)
     mock.conversations.reportActivity("web-vite", { state: "running" })
     const [latest] = await mock.client.sessions.listSessions({})
     expect(latest).toMatchObject({ sessionId: "web-vite", state: "running" })
@@ -366,7 +434,7 @@ describe("conversations", () => {
     const state = seedState()
     for (const s of state.sessions) if (s.projectId === "toolbox") s.state = "stopped"
     const { client } = backend(state)
-    await client.auth.login({ username: "eric", password: "circus" })
+    await client.auth.login(eric)
     await client.projects.deleteProject({ projectId: "toolbox" })
     expect(state.conversations["dotfiles-go"]).toBeUndefined()
   })

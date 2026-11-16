@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Link } from "react-router"
 import { ChevronRightIcon, MonitorSmartphoneIcon, PlusIcon, SearchIcon } from "lucide-react"
 
-import { useAuth, useDevices, useProjects, useSessionList } from "@/api/hooks"
+import { useCurrentUser, useDevices, useProjects, useSessionList } from "@/api/hooks"
 import { Brand } from "@/components/brand"
 import { useOpenNewProject } from "@/components/projects/new-project-context"
 import { StatusDot } from "@/components/status-dot"
@@ -43,7 +43,7 @@ export function AppSidebar({
   /** The project whose own page (home or settings) is open. */
   activeProjectId?: string
 }) {
-  const auth = useAuth()
+  const { user } = useCurrentUser()
   const openNewProject = useOpenNewProject()
   const { isMobile, setOpenMobile } = useSidebar()
   const projects = useProjects()
@@ -52,7 +52,6 @@ export function AppSidebar({
   const tree = projects.data && sessions.data ? buildTree(projects.data, sessions.data) : null
   // Only a failed first load shows an error; a failed refetch keeps the list.
   const loadFailed = (projects.isError && !projects.data) || (sessions.isError && !sessions.data)
-  const user = auth.data?.kind === "signed_in" ? auth.data.user : null
 
   return (
     <Sidebar collapsible="offcanvas">
@@ -122,7 +121,7 @@ export function AppSidebar({
           {user && (
             <SidebarMenuItem>
               <UserMenu
-                username={user.username}
+                user={user}
                 className={`h-10 data-[state=open]:bg-sidebar-foreground/10 ${rowStates}`}
               />
             </SidebarMenuItem>

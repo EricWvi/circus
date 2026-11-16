@@ -1,4 +1,4 @@
-import type { Device, Project, SessionSummary } from "@/api/types"
+import type { Device, LoginMethods, Project, Role, SessionSummary } from "@/api/types"
 import { settleEvents } from "@/lib/settle"
 import type { Conversations } from "@/lib/types"
 import { projects as seedProjects, sessions as seedSessions } from "@/mock/data"
@@ -6,17 +6,32 @@ import { projects as seedProjects, sessions as seedSessions } from "@/mock/data"
 /** The setup token of a fresh mock server, as printed in its "terminal". */
 export const DEV_SETUP_TOKEN = "dev-setup-token"
 
+/** How the mock server says users can sign in. */
+export const MOCK_LOGIN_METHODS: LoginMethods = {
+  password: true,
+  oidc: { displayName: "Authelia" },
+}
+
+/** The demo accounts; both use the password `circus`. */
+export const SEED_SUPER_EMAIL = "eric@example.com"
+export const SEED_USER_EMAIL = "dev@example.com"
+/** Who setup through the mock's OIDC provider creates. */
+export const OIDC_SETUP_EMAIL = "oidc-admin@example.com"
+
 export interface MockUser {
-  username: string
-  password: string
+  userId: string
+  email: string
+  /** Null for accounts that only sign in through OIDC. */
+  password: string | null
+  role: Role
 }
 
 /** Everything the mock server knows. Plain JSON so it can be persisted. */
 export interface MockState {
-  /** Cleared once the first user exists. */
+  /** Accepted until a super user exists; null on the seeded server. */
   setupToken: string | null
   users: MockUser[]
-  /** The signed-in username; stands in for the session cookie. */
+  /** The signed-in user id; stands in for the session cookie. */
   cookie: string | null
   projects: (Project & { owner: string })[]
   sessions: SessionSummary[]
@@ -50,9 +65,13 @@ export function freshState(): MockState {
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
 
-/** A set-up server with user `eric` (password `circus`), signed out, and the demo data. */
+/**
+ * A set-up server, signed out, with the super user `eric@example.com` (who
+ * owns the demo data) and the user `dev@example.com`, both with password
+ * `circus`.
+ */
 export function seedState(now: number = Date.now()): MockState {
-  const owner = "eric"
+  const owner = "user-eric"
   const devices: MockState["devices"] = [
     { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64" },
     { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64" },
@@ -95,7 +114,10 @@ export function seedState(now: number = Date.now()): MockState {
 
   return {
     setupToken: null,
-    users: [{ username: owner, password: "circus" }],
+    users: [
+      { userId: owner, email: SEED_SUPER_EMAIL, password: "circus", role: "super" },
+      { userId: "user-dev", email: SEED_USER_EMAIL, password: "circus", role: "user" },
+    ],
     cookie: null,
     projects,
     sessions,

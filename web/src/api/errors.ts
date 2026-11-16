@@ -6,6 +6,7 @@ export type ErrorCode =
   | "already_exists"
   | "failed_precondition"
   | "permission_denied"
+  | "resource_exhausted"
   | "unavailable"
 
 export class ApiError extends Error {
@@ -31,6 +32,7 @@ export function isApiError(error: unknown, code?: ErrorCode): error is ApiError 
 /** A one-line message suitable for showing inside a form. */
 export function errorMessage(error: unknown): string {
   if (isApiError(error, "unavailable")) return "Can't reach the server. Try again."
+  if (isApiError(error, "resource_exhausted")) return "Too many attempts. Try again later."
   if (error instanceof ApiError) return error.message
   return "Something went wrong. Try again."
 }
