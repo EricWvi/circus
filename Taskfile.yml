@@ -105,9 +105,14 @@ tasks:
       LIMIT: '{{default "60" .LIMIT}}'
 
   web:dev:
-    desc: Start the Web UI dev server
+    desc: Start the Web UI dev server (BACKEND=server sends auth to `task web:dev:server`)
     cmds:
-      - npm -w @circus/web run dev
+      - '{{if .BACKEND}}VITE_CIRCUS_BACKEND={{.BACKEND}} {{end}}npm -w @circus/web run dev'
+
+  web:dev:server:
+    desc: Run the control plane for Web UI development (config web/dev.server.yaml)
+    cmds:
+      - go run ./cmd/circus server --config web/dev.server.yaml
 
   web:build:
     desc: Build the Web UI into web/dist

@@ -79,6 +79,13 @@ export interface MockBackendOptions {
   note?: (message: string) => void
   /** Whether an OIDC provider is configured (default true). */
   oidc?: boolean
+  /**
+   * When set, auth is served elsewhere (a real control plane): every
+   * project, device and session call is made as this user id, without
+   * checking the mock's own sign-in. The app's auth guard still keeps
+   * signed-out people away from the pages that make them.
+   */
+  actAs?: string
 }
 
 /** Failed sign-ins per email within the window before further tries are refused. */
@@ -97,6 +104,7 @@ export function createMockBackend({
   tabId = "",
   note = () => {},
   oidc = true,
+  actAs,
 }: MockBackendOptions): MockBackend {
   const methods = (): LoginMethods =>
     oidc ? structuredClone(MOCK_LOGIN_METHODS) : { password: MOCK_LOGIN_METHODS.password }
@@ -131,6 +139,7 @@ export function createMockBackend({
 
   /** The signed-in user's id. */
   function currentUser(): string {
+    if (actAs !== undefined) return actAs
     const user = state.users.find((u) => u.userId === state.cookie)
     if (!user) throw new ApiError("unauthenticated", "Sign in to continue.")
     return user.userId
@@ -151,7 +160,7 @@ export function createMockBackend({
       throw invalid("Open the setup link printed in the server log.", "token")
     }
     if (state.setupToken === null || token !== state.setupToken) {
-      throw new ApiError("permission_denied", "This setup link is not valid.")
+      throw new ApiError("permission_denied", "This setup link is not valid.", "token")
     }
     if (hasSuper()) throw new ApiError("already_exists", "Circus is already set up.")
   }

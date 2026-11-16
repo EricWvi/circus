@@ -1,7 +1,7 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 
-import { startMockBackend } from "./api/mock"
+import { startBackend } from "./api/backend"
 import { ApiProvider } from "./api/provider"
 import { createQueryClient } from "./api/query-client"
 import { App } from "./App"
@@ -10,9 +10,10 @@ import { createAppRouter } from "./router"
 import { ConversationStoreContext } from "./state/conversations-context"
 import "./index.css"
 
-// The control plane does not serve these APIs yet; the mock stands in for it.
-// The router is created after the mock has handled its URL switches.
-const backend = startMockBackend()
+// The control plane serves only auth so far; the mock stands in for the rest
+// (see api/backend.ts). The router is created after the mock has handled its
+// URL switches.
+const backend = startBackend()
 const queryClient = createQueryClient()
 const router = createAppRouter()
 // Another tab changed the mock server's data: refetch, as a pushed update would.

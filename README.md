@@ -15,6 +15,7 @@ debug client. The TypeScript worker is planned for M3 and not built yet.
 | `buf.yaml`, `buf.gen.yaml` | Protocol checks and local code generation |
 | `gen/go/circus/v1/` | Generated Go messages |
 | `gen/ts/` | Generated TypeScript workspace package `@circus/proto` |
+| `web/` | The Web UI (React, Vite); see [web/README.md](web/README.md) for running it against the control plane |
 | `internal/controlplane/` | circus server: enrollment, auth, HTTP, TLS, health, timers, call-path composition |
 | `internal/controlplane/calls/` | Metadata-only routing with boot-fenced at-most-once dispatch |
 | `internal/controlplane/gateway/` | Authenticated daemon links, their shared wire budget and registry |
@@ -60,8 +61,8 @@ task check-gen
 ./bin/circus version
 ```
 
-Generated files are checked in. `task check-gen` regenerates into `.tmp` and
-compares the outputs with the current `gen/` tree, including uncommitted files. Breaking checks are configured but will enter CI after there
+Generated files are checked in. `task check-gen` requires a clean `gen/` tree
+after generation. Breaking checks are configured but will enter CI after there
 is a release to compare against. Set the CLI version at build time with
 `go build -ldflags "-X main.version=1.0.0" -o bin/circus ./cmd/circus`.
 

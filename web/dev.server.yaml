@@ -1,0 +1,26 @@
+# Control plane config for developing the Web UI against the real server.
+# Run it from the repository root (relative paths use the working directory):
+#   task web:dev:server
+# and start the Web UI in server mode next to it:
+#   task web:dev BACKEND=server
+# See web/README.md.
+
+# Vite proxies the control plane's routes to this address.
+listen: "127.0.0.1:8443"
+# Git-ignored; delete the file to start over with a fresh setup link.
+db: ".tmp/dev/circus.db"
+
+# Plaintext on loopback, and browser cookies without Secure.
+dev_insecure: true
+# The browser origin is the Vite dev server: the server checks Origin
+# against it and prints the setup link on it.
+public_url: "http://localhost:5173"
+
+# OIDC sign-in needs a provider that redirects back to
+# http://localhost:5173/auth/oidc/callback (the Vite proxy forwards it here).
+# Register that redirect URI at the provider, then uncomment and fill in:
+# oidc:
+#   issuer: "https://auth.example.com"
+#   client_id: "circus-dev"
+#   client_secret: "" # Or set CIRCUS_OIDC_CLIENT_SECRET.
+#   display_name: "Authelia"

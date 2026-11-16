@@ -1,4 +1,8 @@
-/** The subset of Connect error codes the UI distinguishes. */
+/**
+ * Connect error codes, by their protocol names. The UI distinguishes the
+ * first group; the rest only reach it from a real server and read as a
+ * generic failure.
+ */
 export type ErrorCode =
   | "unauthenticated"
   | "invalid_argument"
@@ -8,6 +12,14 @@ export type ErrorCode =
   | "permission_denied"
   | "resource_exhausted"
   | "unavailable"
+  | "canceled"
+  | "unknown"
+  | "deadline_exceeded"
+  | "aborted"
+  | "out_of_range"
+  | "unimplemented"
+  | "internal"
+  | "data_loss"
 
 export class ApiError extends Error {
   readonly code: ErrorCode
@@ -17,8 +29,8 @@ export class ApiError extends Error {
    */
   readonly field?: string
 
-  constructor(code: ErrorCode, message: string, field?: string) {
-    super(message)
+  constructor(code: ErrorCode, message: string, field?: string, options?: ErrorOptions) {
+    super(message, options)
     this.name = "ApiError"
     this.code = code
     this.field = field

@@ -3,7 +3,7 @@
 
 import { createMockBackend, type MockBackend } from "./backend"
 import { parsePersisted, serialize, STORAGE_KEY } from "./persist"
-import { freshState, seedState, settleInFlight, type MockState } from "./state"
+import { freshState, SEED_OWNER_ID, seedState, settleInFlight, type MockState } from "./state"
 
 export type { MockBackend } from "./backend"
 
@@ -45,6 +45,15 @@ function save(state: MockState) {
   }
 }
 
+export interface StartMockOptions {
+  /**
+   * Auth comes from a real control plane: the mock serves only projects,
+   * devices and sessions, all as the demo data's owner, and ignores its
+   * auth switches (`?mock=fresh`, `?mock=nooidc`).
+   */
+  externalAuth?: boolean
+}
+
 /**
  * Starts the mock backend from persisted state. `?mock=fresh` resets it to
  * an uninitialized server and `?mock=reset` restores the demo seed;
@@ -52,11 +61,17 @@ function save(state: MockState) {
  * Modes combine with commas (`?mock=reset,nooidc`); the query parameter is
  * removed afterwards.
  */
-export function startMockBackend(): MockBackend {
+export function startMockBackend({ externalAuth = false }: StartMockOptions = {}): MockBackend {
   const url = new URL(window.location.href)
   const mock = url.searchParams.get("mock")
   const modes = new Set(mock?.split(",") ?? [])
-  const mode = modes.has("fresh") ? "fresh" : modes.has("reset") ? "reset" : null
+  if (externalAuth && (modes.has("fresh") || modes.has("nooidc"))) {
+    console.info(
+      "Auth comes from the control plane: ?mock=fresh and ?mock=nooidc do nothing. ?mock=reset still restores the demo data.",
+    )
+  }
+  const fresh = modes.has("fresh") && !externalAuth
+  const mode = fresh ? "fresh" : modes.has("reset") ? "reset" : null
   const tab = tabId()
   let state: MockState
   if (mode === "fresh") state = freshState()
@@ -73,7 +88,7 @@ export function startMockBackend(): MockBackend {
   }
   save(state)
 
-  if (state.setupToken !== null && !state.users.some((u) => u.role === "super")) {
+  if (!externalAuth && state.setupToken !== null && !state.users.some((u) => u.role === "super")) {
     const link = new URL(`/setup?token=${encodeURIComponent(state.setupToken)}`, url.origin)
     console.info(`Circus is not set up yet. Open this link to create the super user:\n\n  ${link}\n`)
   }
@@ -84,6 +99,7 @@ export function startMockBackend(): MockBackend {
     tabId: tab,
     note: (message) => console.info(message),
     oidc: !modes.has("nooidc"),
+    actAs: externalAuth ? SEED_OWNER_ID : undefined,
   })
 
   // Another tab changed the store: adopt its state so this tab's next write

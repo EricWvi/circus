@@ -15,6 +15,7 @@ import {
   freshState,
   MOCK_LOGIN_METHODS,
   OIDC_SETUP_EMAIL,
+  SEED_OWNER_ID,
   seedState,
   settleInFlight,
   STALE_AFTER_MS,
@@ -87,6 +88,8 @@ describe("auth", () => {
     await expectCode(client.auth.setup({ ...setupReq, email: "other@example.com" }), "already_exists")
     // A wrong token still learns nothing.
     await expectCode(client.auth.setup({ ...setupReq, token: "nope" }), "permission_denied")
+    // The server names the field, as it does for a missing token.
+    expect(await fieldOf(client.auth.setup({ ...setupReq, token: "nope" }))).toBe("token")
   })
 
   it("names the invalid field", async () => {
@@ -175,6 +178,22 @@ describe("auth", () => {
     await client.auth.logout()
     expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out", methods })
     await expectCode(client.projects.listProjects(), "unauthenticated")
+  })
+})
+
+describe("with auth served elsewhere", () => {
+  it("serves data as the given user without a mock sign-in", async () => {
+    const { client } = createMockBackend({ state: seedState(), latency: () => 0, actAs: SEED_OWNER_ID })
+    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out", methods })
+    expect((await client.projects.listProjects()).length).toBeGreaterThan(0)
+    expect((await client.machines.listDevices()).length).toBeGreaterThan(0)
+    expect((await client.sessions.listSessions({})).length).toBeGreaterThan(0)
+  })
+
+  it("keeps other users' data out of view", async () => {
+    const { client } = createMockBackend({ state: seedState(), latency: () => 0, actAs: "user-dev" })
+    expect(await client.projects.listProjects()).toEqual([])
+    await expectCode(client.projects.getProject({ projectId: "circus" }), "not_found")
   })
 })
 

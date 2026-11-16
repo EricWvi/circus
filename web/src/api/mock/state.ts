@@ -15,6 +15,8 @@ export const MOCK_LOGIN_METHODS: LoginMethods = {
 /** The demo accounts; both use the password `circus`. */
 export const SEED_SUPER_EMAIL = "eric@example.com"
 export const SEED_USER_EMAIL = "dev@example.com"
+/** The user id of the seeded super user, who owns the demo data. */
+export const SEED_OWNER_ID = "user-eric"
 /** Who setup through the mock's OIDC provider creates. */
 export const OIDC_SETUP_EMAIL = "oidc-admin@example.com"
 
@@ -71,7 +73,7 @@ const DAY = 24 * 60 * MINUTE
  * `circus`.
  */
 export function seedState(now: number = Date.now()): MockState {
-  const owner = "user-eric"
+  const owner = SEED_OWNER_ID
   const devices: MockState["devices"] = [
     { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64" },
     { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64" },

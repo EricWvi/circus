@@ -18,7 +18,10 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "@circus/proto/*": ["../gen/ts/src/*.ts"]
+    }
   },
   "include": ["src"]
 }

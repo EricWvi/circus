@@ -1,8 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { useState, type FormEvent } from "react"
-import { Link, useSearchParams } from "react-router"
+import { Link } from "react-router"
 
-import { authErrorMessage, authMessages } from "@/api/auth-messages"
+import { authErrorMessage, authMessages, isInvalidSetupToken } from "@/api/auth-messages"
 import { isApiError } from "@/api/errors"
 import { useAuth, useOidcSetup, useSetup } from "@/api/hooks"
 import { queryKeys } from "@/api/query-client"
@@ -20,7 +20,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { useQuietAutoFocus } from "@/hooks/use-quiet-autofocus"
-import { useRedirectErrorCode } from "@/hooks/use-redirect-error"
+import { useOneTimeParams } from "@/hooks/use-redirect-error"
 import { setupRedirectError } from "@/lib/auth-errors"
 
 type Invalid = "email" | "password" | "confirm" | null
@@ -30,9 +30,10 @@ const openTheLink = "Open the setup link printed in the server log."
 
 export function SetupPage() {
   const auth = useAuth()
-  const [params] = useSearchParams()
-  const token = params.get("token")
-  const redirect = setupRedirectError(useRedirectErrorCode())
+  // The token stays in this page's state only: it leaves the address bar
+  // (and with it history and Referer), so a reload asks for the link again.
+  const { token, error } = useOneTimeParams(["token", "error"])
+  const redirect = setupRedirectError(error)
   const [blocked, setBlocked] = useState<Blocked>(
     redirect?.kind === "invalid_token" || redirect?.kind === "already_set_up" ? redirect.kind : null,
   )
@@ -101,7 +102,7 @@ function SetupForm({
   )
 
   const onError = (e: unknown) => {
-    if (isApiError(e, "permission_denied")) return onBlocked("invalid_token")
+    if (isInvalidSetupToken(e)) return onBlocked("invalid_token")
     if (isApiError(e, "already_exists")) {
       // Someone else finished setup first.
       void queryClient.invalidateQueries({ queryKey: queryKeys.auth })
