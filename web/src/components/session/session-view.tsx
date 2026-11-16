@@ -8,18 +8,24 @@ import {
 } from "@/components/ai-elements/conversation"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { StatusBadge } from "@/components/status-dot"
-import { ModeToggle } from "@/components/theme/mode-toggle"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import type { Project, Session } from "@/lib/types"
-import { useSessions } from "@/state/sessions-context"
+import type { Project, SessionSummary } from "@/api/types"
+import { useConversations } from "@/state/conversations-context"
 
 import { EventItem } from "./event-list"
 import { SessionPrompt } from "./session-prompt"
 
-export function SessionView({ project, session }: { project: Project; session: Session }) {
-  const { send, stop, decideApproval } = useSessions()
-  const last = session.events.at(-1)
+export function SessionView({
+  project,
+  session,
+}: {
+  project: Project
+  session: SessionSummary
+}) {
+  const { events: eventsOf, send, stop, decideApproval } = useConversations()
+  const events = eventsOf(session.sessionId)
+  const last = events.at(-1)
   const streamingText = last?.kind === "assistant_text" && last.streaming && last.text !== ""
   const busy = session.state === "running"
   const showWorking = busy && !streamingText && last?.kind !== "tool_call"
@@ -38,27 +44,28 @@ export function SessionView({ project, session }: { project: Project; session: S
           <StatusBadge state={session.state} />
         </div>
         <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
-          on {session.deviceName}
+          on {session.device}
         </span>
-        <ModeToggle />
       </header>
 
       <Conversation className="min-h-0">
         <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-6">
-          {session.events.length === 0 ? (
+          {events.length === 0 ? (
             <ConversationEmptyState
               className="min-h-[50vh]"
               icon={<MessageSquareDashedIcon className="size-8" />}
               title="No messages yet"
-              description={`Send a prompt to start working on ${session.deviceName}.`}
+              description={`Send a prompt to start working on ${session.device}.`}
             />
           ) : (
-            session.events.map((event) => (
+            events.map((event) => (
               <EventItem
                 key={event.id}
                 event={event}
-                session={session}
-                onDecide={(eventId, decision) => decideApproval(session.id, eventId, decision)}
+                deviceName={session.device}
+                onDecide={(eventId, decision) =>
+                  decideApproval(session.sessionId, eventId, decision)
+                }
               />
             ))
           )}
@@ -74,8 +81,8 @@ export function SessionView({ project, session }: { project: Project; session: S
       <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
         <SessionPrompt
           busy={busy}
-          onSend={(text, attachments) => send(session.id, text, attachments)}
-          onStop={() => stop(session.id)}
+          onSend={(text, attachments) => send(session.sessionId, text, attachments)}
+          onStop={() => stop(session.sessionId)}
         />
       </div>
     </div>

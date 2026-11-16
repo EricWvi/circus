@@ -1,0 +1,370 @@
+import { describe, expect, it } from "vitest"
+
+import { ApiError, type ErrorCode } from "@/api/errors"
+import type { CircusClient } from "@/api/types"
+
+import { createMockBackend, MAX_KEPT_ATTACHMENT_URL } from "./backend"
+import { parsePersisted, serialize, VERSION } from "./persist"
+import {
+  DEV_SETUP_TOKEN,
+  freshState,
+  seedState,
+  settleInFlight,
+  STALE_AFTER_MS,
+  type MockState,
+} from "./state"
+
+function backend(state: MockState = seedState()) {
+  return createMockBackend({ state, latency: () => 0 })
+}
+
+async function signedIn(): Promise<CircusClient> {
+  const { client } = backend()
+  await client.auth.login({ username: "eric", password: "circus" })
+  return client
+}
+
+async function expectCode(promise: Promise<unknown>, code: ErrorCode) {
+  const error = await promise.then(
+    () => undefined,
+    (e: unknown) => e,
+  )
+  expect(error).toBeInstanceOf(ApiError)
+  expect((error as ApiError).code).toBe(code)
+}
+
+const mbp = (path: string) => ({ device: "eric-mbp", path })
+
+describe("auth", () => {
+  it("reports needs_setup until the first user exists", async () => {
+    const { client } = backend(freshState())
+    expect(await client.auth.whoAmI()).toEqual({ kind: "needs_setup" })
+  })
+
+  it("rejects a wrong setup token", async () => {
+    const { client } = backend(freshState())
+    await expectCode(
+      client.auth.setup({ token: "nope", username: "eric", password: "password1" }),
+      "permission_denied",
+    )
+    expect(await client.auth.whoAmI()).toEqual({ kind: "needs_setup" })
+  })
+
+  it("signs in with setup", async () => {
+    const { client } = backend(freshState())
+    const req = { token: DEV_SETUP_TOKEN, username: "eric", password: "password1" }
+    expect(await client.auth.setup(req)).toEqual({ username: "eric" })
+    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_in", user: { username: "eric" } })
+    await expectCode(client.auth.setup({ ...req, username: "other" }), "failed_precondition")
+  })
+
+  it("consumes the setup token", async () => {
+    const state = freshState()
+    const { client } = backend(state)
+    const req = { token: DEV_SETUP_TOKEN, username: "eric", password: "password1" }
+    await client.auth.setup(req)
+    expect(state.setupToken).toBeNull()
+    // Even with the users gone, the same token is no longer accepted.
+    state.users = []
+    await expectCode(client.auth.setup({ ...req, username: "other" }), "permission_denied")
+  })
+
+  it("validates the first user", async () => {
+    const { client } = backend(freshState())
+    await expectCode(
+      client.auth.setup({ token: DEV_SETUP_TOKEN, username: "eric", password: "short" }),
+      "invalid_argument",
+    )
+    await expectCode(
+      client.auth.setup({ token: DEV_SETUP_TOKEN, username: "", password: "password1" }),
+      "invalid_argument",
+    )
+  })
+
+  it("rejects wrong credentials", async () => {
+    const { client } = backend()
+    await expectCode(client.auth.login({ username: "eric", password: "wrong" }), "unauthenticated")
+    await expectCode(client.auth.login({ username: "nobody", password: "circus" }), "unauthenticated")
+    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out" })
+  })
+
+  it("rejects every non-auth call when signed out", async () => {
+    const { client } = backend()
+    await expectCode(client.projects.listProjects(), "unauthenticated")
+    await expectCode(client.projects.getProject({ projectId: "circus" }), "unauthenticated")
+    await expectCode(client.projects.createProject({ name: "x", locations: [mbp("/x")] }), "unauthenticated")
+    await expectCode(client.machines.listDevices(), "unauthenticated")
+    await expectCode(client.sessions.listSessions({}), "unauthenticated")
+  })
+
+  it("signs out", async () => {
+    const client = await signedIn()
+    await client.auth.logout()
+    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out" })
+    await expectCode(client.projects.listProjects(), "unauthenticated")
+  })
+})
+
+describe("projects", () => {
+  it("lists projects by name", async () => {
+    const client = await signedIn()
+    await client.projects.createProject({ name: "aardvark", locations: [mbp("/src/a")] })
+    const names = (await client.projects.listProjects()).map((p) => p.name)
+    expect(names).toEqual(["aardvark", "circus", "palace", "toolbox"])
+  })
+
+  it("trims names and keeps them unique regardless of case", async () => {
+    const client = await signedIn()
+    const created = await client.projects.createProject({ name: "  web  ", locations: [mbp("/src/web")] })
+    expect(created.name).toBe("web")
+    expect(created.lastUsedLocation).toBe(0)
+    await expectCode(
+      client.projects.createProject({ name: "Circus", locations: [mbp("/src/c")] }),
+      "already_exists",
+    )
+    await expectCode(
+      client.projects.updateProject({ projectId: created.projectId, name: "palace" }),
+      "already_exists",
+    )
+    // Renaming to its own name is not a conflict.
+    await client.projects.updateProject({ projectId: created.projectId, name: "WEB" })
+  })
+
+  it("validates names", async () => {
+    const client = await signedIn()
+    for (const name of ["", "   ", "x".repeat(65), "a\tb"]) {
+      await expectCode(client.projects.createProject({ name, locations: [mbp("/src")] }), "invalid_argument")
+    }
+    await client.projects.createProject({ name: "x".repeat(64), locations: [mbp("/src")] })
+  })
+
+  it("validates locations", async () => {
+    const client = await signedIn()
+    const create = (locations: { device: string; path: string }[]) =>
+      client.projects.createProject({ name: "new", locations })
+    await expectCode(create([]), "invalid_argument")
+    await expectCode(create([{ device: "ghost", path: "/src" }]), "invalid_argument")
+    await expectCode(create([mbp("src/relative")]), "invalid_argument")
+    await expectCode(create([{ device: "eric-win", path: "/not/windows" }]), "invalid_argument")
+    await expectCode(create([mbp("/src/a"), mbp("/src/a/")]), "invalid_argument")
+    const ok = await create([mbp("/src/a/"), { device: "eric-win", path: "D:\\work" }])
+    expect(ok.locations).toEqual([mbp("/src/a"), { device: "eric-win", path: "D:\\work" }])
+  })
+
+  it("normalizes Windows paths before checking for duplicates", async () => {
+    const client = await signedIn()
+    const win = (path: string) => ({ device: "eric-win", path })
+    await expectCode(
+      client.projects.createProject({ name: "w", locations: [win("D:\\work"), win("d:/work/")] }),
+      "invalid_argument",
+    )
+    const p = await client.projects.createProject({ name: "w", locations: [win("c:/src/app")] })
+    expect(p.locations).toEqual([win("C:\\src\\app")])
+  })
+
+  it("clamps lastUsedLocation when locations shrink", async () => {
+    const client = await signedIn()
+    const p = await client.projects.createProject({
+      name: "multi",
+      locations: [mbp("/a"), mbp("/b"), mbp("/c")],
+    })
+    await client.sessions.createSession({ projectId: p.projectId, locationIndex: 2 })
+    const shrunk = await client.projects.updateProject({
+      projectId: p.projectId,
+      locations: [mbp("/x"), mbp("/y")],
+    })
+    expect(shrunk.lastUsedLocation).toBe(1)
+    // A surviving location keeps being the default even if it moved.
+    const moved = await client.projects.updateProject({
+      projectId: p.projectId,
+      locations: [mbp("/y"), mbp("/z"), mbp("/w")],
+    })
+    expect(moved.lastUsedLocation).toBe(0)
+  })
+
+  it("returns not_found for unknown projects", async () => {
+    const client = await signedIn()
+    await expectCode(client.projects.getProject({ projectId: "missing" }), "not_found")
+    await expectCode(client.sessions.listSessions({ projectId: "missing" }), "not_found")
+  })
+
+  it("refuses to delete a project with sessions that are not stopped", async () => {
+    const client = await signedIn()
+    await expectCode(client.projects.deleteProject({ projectId: "circus" }), "failed_precondition")
+  })
+
+  it("deletes a project whose sessions are all stopped, with its sessions", async () => {
+    const state = seedState()
+    for (const s of state.sessions) if (s.projectId === "toolbox") s.state = "stopped"
+    const { client } = backend(state)
+    await client.auth.login({ username: "eric", password: "circus" })
+    await client.projects.deleteProject({ projectId: "toolbox" })
+    await expectCode(client.projects.getProject({ projectId: "toolbox" }), "not_found")
+    const sessions = await client.sessions.listSessions({})
+    expect(sessions.some((s) => s.projectId === "toolbox")).toBe(false)
+  })
+})
+
+describe("sessions", () => {
+  it("lists newest activity first, including stopped sessions", async () => {
+    const client = await signedIn()
+    const sessions = await client.sessions.listSessions({ projectId: "circus" })
+    const times = sessions.map((s) => s.lastActivityAtUnixMs)
+    expect(times).toEqual([...times].sort((a, b) => b - a))
+    expect(sessions.some((s) => s.state === "stopped")).toBe(true)
+  })
+
+  it("creates a session at a location and makes it the project's default", async () => {
+    const client = await signedIn()
+    const before = await client.projects.getProject({ projectId: "circus" })
+    expect(before.lastUsedLocation).toBe(0)
+    const session = await client.sessions.createSession({ projectId: "circus", locationIndex: 1 })
+    expect(session).toMatchObject({
+      projectId: "circus",
+      state: "idle",
+      device: before.locations[1].device,
+      cwd: before.locations[1].path,
+    })
+    const after = await client.projects.getProject({ projectId: "circus" })
+    expect(after.lastUsedLocation).toBe(1)
+    expect((await client.sessions.listSessions({}))[0].sessionId).toBe(session.sessionId)
+  })
+
+  it("rejects a location index out of range", async () => {
+    const client = await signedIn()
+    await expectCode(client.sessions.createSession({ projectId: "circus", locationIndex: 5 }), "invalid_argument")
+    await expectCode(client.sessions.createSession({ projectId: "circus", locationIndex: -1 }), "invalid_argument")
+  })
+
+  it("records simulated activity", async () => {
+    const mock = backend()
+    await mock.client.auth.login({ username: "eric", password: "circus" })
+    mock.conversations.reportActivity("web-vite", { state: "running" })
+    const [latest] = await mock.client.sessions.listSessions({})
+    expect(latest).toMatchObject({ sessionId: "web-vite", state: "running" })
+  })
+})
+
+describe("conversations", () => {
+  it("keeps transcripts with the store", () => {
+    const state = seedState()
+    const mock = backend(state)
+    const events = mock.conversations.load()["web-vite"]
+    const added = [...events, { kind: "assistant_text" as const, id: "x", at: "", text: "hi" }]
+    mock.conversations.save("web-vite", added)
+    expect(backend(structuredClone(state)).conversations.load()["web-vite"]).toEqual(added)
+  })
+
+  const inFlight = (mock: ReturnType<typeof backend>) => {
+    mock.conversations.reportActivity("web-vite", { state: "running" })
+    mock.conversations.save("web-vite", [
+      { kind: "assistant_text", id: "a", at: "", text: "par", streaming: true },
+      { kind: "tool_call", id: "t", at: "", tool: "Bash", input: {}, status: "running" },
+    ])
+  }
+
+  it("settles abandoned in-flight work on load", () => {
+    const state = seedState()
+    inFlight(backend(state))
+    settleInFlight(state, "other-tab", Date.now() + STALE_AFTER_MS)
+    expect(state.sessions.find((s) => s.sessionId === "web-vite")?.state).toBe("interrupted")
+    expect(state.sessions.some((s) => s.state === "running")).toBe(false)
+    const [text, tool] = state.conversations["web-vite"]
+    expect(text).toMatchObject({ streaming: false, text: "par" })
+    expect(tool).toMatchObject({ status: "error" })
+  })
+
+  it("leaves work another tab is still streaming alone", () => {
+    const state = seedState()
+    inFlight(backend(state))
+    settleInFlight(state, "other-tab", Date.now() + 1000)
+    expect(state.sessions.find((s) => s.sessionId === "web-vite")?.state).toBe("running")
+    expect(state.conversations["web-vite"][0]).toMatchObject({ streaming: true })
+    // The seed's running session has never been written by a live tab.
+    expect(state.sessions.find((s) => s.sessionId === "store-fencing")?.state).toBe("interrupted")
+  })
+
+  it("settles this tab's own in-flight work on reload, however recent", () => {
+    const state = seedState()
+    inFlight(createMockBackend({ state, latency: () => 0, tabId: "this-tab" }))
+    settleInFlight(state, "this-tab", Date.now() + 1000)
+    expect(state.sessions.find((s) => s.sessionId === "web-vite")?.state).toBe("interrupted")
+    expect(state.conversations["web-vite"][0]).toMatchObject({ streaming: false })
+  })
+
+  it("settles one session on request", () => {
+    const state = seedState()
+    const mock = backend(state)
+    inFlight(mock)
+    mock.conversations.settle("web-vite")
+    expect(state.sessions.find((s) => s.sessionId === "web-vite")?.state).toBe("interrupted")
+    expect(mock.conversations.load()["web-vite"][1]).toMatchObject({ status: "error" })
+  })
+
+  it("does not keep large attachment data", () => {
+    const state = seedState()
+    const mock = backend(state)
+    const big = `data:image/png;base64,${"A".repeat(MAX_KEPT_ATTACHMENT_URL + 1)}`
+    const small = "data:image/svg+xml,<svg/>"
+    const attachment = (id: string, url: string) => ({ id, filename: `${id}.png`, mediaType: "image/png", url })
+    mock.conversations.save("web-vite", [
+      { kind: "user_message", id: "u", at: "", text: "look", attachments: [attachment("big", big), attachment("small", small)] },
+    ])
+    const [message] = mock.conversations.load()["web-vite"]
+    expect(message.kind === "user_message" && message.attachments?.map((a) => a.url)).toEqual(["", small])
+  })
+
+  it("tells subscribers which transcripts another tab changed", () => {
+    const state = seedState()
+    const mock = backend(state)
+    const seen: string[][] = []
+    mock.conversations.subscribe((ids) => seen.push(ids))
+    const next = structuredClone(state)
+    next.conversations["web-vite"] = []
+    mock.adopt(next)
+    expect(seen).toEqual([["web-vite"]])
+    expect(mock.conversations.load()["web-vite"]).toEqual([])
+  })
+
+  it("drops a deleted project's transcripts", async () => {
+    const state = seedState()
+    for (const s of state.sessions) if (s.projectId === "toolbox") s.state = "stopped"
+    const { client } = backend(state)
+    await client.auth.login({ username: "eric", password: "circus" })
+    await client.projects.deleteProject({ projectId: "toolbox" })
+    expect(state.conversations["dotfiles-go"]).toBeUndefined()
+  })
+})
+
+it("does not share objects with the store", async () => {
+  const client = await signedIn()
+  const [project] = await client.projects.listProjects()
+  project.name = "mutated"
+  project.locations.push(mbp("/elsewhere"))
+  const again = await client.projects.getProject({ projectId: project.projectId })
+  expect(again.name).not.toBe("mutated")
+  expect(again.locations).toHaveLength(2)
+})
+
+describe("persistence", () => {
+  it("round-trips the state", () => {
+    const state = seedState()
+    expect(parsePersisted(serialize(state))).toEqual(JSON.parse(JSON.stringify(state)))
+  })
+
+  it("drops a blob from the previous version instead of crashing", () => {
+    const v1 = structuredClone(seedState()) as Partial<MockState>
+    delete v1.conversations
+    delete v1.writtenAtMs
+    delete v1.writtenBy
+    expect(parsePersisted(JSON.stringify({ version: 1, state: v1 }))).toBeNull()
+    // Same shape problem even if a blob claims the current version.
+    expect(parsePersisted(JSON.stringify({ version: VERSION, state: v1 }))).toBeNull()
+  })
+
+  it("drops malformed blobs", () => {
+    for (const raw of [null, "", "{", "null", "42", "[]", '{"version":2}', '{"version":2,"state":{"users":"x"}}']) {
+      expect(parsePersisted(raw)).toBeNull()
+    }
+  })
+})

@@ -1,4 +1,5 @@
-import type { Project, Session, SessionEvent } from "@/lib/types"
+import type { Location } from "@/api/types"
+import type { SessionEvent, SessionState } from "@/lib/types"
 
 import { ciScreenshotUrl } from "./screenshot"
 
@@ -8,14 +9,49 @@ const ago = (minutes: number) => new Date(loadedAt - minutes * 60_000).toISOStri
 let seq = 0
 const id = () => `ev-${++seq}`
 
-export const currentUser = { name: "eric", email: "eric@example.com" }
+export interface MockProject {
+  id: string
+  name: string
+  locations: Location[]
+}
 
-export const devices = { online: 3, total: 4 }
+export interface MockSession {
+  id: string
+  projectId: string
+  title: string
+  state: SessionState
+  /** ISO 8601 timestamp of the last event or state change. */
+  lastActivityAt: string
+  pendingApprovalCount: number
+  deviceName: string
+  events: SessionEvent[]
+}
 
-export const projects: Project[] = [
-  { id: "circus", name: "circus" },
-  { id: "palace", name: "palace" },
-  { id: "toolbox", name: "toolbox" },
+export const projects: MockProject[] = [
+  {
+    id: "circus",
+    name: "circus",
+    locations: [
+      { device: "eric-mbp", path: "/Users/eric/src/circus" },
+      { device: "devbox", path: "/home/eric/src/circus" },
+    ],
+  },
+  {
+    id: "palace",
+    name: "palace",
+    locations: [
+      { device: "palace-builder", path: "/srv/palace" },
+      { device: "eric-mbp", path: "/Users/eric/src/palace" },
+    ],
+  },
+  {
+    id: "toolbox",
+    name: "toolbox",
+    locations: [
+      { device: "eric-win", path: "C:\\Users\\eric\\src\\toolbox" },
+      { device: "devbox", path: "/home/eric/src/toolbox" },
+    ],
+  },
 ]
 
 const refreshGo = `  1	package auth
@@ -323,7 +359,7 @@ const lintEvents: SessionEvent[] = [
   },
 ]
 
-export const sessions: Session[] = [
+export const sessions: MockSession[] = [
   {
     id: "fix-auth-refresh",
     projectId: "circus",

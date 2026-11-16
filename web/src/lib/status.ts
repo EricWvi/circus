@@ -1,4 +1,4 @@
-import type { Session, SessionState } from "./types"
+import type { SessionState } from "./types"
 
 export const sessionStateLabels: Record<SessionState, string> = {
   running: "Running",
@@ -23,7 +23,7 @@ const urgency: Record<SessionState, number> = {
 }
 
 /** Sessions that appear in the sidebar tree; stopped ones live on the project page. */
-export function isVisibleInTree(session: Pick<Session, "state">): boolean {
+export function isVisibleInTree(session: { state: SessionState }): boolean {
   return session.state !== "stopped"
 }
 
@@ -32,7 +32,7 @@ export function isVisibleInTree(session: Pick<Session, "state">): boolean {
  * project has no visible sessions.
  */
 export function rollupState(
-  sessions: readonly Pick<Session, "state">[],
+  sessions: readonly { state: SessionState }[],
 ): SessionState | undefined {
   let best: SessionState | undefined
   for (const { state } of sessions) {

@@ -208,3 +208,11 @@
     @apply font-sans;
     }
 }
+/*
+ * See use-quiet-autofocus.ts: no ring for focus placed on page load.
+ * Unlayered on purpose, so it wins over the input's ring utilities.
+ */
+[data-quiet-focus]:focus-visible:not([aria-invalid="true"]) {
+  border-color: var(--input);
+  box-shadow: none;
+}

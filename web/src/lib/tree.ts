@@ -1,21 +1,22 @@
+import type { Project, SessionSummary } from "@/api/types"
+
 import { isVisibleInTree } from "./status"
-import type { Project, Session } from "./types"
 
 export interface ProjectNode {
   project: Project
   /** Visible sessions, most recent activity first. */
-  sessions: Session[]
+  sessions: SessionSummary[]
 }
 
-export function buildTree(projects: Project[], sessions: Session[]): ProjectNode[] {
+export function buildTree(projects: Project[], sessions: SessionSummary[]): ProjectNode[] {
   return projects.map((project) => ({
     project,
     sessions: sessions
-      .filter((s) => s.projectId === project.id && isVisibleInTree(s))
-      .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
+      .filter((s) => s.projectId === project.projectId && isVisibleInTree(s))
+      .sort((a, b) => b.lastActivityAtUnixMs - a.lastActivityAtUnixMs),
   }))
 }
 
-export function sessionPath(session: Pick<Session, "id" | "projectId">): string {
-  return `/p/${encodeURIComponent(session.projectId)}/s/${encodeURIComponent(session.id)}`
+export function sessionPath(session: Pick<SessionSummary, "sessionId" | "projectId">): string {
+  return `/p/${encodeURIComponent(session.projectId)}/s/${encodeURIComponent(session.sessionId)}`
 }

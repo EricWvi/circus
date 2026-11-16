@@ -1,13 +1,9 @@
 import { useState } from "react"
 import { Link } from "react-router"
-import {
-  ChevronRightIcon,
-  MonitorSmartphoneIcon,
-  PlusIcon,
-  SearchIcon,
-  SettingsIcon,
-} from "lucide-react"
+import { ChevronRightIcon, MonitorSmartphoneIcon, PlusIcon, SearchIcon } from "lucide-react"
 
+import { useAuth, useDevices, useProjects, useSessionList } from "@/api/hooks"
+import { Brand } from "@/components/brand"
 import { StatusDot } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -22,6 +18,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSkeleton,
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
@@ -30,24 +27,27 @@ import {
 import { rollupState, sessionStateLabels } from "@/lib/status"
 import { formatRelative } from "@/lib/time"
 import { buildTree, sessionPath, type ProjectNode } from "@/lib/tree"
-import { currentUser, devices } from "@/mock/data"
-import { useSessions } from "@/state/sessions-context"
+
+import { UserMenu } from "./user-menu"
 
 // Hover is half the strength of the selected state.
 const rowStates =
   "hover:bg-sidebar-foreground/5 active:bg-sidebar-foreground/5 data-active:bg-sidebar-foreground/10 data-active:hover:bg-sidebar-foreground/10"
 
 export function AppSidebar({ activeSessionId }: { activeSessionId?: string }) {
-  const { projects, sessions } = useSessions()
-  const tree = buildTree(projects, sessions)
+  const auth = useAuth()
+  const projects = useProjects()
+  const sessions = useSessionList()
+  const devices = useDevices()
+  const tree = projects.data && sessions.data ? buildTree(projects.data, sessions.data) : null
+  // Only a failed first load shows an error; a failed refetch keeps the list.
+  const loadFailed = (projects.isError && !projects.data) || (sessions.isError && !sessions.data)
+  const user = auth.data?.kind === "signed_in" ? auth.data.user : null
 
   return (
     <Sidebar collapsible="offcanvas">
       <SidebarHeader className="gap-3 px-3 pt-3">
-        <div className="flex h-7 items-center gap-2 px-1">
-          <span className="size-3 bg-sidebar-foreground" aria-hidden />
-          <span className="text-sm font-semibold tracking-tight">circus</span>
-        </div>
+        <Brand className="h-7 px-1" />
         <Button
           variant="outline"
           className="h-8 w-full justify-start gap-2 bg-background px-2 font-normal text-muted-foreground"
@@ -62,9 +62,23 @@ export function AppSidebar({ activeSessionId }: { activeSessionId?: string }) {
         <SidebarGroup>
           <SidebarGroupLabel>Projects</SidebarGroupLabel>
           <SidebarMenu>
-            {tree.map((node) => (
-              <ProjectGroup key={node.project.id} node={node} activeSessionId={activeSessionId} />
+            {tree?.map((node) => (
+              <ProjectGroup
+                key={node.project.projectId}
+                node={node}
+                activeSessionId={activeSessionId}
+              />
             ))}
+            {!tree && !loadFailed && (
+              <>
+                <SidebarMenuSkeleton />
+                <SidebarMenuSkeleton />
+                <SidebarMenuSkeleton />
+              </>
+            )}
+            {loadFailed && (
+              <li className="px-2 py-1 text-xs text-muted-foreground">Couldn&apos;t load projects</li>
+            )}
             <SidebarMenuItem>
               <SidebarMenuButton className={`text-muted-foreground ${rowStates}`}>
                 <PlusIcon />
@@ -81,22 +95,21 @@ export function AppSidebar({ activeSessionId }: { activeSessionId?: string }) {
             <SidebarMenuButton className={rowStates}>
               <MonitorSmartphoneIcon />
               <span className="flex-1">Devices</span>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {devices.online}/{devices.total} online
-              </span>
+              {devices.data && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {devices.data.filter((d) => d.online).length}/{devices.data.length} online
+                </span>
+              )}
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarMenuItem className="flex items-center gap-1">
-            <div className="flex min-w-0 flex-1 items-center gap-2 p-2 text-sm">
-              <span className="flex size-6 shrink-0 items-center justify-center bg-sidebar-primary text-xs font-medium text-sidebar-primary-foreground uppercase">
-                {currentUser.name.slice(0, 1)}
-              </span>
-              <span className="truncate">{currentUser.name}</span>
-            </div>
-            <Button variant="ghost" size="icon-sm" aria-label="Settings">
-              <SettingsIcon />
-            </Button>
-          </SidebarMenuItem>
+          {user && (
+            <SidebarMenuItem>
+              <UserMenu
+                username={user.username}
+                className={`h-10 data-[state=open]:bg-sidebar-foreground/10 ${rowStates}`}
+              />
+            </SidebarMenuItem>
+          )}
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
@@ -134,24 +147,24 @@ function ProjectGroup({
               <li className="px-2 py-1 text-xs text-muted-foreground">No active sessions</li>
             )}
             {sessions.map((session) => (
-              <SidebarMenuSubItem key={session.id}>
+              <SidebarMenuSubItem key={session.sessionId}>
                 <SidebarMenuSubButton
                   asChild
-                  isActive={session.id === activeSessionId}
+                  isActive={session.sessionId === activeSessionId}
                   className={`h-8 ${rowStates}`}
                 >
                   <Link
                     to={sessionPath(session)}
                     onClick={() => isMobile && setOpenMobile(false)}
-                    aria-current={session.id === activeSessionId ? "page" : undefined}
+                    aria-current={session.sessionId === activeSessionId ? "page" : undefined}
                   >
                     <StatusDot state={session.state} />
                     <span className="min-w-0 flex-1 truncate">{session.title}</span>
                     <time
-                      dateTime={session.lastActivityAt}
+                      dateTime={new Date(session.lastActivityAtUnixMs).toISOString()}
                       className="shrink-0 text-xs text-muted-foreground tabular-nums"
                     >
-                      {formatRelative(session.lastActivityAt)}
+                      {formatRelative(session.lastActivityAtUnixMs)}
                     </time>
                   </Link>
                 </SidebarMenuSubButton>

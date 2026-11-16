@@ -11,11 +11,6 @@ export type SessionState =
   | "broken"
   | "stopped"
 
-export interface Project {
-  id: string
-  name: string
-}
-
 export interface ImageAttachment {
   id: string
   filename: string
@@ -79,15 +74,25 @@ export type SessionEvent =
   | ReasoningEvent
   | ToolCallEvent
 
-export interface Session {
-  id: string
-  projectId: string
-  title: string
-  state: SessionState
-  /** ISO 8601 timestamp of the last event or state change. */
-  lastActivityAt: string
-  pendingApprovalCount: number
-  /** Device the session's tools execute on. */
-  deviceName: string
-  events: SessionEvent[]
+/** Session progress the server observes from the agent itself. */
+export interface SessionActivity {
+  state?: SessionState
+  pendingApprovalCount?: number
+}
+
+/** Conversation events keyed by session id, oldest first. */
+export type Conversations = Record<string, SessionEvent[]>
+
+/**
+ * Where the simulated conversation stream keeps its transcripts and reports
+ * session progress, until both come from the control plane.
+ */
+export interface ConversationStore {
+  load(): Conversations
+  save(sessionId: string, events: SessionEvent[]): void
+  reportActivity(sessionId: string, activity: SessionActivity): void
+  /** Ends whatever the session had in flight; nothing will finish it. */
+  settle(sessionId: string): void
+  /** Called with the sessions whose transcripts another tab changed. */
+  subscribe(listener: (sessionIds: string[]) => void): () => void
 }

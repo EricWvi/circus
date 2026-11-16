@@ -4,7 +4,7 @@ import { formatRelative } from "./time"
 
 describe("formatRelative", () => {
   const now = Date.parse("2026-11-15T12:00:00Z")
-  const ago = (ms: number) => new Date(now - ms).toISOString()
+  const ago = (ms: number) => now - ms
 
   it("formats compact units", () => {
     expect(formatRelative(ago(10_000), now)).toBe("now")
