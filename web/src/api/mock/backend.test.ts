@@ -162,6 +162,27 @@ describe("projects", () => {
     expect(p.locations).toEqual([win("C:\\src\\app")])
   })
 
+  it("names the field each validation error is about", async () => {
+    const client = await signedIn()
+    const fieldOf = (promise: Promise<unknown>) =>
+      promise.then(
+        () => undefined,
+        (e: unknown) => (e as ApiError).field,
+      )
+    expect(await fieldOf(client.projects.createProject({ name: "", locations: [mbp("/a")] }))).toBe("name")
+    expect(await fieldOf(client.projects.createProject({ name: "circus", locations: [mbp("/a")] }))).toBe("name")
+    expect(await fieldOf(client.projects.createProject({ name: "n", locations: [] }))).toBe("locations")
+    expect(
+      await fieldOf(client.projects.createProject({ name: "n", locations: [mbp("/a"), { device: "x", path: "/a" }] })),
+    ).toBe("locations[1].device")
+    expect(await fieldOf(client.projects.createProject({ name: "n", locations: [mbp("rel")] }))).toBe(
+      "locations[0].path",
+    )
+    expect(await fieldOf(client.projects.createProject({ name: "n", locations: [mbp("/a"), mbp("/a")] }))).toBe(
+      "locations[1].path",
+    )
+  })
+
   it("clamps lastUsedLocation when locations shrink", async () => {
     const client = await signedIn()
     const p = await client.projects.createProject({
@@ -312,6 +333,21 @@ describe("conversations", () => {
     ])
     const [message] = mock.conversations.load()["web-vite"]
     expect(message.kind === "user_message" && message.attachments?.map((a) => a.url)).toEqual(["", small])
+  })
+
+  it("tells the app when another tab changed its data, not for transcripts alone", () => {
+    const state = seedState()
+    const mock = backend(state)
+    let calls = 0
+    mock.onExternalChange(() => calls++)
+    const transcriptOnly = structuredClone(state)
+    transcriptOnly.conversations["web-vite"] = []
+    mock.adopt(transcriptOnly)
+    expect(calls).toBe(0)
+    const fewerLocations = structuredClone(state)
+    fewerLocations.projects[0].locations.pop()
+    mock.adopt(fewerLocations)
+    expect(calls).toBe(1)
   })
 
   it("tells subscribers which transcripts another tab changed", () => {

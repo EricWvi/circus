@@ -15,6 +15,8 @@ import "./index.css"
 const backend = startMockBackend()
 const queryClient = createQueryClient()
 const router = createAppRouter()
+// Another tab changed the mock server's data: refetch, as a pushed update would.
+backend.onExternalChange(() => void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "auth" }))
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

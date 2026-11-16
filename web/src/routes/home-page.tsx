@@ -10,13 +10,18 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { useOpenNewProject } from "@/components/projects/new-project-context"
 import { isVisibleInTree } from "@/lib/status"
-import { sessionPath } from "@/lib/tree"
+import { projectPath, sessionPath } from "@/lib/tree"
 
 import { BarePage, LoadError } from "./page-states"
 
-/** Opens the most recently active session, or offers to create a project. */
+/**
+ * Opens the most recently active session, else the first project's page, or
+ * offers to create a project.
+ */
 export function HomePage() {
+  const openNewProject = useOpenNewProject()
   const projects = useProjects()
   const sessions = useSessionList()
 
@@ -44,7 +49,7 @@ export function HomePage() {
             <EmptyTitle>No projects</EmptyTitle>
           </EmptyHeader>
           <EmptyContent>
-            <Button>
+            <Button onClick={openNewProject}>
               <PlusIcon />
               New project
             </Button>
@@ -59,13 +64,5 @@ export function HomePage() {
     .filter((s) => projectIds.has(s.projectId) && isVisibleInTree(s))
     .sort((a, b) => b.lastActivityAtUnixMs - a.lastActivityAtUnixMs)[0]
   if (latest) return <Navigate to={sessionPath(latest)} replace />
-  return (
-    <BarePage>
-      <Empty className="flex-1">
-        <EmptyHeader>
-          <EmptyTitle>No active sessions</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
-    </BarePage>
-  )
+  return <Navigate to={projectPath(projects.data[0].projectId)} replace />
 }

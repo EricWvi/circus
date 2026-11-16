@@ -10,11 +10,17 @@ export type ErrorCode =
 
 export class ApiError extends Error {
   readonly code: ErrorCode
+  /**
+   * The request field the error is about, as a path like "name" or
+   * "locations[1].path" (a Connect error's BadRequest field violation).
+   */
+  readonly field?: string
 
-  constructor(code: ErrorCode, message: string) {
+  constructor(code: ErrorCode, message: string, field?: string) {
     super(message)
     this.name = "ApiError"
     this.code = code
+    this.field = field
   }
 }
 

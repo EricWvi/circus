@@ -78,6 +78,8 @@ export type SessionEvent =
 export interface SessionActivity {
   state?: SessionState
   pendingApprovalCount?: number
+  /** The server names a session after its first message. */
+  title?: string
 }
 
 /** Conversation events keyed by session id, oldest first. */

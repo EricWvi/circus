@@ -1,5 +1,7 @@
 import { MessageSquareDashedIcon } from "lucide-react"
+import { Link } from "react-router"
 
+import type { Project, SessionSummary } from "@/api/types"
 import {
   Conversation,
   ConversationContent,
@@ -7,10 +9,9 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation"
 import { Shimmer } from "@/components/ai-elements/shimmer"
+import { PageHeader } from "@/components/page-header"
 import { StatusBadge } from "@/components/status-dot"
-import { Separator } from "@/components/ui/separator"
-import { SidebarTrigger } from "@/components/ui/sidebar"
-import type { Project, SessionSummary } from "@/api/types"
+import { projectPath } from "@/lib/tree"
 import { useConversations } from "@/state/conversations-context"
 
 import { EventItem } from "./event-list"
@@ -32,21 +33,25 @@ export function SessionView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        <SidebarTrigger />
-        <Separator orientation="vertical" className="mr-1 data-vertical:h-4 data-vertical:self-center" />
-        <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
-          <span className="hidden shrink-0 text-muted-foreground sm:inline">{project.name}</span>
-          <span className="hidden text-muted-foreground sm:inline" aria-hidden>
-            /
+      <PageHeader
+        actions={
+          <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
+            on {session.device}
           </span>
-          <h1 className="min-w-0 truncate font-medium">{session.title}</h1>
-          <StatusBadge state={session.state} />
-        </div>
-        <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
-          on {session.device}
+        }
+      >
+        <Link
+          to={projectPath(project.projectId)}
+          className="hidden shrink-0 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:inline"
+        >
+          {project.name}
+        </Link>
+        <span className="hidden text-muted-foreground sm:inline" aria-hidden>
+          /
         </span>
-      </header>
+        <h1 className="min-w-0 truncate font-medium">{session.title}</h1>
+        <StatusBadge state={session.state} />
+      </PageHeader>
 
       <Conversation className="min-h-0">
         <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-6">

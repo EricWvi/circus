@@ -13,6 +13,7 @@ import {
   PromptInputButton,
   PromptInputFooter,
   PromptInputHeader,
+  PromptInputProvider,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
@@ -48,18 +49,25 @@ function AddImageButton() {
 }
 
 export function SessionPrompt({
-  busy,
+  busy = false,
+  pending = false,
+  placeholder = "Message Claude… (Shift+Enter for a new line)",
   onSend,
   onStop,
 }: {
-  busy: boolean
-  onSend: (text: string, attachments: ImageAttachment[]) => void
-  onStop: () => void
+  /** A turn is running; the submit button stops it. */
+  busy?: boolean
+  /** The message is being sent; the input keeps its text until it succeeds. */
+  pending?: boolean
+  placeholder?: string
+  /** A rejected promise keeps the text and images for another try. */
+  onSend: (text: string, attachments: ImageAttachment[]) => void | Promise<void>
+  onStop?: () => void
 }) {
   const handleSubmit = ({ text, files }: PromptInputMessage) => {
     const trimmed = text.trim()
-    if (!trimmed && files.length === 0) return
-    onSend(
+    if (pending || (!trimmed && files.length === 0)) return Promise.reject(new Error("nothing to send"))
+    return onSend(
       trimmed,
       files.map((f) => ({
         id: nanoid(),
@@ -70,18 +78,25 @@ export function SessionPrompt({
     )
   }
 
+  // The provider keeps text and images when sending fails.
   return (
-    <PromptInput accept="image/*" multiple onSubmit={handleSubmit}>
-      <PendingAttachments />
-      <PromptInputBody>
-        <PromptInputTextarea placeholder="Message Claude… (Shift+Enter for a new line)" />
-      </PromptInputBody>
-      <PromptInputFooter>
-        <PromptInputTools>
-          <AddImageButton />
-        </PromptInputTools>
-        <PromptInputSubmit status={busy ? "streaming" : "ready"} onStop={onStop} />
-      </PromptInputFooter>
-    </PromptInput>
+    <PromptInputProvider>
+      <PromptInput accept="image/*" multiple onSubmit={handleSubmit}>
+        <PendingAttachments />
+        <PromptInputBody>
+          <PromptInputTextarea placeholder={placeholder} />
+        </PromptInputBody>
+        <PromptInputFooter>
+          <PromptInputTools>
+            <AddImageButton />
+          </PromptInputTools>
+          <PromptInputSubmit
+            status={pending ? "submitted" : busy ? "streaming" : "ready"}
+            onStop={onStop}
+            disabled={pending}
+          />
+        </PromptInputFooter>
+      </PromptInput>
+    </PromptInputProvider>
   )
 }

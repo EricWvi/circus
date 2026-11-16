@@ -20,3 +20,7 @@ export function buildTree(projects: Project[], sessions: SessionSummary[]): Proj
 export function sessionPath(session: Pick<SessionSummary, "sessionId" | "projectId">): string {
   return `/p/${encodeURIComponent(session.projectId)}/s/${encodeURIComponent(session.sessionId)}`
 }
+
+export const projectPath = (projectId: string) => `/p/${encodeURIComponent(projectId)}`
+
+export const projectSettingsPath = (projectId: string) => `${projectPath(projectId)}/settings`

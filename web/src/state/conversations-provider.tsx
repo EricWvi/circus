@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react"
 
 import { queryKeys } from "@/api/query-client"
+import { titleFromMessage } from "@/lib/title"
 import type { SessionSummary } from "@/api/types"
 import type {
   ImageAttachment,
@@ -156,6 +157,9 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
   const send = useCallback<ConversationsContextValue["send"]>(
     (sessionId, text, attachments: ImageAttachment[]) => {
       clearTimers(sessionId)
+      const first = !(live.current.latest[sessionId] ?? noEvents).some(
+        (e) => e.kind === "user_message",
+      )
       dispatch({
         type: "append",
         sessionId,
@@ -167,7 +171,9 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
           attachments,
         },
       })
-      report(sessionId, { state: "running" })
+      // The first message names the session, as the server would.
+      const title = first ? titleFromMessage(text) : null
+      report(sessionId, title ? { state: "running", title } : { state: "running" })
 
       const reply = cannedReplies[nextId % cannedReplies.length]
       const words = reply.split(/(?<=\s)/)

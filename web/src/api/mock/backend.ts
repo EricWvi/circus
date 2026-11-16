@@ -24,6 +24,11 @@ export interface MockBackend {
   conversations: ConversationStore
   /** Replaces the state with one another tab wrote, notifying subscribers. */
   adopt(next: MockState): void
+  /**
+   * Called when another tab changed projects, sessions or devices, the way
+   * a server would push updates; the app refetches.
+   */
+  onExternalChange(listener: () => void): () => void
 }
 
 /** Pasted images larger than this are not persisted (localStorage is small). */
@@ -56,7 +61,8 @@ export interface MockBackendOptions {
   tabId?: string
 }
 
-const invalid =(message: string) => new ApiError("invalid_argument", message)
+const invalid = (message: string, field?: string) =>
+  new ApiError("invalid_argument", message, field)
 
 /** An in-memory control plane with the server's validation and error semantics. */
 export function createMockBackend({
@@ -72,6 +78,7 @@ export function createMockBackend({
     state.writtenBy[sessionId] = tabId
   }
   const listeners = new Set<(sessionIds: string[]) => void>()
+  const externalListeners = new Set<() => void>()
 
   // Runs a handler after the simulated network delay. Requests and responses
   // are copied so callers never share objects with the store.
@@ -104,32 +111,39 @@ export function createMockBackend({
   }
 
   function checkName(owner: string, name: unknown, exceptId?: string): string {
-    if (typeof name !== "string") throw invalid("Enter a project name.")
+    if (typeof name !== "string") throw invalid("Enter a project name.", "name")
     const problem = validateProjectName(name)
-    if (problem) throw invalid(problem)
+    if (problem) throw invalid(problem, "name")
     const trimmed = name.trim()
     const taken = state.projects.some(
       (p) => p.owner === owner && p.projectId !== exceptId && sameProjectName(p.name, trimmed),
     )
-    if (taken) throw new ApiError("already_exists", `A project named "${trimmed}" already exists.`)
+    if (taken) {
+      throw new ApiError("already_exists", `A project named "${trimmed}" already exists.`, "name")
+    }
     return trimmed
   }
 
   function checkLocations(owner: string, locations: unknown): Location[] {
     if (!Array.isArray(locations) || locations.length === 0) {
-      throw invalid("Add at least one location.")
+      throw invalid("Add at least one location.", "locations")
     }
     const out: Location[] = []
-    for (const loc of locations as Location[]) {
+    for (const [i, loc] of (locations as Location[]).entries()) {
       const device = state.devices.find((d) => d.owner === owner && d.name === loc?.device)
-      if (!device) throw invalid(`Unknown device "${loc?.device ?? ""}".`)
+      if (!device) {
+        throw invalid(`Unknown device "${loc?.device ?? ""}".`, `locations[${i}].device`)
+      }
       const path = normalizePath(String(loc.path ?? ""), device.os)
       if (!isAbsolutePath(path, device.os)) {
-        throw invalid(`"${loc.path}" is not an absolute path on ${device.name}.`)
+        throw invalid(
+          `"${loc.path}" is not an absolute path on ${device.name}.`,
+          `locations[${i}].path`,
+        )
       }
       const location = { device: device.name, path }
       if (out.some((l) => sameLocation(l, location))) {
-        throw invalid(`${device.name}:${path} is listed more than once.`)
+        throw invalid(`${device.name}:${path} is listed more than once.`, `locations[${i}].path`)
       }
       out.push(location)
     }
@@ -282,7 +296,7 @@ export function createMockBackend({
         const location = Number.isInteger(req.locationIndex)
           ? project.locations[req.locationIndex]
           : undefined
-        if (!location) throw invalid("Choose one of the project's locations.")
+        if (!location) throw invalid("Choose one of the project's locations.", "locationIndex")
         const at = now()
         const session: SessionSummary = {
           sessionId: nanoid(12),
@@ -333,8 +347,15 @@ export function createMockBackend({
       const changedIds = Object.keys({ ...state.conversations, ...next.conversations }).filter(
         (id) => JSON.stringify(state.conversations[id]) !== JSON.stringify(next.conversations[id]),
       )
+      const data = (m: MockState) => JSON.stringify([m.projects, m.sessions, m.devices])
+      const dataChanged = data(state) !== data(next)
       Object.assign(state, next)
       if (changedIds.length > 0) for (const listener of listeners) listener(changedIds)
+      if (dataChanged) for (const listener of externalListeners) listener()
+    },
+    onExternalChange(listener) {
+      externalListeners.add(listener)
+      return () => externalListeners.delete(listener)
     },
   }
 }
