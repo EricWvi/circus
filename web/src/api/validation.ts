@@ -1,6 +1,8 @@
 // Input rules shared by the mock server and the forms. The server is the
 // authority; the UI runs the same checks first for instant feedback.
 
+import { i18n } from "@/i18n/i18n"
+
 import type { Location } from "./types"
 
 export const EMAIL_MAX = 254
@@ -29,7 +31,7 @@ const utf8Length = (text: string) => new TextEncoder().encode(text).length
  */
 export function validateEmail(email: string): string | null {
   const normalized = normalizeEmail(email)
-  if (normalized === "") return "Enter an email address."
+  if (normalized === "") return i18n.t("validation.emailRequired")
   const parts = normalized.split("@")
   if (
     utf8Length(normalized) > EMAIL_MAX ||
@@ -38,26 +40,26 @@ export function validateEmail(email: string): string | null {
     /\s/.test(normalized) ||
     emailControlChars.test(normalized)
   ) {
-    return "Enter a valid email address."
+    return i18n.t("validation.emailInvalid")
   }
   return null
 }
 
 export function validatePassword(password: string): string | null {
   const bytes = utf8Length(password)
-  if (bytes < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters.`
-  if (bytes > PASSWORD_MAX) return `Password is too long (at most ${PASSWORD_MAX} bytes).`
+  if (bytes < PASSWORD_MIN) return i18n.t("validation.passwordTooShort", { min: PASSWORD_MIN })
+  if (bytes > PASSWORD_MAX) return i18n.t("validation.passwordTooLong", { max: PASSWORD_MAX })
   return null
 }
 
 /** Checks a project name after trimming. */
 export function validateProjectName(name: string): string | null {
   const trimmed = name.trim()
-  if (trimmed === "") return "Enter a project name."
+  if (trimmed === "") return i18n.t("validation.projectNameRequired")
   if ([...trimmed].length > PROJECT_NAME_MAX) {
-    return `Project names are at most ${PROJECT_NAME_MAX} characters.`
+    return i18n.t("validation.projectNameTooLong", { max: PROJECT_NAME_MAX })
   }
-  if (controlChars.test(trimmed)) return "Project names can't contain control characters."
+  if (controlChars.test(trimmed)) return i18n.t("validation.projectNameControlChars")
   return null
 }
 

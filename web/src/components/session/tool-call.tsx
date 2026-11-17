@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import type { BundledLanguage } from "shiki"
 
 import { CodeBlock } from "@/components/ai-elements/code-block"
@@ -9,6 +10,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool"
+import { INTERRUPTED_TOOL_ERROR } from "@/lib/settle"
 import type { ToolCallEvent } from "@/lib/types"
 
 import { toToolPartState } from "./tool-state"
@@ -70,6 +72,7 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Body({ event }: { event: ToolCallEvent }) {
+  const { t } = useTranslation()
   const { tool, input, output, error } = event
 
   const errorBlock = error ? (
@@ -80,11 +83,11 @@ function Body({ event }: { event: ToolCallEvent }) {
     case "Bash":
       return (
         <>
-          <Section label="Command">
+          <Section label={t("session.tool.command")}>
             <CodeBlock code={str(input.command)} language="bash" />
           </Section>
           {output !== undefined && (
-            <Section label="Output">
+            <Section label={t("session.tool.output")}>
               <CodeBlock code={output} language="log" />
             </Section>
           )}
@@ -122,6 +125,7 @@ function Body({ event }: { event: ToolCallEvent }) {
 }
 
 export function ToolCall({ event }: { event: ToolCallEvent }) {
+  const { t } = useTranslation()
   const target = summary(event)
   const decision = event.approval?.decision
 
@@ -137,10 +141,18 @@ export function ToolCall({ event }: { event: ToolCallEvent }) {
       <ToolContent className="space-y-3 border-t p-3">
         {decision && (
           <p className="text-xs text-muted-foreground">
-            {decision === "approved" ? "Approved by you" : "Denied by you"}
+            {t(decision === "approved" ? "session.tool.approvedByYou" : "session.tool.deniedByYou")}
           </p>
         )}
-        <Body event={event} />
+        <Body
+          event={
+            // The client's own note for a tool call it gave up on; any other
+            // error text comes from the agent and is shown as it is.
+            event.error === INTERRUPTED_TOOL_ERROR
+              ? { ...event, error: t("session.tool.interrupted") }
+              : event
+          }
+        />
       </ToolContent>
     </Tool>
   )

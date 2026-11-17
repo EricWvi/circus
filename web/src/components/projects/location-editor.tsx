@@ -1,4 +1,5 @@
 import { PlusIcon, XIcon } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import type { Device } from "@/api/types"
 import { DisabledReason } from "@/components/disabled-reason"
@@ -44,6 +45,7 @@ export function LocationEditor({
   onChange: (rows: LocationRow[]) => void
   onTouch: (key: string, field: LocationField) => void
 }) {
+  const { t } = useTranslation()
   const sorted = sortDevices(devices ?? [])
   const update = (key: string, patch: Partial<LocationRow>) =>
     onChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)))
@@ -67,7 +69,7 @@ export function LocationEditor({
                   loading={devices === undefined}
                   disabled={disabled}
                   invalid={!!rowErrors.device}
-                  label={`Device for location ${n}`}
+                  label={t("projects.deviceForLocation", { n })}
                   onChange={(name) => update(row.key, { device: name })}
                   onClose={() => onTouch(row.key, "device")}
                 />
@@ -77,7 +79,7 @@ export function LocationEditor({
                 <Input
                   value={row.path}
                   placeholder={pathPlaceholder(device?.os)}
-                  aria-label={`Path for location ${n}`}
+                  aria-label={t("projects.pathForLocation", { n })}
                   aria-invalid={rowErrors.path ? true : undefined}
                   autoCapitalize="none"
                   autoComplete="off"
@@ -90,13 +92,13 @@ export function LocationEditor({
               </div>
               <div className="col-start-2 row-start-1 sm:col-start-3">
                 <DisabledReason
-                  reason={rows.length === 1 ? "A project needs at least one location" : null}
+                  reason={rows.length === 1 ? t("projects.needsOneLocation") : null}
                 >
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    aria-label={`Remove location ${n}`}
+                    aria-label={t("projects.removeLocation", { n })}
                     disabled={disabled || rows.length === 1}
                     onClick={() => onChange(rows.filter((r) => r.key !== row.key))}
                   >
@@ -117,7 +119,7 @@ export function LocationEditor({
         onClick={() => onChange([...rows, newRow(sorted)])}
       >
         <PlusIcon />
-        Add location
+        {t("projects.addLocation")}
       </Button>
     </div>
   )
@@ -142,6 +144,7 @@ function DeviceSelect({
   onChange: (name: string) => void
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const { triggerRef, onOpenChange, onCloseAutoFocus } = useOverlayFocus<HTMLButtonElement>()
   const selected = devices.find((d) => d.name === value)
   const empty = !loading && devices.length === 0
@@ -162,7 +165,7 @@ function DeviceSelect({
         aria-invalid={invalid ? true : undefined}
         className="w-full"
       >
-        <SelectValue placeholder={empty ? "No devices" : "Device"}>
+        <SelectValue placeholder={t(empty ? "projects.noDevices" : "projects.device")}>
           {selected && <DeviceName device={selected} />}
         </SelectValue>
       </SelectTrigger>
@@ -178,11 +181,12 @@ function DeviceSelect({
 }
 
 function DeviceName({ device, showOs }: { device: Device; showOs?: boolean }) {
+  const { t } = useTranslation()
   return (
     <span className="flex min-w-0 items-baseline gap-2">
       <span className="truncate">{device.name}</span>
       {showOs && <span className="shrink-0 text-xs text-muted-foreground">{osLabel(device.os)}</span>}
-      {!device.online && <span className="shrink-0 text-xs text-muted-foreground">offline</span>}
+      {!device.online && <span className="shrink-0 text-xs text-muted-foreground">{t("common.offline")}</span>}
     </span>
   )
 }

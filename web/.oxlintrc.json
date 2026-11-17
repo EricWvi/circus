@@ -7,6 +7,9 @@
     "react",
     "import"
   ],
+  "jsPlugins": [
+    "eslint-plugin-i18next"
+  ],
   "env": {
     "browser": true,
     "es2024": true
@@ -53,6 +56,37 @@
   "overrides": [
     {
       "files": [
+        "src/**/*.tsx"
+      ],
+      "rules": {
+        "i18next/no-literal-string": [
+          "error",
+          {
+            "mode": "jsx-only",
+            "should-validate-template": true,
+            "jsx-attributes": {
+              "include": [
+                "placeholder",
+                "title",
+                "alt",
+                "label",
+                "aria-label",
+                "aria-description",
+                "aria-placeholder",
+                "aria-roledescription",
+                "aria-valuetext",
+                "description",
+                "heading",
+                "reason",
+                "tooltip"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "files": [
         "src/components/ui/**",
         "src/components/ai-elements/**",
         "src/hooks/use-mobile*"
@@ -63,7 +97,8 @@
         "react/set-state-in-effect": "off",
         "react/static-components": "off",
         "no-shadow": "off",
-        "no-underscore-dangle": "off"
+        "no-underscore-dangle": "off",
+        "i18next/no-literal-string": "off"
       }
     }
   ]

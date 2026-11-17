@@ -10,6 +10,7 @@ import {
   hasErrors,
   mapServerError,
   pickLocation,
+  projectErrorMessage,
   sortDevices,
   toLocations,
   validateForm,
@@ -77,23 +78,56 @@ describe("validateForm", () => {
 })
 
 describe("mapServerError", () => {
-  const rows = [row("a", "box", "/a"), row("b", "box", "/b")]
+  const form = { name: " web ", rows: [row("a", "box", "/a"), row("b", "box", "/b")] }
 
   it("maps field paths to the name or a row's field", () => {
-    expect(mapServerError(new ApiError("already_exists", "taken", "name"), rows)).toEqual({ rows: {}, name: "taken" })
-    expect(mapServerError(new ApiError("invalid_argument", "bad", "locations[1].path"), rows)).toEqual({
-      rows: { b: { path: "bad" } },
+    expect(mapServerError(new ApiError("already_exists", "taken", "name"), form)).toEqual({
+      rows: {},
+      name: 'A project named "web" already exists.',
     })
-    expect(mapServerError(new ApiError("invalid_argument", "gone", "locations[0].device"), rows)).toEqual({
-      rows: { a: { device: "gone" } },
+    expect(mapServerError(new ApiError("invalid_argument", "bad", "locations[1].path"), form)).toEqual({
+      rows: { b: { path: "This path can't be used on its device." } },
+    })
+    expect(mapServerError(new ApiError("invalid_argument", "gone", "locations[0].device"), form)).toEqual({
+      rows: { a: { device: "Unknown device." } },
     })
   })
 
+  it("never shows the server's text", () => {
+    const { name } = mapServerError(new ApiError("invalid_argument", "server text", "name"), {
+      ...form,
+      name: " ",
+    })
+    expect(name).toBe("Enter a project name.")
+  })
+
+  it("says a value can't be used when the client didn't predict the refusal", () => {
+    expect(mapServerError(new ApiError("invalid_argument", "x", "name"), form).name).toBe(
+      "This name can't be used.",
+    )
+    expect(mapServerError(new ApiError("invalid_argument", "x", "locations[0].path"), form).rows.a?.path).toBe(
+      "This path can't be used on its device.",
+    )
+  })
+
+  it("says when the project is gone", () => {
+    expect(mapServerError(new ApiError("not_found", "x"), form)).toEqual({
+      rows: {},
+      form: "This project no longer exists.",
+    })
+    expect(projectErrorMessage(new ApiError("not_found", "x"))).toBe("This project no longer exists.")
+    expect(projectErrorMessage(new ApiError("unavailable", "x"))).toMatch(/reach the server/)
+    expect(projectErrorMessage(new Error("x"))).toMatch(/went wrong/)
+  })
+
   it("falls back to one line for the form", () => {
-    expect(mapServerError(new ApiError("invalid_argument", "none", "locations"), rows)).toEqual({ rows: {}, form: "none" })
-    expect(mapServerError(new ApiError("invalid_argument", "x", "locations[7].path"), rows).form).toBe("x")
-    expect(mapServerError(new ApiError("unavailable", "down"), rows).form).toMatch(/reach the server/)
-    expect(mapServerError(new Error("boom"), rows).form).toMatch(/went wrong/)
+    expect(mapServerError(new ApiError("invalid_argument", "none", "locations"), form)).toEqual({
+      rows: {},
+      form: "Add at least one location.",
+    })
+    expect(mapServerError(new ApiError("invalid_argument", "x", "locations[7].path"), form).form).toMatch(/went wrong/)
+    expect(mapServerError(new ApiError("unavailable", "down"), form).form).toMatch(/reach the server/)
+    expect(mapServerError(new Error("boom"), form).form).toMatch(/went wrong/)
   })
 })
 

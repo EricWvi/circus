@@ -1,5 +1,10 @@
 import type { SessionEvent } from "./types"
 
+/**
+ * The error a settled tool call is stored with. It marks the client's own
+ * note rather than agent text, so the tool view shows it in the active
+ * language (`session.tool.interrupted`).
+ */
 export const INTERRUPTED_TOOL_ERROR = "Interrupted before the tool finished."
 
 /**

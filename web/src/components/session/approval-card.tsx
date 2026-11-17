@@ -1,4 +1,5 @@
 import { ShieldAlertIcon } from "lucide-react"
+import { Trans, useTranslation } from "react-i18next"
 
 import { CodeBlock } from "@/components/ai-elements/code-block"
 import {
@@ -21,6 +22,7 @@ export function ApprovalCard({
   deviceName: string
   onDecide: (decision: "approved" | "denied") => void
 }) {
+  const { t } = useTranslation()
   const command =
     typeof event.input.command === "string"
       ? event.input.command
@@ -37,7 +39,11 @@ export function ApprovalCard({
           <span className="flex items-center gap-2 font-medium">
             <ShieldAlertIcon className="size-4 shrink-0" />
             <span>
-              Allow <span className="font-semibold">{event.tool}</span> on {deviceName}?
+              <Trans
+                i18nKey="session.approval.title"
+                values={{ tool: event.tool, device: deviceName }}
+                components={{ tool: <span className="font-semibold" /> }}
+              />
             </span>
           </span>
           <CodeBlock code={command} language="bash" />
@@ -48,9 +54,11 @@ export function ApprovalCard({
       </ConfirmationRequest>
       <ConfirmationActions>
         <ConfirmationAction variant="outline" onClick={() => onDecide("denied")}>
-          Deny
+          {t("session.approval.deny")}
         </ConfirmationAction>
-        <ConfirmationAction onClick={() => onDecide("approved")}>Approve</ConfirmationAction>
+        <ConfirmationAction onClick={() => onDecide("approved")}>
+          {t("session.approval.approve")}
+        </ConfirmationAction>
       </ConfirmationActions>
     </Confirmation>
   )

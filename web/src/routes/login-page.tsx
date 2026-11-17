@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router"
 
 import { authErrorMessage } from "@/api/auth-messages"
@@ -15,7 +16,14 @@ import { useRedirectErrorCode } from "@/hooks/use-redirect-error"
 import { loginRedirectError } from "@/lib/auth-errors"
 import { safeNext } from "@/lib/auth-redirect"
 
+/** Why sign-in failed, kept as the cause so its text follows the language. */
+type LoginProblem =
+  | { kind: "redirect"; code: string }
+  | { kind: "missing_fields" }
+  | { kind: "failed"; error: unknown }
+
 export function LoginPage() {
+  const { t } = useTranslation()
   const auth = useAuth()
   const methods = auth.data?.kind === "signed_out" ? auth.data.methods : undefined
   const [params] = useSearchParams()
@@ -25,30 +33,39 @@ export function LoginPage() {
   const redirectError = useRedirectErrorCode()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(() => loginRedirectError(redirectError))
+  const [problem, setProblem] = useState<LoginProblem | null>(() =>
+    redirectError ? { kind: "redirect", code: redirectError } : null,
+  )
+  const error =
+    problem === null
+      ? null
+      : problem.kind === "redirect"
+        ? loginRedirectError(problem.code)
+        : problem.kind === "missing_fields"
+          ? t("auth.enterEmailAndPassword")
+          : authErrorMessage(problem.error)
+  const failed = (e: unknown) => setProblem({ kind: "failed", error: e })
 
   // On success the auth guard moves the user on to `next`.
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (email.trim() === "" || password === "") {
-      setError("Enter your email and password.")
+      setProblem({ kind: "missing_fields" })
       return
     }
-    setError(null)
-    login.mutate({ email, password }, { onError: (e) => setError(authErrorMessage(e)) })
+    setProblem(null)
+    login.mutate({ email, password }, { onError: failed })
   }
 
   const continueWithOidc = () => {
-    setError(null)
+    setProblem(null)
     const next = safeNext(params.get("next"))
-    oidcLogin.mutate(next === "/" ? undefined : next, {
-      onError: (e) => setError(authErrorMessage(e)),
-    })
+    oidcLogin.mutate(next === "/" ? undefined : next, { onError: failed })
   }
 
   const edit = (set: (value: string) => void) => (value: string) => {
     set(value)
-    setError(null)
+    setProblem(null)
   }
   const pending = login.isPending || oidcLogin.isPending
 
@@ -57,7 +74,7 @@ export function LoginPage() {
       <form onSubmit={submit} noValidate className="flex flex-col gap-5">
         <FieldGroup className="gap-4">
           <Field>
-            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <FieldLabel htmlFor="email">{t("auth.email")}</FieldLabel>
             <Input
               id="email"
               {...quietAutoFocus}
@@ -72,7 +89,7 @@ export function LoginPage() {
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <FieldLabel htmlFor="password">{t("auth.password")}</FieldLabel>
             <Input
               id="password"
               name="password"
@@ -86,8 +103,8 @@ export function LoginPage() {
         </FieldGroup>
         <FormError>{error}</FormError>
         <Button type="submit" className="w-full" disabled={pending}>
-          {login.isPending && <Spinner aria-label="Signing in" />}
-          Sign in
+          {login.isPending && <Spinner aria-label={t("auth.signingIn")} />}
+          {t("auth.signIn")}
         </Button>
       </form>
       <OrDivider />
@@ -116,6 +133,7 @@ export function LoginPage() {
  * tooltip too (tooltips normally close on click), so it still explains.
  */
 function UnavailableProvider({ name, children }: { name: string; children: ReactNode }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
     <Tooltip open={open} onOpenChange={setOpen}>
@@ -124,7 +142,7 @@ function UnavailableProvider({ name, children }: { name: string; children: React
           type="button"
           variant="outline"
           size="icon-lg"
-          aria-label={`Sign in with ${name}`}
+          aria-label={t("auth.signInWith", { provider: name })}
           aria-disabled="true"
           onClick={(event) => {
             // Keeps the tooltip's own close-on-click from running.
@@ -136,7 +154,7 @@ function UnavailableProvider({ name, children }: { name: string; children: React
         </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom" sideOffset={4}>
-        Not available yet
+        {t("auth.notAvailableYet")}
       </TooltipContent>
     </Tooltip>
   )

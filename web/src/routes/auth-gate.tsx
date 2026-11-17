@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next"
 import { Navigate, Outlet, useLocation } from "react-router"
 
 import { useAuth } from "@/api/hooks"
@@ -7,6 +8,7 @@ import { authRedirect } from "@/lib/auth-redirect"
 
 /** Resolves who is signed in and routes to setup, sign-in or the app. */
 export function AuthGate() {
+  const { t } = useTranslation()
   const auth = useAuth()
   const location = useLocation()
 
@@ -17,9 +19,9 @@ export function AuthGate() {
     return (
       <AuthCard>
         <div className="flex flex-col items-center gap-4">
-          <p className="text-sm text-muted-foreground">Can&apos;t reach the server.</p>
+          <p className="text-sm text-muted-foreground">{t("errors.serverUnreachable")}</p>
           <Button variant="outline" onClick={() => void auth.refetch()}>
-            Try again
+            {t("common.tryAgain")}
           </Button>
         </div>
       </AuthCard>

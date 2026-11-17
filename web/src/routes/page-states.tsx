@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
@@ -16,12 +17,13 @@ export function BarePage({ children }: { children?: ReactNode }) {
 }
 
 export function LoadError({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation()
   return (
     <BarePage>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
-        <p className="text-sm text-muted-foreground">Couldn&apos;t load this page.</p>
+        <p className="text-sm text-muted-foreground">{t("errors.pageLoadFailed")}</p>
         <Button variant="outline" onClick={onRetry}>
-          Try again
+          {t("common.tryAgain")}
         </Button>
       </div>
     </BarePage>

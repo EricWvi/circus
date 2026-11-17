@@ -1,4 +1,5 @@
 import { MessageSquareDashedIcon } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Link } from "react-router"
 
 import type { Project, SessionSummary } from "@/api/types"
@@ -24,6 +25,7 @@ export function SessionView({
   project: Project
   session: SessionSummary
 }) {
+  const { t } = useTranslation()
   const { events: eventsOf, send, stop, decideApproval } = useConversations()
   const events = eventsOf(session.sessionId)
   const last = events.at(-1)
@@ -36,7 +38,7 @@ export function SessionView({
       <PageHeader
         actions={
           <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
-            on {session.device}
+            {t("session.onDevice", { device: session.device })}
           </span>
         }
       >
@@ -59,8 +61,8 @@ export function SessionView({
             <ConversationEmptyState
               className="min-h-[50vh]"
               icon={<MessageSquareDashedIcon className="size-8" />}
-              title="No messages yet"
-              description={`Send a prompt to start working on ${session.device}.`}
+              title={t("session.noMessages")}
+              description={t("session.noMessagesHint", { device: session.device })}
             />
           ) : (
             events.map((event) => (
@@ -76,11 +78,11 @@ export function SessionView({
           )}
           {showWorking && (
             <div className="text-sm">
-              <Shimmer>Working…</Shimmer>
+              <Shimmer>{t("session.working")}</Shimmer>
             </div>
           )}
         </ConversationContent>
-        <ConversationScrollButton />
+        <ConversationScrollButton aria-label={t("session.scrollToLatest")} />
       </Conversation>
 
       <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">

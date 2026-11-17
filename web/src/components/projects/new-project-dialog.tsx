@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router"
 
 import { useCreateProject, useDevices, useProjects } from "@/api/hooks"
@@ -46,6 +47,7 @@ export function NewProjectDialogProvider({ children }: { children: ReactNode }) 
 
 // Mounted with the dialog content, so every opening starts empty.
 function NewProjectForm({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const devices = useDevices()
   const projects = useProjects()
@@ -82,10 +84,10 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-5">
       <DialogHeader>
-        <DialogTitle>New project</DialogTitle>
+        <DialogTitle>{t("projects.newProject")}</DialogTitle>
       </DialogHeader>
       <Field>
-        <FieldLabel htmlFor="new-project-name">Name</FieldLabel>
+        <FieldLabel htmlFor="new-project-name">{t("common.name")}</FieldLabel>
         <Input
           id="new-project-name"
           {...quietAutoFocus}
@@ -102,7 +104,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
       </Field>
       <FieldSet className="gap-2">
         <FieldLegend variant="label" className="mb-0">
-          Locations
+          {t("projects.locations")}
         </FieldLegend>
         <LocationEditor
           rows={form.rows}
@@ -121,12 +123,12 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
       <DialogFooter>
         <DialogClose asChild>
           <Button type="button" variant="outline">
-            Cancel
+            {t("common.cancel")}
           </Button>
         </DialogClose>
         <Button type="submit" disabled={create.isPending}>
-          {create.isPending && <Spinner aria-label="Creating project" />}
-          Create
+          {create.isPending && <Spinner aria-label={t("projects.creating")} />}
+          {t("common.create")}
         </Button>
       </DialogFooter>
     </form>

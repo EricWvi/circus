@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Link } from "react-router"
 import { ChevronRightIcon, MonitorSmartphoneIcon, PlusIcon, SearchIcon } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { useCurrentUser, useDevices, useProjects, useSessionList } from "@/api/hooks"
 import { Brand } from "@/components/brand"
@@ -25,7 +26,7 @@ import {
   SidebarMenuSubItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { rollupState, sessionStateLabels } from "@/lib/status"
+import { rollupState } from "@/lib/status"
 import { formatRelative } from "@/lib/time"
 import { buildTree, projectPath, sessionPath, type ProjectNode } from "@/lib/tree"
 
@@ -43,6 +44,7 @@ export function AppSidebar({
   /** The project whose own page (home or settings) is open. */
   activeProjectId?: string
 }) {
+  const { t } = useTranslation()
   const { user } = useCurrentUser()
   const openNewProject = useOpenNewProject()
   const { isMobile, setOpenMobile } = useSidebar()
@@ -62,14 +64,15 @@ export function AppSidebar({
           className="h-8 w-full justify-start gap-2 bg-background px-2 font-normal text-muted-foreground"
         >
           <SearchIcon />
-          <span className="flex-1 text-left">Search</span>
+          <span className="flex-1 text-left">{t("sidebar.search")}</span>
+          {/* oxlint-disable-next-line i18next/no-literal-string -- a key glyph, the same in every language */}
           <Kbd>⌘K</Kbd>
         </Button>
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Projects</SidebarGroupLabel>
+          <SidebarGroupLabel>{t("sidebar.projects")}</SidebarGroupLabel>
           <SidebarMenu>
             {tree?.map((node) => (
               <ProjectGroup
@@ -87,7 +90,7 @@ export function AppSidebar({
               </>
             )}
             {loadFailed && (
-              <li className="px-2 py-1 text-xs text-muted-foreground">Couldn&apos;t load projects</li>
+              <li className="px-2 py-1 text-xs text-muted-foreground">{t("sidebar.projectsLoadFailed")}</li>
             )}
             <SidebarMenuItem>
               <SidebarMenuButton
@@ -98,7 +101,7 @@ export function AppSidebar({
                 }}
               >
                 <PlusIcon />
-                <span>New project</span>
+                <span>{t("projects.newProject")}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -110,10 +113,13 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton className={rowStates}>
               <MonitorSmartphoneIcon />
-              <span className="flex-1">Devices</span>
+              <span className="flex-1">{t("sidebar.devices")}</span>
               {devices.data && (
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {devices.data.filter((d) => d.online).length}/{devices.data.length} online
+                  {t("sidebar.devicesOnline", {
+                    online: devices.data.filter((d) => d.online).length,
+                    total: devices.data.length,
+                  })}
                 </span>
               )}
             </SidebarMenuButton>
@@ -141,6 +147,7 @@ function ProjectGroup({
   activeSessionId?: string
   active: boolean
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(true)
   const { isMobile, setOpenMobile } = useSidebar()
   const rollup = rollupState(sessions)
@@ -161,7 +168,7 @@ function ProjectGroup({
           >
             <span className="flex-1 truncate">{project.name}</span>
             {!open && rollup && (
-              <span className="flex items-center" title={sessionStateLabels[rollup]}>
+              <span className="flex items-center" title={t(`status.${rollup}`)}>
                 <StatusDot state={rollup} />
               </span>
             )}
@@ -170,7 +177,9 @@ function ProjectGroup({
         <CollapsibleTrigger asChild>
           <button
             type="button"
-            aria-label={`${open ? "Collapse" : "Expand"} ${project.name}`}
+            aria-label={t(open ? "sidebar.collapseProject" : "sidebar.expandProject", {
+              name: project.name,
+            })}
             className="absolute top-1.5 left-1.5 flex size-5 items-center justify-center rounded-md text-muted-foreground outline-hidden ring-sidebar-ring hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground focus-visible:ring-2"
           >
             <ChevronRightIcon className="size-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
@@ -179,7 +188,7 @@ function ProjectGroup({
         <CollapsibleContent>
           <SidebarMenuSub className="mr-0 pr-0">
             {sessions.length === 0 && (
-              <li className="px-2 py-1 text-xs text-muted-foreground">No active sessions</li>
+              <li className="px-2 py-1 text-xs text-muted-foreground">{t("sidebar.noActiveSessions")}</li>
             )}
             {sessions.map((session) => (
               <SidebarMenuSubItem key={session.sessionId}>

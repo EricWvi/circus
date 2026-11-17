@@ -13,6 +13,7 @@ import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   createContext,
   memo,
@@ -154,15 +155,26 @@ export type ReasoningTriggerProps = ComponentProps<
   getThinkingMessage?: (isStreaming: boolean, duration?: number) => ReactNode;
 };
 
-const defaultGetThinkingMessage = (isStreaming: boolean, duration?: number) => {
+const ThinkingMessage = ({
+  isStreaming,
+  duration,
+}: {
+  isStreaming: boolean;
+  duration?: number;
+}) => {
+  const { t } = useTranslation();
   if (isStreaming || duration === 0) {
-    return <Shimmer duration={1}>Thinking...</Shimmer>;
+    return <Shimmer duration={1}>{t("session.reasoning.thinking")}</Shimmer>;
   }
   if (duration === undefined) {
-    return <p>Thought for a few seconds</p>;
+    return <p>{t("session.reasoning.thoughtBriefly")}</p>;
   }
-  return <p>Thought for {duration} seconds</p>;
+  return <p>{t("session.reasoning.thoughtFor", { count: duration })}</p>;
 };
+
+const defaultGetThinkingMessage = (isStreaming: boolean, duration?: number) => (
+  <ThinkingMessage duration={duration} isStreaming={isStreaming} />
+);
 
 export const ReasoningTrigger = memo(
   ({

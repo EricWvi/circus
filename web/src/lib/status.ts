@@ -1,15 +1,5 @@
 import type { SessionState } from "./types"
 
-export const sessionStateLabels: Record<SessionState, string> = {
-  running: "Running",
-  awaiting_approval: "Needs approval",
-  queued: "Queued",
-  idle: "Idle",
-  interrupted: "Interrupted",
-  broken: "Broken",
-  stopped: "Stopped",
-}
-
 // Lower number = more urgent. Drives the status shown next to a collapsed
 // project and the order of attention in the sidebar.
 const urgency: Record<SessionState, number> = {

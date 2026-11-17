@@ -3,9 +3,9 @@
 // pages show.
 
 import { authMessages } from "@/api/auth-messages"
+import { i18n } from "@/i18n/i18n"
 
-const unverified = "Your account's email address is not verified with the provider."
-const providerFailed = "Sign-in with the provider failed. Try again."
+const unverified = () => i18n.t("auth.errors.emailUnverified")
 
 /** The message for a code the server put on /login, or null for none. */
 export function loginRedirectError(code: string | null): string | null {
@@ -14,12 +14,12 @@ export function loginRedirectError(code: string | null): string | null {
     case "":
       return null
     case "email_unverified":
-      return unverified
+      return unverified()
     case "too_many_attempts":
       return authMessages.tooManyAttempts
     case "oidc_failed":
     default:
-      return providerFailed
+      return i18n.t("auth.errors.providerFailed")
   }
 }
 
@@ -42,11 +42,11 @@ export function setupRedirectError(code: string | null): SetupRedirectError | nu
     case "already_set_up":
       return { kind: "already_set_up" }
     case "email_unverified":
-      return { kind: "failed", message: unverified }
+      return { kind: "failed", message: unverified() }
     case "too_many_attempts":
       return { kind: "failed", message: authMessages.tooManyAttempts }
     case "oidc_failed":
     default:
-      return { kind: "failed", message: "Setup with the provider failed. Try again." }
+      return { kind: "failed", message: i18n.t("auth.errors.setupProviderFailed") }
   }
 }

@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { useState, type FormEvent } from "react"
+import { Trans, useTranslation } from "react-i18next"
 import { Link } from "react-router"
 
 import { authErrorMessage, authMessages, isInvalidSetupToken } from "@/api/auth-messages"
@@ -26,9 +27,18 @@ import { setupRedirectError } from "@/lib/auth-errors"
 type Invalid = "email" | "password" | "confirm" | null
 type Blocked = "invalid_token" | "already_set_up" | null
 
-const openTheLink = "Open the setup link printed in the server log."
+/**
+ * Why setup failed, kept as the cause so its text follows the language. An
+ * invalid field is checked again at render; editing clears the problem, so
+ * the values are still the submitted ones.
+ */
+type SetupProblem =
+  | { kind: "redirect"; code: string }
+  | { kind: "invalid"; field: "email" | "password" | "confirm" }
+  | { kind: "failed"; error: unknown }
 
 export function SetupPage() {
+  const { t } = useTranslation()
   const auth = useAuth()
   // The token stays in this page's state only: it leaves the address bar
   // (and with it history and Referer), so a reload asks for the link again.
@@ -45,10 +55,12 @@ export function SetupPage() {
       <AuthCard>
         <AuthMessage>
           <p>
-            {authMessages.alreadySetUp}{" "}
-            <Link to="/login" className="text-foreground underline underline-offset-4">
-              Sign in
-            </Link>
+            <Trans
+              i18nKey="auth.alreadySetUpSignIn"
+              components={{
+                signIn: <Link to="/login" className="text-foreground underline underline-offset-4" />,
+              }}
+            />
           </p>
         </AuthMessage>
       </AuthCard>
@@ -64,7 +76,7 @@ export function SetupPage() {
               {failed}
             </p>
           )}
-          <p>{openTheLink}</p>
+          <p>{t("auth.openSetupLink")}</p>
         </AuthMessage>
       </AuthCard>
     )
@@ -73,7 +85,7 @@ export function SetupPage() {
     <SetupForm
       token={token}
       methods={auth.data?.kind === "needs_setup" ? auth.data.methods : undefined}
-      initialError={failed}
+      redirectError={failed ? error : null}
       onBlocked={setBlocked}
     />
   )
@@ -82,14 +94,16 @@ export function SetupPage() {
 function SetupForm({
   token,
   methods,
-  initialError,
+  redirectError,
   onBlocked,
 }: {
   token: string
   methods?: LoginMethods
-  initialError: string | null
+  /** The code of a failed provider setup the server redirected back with. */
+  redirectError: string | null
   onBlocked: (reason: Blocked) => void
 }) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const setup = useSetup()
   const oidcSetup = useOidcSetup()
@@ -97,9 +111,32 @@ function SetupForm({
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
-  const [error, setError] = useState<{ message: string; field: Invalid } | null>(
-    initialError ? { message: initialError, field: null } : null,
+  const [problem, setProblem] = useState<SetupProblem | null>(() =>
+    redirectError ? { kind: "redirect", code: redirectError } : null,
   )
+  const error = describe(problem)
+
+  function describe(p: SetupProblem | null): { message: string; field: Invalid } | null {
+    if (!p) return null
+    if (p.kind === "redirect") {
+      const redirect = setupRedirectError(p.code)
+      return redirect?.kind === "failed" ? { message: redirect.message, field: null } : null
+    }
+    if (p.kind === "invalid") {
+      const message =
+        p.field === "email"
+          ? validateEmail(email)
+          : p.field === "password"
+            ? validatePassword(password)
+            : t("auth.passwordsDontMatch")
+      return { message: message ?? "", field: p.field }
+    }
+    const field = isApiError(p.error, "invalid_argument") && p.error.field
+    return {
+      message: authErrorMessage(p.error),
+      field: field === "email" || field === "password" ? field : null,
+    }
+  }
 
   const onError = (e: unknown) => {
     if (isInvalidSetupToken(e)) return onBlocked("invalid_token")
@@ -108,33 +145,27 @@ function SetupForm({
       void queryClient.invalidateQueries({ queryKey: queryKeys.auth })
       return onBlocked("already_set_up")
     }
-    const field = isApiError(e, "invalid_argument") && e.field
-    setError({
-      message: authErrorMessage(e),
-      field: field === "email" || field === "password" ? field : null,
-    })
+    setProblem({ kind: "failed", error: e })
   }
 
   // On success the auth guard moves the signed-in user to the home page.
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const emailProblem = validateEmail(email)
-    if (emailProblem) return setError({ message: emailProblem, field: "email" })
-    const passwordProblem = validatePassword(password)
-    if (passwordProblem) return setError({ message: passwordProblem, field: "password" })
-    if (confirm !== password) return setError({ message: "Passwords don't match.", field: "confirm" })
-    setError(null)
+    if (validateEmail(email)) return setProblem({ kind: "invalid", field: "email" })
+    if (validatePassword(password)) return setProblem({ kind: "invalid", field: "password" })
+    if (confirm !== password) return setProblem({ kind: "invalid", field: "confirm" })
+    setProblem(null)
     setup.mutate({ token, email, password }, { onError })
   }
 
   const continueWithOidc = () => {
-    setError(null)
+    setProblem(null)
     oidcSetup.mutate(token, { onError })
   }
 
   const edit = (set: (value: string) => void) => (value: string) => {
     set(value)
-    setError(null)
+    setProblem(null)
   }
   const invalid = (field: Invalid) => (error?.field === field ? true : undefined)
   const pending = setup.isPending || oidcSetup.isPending
@@ -144,7 +175,7 @@ function SetupForm({
       <form onSubmit={submit} noValidate className="flex flex-col gap-5">
         <FieldGroup className="gap-4">
           <Field>
-            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <FieldLabel htmlFor="email">{t("auth.email")}</FieldLabel>
             <Input
               id="email"
               {...quietAutoFocus}
@@ -159,7 +190,7 @@ function SetupForm({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <FieldLabel htmlFor="password">{t("auth.password")}</FieldLabel>
             <Input
               id="password"
               name="password"
@@ -171,7 +202,7 @@ function SetupForm({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="confirm">Confirm password</FieldLabel>
+            <FieldLabel htmlFor="confirm">{t("auth.confirmPassword")}</FieldLabel>
             <Input
               id="confirm"
               name="confirm"
@@ -185,8 +216,8 @@ function SetupForm({
         </FieldGroup>
         <FormError>{error?.message}</FormError>
         <Button type="submit" className="w-full" disabled={pending}>
-          {setup.isPending && <Spinner aria-label="Creating account" />}
-          Create account
+          {setup.isPending && <Spinner aria-label={t("auth.creatingAccount")} />}
+          {t("auth.createAccount")}
         </Button>
       </form>
       {methods?.oidc && (

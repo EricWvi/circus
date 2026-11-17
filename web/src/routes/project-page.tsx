@@ -1,9 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { FolderIcon, SettingsIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Link, Navigate, useNavigate, useParams } from "react-router"
 
-import { errorMessage, isApiError } from "@/api/errors"
+import { isApiError } from "@/api/errors"
 import { useCreateSession, useDevices, useProjects, useSessionList } from "@/api/hooks"
 import { queryKeys } from "@/api/query-client"
 import type { Device, Location, Project, SessionSummary } from "@/api/types"
@@ -19,8 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
-import { pickLocation } from "@/lib/location-form"
-import { sessionStateLabels } from "@/lib/status"
+import { pickLocation, projectErrorMessage } from "@/lib/location-form"
 import { formatRelative } from "@/lib/time"
 import { projectSettingsPath, sessionPath } from "@/lib/tree"
 import type { ImageAttachment } from "@/lib/types"
@@ -42,6 +42,7 @@ export function ProjectPage() {
 }
 
 function ProjectHome({ project }: { project: Project }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const devices = useDevices()
@@ -52,7 +53,8 @@ function ProjectHome({ project }: { project: Project }) {
   // us (another tab removes or reorders locations), so the index is derived.
   const [chosen, setChosen] = useState<Location | null>(null)
   const locationIndex = pickLocation(project, chosen)
-  const [error, setError] = useState<string | null>(null)
+  // Kept as the error itself; its message is chosen at render time.
+  const [error, setError] = useState<unknown>(null)
 
   // Set synchronously when a submit starts, so a second Enter (images take
   // a moment to read) can't start another session. Released on failure.
@@ -89,7 +91,7 @@ function ProjectHome({ project }: { project: Project }) {
       else inFlight.current = false
     } catch (e) {
       inFlight.current = false
-      setError(errorMessage(e))
+      setError(e)
       // The location is gone on the server: refresh the project's locations.
       if (isApiError(e) && e.field === "locationIndex") {
         void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
@@ -103,7 +105,7 @@ function ProjectHome({ project }: { project: Project }) {
       <PageHeader
         actions={
           <Button variant="ghost" size="icon-sm" asChild>
-            <Link to={projectSettingsPath(project.projectId)} aria-label="Project settings">
+            <Link to={projectSettingsPath(project.projectId)} aria-label={t("projects.projectSettings")}>
               <SettingsIcon />
             </Link>
           </Button>
@@ -114,9 +116,9 @@ function ProjectHome({ project }: { project: Project }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[760px] flex-col gap-8 px-4 py-8">
-          <section className="flex flex-col gap-2" aria-label="New session">
+          <section className="flex flex-col gap-2" aria-label={t("projects.newSession")}>
             <SessionPrompt
-              placeholder="Start a session… (Shift+Enter for a new line)"
+              placeholder={t("projects.startPlaceholder")}
               pending={createSession.isPending}
               onSend={start}
             />
@@ -127,15 +129,17 @@ function ProjectHome({ project }: { project: Project }) {
               disabled={createSession.isPending}
               onChange={(i) => setChosen(project.locations[i])}
             />
-            {error && (
+            {error !== null && (
               <p role="alert" className="text-sm text-destructive">
-                {error}
+                {isApiError(error) && error.field === "locationIndex"
+                  ? t("projects.locationGone")
+                  : projectErrorMessage(error)}
               </p>
             )}
           </section>
 
           <section className="flex flex-col gap-2">
-            <h2 className="px-2 text-xs font-medium text-muted-foreground">Sessions</h2>
+            <h2 className="px-2 text-xs font-medium text-muted-foreground">{t("projects.sessions")}</h2>
             <SessionList sessions={sessions.data} failed={sessions.isError && !sessions.data} />
           </section>
         </div>
@@ -159,6 +163,7 @@ function LocationPicker({
   disabled: boolean
   onChange: (index: number) => void
 }) {
+  const { t } = useTranslation()
   const { triggerRef, onOpenChange, onCloseAutoFocus } = useOverlayFocus<HTMLButtonElement>()
   const offline = (device: string) => devices?.find((d) => d.name === device)?.online === false
   const current = project.locations[value]
@@ -167,7 +172,7 @@ function LocationPicker({
     <span className="flex min-w-0 items-center gap-2">
       <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       <span className="truncate font-mono">{locationLabel(l)}</span>
-      {offline(l.device) && <span className="shrink-0 text-muted-foreground">offline</span>}
+      {offline(l.device) && <span className="shrink-0 text-muted-foreground">{t("common.offline")}</span>}
     </span>
   )
 
@@ -185,7 +190,7 @@ function LocationPicker({
       <SelectTrigger
         ref={triggerRef}
         size="sm"
-        aria-label="Location"
+        aria-label={t("projects.location")}
         className="max-w-full border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground dark:bg-transparent dark:hover:bg-muted/50"
       >
         <SelectValue>{current && content(current)}</SelectValue>
@@ -202,9 +207,11 @@ function LocationPicker({
 }
 
 function SessionList({ sessions, failed }: { sessions: SessionSummary[] | undefined; failed: boolean }) {
-  if (failed) return <p className="px-2 text-sm text-muted-foreground">Couldn&apos;t load sessions</p>
+  const { t } = useTranslation()
+  const note = (text: string) => <p className="px-2 text-sm text-muted-foreground">{text}</p>
+  if (failed) return note(t("projects.sessionsLoadFailed"))
   if (!sessions) return null
-  if (sessions.length === 0) return <p className="px-2 text-sm text-muted-foreground">No sessions yet</p>
+  if (sessions.length === 0) return note(t("projects.noSessions"))
   const sorted = [...sessions].sort((a, b) => b.lastActivityAtUnixMs - a.lastActivityAtUnixMs)
   return (
     <ul className="flex flex-col">
@@ -219,14 +226,14 @@ function SessionList({ sessions, failed }: { sessions: SessionSummary[] | undefi
                 stopped && "text-muted-foreground",
               )}
             >
-              <span className="flex w-3 justify-center" title={sessionStateLabels[s.state]}>
+              <span className="flex w-3 justify-center" title={t(`status.${s.state}`)}>
                 <StatusDot state={s.state} />
               </span>
               <span className="min-w-0 flex-1 truncate">{s.title}</span>
               <span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">{s.device}</span>
               <time
                 dateTime={new Date(s.lastActivityAtUnixMs).toISOString()}
-                className="w-8 shrink-0 text-right text-xs text-muted-foreground tabular-nums"
+                className="w-14 shrink-0 text-right text-xs whitespace-nowrap text-muted-foreground tabular-nums"
               >
                 {formatRelative(s.lastActivityAtUnixMs)}
               </time>

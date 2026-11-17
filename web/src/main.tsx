@@ -6,6 +6,7 @@ import { ApiProvider } from "./api/provider"
 import { createQueryClient } from "./api/query-client"
 import { App } from "./App"
 import { ThemeProvider } from "./components/theme/theme-provider"
+import { startI18n } from "./i18n/preference"
 import { createAppRouter } from "./router"
 import { ConversationStoreContext } from "./state/conversations-context"
 import "./index.css"
@@ -13,6 +14,8 @@ import "./index.css"
 // The control plane serves only auth so far; the mock stands in for the rest
 // (see api/backend.ts). The router is created after the mock has handled its
 // URL switches.
+// The language is settled before anything renders.
+startI18n()
 const backend = startBackend()
 const queryClient = createQueryClient()
 const router = createAppRouter()

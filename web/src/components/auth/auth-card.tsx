@@ -1,5 +1,6 @@
 import { KeyRoundIcon } from "lucide-react"
 import type { ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 
 import { Brand } from "@/components/brand"
 import { Button } from "@/components/ui/button"
@@ -37,10 +38,11 @@ export function AuthMessage({ children }: { children: ReactNode }) {
 
 /** Separates the password form from the other ways to sign in. */
 export function OrDivider() {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center gap-3 text-xs text-muted-foreground">
       <span className="h-px flex-1 bg-border" aria-hidden />
-      or
+      {t("auth.or")}
       <span className="h-px flex-1 bg-border" aria-hidden />
     </div>
   )
@@ -60,6 +62,7 @@ export function OidcButton({
   disabled: boolean
   onClick: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <Button
       type="button"
@@ -68,8 +71,12 @@ export function OidcButton({
       disabled={pending || disabled}
       onClick={onClick}
     >
-      {pending ? <Spinner aria-label={`Continuing with ${displayName}`} /> : <KeyRoundIcon />}
-      Continue with {displayName}
+      {pending ? (
+        <Spinner aria-label={t("auth.continuingWith", { provider: displayName })} />
+      ) : (
+        <KeyRoundIcon />
+      )}
+      {t("auth.continueWith", { provider: displayName })}
     </Button>
   )
 }

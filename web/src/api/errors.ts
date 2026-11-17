@@ -1,3 +1,5 @@
+import { i18n } from "@/i18n/i18n"
+
 /**
  * Connect error codes, by their protocol names. The UI distinguishes the
  * first group; the rest only reach it from a real server and read as a
@@ -41,10 +43,12 @@ export function isApiError(error: unknown, code?: ErrorCode): error is ApiError 
   return error instanceof ApiError && (code === undefined || error.code === code)
 }
 
-/** A one-line message suitable for showing inside a form. */
+/**
+ * A one-line message suitable for showing inside a form, chosen by code: the
+ * error's own message is for logs, not for people.
+ */
 export function errorMessage(error: unknown): string {
-  if (isApiError(error, "unavailable")) return "Can't reach the server. Try again."
-  if (isApiError(error, "resource_exhausted")) return "Too many attempts. Try again later."
-  if (error instanceof ApiError) return error.message
-  return "Something went wrong. Try again."
+  if (isApiError(error, "unavailable")) return i18n.t("errors.unreachable")
+  if (isApiError(error, "resource_exhausted")) return i18n.t("errors.tooManyAttempts")
+  return i18n.t("errors.generic")
 }

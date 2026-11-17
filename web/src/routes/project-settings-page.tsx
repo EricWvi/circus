@@ -1,9 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { nanoid } from "nanoid"
 import { useEffect, useState, type FormEvent } from "react"
+import { useTranslation } from "react-i18next"
 import { Link, Navigate, useNavigate, useParams } from "react-router"
 
-import { errorMessage, isApiError } from "@/api/errors"
+import { isApiError } from "@/api/errors"
 import {
   useDeleteProject,
   useDevices,
@@ -31,7 +32,12 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
-import { formChanged, sameProjectFields, type LocationRow } from "@/lib/location-form"
+import {
+  formChanged,
+  projectErrorMessage,
+  sameProjectFields,
+  type LocationRow,
+} from "@/lib/location-form"
 import { deleteBlockedReason } from "@/lib/project-delete"
 import { projectPath } from "@/lib/tree"
 
@@ -41,6 +47,7 @@ const rowsOf = (project: Project): LocationRow[] =>
   project.locations.map((l) => ({ key: nanoid(), device: l.device, path: l.path }))
 
 export function ProjectSettingsPage() {
+  const { t } = useTranslation()
   const { projectId } = useParams()
   const projects = useProjects()
 
@@ -61,7 +68,7 @@ export function ProjectSettingsPage() {
         <span className="text-muted-foreground" aria-hidden>
           /
         </span>
-        <h1 className="shrink-0 font-medium">Settings</h1>
+        <h1 className="shrink-0 font-medium">{t("projects.settings")}</h1>
       </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-4 py-8">
@@ -84,6 +91,7 @@ function ProjectForm({
   project: Project
   otherProjects: Project[]
 }) {
+  const { t } = useTranslation()
   const devices = useDevices()
   const update = useUpdateProject()
   const [savedAt, setSavedAt] = useState(0)
@@ -123,9 +131,9 @@ function ProjectForm({
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-10">
       <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-medium">General</h2>
+        <h2 className="text-sm font-medium">{t("projects.general")}</h2>
         <Field className="max-w-sm">
-          <FieldLabel htmlFor="project-name">Name</FieldLabel>
+          <FieldLabel htmlFor="project-name">{t("common.name")}</FieldLabel>
           <Input
             id="project-name"
             autoComplete="off"
@@ -140,7 +148,7 @@ function ProjectForm({
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-medium">Locations</h2>
+        <h2 className="text-sm font-medium">{t("projects.locations")}</h2>
         <LocationEditor
           rows={form.rows}
           devices={devices.data}
@@ -159,8 +167,8 @@ function ProjectForm({
         )}
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={!changed || update.isPending}>
-            {update.isPending && <Spinner aria-label="Saving" />}
-            Save
+            {update.isPending && <Spinner aria-label={t("common.saving")} />}
+            {t("common.save")}
           </Button>
           <SavedNote at={changed ? 0 : savedAt} />
         </div>
@@ -174,6 +182,7 @@ const SAVED_FADE_MS = 500
 
 /** "Saved" next to the button for a moment, then fades and is removed. */
 function SavedNote({ at }: { at: number }) {
+  const { t } = useTranslation()
   const [phase, setPhase] = useState<{ at: number; step: "fading" | "gone" } | null>(null)
   useEffect(() => {
     if (at === 0) return
@@ -193,19 +202,20 @@ function SavedNote({ at }: { at: number }) {
       role="status"
       className={`text-sm text-muted-foreground transition-opacity duration-500 ${step === "visible" ? "opacity-100" : "opacity-0"}`}
     >
-      {step !== "gone" && "Saved"}
+      {step !== "gone" && t("common.saved")}
     </span>
   )
 }
 
 function DeleteSection({ project }: { project: Project }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const sessions = useSessionList(project.projectId)
   const remove = useDeleteProject()
   const [open, setOpen] = useState(false)
   const focus = useOverlayFocus()
-  const blocked = sessions.data ? deleteBlockedReason(sessions.data) : "Loading sessions…"
+  const blocked = sessions.data ? deleteBlockedReason(sessions.data) : t("projects.deleteBlockedLoading")
 
   const change = (next: boolean) => {
     focus.onOpenChange(next)
@@ -231,8 +241,8 @@ function DeleteSection({ project }: { project: Project }) {
   const error =
     remove.error &&
     (isApiError(remove.error, "failed_precondition")
-      ? "It has active sessions again. Stop them first."
-      : errorMessage(remove.error))
+      ? t("projects.deleteRaced")
+      : projectErrorMessage(remove.error))
 
   return (
     <section className="flex flex-col items-start gap-3 border-t pt-8">
@@ -244,14 +254,14 @@ function DeleteSection({ project }: { project: Project }) {
           disabled={blocked !== null}
           onClick={() => change(true)}
         >
-          Delete project
+          {t("projects.deleteProject")}
         </Button>
       </DisabledReason>
       <Dialog open={open} onOpenChange={change}>
         <DialogContent showCloseButton={false} onCloseAutoFocus={focus.onCloseAutoFocus}>
           <DialogHeader>
-            <DialogTitle>Delete {project.name}?</DialogTitle>
-            <DialogDescription>Its stopped sessions are deleted too.</DialogDescription>
+            <DialogTitle>{t("projects.deleteTitle", { name: project.name })}</DialogTitle>
+            <DialogDescription>{t("projects.deleteDescription")}</DialogDescription>
           </DialogHeader>
           {error && (
             <p role="alert" className="text-sm text-destructive">
@@ -260,11 +270,11 @@ function DeleteSection({ project }: { project: Project }) {
           )}
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline">{t("common.cancel")}</Button>
             </DialogClose>
             <Button variant="destructive" disabled={remove.isPending} onClick={confirm}>
-              {remove.isPending && <Spinner aria-label="Deleting" />}
-              Delete
+              {remove.isPending && <Spinner aria-label={t("projects.deleting")} />}
+              {t("common.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>

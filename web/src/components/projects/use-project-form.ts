@@ -1,6 +1,8 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 
 import type { Device, Location } from "@/api/types"
+import { i18n } from "@/i18n/i18n"
 import {
   hasErrors,
   mapServerError,
@@ -12,6 +14,39 @@ import {
   type LocationRow,
   type RowErrors,
 } from "@/lib/location-form"
+
+/** Why the last submit failed, kept as the cause so its text follows the language. */
+type ServerProblem =
+  | { kind: "error"; error: unknown; form: { name: string; rows: readonly LocationRow[] } }
+  | { kind: "devices_not_ready" }
+
+interface ServerState {
+  problem: ServerProblem
+  /** Errors no longer shown: "name", "form", "rows" (all) or "<row key>.<field>". */
+  dismissed: ReadonlySet<string>
+}
+
+/** The server errors to show now, in the active language. */
+function serverErrors(state: ServerState | null): FormErrors {
+  if (!state) return noErrors()
+  const { problem, dismissed } = state
+  const all =
+    problem.kind === "devices_not_ready"
+      ? { rows: {}, form: i18n.t("projects.devicesNotReady") }
+      : mapServerError(problem.error, problem.form)
+  const shown: FormErrors = { rows: {} }
+  if (!dismissed.has("name")) shown.name = all.name
+  if (!dismissed.has("form")) shown.form = all.form
+  if (dismissed.has("rows")) return shown
+  for (const [key, errors] of Object.entries(all.rows)) {
+    const kept: RowErrors = {}
+    for (const field of ["device", "path"] as const) {
+      if (errors[field] && !dismissed.has(`${key}.${field}`)) kept[field] = errors[field]
+    }
+    if (kept.device || kept.path) shown.rows[key] = kept
+  }
+  return shown
+}
 
 /**
  * State of a project name + locations form. Local errors show once a field
@@ -29,11 +64,16 @@ export function useProjectForm({
   devices: Device[] | undefined
   otherProjects: readonly { name: string }[]
 }) {
+  // Messages are made during render; re-render when the language changes.
+  useTranslation()
   const [name, setNameState] = useState(initialName)
   const [rows, setRowsState] = useState(initialRows)
   const [touched, setTouched] = useState(() => new Set<string>())
   const [submitted, setSubmitted] = useState(false)
-  const [server, setServer] = useState<FormErrors>(noErrors)
+  const [serverState, setServerState] = useState<ServerState | null>(null)
+  const server = serverErrors(serverState)
+  const dismiss = (ids: readonly string[]) =>
+    setServerState((s) => s && { ...s, dismissed: new Set([...s.dismissed, ...ids]) })
 
   const local = validateForm({ name, rows }, devices ?? [], otherProjects)
   const shows = (id: string) => submitted || touched.has(id)
@@ -60,23 +100,21 @@ export function useProjectForm({
     },
     setName(value: string) {
       setNameState(value)
-      setServer((s) => ({ ...s, name: undefined, form: undefined }))
+      dismiss(["name", "form"])
     },
     setRows(next: LocationRow[]) {
-      // Edited fields drop their server errors; a reorder or removal drops all.
-      setServer((s) => {
-        const kept: Record<string, RowErrors> = {}
-        for (const row of next) {
-          const before = rows.find((r) => r.key === row.key)
-          const errors = s.rows[row.key]
-          if (!before || !errors || rows.length !== next.length) continue
-          kept[row.key] = {
-            ...(before.device === row.device && { device: errors.device }),
-            ...(before.path === row.path && { path: errors.path }),
-          }
+      // Edited fields drop their server errors; an added or removed row drops all.
+      const ids = ["form"]
+      for (const row of next) {
+        const before = rows.find((r) => r.key === row.key)
+        if (!before || rows.length !== next.length) {
+          ids.push("rows")
+          break
         }
-        return { ...s, rows: kept, form: undefined }
-      })
+        if (before.device !== row.device) ids.push(`${row.key}.device`)
+        if (before.path !== row.path) ids.push(`${row.key}.path`)
+      }
+      dismiss(ids)
       setRowsState(next)
     },
     touch(id: "name" | `${string}.${LocationField}`) {
@@ -86,10 +124,10 @@ export function useProjectForm({
     submit(): { name: string; locations: Location[] } | null {
       setSubmitted(true)
       if (devices === undefined) {
-        setServer({ rows: {}, form: "Devices aren't available yet. Try again in a moment." })
+        setServerState({ problem: { kind: "devices_not_ready" }, dismissed: new Set() })
         return null
       }
-      setServer(noErrors())
+      setServerState(null)
       if (hasErrors(local)) return null
       return { name: name.trim(), locations: toLocations(rows) }
     },
@@ -99,7 +137,7 @@ export function useProjectForm({
       setRowsState(rows.map((r) => (r.device === "" ? { ...r, device } : r)))
     },
     serverError(error: unknown) {
-      setServer(mapServerError(error, rows))
+      setServerState({ problem: { kind: "error", error, form: { name, rows } }, dismissed: new Set() })
     },
     /** Starts over from saved values, e.g. after a successful save. */
     reset(nextName: string, nextRows: LocationRow[]) {
@@ -107,7 +145,7 @@ export function useProjectForm({
       setRowsState(nextRows)
       setTouched(new Set())
       setSubmitted(false)
-      setServer(noErrors())
+      setServerState(null)
     },
   }
 }

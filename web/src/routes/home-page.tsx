@@ -1,4 +1,5 @@
 import { FolderIcon, PlusIcon } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Navigate } from "react-router"
 
 import { useProjects, useSessionList } from "@/api/hooks"
@@ -21,6 +22,7 @@ import { BarePage, LoadError } from "./page-states"
  * offers to create a project.
  */
 export function HomePage() {
+  const { t } = useTranslation()
   const openNewProject = useOpenNewProject()
   const projects = useProjects()
   const sessions = useSessionList()
@@ -46,12 +48,12 @@ export function HomePage() {
             <EmptyMedia variant="icon">
               <FolderIcon />
             </EmptyMedia>
-            <EmptyTitle>No projects</EmptyTitle>
+            <EmptyTitle>{t("projects.noProjects")}</EmptyTitle>
           </EmptyHeader>
           <EmptyContent>
             <Button onClick={openNewProject}>
               <PlusIcon />
-              New project
+              {t("projects.newProject")}
             </Button>
           </EmptyContent>
         </Empty>

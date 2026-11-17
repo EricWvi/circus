@@ -1,4 +1,5 @@
 import { ImageOffIcon } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { Attachment, AttachmentPreview, Attachments } from "@/components/ai-elements/attachments"
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message"
@@ -18,6 +19,7 @@ export function EventItem({
   deviceName: string
   onDecide: (eventId: string, decision: "approved" | "denied") => void
 }) {
+  const { t } = useTranslation()
   switch (event.kind) {
     case "user_message":
       return (
@@ -29,11 +31,11 @@ export function EventItem({
                 a.url === "" ? (
                   <div
                     key={a.id}
-                    title={`${a.filename} was not kept after reload`}
+                    title={t("session.imageNotKeptTitle", { filename: a.filename })}
                     className="flex h-24 w-40 flex-col items-center justify-center gap-1 border bg-muted px-2 text-xs text-muted-foreground"
                   >
                     <ImageOffIcon className="size-4" aria-hidden />
-                    <span className="text-center leading-tight">Not kept after reload</span>
+                    <span className="text-center leading-tight">{t("session.imageNotKept")}</span>
                   </div>
                 ) : (
                   <Attachment

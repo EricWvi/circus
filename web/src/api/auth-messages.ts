@@ -2,20 +2,44 @@
 // are chosen by error code (and field) on the client; the server's own
 // message text is for logs, not for people.
 
-import { isApiError } from "./errors"
+import { i18n } from "@/i18n/i18n"
 
+import { isApiError } from "./errors"
+import { PASSWORD_MAX, PASSWORD_MIN } from "./validation"
+
+/** The messages, read from the catalog in the active language at each use. */
 export const authMessages = {
-  wrongCredentials: "Wrong email or password.",
-  tooManyAttempts: "Too many attempts. Try again in a few minutes.",
-  invalidEmail: "Enter a valid email address.",
-  invalidPassword: "Use a password of 8 to 72 characters.",
-  invalidSetupLink: "This setup link is not valid.",
-  wrongOrigin: "This page's address doesn't match the server's configured URL.",
-  alreadySetUp: "Circus is already set up.",
-  notSetUp: "Circus is not set up yet.",
-  unreachable: "Can't reach the server. Try again.",
-  generic: "Something went wrong. Try again.",
-} as const
+  get wrongCredentials() {
+    return i18n.t("auth.errors.wrongCredentials")
+  },
+  get tooManyAttempts() {
+    return i18n.t("auth.errors.tooManyAttempts")
+  },
+  get invalidEmail() {
+    return i18n.t("auth.errors.invalidEmail")
+  },
+  get invalidPassword() {
+    return i18n.t("auth.errors.invalidPassword", { min: PASSWORD_MIN, max: PASSWORD_MAX })
+  },
+  get invalidSetupLink() {
+    return i18n.t("auth.errors.invalidSetupLink")
+  },
+  get wrongOrigin() {
+    return i18n.t("auth.errors.wrongOrigin")
+  },
+  get alreadySetUp() {
+    return i18n.t("auth.errors.alreadySetUp")
+  },
+  get notSetUp() {
+    return i18n.t("auth.errors.notSetUp")
+  },
+  get unreachable() {
+    return i18n.t("errors.unreachable")
+  },
+  get generic() {
+    return i18n.t("errors.generic")
+  },
+}
 
 /**
  * Whether setup was refused for its token. The server refuses a bad token

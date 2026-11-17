@@ -3,7 +3,7 @@
 
 import { nanoid } from "nanoid"
 
-import { isApiError } from "@/api/errors"
+import { errorMessage, isApiError } from "@/api/errors"
 import type { Device, Location } from "@/api/types"
 import {
   isAbsolutePath,
@@ -11,6 +11,7 @@ import {
   sameProjectName,
   validateProjectName,
 } from "@/api/validation"
+import { i18n } from "@/i18n/i18n"
 
 export interface LocationRow {
   /** Stable React key; not sent to the server. */
@@ -80,16 +81,18 @@ export function validateRows(
   for (const row of rows) {
     const device = devices.find((d) => d.name === row.device)
     const rowErrors: RowErrors = {}
-    if (!device) rowErrors.device = row.device === "" ? "Choose a device." : "Unknown device."
+    if (!device) {
+      rowErrors.device = i18n.t(row.device === "" ? "validation.deviceRequired" : "validation.deviceUnknown")
+    }
     if (row.path.trim() === "") {
-      rowErrors.path = "Enter a path."
+      rowErrors.path = i18n.t("validation.pathRequired")
     } else if (device) {
       const path = normalizePath(row.path, device.os)
       if (!isAbsolutePath(path, device.os)) {
-        rowErrors.path = `Use an absolute path, like ${examplePath(device.os)}.`
+        rowErrors.path = i18n.t("validation.pathNotAbsolute", { example: examplePath(device.os) })
       } else {
         const id = `${device.name}\n${path}`
-        if (seen.has(id)) rowErrors.path = "This location is already listed."
+        if (seen.has(id)) rowErrors.path = i18n.t("validation.locationDuplicate")
         seen.add(id)
       }
     }
@@ -106,7 +109,7 @@ export function validateName(
   const problem = validateProjectName(name)
   if (problem) return problem
   if (others.some((p) => sameProjectName(p.name, name))) {
-    return `A project named "${name.trim()}" already exists.`
+    return i18n.t("validation.projectNameTaken", { name: name.trim() })
   }
   return undefined
 }
@@ -124,22 +127,48 @@ export const toLocations = (rows: readonly LocationRow[]): Location[] =>
   rows.map((r) => ({ device: r.device, path: r.path.trim() }))
 
 /**
- * Puts a server error where it belongs: on the name, on a location row's
- * device or path (by the error's field path), or as one line for the form.
+ * A one-line message for a failed project operation: like `errorMessage`,
+ * but a missing project says so.
  */
-export function mapServerError(error: unknown, rows: readonly LocationRow[]): FormErrors {
-  const message = error instanceof Error ? error.message : "Something went wrong. Try again."
-  if (!isApiError(error) || !error.field) return { rows: {}, form: messageFor(error, message) }
-  if (error.field === "name") return { rows: {}, name: message }
-  const match = /^locations\[(\d+)\]\.(device|path)$/.exec(error.field)
-  const row = match ? rows[Number(match[1])] : undefined
-  if (match && row) return { rows: { [row.key]: { [match[2] as LocationField]: message } } }
-  return { rows: {}, form: message }
+export function projectErrorMessage(error: unknown): string {
+  if (isApiError(error, "not_found")) return i18n.t("projects.projectGone")
+  return errorMessage(error)
 }
 
-function messageFor(error: unknown, message: string): string {
-  if (isApiError(error, "unavailable")) return "Can't reach the server. Try again."
-  return isApiError(error) ? message : "Something went wrong. Try again."
+/**
+ * Puts a server error where it belongs: on the name, on a location row's
+ * device or path (by the error's field path), or as one line for the form.
+ * The message is chosen by code and field; the server's text is never shown.
+ */
+export function mapServerError(
+  error: unknown,
+  form: { name: string; rows: readonly LocationRow[] },
+): FormErrors {
+  if (!isApiError(error)) return { rows: {}, form: projectErrorMessage(error) }
+  if (error.field === "name") {
+    if (error.code === "already_exists") {
+      return { rows: {}, name: i18n.t("validation.projectNameTaken", { name: form.name.trim() }) }
+    }
+    if (error.code === "invalid_argument") {
+      // The client's own check, when it explains the refusal; otherwise the
+      // server refused a name the client accepts.
+      return {
+        rows: {},
+        name: validateProjectName(form.name) ?? i18n.t("validation.projectNameRejected"),
+      }
+    }
+  }
+  if (error.code === "invalid_argument") {
+    if (error.field === "locations") return { rows: {}, form: i18n.t("validation.locationsRequired") }
+    const match = /^locations\[(\d+)\]\.(device|path)$/.exec(error.field ?? "")
+    const row = match ? form.rows[Number(match[1])] : undefined
+    if (match && row) {
+      const field = match[2] as LocationField
+      const message = i18n.t(field === "device" ? "validation.deviceUnknown" : "validation.pathRejected")
+      return { rows: { [row.key]: { [field]: message } } }
+    }
+  }
+  return { rows: {}, form: projectErrorMessage(error) }
 }
 
 /**

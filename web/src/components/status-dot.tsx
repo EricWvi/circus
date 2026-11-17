@@ -1,4 +1,5 @@
-import { sessionStateLabels } from "@/lib/status"
+import { useTranslation } from "react-i18next"
+
 import type { SessionState } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -46,13 +47,14 @@ export function StatusDot({
   /** Expose the state name to assistive technology. */
   label?: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <span
       className={cn("relative inline-flex size-2.5 shrink-0 items-center justify-center", className)}
       role={label ? "img" : undefined}
-      aria-label={label ? sessionStateLabels[state] : undefined}
+      aria-label={label ? t(`status.${state}`) : undefined}
       aria-hidden={label ? undefined : true}
-      title={label ? sessionStateLabels[state] : undefined}
+      title={label ? t(`status.${state}`) : undefined}
       data-state={state}
     >
       <Glyph state={state} />
@@ -61,6 +63,7 @@ export function StatusDot({
 }
 
 export function StatusBadge({ state }: { state: SessionState }) {
+  const { t } = useTranslation()
   return (
     <span
       className={cn(
@@ -72,7 +75,7 @@ export function StatusBadge({ state }: { state: SessionState }) {
       )}
     >
       <StatusDot state={state} label={false} />
-      {sessionStateLabels[state]}
+      {t(`status.${state}`)}
     </span>
   )
 }

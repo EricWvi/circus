@@ -1,5 +1,6 @@
 import { ImageIcon } from "lucide-react"
 import { nanoid } from "nanoid"
+import { useTranslation } from "react-i18next"
 
 import {
   Attachment,
@@ -40,9 +41,14 @@ function PendingAttachments() {
 }
 
 function AddImageButton() {
+  const { t } = useTranslation()
   const { openFileDialog } = usePromptInputAttachments()
   return (
-    <PromptInputButton onClick={openFileDialog} aria-label="Attach image" tooltip="Attach image">
+    <PromptInputButton
+      onClick={openFileDialog}
+      aria-label={t("session.attachImage")}
+      tooltip={t("session.attachImage")}
+    >
       <ImageIcon />
     </PromptInputButton>
   )
@@ -51,7 +57,7 @@ function AddImageButton() {
 export function SessionPrompt({
   busy = false,
   pending = false,
-  placeholder = "Message Claude… (Shift+Enter for a new line)",
+  placeholder,
   onSend,
   onStop,
 }: {
@@ -64,6 +70,7 @@ export function SessionPrompt({
   onSend: (text: string, attachments: ImageAttachment[]) => void | Promise<void>
   onStop?: () => void
 }) {
+  const status = pending ? "submitted" : busy ? "streaming" : "ready"
   const handleSubmit = ({ text, files }: PromptInputMessage) => {
     const trimmed = text.trim()
     if (pending || (!trimmed && files.length === 0)) return Promise.reject(new Error("nothing to send"))
@@ -91,7 +98,7 @@ export function SessionPrompt({
             <AddImageButton />
           </PromptInputTools>
           <PromptInputSubmit
-            status={pending ? "submitted" : busy ? "streaming" : "ready"}
+            status={status}
             onStop={onStop}
             disabled={pending}
           />

@@ -35,15 +35,15 @@ export const ConversationContent = ({
 );
 
 export type ConversationEmptyStateProps = ComponentProps<"div"> & {
-  title?: string;
+  title: string;
   description?: string;
   icon?: React.ReactNode;
 };
 
 export const ConversationEmptyState = ({
   className,
-  title = "No messages yet",
-  description = "Start a conversation to see messages here",
+  title,
+  description,
   icon,
   children,
   ...props
