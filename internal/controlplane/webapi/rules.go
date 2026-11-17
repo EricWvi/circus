@@ -248,9 +248,52 @@ func sshHost(u *url.URL) bool {
 	return plainName(host)
 }
 
+// explicitAuthority checks the host[:port] part of a scheme://... URL by
+// our own rule rather than net/url's, whose handling of extra colons in a
+// host differs between Go releases (GODEBUG urlstrictcolons). A host that
+// is not bracketed may hold at most one ":", followed by a decimal port of
+// 1 to 65535; anything else with a ":" is refused, for every scheme. A
+// bracketed host is left to url.Parse and the per-scheme rules.
+func explicitAuthority(raw string) bool {
+	_, rest, ok := strings.Cut(raw, "://")
+	if !ok {
+		return false
+	}
+	if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	host := rest[strings.LastIndex(rest, "@")+1:]
+	if strings.HasPrefix(host, "[") {
+		return true
+	}
+	_, port, found := strings.Cut(host, ":")
+	return !found || decimalPort(port)
+}
+
+// decimalPort reports a port of ASCII digits with a value of 1 to 65535.
+func decimalPort(port string) bool {
+	if port == "" {
+		return false
+	}
+	n := 0
+	for i := 0; i < len(port); i++ {
+		c := port[i]
+		if c < '0' || c > '9' {
+			return false
+		}
+		if n = n*10 + int(c-'0'); n > 65535 {
+			return false
+		}
+	}
+	return n >= 1
+}
+
 // urlLike reports one of the accepted scheme://... forms, with the scheme
 // in lower case as git expects it.
 func urlLike(raw string) bool {
+	if !explicitAuthority(raw) {
+		return false
+	}
 	u, err := url.Parse(raw)
 	if err != nil || !strings.HasPrefix(raw, u.Scheme+"://") || u.Opaque != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
 		return false

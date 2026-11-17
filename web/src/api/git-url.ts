@@ -10,11 +10,9 @@
 // The parity test (validation-parity.test.ts) runs the same cases on both
 // sides.
 //
-// One parser setting is assumed: Go's GODEBUG urlstrictcolons=1, the
-// default since Go 1.26 (the go.mod version), under which an http or https
-// host with more than one ":" is refused, while other schemes take the last
-// ":" as the port's. A server built with urlstrictcolons=0 would accept
-// such http(s) hosts that this port refuses.
+// Colons in a host are not left to the parser (whose handling differs
+// between Go releases, GODEBUG urlstrictcolons): the rules check them
+// explicitly first (explicitAuthority), the same for every scheme.
 
 const isLetter = (c: string) => (c >= "a" && c <= "z") || (c >= "A" && c <= "Z")
 const isDigit = (c: string) => c >= "0" && c <= "9"
@@ -36,6 +34,21 @@ export function scpLike(u: string): boolean {
   const userHost = u.slice(0, colon)
   const at = userHost.indexOf("@")
   return at >= 0 && plainName(userHost.slice(0, at)) && plainName(userHost.slice(at + 1))
+}
+
+/**
+ * The host[:port] part of a scheme://... URL by the rules' own check: a
+ * host that is not bracketed may hold at most one ":", followed by a
+ * decimal port of 1 to 65535; anything else with a ":" is refused, for
+ * every scheme. A bracketed host is left to parseHost and the per-scheme
+ * rules.
+ */
+function explicitAuthority(host: string): boolean {
+  if (host.startsWith("[")) return true
+  const colon = host.indexOf(":")
+  if (colon < 0) return true
+  const port = host.slice(colon + 1)
+  return /^[0-9]+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535
 }
 
 /** "" or ":" followed by digits. */
@@ -155,7 +168,7 @@ function parseIPv6(input: string): { is6: true; zone: string } | null {
  * Go's url.parseHost: host[:port], or a bracketed IPv6 literal with an
  * optional port. Returns the host with escapes decoded, or null.
  */
-function parseHost(scheme: string, host: string): string | null {
+function parseHost(host: string): string | null {
   const open = host.lastIndexOf("[")
   if (open > 0) return null
   if (open === 0) {
@@ -180,14 +193,8 @@ function parseHost(scheme: string, host: string): string | null {
     if (!addr?.is6) return null
     return `[${address}]${colonPort}`
   }
-  let colon = host.indexOf(":")
-  if (colon >= 0) {
-    const last = host.lastIndexOf(":")
-    // Go allows several colons (taking the last as the port's) except for
-    // http and https.
-    if (last !== colon && scheme !== "http" && scheme !== "https") colon = last
-    if (!validOptionalPort(host.slice(colon))) return null
-  }
+  const colon = host.indexOf(":")
+  if (colon >= 0 && !validOptionalPort(host.slice(colon))) return null
   const out = unescape(host, "host")
   return out && decoded(out)
 }
@@ -228,7 +235,9 @@ export function urlLike(raw: string): boolean {
   }
 
   const at = authority.lastIndexOf("@")
-  const hostPort = parseHost(scheme, authority.slice(at + 1))
+  const rawHost = authority.slice(at + 1)
+  if (!explicitAuthority(rawHost)) return false
+  const hostPort = parseHost(rawHost)
   if (hostPort === null) return false
   let user: string | null = null
   if (at >= 0) {
