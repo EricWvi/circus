@@ -1,10 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { useEffect } from "react"
 
 import { useClient } from "./context"
+import { isApiError } from "./errors"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
 import { useSessionHold } from "./session-hold"
-import type { Location, Project, SessionSummary, User } from "./types"
+import type { Project, ProjectService, SessionSummary, User } from "./types"
 
 export function useAuth() {
   const client = useClient()
@@ -147,11 +148,25 @@ export function useLogout() {
   })
 }
 
+/**
+ * Refreshes what a failed project call showed to be stale: the project list
+ * when the project is gone (pages then leave it), the devices when a
+ * location's device is unknown.
+ */
+function refreshAfterProjectError(queryClient: QueryClient, error: unknown) {
+  if (isApiError(error, "not_found")) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
+  }
+  if (isApiError(error) && /^locations\[\d+\]\.device$/.test(error.field ?? "")) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
+  }
+}
+
 export function useCreateProject() {
   const client = useClient()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (req: { name: string; locations: Location[] }) =>
+    mutationFn: (req: Parameters<ProjectService["createProject"]>[0]) =>
       client.projects.createProject(req),
     onSuccess: (project) => {
       queryClient.setQueryData<Project[]>(queryKeys.projects, (list) =>
@@ -159,6 +174,7 @@ export function useCreateProject() {
       )
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
     },
+    onError: (error) => refreshAfterProjectError(queryClient, error),
   })
 }
 
@@ -166,7 +182,7 @@ export function useUpdateProject() {
   const client = useClient()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (req: { projectId: string; name?: string; locations?: Location[] }) =>
+    mutationFn: (req: Parameters<ProjectService["updateProject"]>[0]) =>
       client.projects.updateProject(req),
     onSuccess: (project) => {
       queryClient.setQueryData<Project[]>(queryKeys.projects, (list) =>
@@ -176,6 +192,7 @@ export function useUpdateProject() {
       )
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
     },
+    onError: (error) => refreshAfterProjectError(queryClient, error),
   })
 }
 
@@ -220,6 +237,7 @@ export function useCreateSession() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.allSessions })
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
     },
+    onError: (error) => refreshAfterProjectError(queryClient, error),
   })
 }
 

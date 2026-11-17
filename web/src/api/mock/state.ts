@@ -1,4 +1,4 @@
-import type { Device, LoginMethods, Project, Role, SessionSummary } from "@/api/types"
+import type { Device, Location, LoginMethods, Role, SessionSummary } from "@/api/types"
 import { settleEvents } from "@/lib/settle"
 import { interruptTurn } from "@/lib/turns"
 import type { Conversations } from "@/lib/types"
@@ -29,6 +29,32 @@ export interface MockUser {
   role: Role
 }
 
+/**
+ * A stored project. Locations keep only what a request sets; the default
+ * directory and the revoked mark are worked out when it is returned.
+ */
+export interface MockProject {
+  owner: string
+  projectId: string
+  name: string
+  repoUrl: string
+  /**
+   * Bound to a device by its id: a device revoked and enrolled again under
+   * the same name is another device, and the location stays revoked until
+   * it is saved again.
+   */
+  locations: MockLocation[]
+  lastUsedLocation: number
+  createdAtUnixMs: number
+  /** Moves forward whenever the name, the locations or the repository URL change. */
+  updatedAtUnixMs: number
+}
+
+export type MockLocation = Location & { deviceId: string }
+
+/** An enrolled device. `deviceId` is unique; a name can be enrolled again. */
+export type MockDevice = Device & { owner: string; deviceId: string }
+
 /** Everything the mock server knows. Plain JSON so it can be persisted. */
 export interface MockState {
   /** Accepted until a super user exists; null on the seeded server. */
@@ -36,9 +62,9 @@ export interface MockState {
   users: MockUser[]
   /** The signed-in user id; stands in for the session cookie. */
   cookie: string | null
-  projects: (Project & { owner: string })[]
+  projects: MockProject[]
   sessions: SessionSummary[]
-  devices: (Device & { owner: string })[]
+  devices: MockDevice[]
   /** Transcripts of the simulated conversations, by session id. */
   conversations: Conversations
   /**
@@ -80,7 +106,7 @@ export function seedState(now: number = Date.now()): MockState {
     { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64" },
     { name: "eric-win", online: false, lastSeenUnixMs: now - 2 * DAY, os: "windows", arch: "amd64" },
     { name: "palace-builder", online: true, lastSeenUnixMs: now, os: "linux", arch: "arm64" },
-  ].map((d) => ({ ...d, owner, version: "0.1.0" }))
+  ].map((d) => ({ ...d, owner, version: "0.1.0", deviceId: `device-${d.name}` }))
 
   const sessions: SessionSummary[] = seedSessions.map((s) => {
     const project = seedProjects.find((p) => p.id === s.projectId)
@@ -109,9 +135,11 @@ export function seedState(now: number = Date.now()): MockState {
       owner,
       projectId: p.id,
       name: p.name,
-      locations: p.locations.map((l) => ({ ...l })),
+      locations: p.locations.map((l) => ({ ...l, deviceId: `device-${l.device}` })),
       lastUsedLocation: Math.max(0, lastUsed),
+      repoUrl: "",
       createdAtUnixMs: now - (30 - i * 7) * DAY,
+      updatedAtUnixMs: now - (30 - i * 7) * DAY,
     }
   })
 

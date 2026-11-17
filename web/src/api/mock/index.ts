@@ -1,6 +1,8 @@
 // Browser entry for the mock control plane. Only the composition root
 // (main.tsx) imports this; pages talk to the client through context.
 
+import type { ProjectService } from "@/api/types"
+
 import { createMockBackend, type MockBackend } from "./backend"
 import { parsePersisted, serialize, STORAGE_KEY } from "./persist"
 import { freshState, SEED_OWNER_ID, seedState, settleInFlight, type MockState } from "./state"
@@ -52,6 +54,8 @@ export interface StartMockOptions {
    * auth switches (`?mock=fresh`, `?mock=nooidc`).
    */
   externalAuth?: boolean
+  /** Where the mock's sessions find their projects (see `MockBackendOptions`). */
+  projects?: ProjectService
 }
 
 /**
@@ -61,7 +65,10 @@ export interface StartMockOptions {
  * Modes combine with commas (`?mock=reset,nooidc`); the query parameter is
  * removed afterwards.
  */
-export function startMockBackend({ externalAuth = false }: StartMockOptions = {}): MockBackend {
+export function startMockBackend({
+  externalAuth = false,
+  projects,
+}: StartMockOptions = {}): MockBackend {
   const url = new URL(window.location.href)
   const mock = url.searchParams.get("mock")
   const modes = new Set(mock?.split(",") ?? [])
@@ -100,6 +107,7 @@ export function startMockBackend({ externalAuth = false }: StartMockOptions = {}
     note: (message) => console.info(message),
     oidc: !modes.has("nooidc"),
     actAs: externalAuth ? SEED_OWNER_ID : undefined,
+    projects,
   })
 
   // Another tab changed the store: adopt its state so this tab's next write

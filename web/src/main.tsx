@@ -13,8 +13,8 @@ import { ConversationStoreContext } from "./state/conversations-context"
 import { DeviceSimulationContext } from "./state/device-simulation-context"
 import "./index.css"
 
-// The control plane serves only auth so far; the mock stands in for the rest
-// (see api/backend.ts). The router is created after the mock has handled its
+// The control plane doesn't serve sessions yet; the mock simulates them (see
+// api/backend.ts). The router is created after the mock has handled its
 // URL switches.
 // The language and the code font are settled before anything renders.
 startI18n()

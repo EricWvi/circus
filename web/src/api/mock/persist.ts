@@ -2,7 +2,7 @@ import { isMockState, type MockState } from "./state"
 
 export const STORAGE_KEY = "circus.mock"
 /** Bump whenever the shape of MockState changes; older blobs are dropped. */
-export const VERSION = 4
+export const VERSION = 6
 
 /** The persisted state, or null for anything missing, stale or malformed. */
 export function parsePersisted(raw: string | null): MockState | null {

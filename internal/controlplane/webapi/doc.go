@@ -15,7 +15,7 @@
 // Which devices a Web user may see and bind is decided in one place,
 // deviceOwner; see its comment for the current rule.
 //
-// Name, path and repository URL rules (rules.go) are the authority. They
-// started as a port of the Web UI's checks in web/src/api/validation.ts;
-// rules.go lists what the Web UI does not check yet.
+// Name, path and repository URL rules (rules.go) are the authority. The Web
+// UI runs a port of them (web/src/api/validation.ts and git-url.ts) before
+// sending; TestWebParityFixture (parity_test.go) keeps the two in step.
 package webapi

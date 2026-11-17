@@ -13,13 +13,15 @@ task web:build   # production build into web/dist
 `VITE_CIRCUS_BACKEND` chooses what the UI talks to. The choice is made in
 `src/api/backend.ts`; pages only see the client interface.
 
-| Value | Auth | Projects, devices, sessions |
+| Value | Auth, projects, devices | Sessions |
 | --- | --- | --- |
 | `mock` (default) | In-browser mock | In-browser mock |
 | `server` | The control plane, over Connect | In-browser mock, as the owner of the demo data |
 
-The control plane serves only auth so far, so in server mode the mock still
-stands in for everything else and trusts the real sign-in.
+The control plane doesn't serve sessions yet, so in server mode the mock
+still simulates them and trusts the real sign-in. Its sessions belong to the
+server's projects: it looks projects up, and records the last used location,
+through the same projects client as the pages.
 
 ### Mock switches
 
@@ -29,7 +31,8 @@ printed in the browser console), `?mock=reset` restores the demo data and
 commas. The demo accounts are `eric@example.com` (super user) and
 `dev@example.com`, both with password `circus`.
 
-In server mode only `?mock=reset` does something; auth comes from the server.
+In server mode only `?mock=reset` does something (it resets the simulated
+sessions); auth, projects and devices come from the server.
 
 ### Simulated session states
 
@@ -85,6 +88,31 @@ How the pieces fit:
 
 To point Vite at another control plane, set `VITE_CIRCUS_SERVER`, and make
 sure that server's `public_url` is the Vite origin.
+
+## Validation rules
+
+`src/api/validation.ts` and `src/api/git-url.ts` port the control plane's
+rules for project names, paths and repository URLs
+(`internal/controlplane/webapi/rules.go`), so forms can refuse what the
+server would. Two fixtures are generated from the Go side by
+`TestWebParityFixture` (`internal/controlplane/webapi/parity_test.go`):
+
+- `src/api/validation-parity.json`: what the Go rules return for a list of
+  inputs (those of `rules_test.go` and more); `validation-parity.test.ts`
+  runs them against the port.
+- `src/api/case-fold.json`: Go's simple case-folding orbits, which project
+  name uniqueness uses (`sameProjectName`).
+
+The Go test fails whenever the rules (or Go's Unicode tables) no longer
+match the fixtures. Regenerate them, then run the Web tests to see whether
+the port still agrees:
+
+```sh
+go test ./internal/controlplane/webapi -run TestWebParityFixture -update
+npm -w @circus/web run test
+```
+
+New inputs go into `webParityInputs` in `parity_test.go`.
 
 ## Translations
 

@@ -7,18 +7,21 @@ import type {
   Location,
   LoginMethods,
   Project,
+  ProjectService,
   SessionSummary,
   User,
 } from "@/api/types"
 import {
-  isAbsolutePath,
+  checkPath,
+  checkProjectName,
+  checkRepoUrl,
+  defaultPath,
+  MAX_LOCATIONS,
   normalizeEmail,
-  normalizePath,
   sameLocation,
   sameProjectName,
   validateEmail,
   validatePassword,
-  validateProjectName,
 } from "@/api/validation"
 import type { ConversationStore, SessionEvent } from "@/lib/types"
 
@@ -27,6 +30,8 @@ import {
   OIDC_SETUP_EMAIL,
   SEED_SUPER_EMAIL,
   settleSession,
+  type MockLocation,
+  type MockProject,
   type MockState,
   type MockUser,
 } from "./state"
@@ -95,6 +100,12 @@ export interface MockBackendOptions {
    * signed-out people away from the pages that make them.
    */
   actAs?: string
+  /**
+   * The projects the mock's sessions belong to (by default the mock's own).
+   * Sessions look projects up and record the last used location only
+   * through this service, so they also work with a real server's projects.
+   */
+  projects?: ProjectService
 }
 
 /** Failed sign-ins per email within the window before further tries are refused. */
@@ -114,6 +125,7 @@ export function createMockBackend({
   note = () => {},
   oidc = true,
   actAs,
+  projects: sessionProjects,
 }: MockBackendOptions): MockBackend {
   const methods = (): LoginMethods =>
     oidc ? structuredClone(MOCK_LOGIN_METHODS) : { password: MOCK_LOGIN_METHODS.password }
@@ -147,6 +159,15 @@ export function createMockBackend({
           }
         }, latency())
       })
+    }
+  }
+
+  // Like `call`, for handlers that call other services. Those calls take
+  // the time a request takes, so there is no delay of its own.
+  function callAsync<Args extends unknown[], Res>(handler: (...args: Args) => Promise<Res>) {
+    return async (...args: Args): Promise<Res> => {
+      const res = await handler(...structuredClone(args))
+      return res === undefined ? res : structuredClone(res)
     }
   }
 
@@ -206,47 +227,64 @@ export function createMockBackend({
   }
 
   function checkName(owner: string, name: unknown, exceptId?: string): string {
-    if (typeof name !== "string") throw invalid("Enter a project name.", "name")
-    const problem = validateProjectName(name)
-    if (problem) throw invalid(problem, "name")
-    const trimmed = name.trim()
+    const checked = checkProjectName(typeof name === "string" ? name : "")
+    if (!checked.ok) throw invalid(checked.problem, "name")
     const taken = state.projects.some(
-      (p) => p.owner === owner && p.projectId !== exceptId && sameProjectName(p.name, trimmed),
+      (p) => p.owner === owner && p.projectId !== exceptId && sameProjectName(p.name, checked.value),
     )
     if (taken) {
-      throw new ApiError("already_exists", `A project named "${trimmed}" already exists.`, "name")
+      throw new ApiError("already_exists", `A project named "${checked.value}" already exists.`, "name")
     }
-    return trimmed
+    return checked.value
   }
 
-  function checkLocations(owner: string, locations: unknown): Location[] {
-    if (!Array.isArray(locations) || locations.length === 0) {
-      throw invalid("Add at least one location.", "locations")
+  function checkRepo(repoUrl: unknown): string {
+    const checked = checkRepoUrl(typeof repoUrl === "string" ? repoUrl : "")
+    if (!checked.ok) throw invalid(checked.problem, "repo_url")
+    return checked.value
+  }
+
+  /** Normalized locations; an empty path is the device's default directory. */
+  function checkLocations(owner: string, locations: unknown): MockLocation[] {
+    const list = Array.isArray(locations) ? (locations as Location[]) : []
+    if (list.length > MAX_LOCATIONS) {
+      throw invalid(`At most ${MAX_LOCATIONS} locations.`, "locations")
     }
-    const out: Location[] = []
-    for (const [i, loc] of (locations as Location[]).entries()) {
+    const out: MockLocation[] = []
+    for (const [i, loc] of list.entries()) {
       const device = state.devices.find((d) => d.owner === owner && d.name === loc?.device)
       if (!device) {
         throw invalid(`Unknown device "${loc?.device ?? ""}".`, `locations[${i}].device`)
       }
-      const path = normalizePath(String(loc.path ?? ""), device.os)
-      if (!isAbsolutePath(path, device.os)) {
+      const checked = checkPath(String(loc.path ?? ""), device.os)
+      if (!checked.ok) throw invalid(checked.problem, `locations[${i}].path`)
+      // Binds the device that has this name now.
+      const location = { device: device.name, path: checked.value, deviceId: device.deviceId }
+      if (out.some((l) => sameLocation(l, location))) {
         throw invalid(
-          `"${loc.path}" is not an absolute path on ${device.name}.`,
+          checked.value === ""
+            ? `${device.name} already has a default location.`
+            : `${device.name}:${checked.value} is listed more than once.`,
           `locations[${i}].path`,
         )
-      }
-      const location = { device: device.name, path }
-      if (out.some((l) => sameLocation(l, location))) {
-        throw invalid(`${device.name}:${path} is listed more than once.`, `locations[${i}].path`)
       }
       out.push(location)
     }
     return out
   }
 
-  const publicProject = ({ owner: _, ...project }: MockState["projects"][number]): Project =>
-    project
+  const publicProject = ({ owner, updatedAtUnixMs, ...project }: MockProject): Project => ({
+    ...project,
+    locations: project.locations.map(({ deviceId, ...l }) => ({
+      ...l,
+      effectivePath: l.path === "" ? defaultPath(project.projectId) : "",
+      deviceRevoked: !state.devices.some((d) => d.owner === owner && d.deviceId === deviceId),
+    })),
+    updatedAtUnixMs: String(updatedAtUnixMs),
+  })
+
+  /** The next version: now, but always past the previous one. */
+  const nextVersion = (previous: number) => Math.max(now(), previous + 1)
 
   const client: CircusClient = {
     auth: {
@@ -307,17 +345,21 @@ export function createMockBackend({
     },
 
     projects: {
-      createProject: call((req: { name: string; locations: Location[] }) => {
+      createProject: call((req: { name: string; repoUrl: string; locations: Location[] }) => {
         const owner = currentUser()
         const name = checkName(owner, req.name)
+        const repoUrl = checkRepo(req.repoUrl)
         const locations = checkLocations(owner, req.locations)
-        const project = {
+        const at = now()
+        const project: MockProject = {
           owner,
           projectId: nanoid(12),
           name,
+          repoUrl,
           locations,
           lastUsedLocation: 0,
-          createdAtUnixMs: now(),
+          createdAtUnixMs: at,
+          updatedAtUnixMs: at,
         }
         state.projects.push(project)
         changed()
@@ -337,20 +379,50 @@ export function createMockBackend({
       ),
 
       updateProject: call(
-        (req: { projectId: string; name?: string; locations?: Location[] }) => {
+        (req: {
+          projectId: string
+          name?: string
+          locations?: Location[]
+          repoUrl?: string
+          lastUsedLocation?: number
+          expectedUpdatedAt?: string
+        }) => {
           const owner = currentUser()
           const project = ownedProject(owner, req.projectId)
           const name = req.name === undefined ? project.name : checkName(owner, req.name, project.projectId)
+          const repoUrl = req.repoUrl === undefined ? project.repoUrl : checkRepo(req.repoUrl)
+          const locations =
+            req.locations === undefined ? project.locations : checkLocations(owner, req.locations)
+          const versioned =
+            req.name !== undefined || req.repoUrl !== undefined || req.locations !== undefined
+          if (
+            versioned &&
+            req.expectedUpdatedAt !== undefined &&
+            req.expectedUpdatedAt !== String(project.updatedAtUnixMs)
+          ) {
+            throw new ApiError("aborted", "The project changed since it was read.")
+          }
+          // Keep pointing at the same location if it survived the edit.
+          let lastUsed = project.lastUsedLocation
           if (req.locations !== undefined) {
-            const locations = checkLocations(owner, req.locations)
-            // Keep pointing at the same location if it survived the edit.
             const previous = project.locations[project.lastUsedLocation]
             const kept = previous ? locations.findIndex((l) => sameLocation(l, previous)) : -1
-            project.lastUsedLocation =
-              kept >= 0 ? kept : Math.min(project.lastUsedLocation, locations.length - 1)
-            project.locations = locations
+            lastUsed = kept >= 0 ? kept : Math.max(0, Math.min(lastUsed, locations.length - 1))
           }
-          project.name = name
+          if (req.lastUsedLocation !== undefined) {
+            const i = req.lastUsedLocation
+            const inRange = locations.length === 0 ? i === 0 : i >= 0 && i < locations.length
+            if (!Number.isInteger(i) || !inRange) {
+              throw invalid("The last used location is out of range.", "last_used_location")
+            }
+            lastUsed = i
+          }
+          const moved =
+            name !== project.name ||
+            repoUrl !== project.repoUrl ||
+            JSON.stringify(locations) !== JSON.stringify(project.locations)
+          if (moved) project.updatedAtUnixMs = nextVersion(project.updatedAtUnixMs)
+          Object.assign(project, { name, repoUrl, locations, lastUsedLocation: lastUsed })
           changed()
           return publicProject(project)
         },
@@ -382,7 +454,7 @@ export function createMockBackend({
         return state.devices
           .filter((d) => d.owner === owner)
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map(({ owner: _, ...device }) => {
+          .map(({ owner: _, deviceId: __, ...device }) => {
             const since = forcedOffline.get(device.name)
             if (since === undefined || !device.online) return device
             return { ...device, online: false, lastSeenUnixMs: since }
@@ -391,24 +463,38 @@ export function createMockBackend({
     },
 
     sessions: {
-      listSessions: call((req: { projectId?: string }) => {
-        const owner = currentUser()
-        if (req.projectId !== undefined) ownedProject(owner, req.projectId)
-        const owned = new Set(
-          state.projects.filter((p) => p.owner === owner).map((p) => p.projectId),
-        )
+      listSessions: callAsync(async (req: { projectId?: string }) => {
+        currentUser()
+        const projects = sessionProjects ?? client.projects
+        // Unknown projects are not_found; without a project, sessions of
+        // projects that are gone are left out.
+        const owned =
+          req.projectId !== undefined
+            ? new Set([(await projects.getProject({ projectId: req.projectId })).projectId])
+            : new Set((await projects.listProjects()).map((p) => p.projectId))
         return state.sessions
           .filter((s) => owned.has(s.projectId))
-          .filter((s) => req.projectId === undefined || s.projectId === req.projectId)
           .sort((a, b) => b.lastActivityAtUnixMs - a.lastActivityAtUnixMs)
       }),
 
-      createSession: call((req: { projectId: string; locationIndex: number }) => {
-        const project = ownedProject(currentUser(), req.projectId)
-        const location = Number.isInteger(req.locationIndex)
-          ? project.locations[req.locationIndex]
-          : undefined
-        if (!location) throw invalid("Choose one of the project's locations.", "locationIndex")
+      createSession: callAsync(async (req: { projectId: string; locationIndex: number }) => {
+        currentUser()
+        const projects = sessionProjects ?? client.projects
+        const usable = (p: Project) => {
+          const location = Number.isInteger(req.locationIndex) ? p.locations[req.locationIndex] : undefined
+          return location && !location.deviceRevoked ? location : undefined
+        }
+        const chosen = usable(await projects.getProject({ projectId: req.projectId }))
+        if (!chosen) throw invalid("Choose one of the project's locations.", "locationIndex")
+        // Exempt from the version check, like starting a session on the server.
+        const project = await projects.updateProject({
+          projectId: req.projectId,
+          lastUsedLocation: req.locationIndex,
+        })
+        const location = usable(project)
+        if (!location || !sameLocation(location, chosen)) {
+          throw invalid("Choose one of the project's locations.", "locationIndex")
+        }
         const at = now()
         const session: SessionSummary = {
           sessionId: nanoid(12),
@@ -418,11 +504,10 @@ export function createMockBackend({
           lastActivityAtUnixMs: at,
           pendingApprovalCount: 0,
           device: location.device,
-          cwd: location.path,
+          cwd: location.path || location.effectivePath,
           createdAtUnixMs: at,
         }
         state.sessions.push(session)
-        project.lastUsedLocation = req.locationIndex
         changed()
         return session
       }),

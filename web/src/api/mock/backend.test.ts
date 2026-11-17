@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { ApiError, type ErrorCode } from "@/api/errors"
-import type { CircusClient } from "@/api/types"
+import type { CircusClient, ProjectService } from "@/api/types"
 
 import {
   createMockBackend,
@@ -168,7 +168,7 @@ describe("auth", () => {
     const { client } = backend()
     await expectCode(client.projects.listProjects(), "unauthenticated")
     await expectCode(client.projects.getProject({ projectId: "circus" }), "unauthenticated")
-    await expectCode(client.projects.createProject({ name: "x", locations: [mbp("/x")] }), "unauthenticated")
+    await expectCode(client.projects.createProject({ repoUrl: "", name: "x", locations: [mbp("/x")] }), "unauthenticated")
     await expectCode(client.machines.listDevices(), "unauthenticated")
     await expectCode(client.sessions.listSessions({}), "unauthenticated")
   })
@@ -200,18 +200,18 @@ describe("with auth served elsewhere", () => {
 describe("projects", () => {
   it("lists projects by name", async () => {
     const client = await signedIn()
-    await client.projects.createProject({ name: "aardvark", locations: [mbp("/src/a")] })
+    await client.projects.createProject({ repoUrl: "", name: "aardvark", locations: [mbp("/src/a")] })
     const names = (await client.projects.listProjects()).map((p) => p.name)
     expect(names).toEqual(["aardvark", "circus", "palace", "toolbox"])
   })
 
   it("trims names and keeps them unique regardless of case", async () => {
     const client = await signedIn()
-    const created = await client.projects.createProject({ name: "  web  ", locations: [mbp("/src/web")] })
+    const created = await client.projects.createProject({ repoUrl: "", name: "  web  ", locations: [mbp("/src/web")] })
     expect(created.name).toBe("web")
     expect(created.lastUsedLocation).toBe(0)
     await expectCode(
-      client.projects.createProject({ name: "Circus", locations: [mbp("/src/c")] }),
+      client.projects.createProject({ repoUrl: "", name: "Circus", locations: [mbp("/src/c")] }),
       "already_exists",
     )
     await expectCode(
@@ -225,47 +225,49 @@ describe("projects", () => {
   it("validates names", async () => {
     const client = await signedIn()
     for (const name of ["", "   ", "x".repeat(65), "a\tb"]) {
-      await expectCode(client.projects.createProject({ name, locations: [mbp("/src")] }), "invalid_argument")
+      await expectCode(client.projects.createProject({ name, repoUrl: "", locations: [mbp("/src")] }), "invalid_argument")
     }
-    await client.projects.createProject({ name: "x".repeat(64), locations: [mbp("/src")] })
+    await client.projects.createProject({ repoUrl: "", name: "x".repeat(64), locations: [mbp("/src")] })
   })
 
   it("validates locations", async () => {
     const client = await signedIn()
     const create = (locations: { device: string; path: string }[]) =>
-      client.projects.createProject({ name: "new", locations })
-    await expectCode(create([]), "invalid_argument")
+      client.projects.createProject({ repoUrl: "", name: "new", locations })
+    await expectCode(create(Array.from({ length: 17 }, (_, i) => mbp(`/src/${i}`))), "invalid_argument")
     await expectCode(create([{ device: "ghost", path: "/src" }]), "invalid_argument")
     await expectCode(create([mbp("src/relative")]), "invalid_argument")
     await expectCode(create([{ device: "eric-win", path: "/not/windows" }]), "invalid_argument")
     await expectCode(create([mbp("/src/a"), mbp("/src/a/")]), "invalid_argument")
     const ok = await create([mbp("/src/a/"), { device: "eric-win", path: "D:\\work" }])
-    expect(ok.locations).toEqual([mbp("/src/a"), { device: "eric-win", path: "D:\\work" }])
+    expect(ok.locations).toMatchObject([mbp("/src/a"), { device: "eric-win", path: "D:\\work" }])
   })
 
   it("normalizes Windows paths before checking for duplicates", async () => {
     const client = await signedIn()
     const win = (path: string) => ({ device: "eric-win", path })
     await expectCode(
-      client.projects.createProject({ name: "w", locations: [win("D:\\work"), win("d:/work/")] }),
+      client.projects.createProject({ repoUrl: "", name: "w", locations: [win("D:\\work"), win("d:/work/")] }),
       "invalid_argument",
     )
-    const p = await client.projects.createProject({ name: "w", locations: [win("c:/src/app")] })
-    expect(p.locations).toEqual([win("C:\\src\\app")])
+    const p = await client.projects.createProject({ repoUrl: "", name: "w", locations: [win("c:/src/app")] })
+    expect(p.locations).toMatchObject([win("C:\\src\\app")])
   })
 
   it("names the field each validation error is about", async () => {
     const client = await signedIn()
-    expect(await fieldOf(client.projects.createProject({ name: "", locations: [mbp("/a")] }))).toBe("name")
-    expect(await fieldOf(client.projects.createProject({ name: "circus", locations: [mbp("/a")] }))).toBe("name")
-    expect(await fieldOf(client.projects.createProject({ name: "n", locations: [] }))).toBe("locations")
+    expect(await fieldOf(client.projects.createProject({ repoUrl: "", name: "", locations: [mbp("/a")] }))).toBe("name")
+    expect(await fieldOf(client.projects.createProject({ repoUrl: "", name: "circus", locations: [mbp("/a")] }))).toBe("name")
+    const many = Array.from({ length: 17 }, (_, i) => mbp(`/${i}`))
+    expect(await fieldOf(client.projects.createProject({ repoUrl: "", name: "n", locations: many }))).toBe("locations")
+    expect(await fieldOf(client.projects.createProject({ repoUrl: "x", name: "n", locations: [] }))).toBe("repo_url")
     expect(
-      await fieldOf(client.projects.createProject({ name: "n", locations: [mbp("/a"), { device: "x", path: "/a" }] })),
+      await fieldOf(client.projects.createProject({ repoUrl: "", name: "n", locations: [mbp("/a"), { device: "x", path: "/a" }] })),
     ).toBe("locations[1].device")
-    expect(await fieldOf(client.projects.createProject({ name: "n", locations: [mbp("rel")] }))).toBe(
+    expect(await fieldOf(client.projects.createProject({ repoUrl: "", name: "n", locations: [mbp("rel")] }))).toBe(
       "locations[0].path",
     )
-    expect(await fieldOf(client.projects.createProject({ name: "n", locations: [mbp("/a"), mbp("/a")] }))).toBe(
+    expect(await fieldOf(client.projects.createProject({ repoUrl: "", name: "n", locations: [mbp("/a"), mbp("/a")] }))).toBe(
       "locations[1].path",
     )
   })
@@ -273,6 +275,7 @@ describe("projects", () => {
   it("clamps lastUsedLocation when locations shrink", async () => {
     const client = await signedIn()
     const p = await client.projects.createProject({
+      repoUrl: "",
       name: "multi",
       locations: [mbp("/a"), mbp("/b"), mbp("/c")],
     })
@@ -310,6 +313,148 @@ describe("projects", () => {
     await expectCode(client.projects.getProject({ projectId: "toolbox" }), "not_found")
     const sessions = await client.sessions.listSessions({})
     expect(sessions.some((s) => s.projectId === "toolbox")).toBe(false)
+  })
+})
+
+describe("the project model", () => {
+  const create = (client: CircusClient, locations: { device: string; path: string }[], repoUrl = "") =>
+    client.projects.createProject({ name: "model", repoUrl, locations })
+
+  it("takes an optional repository URL, trimmed, and projects without locations", async () => {
+    const client = await signedIn()
+    const p = await create(client, [], " git@github.com:owner/repo.git ")
+    expect(p).toMatchObject({ repoUrl: "git@github.com:owner/repo.git", locations: [], lastUsedLocation: 0 })
+    const cleared = await client.projects.updateProject({ projectId: p.projectId, repoUrl: "" })
+    expect(cleared.repoUrl).toBe("")
+    await expectCode(
+      client.projects.updateProject({ projectId: p.projectId, repoUrl: "github.com/owner/repo" }),
+      "invalid_argument",
+    )
+  })
+
+  it("resolves a location without a path to the default directory, one per device", async () => {
+    const client = await signedIn()
+    const p = await create(client, [mbp(""), mbp("/src"), { device: "devbox", path: "  " }])
+    expect(p.locations).toEqual([
+      { device: "eric-mbp", path: "", effectivePath: `~/circus/projects/${p.projectId}`, deviceRevoked: false },
+      { device: "eric-mbp", path: "/src", effectivePath: "", deviceRevoked: false },
+      { device: "devbox", path: "", effectivePath: `~/circus/projects/${p.projectId}`, deviceRevoked: false },
+    ])
+    const twice = client.projects.createProject({ name: "twice", repoUrl: "", locations: [mbp(""), mbp(" ")] })
+    expect(await fieldOf(twice)).toBe("locations[1].path")
+  })
+
+  it("marks locations whose device is gone", async () => {
+    const state = seedState()
+    const { client } = createMockBackend({ state, latency: () => 0, actAs: SEED_OWNER_ID })
+    const p = await create(client, [mbp("/a"), { device: "devbox", path: "/b" }])
+    state.devices = state.devices.filter((d) => d.name !== "devbox")
+    const again = await client.projects.getProject({ projectId: p.projectId })
+    expect(again.locations.map((l) => l.deviceRevoked)).toEqual([false, true])
+    // Starting a session there is refused; saving it again needs another device.
+    await expectCode(client.sessions.createSession({ projectId: p.projectId, locationIndex: 1 }), "invalid_argument")
+    expect(
+      await fieldOf(client.projects.updateProject({ projectId: p.projectId, locations: again.locations })),
+    ).toBe("locations[1].device")
+  })
+
+  it("refuses a change made on an older version, but not a new last used location", async () => {
+    let clock = 1_000
+    const { client } = createMockBackend({
+      state: seedState(),
+      latency: () => 0,
+      actAs: SEED_OWNER_ID,
+      now: () => clock,
+    })
+    const p = await create(client, [mbp("/a"), mbp("/b")])
+    expect(p.updatedAtUnixMs).toBe("1000")
+    // Two changes in the same millisecond still get two versions.
+    const renamed = await client.projects.updateProject({
+      projectId: p.projectId,
+      name: "renamed",
+      expectedUpdatedAt: p.updatedAtUnixMs,
+    })
+    expect(renamed.updatedAtUnixMs).toBe("1001")
+    await expectCode(
+      client.projects.updateProject({ projectId: p.projectId, name: "again", expectedUpdatedAt: p.updatedAtUnixMs }),
+      "aborted",
+    )
+    expect((await client.projects.getProject({ projectId: p.projectId })).name).toBe("renamed")
+    // Setting only the last used location is never refused, and is no new version.
+    clock = 5_000
+    const used = await client.projects.updateProject({
+      projectId: p.projectId,
+      lastUsedLocation: 1,
+      expectedUpdatedAt: p.updatedAtUnixMs,
+    })
+    expect(used).toMatchObject({ lastUsedLocation: 1, updatedAtUnixMs: "1001" })
+    // Saving the same values is no change either.
+    const same = await client.projects.updateProject({
+      projectId: p.projectId,
+      name: "renamed",
+      repoUrl: "",
+      expectedUpdatedAt: "1001",
+    })
+    expect(same.updatedAtUnixMs).toBe("1001")
+    expect(
+      await fieldOf(client.projects.updateProject({ projectId: p.projectId, lastUsedLocation: 2 })),
+    ).toBe("last_used_location")
+  })
+})
+
+describe("a device enrolled again under a removed device's name", () => {
+  it("leaves the location revoked until it is saved again, which binds the new device", async () => {
+    const state = seedState()
+    const { client } = createMockBackend({ state, latency: () => 0, actAs: SEED_OWNER_ID })
+    const p = await client.projects.createProject({ name: "rebind", repoUrl: "", locations: [{ device: "devbox", path: "/b" }] })
+    // devbox is revoked, and a new device joins with the same name.
+    state.devices.find((d) => d.name === "devbox")!.deviceId = "device-devbox-2"
+    const revoked = await client.projects.getProject({ projectId: p.projectId })
+    expect(revoked.locations[0].deviceRevoked).toBe(true)
+    await expectCode(client.sessions.createSession({ projectId: p.projectId, locationIndex: 0 }), "invalid_argument")
+    const rebound = await client.projects.updateProject({
+      projectId: p.projectId,
+      locations: revoked.locations,
+      expectedUpdatedAt: revoked.updatedAtUnixMs,
+    })
+    expect(rebound.locations[0].deviceRevoked).toBe(false)
+    expect(await client.sessions.createSession({ projectId: p.projectId, locationIndex: 0 })).toMatchObject({
+      device: "devbox",
+      cwd: "/b",
+    })
+  })
+})
+
+describe("sessions on another project service", () => {
+  it("find their projects and record the last used location through it", async () => {
+    const remoteState = seedState()
+    remoteState.projects = []
+    const remote = createMockBackend({ state: remoteState, latency: () => 0, actAs: SEED_OWNER_ID })
+    const project = await remote.client.projects.createProject({
+      name: "remote",
+      repoUrl: "",
+      locations: [mbp("/a"), { device: "devbox", path: "" }],
+    })
+    const calls: unknown[] = []
+    const projects: ProjectService = {
+      ...remote.client.projects,
+      updateProject: (req) => {
+        calls.push(req)
+        return remote.client.projects.updateProject(req)
+      },
+    }
+    // The sessions' own state has none of the remote project ids.
+    const { client } = createMockBackend({ state: seedState(), latency: () => 0, actAs: SEED_OWNER_ID, projects })
+    const session = await client.sessions.createSession({ projectId: project.projectId, locationIndex: 1 })
+    expect(session).toMatchObject({ device: "devbox", cwd: `~/circus/projects/${project.projectId}` })
+    expect(calls).toEqual([{ projectId: project.projectId, lastUsedLocation: 1 }])
+    expect((await remote.client.projects.getProject({ projectId: project.projectId })).lastUsedLocation).toBe(1)
+    expect((await client.sessions.listSessions({ projectId: project.projectId })).map((s) => s.sessionId)).toEqual([
+      session.sessionId,
+    ])
+    // Sessions of the seed projects aren't the remote service's, so they don't list.
+    expect((await client.sessions.listSessions({})).map((s) => s.projectId)).toEqual([project.projectId])
+    await expectCode(client.sessions.listSessions({ projectId: "circus" }), "not_found")
   })
 })
 
@@ -464,7 +609,7 @@ it("does not share objects with the store", async () => {
   const client = await signedIn()
   const [project] = await client.projects.listProjects()
   project.name = "mutated"
-  project.locations.push(mbp("/elsewhere"))
+  project.locations.push({ ...mbp("/elsewhere"), effectivePath: "", deviceRevoked: false })
   const again = await client.projects.getProject({ projectId: project.projectId })
   expect(again.name).not.toBe("mutated")
   expect(again.locations).toHaveLength(2)

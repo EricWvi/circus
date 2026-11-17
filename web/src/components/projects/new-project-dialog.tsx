@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router"
 
 import { useCreateProject, useDevices, useProjects } from "@/api/hooks"
+import { DEFAULT_PATH_PREFIX } from "@/api/validation"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -19,8 +20,9 @@ import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { useQuietAutoFocus } from "@/hooks/use-quiet-autofocus"
 import { defaultDevice, newRow } from "@/lib/location-form"
 
-import { LocationEditor } from "./location-editor"
+import { busyClass, LocationEditor } from "./location-editor"
 import { NewProjectContext } from "./new-project-context"
+import { RepoUrlField } from "./repo-url-field"
 import { useProjectForm } from "./use-project-form"
 
 /** Provides the new-project dialog to everything below it. */
@@ -37,7 +39,7 @@ export function NewProjectDialogProvider({ children }: { children: ReactNode }) 
     <NewProjectContext.Provider value={() => change(true)}>
       {children}
       <Dialog open={open} onOpenChange={change}>
-        <DialogContent className="gap-5 sm:max-w-lg" onCloseAutoFocus={focus.onCloseAutoFocus}>
+        <DialogContent className="gap-5 sm:max-w-xl" onCloseAutoFocus={focus.onCloseAutoFocus}>
           <NewProjectForm onDone={() => change(false)} />
         </DialogContent>
       </Dialog>
@@ -54,8 +56,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   const create = useCreateProject()
   const quietAutoFocus = useQuietAutoFocus()
   const form = useProjectForm({
-    initialName: "",
-    initialRows: () => [newRow(devices.data ?? [])],
+    initial: () => ({ name: "", repoUrl: "", rows: [newRow(devices.data ?? [])] }),
     devices: devices.data,
     otherProjects: projects.data ?? [],
   })
@@ -70,6 +71,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (create.isPending) return
     const req = form.submit()
     if (!req) return
     create.mutate(req, {
@@ -102,6 +104,16 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
         />
         {form.errors.name && <FieldError>{form.errors.name}</FieldError>}
       </Field>
+      <RepoUrlField
+        id="new-project-repo-url"
+        value={form.repoUrl}
+        error={form.errors.repoUrl}
+        busy={create.isPending}
+        onChange={form.setRepoUrl}
+        onBlur={() => {
+          if (form.repoUrl !== "") form.touch("repoUrl")
+        }}
+      />
       <FieldSet className="gap-2">
         <FieldLegend variant="label" className="mb-0">
           {t("projects.locations")}
@@ -110,7 +122,11 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
           rows={form.rows}
           devices={devices.data}
           errors={form.errors.rows}
-          disabled={create.isPending}
+          busy={create.isPending}
+          defaultPath={DEFAULT_PATH_PREFIX + "…"}
+          defaultPathHint={t("projects.defaultPathHint", {
+            path: DEFAULT_PATH_PREFIX + t("projects.projectIdPlaceholder"),
+          })}
           onChange={form.setRows}
           onTouch={(key, field) => form.touch(`${key}.${field}`)}
         />
@@ -126,7 +142,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
             {t("common.cancel")}
           </Button>
         </DialogClose>
-        <Button type="submit" disabled={create.isPending}>
+        <Button type="submit" aria-disabled={create.isPending || undefined} className={busyClass}>
           {create.isPending && <Spinner aria-label={t("projects.creating")} />}
           {t("common.create")}
         </Button>

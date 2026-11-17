@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// The cases below include those of the Web UI's tests
-// (web/src/api/mock/backend.test.ts, web/src/lib/location-form.test.ts), so
-// both sides keep accepting and normalizing the same paths.
+// The Web UI runs a port of these rules. Every input below is also in
+// webParityInputs (parity_test.go), whose recorded results the Web's parity
+// test checks its port against; add new cases there too.
 
 func TestNormalizePath(t *testing.T) {
 	for _, tc := range []struct{ os, in, want string }{

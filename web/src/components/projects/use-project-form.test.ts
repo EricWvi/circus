@@ -5,7 +5,7 @@ import { changedFieldIds } from "./use-project-form"
 const row = (key: string, device: string, path: string) => ({ key, device, path })
 
 describe("changedFieldIds", () => {
-  const sent = { name: "web", rows: [row("a", "box", "/a"), row("b", "box", "/b")] }
+  const sent = { name: "web", repoUrl: "", rows: [row("a", "box", "/a"), row("b", "box", "/b")] }
 
   it("is empty when nothing changed", () => {
     expect(changedFieldIds(sent, { ...sent, rows: [...sent.rows] })).toEqual([])
@@ -13,6 +13,7 @@ describe("changedFieldIds", () => {
 
   it("names the edited fields and the form-wide error", () => {
     expect(changedFieldIds(sent, { ...sent, name: "web2" })).toEqual(["name", "form"])
+    expect(changedFieldIds(sent, { ...sent, repoUrl: "git@h:x" })).toEqual(["repoUrl", "form"])
     expect(
       changedFieldIds(sent, { ...sent, rows: [row("a", "mac", "/a"), row("b", "box", "/c")] }),
     ).toEqual(["a.device", "b.path", "form"])

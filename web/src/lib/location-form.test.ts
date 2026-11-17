@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest"
 
 import { ApiError } from "@/api/errors"
-import type { Device } from "@/api/types"
+import type { Device, ProjectLocation } from "@/api/types"
 
 import {
+  addedRow,
   defaultDevice,
+  hasEarlierDefault,
+  isReplaced,
   formChanged,
-  sameProjectFields,
   hasErrors,
+  locationsChanged,
   mapServerError,
   pickLocation,
   projectErrorMessage,
+  rowsOf,
+  shortDefaultPath,
   sortDevices,
   toLocations,
   validateForm,
@@ -28,6 +33,13 @@ const device = (name: string, os: string, online = true): Device => ({
 })
 const devices = [device("win", "windows", false), device("mac", "darwin"), device("box", "linux")]
 const row = (key: string, d: string, path: string): LocationRow => ({ key, device: d, path })
+const form = (name: string, rows: LocationRow[], repoUrl = "") => ({ name, repoUrl, rows })
+const loc = (d: string, path: string, deviceRevoked = false): ProjectLocation => ({
+  device: d,
+  path,
+  effectivePath: path === "" ? "~/circus/projects/p1" : "",
+  deviceRevoked,
+})
 
 describe("devices", () => {
   it("lists online devices first, then by name", () => {
@@ -42,126 +54,169 @@ describe("devices", () => {
 })
 
 describe("validateRows", () => {
-  it("accepts absolute paths for each device's OS", () => {
-    expect(validateRows([row("a", "box", "/src"), row("b", "win", "D:\\src")], devices)).toEqual({})
+  it("accepts absolute paths for each device's OS, and empty paths", () => {
+    expect(validateRows([row("a", "box", "/src"), row("b", "win", "D:\\src"), row("c", "mac", "")], devices)).toEqual({})
   })
 
-  it("requires a device and a path", () => {
-    expect(validateRows([row("a", "", "")], devices)).toEqual({
-      a: { device: "Choose a device.", path: "Enter a path." },
+  it("requires a device; one that isn't listed was removed", () => {
+    expect(validateRows([row("a", "", "")], devices)).toEqual({ a: { device: "Choose a device." } })
+    expect(validateRows([row("a", "gone", "/x")], devices)).toEqual({
+      a: { device: "This device was removed. Choose another device or remove the location." },
     })
-    expect(validateRows([row("a", "gone", "/x")], devices)).toEqual({ a: { device: "Unknown device." } })
   })
 
   it("checks paths against the device's OS", () => {
     expect(validateRows([row("a", "box", "src")], devices).a.path).toMatch(/absolute path, like \/home/)
     expect(validateRows([row("a", "win", "/src")], devices).a.path).toMatch(/C:\\src\\app/)
+    expect(validateRows([row("a", "win", "\\\\?\\C:\\x")], devices).a.path).toMatch(/aren't supported/)
+    expect(validateRows([row("a", "box", "/a\u200bb")], devices).a.path).toMatch(/invisible/)
   })
 
   it("flags the later of two equal locations, after normalizing", () => {
     expect(validateRows([row("a", "win", "D:\\src"), row("b", "win", "d:/src/")], devices)).toEqual({
       b: { path: "This location is already listed." },
     })
+    expect(validateRows([row("a", "box", "/a//./b"), row("b", "box", "/a/b/")], devices)).toEqual({
+      b: { path: "This location is already listed." },
+    })
     // The same path on another device is fine.
     expect(validateRows([row("a", "box", "/src"), row("b", "mac", "/src")], devices)).toEqual({})
+  })
+
+  it("allows one default location per device", () => {
+    expect(validateRows([row("a", "box", ""), row("b", "box", "  ")], devices)).toEqual({
+      b: { path: "This device already has a default location." },
+    })
+    expect(validateRows([row("a", "box", ""), row("b", "mac", ""), row("c", "box", "/x")], devices)).toEqual({})
   })
 })
 
 describe("validateForm", () => {
+  const rows = [row("a", "box", "/src")]
+
   it("checks the name, also against other projects regardless of case", () => {
-    const rows = [row("a", "box", "/src")]
-    expect(validateForm({ name: " ", rows }, devices, []).name).toBe("Enter a project name.")
-    expect(validateForm({ name: "x".repeat(65), rows }, devices, []).name).toMatch(/at most 64/)
-    expect(validateForm({ name: "Circus", rows }, devices, [{ name: "circus" }]).name).toMatch(/already exists/)
-    expect(hasErrors(validateForm({ name: "web", rows }, devices, [{ name: "circus" }]))).toBe(false)
+    expect(validateForm(form(" ", rows), devices, []).name).toBe("Enter a project name.")
+    expect(validateForm(form("x".repeat(65), rows), devices, []).name).toMatch(/at most 64/)
+    expect(validateForm(form("Circus", rows), devices, [{ name: "circus" }]).name).toMatch(/already exists/)
+    expect(hasErrors(validateForm(form("web", rows), devices, [{ name: "circus" }]))).toBe(false)
+    expect(hasErrors(validateForm(form("web", []), devices, []))).toBe(false)
+  })
+
+  it("checks the repository URL", () => {
+    expect(validateForm(form("w", rows, "github.com/o/r"), devices, []).repoUrl).toMatch(/accepted forms/)
+    expect(validateForm(form("w", rows, "https://h/o r"), devices, []).repoUrl).toMatch(/spaces/)
+    expect(validateForm(form("w", rows, " git@github.com:o/r.git "), devices, []).repoUrl).toBeUndefined()
+  })
+
+  it("leaves saved locations alone until they change", () => {
+    const saved = [loc("gone", "/x")]
+    const unchanged = form("w", [row("k", "gone", "/x")])
+    expect(validateForm(unchanged, devices, [], saved).rows).toEqual({})
+    const edited = form("w", [row("k", "gone", "/y")])
+    expect(validateForm(edited, devices, [], saved).rows.k.device).toMatch(/removed/)
   })
 })
 
 describe("mapServerError", () => {
-  const form = { name: " web ", rows: [row("a", "box", "/a"), row("b", "box", "/b")] }
+  const sent = form(" web ", [row("a", "box", "/a"), row("b", "box", "/b")], "git@h:x")
 
-  it("maps field paths to the name or a row's field", () => {
-    expect(mapServerError(new ApiError("already_exists", "taken", "name"), form)).toEqual({
+  it("maps field paths to the name, the repository URL or a row's field", () => {
+    expect(mapServerError(new ApiError("already_exists", "taken", "name"), sent)).toEqual({
       rows: {},
       name: 'A project named "web" already exists.',
     })
-    expect(mapServerError(new ApiError("invalid_argument", "bad", "locations[1].path"), form)).toEqual({
+    expect(mapServerError(new ApiError("invalid_argument", "bad", "locations[1].path"), sent, devices)).toEqual({
       rows: { b: { path: "This path can't be used on its device." } },
     })
-    expect(mapServerError(new ApiError("invalid_argument", "gone", "locations[0].device"), form)).toEqual({
+    expect(mapServerError(new ApiError("invalid_argument", "gone", "locations[0].device"), sent, devices)).toEqual({
       rows: { a: { device: "Unknown device." } },
     })
-  })
-
-  it("never shows the server's text", () => {
-    const { name } = mapServerError(new ApiError("invalid_argument", "server text", "name"), {
-      ...form,
-      name: " ",
+    expect(mapServerError(new ApiError("invalid_argument", "bad", "repo_url"), sent)).toEqual({
+      rows: {},
+      repoUrl: "This repository URL can't be used.",
     })
-    expect(name).toBe("Enter a project name.")
   })
 
-  it("says a value can't be used when the client didn't predict the refusal", () => {
-    expect(mapServerError(new ApiError("invalid_argument", "x", "name"), form).name).toBe(
-      "This name can't be used.",
+  it("gives a field the client's own message when it explains the refusal", () => {
+    const twice = form("w", [row("a", "box", ""), row("b", "box", "")])
+    expect(mapServerError(new ApiError("invalid_argument", "dup", "locations[1].path"), twice, devices)).toEqual({
+      rows: { b: { path: "This device already has a default location." } },
+    })
+    const removed = form("w", [row("a", "gone", "/a")])
+    expect(mapServerError(new ApiError("invalid_argument", "x", "locations[0].device"), removed, devices).rows.a?.device).toMatch(
+      /removed/,
     )
-    expect(mapServerError(new ApiError("invalid_argument", "x", "locations[0].path"), form).rows.a?.path).toBe(
-      "This path can't be used on its device.",
+    expect(mapServerError(new ApiError("invalid_argument", "x", "repo_url"), form("w", [], "nope")).repoUrl).toMatch(
+      /accepted forms/,
     )
+    expect(mapServerError(new ApiError("invalid_argument", "server text", "name"), form(" ", [])).name).toBe(
+      "Enter a project name.",
+    )
+    expect(mapServerError(new ApiError("invalid_argument", "x", "name"), sent).name).toBe("This name can't be used.")
   })
 
-  it("says when the project is gone", () => {
-    expect(mapServerError(new ApiError("not_found", "x"), form)).toEqual({
+  it("says when the project is gone, changed or at its limits", () => {
+    expect(mapServerError(new ApiError("not_found", "x"), sent)).toEqual({
       rows: {},
       form: "This project no longer exists.",
     })
-    expect(projectErrorMessage(new ApiError("not_found", "x"))).toBe("This project no longer exists.")
+    expect(projectErrorMessage(new ApiError("resource_exhausted", "x"))).toMatch(/limit on projects/)
+    expect(projectErrorMessage(new ApiError("aborted", "x"))).toBe("This project was changed elsewhere.")
     expect(projectErrorMessage(new ApiError("unavailable", "x"))).toMatch(/reach the server/)
     expect(projectErrorMessage(new Error("x"))).toMatch(/went wrong/)
   })
 
   it("falls back to one line for the form", () => {
-    expect(mapServerError(new ApiError("invalid_argument", "none", "locations"), form)).toEqual({
+    expect(mapServerError(new ApiError("invalid_argument", "many", "locations"), sent)).toEqual({
       rows: {},
-      form: "Add at least one location.",
+      form: "A project has at most 16 locations.",
     })
-    expect(mapServerError(new ApiError("invalid_argument", "x", "locations[7].path"), form).form).toMatch(/went wrong/)
-    expect(mapServerError(new ApiError("unavailable", "down"), form).form).toMatch(/reach the server/)
-    expect(mapServerError(new Error("boom"), form).form).toMatch(/went wrong/)
+    expect(mapServerError(new ApiError("invalid_argument", "x", "last_used_location"), sent).form).toBe(
+      "Choose one of the project's locations.",
+    )
+    expect(mapServerError(new ApiError("invalid_argument", "x", "locations[7].path"), sent).form).toMatch(/went wrong/)
+    expect(mapServerError(new ApiError("unavailable", "down"), sent).form).toMatch(/reach the server/)
+    expect(mapServerError(new Error("boom"), sent).form).toMatch(/went wrong/)
   })
 })
 
-describe("formChanged and toLocations", () => {
-  const saved = { name: "web", locations: [{ device: "box", path: "/a" }] }
+describe("formChanged, locationsChanged and toLocations", () => {
+  const saved = { name: "web", repoUrl: "", locations: [loc("box", "/a"), loc("mac", "")] }
 
   it("ignores surrounding whitespace and what the server normalizes", () => {
-    expect(formChanged(saved, { name: " web ", rows: [row("k", "box", "/a ")] })).toBe(false)
-    expect(formChanged(saved, { name: "web", rows: [row("k", "box", "/a/")] }, devices)).toBe(false)
-    const win = { name: "w", locations: [{ device: "win", path: "C:\\src" }] }
-    expect(formChanged(win, { name: "w", rows: [row("k", "win", "c:/src/")] }, devices)).toBe(false)
-    expect(toLocations([row("k", "box", " /a ")])).toEqual([{ device: "box", path: "/a" }])
+    expect(formChanged(saved, form(" web ", [row("k", "box", "/a "), row("l", "mac", " ")]))).toBe(false)
+    expect(formChanged(saved, form("web", [row("k", "box", "/a//"), row("l", "mac", "")]), devices)).toBe(false)
+    const win = { name: "w", repoUrl: "", locations: [loc("win", "C:\\src")] }
+    expect(formChanged(win, form("w", [row("k", "win", "c:/src/")]), devices)).toBe(false)
+    expect(toLocations([row("k", "box", " /a "), row("l", "mac", "  ")])).toEqual([
+      { device: "box", path: "/a" },
+      { device: "mac", path: "" },
+    ])
   })
 
-  it("notices a renamed project or changed locations", () => {
-    expect(formChanged(saved, { name: "web2", rows: [row("k", "box", "/a")] })).toBe(true)
-    expect(formChanged(saved, { name: "web", rows: [row("k", "mac", "/a")] })).toBe(true)
-    expect(formChanged(saved, { name: "web", rows: [row("k", "box", "/a"), row("l", "box", "/b")] })).toBe(true)
+  it("notices a renamed project, a new repository URL or changed locations", () => {
+    const rows = [row("k", "box", "/a"), row("l", "mac", "")]
+    expect(formChanged(saved, form("web2", rows))).toBe(true)
+    expect(formChanged(saved, form("web", rows, "git@h:x"))).toBe(true)
+    expect(locationsChanged(saved.locations, rows)).toBe(false)
+    expect(locationsChanged(saved.locations, [rows[0]])).toBe(true)
+    expect(locationsChanged(saved.locations, [rows[0], row("l", "mac", "/b")])).toBe(true)
+    expect(locationsChanged(saved.locations, [row("k", "mac", "/a"), rows[1]])).toBe(true)
   })
-})
 
-describe("sameProjectFields", () => {
-  it("compares name and locations in order", () => {
-    const a = { name: "p", locations: [{ device: "d", path: "/a" }, { device: "d", path: "/b" }] }
-    expect(sameProjectFields(a, structuredClone(a))).toBe(true)
-    expect(sameProjectFields(a, { ...a, name: "q" })).toBe(false)
-    expect(sameProjectFields(a, { ...a, locations: [...a.locations].reverse() })).toBe(false)
+  it("starts rows from the saved locations", () => {
+    expect(rowsOf({ locations: saved.locations }).map((r) => ({ device: r.device, path: r.path }))).toEqual([
+      { device: "box", path: "/a" },
+      { device: "mac", path: "" },
+    ])
   })
 })
 
 describe("pickLocation", () => {
-  const a = { device: "box", path: "/a" }
-  const b = { device: "box", path: "/b" }
-  const c = { device: "mac", path: "/c" }
+  const a = loc("box", "/a")
+  const b = loc("box", "")
+  const c = loc("mac", "/c")
+  const gone = loc("old", "/x", true)
 
   it("follows the chosen location when it moves", () => {
     expect(pickLocation({ locations: [a, b, c], lastUsedLocation: 0 }, b)).toBe(1)
@@ -172,5 +227,52 @@ describe("pickLocation", () => {
     expect(pickLocation({ locations: [a, b, c], lastUsedLocation: 2 }, null)).toBe(2)
     expect(pickLocation({ locations: [a], lastUsedLocation: 2 }, c)).toBe(0)
     expect(pickLocation({ locations: [a, b], lastUsedLocation: 5 }, null)).toBe(1)
+  })
+
+  it("skips locations whose device was removed, and has none to offer without one", () => {
+    expect(pickLocation({ locations: [gone, a], lastUsedLocation: 0 }, null)).toBe(1)
+    expect(pickLocation({ locations: [a, gone], lastUsedLocation: 0 }, gone)).toBe(0)
+    expect(pickLocation({ locations: [gone], lastUsedLocation: 0 }, null)).toBe(-1)
+    expect(pickLocation({ locations: [], lastUsedLocation: 0 }, null)).toBe(-1)
+  })
+})
+
+describe("a revoked device whose name is enrolled again", () => {
+  const saved = [{ device: "box", path: "/a", deviceRevoked: true }]
+  const rows = rowsOf({ locations: saved.map((l) => ({ ...l, effectivePath: "" })) })
+
+  it("counts as a change while a device has the name, so saving binds it", () => {
+    expect(rows[0].revoked).toBe(true)
+    expect(isReplaced(rows[0], devices)).toBe(true)
+    expect(locationsChanged(saved, rows, devices)).toBe(true)
+    // Without the name listed, the location is just removed; nothing to save.
+    const others = devices.filter((d) => d.name !== "box")
+    expect(isReplaced(rows[0], others)).toBe(false)
+    expect(locationsChanged(saved, rows, others)).toBe(false)
+  })
+})
+
+describe("addedRow", () => {
+  it("prefers a device without a default location in the form", () => {
+    expect(addedRow([], devices)).toMatchObject({ row: { device: "box", path: "" }, needsPath: false })
+    expect(addedRow([row("a", "box", "")], devices)).toMatchObject({ row: { device: "mac" }, needsPath: false })
+    expect(addedRow([row("a", "box", "/x")], devices)).toMatchObject({ row: { device: "box" }, needsPath: false })
+  })
+
+  it("asks for a path on the first device once every device has a default", () => {
+    const all = devices.map((d, i) => row(String(i), d.name, ""))
+    expect(addedRow(all, devices)).toMatchObject({ row: { device: "box", path: "" }, needsPath: true })
+    expect(hasEarlierDefault([...all, row("x", "box", "")], all.length)).toBe(true)
+    expect(hasEarlierDefault(all, 0)).toBe(false)
+  })
+})
+
+describe("shortDefaultPath", () => {
+  it("keeps both ends of a long project id", () => {
+    const id = "01a1e8e1-69db-70b7-b9ad-c2be3d618a7e"
+    expect(shortDefaultPath(`~/circus/projects/${id}`)).toBe("~/circus/projects/01a1e8…d618a7e")
+    expect(shortDefaultPath(`~/circus/projects/${id}`, { head: 4, tail: 4 })).toBe("~/circus/projects/01a1…8a7e")
+    expect(shortDefaultPath("~/circus/projects/circus")).toBe("~/circus/projects/circus")
+    expect(shortDefaultPath("~/circus/projects/…")).toBe("~/circus/projects/…")
   })
 })

@@ -1,9 +1,11 @@
 // Client-side view of the control plane API, shaped after its protobuf
 // services. Method names follow the RPC names and requests are plain
 // objects. Responses are UI-friendly: int64 timestamps become `number`
-// milliseconds and enums become string unions. A Connect-backed client
-// converts from the generated messages; the in-memory mock implements the
-// same interface.
+// milliseconds (exact up to the year 287396) and enums become string
+// unions. A project's version (`updatedAtUnixMs`) is the exception: it is
+// only ever compared and sent back, so it stays the exact int64 as a decimal
+// string. A Connect-backed client converts from the generated messages; the
+// in-memory mock implements the same interface.
 
 import type { SessionState } from "@/lib/types"
 
@@ -50,32 +52,71 @@ export interface OidcFlow {
   startSetup(token: string): Promise<void>
 }
 
+/** A location as a request names it. */
 export interface Location {
   device: string
-  /** Absolute path on that device. */
+  /**
+   * An absolute path on that device, or empty for the device's default
+   * directory for the project (at most one such location per device).
+   */
   path: string
 }
 
+/** A location as the server returns it. */
+export interface ProjectLocation extends Location {
+  /**
+   * The directory a default location (empty `path`) resolves to on its
+   * device, `~/circus/projects/<project id>`; empty when `path` is set.
+   */
+  effectivePath: string
+  /**
+   * The device was revoked after the location was saved. Sessions can't
+   * start here, and saving the locations again needs another device.
+   */
+  deviceRevoked: boolean
+}
+
+/**
+ * A project's version: the exact `updated_at_unix_ms` int64 as a decimal
+ * string. It moves only when the name, the locations or the repository URL
+ * change, and goes back unchanged as `expectedUpdatedAt`.
+ */
+export type ProjectVersion = string
+
 export interface Project {
   projectId: string
-  /** Unique per user, trimmed, 1 to 64 characters. */
+  /** Unique per user ignoring case, trimmed, 1 to 64 characters. */
   name: string
-  /** At least one; (device, path) pairs are unique. */
-  locations: Location[]
-  /** Index into `locations`; the default for new sessions. */
+  /** Git remote of the project; empty means none. */
+  repoUrl: string
+  /** Between 0 and 16; explicit (device, path) pairs are unique. */
+  locations: ProjectLocation[]
+  /** Index into `locations`; the default for new sessions. 0 while there are none. */
   lastUsedLocation: number
   createdAtUnixMs: number
+  updatedAtUnixMs: ProjectVersion
 }
 
 export interface ProjectService {
-  createProject(req: { name: string; locations: Location[] }): Promise<Project>
+  createProject(req: { name: string; repoUrl: string; locations: Location[] }): Promise<Project>
   /** Ordered by name. */
   listProjects(): Promise<Project[]>
   getProject(req: { projectId: string }): Promise<Project>
+  /**
+   * Changes the fields that are set. With `expectedUpdatedAt`, a change of
+   * the name, the locations or the repository URL applies only if the
+   * project is still at that version, and fails with `aborted` otherwise.
+   * Setting only `lastUsedLocation` is never refused that way.
+   */
   updateProject(req: {
     projectId: string
     name?: string
+    /** Replaces all locations. */
     locations?: Location[]
+    /** "" clears it. */
+    repoUrl?: string
+    lastUsedLocation?: number
+    expectedUpdatedAt?: ProjectVersion
   }): Promise<Project>
   /** Fails with `failed_precondition` while any session in it is not stopped. */
   deleteProject(req: { projectId: string }): Promise<void>

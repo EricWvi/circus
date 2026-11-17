@@ -3,11 +3,16 @@
 //
 // VITE_CIRCUS_BACKEND selects it:
 //   mock   (default) everything is served by the in-browser mock.
-//   server auth goes to the real control plane over Connect (same origin;
-//          in development the Vite server proxies it); projects, devices and
-//          sessions stay on the mock, which the control plane doesn't serve yet.
+//   server auth, projects and devices go to the real control plane over
+//          Connect (same origin; in development the Vite server proxies it);
+//          sessions stay on the mock, which the control plane doesn't serve
+//          yet. The mock's sessions use the server's projects through the
+//          projects client.
 
-import { createServerAuth } from "./connect/auth"
+import { createConnectAuth } from "./connect/auth"
+import { createConnectMachines } from "./connect/machines"
+import { createConnectProjects } from "./connect/projects"
+import { createServerTransport } from "./connect/transport"
 import { startMockBackend, type MockBackend } from "./mock"
 import { browserOidcFlow } from "./oidc"
 
@@ -23,13 +28,17 @@ export function backendKind(value: string | undefined): BackendKind {
 export function startBackend(): MockBackend {
   if (backendKind(import.meta.env.VITE_CIRCUS_BACKEND) === "mock") return startMockBackend()
 
-  const mock = startMockBackend({ externalAuth: true })
+  const transport = createServerTransport(window.location.origin)
+  const projects = createConnectProjects(transport)
+  const mock = startMockBackend({ externalAuth: true, projects })
   return {
     ...mock,
     client: {
-      ...mock.client,
-      auth: createServerAuth(window.location.origin),
+      auth: createConnectAuth(transport),
       oidc: browserOidcFlow,
+      projects,
+      machines: createConnectMachines(transport),
+      sessions: mock.client.sessions,
     },
   }
 }

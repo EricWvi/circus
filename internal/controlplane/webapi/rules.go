@@ -11,11 +11,11 @@ import (
 	"github.com/EricWvi/circus/internal/store"
 )
 
-// These rules started as a port of web/src/api/validation.ts and are the
-// authority; the Web UI runs the same checks first for instant feedback and
-// must be kept in step. Rules the Web UI does not have yet: the forbidden
-// characters (isForbiddenRune), collapsing "//" and "/./" in POSIX paths,
-// refusing the Windows \\?\ and \\.\ prefixes, and the repository URL.
+// These rules are the authority. The Web UI ports all of them
+// (web/src/api/validation.ts and git-url.ts) and runs them first for
+// instant feedback; TestWebParityFixture records what these functions
+// return in a fixture the Web's parity test runs against its port, and
+// fails until the fixture is regenerated when a rule changes.
 
 // defaultPathPrefix is where a location without a path resolves on its
 // device: defaultPathPrefix + project id.

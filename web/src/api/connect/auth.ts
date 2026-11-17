@@ -1,5 +1,4 @@
 import { createClient, type Transport } from "@connectrpc/connect"
-import { createConnectTransport } from "@connectrpc/connect-web"
 import {
   AuthService as AuthServiceDesc,
   User_Role,
@@ -8,16 +7,9 @@ import {
   type WhoAmIResponse,
 } from "@circus/proto/circus/v1/auth_pb"
 
-import { ApiError } from "@/api/errors"
 import type { AuthService, AuthState, LoginMethods, Role, User } from "@/api/types"
 
-import { connectErrorBodiesOnly, toApiError } from "./errors"
-
-/** A response the client can't make sense of; the server broke its contract. */
-const malformed = (what: string) =>
-  new ApiError("internal", "Something went wrong. Try again.", undefined, {
-    cause: new Error(`malformed ${what} response`),
-  })
+import { call, malformed } from "./call"
 
 /** Anything but a super user gets the least privilege. */
 export const toRole = (role: User_Role): Role => (role === User_Role.SUPER ? "super" : "user")
@@ -46,15 +38,6 @@ export function toAuthState(res: WhoAmIResponse): AuthState {
   }
 }
 
-/** Runs a call, turning anything it throws into an `ApiError`. */
-async function call<T>(run: () => Promise<T>): Promise<T> {
-  try {
-    return await run()
-  } catch (error) {
-    throw toApiError(error)
-  }
-}
-
 /** The auth service of a real control plane, over Connect. */
 export function createConnectAuth(transport: Transport): AuthService {
   const client = createClient(AuthServiceDesc, transport)
@@ -64,17 +47,4 @@ export function createConnectAuth(transport: Transport): AuthService {
     login: (req) => call(async () => toUser((await client.login(req)).user, "Login")),
     logout: () => call(async () => void (await client.logout({}))),
   }
-}
-
-/** The auth service of the control plane at `baseUrl`, over Connect with JSON. */
-export function createServerAuth(baseUrl: string): AuthService {
-  return createConnectAuth(
-    createConnectTransport({
-      baseUrl,
-      // Same origin, so cookies flow anyway; explicit for clarity.
-      fetch: connectErrorBodiesOnly((input, init) =>
-        fetch(input, { ...init, credentials: "include" }),
-      ),
-    }),
-  )
 }

@@ -1,17 +1,19 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { FolderIcon, SettingsIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { useTranslation } from "react-i18next"
+import { Trans, useTranslation } from "react-i18next"
 import { Link, Navigate, useNavigate, useParams } from "react-router"
 
 import { isApiError } from "@/api/errors"
 import { useCreateSession, useDevices, useProjects, useSessionList } from "@/api/hooks"
 import { queryKeys } from "@/api/query-client"
-import type { Device, Location, Project, SessionSummary } from "@/api/types"
+import type { Device, Location, Project, ProjectLocation, SessionSummary } from "@/api/types"
+import { InfoTip } from "@/components/info-tip"
 import { PageHeader } from "@/components/page-header"
 import { SessionPrompt } from "@/components/session/session-prompt"
 import { StatusDot } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Select,
   SelectContent,
@@ -20,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
-import { pickLocation, projectErrorMessage } from "@/lib/location-form"
+import { locationDirectory, pickLocation, projectErrorMessage } from "@/lib/location-form"
 import { formatRelative } from "@/lib/time"
 import { projectSettingsPath, sessionPath } from "@/lib/tree"
 import type { ImageAttachment } from "@/lib/types"
@@ -51,8 +53,15 @@ function ProjectHome({ project }: { project: Project }) {
   const { send } = useConversations()
   // The chosen location, remembered by value: the project can change under
   // us (another tab removes or reorders locations), so the index is derived.
+  // -1 when no location can be used.
   const [chosen, setChosen] = useState<Location | null>(null)
   const locationIndex = pickLocation(project, chosen)
+  const noLocation =
+    locationIndex >= 0
+      ? null
+      : project.locations.length === 0
+        ? "projects.noLocationsNotice"
+        : "projects.allRevokedNotice"
   // Kept as the error itself; its message is chosen at render time.
   const [error, setError] = useState<unknown>(null)
 
@@ -72,12 +81,14 @@ function ProjectHome({ project }: { project: Project }) {
 
   const start = async (text: string, attachments: ImageAttachment[]) => {
     if (inFlight.current) throw new Error("already starting a session")
+    const location = project.locations.at(locationIndex)
+    if (locationIndex < 0 || !location) throw new Error("no location to start a session in")
     inFlight.current = true
     setError(null)
     try {
-      const location = project.locations[locationIndex]
       const reusable =
-        created.current?.device === location.device && created.current.cwd === location.path
+        created.current?.device === location.device &&
+        created.current.cwd === locationDirectory(location)
       const session = reusable && created.current
         ? created.current
         : await createSession.mutateAsync({ projectId: project.projectId, locationIndex })
@@ -93,7 +104,7 @@ function ProjectHome({ project }: { project: Project }) {
       inFlight.current = false
       setError(e)
       // The location is gone on the server: refresh the project's locations.
-      if (isApiError(e) && e.field === "locationIndex") {
+      if (locationGone(e)) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
       }
       throw e
@@ -111,7 +122,8 @@ function ProjectHome({ project }: { project: Project }) {
           </Button>
         }
       >
-        <h1 className="min-w-0 truncate font-medium">{project.name}</h1>
+        <h1 className="max-w-[65%] min-w-0 shrink-0 truncate font-medium">{project.name}</h1>
+        {project.repoUrl && <RepoUrl url={project.repoUrl} />}
       </PageHeader>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -120,20 +132,35 @@ function ProjectHome({ project }: { project: Project }) {
             <SessionPrompt
               placeholder={t("projects.startPlaceholder")}
               pending={createSession.isPending}
+              disabledReason={noLocation && t("projects.noUsableLocation")}
               onSend={start}
             />
-            <LocationPicker
-              project={project}
-              devices={devices.data}
-              value={locationIndex}
-              disabled={createSession.isPending}
-              onChange={(i) => setChosen(project.locations[i])}
-            />
+            {noLocation ? (
+              <p className="px-2 text-sm text-muted-foreground">
+                <Trans
+                  i18nKey={noLocation}
+                  components={{
+                    settings: (
+                      <Link
+                        to={projectSettingsPath(project.projectId)}
+                        className="rounded-sm text-foreground underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
+                      />
+                    ),
+                  }}
+                />
+              </p>
+            ) : (
+              <LocationPicker
+                project={project}
+                devices={devices.data}
+                value={locationIndex}
+                disabled={createSession.isPending}
+                onChange={(i) => setChosen(project.locations[i])}
+              />
+            )}
             {error !== null && (
               <p role="alert" className="text-sm text-destructive">
-                {isApiError(error) && error.field === "locationIndex"
-                  ? t("projects.locationGone")
-                  : projectErrorMessage(error)}
+                {locationGone(error) ? t("projects.locationGone") : projectErrorMessage(error)}
               </p>
             )}
           </section>
@@ -148,7 +175,37 @@ function ProjectHome({ project }: { project: Project }) {
   )
 }
 
-const locationLabel = (l: { device: string; path: string }) => `${l.device}:${l.path}`
+/** The server no longer has the chosen location (or the project changed under it). */
+const locationGone = (error: unknown) =>
+  isApiError(error) && (error.field === "locationIndex" || error.field === "last_used_location")
+
+/** The repository URL, subtle and truncated; the full value on hover or focus. */
+function RepoUrl({ url }: { url: string }) {
+  const className =
+    "min-w-0 truncate rounded-sm font-mono text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+  const full = <span className="break-all font-mono">{url}</span>
+  if (/^https?:\/\//.test(url)) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a href={url} target="_blank" rel="noreferrer noopener" className={cn(className, "hover:text-foreground hover:underline")}>
+            {url}
+          </a>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-md">{full}</TooltipContent>
+      </Tooltip>
+    )
+  }
+  return (
+    <InfoTip content={full} contentClassName="max-w-md">
+      <span tabIndex={0} className={cn(className, "cursor-default")}>
+        {url}
+      </span>
+    </InfoTip>
+  )
+}
+
+const locationKey = (l: Location) => `${l.device}\n${l.path}`
 
 function LocationPicker({
   project,
@@ -168,11 +225,18 @@ function LocationPicker({
   const offline = (device: string) => devices?.find((d) => d.name === device)?.online === false
   const current = project.locations[value]
 
-  const content = (l: { device: string; path: string }) => (
+  const mark = (text: string, alarming = false) => (
+    <span className={cn("shrink-0", alarming ? "text-destructive" : "text-muted-foreground")}>{text}</span>
+  )
+  const content = (l: ProjectLocation) => (
     <span className="flex min-w-0 items-center gap-2">
       <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="truncate font-mono">{locationLabel(l)}</span>
-      {offline(l.device) && <span className="shrink-0 text-muted-foreground">{t("common.offline")}</span>}
+      <span className={cn("truncate font-mono", l.deviceRevoked && "line-through decoration-muted-foreground/60")}>
+        {`${l.device}:${locationDirectory(l)}`}
+      </span>
+      {l.path === "" && mark(t("projects.defaultPathMark"))}
+      {l.deviceRevoked && mark(t("projects.deviceRemoved"), true)}
+      {!l.deviceRevoked && offline(l.device) && mark(t("common.offline"))}
     </span>
   )
 
@@ -197,7 +261,7 @@ function LocationPicker({
       </SelectTrigger>
       <SelectContent position="popper" align="start" onCloseAutoFocus={onCloseAutoFocus}>
         {project.locations.map((l, i) => (
-          <SelectItem key={locationLabel(l)} value={String(i)} className="text-xs">
+          <SelectItem key={locationKey(l)} value={String(i)} disabled={l.deviceRevoked} className="text-xs">
             {content(l)}
           </SelectItem>
         ))}

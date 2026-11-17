@@ -10,32 +10,38 @@ import {
   toLocations,
   validateForm,
   type FormErrors,
+  type FormValues,
   type LocationField,
   type LocationRow,
   type RowErrors,
+  type SavedLocation,
 } from "@/lib/location-form"
 
 /** Why the last submit failed, kept as the cause so its text follows the language. */
 type ServerProblem =
-  | { kind: "error"; error: unknown; form: { name: string; rows: readonly LocationRow[] } }
+  | { kind: "error"; error: unknown; form: FormValues }
   | { kind: "devices_not_ready" }
 
 interface ServerState {
   problem: ServerProblem
-  /** Errors no longer shown: "name", "form", "rows" (all) or "<row key>.<field>". */
+  /**
+   * Errors no longer shown: "name", "repoUrl", "form", "rows" (all) or
+   * "<row key>.<field>".
+   */
   dismissed: ReadonlySet<string>
 }
 
 /** The server errors to show now, in the active language. */
-function serverErrors(state: ServerState | null): FormErrors {
+function serverErrors(state: ServerState | null, devices: readonly Device[]): FormErrors {
   if (!state) return noErrors()
   const { problem, dismissed } = state
   const all =
     problem.kind === "devices_not_ready"
       ? { rows: {}, form: i18n.t("projects.devicesNotReady") }
-      : mapServerError(problem.error, problem.form)
+      : mapServerError(problem.error, problem.form, devices)
   const shown: FormErrors = { rows: {} }
   if (!dismissed.has("name")) shown.name = all.name
+  if (!dismissed.has("repoUrl")) shown.repoUrl = all.repoUrl
   if (!dismissed.has("form")) shown.form = all.form
   if (dismissed.has("rows")) return shown
   for (const [key, errors] of Object.entries(all.rows)) {
@@ -48,8 +54,6 @@ function serverErrors(state: ServerState | null): FormErrors {
   return shown
 }
 
-type FormValues = { name: string; rows: readonly LocationRow[] }
-
 /**
  * The server errors that no longer apply after the form went from `before`
  * to `after`: the edited fields and any form-wide error. An added or removed
@@ -58,6 +62,7 @@ type FormValues = { name: string; rows: readonly LocationRow[] }
 export function changedFieldIds(before: FormValues, after: FormValues): string[] {
   const ids: string[] = []
   if (before.name !== after.name) ids.push("name")
+  if (before.repoUrl !== after.repoUrl) ids.push("repoUrl")
   if (before.rows.length !== after.rows.length) ids.push("rows")
   else {
     for (const row of after.rows) {
@@ -74,41 +79,52 @@ export function changedFieldIds(before: FormValues, after: FormValues): string[]
   return ids
 }
 
+/** What a valid form asks for. */
+export interface ProjectRequest {
+  name: string
+  repoUrl: string
+  locations: Location[]
+}
+
 /**
- * State of a project name + locations form. Local errors show once a field
- * was touched or the form was submitted; server errors show until the field
- * they belong to is edited.
+ * State of a project form: name, repository URL and locations. Local errors
+ * show once a field was touched or the form was submitted; server errors
+ * show until the field they belong to is edited.
  */
 export function useProjectForm({
-  initialName,
-  initialRows,
+  initial,
   devices,
   otherProjects,
+  savedLocations,
 }: {
-  initialName: string
-  initialRows: () => LocationRow[]
+  initial: () => FormValues
   devices: Device[] | undefined
   otherProjects: readonly { name: string }[]
+  /**
+   * The project's saved locations, when editing one: rows are checked only
+   * once they differ (see `validateForm`).
+   */
+  savedLocations?: readonly SavedLocation[]
 }) {
   // Messages are made during render; re-render when the language changes.
   useTranslation()
-  const [name, setNameState] = useState(initialName)
-  const [rows, setRowsState] = useState(initialRows)
+  const [values, setValues] = useState(initial)
+  const { name, repoUrl, rows } = values
   const [touched, setTouched] = useState(() => new Set<string>())
   const [submitted, setSubmitted] = useState(false)
   const [serverState, setServerState] = useState<ServerState | null>(null)
   // What the last submit sent, and what the form holds now: a server error
   // that arrives after more edits must not show on the fields edited since.
-  const submittedValues = useRef<FormValues>({ name, rows })
-  const currentValues = useRef<FormValues>({ name, rows })
+  const submittedValues = useRef<FormValues>(values)
+  const currentValues = useRef<FormValues>(values)
   useLayoutEffect(() => {
-    currentValues.current = { name, rows }
-  }, [name, rows])
-  const server = serverErrors(serverState)
+    currentValues.current = values
+  }, [values])
+  const server = serverErrors(serverState, devices ?? [])
   const dismiss = (ids: readonly string[]) =>
     setServerState((s) => s && { ...s, dismissed: new Set([...s.dismissed, ...ids]) })
 
-  const local = validateForm({ name, rows }, devices ?? [], otherProjects)
+  const local = validateForm(values, devices ?? [], otherProjects, savedLocations)
   const shows = (id: string) => submitted || touched.has(id)
 
   const rowErrors: Record<string, RowErrors> = {}
@@ -123,27 +139,30 @@ export function useProjectForm({
     if (errors.device || errors.path) rowErrors[row.key] = errors
   }
 
+  const change = (next: FormValues) => {
+    dismiss(changedFieldIds(values, next))
+    setValues(next)
+  }
+
   return {
     name,
+    repoUrl,
     rows,
+    values,
     errors: {
       name: (shows("name") ? local.name : undefined) ?? server.name,
+      repoUrl: (shows("repoUrl") ? local.repoUrl : undefined) ?? server.repoUrl,
       rows: rowErrors,
       form: server.form,
     },
-    setName(value: string) {
-      setNameState(value)
-      dismiss(changedFieldIds({ name, rows }, { name: value, rows }))
-    },
-    setRows(next: LocationRow[]) {
-      dismiss(changedFieldIds({ name, rows }, { name, rows: next }))
-      setRowsState(next)
-    },
-    touch(id: "name" | `${string}.${LocationField}`) {
+    setName: (value: string) => change({ ...values, name: value }),
+    setRepoUrl: (value: string) => change({ ...values, repoUrl: value }),
+    setRows: (next: readonly LocationRow[]) => change({ ...values, rows: next }),
+    touch(id: "name" | "repoUrl" | `${string}.${LocationField}`) {
       setTouched((t) => (t.has(id) ? t : new Set(t).add(id)))
     },
     /** The request to send, or null when the form shows errors instead. */
-    submit(): { name: string; locations: Location[] } | null {
+    submit(): ProjectRequest | null {
       setSubmitted(true)
       if (devices === undefined) {
         setServerState({ problem: { kind: "devices_not_ready" }, dismissed: new Set() })
@@ -151,13 +170,13 @@ export function useProjectForm({
       }
       setServerState(null)
       if (hasErrors(local)) return null
-      submittedValues.current = { name, rows }
-      return { name: name.trim(), locations: toLocations(rows) }
+      submittedValues.current = values
+      return { name: name.trim(), repoUrl: repoUrl.trim(), locations: toLocations(rows) }
     },
     /** Gives rows without a device the default one, leaving everything else. */
     fillDevice(device: string) {
       if (device === "" || !rows.some((r) => r.device === "")) return
-      setRowsState(rows.map((r) => (r.device === "" ? { ...r, device } : r)))
+      setValues({ ...values, rows: rows.map((r) => (r.device === "" ? { ...r, device } : r)) })
     },
     serverError(error: unknown) {
       const sent = submittedValues.current
@@ -167,9 +186,8 @@ export function useProjectForm({
       })
     },
     /** Starts over from saved values, e.g. after a successful save. */
-    reset(nextName: string, nextRows: LocationRow[]) {
-      setNameState(nextName)
-      setRowsState(nextRows)
+    reset(next: FormValues) {
+      setValues(next)
       setTouched(new Set())
       setSubmitted(false)
       setServerState(null)
