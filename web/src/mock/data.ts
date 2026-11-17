@@ -1,4 +1,5 @@
 import type { Location } from "@/api/types"
+import { INTERRUPTED_TOOL_ERROR } from "@/lib/settle"
 import type { SessionEvent, SessionState } from "@/lib/types"
 
 import { ciScreenshotUrl } from "./screenshot"
@@ -332,6 +333,27 @@ const dotfilesEvents: SessionEvent[] = [
     id: id(),
     at: ago(60 * 26),
     text: "Plan:\n\n1. Port the symlink table to a Go map.\n2. Detect Windows and fall back to copying.\n3. Keep `install.sh` as a thin wrapper that calls `go run ./cmd/install`.",
+  },
+  {
+    kind: "tool_call",
+    id: id(),
+    at: ago(60 * 26),
+    tool: "Read",
+    input: { file_path: "install.sh" },
+    status: "error",
+    error: INTERRUPTED_TOOL_ERROR,
+  },
+  {
+    kind: "assistant_text",
+    id: id(),
+    at: ago(60 * 26),
+    text: "The script links eleven files. I'll start with the table in `cmd/install/links.go`, mapping each source under `dotfiles/` to",
+    unsaved: true,
+  },
+  {
+    kind: "turn_interrupted",
+    id: id(),
+    at: ago(60 * 26),
   },
 ]
 

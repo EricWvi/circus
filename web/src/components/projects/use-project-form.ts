@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useLayoutEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import type { Device, Location } from "@/api/types"
@@ -48,6 +48,32 @@ function serverErrors(state: ServerState | null): FormErrors {
   return shown
 }
 
+type FormValues = { name: string; rows: readonly LocationRow[] }
+
+/**
+ * The server errors that no longer apply after the form went from `before`
+ * to `after`: the edited fields and any form-wide error. An added or removed
+ * row drops every row error.
+ */
+export function changedFieldIds(before: FormValues, after: FormValues): string[] {
+  const ids: string[] = []
+  if (before.name !== after.name) ids.push("name")
+  if (before.rows.length !== after.rows.length) ids.push("rows")
+  else {
+    for (const row of after.rows) {
+      const old = before.rows.find((r) => r.key === row.key)
+      if (!old) {
+        ids.push("rows")
+        break
+      }
+      if (old.device !== row.device) ids.push(`${row.key}.device`)
+      if (old.path !== row.path) ids.push(`${row.key}.path`)
+    }
+  }
+  if (ids.length > 0) ids.push("form")
+  return ids
+}
+
 /**
  * State of a project name + locations form. Local errors show once a field
  * was touched or the form was submitted; server errors show until the field
@@ -71,6 +97,13 @@ export function useProjectForm({
   const [touched, setTouched] = useState(() => new Set<string>())
   const [submitted, setSubmitted] = useState(false)
   const [serverState, setServerState] = useState<ServerState | null>(null)
+  // What the last submit sent, and what the form holds now: a server error
+  // that arrives after more edits must not show on the fields edited since.
+  const submittedValues = useRef<FormValues>({ name, rows })
+  const currentValues = useRef<FormValues>({ name, rows })
+  useLayoutEffect(() => {
+    currentValues.current = { name, rows }
+  }, [name, rows])
   const server = serverErrors(serverState)
   const dismiss = (ids: readonly string[]) =>
     setServerState((s) => s && { ...s, dismissed: new Set([...s.dismissed, ...ids]) })
@@ -100,21 +133,10 @@ export function useProjectForm({
     },
     setName(value: string) {
       setNameState(value)
-      dismiss(["name", "form"])
+      dismiss(changedFieldIds({ name, rows }, { name: value, rows }))
     },
     setRows(next: LocationRow[]) {
-      // Edited fields drop their server errors; an added or removed row drops all.
-      const ids = ["form"]
-      for (const row of next) {
-        const before = rows.find((r) => r.key === row.key)
-        if (!before || rows.length !== next.length) {
-          ids.push("rows")
-          break
-        }
-        if (before.device !== row.device) ids.push(`${row.key}.device`)
-        if (before.path !== row.path) ids.push(`${row.key}.path`)
-      }
-      dismiss(ids)
+      dismiss(changedFieldIds({ name, rows }, { name, rows: next }))
       setRowsState(next)
     },
     touch(id: "name" | `${string}.${LocationField}`) {
@@ -129,6 +151,7 @@ export function useProjectForm({
       }
       setServerState(null)
       if (hasErrors(local)) return null
+      submittedValues.current = { name, rows }
       return { name: name.trim(), locations: toLocations(rows) }
     },
     /** Gives rows without a device the default one, leaving everything else. */
@@ -137,7 +160,11 @@ export function useProjectForm({
       setRowsState(rows.map((r) => (r.device === "" ? { ...r, device } : r)))
     },
     serverError(error: unknown) {
-      setServerState({ problem: { kind: "error", error, form: { name, rows } }, dismissed: new Set() })
+      const sent = submittedValues.current
+      setServerState({
+        problem: { kind: "error", error, form: sent },
+        dismissed: new Set(changedFieldIds(sent, currentValues.current)),
+      })
     },
     /** Starts over from saved values, e.g. after a successful save. */
     reset(nextName: string, nextRows: LocationRow[]) {

@@ -9,6 +9,7 @@ import { ThemeProvider } from "./components/theme/theme-provider"
 import { startI18n } from "./i18n/preference"
 import { createAppRouter } from "./router"
 import { ConversationStoreContext } from "./state/conversations-context"
+import { DeviceSimulationContext } from "./state/device-simulation-context"
 import "./index.css"
 
 // The control plane serves only auth so far; the mock stands in for the rest
@@ -27,7 +28,9 @@ createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <ApiProvider client={backend.client} queryClient={queryClient}>
         <ConversationStoreContext.Provider value={backend.conversations}>
-          <App router={router} />
+          <DeviceSimulationContext.Provider value={import.meta.env.DEV ? backend.simulation : null}>
+            <App router={router} />
+          </DeviceSimulationContext.Provider>
         </ConversationStoreContext.Provider>
       </ApiProvider>
     </ThemeProvider>

@@ -9,6 +9,7 @@ import {
   ConfirmationRequest,
   ConfirmationTitle,
 } from "@/components/ai-elements/confirmation"
+import { DisabledReason } from "@/components/disabled-reason"
 import type { ToolCallEvent } from "@/lib/types"
 
 import { toToolPartState } from "./tool-state"
@@ -16,10 +17,13 @@ import { toToolPartState } from "./tool-state"
 export function ApprovalCard({
   event,
   deviceName,
+  disabledReason = null,
   onDecide,
 }: {
   event: ToolCallEvent
   deviceName: string
+  /** Why the decision can't be made right now (e.g. disconnected); null when it can. */
+  disabledReason?: string | null
   onDecide: (decision: "approved" | "denied") => void
 }) {
   const { t } = useTranslation()
@@ -53,12 +57,20 @@ export function ApprovalCard({
         </ConfirmationTitle>
       </ConfirmationRequest>
       <ConfirmationActions>
-        <ConfirmationAction variant="outline" onClick={() => onDecide("denied")}>
-          {t("session.approval.deny")}
-        </ConfirmationAction>
-        <ConfirmationAction onClick={() => onDecide("approved")}>
-          {t("session.approval.approve")}
-        </ConfirmationAction>
+        <DisabledReason reason={disabledReason}>
+          <ConfirmationAction
+            variant="outline"
+            disabled={disabledReason !== null}
+            onClick={() => onDecide("denied")}
+          >
+            {t("session.approval.deny")}
+          </ConfirmationAction>
+        </DisabledReason>
+        <DisabledReason reason={disabledReason}>
+          <ConfirmationAction disabled={disabledReason !== null} onClick={() => onDecide("approved")}>
+            {t("session.approval.approve")}
+          </ConfirmationAction>
+        </DisabledReason>
       </ConfirmationActions>
     </Confirmation>
   )

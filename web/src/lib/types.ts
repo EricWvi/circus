@@ -49,6 +49,11 @@ export interface AssistantTextEvent extends EventBase {
   /** Markdown. */
   text: string
   streaming?: boolean
+  /**
+   * The turn was interrupted while this text streamed: it was shown but never
+   * saved, so Claude doesn't remember it.
+   */
+  unsaved?: boolean
 }
 
 export interface ReasoningEvent extends EventBase {
@@ -68,11 +73,32 @@ export interface ToolCallEvent extends EventBase {
   approval?: ApprovalRequest
 }
 
+/** The user stopped the turn; what was shown stays. */
+export interface TurnStoppedEvent extends EventBase {
+  kind: "turn_stopped"
+}
+
+/**
+ * The worker was lost mid-turn (the server's TURN_INTERRUPTED). The turn can
+ * be retried or continued until the user sends anything else.
+ */
+export interface TurnInterruptedEvent extends EventBase {
+  kind: "turn_interrupted"
+}
+
+/** The user continued a broken session without the history it lost. */
+export interface HistoryGapEvent extends EventBase {
+  kind: "history_gap"
+}
+
 export type SessionEvent =
   | UserMessageEvent
   | AssistantTextEvent
   | ReasoningEvent
   | ToolCallEvent
+  | TurnStoppedEvent
+  | TurnInterruptedEvent
+  | HistoryGapEvent
 
 /** Session progress the server observes from the agent itself. */
 export interface SessionActivity {

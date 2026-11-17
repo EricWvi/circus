@@ -31,6 +31,19 @@ commas. The demo accounts are `eric@example.com` (super user) and
 
 In server mode only `?mock=reset` does something; auth comes from the server.
 
+### Simulated session states
+
+Development builds show a **Simulate** menu in the session header while
+sessions are simulated: drop the connection for 10 seconds (reconnects with
+1, 2, 4… s backoff; "Retry now" tries at once without moving that schedule),
+kill the worker mid-turn, break the transcript, and take the session's device
+offline. While the connection is down, the conversation and the session lists
+stay as they were when it dropped (see `state/conversations-provider.tsx`). The connection outage and the device switch
+live in memory and reset on reload; the browser's own offline mode shows the
+offline banner. The seeded `Rewrite the dotfiles installer in Go` session is
+interrupted (on an offline device) and `Migrate thumbnailer to libvips` is
+broken.
+
 ## Running against the control plane
 
 Two terminals, both in the repository root:
@@ -94,7 +107,13 @@ the source and fallback) and Simplified Chinese (`zh-CN.ts`). Components use
   `aria-description`, `aria-placeholder`, `aria-roledescription`,
   `aria-valuetext`, and the app's own `description`, `heading`, `reason` and
   `tooltip` (`eslint-plugin-i18next`, run by oxlint; see `.oxlintrc.json`).
-  The vendored `components/ui` and `components/ai-elements` are exempt; their
+  On native DOM tags the plugin checks only `placeholder`, `title`, `alt` and
+  `aria-label`, and nothing on SVG tags; the other props in the list
+  (`aria-description`, `aria-placeholder`, `aria-roledescription`,
+  `aria-valuetext`, `label`, …) are checked on components only, so keep them
+  translated on DOM tags by hand.
+  Tests (`*.test.tsx`, `src/test/`) are exempt. The vendored `components/ui`
+  and `components/ai-elements` are exempt too; their
   visible strings come from the catalog through `useTranslation` or `i18n.t`,
   never from English defaults.
 

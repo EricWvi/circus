@@ -3,6 +3,7 @@ import { useEffect } from "react"
 
 import { useClient } from "./context"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
+import { useSessionHold } from "./session-hold"
 import type { Location, Project, SessionSummary, User } from "./types"
 
 export function useAuth() {
@@ -34,9 +35,11 @@ export function useProjects() {
 
 export function useSessionList(projectId?: string) {
   const client = useClient()
+  const hold = useSessionHold()
   return useQuery({
     queryKey: queryKeys.sessions(projectId),
     queryFn: () => client.sessions.listSessions({ projectId }),
+    select: hold ?? undefined,
   })
 }
 

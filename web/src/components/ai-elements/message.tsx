@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useStreamdownTranslations } from "@/i18n/streamdown";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
@@ -259,11 +260,12 @@ export const MessageBranchPrevious = ({
   children,
   ...props
 }: MessageBranchPreviousProps) => {
+  const { t } = useTranslation();
   const { goToPrevious, totalBranches } = useMessageBranch();
 
   return (
     <Button
-      aria-label="Previous branch"
+      aria-label={t("session.previousBranch")}
       disabled={totalBranches <= 1}
       onClick={goToPrevious}
       size="icon-sm"
@@ -282,11 +284,12 @@ export const MessageBranchNext = ({
   children,
   ...props
 }: MessageBranchNextProps) => {
+  const { t } = useTranslation();
   const { goToNext, totalBranches } = useMessageBranch();
 
   return (
     <Button
-      aria-label="Next branch"
+      aria-label={t("session.nextBranch")}
       disabled={totalBranches <= 1}
       onClick={goToNext}
       size="icon-sm"
@@ -305,6 +308,7 @@ export const MessageBranchPage = ({
   className,
   ...props
 }: MessageBranchPageProps) => {
+  const { t } = useTranslation();
   const { currentBranch, totalBranches } = useMessageBranch();
 
   return (
@@ -315,7 +319,7 @@ export const MessageBranchPage = ({
       )}
       {...props}
     >
-      {currentBranch + 1} of {totalBranches}
+      {t("session.branchPage", { current: currentBranch + 1, total: totalBranches })}
     </ButtonGroupText>
   );
 };

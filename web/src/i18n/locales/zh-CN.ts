@@ -24,6 +24,8 @@ export const zhCN = {
     saved: "已保存",
     saving: "正在保存",
     tryAgain: "重试",
+    commandPalette: "命令面板",
+    commandPaletteHint: "搜索要运行的命令…",
   },
 
   time: {
@@ -31,6 +33,7 @@ export const zhCN = {
     minutes: "{{n}}分钟前",
     hours: "{{n}}小时前",
     days: "{{n}}天前",
+    justNow: "刚刚",
   },
 
   errors: {
@@ -168,6 +171,34 @@ export const zhCN = {
 
   session: {
     onDevice: "在{{device}}上",
+    deviceOfflineMark: "{{device}}已离线",
+    deviceOffline:
+      "{{device}}已离线（上次在线：{{ago}}）。Claude仍可回复，但在它重新连接前，其上的工具都会失败。",
+    stopped: "这个会话已停止。",
+    turnStopped: "你停止了这一轮",
+    unsaved: "未保存——Claude不记得这部分内容",
+    turnInterrupted: "这一轮已中断",
+    retry: "重试",
+    continue: "继续",
+    continuePrompt: "继续",
+    historyGap: "历史缺口——Claude不记得上方对话的一部分",
+    connection: {
+      reconnecting: "正在重新连接…{{seconds}}秒后重试",
+      reconnectingNow: "正在重新连接…",
+      retryNow: "立即重试",
+      offline: "你已离线",
+      disconnected: "已与服务器断开连接，请等待重新连接。",
+    },
+    broken: {
+      title: "这个会话的部分历史未能保存",
+      body: "worker可能仍会修复它。你也可以忽略缺失的部分继续，或者停止这个会话。",
+      continueWithout: "忽略缺失并继续",
+      stopSession: "停止会话",
+      confirmTitle: "忽略缺失的部分并继续？",
+      confirmBody: "Claude将不记得对话的最后一部分。",
+      confirm: "继续",
+      composerDisabled: "这个会话的历史不完整，请先选择继续或停止会话。",
+    },
     noMessages: "还没有消息",
     noMessagesHint: "发送提示词，开始在{{device}}上工作。",
     working: "处理中…",
@@ -183,6 +214,17 @@ export const zhCN = {
     image: "图片",
     source: "来源",
     removeAttachment: "移除",
+    noAttachments: "没有附件",
+    addPhotosOrFiles: "添加图片或文件",
+    takeScreenshot: "截取屏幕",
+    fileErrors: {
+      accept: "没有符合所接受类型的文件。",
+      maxFileSize: "所有文件都超过了大小上限。",
+      maxFiles: "文件过多，部分文件未添加。",
+    },
+    previousBranch: "上一个分支",
+    nextBranch: "下一个分支",
+    branchPage: "{{current}}/{{total}}",
     approval: {
       title: "允许在{{device}}上运行<tool>{{tool}}</tool>？",
       approve: "批准",
@@ -213,6 +255,17 @@ export const zhCN = {
         error: "出错",
       },
     },
+  },
+
+  simulate: {
+    menu: "模拟",
+    dropConnection: "断开连接",
+    killWorker: "中途终止worker",
+    breakTranscript: "损坏对话记录",
+    deviceOffline: "设备离线",
+    alreadyDisconnected: "连接已经断开",
+    noRunningTurn: "没有正在运行的轮次",
+    cannotBreak: "只有空闲或已中断的会话才能损坏",
   },
 
   markdown: {

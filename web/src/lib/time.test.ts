@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { formatRelative } from "./time"
+import { formatRelative, formatTimeAgo } from "./time"
 
 describe("formatRelative", () => {
   const now = Date.parse("2026-11-15T12:00:00Z")
@@ -24,5 +24,19 @@ describe("formatRelative", () => {
 
   it("clamps future timestamps to now", () => {
     expect(formatRelative(ago(-60_000), now)).toBe("now")
+  })
+})
+
+describe("formatTimeAgo", () => {
+  const now = Date.parse("2026-11-15T12:00:00Z")
+  const ago = (ms: number) => now - ms
+
+  it("reads as a phrase in both languages", () => {
+    expect(formatTimeAgo(ago(10_000), now, "en")).toBe("just now")
+    expect(formatTimeAgo(ago(2 * 3_600_000), now, "en")).toBe("2h ago")
+    expect(formatTimeAgo(ago(10_000), now, "zh-CN")).toBe("刚刚")
+    expect(formatTimeAgo(ago(5 * 60_000), now, "zh-CN")).toBe("5分钟前")
+    expect(formatTimeAgo(ago(2 * 3_600_000), now, "zh-CN")).toBe("2小时前")
+    expect(formatTimeAgo(ago(3 * 86_400_000), now, "zh-CN")).toBe("3天前")
   })
 })

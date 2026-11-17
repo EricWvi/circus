@@ -20,6 +20,8 @@ export const en = {
     saved: "Saved",
     saving: "Saving",
     tryAgain: "Try again",
+    commandPalette: "Command Palette",
+    commandPaletteHint: "Search for a command to run…",
   },
 
   // Compact relative times; longer spans show a date.
@@ -28,6 +30,7 @@ export const en = {
     minutes: "{{n}}m",
     hours: "{{n}}h",
     days: "{{n}}d",
+    justNow: "just now",
   },
 
   errors: {
@@ -165,6 +168,34 @@ export const en = {
 
   session: {
     onDevice: "on {{device}}",
+    deviceOfflineMark: "{{device}} is offline",
+    deviceOffline:
+      "{{device}} is offline (last seen {{ago}}). Claude can still reply, but tools on it will fail until it reconnects.",
+    stopped: "This session is stopped.",
+    turnStopped: "You stopped this turn",
+    unsaved: "Not saved — Claude doesn't remember this part",
+    turnInterrupted: "Turn interrupted",
+    retry: "Retry",
+    continue: "Continue",
+    continuePrompt: "Continue",
+    historyGap: "History gap — Claude doesn't remember part of the conversation above",
+    connection: {
+      reconnecting: "Reconnecting… retrying in {{seconds}}s",
+      reconnectingNow: "Reconnecting…",
+      retryNow: "Retry now",
+      offline: "You're offline",
+      disconnected: "Disconnected from the server. Wait until it reconnects.",
+    },
+    broken: {
+      title: "Part of this session's history couldn't be saved",
+      body: "The worker may still repair it. You can also continue without the missing part, or stop the session.",
+      continueWithout: "Continue without it",
+      stopSession: "Stop session",
+      confirmTitle: "Continue without the missing part?",
+      confirmBody: "Claude will not remember the last part of the conversation.",
+      confirm: "Continue",
+      composerDisabled: "This session's history is incomplete. Continue without it or stop the session first.",
+    },
     noMessages: "No messages yet",
     noMessagesHint: "Send a prompt to start working on {{device}}.",
     working: "Working…",
@@ -180,6 +211,17 @@ export const en = {
     image: "Image",
     source: "Source",
     removeAttachment: "Remove",
+    noAttachments: "No attachments",
+    addPhotosOrFiles: "Add photos or files",
+    takeScreenshot: "Take screenshot",
+    fileErrors: {
+      accept: "No files match the accepted types.",
+      maxFileSize: "All files exceed the maximum size.",
+      maxFiles: "Too many files. Some were not added.",
+    },
+    previousBranch: "Previous branch",
+    nextBranch: "Next branch",
+    branchPage: "{{current}} of {{total}}",
     approval: {
       title: "Allow <tool>{{tool}}</tool> on {{device}}?",
       approve: "Approve",
@@ -210,6 +252,18 @@ export const en = {
         error: "Error",
       },
     },
+  },
+
+  // The development-only menu that drives the simulated session states.
+  simulate: {
+    menu: "Simulate",
+    dropConnection: "Drop connection",
+    killWorker: "Kill worker mid-turn",
+    breakTranscript: "Break transcript",
+    deviceOffline: "Device offline",
+    alreadyDisconnected: "The connection is already down",
+    noRunningTurn: "No turn is running",
+    cannotBreak: "Only an idle or interrupted session can break",
   },
 
   // Controls Streamdown draws around rendered Markdown (code, tables,

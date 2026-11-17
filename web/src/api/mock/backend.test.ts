@@ -377,9 +377,10 @@ describe("conversations", () => {
     settleInFlight(state, "other-tab", Date.now() + STALE_AFTER_MS)
     expect(state.sessions.find((s) => s.sessionId === "web-vite")?.state).toBe("interrupted")
     expect(state.sessions.some((s) => s.state === "running")).toBe(false)
-    const [text, tool] = state.conversations["web-vite"]
-    expect(text).toMatchObject({ streaming: false, text: "par" })
+    const [text, tool, marker] = state.conversations["web-vite"]
+    expect(text).toMatchObject({ streaming: false, text: "par", unsaved: true })
     expect(tool).toMatchObject({ status: "error" })
+    expect(marker).toMatchObject({ kind: "turn_interrupted" })
   })
 
   it("leaves work another tab is still streaming alone", () => {
@@ -489,5 +490,27 @@ describe("persistence", () => {
     for (const raw of [null, "", "{", "null", "42", "[]", '{"version":2}', '{"version":2,"state":{"users":"x"}}']) {
       expect(parsePersisted(raw)).toBeNull()
     }
+  })
+})
+
+describe("device simulation", () => {
+  it("lists a device as offline while forced, in memory only", async () => {
+    const state = seedState()
+    let clock = Date.parse("2026-11-17T12:00:00Z")
+    const mock = backend(state, () => clock)
+    await mock.client.auth.login(eric)
+    let notified = 0
+    mock.simulation.subscribe(() => notified++)
+
+    mock.simulation.setDeviceOffline("eric-mbp", true)
+    clock += 60_000
+    const laptop = (await mock.client.machines.listDevices()).find((d) => d.name === "eric-mbp")
+    expect(laptop).toMatchObject({ online: false, lastSeenUnixMs: clock - 60_000 })
+    expect(state.devices.find((d) => d.name === "eric-mbp")?.online).toBe(true)
+    expect([...mock.simulation.offlineDevices()]).toEqual(["eric-mbp"])
+
+    mock.simulation.setDeviceOffline("eric-mbp", false)
+    expect((await mock.client.machines.listDevices()).find((d) => d.name === "eric-mbp")?.online).toBe(true)
+    expect(notified).toBe(2)
   })
 })

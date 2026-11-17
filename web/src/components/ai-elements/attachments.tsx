@@ -419,14 +419,17 @@ export const AttachmentEmpty = ({
   className,
   children,
   ...props
-}: AttachmentEmptyProps) => (
-  <div
-    className={cn(
-      "flex items-center justify-center p-4 text-muted-foreground text-sm",
-      className
-    )}
-    {...props}
-  >
-    {children ?? "No attachments"}
-  </div>
-);
+}: AttachmentEmptyProps) => {
+  const { t } = useTranslation();
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-center p-4 text-muted-foreground text-sm",
+        className
+      )}
+      {...props}
+    >
+      {children ?? t("session.noAttachments")}
+    </div>
+  );
+};

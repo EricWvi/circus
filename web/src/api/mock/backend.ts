@@ -45,6 +45,15 @@ export interface MockBackend {
    * a server would push updates; the app refetches.
    */
   onExternalChange(listener: () => void): () => void
+  /** Switches for simulating device trouble; in memory, reset on reload. */
+  simulation: DeviceSimulation
+}
+
+export interface DeviceSimulation {
+  /** Devices listed as offline whatever their own state. */
+  offlineDevices(): ReadonlySet<string>
+  setDeviceOffline(name: string, offline: boolean): void
+  subscribe(listener: () => void): () => void
 }
 
 /** Pasted images larger than this are not persisted (localStorage is small). */
@@ -118,6 +127,10 @@ export function createMockBackend({
   }
   const listeners = new Set<(sessionIds: string[]) => void>()
   const externalListeners = new Set<() => void>()
+  // Simulated device outages: device name → when it went offline.
+  const forcedOffline = new Map<string, number>()
+  let offlineNames: ReadonlySet<string> = new Set()
+  const simulationListeners = new Set<() => void>()
 
   // Runs a handler after the simulated network delay. Requests and responses
   // are copied so callers never share objects with the store.
@@ -369,7 +382,11 @@ export function createMockBackend({
         return state.devices
           .filter((d) => d.owner === owner)
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map(({ owner: _, ...device }) => device)
+          .map(({ owner: _, ...device }) => {
+            const since = forcedOffline.get(device.name)
+            if (since === undefined || !device.online) return device
+            return { ...device, online: false, lastSeenUnixMs: since }
+          })
       }),
     },
 
@@ -451,6 +468,20 @@ export function createMockBackend({
     onExternalChange(listener) {
       externalListeners.add(listener)
       return () => externalListeners.delete(listener)
+    },
+    simulation: {
+      offlineDevices: () => offlineNames,
+      setDeviceOffline(name, offline) {
+        if (offline === forcedOffline.has(name)) return
+        if (offline) forcedOffline.set(name, now())
+        else forcedOffline.delete(name)
+        offlineNames = new Set(forcedOffline.keys())
+        for (const listener of simulationListeners) listener()
+      },
+      subscribe(listener) {
+        simulationListeners.add(listener)
+        return () => simulationListeners.delete(listener)
+      },
     },
   }
 }

@@ -1,4 +1,3 @@
-import { settleEvents } from "@/lib/settle"
 import type { Conversations, SessionEvent } from "@/lib/types"
 
 export type ConversationsAction =
@@ -11,8 +10,6 @@ export type ConversationsAction =
     }
   /** Take over a transcript as stored, e.g. after another tab changed it. */
   | { type: "replace"; sessionId: string; events: SessionEvent[] }
-  /** End what the session had in flight. */
-  | { type: "settle"; sessionId: string }
 
 export function conversationsReducer(
   state: Conversations,
@@ -31,9 +28,5 @@ export function conversationsReducer(
       }
     case "replace":
       return { ...state, [action.sessionId]: action.events }
-    case "settle": {
-      const settled = settleEvents(events)
-      return settled === events ? state : { ...state, [action.sessionId]: settled }
-    }
   }
 }

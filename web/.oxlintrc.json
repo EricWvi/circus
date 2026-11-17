@@ -87,6 +87,15 @@
     },
     {
       "files": [
+        "src/**/*.test.tsx",
+        "src/test/**"
+      ],
+      "rules": {
+        "i18next/no-literal-string": "off"
+      }
+    },
+    {
+      "files": [
         "src/components/ui/**",
         "src/components/ai-elements/**",
         "src/hooks/use-mobile*"

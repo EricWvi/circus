@@ -1,5 +1,6 @@
 import type { Device, LoginMethods, Project, Role, SessionSummary } from "@/api/types"
 import { settleEvents } from "@/lib/settle"
+import { interruptTurn } from "@/lib/turns"
 import type { Conversations } from "@/lib/types"
 import { projects as seedProjects, sessions as seedSessions } from "@/mock/data"
 
@@ -136,12 +137,20 @@ export function seedState(now: number = Date.now()): MockState {
  */
 export const STALE_AFTER_MS = 5_000
 
-/** Ends what a session had in flight: nothing will finish it any more. */
-export function settleSession(state: MockState, sessionId: string): void {
+/**
+ * Ends what a session had in flight: nothing will finish it any more. A
+ * running turn counts as interrupted, the way a lost worker would leave it.
+ */
+export function settleSession(state: MockState, sessionId: string, now: number = Date.now()): void {
   const session = state.sessions.find((s) => s.sessionId === sessionId)
-  if (session?.state === "running") session.state = "interrupted"
   const events = state.conversations[sessionId]
-  if (events) state.conversations[sessionId] = settleEvents(events)
+  if (session?.state === "running") {
+    session.state = "interrupted"
+    const marker = { id: `interrupted-${sessionId}-${now}`, at: new Date(now).toISOString() }
+    state.conversations[sessionId] = interruptTurn(events ?? [], marker).events
+  } else if (events) {
+    state.conversations[sessionId] = settleEvents(events)
+  }
 }
 
 /**
@@ -154,7 +163,7 @@ export function settleInFlight(state: MockState, tabId: string, now: number = Da
   const ids = new Set([...state.sessions.map((s) => s.sessionId), ...Object.keys(state.conversations)])
   for (const id of ids) {
     const ours = state.writtenBy[id] === tabId
-    if (ours || now - (state.writtenAtMs[id] ?? 0) >= STALE_AFTER_MS) settleSession(state, id)
+    if (ours || now - (state.writtenAtMs[id] ?? 0) >= STALE_AFTER_MS) settleSession(state, id, now)
   }
 }
 

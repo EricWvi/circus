@@ -39,6 +39,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { i18n } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
@@ -416,9 +417,10 @@ export type PromptInputActionAddAttachmentsProps = ComponentProps<
 };
 
 export const PromptInputActionAddAttachments = ({
-  label = "Add photos or files",
+  label,
   ...props
 }: PromptInputActionAddAttachmentsProps) => {
+  const { t } = useTranslation();
   const attachments = usePromptInputAttachments();
 
   const handleSelect = useCallback(
@@ -431,7 +433,7 @@ export const PromptInputActionAddAttachments = ({
 
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
-      <ImageIcon className="mr-2 size-4" /> {label}
+      <ImageIcon className="mr-2 size-4" /> {label ?? t("session.addPhotosOrFiles")}
     </DropdownMenuItem>
   );
 };
@@ -443,10 +445,11 @@ export type PromptInputActionAddScreenshotProps = ComponentProps<
 };
 
 export const PromptInputActionAddScreenshot = ({
-  label = "Take screenshot",
+  label,
   onSelect,
   ...props
 }: PromptInputActionAddScreenshotProps) => {
+  const { t } = useTranslation();
   const attachments = usePromptInputAttachments();
 
   const handleSelect = useCallback(
@@ -477,7 +480,7 @@ export const PromptInputActionAddScreenshot = ({
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
       <Monitor className="mr-2 size-4" />
-      {label}
+      {label ?? t("session.takeScreenshot")}
     </DropdownMenuItem>
   );
 };
@@ -584,7 +587,7 @@ export const PromptInput = ({
       if (incoming.length && accepted.length === 0) {
         onError?.({
           code: "accept",
-          message: "No files match the accepted types.",
+          message: i18n.t("session.fileErrors.accept"),
         });
         return;
       }
@@ -594,7 +597,7 @@ export const PromptInput = ({
       if (accepted.length > 0 && sized.length === 0) {
         onError?.({
           code: "max_file_size",
-          message: "All files exceed the maximum size.",
+          message: i18n.t("session.fileErrors.maxFileSize"),
         });
         return;
       }
@@ -609,7 +612,7 @@ export const PromptInput = ({
         if (typeof capacity === "number" && sized.length > capacity) {
           onError?.({
             code: "max_files",
-            message: "Too many files. Some were not added.",
+            message: i18n.t("session.fileErrors.maxFiles"),
           });
         }
         const next: (FileUIPart & { id: string })[] = [];
@@ -648,7 +651,7 @@ export const PromptInput = ({
       if (incoming.length && accepted.length === 0) {
         onError?.({
           code: "accept",
-          message: "No files match the accepted types.",
+          message: i18n.t("session.fileErrors.accept"),
         });
         return;
       }
@@ -658,7 +661,7 @@ export const PromptInput = ({
       if (accepted.length > 0 && sized.length === 0) {
         onError?.({
           code: "max_file_size",
-          message: "All files exceed the maximum size.",
+          message: i18n.t("session.fileErrors.maxFileSize"),
         });
         return;
       }
@@ -673,7 +676,7 @@ export const PromptInput = ({
       if (typeof capacity === "number" && sized.length > capacity) {
         onError?.({
           code: "max_files",
-          message: "Too many files. Some were not added.",
+          message: i18n.t("session.fileErrors.maxFiles"),
         });
       }
 

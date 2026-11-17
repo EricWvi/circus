@@ -21,6 +21,7 @@ import {
   usePromptInputAttachments,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
+import { DisabledReason } from "@/components/disabled-reason"
 import type { ImageAttachment } from "@/lib/types"
 
 function PendingAttachments() {
@@ -40,11 +41,12 @@ function PendingAttachments() {
   )
 }
 
-function AddImageButton() {
+function AddImageButton({ disabled }: { disabled: boolean }) {
   const { t } = useTranslation()
   const { openFileDialog } = usePromptInputAttachments()
   return (
     <PromptInputButton
+      disabled={disabled}
       onClick={openFileDialog}
       aria-label={t("session.attachImage")}
       tooltip={t("session.attachImage")}
@@ -58,6 +60,8 @@ export function SessionPrompt({
   busy = false,
   pending = false,
   placeholder,
+  sendDisabledReason = null,
+  disabledReason = null,
   onSend,
   onStop,
 }: {
@@ -66,14 +70,24 @@ export function SessionPrompt({
   /** The message is being sent; the input keeps its text until it succeeds. */
   pending?: boolean
   placeholder?: string
+  /**
+   * Why nothing can be sent or stopped right now (e.g. disconnected); typing
+   * and adding images still work. Null when sending works.
+   */
+  sendDisabledReason?: string | null
+  /** Why the whole composer is disabled, typing included. Null when it isn't. */
+  disabledReason?: string | null
   /** A rejected promise keeps the text and images for another try. */
   onSend: (text: string, attachments: ImageAttachment[]) => void | Promise<void>
   onStop?: () => void
 }) {
   const status = pending ? "submitted" : busy ? "streaming" : "ready"
+  const blocked = disabledReason ?? sendDisabledReason
   const handleSubmit = ({ text, files }: PromptInputMessage) => {
     const trimmed = text.trim()
-    if (pending || (!trimmed && files.length === 0)) return Promise.reject(new Error("nothing to send"))
+    if (pending || blocked || (!trimmed && files.length === 0)) {
+      return Promise.reject(new Error("nothing to send"))
+    }
     return onSend(
       trimmed,
       files.map((f) => ({
@@ -85,23 +99,26 @@ export function SessionPrompt({
     )
   }
 
-  // The provider keeps text and images when sending fails.
+  // The provider keeps text and images when sending fails. The tree stays
+  // the same whatever is disabled, so a draft survives a reconnect.
   return (
     <PromptInputProvider>
       <PromptInput accept="image/*" multiple onSubmit={handleSubmit}>
         <PendingAttachments />
         <PromptInputBody>
-          <PromptInputTextarea placeholder={placeholder} />
+          <PromptInputTextarea
+            placeholder={disabledReason ?? placeholder}
+            title={disabledReason ?? undefined}
+            disabled={disabledReason !== null}
+          />
         </PromptInputBody>
         <PromptInputFooter>
           <PromptInputTools>
-            <AddImageButton />
+            <AddImageButton disabled={disabledReason !== null} />
           </PromptInputTools>
-          <PromptInputSubmit
-            status={status}
-            onStop={onStop}
-            disabled={pending}
-          />
+          <DisabledReason reason={blocked}>
+            <PromptInputSubmit status={status} onStop={onStop} disabled={pending || blocked !== null} />
+          </DisabledReason>
         </PromptInputFooter>
       </PromptInput>
     </PromptInputProvider>
