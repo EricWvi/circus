@@ -8,6 +8,7 @@ import { ProjectPage } from "@/routes/project-page"
 import { ProjectSettingsPage } from "@/routes/project-settings-page"
 import { RouteError } from "@/routes/route-error"
 import { SessionPage } from "@/routes/session-page"
+import { SettingsPage } from "@/routes/settings-page"
 import { SetupPage } from "@/routes/setup-page"
 
 export function createAppRouter() {
@@ -25,6 +26,7 @@ export function createAppRouter() {
             { path: "/p/:projectId", element: <ProjectPage /> },
             { path: "/p/:projectId/settings", element: <ProjectSettingsPage /> },
             { path: "/p/:projectId/s/:sessionId", element: <SessionPage /> },
+            { path: "/settings", element: <SettingsPage /> },
           ],
         },
         { path: "*", element: <Navigate to="/" replace /> },

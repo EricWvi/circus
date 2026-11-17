@@ -82,8 +82,9 @@ const LINE_NUMBER_CLASSES = cn(
   "before:content-[counter(line)]",
   "before:inline-block",
   "before:[counter-increment:line]",
-  "before:w-8",
-  "before:mr-4",
+  // 2rem and 1rem at the default code size (0.875rem), scaling with it.
+  "before:w-[calc(var(--code-font-size)*16/7)]",
+  "before:mr-[calc(var(--code-font-size)*8/7)]",
   "before:text-right",
   "before:text-muted-foreground/50",
   "before:font-mono",

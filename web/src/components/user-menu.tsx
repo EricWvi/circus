@@ -1,16 +1,11 @@
-import {
-  ChevronsUpDownIcon,
-  LanguagesIcon,
-  LogOutIcon,
-  MonitorIcon,
-  MoonIcon,
-  SunIcon,
-} from "lucide-react"
+import { ChevronsUpDownIcon, LanguagesIcon, LogOutIcon, SettingsIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router"
 
 import { useLogout } from "@/api/hooks"
 import type { User } from "@/api/types"
-import { useTheme, type Theme } from "@/components/theme/theme-context"
+import { isTheme, themeChoices } from "@/components/theme/theme-choices"
+import { useTheme } from "@/components/theme/theme-context"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,23 +19,10 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { SidebarMenuButton } from "@/components/ui/sidebar"
+import { SidebarMenuButton, useSidebar } from "@/components/ui/sidebar"
 import { useMenuFocus } from "@/hooks/use-menu-focus"
-import { languageNames, languages, type LanguagePreference } from "@/i18n/language"
+import { isPreference, languageNames, languagePreferences } from "@/i18n/language"
 import { setLanguagePreference, useLanguagePreference } from "@/i18n/preference"
-
-const themes: { value: Theme; icon: typeof SunIcon }[] = [
-  { value: "light", icon: SunIcon },
-  { value: "dark", icon: MoonIcon },
-  { value: "system", icon: MonitorIcon },
-]
-
-const isTheme = (value: string): value is Theme => themes.some((t) => t.value === value)
-
-const languageChoices: LanguagePreference[] = ["system", ...languages]
-
-const isLanguageChoice = (value: string): value is LanguagePreference =>
-  languageChoices.includes(value as LanguagePreference)
 
 /** The signed-in user's row in the sidebar footer, opening account options. */
 export function UserMenu({ user, className }: { user: User; className?: string }) {
@@ -49,6 +31,8 @@ export function UserMenu({ user, className }: { user: User; className?: string }
   const language = useLanguagePreference()
   const logout = useLogout()
   const focus = useMenuFocus()
+  const navigate = useNavigate()
+  const { isMobile, setOpenMobile } = useSidebar()
 
   return (
     <>
@@ -80,7 +64,7 @@ export function UserMenu({ user, className }: { user: User; className?: string }
             value={theme}
             onValueChange={(value) => isTheme(value) && setTheme(value)}
           >
-            {themes.map(({ value, icon: Icon }) => (
+            {themeChoices.map(({ value, icon: Icon }) => (
               <DropdownMenuRadioItem key={value} value={value}>
                 <Icon />
                 {t(`userMenu.themes.${value}`)}
@@ -99,9 +83,9 @@ export function UserMenu({ user, className }: { user: User; className?: string }
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup
                 value={language}
-                onValueChange={(value) => isLanguageChoice(value) && setLanguagePreference(value)}
+                onValueChange={(value) => isPreference(value) && setLanguagePreference(value)}
               >
-                {languageChoices.map((choice) => (
+                {languagePreferences.map((choice) => (
                   // Language names are shown in their own language.
                   <DropdownMenuRadioItem
                     key={choice}
@@ -115,6 +99,15 @@ export function UserMenu({ user, className }: { user: User; className?: string }
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={() => {
+              if (isMobile) setOpenMobile(false)
+              void navigate("/settings")
+            }}
+          >
+            <SettingsIcon />
+            {t("userMenu.settings")}
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => logout.mutate()}>
             <LogOutIcon />
             {t("userMenu.signOut")}

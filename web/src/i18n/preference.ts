@@ -91,5 +91,5 @@ const subscribe = (listener: () => void) => {
 
 /** The language preference, as the switch shows it. */
 export function useLanguagePreference(): LanguagePreference {
-  return useSyncExternalStore(subscribe, () => preference)
+  return useSyncExternalStore(subscribe, () => preference, () => preference)
 }

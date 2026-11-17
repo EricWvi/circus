@@ -13,7 +13,10 @@ export const languageNames: Record<Language, string> = {
   "zh-CN": "中文",
 }
 
-const isPreference = (value: unknown): value is LanguagePreference =>
+/** The choices a language switch offers, in order. */
+export const languagePreferences: LanguagePreference[] = ["system", ...languages]
+
+export const isPreference = (value: unknown): value is LanguagePreference =>
   value === "system" || languages.includes(value as Language)
 
 /**

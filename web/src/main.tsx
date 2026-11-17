@@ -8,6 +8,7 @@ import { App } from "./App"
 import { ThemeProvider } from "./components/theme/theme-provider"
 import { startI18n } from "./i18n/preference"
 import { createAppRouter } from "./router"
+import { startCodeFont } from "./settings/code-font"
 import { ConversationStoreContext } from "./state/conversations-context"
 import { DeviceSimulationContext } from "./state/device-simulation-context"
 import "./index.css"
@@ -15,8 +16,9 @@ import "./index.css"
 // The control plane serves only auth so far; the mock stands in for the rest
 // (see api/backend.ts). The router is created after the mock has handled its
 // URL switches.
-// The language is settled before anything renders.
+// The language and the code font are settled before anything renders.
 startI18n()
+startCodeFont()
 const backend = startBackend()
 const queryClient = createQueryClient()
 const router = createAppRouter()

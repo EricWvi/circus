@@ -117,6 +117,17 @@ the source and fallback) and Simplified Chinese (`zh-CN.ts`). Components use
   visible strings come from the catalog through `useTranslation` or `i18n.t`,
   never from English defaults.
 
+## Fonts
+
+- UI text is Geist Mono; Chinese falls through to the platform's Simplified
+  Chinese UI font (PingFang SC / Hiragino Sans GB, Microsoft YaHei, Noto Sans
+  CJK SC / Source Han Sans SC), named in the stacks in `src/index.css`.
+- Code (`font-mono`, `pre`, `code`) uses `--code-font-family` and
+  `--code-font-size`, which `src/settings/code-font.ts` sets on the root
+  element from the per-browser setting (`localStorage` key
+  `circus-code-font`) before the first render. The default is each
+  platform's own code font. People change both on `/settings`.
+
 ## Generated protocol code
 
 The UI imports the generated messages and services as

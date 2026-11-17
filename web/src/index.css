@@ -14,7 +14,7 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: Geist Mono, monospace;
+    --font-sans: Geist Mono, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -53,8 +53,8 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
-    --font-mono: Geist Mono, monospace;
-    --font-serif: Geist Mono, monospace;
+    --font-mono: var(--code-font-family, monospace);
+    --font-serif: Geist Mono, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
     --radius: 0rem;
     --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
     --tracking-tight: calc(var(--tracking-normal) - 0.025em);
@@ -115,9 +115,9 @@
     --sidebar-border: oklch(0.9219 0 0);
     --sidebar-ring: oklch(0.7090 0 0);
     --destructive-foreground: oklch(0.9702 0 0);
-    --font-sans: Geist Mono, monospace;
-    --font-serif: Geist Mono, monospace;
-    --font-mono: Geist Mono, monospace;
+    --font-sans: Geist Mono, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
+    --font-serif: Geist Mono, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
+    --font-mono: var(--code-font-family, monospace);
     --shadow-color: hsl(0 0% 0%);
     --shadow-opacity: 0;
     --shadow-blur: 0px;
@@ -172,9 +172,9 @@
     --sidebar-ring: oklch(0.4386 0 0);
     --destructive-foreground: oklch(0.2686 0 0);
     --radius: 0rem;
-    --font-sans: Geist Mono, monospace;
-    --font-serif: Geist Mono, monospace;
-    --font-mono: Geist Mono, monospace;
+    --font-sans: Geist Mono, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
+    --font-serif: Geist Mono, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
+    --font-mono: var(--code-font-family, monospace);
     --shadow-color: hsl(0 0% 0%);
     --shadow-opacity: 0;
     --shadow-blur: 0px;
@@ -207,6 +207,33 @@
   html {
     @apply font-sans;
     }
+}
+/*
+ * Code areas follow the code font settings (settings/code-font.ts sets
+ * --code-font-family and, when changed, --code-font-size on the root).
+ * Unlayered, so it wins over the components' text-size utilities; the line
+ * height keeps text-sm's ratio. Labels set in font-mono (file names,
+ * language tags) keep their own size.
+ */
+:root {
+    --code-font-size: 0.875rem;
+}
+pre,
+code,
+samp,
+[data-streamdown="code-block-body"] {
+  font-size: var(--code-font-size);
+  line-height: calc(1.25 / 0.875);
+}
+/*
+ * Streamdown's line-number gutter is 24px wide, 16px from the code, in 13px
+ * type, fixed. Keep exactly that at the default 14px code size and scale it
+ * with the code size from there.
+ */
+[data-streamdown="code-block-body"] [class*="counter(line)"]::before {
+  font-size: calc(var(--code-font-size) * 13 / 14);
+  width: calc(var(--code-font-size) * 24 / 14);
+  margin-right: calc(var(--code-font-size) * 16 / 14);
 }
 /*
  * See use-quiet-autofocus.ts: no ring for focus placed on page load.
