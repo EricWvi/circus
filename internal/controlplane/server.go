@@ -19,7 +19,9 @@ import (
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
+	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
+	"github.com/EricWvi/circus/internal/controlplane/webapi"
 	"github.com/EricWvi/circus/internal/loopback"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
@@ -167,6 +169,9 @@ type Server struct {
 	mux        *http.ServeMux
 	now        func() time.Time
 	listen     func(network, addr string) (net.Listener, error) // net.Listen; tests replace it
+	// registry holds the live daemon links: the authority on which devices
+	// are online.
+	registry gateway.Registry
 
 	mu         sync.Mutex
 	started    bool
@@ -266,6 +271,13 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 		return nil, errors.Join(err, s.Shutdown(cleanup))
 	}
 	s.webAuth.Register(s.mux)
+	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger})
+	if err != nil {
+		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		return nil, errors.Join(err, s.Shutdown(cleanup))
+	}
+	web.Register(s.mux)
 
 	return s, nil
 }
@@ -503,6 +515,20 @@ func (s *Server) serveReady(w http.ResponseWriter, r *http.Request) {
 func (s *Server) storeReady(ctx context.Context) error {
 	_, err := s.st.GetUser(ctx, s.user.ID)
 	return err
+}
+
+// onlineDevices returns the ids of userID's devices with a registered daemon
+// link, connected now.
+func (s *Server) onlineDevices(ctx context.Context, userID string) (map[string]bool, error) {
+	conns, err := s.registry.ListOnline(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(conns))
+	for _, c := range conns {
+		out[c.Target.DeviceID] = true
+	}
+	return out, nil
 }
 
 func serveWhoami(w http.ResponseWriter, r *http.Request) {

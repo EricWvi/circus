@@ -29,6 +29,9 @@
 // during shutdown or when any readiness check fails. /v1/whoami authenticates
 // either role for circus doctor. EnrollService exchanges one-time tokens;
 // /join serves instructions (the URL fragment never reaches the server).
+// AuthService serves browser sign-in (auth.WebService); ProjectService and
+// MachineService (package webapi) use its cookie interceptor, and take
+// device presence from the daemon gateway's registry.
 //
 // Logs are JSON with a per-process UUIDv7 instance_id. Tokens, request bodies
 // and Authorization headers are never logged. Host configuration uses flags,

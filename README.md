@@ -212,6 +212,22 @@ Human accounts coexist with the
 legacy machine owner; machine credentials and `GET /v1/whoami` keep working.
 The frontend is outside this change; these endpoints provide its auth API.
 
+`ProjectService` and `MachineService.ListDevices` (`proto/circus/v1/project.proto`,
+`machine.proto`) serve the Web UI's projects and device list with the same
+cookie and Origin rules; without a session they answer `UNAUTHENTICATED`.
+A project belongs to one Web user and has a name (trimmed, 1–64 characters,
+unique per user ignoring case), an optional git repository URL and 0–16
+locations. A location is a device and, optionally, an absolute path
+normalized for that device's OS; without a path it stands for the device's
+default directory `~/circus/projects/<project_id>` (at most one per device),
+reported as `effective_path`. A user's projects hold at most 1000 entries and
+4 MiB of names, repository URLs and paths together. `UpdateProject` with
+`expected_updated_at_unix_ms` applies only to the version the caller read
+and otherwise answers `ABORTED`. Until machines can be enrolled
+for Web users, every device belongs to the legacy machine owner (`admin`):
+the super user sees and binds those devices, other users see none. A device's
+`online` comes from the live daemon links of this process.
+
 `worker_connections` (default 8, at least 1; zero selects the default) bounds
 worker-credential connections; one credential may hold at most 4. A full cap
 answers HTTP 503. Each connection may have 64 operations open.

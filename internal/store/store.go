@@ -49,6 +49,8 @@ type Store interface {
 // writing anything.
 type Ops interface {
 	WebAuthOps
+	// ProjectOps holds the project operations (projects.go).
+	ProjectOps
 	// SessionOps holds the session operations (sessions.go). They are part
 	// of Ops so a session write and a call write can share one Tx.
 	SessionOps

@@ -52,6 +52,7 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		return err
 	}
 	s.router = r
+	s.registry = registry
 	s.mux.Handle("/v1/link/daemon", g)
 	s.mux.Handle("/v1/link/worker", w)
 	s.checks = append(s.checks, readyCheck{"calls", func(ctx context.Context) error {

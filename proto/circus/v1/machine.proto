@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package circus.v1;
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// MachineService lists the machines the signed-in browser user may use.
+// It needs a browser session cookie (UNAUTHENTICATED without one) and
+// follows the same Origin rule as ProjectService.
+service MachineService {
+  // The caller's devices, ordered by name.
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+}
+
+message Device {
+  string name = 1;
+  // A daemon link is connected now.
+  bool online = 2;
+  // Now if online; otherwise the later of the last connect and the last
+  // disconnect. Zero means the device has never connected.
+  int64 last_seen_unix_ms = 3;
+  // GOOS and GOARCH values reported at enrollment, such as "linux" and
+  // "amd64"; may be empty.
+  string os = 4;
+  string arch = 5;
+  // Daemon client version reported at enrollment.
+  string version = 6;
+}
+message ListDevicesRequest {}
+message ListDevicesResponse {
+  repeated Device devices = 1;
+}

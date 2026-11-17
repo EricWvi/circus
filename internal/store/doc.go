@@ -38,6 +38,13 @@
 // a cookie token hash, with caller-supplied idle and maximum deadlines. The
 // legacy machine owner has no human email or role and cannot sign in.
 //
+// Projects (ProjectOps) belong to one user and hold an optional repository
+// URL and 0 to 16 locations, each a device id and a path (empty for the
+// device's default directory, at most one per device). Names are unique per user under simple case
+// folding (ProjectNameKey). A location references its device by id and the
+// device may belong to another user than the project (the caller names the
+// device owner on every write); reads return the device's name.
+//
 // Package storetest holds the contract suite every implementation must pass
 // plus fault-injection and crash-restart harnesses; package sqlite is the
 // SQLite backend.

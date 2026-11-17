@@ -31,6 +31,14 @@
     "./circus/v1/auth_pb": {
       "types": "./dist/circus/v1/auth_pb.d.ts",
       "default": "./dist/circus/v1/auth_pb.js"
+    },
+    "./circus/v1/project_pb": {
+      "types": "./dist/circus/v1/project_pb.d.ts",
+      "default": "./dist/circus/v1/project_pb.js"
+    },
+    "./circus/v1/machine_pb": {
+      "types": "./dist/circus/v1/machine_pb.d.ts",
+      "default": "./dist/circus/v1/machine_pb.js"
     }
   },
   "dependencies": {

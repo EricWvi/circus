@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package circus.v1;
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// ProjectService manages the signed-in browser user's projects.
+//
+// Every call needs a browser session cookie (UNAUTHENTICATED without one)
+// and is refused with PERMISSION_DENIED when its Origin header differs from
+// the server's public URL. A project of another user is NOT_FOUND, like an
+// unknown one. Invalid input is INVALID_ARGUMENT with a google.rpc.BadRequest
+// field violation naming the field: "name", "locations",
+// "locations[i].device", "locations[i].path", "last_used_location",
+// "repo_url" or "project_id". A name another of the user's projects
+// already has is ALREADY_EXISTS with field "name". A user's projects are
+// bounded: at most 1000, and at most 4 MiB of names, repository URLs and
+// paths together; a write past either is RESOURCE_EXHAUSTED.
+service ProjectService {
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  // Ordered by name (case-insensitive), then project_id.
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+}
+
+message Project {
+  message Location {
+    // Name of one of the user's devices (at most 128 bytes).
+    string device = 1;
+    // Optional. An absolute path, normalized for the device's OS: no
+    // trailing separator except at a root; on Windows, backslashes and an
+    // upper-case drive letter. At most 4096 bytes. Empty means the device's
+    // default directory for this project (see effective_path); a project
+    // has at most one such default location per device.
+    string path = 2;
+    // Output only, ignored on input. Set only for default locations (empty
+    // path), and then equal to the default directory,
+    // "~/circus/projects/<project_id>" on the device; empty when path is
+    // set, since path is then the directory.
+    string effective_path = 3;
+    // Output only, ignored on input: the device has been revoked since the
+    // location was saved. The location keeps naming it; saving the same
+    // device name again binds the device that now has that name. Whoever
+    // starts a session here must check the device again.
+    bool device_revoked = 4;
+  }
+  string project_id = 1;
+  // Trimmed, 1 to 64 Unicode code points, no control characters; unique per
+  // user ignoring case.
+  string name = 2;
+  // Between 0 and 16 locations; explicit (device, path) pairs are distinct.
+  repeated Location locations = 3;
+  // Index into locations; the default for new sessions. Always 0, and
+  // meaningless, while the project has no locations.
+  uint32 last_used_location = 4;
+  int64 created_at_unix_ms = 5;
+  // The version of the name, locations and repository URL: it moves only
+  // when one of them changes (see UpdateProjectRequest), not with
+  // last_used_location.
+  int64 updated_at_unix_ms = 6;
+  // Optional git remote of the project; empty means none. Trimmed, at most
+  // 2048 bytes, no whitespace or control characters, one of
+  // https://host/path, http://host/path, ssh://[user@]host[:port]/path,
+  // git://host/path, file:///abs/path, or scp-like user@host:path. Stored
+  // as given otherwise (not rewritten).
+  string repo_url = 7;
+}
+
+message CreateProjectRequest {
+  string name = 1;
+  repeated Project.Location locations = 2;
+  string repo_url = 3;
+}
+message CreateProjectResponse {
+  // last_used_location is 0.
+  Project project = 1;
+}
+message ListProjectsRequest {}
+message ListProjectsResponse {
+  repeated Project projects = 1;
+}
+message GetProjectRequest {
+  string project_id = 1;
+}
+message GetProjectResponse {
+  Project project = 1;
+}
+message UpdateProjectRequest {
+  message LocationList {
+    repeated Project.Location locations = 1;
+  }
+  string project_id = 1;
+  optional string name = 2;
+  // Replaces all locations when set; absent leaves locations unchanged.
+  // last_used_location follows the old default location to its new index
+  // if the new list still has it, and is otherwise clamped into range.
+  LocationList locations = 3;
+  // Wins over the rule above; must index the project's locations after the
+  // update, or be 0 when the project has none.
+  optional uint32 last_used_location = 4;
+  // Replaces the repository URL when set; "" clears it.
+  optional string repo_url = 5;
+  // When set, and name, locations or repo_url is set, the update applies
+  // only if the project's updated_at_unix_ms still equals this value (the
+  // version the caller read, such as an edit form opened in another tab);
+  // otherwise it fails with ABORTED, without a field, and changes nothing.
+  // An update that sets only last_used_location (as starting a session
+  // does) is never refused this way.
+  //
+  // updated_at_unix_ms moves forward, also within the same millisecond,
+  // only when the name, the locations or the repository URL actually
+  // change. A field set to its current value is no change, and
+  // last_used_location alone never moves it, so an open settings form
+  // stays current while sessions start.
+  optional int64 expected_updated_at_unix_ms = 6;
+}
+message UpdateProjectResponse {
+  Project project = 1;
+}
+message DeleteProjectRequest {
+  string project_id = 1;
+}
+message DeleteProjectResponse {}
