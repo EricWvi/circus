@@ -126,6 +126,26 @@ export const en = {
     devicesOnline: "{{online}}/{{total}} online",
   },
 
+  devices: {
+    title: "Devices",
+    online: "Online",
+    offline: "Offline",
+    lastSeen: "Last seen {{ago}}",
+    neverConnected: "Never connected",
+    daemonVersion: "daemon {{version}}",
+    projectsOn: "Projects on {{device}}",
+    loading: "Loading devices",
+    loadFailed: "Couldn't load devices.",
+    emptyTitle: "No devices yet",
+    emptyDescription: "A device is a machine where sessions run their tools. The server admin adds one:",
+    stepCreateLink: "On the server, create a join link:",
+    stepCreateLinkNote: "Add <code>--url</code> when devices reach the server at another address.",
+    stepJoin: "On the device, join with that link (paste it when asked):",
+    stepDaemon: "Then start the daemon on the device:",
+    copyCommand: "Copy command",
+    copied: "Copied",
+  },
+
   userMenu: {
     superUser: "Super user",
     theme: "Theme",

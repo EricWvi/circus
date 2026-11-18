@@ -44,11 +44,21 @@ export function useSessionList(projectId?: string) {
   })
 }
 
-export function useDevices() {
+/** How often a page that shows device status refetches it while visible. */
+export const DEVICES_LIVE_INTERVAL_MS = 10_000
+
+/**
+ * The caller's devices. `live` keeps their status fresh while the page is
+ * visible: a refetch every few seconds and whenever the window regains
+ * focus. Hidden tabs don't poll.
+ */
+export function useDevices({ live = false }: { live?: boolean } = {}) {
   const client = useClient()
   return useQuery({
     queryKey: queryKeys.devices,
     queryFn: () => client.machines.listDevices(),
+    refetchInterval: live ? DEVICES_LIVE_INTERVAL_MS : false,
+    refetchOnWindowFocus: live ? "always" : true,
   })
 }
 

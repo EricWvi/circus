@@ -11,6 +11,7 @@ import { ClientContext } from "@/api/context"
 import { createMockBackend } from "@/api/mock/backend"
 import { SEED_OWNER_ID, seedState, type MockState } from "@/api/mock/state"
 import { createQueryClient } from "@/api/query-client"
+import type { CircusClient } from "@/api/types"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ConversationStoreContext } from "@/state/conversations-context"
 import { ConversationsProvider } from "@/state/conversations-provider"
@@ -36,21 +37,28 @@ export async function advance(ms: number) {
 /**
  * Renders `ui` inside the providers a signed-in page has, backed by a mock
  * server holding `state` (the demo seed by default), signed in as its owner.
+ * `wrapClient` stands between the pages and the mock, to make calls fail.
  */
 export async function renderWithBackend(
   ui: ReactNode,
   {
     state = seedState(),
     timing = {},
-  }: { state?: MockState; timing?: Partial<SimulationTiming> } = {},
+    wrapClient = (client) => client,
+  }: {
+    state?: MockState
+    timing?: Partial<SimulationTiming>
+    wrapClient?: (client: CircusClient) => CircusClient
+  } = {},
 ) {
   // Signed in as the demo data's owner (the mock's cookie), without a call
   // that would wait on the fake timers.
   state.cookie = SEED_OWNER_ID
   const backend = createMockBackend({ state, latency: () => 0 })
   const queryClient = createQueryClient()
+  const client = wrapClient(backend.client)
   const wrap = (children: ReactNode) => (
-    <ClientContext.Provider value={backend.client}>
+    <ClientContext.Provider value={client}>
       <QueryClientProvider client={queryClient}>
         <ConversationStoreContext.Provider value={backend.conversations}>
           <DeviceSimulationContext.Provider value={backend.simulation}>

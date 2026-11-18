@@ -38,3 +38,8 @@ export function formatTimeAgo(
   if (diff < DAY) return format.format(-Math.floor(diff / HOUR), "hour")
   return format.format(-Math.floor(diff / DAY), "day")
 }
+
+/** A full date and time for hover text: "Nov 15, 2026, 12:00 PM" (2026年11月15日 12:00). */
+export function formatDateTime(unixMs: number, language: string = currentLanguage()): string {
+  return new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(unixMs)
+}

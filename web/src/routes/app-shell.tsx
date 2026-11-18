@@ -12,6 +12,7 @@ export function AppShell() {
   const sessionId = useMatch("/p/:projectId/s/:sessionId")?.params.sessionId
   const projectHome = useMatch("/p/:projectId")?.params.projectId
   const projectSettings = useMatch("/p/:projectId/settings")?.params.projectId
+  const devicesPage = useMatch("/devices") !== null
   const { user } = useCurrentUser()
 
   // Keyed by user, so nothing of the previous user's conversations survives.
@@ -22,6 +23,7 @@ export function AppShell() {
           <AppSidebar
             activeSessionId={sessionId}
             activeProjectId={projectHome ?? projectSettings}
+            devicesActive={devicesPage}
           />
           <SidebarInset className="min-h-0 overflow-hidden">
             <Outlet />

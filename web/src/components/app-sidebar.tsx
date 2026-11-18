@@ -39,10 +39,13 @@ const rowStates =
 export function AppSidebar({
   activeSessionId,
   activeProjectId,
+  devicesActive = false,
 }: {
   activeSessionId?: string
   /** The project whose own page (home or settings) is open. */
   activeProjectId?: string
+  /** The devices page is open. */
+  devicesActive?: boolean
 }) {
   const { t } = useTranslation()
   const { user } = useCurrentUser()
@@ -111,17 +114,23 @@ export function AppSidebar({
       <SidebarFooter className="border-t">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton className={rowStates}>
-              <MonitorSmartphoneIcon />
-              <span className="flex-1">{t("sidebar.devices")}</span>
-              {devices.data && (
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {t("sidebar.devicesOnline", {
-                    online: devices.data.filter((d) => d.online).length,
-                    total: devices.data.length,
-                  })}
-                </span>
-              )}
+            <SidebarMenuButton asChild isActive={devicesActive} className={rowStates}>
+              <Link
+                to="/devices"
+                aria-current={devicesActive ? "page" : undefined}
+                onClick={() => isMobile && setOpenMobile(false)}
+              >
+                <MonitorSmartphoneIcon />
+                <span className="flex-1">{t("sidebar.devices")}</span>
+                {devices.data && (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {t("sidebar.devicesOnline", {
+                      online: devices.data.filter((d) => d.online).length,
+                      total: devices.data.length,
+                    })}
+                  </span>
+                )}
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           {user && (

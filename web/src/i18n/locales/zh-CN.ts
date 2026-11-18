@@ -129,6 +129,26 @@ export const zhCN = {
     devicesOnline: "{{online}}/{{total}}在线",
   },
 
+  devices: {
+    title: "设备",
+    online: "在线",
+    offline: "离线",
+    lastSeen: "{{ago}}在线",
+    neverConnected: "从未连接",
+    daemonVersion: "守护进程{{version}}",
+    projectsOn: "{{device}}上的项目",
+    loading: "正在加载设备",
+    loadFailed: "无法加载设备。",
+    emptyTitle: "还没有设备",
+    emptyDescription: "设备是会话运行工具的机器，由服务器管理员添加：",
+    stepCreateLink: "在服务器上创建加入链接：",
+    stepCreateLinkNote: "如果设备通过其他地址访问服务器，加上<code>--url</code>。",
+    stepJoin: "在设备上用这个链接加入（按提示粘贴）：",
+    stepDaemon: "然后在设备上启动守护进程：",
+    copyCommand: "复制命令",
+    copied: "已复制",
+  },
+
   userMenu: {
     superUser: "超级用户",
     theme: "主题",

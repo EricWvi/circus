@@ -79,3 +79,27 @@ export function StatusBadge({ state }: { state: SessionState }) {
     </span>
   )
 }
+
+/**
+ * A device's link state in the same vocabulary: online is a solid dot (like
+ * a running session, without the pulse), offline a hollow ring (like idle).
+ */
+export function DeviceStatusDot({ online, className }: { online: boolean; className?: string }) {
+  const { t } = useTranslation()
+  const label = t(online ? "devices.online" : "devices.offline")
+  return (
+    <span
+      className={cn("relative inline-flex size-2.5 shrink-0 items-center justify-center", className)}
+      role="img"
+      aria-label={label}
+      title={label}
+      data-online={online}
+    >
+      {online ? (
+        <span className="size-2 rounded-full bg-foreground" />
+      ) : (
+        <span className="size-2 rounded-full border border-muted-foreground/70" />
+      )}
+    </span>
+  )
+}

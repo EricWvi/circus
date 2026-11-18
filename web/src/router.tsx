@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router"
 
 import { AppShell } from "@/routes/app-shell"
 import { AuthGate } from "@/routes/auth-gate"
+import { DevicesPage } from "@/routes/devices-page"
 import { HomePage } from "@/routes/home-page"
 import { LoginPage } from "@/routes/login-page"
 import { ProjectPage } from "@/routes/project-page"
@@ -26,6 +27,7 @@ export function createAppRouter() {
             { path: "/p/:projectId", element: <ProjectPage /> },
             { path: "/p/:projectId/settings", element: <ProjectSettingsPage /> },
             { path: "/p/:projectId/s/:sessionId", element: <SessionPage /> },
+            { path: "/devices", element: <DevicesPage /> },
             { path: "/settings", element: <SettingsPage /> },
           ],
         },
