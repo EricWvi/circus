@@ -131,8 +131,15 @@ type TurnOutcome int32
 const (
 	TurnOutcome_TURN_OUTCOME_UNSPECIFIED TurnOutcome = 0
 	TurnOutcome_TURN_OUTCOME_COMPLETED   TurnOutcome = 1
+	// An unfinished turn was closed without a confirmed user-stop report,
+	// including lease loss or a successor starting before ENDED arrived.
+	// This does not establish which transcript entries were saved.
 	TurnOutcome_TURN_OUTCOME_INTERRUPTED TurnOutcome = 2
 	TurnOutcome_TURN_OUTCOME_ERROR       TurnOutcome = 3
+	// The worker observed an abort caused by Interrupt or INPUT_PRIORITY_NOW
+	// and its fenced ENDED report was accepted. Does not stop the session
+	// or guarantee that partial assistant text was saved.
+	TurnOutcome_TURN_OUTCOME_STOPPED TurnOutcome = 4
 )
 
 // Enum value maps for TurnOutcome.
@@ -142,12 +149,14 @@ var (
 		1: "TURN_OUTCOME_COMPLETED",
 		2: "TURN_OUTCOME_INTERRUPTED",
 		3: "TURN_OUTCOME_ERROR",
+		4: "TURN_OUTCOME_STOPPED",
 	}
 	TurnOutcome_value = map[string]int32{
 		"TURN_OUTCOME_UNSPECIFIED": 0,
 		"TURN_OUTCOME_COMPLETED":   1,
 		"TURN_OUTCOME_INTERRUPTED": 2,
 		"TURN_OUTCOME_ERROR":       3,
+		"TURN_OUTCOME_STOPPED":     4,
 	}
 )
 
@@ -248,15 +257,17 @@ func (Session_State) EnumDescriptor() ([]byte, []int) {
 type SessionEvent_Kind int32
 
 const (
-	SessionEvent_KIND_UNSPECIFIED            SessionEvent_Kind = 0
-	SessionEvent_KIND_TURN_STARTED           SessionEvent_Kind = 1
-	SessionEvent_KIND_ASSISTANT              SessionEvent_Kind = 2
-	SessionEvent_KIND_USER                   SessionEvent_Kind = 3
-	SessionEvent_KIND_TOOL_PROGRESS          SessionEvent_Kind = 4
-	SessionEvent_KIND_RESULT                 SessionEvent_Kind = 5
-	SessionEvent_KIND_PERMISSION_DENIED      SessionEvent_Kind = 6
-	SessionEvent_KIND_APPROVAL_PENDING       SessionEvent_Kind = 7
-	SessionEvent_KIND_APPROVAL_RESOLVED      SessionEvent_Kind = 8
+	SessionEvent_KIND_UNSPECIFIED       SessionEvent_Kind = 0
+	SessionEvent_KIND_TURN_STARTED      SessionEvent_Kind = 1
+	SessionEvent_KIND_ASSISTANT         SessionEvent_Kind = 2
+	SessionEvent_KIND_USER              SessionEvent_Kind = 3
+	SessionEvent_KIND_TOOL_PROGRESS     SessionEvent_Kind = 4
+	SessionEvent_KIND_RESULT            SessionEvent_Kind = 5
+	SessionEvent_KIND_PERMISSION_DENIED SessionEvent_Kind = 6
+	SessionEvent_KIND_APPROVAL_PENDING  SessionEvent_Kind = 7
+	SessionEvent_KIND_APPROVAL_RESOLVED SessionEvent_Kind = 8
+	// Control-plane-only durable boundary for a turn ending INTERRUPTED.
+	// payload_json: {"turn_no":"<uint64>","outcome":"interrupted"}.
 	SessionEvent_KIND_TURN_INTERRUPTED       SessionEvent_Kind = 9
 	SessionEvent_KIND_SESSION_STATE          SessionEvent_Kind = 10
 	SessionEvent_KIND_BGTASK_STARTED         SessionEvent_Kind = 11
@@ -271,6 +282,9 @@ const (
 	// the user's view only; the payload names the subpath and the unknown
 	// parents.
 	SessionEvent_KIND_TRANSCRIPT_GAP_DETECTED SessionEvent_Kind = 16
+	// Control-plane-only durable boundary for a turn ending STOPPED.
+	// payload_json: {"turn_no":"<uint64>","outcome":"stopped"}.
+	SessionEvent_KIND_TURN_STOPPED SessionEvent_Kind = 17
 )
 
 // Enum value maps for SessionEvent_Kind.
@@ -293,6 +307,7 @@ var (
 		14: "KIND_ERROR",
 		15: "KIND_TRANSCRIPT_GAP_ACCEPTED",
 		16: "KIND_TRANSCRIPT_GAP_DETECTED",
+		17: "KIND_TURN_STOPPED",
 	}
 	SessionEvent_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED":             0,
@@ -312,6 +327,7 @@ var (
 		"KIND_ERROR":                   14,
 		"KIND_TRANSCRIPT_GAP_ACCEPTED": 15,
 		"KIND_TRANSCRIPT_GAP_DETECTED": 16,
+		"KIND_TURN_STOPPED":            17,
 	}
 )
 
@@ -421,12 +437,13 @@ func (x *SessionConfig) GetPermissionMode() string {
 // Session state and lease ownership are independent: an idle session can have
 // a live CLI and a lease, including while an asynchronous subagent runs.
 type Session struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	SessionId       string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	State           Session_State          `protobuf:"varint,2,opt,name=state,proto3,enum=circus.v1.Session_State" json:"state,omitempty"`
-	LastTurnOutcome TurnOutcome            `protobuf:"varint,3,opt,name=last_turn_outcome,json=lastTurnOutcome,proto3,enum=circus.v1.TurnOutcome" json:"last_turn_outcome,omitempty"`
-	TurnCount       uint64                 `protobuf:"varint,4,opt,name=turn_count,json=turnCount,proto3" json:"turn_count,omitempty"`
-	CreatedAtUnixMs int64                  `protobuf:"varint,5,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	State     Session_State          `protobuf:"varint,2,opt,name=state,proto3,enum=circus.v1.Session_State" json:"state,omitempty"`
+	// Outcome of the last ended turn; unchanged by STARTED or an interrupt request.
+	LastTurnOutcome TurnOutcome `protobuf:"varint,3,opt,name=last_turn_outcome,json=lastTurnOutcome,proto3,enum=circus.v1.TurnOutcome" json:"last_turn_outcome,omitempty"`
+	TurnCount       uint64      `protobuf:"varint,4,opt,name=turn_count,json=turnCount,proto3" json:"turn_count,omitempty"`
+	CreatedAtUnixMs int64       `protobuf:"varint,5,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
 	// Zero until stopped.
 	StoppedAtUnixMs int64 `protobuf:"varint,6,opt,name=stopped_at_unix_ms,json=stoppedAtUnixMs,proto3" json:"stopped_at_unix_ms,omitempty"`
 	// Unset in ListSessions results; GetSession returns it.
@@ -435,8 +452,17 @@ type Session struct {
 	ViewTruncated bool `protobuf:"varint,8,opt,name=view_truncated,json=viewTruncated,proto3" json:"view_truncated,omitempty"`
 	// Empty permits scheduling on any attached worker belonging to the user.
 	PinnedWorkerId string `protobuf:"bytes,9,opt,name=pinned_worker_id,json=pinnedWorkerId,proto3" json:"pinned_worker_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The project the session was created in.
+	ProjectId string `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// Shown in session lists. Set from the first user message unless
+	// UpdateSession set it first; empty until then.
+	Title string `protobuf:"bytes,11,opt,name=title,proto3" json:"title,omitempty"`
+	// Maximum timestamp of creation, durable events and accepted user inputs.
+	LastActivityAtUnixMs int64 `protobuf:"varint,12,opt,name=last_activity_at_unix_ms,json=lastActivityAtUnixMs,proto3" json:"last_activity_at_unix_ms,omitempty"`
+	// Pending, unexpired approvals (at most 32).
+	PendingApprovalCount uint32 `protobuf:"varint,13,opt,name=pending_approval_count,json=pendingApprovalCount,proto3" json:"pending_approval_count,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Session) Reset() {
@@ -532,6 +558,34 @@ func (x *Session) GetPinnedWorkerId() string {
 	return ""
 }
 
+func (x *Session) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *Session) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Session) GetLastActivityAtUnixMs() int64 {
+	if x != nil {
+		return x.LastActivityAtUnixMs
+	}
+	return 0
+}
+
+func (x *Session) GetPendingApprovalCount() uint32 {
+	if x != nil {
+		return x.PendingApprovalCount
+	}
+	return 0
+}
+
 // SessionEvent is the user-facing view, not the authoritative transcript.
 // Durable events have increasing seq; ephemeral events are live-only, have
 // seq = 0 and cannot be replayed. after_seq refers only to durable events.
@@ -621,11 +675,19 @@ func (x *SessionEvent) GetTruncated() bool {
 }
 
 type CreateSessionRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Config         *SessionConfig         `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
-	PinnedWorkerId *string                `protobuf:"bytes,2,opt,name=pinned_worker_id,json=pinnedWorkerId,proto3,oneof" json:"pinned_worker_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// config.default_device and config.cwds must be empty: the control
+	// plane fills them from the project location. model and
+	// permission_mode may be set.
+	Config         *SessionConfig `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
+	PinnedWorkerId *string        `protobuf:"bytes,2,opt,name=pinned_worker_id,json=pinnedWorkerId,proto3,oneof" json:"pinned_worker_id,omitempty"`
+	// Required: a project of the caller.
+	ProjectId string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// Index into the project's locations; unset uses the project's
+	// last_used_location. The location's device must not be revoked.
+	LocationIndex *uint32 `protobuf:"varint,4,opt,name=location_index,json=locationIndex,proto3,oneof" json:"location_index,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateSessionRequest) Reset() {
@@ -670,6 +732,20 @@ func (x *CreateSessionRequest) GetPinnedWorkerId() string {
 		return *x.PinnedWorkerId
 	}
 	return ""
+}
+
+func (x *CreateSessionRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetLocationIndex() uint32 {
+	if x != nil && x.LocationIndex != nil {
+		return *x.LocationIndex
+	}
+	return 0
 }
 
 type CreateSessionResponse struct {
@@ -894,11 +970,14 @@ func (x *WatchSessionRequest) GetAfterSeq() uint64 {
 	return 0
 }
 
+// ListSessions orders by last_activity_at descending, then session_id descending.
 type ListSessionsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Zero selects 100; maximum 1000.
-	PageSize      uint32 `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	PageSize  uint32 `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken string `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Optional filter.
+	ProjectId     string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -943,6 +1022,13 @@ func (x *ListSessionsRequest) GetPageSize() uint32 {
 func (x *ListSessionsRequest) GetPageToken() string {
 	if x != nil {
 		return x.PageToken
+	}
+	return ""
+}
+
+func (x *ListSessionsRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
 	}
 	return ""
 }
@@ -1044,6 +1130,59 @@ func (x *GetSessionRequest) GetSessionId() string {
 	return ""
 }
 
+type UpdateSessionRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// Trimmed; 1 to 200 characters after trimming, at most 1024 bytes.
+	Title         string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateSessionRequest) Reset() {
+	*x = UpdateSessionRequest{}
+	mi := &file_circus_v1_session_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateSessionRequest) ProtoMessage() {}
+
+func (x *UpdateSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_session_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateSessionRequest.ProtoReflect.Descriptor instead.
+func (*UpdateSessionRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UpdateSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *UpdateSessionRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
 // Approval requests merge while pending by (session, tool, device, match_key),
 // ignoring display, reason and tool_use_id. match_key is the SHA-256 of the
 // matched command or path in 64 lowercase hexadecimal digits, so display is
@@ -1069,7 +1208,7 @@ type SessionApproval struct {
 
 func (x *SessionApproval) Reset() {
 	*x = SessionApproval{}
-	mi := &file_circus_v1_session_proto_msgTypes[11]
+	mi := &file_circus_v1_session_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1081,7 +1220,7 @@ func (x *SessionApproval) String() string {
 func (*SessionApproval) ProtoMessage() {}
 
 func (x *SessionApproval) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[11]
+	mi := &file_circus_v1_session_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1094,7 +1233,7 @@ func (x *SessionApproval) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionApproval.ProtoReflect.Descriptor instead.
 func (*SessionApproval) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{11}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SessionApproval) GetApprovalId() string {
@@ -1183,7 +1322,7 @@ type ListApprovalsRequest struct {
 
 func (x *ListApprovalsRequest) Reset() {
 	*x = ListApprovalsRequest{}
-	mi := &file_circus_v1_session_proto_msgTypes[12]
+	mi := &file_circus_v1_session_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1195,7 +1334,7 @@ func (x *ListApprovalsRequest) String() string {
 func (*ListApprovalsRequest) ProtoMessage() {}
 
 func (x *ListApprovalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[12]
+	mi := &file_circus_v1_session_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1208,7 +1347,7 @@ func (x *ListApprovalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListApprovalsRequest.ProtoReflect.Descriptor instead.
 func (*ListApprovalsRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{12}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListApprovalsRequest) GetSessionId() string {
@@ -1228,7 +1367,7 @@ type ListApprovalsResponse struct {
 
 func (x *ListApprovalsResponse) Reset() {
 	*x = ListApprovalsResponse{}
-	mi := &file_circus_v1_session_proto_msgTypes[13]
+	mi := &file_circus_v1_session_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1240,7 +1379,7 @@ func (x *ListApprovalsResponse) String() string {
 func (*ListApprovalsResponse) ProtoMessage() {}
 
 func (x *ListApprovalsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[13]
+	mi := &file_circus_v1_session_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1253,7 +1392,7 @@ func (x *ListApprovalsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListApprovalsResponse.ProtoReflect.Descriptor instead.
 func (*ListApprovalsResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{13}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListApprovalsResponse) GetApprovals() []*SessionApproval {
@@ -1276,7 +1415,7 @@ type ResolveApprovalRequest struct {
 
 func (x *ResolveApprovalRequest) Reset() {
 	*x = ResolveApprovalRequest{}
-	mi := &file_circus_v1_session_proto_msgTypes[14]
+	mi := &file_circus_v1_session_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1288,7 +1427,7 @@ func (x *ResolveApprovalRequest) String() string {
 func (*ResolveApprovalRequest) ProtoMessage() {}
 
 func (x *ResolveApprovalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[14]
+	mi := &file_circus_v1_session_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1301,7 +1440,7 @@ func (x *ResolveApprovalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveApprovalRequest.ProtoReflect.Descriptor instead.
 func (*ResolveApprovalRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{14}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ResolveApprovalRequest) GetApprovalId() string {
@@ -1326,7 +1465,7 @@ type ResolveApprovalResponse struct {
 
 func (x *ResolveApprovalResponse) Reset() {
 	*x = ResolveApprovalResponse{}
-	mi := &file_circus_v1_session_proto_msgTypes[15]
+	mi := &file_circus_v1_session_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1338,7 +1477,7 @@ func (x *ResolveApprovalResponse) String() string {
 func (*ResolveApprovalResponse) ProtoMessage() {}
 
 func (x *ResolveApprovalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[15]
+	mi := &file_circus_v1_session_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1351,10 +1490,10 @@ func (x *ResolveApprovalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveApprovalResponse.ProtoReflect.Descriptor instead.
 func (*ResolveApprovalResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{15}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{16}
 }
 
-// Interrupt ends the current turn without stopping the session: it raises
+// Interrupt requests an abort without stopping the session: it raises
 // the session's interrupt level to the running turn's turn_no and hints the
 // holder. Without a running turn it changes nothing.
 type InterruptRequest struct {
@@ -1366,7 +1505,7 @@ type InterruptRequest struct {
 
 func (x *InterruptRequest) Reset() {
 	*x = InterruptRequest{}
-	mi := &file_circus_v1_session_proto_msgTypes[16]
+	mi := &file_circus_v1_session_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1378,7 +1517,7 @@ func (x *InterruptRequest) String() string {
 func (*InterruptRequest) ProtoMessage() {}
 
 func (x *InterruptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[16]
+	mi := &file_circus_v1_session_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1391,7 +1530,7 @@ func (x *InterruptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InterruptRequest.ProtoReflect.Descriptor instead.
 func (*InterruptRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{16}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *InterruptRequest) GetSessionId() string {
@@ -1409,7 +1548,7 @@ type InterruptResponse struct {
 
 func (x *InterruptResponse) Reset() {
 	*x = InterruptResponse{}
-	mi := &file_circus_v1_session_proto_msgTypes[17]
+	mi := &file_circus_v1_session_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1421,7 +1560,7 @@ func (x *InterruptResponse) String() string {
 func (*InterruptResponse) ProtoMessage() {}
 
 func (x *InterruptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[17]
+	mi := &file_circus_v1_session_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1434,7 +1573,7 @@ func (x *InterruptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InterruptResponse.ProtoReflect.Descriptor instead.
 func (*InterruptResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{17}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{18}
 }
 
 // StopSession is idempotent, prevents new turns and stops the session's jobs.
@@ -1448,7 +1587,7 @@ type StopSessionRequest struct {
 
 func (x *StopSessionRequest) Reset() {
 	*x = StopSessionRequest{}
-	mi := &file_circus_v1_session_proto_msgTypes[18]
+	mi := &file_circus_v1_session_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1460,7 +1599,7 @@ func (x *StopSessionRequest) String() string {
 func (*StopSessionRequest) ProtoMessage() {}
 
 func (x *StopSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[18]
+	mi := &file_circus_v1_session_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1473,7 +1612,7 @@ func (x *StopSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopSessionRequest.ProtoReflect.Descriptor instead.
 func (*StopSessionRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{18}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *StopSessionRequest) GetSessionId() string {
@@ -1491,7 +1630,7 @@ type StopSessionResponse struct {
 
 func (x *StopSessionResponse) Reset() {
 	*x = StopSessionResponse{}
-	mi := &file_circus_v1_session_proto_msgTypes[19]
+	mi := &file_circus_v1_session_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1503,7 +1642,7 @@ func (x *StopSessionResponse) String() string {
 func (*StopSessionResponse) ProtoMessage() {}
 
 func (x *StopSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[19]
+	mi := &file_circus_v1_session_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1516,7 +1655,7 @@ func (x *StopSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopSessionResponse.ProtoReflect.Descriptor instead.
 func (*StopSessionResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{19}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{20}
 }
 
 // DeleteSession deletes a session and everything recorded for it. It is
@@ -1533,7 +1672,7 @@ type DeleteSessionRequest struct {
 
 func (x *DeleteSessionRequest) Reset() {
 	*x = DeleteSessionRequest{}
-	mi := &file_circus_v1_session_proto_msgTypes[20]
+	mi := &file_circus_v1_session_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1545,7 +1684,7 @@ func (x *DeleteSessionRequest) String() string {
 func (*DeleteSessionRequest) ProtoMessage() {}
 
 func (x *DeleteSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[20]
+	mi := &file_circus_v1_session_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1558,7 +1697,7 @@ func (x *DeleteSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSessionRequest.ProtoReflect.Descriptor instead.
 func (*DeleteSessionRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{20}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeleteSessionRequest) GetSessionId() string {
@@ -1576,7 +1715,7 @@ type DeleteSessionResponse struct {
 
 func (x *DeleteSessionResponse) Reset() {
 	*x = DeleteSessionResponse{}
-	mi := &file_circus_v1_session_proto_msgTypes[21]
+	mi := &file_circus_v1_session_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1588,7 +1727,7 @@ func (x *DeleteSessionResponse) String() string {
 func (*DeleteSessionResponse) ProtoMessage() {}
 
 func (x *DeleteSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[21]
+	mi := &file_circus_v1_session_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1601,7 +1740,7 @@ func (x *DeleteSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSessionResponse.ProtoReflect.Descriptor instead.
 func (*DeleteSessionResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{21}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{22}
 }
 
 // RecoverSession accepts a gap in a broken session's transcript. Allowed only
@@ -1633,7 +1772,7 @@ type RecoverSessionRequest struct {
 
 func (x *RecoverSessionRequest) Reset() {
 	*x = RecoverSessionRequest{}
-	mi := &file_circus_v1_session_proto_msgTypes[22]
+	mi := &file_circus_v1_session_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1645,7 +1784,7 @@ func (x *RecoverSessionRequest) String() string {
 func (*RecoverSessionRequest) ProtoMessage() {}
 
 func (x *RecoverSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[22]
+	mi := &file_circus_v1_session_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1658,7 +1797,7 @@ func (x *RecoverSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverSessionRequest.ProtoReflect.Descriptor instead.
 func (*RecoverSessionRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{22}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RecoverSessionRequest) GetSessionId() string {
@@ -1683,7 +1822,7 @@ type RecoverSessionResponse struct {
 
 func (x *RecoverSessionResponse) Reset() {
 	*x = RecoverSessionResponse{}
-	mi := &file_circus_v1_session_proto_msgTypes[23]
+	mi := &file_circus_v1_session_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1695,7 +1834,7 @@ func (x *RecoverSessionResponse) String() string {
 func (*RecoverSessionResponse) ProtoMessage() {}
 
 func (x *RecoverSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[23]
+	mi := &file_circus_v1_session_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1708,7 +1847,7 @@ func (x *RecoverSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecoverSessionResponse.ProtoReflect.Descriptor instead.
 func (*RecoverSessionResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_session_proto_rawDescGZIP(), []int{23}
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{24}
 }
 
 type SessionConfig_Cwd struct {
@@ -1723,7 +1862,7 @@ type SessionConfig_Cwd struct {
 
 func (x *SessionConfig_Cwd) Reset() {
 	*x = SessionConfig_Cwd{}
-	mi := &file_circus_v1_session_proto_msgTypes[24]
+	mi := &file_circus_v1_session_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1735,7 +1874,7 @@ func (x *SessionConfig_Cwd) String() string {
 func (*SessionConfig_Cwd) ProtoMessage() {}
 
 func (x *SessionConfig_Cwd) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_session_proto_msgTypes[24]
+	mi := &file_circus_v1_session_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1777,7 +1916,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x0fpermission_mode\x18\x04 \x01(\tR\x0epermissionMode\x1a/\n" +
 	"\x03Cwd\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x10\n" +
-	"\x03cwd\x18\x02 \x01(\tR\x03cwd\"\x92\x04\n" +
+	"\x03cwd\x18\x02 \x01(\tR\x03cwd\"\xb5\x05\n" +
 	"\aSession\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12.\n" +
@@ -1789,7 +1928,13 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x12stopped_at_unix_ms\x18\x06 \x01(\x03R\x0fstoppedAtUnixMs\x120\n" +
 	"\x06config\x18\a \x01(\v2\x18.circus.v1.SessionConfigR\x06config\x12%\n" +
 	"\x0eview_truncated\x18\b \x01(\bR\rviewTruncated\x12(\n" +
-	"\x10pinned_worker_id\x18\t \x01(\tR\x0epinnedWorkerId\"x\n" +
+	"\x10pinned_worker_id\x18\t \x01(\tR\x0epinnedWorkerId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\n" +
+	" \x01(\tR\tprojectId\x12\x14\n" +
+	"\x05title\x18\v \x01(\tR\x05title\x126\n" +
+	"\x18last_activity_at_unix_ms\x18\f \x01(\x03R\x14lastActivityAtUnixMs\x124\n" +
+	"\x16pending_approval_count\x18\r \x01(\rR\x14pendingApprovalCount\"x\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -1797,7 +1942,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\fSTATE_QUEUED\x10\x02\x12\x11\n" +
 	"\rSTATE_RUNNING\x10\x03\x12\x11\n" +
 	"\rSTATE_STOPPED\x10\x04\x12\x10\n" +
-	"\fSTATE_BROKEN\x10\x05\"\xfc\x04\n" +
+	"\fSTATE_BROKEN\x10\x05\"\x93\x05\n" +
 	"\fSessionEvent\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x1c\n" +
 	"\n" +
@@ -1805,7 +1950,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x04kind\x18\x03 \x01(\x0e2\x1c.circus.v1.SessionEvent.KindR\x04kind\x12!\n" +
 	"\fpayload_json\x18\x04 \x01(\tR\vpayloadJson\x12\x1c\n" +
 	"\tephemeral\x18\x05 \x01(\bR\tephemeral\x12\x1c\n" +
-	"\ttruncated\x18\x06 \x01(\bR\ttruncated\"\xaa\x03\n" +
+	"\ttruncated\x18\x06 \x01(\bR\ttruncated\"\xc1\x03\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11KIND_TURN_STARTED\x10\x01\x12\x12\n" +
@@ -1825,11 +1970,16 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\n" +
 	"KIND_ERROR\x10\x0e\x12 \n" +
 	"\x1cKIND_TRANSCRIPT_GAP_ACCEPTED\x10\x0f\x12 \n" +
-	"\x1cKIND_TRANSCRIPT_GAP_DETECTED\x10\x10\"\x8c\x01\n" +
+	"\x1cKIND_TRANSCRIPT_GAP_DETECTED\x10\x10\x12\x15\n" +
+	"\x11KIND_TURN_STOPPED\x10\x11\"\xea\x01\n" +
 	"\x14CreateSessionRequest\x120\n" +
 	"\x06config\x18\x01 \x01(\v2\x18.circus.v1.SessionConfigR\x06config\x12-\n" +
-	"\x10pinned_worker_id\x18\x02 \x01(\tH\x00R\x0epinnedWorkerId\x88\x01\x01B\x13\n" +
-	"\x11_pinned_worker_id\"E\n" +
+	"\x10pinned_worker_id\x18\x02 \x01(\tH\x00R\x0epinnedWorkerId\x88\x01\x01\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId\x12*\n" +
+	"\x0elocation_index\x18\x04 \x01(\rH\x01R\rlocationIndex\x88\x01\x01B\x13\n" +
+	"\x11_pinned_worker_idB\x11\n" +
+	"\x0f_location_index\"E\n" +
 	"\x15CreateSessionResponse\x12,\n" +
 	"\asession\x18\x01 \x01(\v2\x12.circus.v1.SessionR\asession\"\xa1\x01\n" +
 	"\x12SendMessageRequest\x12\x1d\n" +
@@ -1844,17 +1994,23 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x13WatchSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
-	"\tafter_seq\x18\x02 \x01(\x04R\bafterSeq\"Q\n" +
+	"\tafter_seq\x18\x02 \x01(\x04R\bafterSeq\"p\n" +
 	"\x13ListSessionsRequest\x12\x1b\n" +
 	"\tpage_size\x18\x01 \x01(\rR\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x02 \x01(\tR\tpageToken\"n\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId\"n\n" +
 	"\x14ListSessionsResponse\x12.\n" +
 	"\bsessions\x18\x01 \x03(\v2\x12.circus.v1.SessionR\bsessions\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"2\n" +
 	"\x11GetSessionRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"\xe1\x02\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"K\n" +
+	"\x14UpdateSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\"\xe1\x02\n" +
 	"\x0fSessionApproval\x12\x1f\n" +
 	"\vapproval_id\x18\x01 \x01(\tR\n" +
 	"approvalId\x12\x1d\n" +
@@ -1906,19 +2062,21 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x17TURN_ORIGIN_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11TURN_ORIGIN_INPUT\x10\x01\x12\x1c\n" +
 	"\x18TURN_ORIGIN_NOTIFICATION\x10\x02\x12\x13\n" +
-	"\x0fTURN_ORIGIN_CLI\x10\x03*}\n" +
+	"\x0fTURN_ORIGIN_CLI\x10\x03*\x97\x01\n" +
 	"\vTurnOutcome\x12\x1c\n" +
 	"\x18TURN_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16TURN_OUTCOME_COMPLETED\x10\x01\x12\x1c\n" +
 	"\x18TURN_OUTCOME_INTERRUPTED\x10\x02\x12\x16\n" +
-	"\x12TURN_OUTCOME_ERROR\x10\x032\xfd\x06\n" +
+	"\x12TURN_OUTCOME_ERROR\x10\x03\x12\x18\n" +
+	"\x14TURN_OUTCOME_STOPPED\x10\x042\xc3\a\n" +
 	"\x0eSessionService\x12R\n" +
 	"\rCreateSession\x12\x1f.circus.v1.CreateSessionRequest\x1a .circus.v1.CreateSessionResponse\x12L\n" +
 	"\vSendMessage\x12\x1d.circus.v1.SendMessageRequest\x1a\x1e.circus.v1.SendMessageResponse\x12I\n" +
 	"\fWatchSession\x12\x1e.circus.v1.WatchSessionRequest\x1a\x17.circus.v1.SessionEvent0\x01\x12O\n" +
 	"\fListSessions\x12\x1e.circus.v1.ListSessionsRequest\x1a\x1f.circus.v1.ListSessionsResponse\x12>\n" +
 	"\n" +
-	"GetSession\x12\x1c.circus.v1.GetSessionRequest\x1a\x12.circus.v1.Session\x12R\n" +
+	"GetSession\x12\x1c.circus.v1.GetSessionRequest\x1a\x12.circus.v1.Session\x12D\n" +
+	"\rUpdateSession\x12\x1f.circus.v1.UpdateSessionRequest\x1a\x12.circus.v1.Session\x12R\n" +
 	"\rListApprovals\x12\x1f.circus.v1.ListApprovalsRequest\x1a .circus.v1.ListApprovalsResponse\x12X\n" +
 	"\x0fResolveApproval\x12!.circus.v1.ResolveApprovalRequest\x1a\".circus.v1.ResolveApprovalResponse\x12F\n" +
 	"\tInterrupt\x12\x1b.circus.v1.InterruptRequest\x1a\x1c.circus.v1.InterruptResponse\x12L\n" +
@@ -1939,7 +2097,7 @@ func file_circus_v1_session_proto_rawDescGZIP() []byte {
 }
 
 var file_circus_v1_session_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_circus_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_circus_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_circus_v1_session_proto_goTypes = []any{
 	(InputPriority)(0),              // 0: circus.v1.InputPriority
 	(TurnOrigin)(0),                 // 1: circus.v1.TurnOrigin
@@ -1957,23 +2115,24 @@ var file_circus_v1_session_proto_goTypes = []any{
 	(*ListSessionsRequest)(nil),     // 13: circus.v1.ListSessionsRequest
 	(*ListSessionsResponse)(nil),    // 14: circus.v1.ListSessionsResponse
 	(*GetSessionRequest)(nil),       // 15: circus.v1.GetSessionRequest
-	(*SessionApproval)(nil),         // 16: circus.v1.SessionApproval
-	(*ListApprovalsRequest)(nil),    // 17: circus.v1.ListApprovalsRequest
-	(*ListApprovalsResponse)(nil),   // 18: circus.v1.ListApprovalsResponse
-	(*ResolveApprovalRequest)(nil),  // 19: circus.v1.ResolveApprovalRequest
-	(*ResolveApprovalResponse)(nil), // 20: circus.v1.ResolveApprovalResponse
-	(*InterruptRequest)(nil),        // 21: circus.v1.InterruptRequest
-	(*InterruptResponse)(nil),       // 22: circus.v1.InterruptResponse
-	(*StopSessionRequest)(nil),      // 23: circus.v1.StopSessionRequest
-	(*StopSessionResponse)(nil),     // 24: circus.v1.StopSessionResponse
-	(*DeleteSessionRequest)(nil),    // 25: circus.v1.DeleteSessionRequest
-	(*DeleteSessionResponse)(nil),   // 26: circus.v1.DeleteSessionResponse
-	(*RecoverSessionRequest)(nil),   // 27: circus.v1.RecoverSessionRequest
-	(*RecoverSessionResponse)(nil),  // 28: circus.v1.RecoverSessionResponse
-	(*SessionConfig_Cwd)(nil),       // 29: circus.v1.SessionConfig.Cwd
+	(*UpdateSessionRequest)(nil),    // 16: circus.v1.UpdateSessionRequest
+	(*SessionApproval)(nil),         // 17: circus.v1.SessionApproval
+	(*ListApprovalsRequest)(nil),    // 18: circus.v1.ListApprovalsRequest
+	(*ListApprovalsResponse)(nil),   // 19: circus.v1.ListApprovalsResponse
+	(*ResolveApprovalRequest)(nil),  // 20: circus.v1.ResolveApprovalRequest
+	(*ResolveApprovalResponse)(nil), // 21: circus.v1.ResolveApprovalResponse
+	(*InterruptRequest)(nil),        // 22: circus.v1.InterruptRequest
+	(*InterruptResponse)(nil),       // 23: circus.v1.InterruptResponse
+	(*StopSessionRequest)(nil),      // 24: circus.v1.StopSessionRequest
+	(*StopSessionResponse)(nil),     // 25: circus.v1.StopSessionResponse
+	(*DeleteSessionRequest)(nil),    // 26: circus.v1.DeleteSessionRequest
+	(*DeleteSessionResponse)(nil),   // 27: circus.v1.DeleteSessionResponse
+	(*RecoverSessionRequest)(nil),   // 28: circus.v1.RecoverSessionRequest
+	(*RecoverSessionResponse)(nil),  // 29: circus.v1.RecoverSessionResponse
+	(*SessionConfig_Cwd)(nil),       // 30: circus.v1.SessionConfig.Cwd
 }
 var file_circus_v1_session_proto_depIdxs = []int32{
-	29, // 0: circus.v1.SessionConfig.cwds:type_name -> circus.v1.SessionConfig.Cwd
+	30, // 0: circus.v1.SessionConfig.cwds:type_name -> circus.v1.SessionConfig.Cwd
 	3,  // 1: circus.v1.Session.state:type_name -> circus.v1.Session.State
 	2,  // 2: circus.v1.Session.last_turn_outcome:type_name -> circus.v1.TurnOutcome
 	5,  // 3: circus.v1.Session.config:type_name -> circus.v1.SessionConfig
@@ -1982,31 +2141,33 @@ var file_circus_v1_session_proto_depIdxs = []int32{
 	6,  // 6: circus.v1.CreateSessionResponse.session:type_name -> circus.v1.Session
 	0,  // 7: circus.v1.SendMessageRequest.priority:type_name -> circus.v1.InputPriority
 	6,  // 8: circus.v1.ListSessionsResponse.sessions:type_name -> circus.v1.Session
-	16, // 9: circus.v1.ListApprovalsResponse.approvals:type_name -> circus.v1.SessionApproval
+	17, // 9: circus.v1.ListApprovalsResponse.approvals:type_name -> circus.v1.SessionApproval
 	8,  // 10: circus.v1.SessionService.CreateSession:input_type -> circus.v1.CreateSessionRequest
 	10, // 11: circus.v1.SessionService.SendMessage:input_type -> circus.v1.SendMessageRequest
 	12, // 12: circus.v1.SessionService.WatchSession:input_type -> circus.v1.WatchSessionRequest
 	13, // 13: circus.v1.SessionService.ListSessions:input_type -> circus.v1.ListSessionsRequest
 	15, // 14: circus.v1.SessionService.GetSession:input_type -> circus.v1.GetSessionRequest
-	17, // 15: circus.v1.SessionService.ListApprovals:input_type -> circus.v1.ListApprovalsRequest
-	19, // 16: circus.v1.SessionService.ResolveApproval:input_type -> circus.v1.ResolveApprovalRequest
-	21, // 17: circus.v1.SessionService.Interrupt:input_type -> circus.v1.InterruptRequest
-	23, // 18: circus.v1.SessionService.StopSession:input_type -> circus.v1.StopSessionRequest
-	25, // 19: circus.v1.SessionService.DeleteSession:input_type -> circus.v1.DeleteSessionRequest
-	27, // 20: circus.v1.SessionService.RecoverSession:input_type -> circus.v1.RecoverSessionRequest
-	9,  // 21: circus.v1.SessionService.CreateSession:output_type -> circus.v1.CreateSessionResponse
-	11, // 22: circus.v1.SessionService.SendMessage:output_type -> circus.v1.SendMessageResponse
-	7,  // 23: circus.v1.SessionService.WatchSession:output_type -> circus.v1.SessionEvent
-	14, // 24: circus.v1.SessionService.ListSessions:output_type -> circus.v1.ListSessionsResponse
-	6,  // 25: circus.v1.SessionService.GetSession:output_type -> circus.v1.Session
-	18, // 26: circus.v1.SessionService.ListApprovals:output_type -> circus.v1.ListApprovalsResponse
-	20, // 27: circus.v1.SessionService.ResolveApproval:output_type -> circus.v1.ResolveApprovalResponse
-	22, // 28: circus.v1.SessionService.Interrupt:output_type -> circus.v1.InterruptResponse
-	24, // 29: circus.v1.SessionService.StopSession:output_type -> circus.v1.StopSessionResponse
-	26, // 30: circus.v1.SessionService.DeleteSession:output_type -> circus.v1.DeleteSessionResponse
-	28, // 31: circus.v1.SessionService.RecoverSession:output_type -> circus.v1.RecoverSessionResponse
-	21, // [21:32] is the sub-list for method output_type
-	10, // [10:21] is the sub-list for method input_type
+	16, // 15: circus.v1.SessionService.UpdateSession:input_type -> circus.v1.UpdateSessionRequest
+	18, // 16: circus.v1.SessionService.ListApprovals:input_type -> circus.v1.ListApprovalsRequest
+	20, // 17: circus.v1.SessionService.ResolveApproval:input_type -> circus.v1.ResolveApprovalRequest
+	22, // 18: circus.v1.SessionService.Interrupt:input_type -> circus.v1.InterruptRequest
+	24, // 19: circus.v1.SessionService.StopSession:input_type -> circus.v1.StopSessionRequest
+	26, // 20: circus.v1.SessionService.DeleteSession:input_type -> circus.v1.DeleteSessionRequest
+	28, // 21: circus.v1.SessionService.RecoverSession:input_type -> circus.v1.RecoverSessionRequest
+	9,  // 22: circus.v1.SessionService.CreateSession:output_type -> circus.v1.CreateSessionResponse
+	11, // 23: circus.v1.SessionService.SendMessage:output_type -> circus.v1.SendMessageResponse
+	7,  // 24: circus.v1.SessionService.WatchSession:output_type -> circus.v1.SessionEvent
+	14, // 25: circus.v1.SessionService.ListSessions:output_type -> circus.v1.ListSessionsResponse
+	6,  // 26: circus.v1.SessionService.GetSession:output_type -> circus.v1.Session
+	6,  // 27: circus.v1.SessionService.UpdateSession:output_type -> circus.v1.Session
+	19, // 28: circus.v1.SessionService.ListApprovals:output_type -> circus.v1.ListApprovalsResponse
+	21, // 29: circus.v1.SessionService.ResolveApproval:output_type -> circus.v1.ResolveApprovalResponse
+	23, // 30: circus.v1.SessionService.Interrupt:output_type -> circus.v1.InterruptResponse
+	25, // 31: circus.v1.SessionService.StopSession:output_type -> circus.v1.StopSessionResponse
+	27, // 32: circus.v1.SessionService.DeleteSession:output_type -> circus.v1.DeleteSessionResponse
+	29, // 33: circus.v1.SessionService.RecoverSession:output_type -> circus.v1.RecoverSessionResponse
+	22, // [22:34] is the sub-list for method output_type
+	10, // [10:22] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -2024,7 +2185,7 @@ func file_circus_v1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_session_proto_rawDesc), len(file_circus_v1_session_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   25,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

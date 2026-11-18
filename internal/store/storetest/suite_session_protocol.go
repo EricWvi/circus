@@ -156,6 +156,17 @@ func testEventBatches(t *testing.T, b Backend) {
 	r, err = pub(fence, 4, ev("RESULT"))
 	must(t, err)
 	mustEqual(t, "continues", r.Seqs, []int64{2})
+	// Both turn boundaries are control-plane-only, like gap acceptance.
+	for i, kind := range []string{store.EventKindTurnInterrupted, store.EventKindTurnStopped} {
+		batch := int64(i + 5)
+		r, err = pub(fence, batch, append(ev("ASSISTANT"), ev(kind)...))
+		must(t, err)
+		mustIs(t, r.DropReason, store.ErrInvalid)
+		mustEqual(t, "reserved boundary batch dropped", []any{r.Dropped, last()}, []any{true, int64(2)})
+		r, err = pub(fence, batch, ev(kind))
+		must(t, err)
+		mustEqual(t, "dropped retry consumed", r.Deduplicated, true)
+	}
 	// Fenced: nothing consumed.
 	stale := fence
 	stale.ConnID = "old"
@@ -466,7 +477,12 @@ func testTurnRules(t *testing.T, b Backend) {
 	fence := acquire(t, s, "s1", "w1", "b1", t0)
 	turn := func(seq int64, ph store.TurnPhase, at int64, p store.TurnPersisted, incomplete bool) (store.TurnReported, error) {
 		return s.ReportTurn(ctx, fence, store.TurnReport{LocalSeq: seq, Phase: ph, Origin: store.TurnFromInput,
-			Outcome: store.TurnCompleted, Usage: store.TurnUsage{InputTokens: 7}, At: at, Persisted: p, TranscriptIncomplete: incomplete})
+			Outcome: func() store.TurnOutcome {
+				if seq == 1 && ph == store.TurnEnded {
+					return store.TurnStopped
+				}
+				return store.TurnCompleted
+			}(), Usage: store.TurnUsage{InputTokens: 7}, At: at, Persisted: p, TranscriptIncomplete: incomplete})
 	}
 	_, err := turn(2, store.TurnStarted, t0+1, store.TurnPersisted{}, false)
 	mustIs(t, err, store.ErrInvalid) // the first is 1
@@ -489,6 +505,7 @@ func testTurnRules(t *testing.T, b Backend) {
 	must(t, err)
 	mustEqual(t, "closed by its successor", []any{turns[0].Outcome, turns[0].EndedAt, r.Session.State, r.Session.LastTurnOutcome},
 		[]any{store.TurnInterrupted, t0 + 3, store.SessionRunning, store.TurnInterrupted})
+	checkTurnBoundary(t, s, "s1", 1, t0+3, store.TurnInterrupted)
 	rec, err := s.GetRecovery(ctx, fence)
 	must(t, err)
 	mustEqual(t, "a turn has started since", rec.LastTurnInterrupted, false)
@@ -504,23 +521,32 @@ func testTurnRules(t *testing.T, b Backend) {
 	r, err = turn(1, store.TurnEnded, t0+5, store.TurnPersisted{}, false)
 	must(t, err)
 	mustEqual(t, "repeated late ENDED", r.Duplicate, true)
+	checkTurnBoundary(t, s, "s1", 1, t0+3, store.TurnInterrupted)
 	r, err = turn(2, store.TurnEnded, t0+6, store.TurnPersisted{}, false)
 	must(t, err)
 	mustEqual(t, "turn 2 ends", []any{r.Session.State, r.Session.Usage.InputTokens, r.Session.LastTurnOutcome},
 		[]any{store.SessionIdle, int64(14), store.TurnCompleted})
 
-	// A user interrupt reported with ENDED is not "closed without ENDED".
+	// A worker-reported INTERRUPTED outcome is not "closed without ENDED".
 	must(t, errOf(turn(3, store.TurnStarted, t0+7, store.TurnPersisted{}, false)))
 	_, err = s.ReportTurn(ctx, fence, store.TurnReport{LocalSeq: 3, Phase: store.TurnEnded, Outcome: store.TurnInterrupted, At: t0 + 8})
 	must(t, err)
 	rec, err = s.GetRecovery(ctx, fence)
 	must(t, err)
 	mustEqual(t, "reported interrupt", rec.LastTurnInterrupted, false)
+	// A confirmed user stop has its own outcome and the same recovery rule.
+	must(t, errOf(turn(4, store.TurnStarted, t0+8, store.TurnPersisted{}, false)))
+	stopped, err := s.ReportTurn(ctx, fence, store.TurnReport{LocalSeq: 4, Phase: store.TurnEnded, Outcome: store.TurnStopped, At: t0 + 9})
+	must(t, err)
+	mustEqual(t, "confirmed stop", stopped.Session.LastTurnOutcome, store.TurnStopped)
+	rec, err = s.GetRecovery(ctx, fence)
+	must(t, err)
+	mustEqual(t, "reported stop", rec.LastTurnInterrupted, false)
 	// A late incomplete ENDED of a closed turn still breaks the session,
 	// with that turn as the one that broke it.
-	must(t, errOf(turn(4, store.TurnStarted, t0+9, store.TurnPersisted{}, false)))
-	must(t, errOf(turn(5, store.TurnStarted, t0+10, store.TurnPersisted{}, false))) // closes 4
-	r, err = turn(4, store.TurnEnded, t0+11, store.TurnPersisted{}, true)
+	must(t, errOf(turn(5, store.TurnStarted, t0+9, store.TurnPersisted{}, false)))
+	must(t, errOf(turn(6, store.TurnStarted, t0+10, store.TurnPersisted{}, false))) // closes 5
+	r, err = turn(5, store.TurnEnded, t0+11, store.TurnPersisted{}, true)
 	must(t, err)
 	mustEqual(t, "late incomplete", []any{r.Session.State, r.Turn.Outcome}, []any{store.SessionBroken, store.TurnInterrupted})
 

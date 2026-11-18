@@ -194,9 +194,11 @@ func testInterruptSession(t *testing.T, b Backend) {
 	report(t, s, fence, store.TurnReport{LocalSeq: 1, Phase: store.TurnStarted})
 	no, changed = interrupt()
 	mustEqual(t, "turn 1", []any{no, changed}, []any{int64(1), true})
+	mustEqual(t, "intent does not close", []any{getSession(t, s, "s1").State, len(sessionEvents(t, s, "s1"))}, []any{store.SessionRunning, 0})
 	no, changed = interrupt()
 	mustEqual(t, "repeated", []any{no, changed}, []any{int64(1), false})
-	report(t, s, fence, store.TurnReport{LocalSeq: 1, Phase: store.TurnEnded, Outcome: store.TurnInterrupted})
+	report(t, s, fence, store.TurnReport{LocalSeq: 1, Phase: store.TurnEnded, Outcome: store.TurnStopped, At: t0 + 2})
+	checkTurnBoundary(t, s, "s1", 1, t0+2, store.TurnStopped)
 	no, changed = interrupt()
 	mustEqual(t, "after the end", []any{no, changed}, []any{int64(1), false})
 	// Turn 2 is above the recorded level: not interrupted by a late hint.
@@ -838,6 +840,25 @@ func testInputDedupPriority(t *testing.T, b Backend) {
 	in.Kind = store.InputApproval
 	_, err = s.SubmitInput(t.Context(), in)
 	mustIs(t, err, store.ErrExists)
+	// NOW while idle creates no stopped turn. Its delivery to an active
+	// turn is worker state; the store never infers an abort from priority.
+	in = newInput("s1", 2)
+	in.Priority = store.InputNow
+	submit(t, s, in)
+	mustEqual(t, "idle NOW has no stop boundary", len(sessionEvents(t, s, "s1")), 0)
+	fence := acquire(t, s, "s1", "w1", "b1", t0)
+	report(t, s, fence, store.TurnReport{LocalSeq: 1, Phase: store.TurnStarted})
+	in = newInput("s1", 3)
+	in.Priority = store.InputNow
+	submit(t, s, in)
+	mustEqual(t, "NOW retry", submit(t, s, in).Created, false)
+	mustEqual(t, "NOW intent keeps turn running", getSession(t, s, "s1").State, store.SessionRunning)
+	mustEqual(t, "NOW intent has no boundary", len(sessionEvents(t, s, "s1")), 0)
+	ended := report(t, s, fence, store.TurnReport{LocalSeq: 1, Phase: store.TurnEnded, Outcome: store.TurnStopped, At: t0 + 4})
+	checkTurnBoundary(t, s, "s1", 1, t0+4, store.TurnStopped)
+	replacement := report(t, s, fence, store.TurnReport{LocalSeq: 2, Phase: store.TurnStarted, At: t0 + 5})
+	mustEqual(t, "replacement is running with prior outcome", []any{ended.Session.State, replacement.Session.State, replacement.Session.LastTurnOutcome},
+		[]any{store.SessionIdle, store.SessionRunning, store.TurnStopped})
 }
 
 // testLeaseLossRace: the expiry sweep, a settle, a takeover and the old
@@ -912,6 +933,7 @@ func testLeaseLossRace(t *testing.T, b Backend) {
 			must(t, err)
 		}
 		mustEqual(t, label("round ", round, " losses"), losses, 1)
+		checkTurnBoundary(t, s, "s1", 1, now, store.TurnInterrupted)
 		turns, err := s.ListTurns(ctx, store.TurnFilter{SessionID: "s1", Limit: 10})
 		must(t, err)
 		mustEqual(t, "interrupted once", []any{turns[0].Outcome, turns[0].EndedAt}, []any{store.TurnInterrupted, now})

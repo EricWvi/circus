@@ -2190,13 +2190,19 @@ func (*TakeInputs) Descriptor() ([]byte, []int) {
 // marks. ENDED for a local_seq never STARTED is INVALID. ENDED follows the SDK
 // result and makes the session IDLE (or QUEUED with work and no lease). Lease
 // loss during a turn records INTERRUPTED without automatically resuming.
+// Before sending ENDED or a successor's STARTED, flush every queued
+// PublishEvents batch of the preceding turn and wait for acknowledgment (or
+// INVALID consumption). Control-plane boundaries must follow that turn's
+// worker events in durable seq order.
 type ReportTurn struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Starts at 1 and increases by one per turn within the epoch.
 	LocalSeq uint64           `protobuf:"varint,1,opt,name=local_seq,json=localSeq,proto3" json:"local_seq,omitempty"`
 	Phase    ReportTurn_Phase `protobuf:"varint,2,opt,name=phase,proto3,enum=circus.v1.ReportTurn_Phase" json:"phase,omitempty"`
 	Origin   TurnOrigin       `protobuf:"varint,3,opt,name=origin,proto3,enum=circus.v1.TurnOrigin" json:"origin,omitempty"`
-	// ENDED only.
+	// ENDED only. STOPPED requires an observed abort attributable to a
+	// user Interrupt or NOW input applied to this turn. Cleanup after lease
+	// loss, shutdown or StopSession is not a user stop-turn action.
 	Outcome TurnOutcome `protobuf:"varint,4,opt,name=outcome,proto3,enum=circus.v1.TurnOutcome" json:"outcome,omitempty"`
 	// ENDED only: opaque SDK result usage JSON, at most 4 KiB.
 	UsageJson string `protobuf:"bytes,5,opt,name=usage_json,json=usageJson,proto3" json:"usage_json,omitempty"`
@@ -2704,7 +2710,8 @@ type PublishEvents struct {
 	// beyond the last plus one is INVALID and consumes nothing. ok consumes it;
 	// so does a batch at the next sequence that fails validation (an over-cap
 	// field, or a kind only the control plane records such as
-	// TRANSCRIPT_GAP_ACCEPTED): it is recorded as dropped and answered INVALID,
+	// TRANSCRIPT_GAP_ACCEPTED, TURN_INTERRUPTED or TURN_STOPPED): it is recorded
+	// as dropped and answered INVALID,
 	// and the worker continues with the next sequence. A worker treats every
 	// INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
 	// and Fenced consume nothing. Retrying must preserve content.

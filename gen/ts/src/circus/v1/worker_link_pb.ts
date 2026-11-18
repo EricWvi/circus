@@ -1202,6 +1202,10 @@ export const TakeInputsSchema: GenMessage<TakeInputs> = /*@__PURE__*/
  * marks. ENDED for a local_seq never STARTED is INVALID. ENDED follows the SDK
  * result and makes the session IDLE (or QUEUED with work and no lease). Lease
  * loss during a turn records INTERRUPTED without automatically resuming.
+ * Before sending ENDED or a successor's STARTED, flush every queued
+ * PublishEvents batch of the preceding turn and wait for acknowledgment (or
+ * INVALID consumption). Control-plane boundaries must follow that turn's
+ * worker events in durable seq order.
  *
  * @generated from message circus.v1.ReportTurn
  */
@@ -1224,7 +1228,9 @@ export type ReportTurn = Message<"circus.v1.ReportTurn"> & {
   origin: TurnOrigin;
 
   /**
-   * ENDED only.
+   * ENDED only. STOPPED requires an observed abort attributable to a
+   * user Interrupt or NOW input applied to this turn. Cleanup after lease
+   * loss, shutdown or StopSession is not a user stop-turn action.
    *
    * @generated from field: circus.v1.TurnOutcome outcome = 4;
    */
@@ -1930,7 +1936,8 @@ export type PublishEvents = Message<"circus.v1.PublishEvents"> & {
    * beyond the last plus one is INVALID and consumes nothing. ok consumes it;
    * so does a batch at the next sequence that fails validation (an over-cap
    * field, or a kind only the control plane records such as
-   * TRANSCRIPT_GAP_ACCEPTED): it is recorded as dropped and answered INVALID,
+   * TRANSCRIPT_GAP_ACCEPTED, TURN_INTERRUPTED or TURN_STOPPED): it is recorded
+   * as dropped and answered INVALID,
    * and the worker continues with the next sequence. A worker treats every
    * INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
    * and Fenced consume nothing. Retrying must preserve content.

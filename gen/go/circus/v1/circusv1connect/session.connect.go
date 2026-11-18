@@ -48,6 +48,9 @@ const (
 	// SessionServiceGetSessionProcedure is the fully-qualified name of the SessionService's GetSession
 	// RPC.
 	SessionServiceGetSessionProcedure = "/circus.v1.SessionService/GetSession"
+	// SessionServiceUpdateSessionProcedure is the fully-qualified name of the SessionService's
+	// UpdateSession RPC.
+	SessionServiceUpdateSessionProcedure = "/circus.v1.SessionService/UpdateSession"
 	// SessionServiceListApprovalsProcedure is the fully-qualified name of the SessionService's
 	// ListApprovals RPC.
 	SessionServiceListApprovalsProcedure = "/circus.v1.SessionService/ListApprovals"
@@ -75,8 +78,13 @@ type SessionServiceClient interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	WatchSession(context.Context, *connect.Request[v1.WatchSessionRequest]) (*connect.ServerStreamForClient[v1.SessionEvent], error)
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	// GetSession and UpdateSession deliberately share the Session snapshot.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.Session], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	UpdateSession(context.Context, *connect.Request[v1.UpdateSessionRequest]) (*connect.Response[v1.Session], error)
 	ListApprovals(context.Context, *connect.Request[v1.ListApprovalsRequest]) (*connect.Response[v1.ListApprovalsResponse], error)
 	ResolveApproval(context.Context, *connect.Request[v1.ResolveApprovalRequest]) (*connect.Response[v1.ResolveApprovalResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
@@ -126,6 +134,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("GetSession")),
 			connect.WithClientOptions(opts...),
 		),
+		updateSession: connect.NewClient[v1.UpdateSessionRequest, v1.Session](
+			httpClient,
+			baseURL+SessionServiceUpdateSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("UpdateSession")),
+			connect.WithClientOptions(opts...),
+		),
 		listApprovals: connect.NewClient[v1.ListApprovalsRequest, v1.ListApprovalsResponse](
 			httpClient,
 			baseURL+SessionServiceListApprovalsProcedure,
@@ -172,6 +186,7 @@ type sessionServiceClient struct {
 	watchSession    *connect.Client[v1.WatchSessionRequest, v1.SessionEvent]
 	listSessions    *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
 	getSession      *connect.Client[v1.GetSessionRequest, v1.Session]
+	updateSession   *connect.Client[v1.UpdateSessionRequest, v1.Session]
 	listApprovals   *connect.Client[v1.ListApprovalsRequest, v1.ListApprovalsResponse]
 	resolveApproval *connect.Client[v1.ResolveApprovalRequest, v1.ResolveApprovalResponse]
 	interrupt       *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
@@ -203,6 +218,11 @@ func (c *sessionServiceClient) ListSessions(ctx context.Context, req *connect.Re
 // GetSession calls circus.v1.SessionService.GetSession.
 func (c *sessionServiceClient) GetSession(ctx context.Context, req *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.Session], error) {
 	return c.getSession.CallUnary(ctx, req)
+}
+
+// UpdateSession calls circus.v1.SessionService.UpdateSession.
+func (c *sessionServiceClient) UpdateSession(ctx context.Context, req *connect.Request[v1.UpdateSessionRequest]) (*connect.Response[v1.Session], error) {
+	return c.updateSession.CallUnary(ctx, req)
 }
 
 // ListApprovals calls circus.v1.SessionService.ListApprovals.
@@ -242,8 +262,13 @@ type SessionServiceHandler interface {
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	WatchSession(context.Context, *connect.Request[v1.WatchSessionRequest], *connect.ServerStream[v1.SessionEvent]) error
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	// GetSession and UpdateSession deliberately share the Session snapshot.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.Session], error)
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	UpdateSession(context.Context, *connect.Request[v1.UpdateSessionRequest]) (*connect.Response[v1.Session], error)
 	ListApprovals(context.Context, *connect.Request[v1.ListApprovalsRequest]) (*connect.Response[v1.ListApprovalsResponse], error)
 	ResolveApproval(context.Context, *connect.Request[v1.ResolveApprovalRequest]) (*connect.Response[v1.ResolveApprovalResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
@@ -287,6 +312,12 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		SessionServiceGetSessionProcedure,
 		svc.GetSession,
 		connect.WithSchema(sessionServiceMethods.ByName("GetSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceUpdateSessionHandler := connect.NewUnaryHandler(
+		SessionServiceUpdateSessionProcedure,
+		svc.UpdateSession,
+		connect.WithSchema(sessionServiceMethods.ByName("UpdateSession")),
 		connect.WithHandlerOptions(opts...),
 	)
 	sessionServiceListApprovalsHandler := connect.NewUnaryHandler(
@@ -337,6 +368,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceListSessionsHandler.ServeHTTP(w, r)
 		case SessionServiceGetSessionProcedure:
 			sessionServiceGetSessionHandler.ServeHTTP(w, r)
+		case SessionServiceUpdateSessionProcedure:
+			sessionServiceUpdateSessionHandler.ServeHTTP(w, r)
 		case SessionServiceListApprovalsProcedure:
 			sessionServiceListApprovalsHandler.ServeHTTP(w, r)
 		case SessionServiceResolveApprovalProcedure:
@@ -376,6 +409,10 @@ func (UnimplementedSessionServiceHandler) ListSessions(context.Context, *connect
 
 func (UnimplementedSessionServiceHandler) GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.Session], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.SessionService.GetSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) UpdateSession(context.Context, *connect.Request[v1.UpdateSessionRequest]) (*connect.Response[v1.Session], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.SessionService.UpdateSession is not implemented"))
 }
 
 func (UnimplementedSessionServiceHandler) ListApprovals(context.Context, *connect.Request[v1.ListApprovalsRequest]) (*connect.Response[v1.ListApprovalsResponse], error) {

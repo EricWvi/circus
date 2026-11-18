@@ -25,8 +25,10 @@ func TestDeleteStopsBetweenChunks(t *testing.T) {
 	must(d.CreateUser(ctx, store.User{ID: "u1", Name: "u", CreatedAt: now}))
 	must(d.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "d1", UserID: "u1", Name: "d", MachineID: "m", CreatedAt: now}))
 	must(d.CreateIdentity(ctx, store.Identity{Kind: store.KindWorker, ID: "w1", UserID: "u1", Name: "w", MachineID: "m", CreatedAt: now}))
+	_, errProject := d.CreateProject(ctx, store.Project{ID: "p1", UserID: "u1", Name: "Project", CreatedAt: now, UpdatedAt: now}, "")
+	must(errProject)
 	for _, id := range []string{"s1", "keep"} {
-		must(d.CreateSession(ctx, store.Session{ID: id, UserID: "u1", ClaudeSessionID: "c-" + id, DefaultDeviceID: "d1", CreatedAt: now}, nil, 10))
+		must(d.CreateSession(ctx, store.Session{ID: id, UserID: "u1", ProjectID: "p1", ClaudeSessionID: "c-" + id, DefaultDeviceID: "d1", CreatedAt: now}, nil, 10))
 	}
 	q := store.TranscriptQuota{MaxEntryBytes: 1 << 20, MaxSessionBytes: 1 << 30, MaxUserBytes: 1 << 30}
 	fill := func(id string, n int) {
@@ -60,10 +62,10 @@ func TestDeleteStopsBetweenChunks(t *testing.T) {
 	var left, subpath, sess, user int64
 	must(mapErr(d.sqldb.QueryRow(`SELECT COALESCE(SUM(bytes), 0) FROM transcript_entries WHERE session_id = 's1'`).Scan(&left)))
 	must(mapErr(d.sqldb.QueryRow(`SELECT bytes FROM transcript_subpaths WHERE session_id = 's1'`).Scan(&subpath)))
-	s1, err := d.GetSession(ctx, "s1")
+	s1, err := d.GetSession(ctx, "s1", now)
 	must(err)
 	sess = s1.TranscriptBytes
-	k, err := d.GetSession(ctx, "keep")
+	k, err := d.GetSession(ctx, "keep", now)
 	must(err)
 	u, err := d.GetUser(ctx, "u1")
 	must(err)

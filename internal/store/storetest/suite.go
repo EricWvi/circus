@@ -79,6 +79,14 @@ func Run(t *testing.T, b Backend) {
 		{"SetConnectedConcurrent", testSetConnectedConcurrent},
 		{"TxTimerAtomicity", testTxTimerAtomicity},
 		{"SessionCreate", testSessionCreate},
+		{"SessionLists", testSessionLists},
+		{"SessionActivity", testSessionActivity},
+		{"SessionPagingActivity", testSessionPagingActivity},
+		{"UserProjectSessions", testUserProjectSessions},
+		{"SessionTitles", testSessionTitles},
+		{"ProjectSessions", testProjectSessions},
+		{"TurnBoundaries", testTurnBoundaries},
+		{"StopReportRace", testStopReportRace},
 		{"SessionFencing", testSessionFencing},
 		{"LeaseAcquire", testLeaseAcquire},
 		{"LeaseConcurrentAcquire", testLeaseConcurrentAcquire},
@@ -208,6 +216,8 @@ func seed(t testing.TB, ops store.Ops) fixture {
 	must(t, ops.CreateUser(ctx, f.user))
 	must(t, ops.CreateIdentity(ctx, f.device))
 	must(t, ops.CreateIdentity(ctx, f.worker))
+	_, err := ops.CreateProject(ctx, store.Project{ID: "session-project", UserID: f.user.ID, Name: "Sessions", CreatedAt: t0, UpdatedAt: t0}, "")
+	must(t, err)
 	return f
 }
 

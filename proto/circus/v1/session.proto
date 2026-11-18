@@ -4,16 +4,23 @@ package circus.v1;
 
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
-// SessionService is the user-facing session API. Authentication is a Bearer
-// credential; workers use the worker link for session operations instead.
+// SessionService is the user-facing session API. Every call authenticates a
+// browser session cookie and refuses an Origin different from the server's
+// public URL, as ProjectService does. A Bearer credential for the CLI comes
+// later. Workers use the worker link for session operations instead.
 service SessionService {
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   rpc WatchSession(WatchSessionRequest) returns (stream SessionEvent);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // GetSession and UpdateSession deliberately share the Session snapshot.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   rpc GetSession(GetSessionRequest) returns (Session);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  rpc UpdateSession(UpdateSessionRequest) returns (Session);
   rpc ListApprovals(ListApprovalsRequest) returns (ListApprovalsResponse);
   rpc ResolveApproval(ResolveApprovalRequest) returns (ResolveApprovalResponse);
   rpc Interrupt(InterruptRequest) returns (InterruptResponse);
@@ -63,8 +70,15 @@ enum TurnOrigin {
 enum TurnOutcome {
   TURN_OUTCOME_UNSPECIFIED = 0;
   TURN_OUTCOME_COMPLETED = 1;
+  // An unfinished turn was closed without a confirmed user-stop report,
+  // including lease loss or a successor starting before ENDED arrived.
+  // This does not establish which transcript entries were saved.
   TURN_OUTCOME_INTERRUPTED = 2;
   TURN_OUTCOME_ERROR = 3;
+  // The worker observed an abort caused by Interrupt or INPUT_PRIORITY_NOW
+  // and its fenced ENDED report was accepted. Does not stop the session
+  // or guarantee that partial assistant text was saved.
+  TURN_OUTCOME_STOPPED = 4;
 }
 
 // Session state and lease ownership are independent: an idle session can have
@@ -88,6 +102,7 @@ message Session {
     STATE_BROKEN = 5;
   }
   State state = 2;
+  // Outcome of the last ended turn; unchanged by STARTED or an interrupt request.
   TurnOutcome last_turn_outcome = 3;
   uint64 turn_count = 4;
   int64 created_at_unix_ms = 5;
@@ -99,6 +114,15 @@ message Session {
   bool view_truncated = 8;
   // Empty permits scheduling on any attached worker belonging to the user.
   string pinned_worker_id = 9;
+  // The project the session was created in.
+  string project_id = 10;
+  // Shown in session lists. Set from the first user message unless
+  // UpdateSession set it first; empty until then.
+  string title = 11;
+  // Maximum timestamp of creation, durable events and accepted user inputs.
+  int64 last_activity_at_unix_ms = 12;
+  // Pending, unexpired approvals (at most 32).
+  uint32 pending_approval_count = 13;
 }
 
 // SessionEvent is the user-facing view, not the authoritative transcript.
@@ -118,6 +142,8 @@ message SessionEvent {
     KIND_PERMISSION_DENIED = 6;
     KIND_APPROVAL_PENDING = 7;
     KIND_APPROVAL_RESOLVED = 8;
+    // Control-plane-only durable boundary for a turn ending INTERRUPTED.
+    // payload_json: {"turn_no":"<uint64>","outcome":"interrupted"}.
     KIND_TURN_INTERRUPTED = 9;
     KIND_SESSION_STATE = 10;
     KIND_BGTASK_STARTED = 11;
@@ -132,6 +158,9 @@ message SessionEvent {
     // the user's view only; the payload names the subpath and the unknown
     // parents.
     KIND_TRANSCRIPT_GAP_DETECTED = 16;
+    // Control-plane-only durable boundary for a turn ending STOPPED.
+    // payload_json: {"turn_no":"<uint64>","outcome":"stopped"}.
+    KIND_TURN_STOPPED = 17;
   }
   Kind kind = 3;
   // Opaque SDK message JSON; durable view payloads over 256 KiB are truncated.
@@ -141,8 +170,16 @@ message SessionEvent {
 }
 
 message CreateSessionRequest {
+  // config.default_device and config.cwds must be empty: the control
+  // plane fills them from the project location. model and
+  // permission_mode may be set.
   SessionConfig config = 1;
   optional string pinned_worker_id = 2;
+  // Required: a project of the caller.
+  string project_id = 3;
+  // Index into the project's locations; unset uses the project's
+  // last_used_location. The location's device must not be revoked.
+  optional uint32 location_index = 4;
 }
 message CreateSessionResponse {
   Session session = 1;
@@ -168,10 +205,13 @@ message WatchSessionRequest {
   // Replay durable events strictly after this sequence, then follow live events.
   uint64 after_seq = 2;
 }
+// ListSessions orders by last_activity_at descending, then session_id descending.
 message ListSessionsRequest {
   // Zero selects 100; maximum 1000.
   uint32 page_size = 1;
   string page_token = 2;
+  // Optional filter.
+  string project_id = 3;
 }
 message ListSessionsResponse {
   // At most 1000, without config; a user may have at most 1000 sessions.
@@ -180,6 +220,11 @@ message ListSessionsResponse {
 }
 message GetSessionRequest {
   string session_id = 1;
+}
+message UpdateSessionRequest {
+  string session_id = 1;
+  // Trimmed; 1 to 200 characters after trimming, at most 1024 bytes.
+  string title = 2;
 }
 
 // Approval requests merge while pending by (session, tool, device, match_key),
@@ -216,7 +261,7 @@ message ResolveApprovalRequest {
   bool approve = 2;
 }
 message ResolveApprovalResponse {}
-// Interrupt ends the current turn without stopping the session: it raises
+// Interrupt requests an abort without stopping the session: it raises
 // the session's interrupt level to the running turn's turn_no and hints the
 // holder. Without a running turn it changes nothing.
 message InterruptRequest {

@@ -46,7 +46,10 @@ const activeCallStates = `('accepted', 'dispatched', 'running', 'unknown')`
 const sessionCols = `session_id, user_id, claude_session_id, state, default_device_id, model, permission_mode,
 	pinned_worker_id, turn_count, last_turn_outcome, interrupt_turn_no, previous_turn_interrupted, transcript_gap_turn_no, input_tokens, output_tokens,
 	cache_read_tokens, cache_create_tokens, cost_micro_usd, duration_ms, transcript_bytes, view_bytes,
-	view_truncated, last_event_seq, dropped_event_batches, reason, created_at, updated_at, stopped_at`
+	view_truncated, last_event_seq, dropped_event_batches, reason, created_at, updated_at, stopped_at,
+	project_id, title, last_activity_at,
+	(SELECT COUNT(*) FROM session_approvals a WHERE a.session_id = sessions.session_id
+		AND a.state = 'pending' AND a.expires_at > ?1)`
 
 func scanSession(s scanner) (store.Session, error) {
 	var x store.Session
@@ -57,15 +60,16 @@ func scanSession(s scanner) (store.Session, error) {
 		&x.Usage.InputTokens, &x.Usage.OutputTokens, &x.Usage.CacheReadInputTokens,
 		&x.Usage.CacheCreationInputTokens, &x.Usage.CostMicroUSD, &x.Usage.DurationMs,
 		&x.TranscriptBytes, &x.ViewBytes, &truncated, &x.LastEventSeq, &x.DroppedEventBatches, nullStr{&x.Reason},
-		&x.CreatedAt, &x.UpdatedAt, nullInt{&x.StoppedAt})
+		&x.CreatedAt, &x.UpdatedAt, nullInt{&x.StoppedAt},
+		&x.ProjectID, &x.Title, &x.LastActivityAt, &x.PendingApprovalCount)
 	x.State = store.SessionState(state)
 	x.LastTurnOutcome = store.TurnOutcome(outcome)
 	x.ViewTruncated = truncated != 0
 	return x, mapErr(err)
 }
 
-func (o *ops) getSession(ctx context.Context, id string) (store.Session, error) {
-	return scanSession(o.q.QueryRow(ctx, `SELECT `+sessionCols+` FROM sessions WHERE session_id = ?`, id))
+func (o *ops) getSession(ctx context.Context, id string, now int64) (store.Session, error) {
+	return scanSession(o.q.QueryRow(ctx, `SELECT `+sessionCols+` FROM sessions WHERE session_id = ?`, now, id))
 }
 
 func (o *ops) setState(ctx context.Context, id string, state store.SessionState, now int64) error {
@@ -75,7 +79,7 @@ func (o *ops) setState(ctx context.Context, id string, state store.SessionState,
 
 func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.SessionCwd, maxSessions int) error {
 	for _, c := range []struct{ what, v string }{
-		{"session id", s.ID}, {"user id", s.UserID}, {"claude session id", s.ClaudeSessionID}, {"default device id", s.DefaultDeviceID},
+		{"session id", s.ID}, {"user id", s.UserID}, {"project id", s.ProjectID}, {"claude session id", s.ClaudeSessionID}, {"default device id", s.DefaultDeviceID},
 	} {
 		if err := store.CheckID(c.what, c.v); err != nil {
 			return err
@@ -106,6 +110,10 @@ func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.S
 		}
 	}
 	return o.unit(ctx, func(tx *ops) error {
+		var exists int
+		if err := tx.q.QueryRow(ctx, `SELECT 1 FROM projects WHERE id = ?`, s.ProjectID).Scan(&exists); err != nil {
+			return mapErr(err)
+		}
 		var n int
 		if err := tx.q.QueryRow(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, s.UserID).Scan(&n); err != nil {
 			return mapErr(err)
@@ -114,9 +122,9 @@ func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.S
 			return fmt.Errorf("%w: user %q has %d sessions", store.ErrLimit, s.UserID, n)
 		}
 		if _, err := tx.exec(ctx, `INSERT INTO sessions (session_id, user_id, claude_session_id, state, default_device_id,
-			model, permission_mode, pinned_worker_id, created_at, updated_at) VALUES (?,?,?,'idle',?,?,?,?,?,?)`,
+			model, permission_mode, pinned_worker_id, created_at, updated_at, project_id, last_activity_at) VALUES (?,?,?,'idle',?,?,?,?,?,?,?,?)`,
 			s.ID, s.UserID, s.ClaudeSessionID, s.DefaultDeviceID, nstr(s.Model), nstr(s.PermissionMode),
-			nstr(s.PinnedWorkerID), s.CreatedAt, s.CreatedAt); err != nil {
+			nstr(s.PinnedWorkerID), s.CreatedAt, s.CreatedAt, s.ProjectID, s.CreatedAt); err != nil {
 			return err
 		}
 		if _, err := tx.exec(ctx, `INSERT INTO session_leases (session_id) VALUES (?)`, s.ID); err != nil {
@@ -143,8 +151,25 @@ func checkCwd(c store.SessionCwd) error {
 	return store.CheckText("working directory", c.Cwd, store.MaxPathBytes, false)
 }
 
-func (o *ops) GetSession(ctx context.Context, sessionID string) (store.Session, error) {
-	return o.getSession(ctx, sessionID)
+func (o *ops) GetSession(ctx context.Context, sessionID string, now int64) (store.Session, error) {
+	if now == 0 {
+		return store.Session{}, invalid("GetSession needs a time")
+	}
+	return o.getSession(ctx, sessionID, now)
+}
+
+func (o *ops) SetSessionTitle(ctx context.Context, sessionID, title string) error {
+	if err := store.CheckID("session id", sessionID); err != nil {
+		return err
+	}
+	if title == "" || len(title) > store.MaxSessionTitleBytes {
+		return invalid("title must be 1..%d bytes", store.MaxSessionTitleBytes)
+	}
+	n, err := o.exec(ctx, `UPDATE sessions SET title = ? WHERE session_id = ?`, title, sessionID)
+	if err == nil && n == 0 {
+		return store.ErrNotFound
+	}
+	return err
 }
 
 func (o *ops) ListSessions(ctx context.Context, f store.SessionFilter) ([]store.Session, error) {
@@ -154,13 +179,22 @@ func (o *ops) ListSessions(ctx context.Context, f store.SessionFilter) ([]store.
 	if err := store.CheckOptionalID("user id", f.UserID); err != nil {
 		return nil, err
 	}
+	if err := store.CheckOptionalID("project id", f.ProjectID); err != nil {
+		return nil, err
+	}
+	if f.Now == 0 {
+		return nil, invalid("ListSessions needs a time")
+	}
 	var where []string
-	var args []any
+	args := []any{f.Now}
 	if f.UserID != "" {
 		where, args = append(where, "user_id = ?"), append(args, f.UserID)
 	}
+	if f.ProjectID != "" {
+		where, args = append(where, "project_id = ?"), append(args, f.ProjectID)
+	}
 	if f.After != nil {
-		where, args = append(where, "(created_at, session_id) > (?, ?)"), append(args, f.After.CreatedAt, f.After.ID)
+		where, args = append(where, "(last_activity_at, session_id) < (?, ?)"), append(args, f.After.LastActivityAt, f.After.ID)
 	}
 	if len(f.States) > 5 {
 		return nil, invalid("too many session states")
@@ -177,7 +211,7 @@ func (o *ops) ListSessions(ctx context.Context, f store.SessionFilter) ([]store.
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, " AND ")
 	}
-	rows, err := o.q.QueryContext(ctx, q+` ORDER BY created_at, session_id LIMIT ?`, append(args, f.Limit)...)
+	rows, err := o.q.QueryContext(ctx, q+` ORDER BY last_activity_at DESC, session_id DESC LIMIT ?`, append(args, f.Limit)...)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -199,7 +233,7 @@ func (o *ops) StopSession(ctx context.Context, sessionID string, at int64, reaso
 	var changed bool
 	err := o.unit(ctx, func(tx *ops) error {
 		var err error
-		if s, err = tx.getSession(ctx, sessionID); err != nil {
+		if s, err = tx.getSession(ctx, sessionID, at); err != nil {
 			return err
 		}
 		if s.State != store.SessionStopped {
@@ -208,7 +242,7 @@ func (o *ops) StopSession(ctx context.Context, sessionID string, at int64, reaso
 				return err
 			}
 			changed = true
-			if s, err = tx.getSession(ctx, sessionID); err != nil {
+			if s, err = tx.getSession(ctx, sessionID, at); err != nil {
 				return err
 			}
 		}
@@ -237,7 +271,7 @@ func (o *ops) InterruptSession(ctx context.Context, sessionID string, at int64) 
 			return err
 		}
 		changed = n > 0
-		if s, err = tx.getSession(ctx, sessionID); err != nil {
+		if s, err = tx.getSession(ctx, sessionID, at); err != nil {
 			return err
 		}
 		l, err = tx.getLease(ctx, sessionID)
@@ -324,9 +358,22 @@ func (o *ops) DeleteSession(ctx context.Context, sessionID string, now int64) er
 	}
 }
 
+func (o *ops) CheckSessionDeletable(ctx context.Context, sessionID string, now int64) error {
+	if err := store.CheckID("session id", sessionID); err != nil {
+		return err
+	}
+	if now == 0 {
+		return invalid("CheckSessionDeletable needs a time")
+	}
+	return o.unit(ctx, func(tx *ops) error {
+		_, err := tx.deletable(ctx, sessionID, now)
+		return err
+	})
+}
+
 // deletable returns the session when DeleteSession's preconditions hold.
 func (o *ops) deletable(ctx context.Context, sessionID string, now int64) (store.Session, error) {
-	s, err := o.getSession(ctx, sessionID)
+	s, err := o.getSession(ctx, sessionID, now)
 	if err != nil {
 		return s, err
 	}
@@ -372,7 +419,7 @@ func (o *ops) TranscriptRepaired(ctx context.Context, f store.Fence) (store.Sess
 			return err
 		}
 		var err error
-		s, err = tx.getSession(ctx, f.SessionID)
+		s, err = tx.getSession(ctx, f.SessionID, f.Now)
 		return err
 	})
 	return s, err
@@ -401,7 +448,7 @@ func (o *ops) SettleSession(ctx context.Context, sessionID string, now int64) (s
 				return err
 			}
 		}
-		s, err := tx.getSession(ctx, sessionID)
+		s, err := tx.getSession(ctx, sessionID, now)
 		if err != nil {
 			return err
 		}
@@ -414,7 +461,7 @@ func (o *ops) SettleSession(ctx context.Context, sessionID string, now int64) (s
 				if err := tx.setState(ctx, sessionID, store.SessionQueued, now); err != nil {
 					return err
 				}
-				if s, err = tx.getSession(ctx, sessionID); err != nil {
+				if s, err = tx.getSession(ctx, sessionID, now); err != nil {
 					return err
 				}
 			}
@@ -496,8 +543,7 @@ func (o *ops) loseLease(ctx context.Context, l store.Lease, now int64) (store.Le
 		WHERE session_id = ?`, l.WorkerID, l.BootID, l.SessionID); err != nil {
 		return loss, err
 	}
-	n, err := o.exec(ctx, `UPDATE session_turns SET ended_at = ?, outcome = 'interrupted'
-		WHERE session_id = ? AND ended_at IS NULL`, now, l.SessionID)
+	n, err := o.interruptOpenTurns(ctx, l.SessionID, now)
 	if err != nil {
 		return loss, err
 	}
@@ -523,7 +569,7 @@ func (o *ops) loseLease(ctx context.Context, l store.Lease, now int64) (store.Le
 		WHERE session_id = ? AND notice = 'handed'`, l.SessionID); err != nil {
 		return loss, err
 	}
-	s, err := o.getSession(ctx, l.SessionID)
+	s, err := o.getSession(ctx, l.SessionID, now)
 	if err != nil {
 		return loss, err
 	}
@@ -542,7 +588,7 @@ func (o *ops) loseLease(ctx context.Context, l store.Lease, now int64) (store.Le
 	} else if _, err := o.exec(ctx, `UPDATE sessions SET updated_at = ? WHERE session_id = ?`, now, l.SessionID); err != nil {
 		return loss, err
 	}
-	loss.Session, err = o.getSession(ctx, l.SessionID)
+	loss.Session, err = o.getSession(ctx, l.SessionID, now)
 	return loss, err
 }
 
@@ -558,7 +604,7 @@ func (o *ops) AcquireLease(ctx context.Context, r store.LeaseRequest) (store.Lea
 	}
 	var out store.LeaseAcquired
 	err := o.unit(ctx, func(tx *ops) error {
-		s, err := tx.getSession(ctx, r.SessionID)
+		s, err := tx.getSession(ctx, r.SessionID, r.Now)
 		if err != nil {
 			return err
 		}
@@ -626,7 +672,7 @@ func (o *ops) AcquireLease(ctx context.Context, r store.LeaseRequest) (store.Lea
 		if out.Lease, err = tx.getLease(ctx, r.SessionID); err != nil {
 			return err
 		}
-		out.Session, err = tx.getSession(ctx, r.SessionID)
+		out.Session, err = tx.getSession(ctx, r.SessionID, r.Now)
 		return err
 	})
 	if err != nil {
@@ -642,7 +688,7 @@ func (o *ops) GetLease(ctx context.Context, sessionID string) (store.Lease, erro
 func (o *ops) GetRecovery(ctx context.Context, f store.Fence) (store.Recovery, error) {
 	var out store.Recovery
 	err := o.fenced(ctx, f, func(tx *ops) error {
-		s, err := tx.getSession(ctx, f.SessionID)
+		s, err := tx.getSession(ctx, f.SessionID, f.Now)
 		if err != nil {
 			return err
 		}
@@ -755,7 +801,7 @@ func (o *ops) ReleaseLease(ctx context.Context, f store.Fence) (store.LeaseLoss,
 			// A resent release: the lease is already gone.
 			loss.Released, loss.Repeated = l, true
 			var err error
-			loss.Session, err = tx.getSession(ctx, f.SessionID)
+			loss.Session, err = tx.getSession(ctx, f.SessionID, f.Now)
 			return err
 		}
 		var err error
@@ -812,7 +858,7 @@ func (o *ops) RecoverSession(ctx context.Context, sessionID string, accept bool,
 	}
 	var out store.SessionRecovered
 	err := o.unit(ctx, func(tx *ops) error {
-		s, err := tx.getSession(ctx, sessionID)
+		s, err := tx.getSession(ctx, sessionID, at)
 		if err != nil {
 			return err
 		}
@@ -849,7 +895,7 @@ func (o *ops) RecoverSession(ctx context.Context, sessionID string, accept bool,
 			return err
 		}
 		out.EventSeq = seqs[0]
-		out.Session, err = tx.getSession(ctx, sessionID)
+		out.Session, err = tx.getSession(ctx, sessionID, at)
 		if out.Loss != nil {
 			out.Loss.Session = out.Session
 		}
@@ -927,7 +973,7 @@ func (o *ops) ResumeLeases(ctx context.Context, workerID, bootID, connID string,
 				return err
 			}
 			l.ConnID, l.ExpiresAt = connID, expiresAt
-			s, err := tx.getSession(ctx, k.SessionID)
+			s, err := tx.getSession(ctx, k.SessionID, now)
 			if err != nil {
 				return err
 			}
@@ -956,7 +1002,7 @@ func (o *ops) AdmitSessionCall(ctx context.Context, f store.Fence, callID string
 		return invalid("maxActive must be positive")
 	}
 	return o.fenced(ctx, f, func(tx *ops) error {
-		s, err := tx.getSession(ctx, f.SessionID)
+		s, err := tx.getSession(ctx, f.SessionID, f.Now)
 		if err != nil {
 			return err
 		}

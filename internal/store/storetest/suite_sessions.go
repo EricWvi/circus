@@ -24,7 +24,7 @@ var errRollback = errors.New("storetest: rollback")
 
 func newSession(id string, f fixture) store.Session {
 	return store.Session{
-		ID: id, UserID: f.user.ID, ClaudeSessionID: "claude-" + id, DefaultDeviceID: f.device.ID,
+		ID: id, UserID: f.user.ID, ProjectID: "session-project", ClaudeSessionID: "claude-" + id, DefaultDeviceID: f.device.ID,
 		Model: "model", PermissionMode: "auto", CreatedAt: t0,
 	}
 }
@@ -147,7 +147,7 @@ func lastLocalSeq(t testing.TB, ops store.Ops, f store.Fence, seq int64) (last i
 
 func getSession(t testing.TB, ops store.Ops, id string) store.Session {
 	t.Helper()
-	s, err := ops.GetSession(context.Background(), id)
+	s, err := ops.GetSession(context.Background(), id, t0)
 	must(t, err)
 	return s
 }
@@ -206,7 +206,7 @@ func snapSession(t testing.TB, s store.Store, good store.Fence) sessionSnap {
 	err := s.Tx(context.Background(), func(ctx context.Context, tx store.Ops) error {
 		var err error
 		sid := good.SessionID
-		if snap.Session, err = tx.GetSession(ctx, sid); err != nil {
+		if snap.Session, err = tx.GetSession(ctx, sid, t0); err != nil {
 			return err
 		}
 		if snap.Lease, err = tx.GetLease(ctx, sid); err != nil {
@@ -433,7 +433,7 @@ func testSessionCreate(t *testing.T, b Backend) {
 	s1.PinnedWorkerID = "w2"
 	must(t, s.CreateSession(ctx, s1, []store.SessionCwd{{DeviceID: "d1", Cwd: "/home/u"}}, 2))
 	want := s1
-	want.State, want.UpdatedAt = store.SessionIdle, t0
+	want.State, want.UpdatedAt, want.LastActivityAt = store.SessionIdle, t0, t0
 	mustEqual(t, "GetSession", getSession(t, s, "s1"), want)
 	l, err := s.GetLease(ctx, "s1")
 	must(t, err)
@@ -465,10 +465,10 @@ func testSessionCreate(t *testing.T, b Backend) {
 	mustEqual(t, "initial cwds", recs.Cwds, []store.SessionCwd{{DeviceID: "d1", Cwd: "/home/u", UpdatedAt: t0}})
 
 	// Keyset pages.
-	page, err := s.ListSessions(ctx, store.SessionFilter{UserID: "u1", Limit: 1})
+	page, err := s.ListSessions(ctx, store.SessionFilter{Now: t0, UserID: "u1", Limit: 1})
 	must(t, err)
 	mustEqual(t, "first page", len(page), 1)
-	page2, err := s.ListSessions(ctx, store.SessionFilter{UserID: "u1", Limit: 5, After: &store.SessionCursor{CreatedAt: page[0].CreatedAt, ID: page[0].ID}})
+	page2, err := s.ListSessions(ctx, store.SessionFilter{Now: t0, UserID: "u1", Limit: 5, After: &store.SessionCursor{LastActivityAt: page[0].LastActivityAt, ID: page[0].ID}})
 	must(t, err)
 	mustEqual(t, "second page", len(page2), 1)
 	if page[0].ID == page2[0].ID {
@@ -705,6 +705,7 @@ func testLeaseLossRule(t *testing.T, b Backend) {
 				end = lostAt - 1
 			}
 			mustEqual(t, "interrupted turn", []any{turns[0].Outcome, turns[0].EndedAt}, []any{store.TurnInterrupted, end})
+			checkTurnBoundary(t, s, "s1", turns[0].TurnNo, end, store.TurnInterrupted)
 
 			next := store.Fence{SessionID: "s1", Epoch: 2, WorkerID: "w2", BootID: "b9", ConnID: "b9-c", Now: lostAt + 1}
 			if !takeover {

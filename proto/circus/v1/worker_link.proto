@@ -394,12 +394,18 @@ message TakeInputs {}
 // marks. ENDED for a local_seq never STARTED is INVALID. ENDED follows the SDK
 // result and makes the session IDLE (or QUEUED with work and no lease). Lease
 // loss during a turn records INTERRUPTED without automatically resuming.
+// Before sending ENDED or a successor's STARTED, flush every queued
+// PublishEvents batch of the preceding turn and wait for acknowledgment (or
+// INVALID consumption). Control-plane boundaries must follow that turn's
+// worker events in durable seq order.
 message ReportTurn {
   // Starts at 1 and increases by one per turn within the epoch.
   uint64 local_seq = 1;
   Phase phase = 2;
   TurnOrigin origin = 3;
-  // ENDED only.
+  // ENDED only. STOPPED requires an observed abort attributable to a
+  // user Interrupt or NOW input applied to this turn. Cleanup after lease
+  // loss, shutdown or StopSession is not a user stop-turn action.
   TurnOutcome outcome = 4;
   // ENDED only: opaque SDK result usage JSON, at most 4 KiB.
   string usage_json = 5;
@@ -604,7 +610,8 @@ message PublishEvents {
   // beyond the last plus one is INVALID and consumes nothing. ok consumes it;
   // so does a batch at the next sequence that fails validation (an over-cap
   // field, or a kind only the control plane records such as
-  // TRANSCRIPT_GAP_ACCEPTED): it is recorded as dropped and answered INVALID,
+  // TRANSCRIPT_GAP_ACCEPTED, TURN_INTERRUPTED or TURN_STOPPED): it is recorded
+  // as dropped and answered INVALID,
   // and the worker continues with the next sequence. A worker treats every
   // INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
   // and Fenced consume nothing. Retrying must preserve content.

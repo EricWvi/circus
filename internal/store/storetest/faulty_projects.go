@@ -22,6 +22,6 @@ func (o *faultyOps) UpdateProject(ctx context.Context, userID, projectID string,
 	err = o.write(ctx, func(x store.Ops) error { v, err = x.UpdateProject(ctx, userID, projectID, patch, owner); return err })
 	return
 }
-func (o *faultyOps) DeleteProject(ctx context.Context, userID, projectID string) error {
-	return o.write(ctx, func(x store.Ops) error { return x.DeleteProject(ctx, userID, projectID) })
+func (o *faultyOps) DeleteProject(ctx context.Context, userID, projectID string, now int64) error {
+	return o.write(ctx, func(x store.Ops) error { return x.DeleteProject(ctx, userID, projectID, now) })
 }

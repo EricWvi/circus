@@ -110,7 +110,7 @@ func testProjects(t *testing.T, b Backend) {
 	mustIs(t, err, store.ErrNotFound)
 	_, err = s.UpdateProject(ctx, f.bob.ID, "p1", store.ProjectPatch{Name: ptr("mine"), UpdatedAt: t0 + 1}, owner)
 	mustIs(t, err, store.ErrNotFound)
-	mustIs(t, s.DeleteProject(ctx, f.bob.ID, "p1"), store.ErrNotFound)
+	mustIs(t, s.DeleteProject(ctx, f.bob.ID, "p1", t0), store.ErrNotFound)
 	_, err = s.GetProject(ctx, f.alice.ID, "missing")
 	mustIs(t, err, store.ErrNotFound)
 
@@ -142,10 +142,10 @@ func testProjects(t *testing.T, b Backend) {
 	}
 
 	// Delete, then it is gone; deleting again is not found.
-	must(t, s.DeleteProject(ctx, f.alice.ID, "q0"))
+	must(t, s.DeleteProject(ctx, f.alice.ID, "q0", t0))
 	_, err = s.GetProject(ctx, f.alice.ID, "q0")
 	mustIs(t, err, store.ErrNotFound)
-	mustIs(t, s.DeleteProject(ctx, f.alice.ID, "q0"), store.ErrNotFound)
+	mustIs(t, s.DeleteProject(ctx, f.alice.ID, "q0", t0), store.ErrNotFound)
 }
 
 func testProjectLocations(t *testing.T, b Backend) {
@@ -293,7 +293,7 @@ func testProjectCascade(t *testing.T, b Backend) {
 	must(t, err)
 	// Deleting a project deletes its locations: the same id can be created
 	// again with the same locations.
-	must(t, s.DeleteProject(ctx, f.alice.ID, "p1"))
+	must(t, s.DeleteProject(ctx, f.alice.ID, "p1", t0))
 	_, err = s.CreateProject(ctx, newProject("p1", f.alice.ID, "a", loc("d1", "/a"), loc("d2", "/b")), f.user.ID)
 	must(t, err)
 	// Deleting a Web user deletes its projects, not other users' projects.
@@ -594,7 +594,7 @@ func testProjectBytes(t *testing.T, b Backend) {
 	// Bob is not affected; deleting frees Alice's budget.
 	_, err = s.CreateProject(ctx, newProject("bob", f.bob.ID, strings.Repeat("b", 64), loc("d1", path(0, 0))), owner)
 	must(t, err)
-	must(t, s.DeleteProject(ctx, f.alice.ID, "p1"))
+	must(t, s.DeleteProject(ctx, f.alice.ID, "p1", t0))
 	_, err = s.CreateProject(ctx, newProject("two", f.alice.ID, "2"), owner)
 	must(t, err)
 }

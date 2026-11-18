@@ -223,11 +223,11 @@ func (s *Service) UpdateProject(ctx context.Context, req *connect.Request[circus
 	return connect.NewResponse(&circusv1.UpdateProjectResponse{Project: protoProject(p)}), nil
 }
 
-// DeleteProject deletes the project. Deleting a project that still has
-// sessions that are not stopped will be refused (FAILED_PRECONDITION) once
-// sessions belong to projects; sessions do not reference projects yet, so
-// there is nothing to check. The store deletes in one transaction, which
-// that check will join.
+// DeleteProject preflights every session in one snapshot, deleting nothing if
+// any fails DeleteSession's preconditions. It then deletes sessions individually
+// through the chunked store method, followed by the empty project. These are
+// separate transactions: a failure or a newly created session can leave a
+// partially completed cascade. FAILED_PRECONDITION permits the client to retry.
 func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circusv1.DeleteProjectRequest]) (*connect.Response[circusv1.DeleteProjectResponse], error) {
 	u, err := user(ctx)
 	if err != nil {
@@ -236,11 +236,60 @@ func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circus
 	if err := projectID(req.Msg.GetProjectId()); err != nil {
 		return nil, err
 	}
-	if err := s.st.DeleteProject(ctx, u.ID, req.Msg.GetProjectId()); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errProjectNotFound)
+	projectID := req.Msg.GetProjectId()
+	now := s.now().UnixMilli()
+	var ids []string
+	err = s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		if _, err := tx.GetProject(ctx, u.ID, projectID); err != nil {
+			return err
 		}
-		return nil, s.internal(ctx, "delete project", err)
+		filter := store.SessionFilter{ProjectID: projectID, Now: now, Limit: store.MaxPageSize}
+		for {
+			sessions, err := tx.ListSessions(ctx, filter)
+			if err != nil {
+				return err
+			}
+			for _, sess := range sessions {
+				if err := tx.CheckSessionDeletable(ctx, sess.ID, now); err != nil {
+					return err
+				}
+				ids = append(ids, sess.ID)
+			}
+			if len(sessions) < filter.Limit {
+				return nil
+			}
+			last := sessions[len(sessions)-1]
+			filter.After = &store.SessionCursor{LastActivityAt: last.LastActivityAt, ID: last.ID}
+		}
+	})
+	if err == nil {
+		for _, id := range ids {
+			err = s.st.DeleteSession(ctx, id, s.now().UnixMilli())
+			// Another concurrent cascade may already have removed this session.
+			if errors.Is(err, store.ErrNotFound) {
+				err = nil
+			}
+			if err != nil {
+				break
+			}
+		}
+		if err == nil {
+			err = s.st.DeleteProject(ctx, u.ID, projectID, s.now().UnixMilli())
+		}
+	}
+	if err != nil {
+		switch {
+		case ctx.Err() != nil:
+			return nil, s.internal(ctx, "delete project", err)
+		case errors.Is(err, store.ErrSessionActive):
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the project has sessions that are not stopped or still busy"))
+		case errors.Is(err, store.ErrHasSessions):
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("a session was created while deleting; try again"))
+		case errors.Is(err, store.ErrNotFound):
+			return nil, connect.NewError(connect.CodeNotFound, errProjectNotFound)
+		default:
+			return nil, s.internal(ctx, "delete project", err)
+		}
 	}
 	return connect.NewResponse(&circusv1.DeleteProjectResponse{}), nil
 }

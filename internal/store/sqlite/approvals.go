@@ -75,7 +75,7 @@ func (o *ops) RequestApproval(ctx context.Context, f store.Fence, a store.Approv
 	}
 	var out store.ApprovalRequested
 	err := o.fenced(ctx, f, func(tx *ops) error {
-		s, err := tx.getSession(ctx, f.SessionID)
+		s, err := tx.getSession(ctx, f.SessionID, f.Now)
 		if err != nil {
 			return err
 		}
@@ -152,7 +152,7 @@ func (o *ops) ResolveApproval(ctx context.Context, r store.ApprovalResolution) (
 			}
 		}
 		if a.State == store.ApprovalPending {
-			s, err := tx.getSession(ctx, a.SessionID)
+			s, err := tx.getSession(ctx, a.SessionID, r.At)
 			if err != nil {
 				return err
 			}
@@ -200,7 +200,7 @@ func (o *ops) ResolveApproval(ctx context.Context, r store.ApprovalResolution) (
 			}
 		}
 		out.Approval = a
-		if out.Session, err = tx.getSession(ctx, a.SessionID); err != nil {
+		if out.Session, err = tx.getSession(ctx, a.SessionID, r.At); err != nil {
 			return err
 		}
 		out.Lease, err = tx.getLease(ctx, a.SessionID)
@@ -288,7 +288,7 @@ func (o *ops) ConsumeGrant(ctx context.Context, f store.Fence, k store.GrantKey,
 	}
 	var ok bool
 	err := o.fenced(ctx, f, func(tx *ops) error {
-		s, err := tx.getSession(ctx, f.SessionID)
+		s, err := tx.getSession(ctx, f.SessionID, f.Now)
 		if err != nil {
 			return err
 		}

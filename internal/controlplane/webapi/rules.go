@@ -43,31 +43,6 @@ func isJSSpace(r rune) bool {
 // jsTrim trims like String.prototype.trim.
 func jsTrim(s string) string { return strings.TrimFunc(s, isJSSpace) }
 
-// isForbiddenRune reports the characters no name, path or repository URL
-// may hold (after trimming), because they are invisible or make text
-// display differently from what it is:
-//   - C0 controls, DEL and C1 controls: U+0000–U+001F, U+007F–U+009F;
-//   - zero-width characters: U+200B–U+200D, U+FEFF;
-//   - bidirectional marks: U+200E, U+200F (LRM, RLM), U+061C (ALM);
-//   - bidirectional embeddings, overrides and isolates: U+202A–U+202E,
-//     U+2066–U+2069;
-//   - line and paragraph separators: U+2028, U+2029.
-func isForbiddenRune(r rune) bool {
-	switch {
-	case r < 0x20, r >= 0x7f && r <= 0x9f:
-		return true
-	case r >= 0x200b && r <= 0x200d, r == 0xfeff:
-		return true
-	case r == 0x200e, r == 0x200f, r == 0x061c:
-		return true
-	case r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069:
-		return true
-	case r == 0x2028, r == 0x2029:
-		return true
-	}
-	return false
-}
-
 // checkName trims a project name and returns it, or a short reason it is
 // refused.
 func checkName(raw string) (string, string) {
@@ -77,7 +52,7 @@ func checkName(raw string) (string, string) {
 		return "", "enter a project name"
 	case utf8.RuneCountInString(name) > store.MaxProjectNameRunes:
 		return "", "project name is longer than 64 characters"
-	case strings.ContainsFunc(name, isForbiddenRune):
+	case strings.ContainsFunc(name, store.IsForbiddenDisplayRune):
 		return "", "project name has control or invisible characters"
 	}
 	return name, ""
@@ -141,14 +116,14 @@ func isAbsolutePath(path, os string) bool {
 // checkPath normalizes a location's path for os and returns it, or a short
 // reason it is refused. An empty or blank path stays empty: the device's
 // default directory. A path that normalizes to nothing (`\\` on Windows) is
-// refused, and so are forbidden characters (isForbiddenRune), the Windows
+// refused, and so are forbidden characters (store.IsForbiddenDisplayRune), the Windows
 // \\?\ and \\.\ prefixes, and paths over store.MaxPathBytes.
 func checkPath(raw, os string) (string, string) {
 	trimmed := jsTrim(raw)
 	if trimmed == "" {
 		return "", ""
 	}
-	if strings.ContainsFunc(trimmed, isForbiddenRune) {
+	if strings.ContainsFunc(trimmed, store.IsForbiddenDisplayRune) {
 		return "", "path has control or invisible characters"
 	}
 	path := normalizePath(trimmed, os)
@@ -189,7 +164,7 @@ func checkRepoURL(raw string) (string, string) {
 		return "", ""
 	case len(u) > store.MaxRepoURLBytes:
 		return "", "repository URL is longer than 2048 bytes"
-	case strings.ContainsFunc(u, func(r rune) bool { return unicode.IsSpace(r) || isForbiddenRune(r) }):
+	case strings.ContainsFunc(u, func(r rune) bool { return unicode.IsSpace(r) || store.IsForbiddenDisplayRune(r) }):
 		return "", "repository URL has whitespace, control or invisible characters"
 	case strings.HasPrefix(u, "-"):
 		return "", "repository URL starts with -"

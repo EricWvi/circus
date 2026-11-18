@@ -823,7 +823,8 @@ PublishEvents `batch_seq` starts at 1 per epoch: a repeat is
 `ok.deduplicated` without writing, a gap is `INVALID` and consumes nothing,
 and a retry carries identical content. Unlike appends, a batch at the next
 sequence that fails validation (an over-cap field, or a kind only the
-control plane records, such as `TRANSCRIPT_GAP_ACCEPTED`) consumes its
+control plane records: `TRANSCRIPT_GAP_ACCEPTED`, `TURN_INTERRUPTED` or
+`TURN_STOPPED`) consumes its
 `batch_seq`: the control plane records it as dropped and answers `INVALID`,
 and the worker continues with the next sequence, so one bad event cannot
 freeze the view. A worker treats every PublishEvents `INVALID` as consumed:
@@ -845,11 +846,63 @@ predecessor never ENDED closes that turn as INTERRUPTED, and a late ENDED
 for it still applies its persisted marks and `transcript_incomplete`
 without changing its outcome. ENDED for a local_seq never STARTED is
 `INVALID`. ENDED follows the SDK result, including an interrupted empty
-result, and carries outcome COMPLETED, INTERRUPTED or ERROR, opaque
+result, and carries outcome COMPLETED, INTERRUPTED, ERROR or STOPPED, opaque
 usage_json, optional `persisted` and `transcript_incomplete`. Origin
 describes what started the turn: input pushed while idle, a notification
 pushed while idle, or the CLI itself (for example subagent completion).
 Report turns of all origins.
+
+Before sending a turn's ReportTurn ENDED, and before sending its successor's
+STARTED, the worker MUST flush every queued PublishEvents batch belonging
+to the preceding turn and wait for each batch to be acknowledged (or consumed
+as INVALID under the event retry rules). This includes its final SDK RESULT
+and assistant events. The control plane assigns boundary event sequences
+when the turn closes, so flushing first ensures TURN_STOPPED or
+TURN_INTERRUPTED follows that turn's worker events in durable seq order.
+
+STOPPED requires the worker to observe an abort attributable to a user
+Interrupt or NOW input applied to that turn. Track attribution by epoch
+and local sequence / assigned turn number, not by a session-wide flag.
+For Interrupt, wait for STARTED's assigned turn number before comparing
+the interrupt level; duplicate or stale hints must not affect a later
+turn. For NOW, attribute the abort to the turn active at actual delivery,
+deduplicate pushes by input_id, and do not tag the replacement turn.
+An idle interrupt changes nothing, and an idle NOW input starts normal work.
+Natural completion or error is not STOPPED merely because a stop request
+was pending. Ambiguous termination is reported ERROR. STOPPED does not
+stop the session or establish which partial assistant text was saved.
+
+INTERRUPTED means an unfinished turn was closed without a confirmed
+user-stop report, including lease loss or a successor starting before
+ENDED arrived; it is not proof of worker death or transcript loss. The
+first committed closure wins. If STOPPED ENDED commits first, later lease
+loss preserves it. If loss or forced closure commits first, late or fenced
+ENDED cannot relabel it even when an interrupt request preceded the loss.
+Reported mirror failure still makes the session BROKEN, including with a
+confirmed STOPPED outcome; an already STOPPED session keeps that state.
+
+The store records exactly one durable `TURN_STOPPED` (kind 17) or
+`TURN_INTERRUPTED` (kind 9) boundary per turn first closed with that
+outcome, in the same transaction as the outcome; fan-out follows commit.
+Their payloads are respectively
+`{"turn_no":"<decimal uint64>","outcome":"stopped"}` and
+`{"turn_no":"<decimal uint64>","outcome":"interrupted"}`.
+The decimal string preserves JavaScript uint64 precision. Workers publish
+SDK results and assistant messages, but cannot publish either boundary.
+Both kinds survive view truncation without their payloads; replay then
+identifies the category without asserting a turn correlation.
+
+Every lease-loss entry point closes an open turn as INTERRUPTED:
+ReleaseLease (including shutdown or permanent stop cleanup),
+ReleaseWorkerLeases on a new boot, ExpireLeases, SettleSession of an expired
+lease, AcquireLease takeover or fresh replacement (including a fresh
+holder's release from STOPPED/BROKEN), and RecoverSession revocation.
+A successor STARTED without ENDED uses the same closure rule. StopSession
+and transcript quota stop retain the lease and do not themselves close a
+turn; accepted final ENDED retains its actual outcome, otherwise release
+closes it as INTERRUPTED. Shutdown or control-plane restart alone is not a
+user stop-turn action; restart grace and successful resume preserve an open
+turn. Permanent session stop must not synthesize TURN_STOPPED.
 
 #### Persistence marks
 
@@ -1039,13 +1092,84 @@ event batches.
 
 #### User-side API
 
-The user-side Connect API creates sessions with SessionConfig and an
-optional pinned worker; SendMessage deduplicates by (session_id,
+The user-side Connect API authenticates a browser session cookie, with the
+same Origin rule as ProjectService. A Bearer credential for the CLI comes
+later. CreateSession requires a project of the caller and optionally a
+location_index (otherwise the project's last_used_location) and pinned
+worker. The selected location's device must not be revoked.
+config.default_device and config.cwds must be empty; the control plane fills
+them from the project location. model and permission_mode may be supplied.
+These service handlers remain to be implemented.
+
+Session.project_id is required in the store and references projects. The
+session's user_id remains the machine owner whose devices and workers serve
+it, while the project's user_id is the Web user. For the Web super user,
+the machine owner is the legacy owner returned by deviceOwner. The store
+does not cross-check these owners; the service authorizes through the
+project.
+
+SendMessage deduplicates by (session_id,
 client_msg_id), retaining identical content, and returns input_id/event_seq.
 A stopped session refuses SendMessage; a broken one accepts but does not
-deliver until repaired. ListSessions is paged (default 100, maximum 1000)
-and leaves `config` unset; GetSession returns it. A user has at most 1000
-sessions. WatchSession replays durable events strictly after after_seq, then
+deliver until repaired. ListSessions is paged (default 100, maximum 1000),
+optionally filtered by project_id, and ordered by last_activity_at descending,
+then session_id descending, with an exclusive keyset cursor. It leaves
+`config` unset; GetSession returns it. A machine owner has at most 1000
+sessions. Both reads return project_id, title, last_activity_at_unix_ms and
+pending_approval_count. Last activity starts at creation and never moves
+backwards: every stored durable event and every newly accepted user-kind
+input sets it to max(current, its timestamp). This includes control-plane
+boundaries and retained events with dropped payloads; ephemeral or dropped
+events, approval inputs and duplicate input submissions do not move it.
+A ListSessions traversal is not a snapshot. Sessions remaining in the filter
+with unchanged activity are returned exactly once, and an already-returned
+session never repeats. A not-yet-returned session that becomes active and
+moves above the cursor is skipped in this traversal and appears on refresh.
+Deletions disappear; new sessions above the cursor also appear on refresh.
+Store expiry reads take an explicit Unix-millisecond now
+(GetSession's argument, SessionFilter.Now); pending approvals count only
+when their state is pending and expires_at > now, even before an expiry
+sweep runs, at most 32.
+
+A new user-kind SubmitInput sets an empty title atomically from the first
+nonempty text line: collapse whitespace, trim, and cut at 60 Unicode code
+points, preferring the last whitespace in the second half of the cut,
+including whitespace immediately after the first 60 characters. Whitespace
+is normalized before removing the control, zero-width and bidirectional
+characters forbidden in project names; whitespace exposed by removal is
+collapsed again. The 60-character limit excludes the appended `…`, so a
+hard-cut title can contain 61 Unicode code points including the ellipsis.
+Empty text derives no title; approval inputs and
+duplicate submissions do not set it. SubmitInput currently records no view
+event of its own. UpdateSession sets a trimmed title of 1–200 characters
+and at most 1024 bytes; the store's SetSessionTitle enforces nonempty and
+the byte cap, with character validation left to the service. Explicit title
+updates do not move activity and prevent subsequent automatic naming.
+
+The DeleteProject RPC first checks every session's DeleteSession
+preconditions in one snapshot. If any is not deletable it returns
+FAILED_PRECONDITION and deletes nothing. It then deletes the checked
+sessions one at a time through chunked DeleteSession, followed by the empty
+project. The store's DeleteProject always refuses with ErrHasSessions while
+any session remains, including a deletable one. A session created during the
+cascade therefore makes the final step return FAILED_PRECONDITION; the
+client can retry. A failed or interrupted cascade may have removed some
+sessions already; retry finishes the remaining work. This avoids holding
+the database writer for all transcripts in one transaction. Like
+DeleteSession, running device job rows survive until they end.
+
+DeleteUser cascades its empty projects but refuses with ErrHasSessions if
+any owned project has sessions, deleting nothing; remove those sessions
+through the chunked deletion flow first. The machine owner may differ from
+the project's Web user, so this precondition is checked through projects.
+
+The development migration to project-backed sessions
+deletes all old session data, their calls and device jobs and resets user
+transcript totals, because old sessions cannot be assigned a project;
+users, devices, workers and projects survive. The outcome checks accept
+stopped alongside the historical completed, interrupted and error values.
+
+WatchSession replays durable events strictly after after_seq, then
 streams live events. SessionEvent carries seq, ts_unix_ms, shared kind,
 opaque payload_json, ephemeral and truncated. TURN_STARTED payload includes
 origin. Ephemeral events have seq=0 and are not stored or replayed. Durable
@@ -1155,6 +1279,7 @@ consumer-stall pauses). Its own memory bound is one partial message
 - [ ] Keeps at most 48 call operations (Submit, Query, Cancel) open per connection, so session operations always find a slot.
 - [ ] Uses epoch 0 only for AcquireLease, sets `fresh` whenever it holds no local state, and retries a lost AcquireLease reply with AcquireLease; after a reconnect sends Attach, then ResumeLeases, then resent operations; fences every other session read/write and SubmitCall; sends session operations only on its newest connection; carries opaque tool_use_id; treats SESSION_FENCED and SESSION_STOPPED as terminal and unrecorded.
 - [ ] Reuses an unacknowledged append or event `batch_seq` with identical content until it is acknowledged (an event batch answered INVALID is consumed; an append answered INVALID or LIMIT is reported to the SDK as failed), splitting oversized SDK appends into consecutive batches; preserves ReportTurn local_seq/phase across retries; reuses taken input ids as SDK uuids; marks persisted items only after the SDK result, splitting them across PatchSessionState.persisted when needed; records owed call notices.
+- [ ] Flushes every queued PublishEvents batch for a turn and waits for acknowledgment (or INVALID consumption) before sending its ENDED or a successor's STARTED, so control-plane turn boundaries follow the turn's worker events in seq order.
 - [ ] Reports mirror_error as ENDED with `transcript_incomplete`, repairs, then sends TranscriptRepaired.
 - [ ] Reconnects with the same boot and ResumeLeases within TTL; closes SDK and confirms CLI exit on lease loss/release; Unwatches calls without Cancel and never cancels calls of a query closed for fencing, stop or release; injects Recovery before the next input without automatically resuming.
 - [ ] Respects section 5 caps, the section 7 field caps, 8 MiB transcript batches/pages (single-entry exception), the 64 KiB limit for every other session op, 128-event batches, input limits and one-use grants.

@@ -62,7 +62,10 @@ type WebAuthOps interface {
 	// HasUserIdentityAtIssuer reports whether a user has any subject at this
 	// issuer. Check and bind in one Tx to prevent concurrent email rebinding.
 	HasUserIdentityAtIssuer(context.Context, string, string) (bool, error)
-	// DeleteUser deletes a user and cascades web sessions/identities. Existing
+	// DeleteUser deletes a user and cascades web sessions/identities and empty
+	// projects. Any session under its projects prevents deletion with
+	// ErrHasSessions, deleting nothing; callers must remove those sessions
+	// through the chunked deletion flow first. Existing
 	// machine resources still prevent deletion (ErrNotFound for referenced rows).
 	// Missing users are ignored.
 	DeleteUser(context.Context, string) error

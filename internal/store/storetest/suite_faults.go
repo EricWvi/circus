@@ -196,6 +196,10 @@ func crashScript(f fixture) []crashStep {
 			_, err := s.RevokeCredentials(ctx, store.KindDevice, "d1", t0+4)
 			return err
 		}},
+		{"project", 1, func(ctx context.Context, s store.Store) error {
+			_, err := s.CreateProject(ctx, newProject("session-project", "u1", "Sessions"), "")
+			return err
+		}},
 		{"session", 1, func(ctx context.Context, s store.Store) error {
 			return s.CreateSession(ctx, newSession("s1", f), []store.SessionCwd{{DeviceID: "d1", Cwd: "/w"}}, 10)
 		}},
@@ -231,8 +235,13 @@ func crashScript(f fixture) []crashStep {
 		{"await", 1, func(ctx context.Context, s store.Store) error {
 			return s.PatchSessionRecords(ctx, crashFence, store.RecordsPatch{ReturnedCallIDs: []string{"c2"}, AwaitingCallIDs: []string{"c2"}})
 		}},
+		{"title", 1, func(ctx context.Context, s store.Store) error { return s.SetSessionTitle(ctx, "s1", "Title") }},
+		{"successor", 1, func(ctx context.Context, s store.Store) error {
+			_, err := s.ReportTurn(ctx, crashFence, store.TurnReport{LocalSeq: 2, Phase: store.TurnStarted, Origin: store.TurnFromInput, At: t0 + 12})
+			return err
+		}},
 		{"end", 1, func(ctx context.Context, s store.Store) error {
-			_, err := s.ReportTurn(ctx, crashFence, store.TurnReport{LocalSeq: 1, Phase: store.TurnEnded, Outcome: store.TurnCompleted, At: t0 + 12,
+			_, err := s.ReportTurn(ctx, crashFence, store.TurnReport{LocalSeq: 2, Phase: store.TurnEnded, Outcome: store.TurnStopped, At: t0 + 13,
 				Persisted: store.TurnPersisted{InputIDs: []string{"s1-in1"}, CallIDs: []string{"c2"}}})
 			return err
 		}},
@@ -255,6 +264,8 @@ type snapshot struct {
 	Calls            []store.Call
 	Jobs             []store.Job
 	Timers           []store.Timer
+	Projects         []store.Project
+	Events           []store.SessionEvent
 	Sessions         []store.Session
 	Leases           []store.Lease
 	Turns            []store.Turn
@@ -289,10 +300,13 @@ func takeSnapshot(t testing.TB, s store.Ops) snapshot {
 	for i := range snap.Timers {
 		snap.Timers[i].Token = "" // random per claim
 	}
-	snap.Sessions, err = s.ListSessions(ctx, store.SessionFilter{Limit: store.MaxPageSize})
+	snap.Projects, err = s.ListProjects(ctx, "u1")
+	must(t, err)
+	snap.Sessions, err = s.ListSessions(ctx, store.SessionFilter{Now: t0, Limit: store.MaxPageSize})
 	must(t, err)
 	if l, err := s.GetLease(ctx, "s1"); err == nil {
 		snap.Leases = append(snap.Leases, l)
+		snap.Events = sessionEvents(t, s, "s1")
 		if l.WorkerID != "" {
 			page, err := s.LoadTranscript(ctx, crashFence, store.TranscriptPageRequest{Limit: 100, MaxBytes: 1 << 20})
 			must(t, err)

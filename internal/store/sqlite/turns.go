@@ -70,7 +70,7 @@ func (o *ops) SubmitInput(ctx context.Context, in store.Input) (store.InputSubmi
 // submitInput is SubmitInput inside a unit; in is already checked.
 func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmitted, error) {
 	var out store.InputSubmitted
-	s, err := o.getSession(ctx, in.SessionID)
+	s, err := o.getSession(ctx, in.SessionID, in.CreatedAt)
 	if err != nil {
 		return out, err
 	}
@@ -103,6 +103,18 @@ func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmi
 			return out, err
 		}
 		out.Created = true
+		if in.Kind == store.InputUser {
+			if _, err := o.exec(ctx, `UPDATE sessions SET last_activity_at = max(last_activity_at, ?) WHERE session_id = ?`, in.CreatedAt, in.SessionID); err != nil {
+				return out, err
+			}
+		}
+		if in.Kind == store.InputUser && s.Title == "" {
+			if title := store.DeriveSessionTitle(in.Text); title != "" {
+				if _, err := o.exec(ctx, `UPDATE sessions SET title = ? WHERE session_id = ? AND title = ''`, title, in.SessionID); err != nil {
+					return out, err
+				}
+			}
+		}
 		if out.Input, err = scanInput(o.q.QueryRow(ctx, `SELECT `+inputCols+` FROM session_inputs WHERE input_id = ?`, in.InputID)); err != nil {
 			return out, err
 		}
@@ -115,14 +127,14 @@ func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmi
 			return out, err
 		}
 	}
-	out.Session, err = o.getSession(ctx, in.SessionID)
+	out.Session, err = o.getSession(ctx, in.SessionID, in.CreatedAt)
 	return out, err
 }
 
 func (o *ops) TakeInputs(ctx context.Context, f store.Fence) ([]store.Input, error) {
 	var out []store.Input
 	err := o.fenced(ctx, f, func(tx *ops) error {
-		s, err := tx.getSession(ctx, f.SessionID)
+		s, err := tx.getSession(ctx, f.SessionID, f.Now)
 		if err != nil {
 			return err
 		}
@@ -204,7 +216,7 @@ func (o *ops) ReportTurn(ctx context.Context, f store.Fence, r store.TurnReport)
 	}
 	var out store.TurnReported
 	err := o.fenced(ctx, f, func(tx *ops) error {
-		s, err := tx.getSession(ctx, f.SessionID)
+		s, err := tx.getSession(ctx, f.SessionID, f.Now)
 		if err != nil {
 			return err
 		}
@@ -238,7 +250,7 @@ func (o *ops) ReportTurn(ctx context.Context, f store.Fence, r store.TurnReport)
 			}
 		default:
 			// The first ENDED: of an open turn, or late for a turn its
-			// successor closed as interrupted, whose outcome and usage stay.
+			// successor closed as interrupted, whose outcome and end time stay.
 			if t.EndedAt == 0 {
 				if err := tx.endTurn(ctx, f, r); err != nil {
 					return err
@@ -270,7 +282,7 @@ func (o *ops) ReportTurn(ctx context.Context, f store.Fence, r store.TurnReport)
 			WHERE session_id = ? AND epoch = ? AND local_seq = ?`, f.SessionID, f.Epoch, r.LocalSeq)); err != nil {
 			return err
 		}
-		out.Session, err = tx.getSession(ctx, f.SessionID)
+		out.Session, err = tx.getSession(ctx, f.SessionID, f.Now)
 		return err
 	})
 	if err != nil {
@@ -290,8 +302,7 @@ func (o *ops) startTurn(ctx context.Context, f store.Fence, r store.TurnReport, 
 	if r.LocalSeq != last+1 {
 		return invalid("STARTED with local_seq %d, the next is %d", r.LocalSeq, last+1)
 	}
-	closed, err := o.exec(ctx, `UPDATE session_turns SET ended_at = ?, outcome = 'interrupted'
-		WHERE session_id = ? AND ended_at IS NULL`, r.At, f.SessionID)
+	closed, err := o.interruptOpenTurns(ctx, f.SessionID, r.At)
 	if err != nil {
 		return err
 	}
@@ -322,6 +333,16 @@ func (o *ops) endTurn(ctx context.Context, f store.Fence, r store.TurnReport) er
 		f.SessionID, f.Epoch, r.LocalSeq); err != nil {
 		return err
 	}
+	if r.Outcome == store.TurnStopped || r.Outcome == store.TurnInterrupted {
+		var turnNo int64
+		if err := o.q.QueryRow(ctx, `SELECT turn_no FROM session_turns WHERE session_id = ? AND epoch = ? AND local_seq = ?`,
+			f.SessionID, f.Epoch, r.LocalSeq).Scan(&turnNo); err != nil {
+			return mapErr(err)
+		}
+		if err := o.turnBoundary(ctx, f.SessionID, turnNo, r.At, r.Outcome); err != nil {
+			return err
+		}
+	}
 	_, err := o.exec(ctx, `UPDATE sessions SET last_turn_outcome = ?, updated_at = ?,
 		input_tokens = input_tokens + ?, output_tokens = output_tokens + ?, cache_read_tokens = cache_read_tokens + ?,
 		cache_create_tokens = cache_create_tokens + ?, cost_micro_usd = cost_micro_usd + ?, duration_ms = duration_ms + ?,
@@ -330,6 +351,30 @@ func (o *ops) endTurn(ctx context.Context, f store.Fence, r store.TurnReport) er
 		WHERE session_id = ?9`, string(r.Outcome), r.At, u.InputTokens, u.OutputTokens, u.CacheReadInputTokens,
 		u.CacheCreationInputTokens, u.CostMicroUSD, u.DurationMs, f.SessionID)
 	return err
+}
+
+// interruptOpenTurns closes every open turn and records its boundary before
+// returning. The caller owns the transaction and updates the session snapshot.
+func (o *ops) interruptOpenTurns(ctx context.Context, sessionID string, at int64) (int, error) {
+	rows, err := o.q.QueryContext(ctx, `UPDATE session_turns SET ended_at = ?, outcome = 'interrupted'
+		WHERE session_id = ? AND ended_at IS NULL RETURNING turn_no`, at, sessionID)
+	if err != nil {
+		return 0, mapErr(err)
+	}
+	turns, err := collect(rows, func(s scanner) (int64, error) {
+		var no int64
+		err := s.Scan(&no)
+		return no, mapErr(err)
+	})
+	if err != nil {
+		return 0, err
+	}
+	for _, no := range turns {
+		if err := o.turnBoundary(ctx, sessionID, no, at, store.TurnInterrupted); err != nil {
+			return 0, err
+		}
+	}
+	return len(turns), nil
 }
 
 // addLateUsage records the usage of a late ENDED, for a turn its

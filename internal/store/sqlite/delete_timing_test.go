@@ -32,7 +32,9 @@ func TestDeleteFullSessionTiming(t *testing.T) {
 	must(d.CreateUser(ctx, store.User{ID: "u1", Name: "u", CreatedAt: now}))
 	must(d.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "d1", UserID: "u1", Name: "d", MachineID: "m", CreatedAt: now}))
 	must(d.CreateIdentity(ctx, store.Identity{Kind: store.KindWorker, ID: "w1", UserID: "u1", Name: "w", MachineID: "m", CreatedAt: now}))
-	must(d.CreateSession(ctx, store.Session{ID: "s1", UserID: "u1", ClaudeSessionID: "c1", DefaultDeviceID: "d1", CreatedAt: now}, nil, 10))
+	_, errProject := d.CreateProject(ctx, store.Project{ID: "p1", UserID: "u1", Name: "Project", CreatedAt: now, UpdatedAt: now}, "")
+	must(errProject)
+	must(d.CreateSession(ctx, store.Session{ID: "s1", UserID: "u1", ProjectID: "p1", ClaudeSessionID: "c1", DefaultDeviceID: "d1", CreatedAt: now}, nil, 10))
 	r, err := d.AcquireLease(ctx, store.LeaseRequest{SessionID: "s1", WorkerID: "w1", BootID: "b1", ConnID: "c1", Now: now, ExpiresAt: now + 3_600_000})
 	must(err)
 	f := store.Fence{SessionID: "s1", Epoch: r.Lease.Epoch, WorkerID: "w1", BootID: "b1", ConnID: "c1", Now: now}

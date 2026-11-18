@@ -35,6 +35,10 @@ var ErrLocationIndex = errors.New("store: location index out of range")
 // read it. Nothing was written.
 var ErrProjectStale = errors.New("store: project changed since it was read")
 
+// ErrHasSessions reports a project, or a user owning projects, with any
+// session. Nothing was written; the service maps it to FAILED_PRECONDITION.
+var ErrHasSessions = errors.New("store: project has active sessions")
+
 // ErrProjectBytes reports a project write that would take the user's
 // projects past MaxProjectBytesPerUser. It matches ErrLimit. Nothing was
 // written.
@@ -146,10 +150,14 @@ type ProjectOps interface {
 	// ErrProjectBytes. A patch that sets nothing returns the project
 	// unchanged.
 	UpdateProject(ctx context.Context, userID, projectID string, patch ProjectPatch, deviceOwnerID string) (Project, error)
-	// DeleteProject deletes the user's project and its locations, or
-	// returns ErrNotFound. It is one transaction, so a precondition read
-	// (such as the project's sessions all being stopped) can join it.
-	DeleteProject(ctx context.Context, userID, projectID string) error
+	// DeleteProject deletes the user's empty project and locations in one
+	// transaction. Any session, even deletable, is ErrHasSessions and nothing
+	// is deleted. The service preflights all sessions, deletes them one by one
+	// with chunked DeleteSession, then calls this method; a session created
+	// meanwhile makes this final step refuse, so the client can retry.
+	// ErrNotFound if absent or owned by another Web user. now is required
+	// Unix milliseconds, retained for the caller's deletion timestamp.
+	DeleteProject(ctx context.Context, userID, projectID string, now int64) error
 }
 
 // ProjectNameKey is the form project names are compared in for uniqueness:

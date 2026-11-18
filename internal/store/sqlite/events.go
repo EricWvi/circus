@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/EricWvi/circus/internal/store"
 )
@@ -16,7 +17,8 @@ func checkEvents(events []store.EventInput, worker bool) error {
 		if err := store.CheckText("event kind", e.Kind, store.MaxCodeBytes, false); err != nil {
 			return err
 		}
-		if worker && e.Kind == store.EventKindTranscriptGapAccepted {
+		if worker && (e.Kind == store.EventKindTranscriptGapAccepted ||
+			e.Kind == store.EventKindTurnInterrupted || e.Kind == store.EventKindTurnStopped) {
 			return invalid("event kind %s is recorded by the control plane only", e.Kind)
 		}
 		if err := store.CheckOptionalID("event format", e.Format); err != nil {
@@ -27,6 +29,19 @@ func checkEvents(events []store.EventInput, worker bool) error {
 		}
 	}
 	return nil
+}
+
+// turnBoundary runs only at the first closure, inside its transaction.
+func (o *ops) turnBoundary(ctx context.Context, sessionID string, turnNo, at int64, outcome store.TurnOutcome) error {
+	kind := store.EventKindTurnInterrupted
+	if outcome == store.TurnStopped {
+		kind = store.EventKindTurnStopped
+	}
+	_, err := o.storeEvents(ctx, sessionID, []store.EventInput{{
+		Kind: kind, At: at, Boundary: true,
+		Payload: fmt.Appendf(nil, `{"turn_no":"%d","outcome":"%s"}`, turnNo, outcome),
+	}}, store.DefaultMaxViewBytes)
+	return err
 }
 
 func (o *ops) AppendEvents(ctx context.Context, sessionID string, pub *store.EventPublish, events []store.EventInput, maxViewBytes int64) (store.EventsAppended, error) {
@@ -100,10 +115,10 @@ func (o *ops) AppendEvents(ctx context.Context, sessionID string, pub *store.Eve
 // the view and count caps, and returns each event's seq (0 if dropped).
 func (o *ops) storeEvents(ctx context.Context, sessionID string, events []store.EventInput, maxViewBytes int64) ([]int64, error) {
 	seqs := make([]int64, len(events))
-	var viewBytes, lastSeq, count int64
+	var viewBytes, lastSeq, count, lastActivity int64
 	var truncated bool
-	if err := o.q.QueryRow(ctx, `SELECT view_bytes, view_truncated, last_event_seq, event_count FROM sessions
-		WHERE session_id = ?`, sessionID).Scan(&viewBytes, &truncated, &lastSeq, &count); err != nil {
+	if err := o.q.QueryRow(ctx, `SELECT view_bytes, view_truncated, last_event_seq, event_count, last_activity_at FROM sessions
+		WHERE session_id = ?`, sessionID).Scan(&viewBytes, &truncated, &lastSeq, &count, &lastActivity); err != nil {
 		return nil, mapErr(err)
 	}
 	for i, e := range events {
@@ -115,7 +130,7 @@ func (o *ops) storeEvents(ctx context.Context, sessionID string, events []store.
 			truncated = true
 		}
 		if truncated {
-			if !e.Boundary {
+			if !e.Boundary && e.Kind != store.EventKindTurnInterrupted && e.Kind != store.EventKindTurnStopped {
 				continue // dropped: no seq
 			}
 			payload, cut = nil, true
@@ -129,6 +144,7 @@ func (o *ops) storeEvents(ctx context.Context, sessionID string, events []store.
 		viewBytes += int64(len(payload))
 		count++
 		seqs[i] = lastSeq
+		lastActivity = max(lastActivity, e.At)
 	}
 	if count > store.MaxSessionEvents {
 		var evicted int64
@@ -145,8 +161,8 @@ func (o *ops) storeEvents(ctx context.Context, sessionID string, events []store.
 		viewBytes -= evicted
 		count = store.MaxSessionEvents
 	}
-	if _, err := o.exec(ctx, `UPDATE sessions SET view_bytes = ?, view_truncated = ?, last_event_seq = ?, event_count = ?
-		WHERE session_id = ?`, viewBytes, b2i(truncated), lastSeq, count, sessionID); err != nil {
+	if _, err := o.exec(ctx, `UPDATE sessions SET view_bytes = ?, view_truncated = ?, last_event_seq = ?, event_count = ?,
+		last_activity_at = max(last_activity_at, ?) WHERE session_id = ?`, viewBytes, b2i(truncated), lastSeq, count, lastActivity, sessionID); err != nil {
 		return nil, err
 	}
 	return seqs, nil

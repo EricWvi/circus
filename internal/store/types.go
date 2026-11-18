@@ -848,11 +848,13 @@ const (
 	TurnCompleted   TurnOutcome = "completed"
 	TurnInterrupted TurnOutcome = "interrupted"
 	TurnError       TurnOutcome = "error"
+	// TurnStopped is a confirmed user abort accepted from the fenced holder.
+	TurnStopped TurnOutcome = "stopped"
 )
 
 // Valid reports whether o is a known outcome.
 func (o TurnOutcome) Valid() bool {
-	return o == TurnCompleted || o == TurnInterrupted || o == TurnError
+	return o == TurnCompleted || o == TurnInterrupted || o == TurnError || o == TurnStopped
 }
 
 // TurnOrigin is what started a turn: a user input the worker pushed, a
@@ -881,8 +883,19 @@ const (
 
 // Session is one remote Claude Code session.
 type Session struct {
-	ID     string // UUIDv7, chosen by the control plane; never reused
-	UserID string
+	ID string // UUIDv7, chosen by the control plane; never reused
+	// UserID is the machine owner whose devices and workers serve the session.
+	// It may differ from the project's Web user (the super user's devices
+	// belong to the legacy owner returned by deviceOwner). The service
+	// authorizes through the project; the store does not compare these owners.
+	UserID    string
+	ProjectID string
+	Title     string
+	// LastActivityAt is the maximum of creation, stored durable event times
+	// and accepted user input times. It never decreases.
+	LastActivityAt int64
+	// PendingApprovalCount excludes approvals expired at the read's supplied now.
+	PendingApprovalCount uint32
 	// ClaudeSessionID is the CLI's session id, generated at creation.
 	// Unique.
 	ClaudeSessionID string
@@ -925,17 +938,20 @@ type Session struct {
 	StoppedAt int64
 }
 
-// SessionCursor is the exclusive (CreatedAt, ID) key of the last session
+// SessionCursor is the exclusive (LastActivityAt, ID) key of the last session
 // read.
 type SessionCursor struct {
-	CreatedAt int64
-	ID        string
+	LastActivityAt int64
+	ID             string
 }
 
 // SessionFilter selects sessions for ListSessions. Limit is required
 // (1..MaxPageSize); other empty fields do not filter.
 type SessionFilter struct {
-	UserID string
+	UserID    string
+	ProjectID string
+	// Now is the read time in Unix milliseconds, required for approval expiry.
+	Now    int64
 	States []SessionState
 	Limit  int
 	After  *SessionCursor
@@ -1449,8 +1465,10 @@ type SessionRecords struct {
 	Next    *RecordsCursor
 }
 
-// EventInput is one event to append. Boundary marks the events kept after
-// the view cap (turn start and end, interruption, result summary).
+// EventInput is one durable event to append; ephemeral events never enter
+// the store. Boundary marks the events kept after the view cap (turn start
+// and end, interruption, result summary). TURN_STOPPED and TURN_INTERRUPTED
+// are always boundaries, regardless of this flag.
 type EventInput struct {
 	Kind     string // at most MaxCodeBytes
 	Format   string // "claude-sdk" for SDK messages; at most MaxIDBytes
@@ -1463,6 +1481,14 @@ type EventInput struct {
 // records. Only the control plane records it: a worker batch with it is
 // dropped.
 const EventKindTranscriptGapAccepted = "TRANSCRIPT_GAP_ACCEPTED"
+
+// Turn boundaries are durable and recorded only by the control plane in the
+// transaction that first closes the turn. Their payload is
+// {"turn_no":"<decimal uint64>","outcome":"stopped"|"interrupted"}.
+const (
+	EventKindTurnStopped     = "TURN_STOPPED"
+	EventKindTurnInterrupted = "TURN_INTERRUPTED"
+)
 
 // EventPublish marks events a worker publishes: the fence of its
 // connection and the batch sequence, from 1 per epoch.

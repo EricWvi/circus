@@ -46,7 +46,7 @@ func (o *ops) AppendTranscript(ctx context.Context, f store.Fence, b store.Trans
 		case !isNotFound(err):
 			return err
 		}
-		s, err := tx.getSession(ctx, f.SessionID)
+		s, err := tx.getSession(ctx, f.SessionID, f.Now)
 		if err != nil {
 			return err
 		}

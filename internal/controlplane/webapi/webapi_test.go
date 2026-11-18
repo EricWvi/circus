@@ -927,7 +927,7 @@ func TestListProjectsAtBound(t *testing.T) {
 	_, err = super.create(t, "one more")
 	wantCode(t, err, connect.CodeResourceExhausted)
 	for _, p := range list[len(list)-2:] {
-		if err := h.st.DeleteProject(ctx, userID, p.ProjectId); err != nil {
+		if err := h.st.DeleteProject(ctx, userID, p.ProjectId, h.clock.Load()); err != nil {
 			t.Fatal(err)
 		}
 	}

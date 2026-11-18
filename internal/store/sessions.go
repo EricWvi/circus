@@ -36,7 +36,7 @@ import "context"
 // attached to only in a transaction that proves its session's lease.
 //
 // Losing a lease (ReleaseLease, ReleaseWorkerLeases, ExpireLeases,
-// SettleSession, or an AcquireLease that takes over an expired one) applies
+// SettleSession, RecoverSession, or an AcquireLease that replaces a holder) applies
 // one rule in the same transaction, and reports it as a LeaseLoss: a
 // running turn ends as interrupted; taken inputs not yet persisted become
 // persisted when their input id is in the transcript and pending
@@ -44,6 +44,8 @@ import "context"
 // handed; and the session becomes queued when it has pending work (a
 // pending input, or an ended job whose notification is not handed), idle
 // otherwise. A stopped or broken session keeps its state.
+// Each open turn closed this way gets one EventKindTurnInterrupted boundary
+// in the same transaction. A stop request alone closes no turn.
 //
 // # Recovery
 //
@@ -205,6 +207,10 @@ import "context"
 //
 // Event kinds are the SessionEvent.Kind names without the KIND_ prefix,
 // such as "TURN_STARTED" and EventKindTranscriptGapAccepted.
+// Every stored durable event moves LastActivityAt to max(current, its
+// timestamp), including a retained boundary with a truncated payload. New
+// user inputs also move it; dropped events and live-only fragments do not. Internal turn boundaries use DefaultMaxViewBytes
+// and respect a view already truncated by a caller's smaller cap.
 type SessionOps interface {
 	// Sessions.
 
@@ -213,7 +219,11 @@ type SessionOps interface {
 	// initial working directories cwds (AgentID "" is the main thread), in
 	// one transaction. Checked in the same transaction: the user has fewer
 	// than maxSessions sessions (ErrLimit otherwise), the default device and
-	// any pinned worker belong to the user (ErrNotFound otherwise). ErrExists
+	// any pinned worker belong to the user, and ProjectID exists (ErrNotFound
+	// otherwise). UserID is the machine owner, which may differ from the
+	// project's Web user; the store does not cross-check them. The service
+	// authorizes through the project. Title starts empty and LastActivityAt
+	// starts at CreatedAt. ErrExists
 	// if the session id or ClaudeSessionID is taken. len(cwds) ≤
 	// MaxSessionCwds. Not idempotent: a retried create with the same id
 	// returns ErrExists, and the caller compares the stored row.
@@ -223,11 +233,22 @@ type SessionOps interface {
 	// message still in flight for the old one pass the new one's fence at
 	// epoch 1. The control plane mints UUIDv7 ids and never reuses them.
 	CreateSession(ctx context.Context, s Session, cwds []SessionCwd, maxSessions int) error
-	// GetSession returns the session, or ErrNotFound.
-	GetSession(ctx context.Context, sessionID string) (Session, error)
-	// ListSessions returns at most f.Limit sessions ordered by (CreatedAt,
-	// ID).
+	// GetSession returns the session, or ErrNotFound. now is required, in
+	// Unix milliseconds; pending approvals count only when ExpiresAt > now,
+	// even before the expiry sweep runs, as with other expiry reads.
+	GetSession(ctx context.Context, sessionID string, now int64) (Session, error)
+	// ListSessions returns at most f.Limit sessions ordered by LastActivityAt
+	// descending, then ID descending. f.Now has GetSession's expiry semantics.
+	// A traversal is not a snapshot: sessions remaining in the filter with
+	// unchanged activity are returned exactly once. Activity only increases,
+	// so already returned sessions never repeat. A not-yet-returned session
+	// moving above the cursor is skipped until refresh; deleted sessions
+	// disappear, and new sessions above the cursor appear on refresh.
 	ListSessions(ctx context.Context, f SessionFilter) ([]Session, error)
+	// SetSessionTitle unconditionally sets a nonempty title of at most
+	// MaxSessionTitleBytes. Character validation is the service's job.
+	// ErrNotFound if absent. It does not move LastActivityAt.
+	SetSessionTitle(ctx context.Context, sessionID, title string) error
 	// StopSession moves the session to stopped at time at with reason (a
 	// short code, at most MaxCodeBytes) and returns it with its lease as it
 	// stands. The lease is not released: the caller tells the holder to
@@ -266,6 +287,12 @@ type SessionOps interface {
 	// left to their handlers, which find nothing. ErrNotFound if absent,
 	// including after a delete that already succeeded.
 	DeleteSession(ctx context.Context, sessionID string, now int64) error
+	// CheckSessionDeletable checks DeleteSession's preconditions without
+	// deleting anything: ErrSessionActive if not stopped, with a live lease,
+	// or with a non-terminal call; ErrNotFound if absent. now is required.
+	// Use inside one Tx to preflight all sessions before a project cascade.
+	// It reserves nothing; DeleteSession rechecks during its chunked writes.
+	CheckSessionDeletable(ctx context.Context, sessionID string, now int64) error
 	// TranscriptRepaired moves a broken session back to idle after the
 	// holder re-imported the missing transcript batches. It never touches
 	// TranscriptGapTurnNo. Fenced.
@@ -450,7 +477,12 @@ type SessionOps interface {
 	// yet persisted (ErrLimit). A broken session accepts inputs; they wait
 	// for the repair. An idle session without a live lease becomes queued.
 	// The result carries the session and its lease, so the caller nudges
-	// the holder or offers the session.
+	// the holder or offers the session. A new user-kind input also sets an
+	// empty title to DeriveSessionTitle(in.Text), when nonempty, in this
+	// transaction. Approval inputs and retries do not set it. A new user
+	// input also moves LastActivityAt to max(current, in.CreatedAt) in this
+	// transaction, even before a worker publishes. Approval inputs and
+	// retries do not move activity. SubmitInput appends no view event itself.
 	SubmitInput(ctx context.Context, in Input) (InputSubmitted, error)
 	// TakeInputs marks every pending input taken by f.Epoch and returns all
 	// inputs taken by f.Epoch and not yet persisted, oldest first (at most
@@ -474,6 +506,12 @@ type SessionOps interface {
 	// first ENDED of a turn still open sets its end time, outcome and
 	// usage, adds the usage to the session's totals, records the outcome as
 	// the session's last and moves running to idle once no turn is open.
+	// STOPPED means the holder observed a user abort from Interrupt or NOW;
+	// the store does not infer it from an interrupt level or input priority.
+	// The first closure wins: STOPPED and INTERRUPTED each record exactly
+	// one control-plane-only durable boundary, atomically with the outcome.
+	// A successor without ENDED records INTERRUPTED for its predecessor;
+	// a late or fenced report never relabels it or adds another boundary.
 	// The first, late, ENDED of a turn its successor closed keeps that
 	// turn's outcome and end time but records its usage, on the turn and in
 	// the session's totals. Either first ENDED applies r.Persisted (see
@@ -531,7 +569,8 @@ type SessionOps interface {
 	// beyond it plus one is ErrInvalid and consumes nothing; one exactly
 	// next is consumed, and if any of its events fails validation (an
 	// over-cap field, or a kind only the control plane records,
-	// EventKindTranscriptGapAccepted) the whole batch is recorded as
+	// EventKindTranscriptGapAccepted, EventKindTurnInterrupted or
+	// EventKindTurnStopped) the whole batch is recorded as
 	// dropped (Session.DroppedEventBatches + 1) and the result reports
 	// Dropped with a DropReason matching ErrInvalid; the error is nil, so
 	// the consumption commits. Fenced and store errors consume nothing. A

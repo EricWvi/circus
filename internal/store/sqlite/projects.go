@@ -300,16 +300,27 @@ func followLocation(old []store.ProjectLocation, last int, next []store.ProjectL
 	return max(0, min(last, len(next)-1))
 }
 
-func (o *ops) DeleteProject(ctx context.Context, userID, projectID string) error {
+func (o *ops) DeleteProject(ctx context.Context, userID, projectID string, now int64) error {
 	if err := store.CheckID("user id", userID); err != nil {
 		return err
 	}
 	if err := store.CheckID("project id", projectID); err != nil {
 		return err
 	}
-	// One unit, so a check that the project's sessions are all stopped can
-	// run in the same transaction once sessions belong to projects.
+	if now == 0 {
+		return invalid("DeleteProject needs a time")
+	}
 	return o.unit(ctx, func(tx *ops) error {
+		if _, err := tx.GetProject(ctx, userID, projectID); err != nil {
+			return err
+		}
+		var hasSessions bool
+		if err := tx.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sessions WHERE project_id = ?)`, projectID).Scan(&hasSessions); err != nil {
+			return mapErr(err)
+		}
+		if hasSessions {
+			return store.ErrHasSessions
+		}
 		n, err := tx.exec(ctx, `DELETE FROM projects WHERE id = ? AND user_id = ?`, projectID, userID)
 		if err == nil && n == 0 {
 			err = store.ErrNotFound

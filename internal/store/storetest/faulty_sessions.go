@@ -6,7 +6,7 @@ import (
 	"github.com/EricWvi/circus/internal/store"
 )
 
-// Session operations. CheckFence, AdmitSessionCall, LoadTranscript,
+// Session operations. CheckSessionDeletable, CheckFence, AdmitSessionCall, LoadTranscript,
 // HasTranscriptUUID and ReadEvents are reads, like Get* and List*; every
 // other method is a write point. DeleteSession is one write point however
 // many transactions it runs.
@@ -15,8 +15,8 @@ func (o *faultyOps) CreateSession(ctx context.Context, s store.Session, cwds []s
 	return o.write(ctx, func(x store.Ops) error { return x.CreateSession(ctx, s, cwds, maxSessions) })
 }
 
-func (o *faultyOps) GetSession(ctx context.Context, sessionID string) (v store.Session, err error) {
-	err = o.read(ctx, func(x store.Ops) error { v, err = x.GetSession(ctx, sessionID); return err })
+func (o *faultyOps) GetSession(ctx context.Context, sessionID string, now int64) (v store.Session, err error) {
+	err = o.read(ctx, func(x store.Ops) error { v, err = x.GetSession(ctx, sessionID, now); return err })
 	return v, err
 }
 
@@ -212,4 +212,12 @@ func (o *faultyOps) RecoverSession(ctx context.Context, sessionID string, accept
 func (o *faultyOps) ExpireApprovals(ctx context.Context, now int64, limit int) (v []store.Approval, err error) {
 	err = o.write(ctx, func(x store.Ops) error { v, err = x.ExpireApprovals(ctx, now, limit); return err })
 	return v, err
+}
+
+func (o *faultyOps) SetSessionTitle(ctx context.Context, sessionID, title string) error {
+	return o.write(ctx, func(x store.Ops) error { return x.SetSessionTitle(ctx, sessionID, title) })
+}
+
+func (o *faultyOps) CheckSessionDeletable(ctx context.Context, sessionID string, now int64) (err error) {
+	return o.read(ctx, func(x store.Ops) error { return x.CheckSessionDeletable(ctx, sessionID, now) })
 }

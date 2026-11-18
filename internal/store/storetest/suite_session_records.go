@@ -480,7 +480,7 @@ func testSessionDelete(t *testing.T, b Backend) {
 	must(t, s.DeleteSession(ctx, "s1", t0+4))
 	mustIs(t, s.DeleteSession(ctx, "s1", t0+4), store.ErrNotFound) // done already
 
-	_, err = s.GetSession(ctx, "s1")
+	_, err = s.GetSession(ctx, "s1", t0)
 	mustIs(t, err, store.ErrNotFound)
 	_, err = s.GetLease(ctx, "s1")
 	mustIs(t, err, store.ErrNotFound)

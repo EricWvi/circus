@@ -144,6 +144,18 @@ var errProjectNotFound = errors.New("project not found")
 
 // internal maps a store failure the caller has no specific answer for.
 func (s *Service) internal(ctx context.Context, op string, err error) error {
+	// A canceled database operation can surface a driver error instead of
+	// the context error. Use the request's status when it has ended.
+	cause := err
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		cause = ctxErr
+	}
+	switch {
+	case errors.Is(cause, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, context.Canceled)
+	case errors.Is(cause, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, context.DeadlineExceeded)
+	}
 	if errors.Is(err, store.ErrBusy) {
 		s.logger.WarnContext(ctx, "web api store busy", "op", op, "error", err)
 		return connect.NewError(connect.CodeUnavailable, errors.New("busy; retry"))

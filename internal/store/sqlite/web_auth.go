@@ -110,8 +110,18 @@ func (o *ops) DeleteUser(ctx context.Context, id string) error {
 	if err := store.CheckID("user id", id); err != nil {
 		return err
 	}
-	_, err := o.exec(ctx, `DELETE FROM users WHERE id = ?`, id)
-	return err
+	return o.unit(ctx, func(tx *ops) error {
+		var hasSessions bool
+		if err := tx.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sessions s
+            JOIN projects p ON p.id = s.project_id WHERE p.user_id = ?)`, id).Scan(&hasSessions); err != nil {
+			return mapErr(err)
+		}
+		if hasSessions {
+			return store.ErrHasSessions
+		}
+		_, err := tx.exec(ctx, `DELETE FROM users WHERE id = ?`, id)
+		return err
+	})
 }
 func (o *ops) CreateWebSession(ctx context.Context, s store.WebSession) error {
 	if len(s.TokenHash) != sha256.Size || s.UserID == "" || s.CreatedAt <= 0 || s.LastUsedAt < s.CreatedAt ||
