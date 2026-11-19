@@ -49,14 +49,17 @@ broken.
 
 ## Running against the control plane
 
-Two terminals, both in the repository root:
+Run these in three terminals from the repository root.
 
 ```sh
 # Terminal 1: the control plane, with web/dev.server.yaml
 # (127.0.0.1:8443, plaintext, database in .tmp/dev/circus.db).
 task web:dev:server
 
-# Terminal 2: the Web UI in server mode.
+# Terminal 2: enroll once and run the scripted worker.
+task web:dev:worker
+
+# Terminal 3: the Web UI in server mode.
 task web:dev BACKEND=server
 ```
 
@@ -69,8 +72,46 @@ line; the `url` field):
 
 The link already points at the Vite origin, because `public_url` in the dev
 config is `http://localhost:5173`. Open it in the browser and create the super
-user. The token is valid only for that server run; restart the server for a
-new one. To start over, stop the server and delete `.tmp/dev/circus.db`.
+user. The token is valid only for that server run. Restart the server for a
+new one. The worker keeps its enrollment in `.tmp/dev/circus/worker.json`.
+To start over, stop the dev processes and remove the database and the
+development credentials in `.tmp/dev/circus/`.
+
+Sessions need a project location on an enrolled device. Enroll a local
+device once and run its daemon in another terminal to enable real tool calls.
+
+```sh
+export XDG_CONFIG_HOME="$PWD/.tmp/dev"
+export XDG_STATE_HOME="$PWD/.tmp/dev/state"
+export XDG_CACHE_HOME="$PWD/.tmp/dev/cache"
+go run ./cmd/circus server enroll-token create --config web/dev.server.yaml \
+  --role daemon --url http://127.0.0.1:8443 |
+  go run ./cmd/circus join --role daemon --name web-dev-device
+go run ./cmd/circus daemon
+```
+
+Create a project with a location on `web-dev-device` and enter an existing
+absolute directory on that device. Create a session in the project and send
+a message. The worker streams a Markdown reply quoting your input. The
+following inputs exercise specific session behaviors.
+
+| Input | Behavior |
+| --- | --- |
+| `/fake bash <command>` | Run Bash in the session's working directory. |
+| `/fake read <path>` | Read a file on the device. Relative paths use the session's working directory. |
+| `/fake approve <command>` | Request approval after denying Bash. An approval retries Bash in the active turn or starts a turn if idle. |
+| `/fake slow <seconds>` | Stretch the reply to exercise Interrupt and NOW input. |
+| `/fake think` | Emit a thinking block before the reply. |
+| `/fake crash` | Drop all local sessions mid-turn. After two seconds, start a new boot. The server records the interrupted turn. |
+| `/fake blip` | Disconnect for two seconds, resume the same lease and finish the turn. |
+| `/fake break` | Report failed transcript mirroring. Use RecoverSession to accept the gap. |
+| `/fake job <command>` | Start a Bash job on the device and deliver its completion notice. |
+| `/fake error` | End the turn with an error. |
+
+Bash and Read use the real daemon and its filesystem. Stop the worker,
+daemon, Vite and server with Ctrl-C in their terminals when finished.
+The worker can take up to five seconds to exit when the control plane is
+unreachable, while it tries to flush events and release session leases.
 
 How the pieces fit:
 

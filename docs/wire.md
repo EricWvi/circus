@@ -971,7 +971,8 @@ together, partly in `PatchSessionState.persisted`. That field is allowed
 only for items delivered before the SDK result of a turn already reported
 ENDED or about to be; marks are idempotent and ENDED carries the remainder.
 Never mark items of a turn whose transcript is incomplete before it has been
-repaired.
+repaired. An SDK result with an ERROR outcome still acknowledges the delivered
+items. A CLI failure before any result has arrived supplies no such evidence.
 
 **Owed call notices.** When MCP returns a call to the model with a
 nonterminal outcome (unknown, or "still running, you will be notified"), add
@@ -988,6 +989,107 @@ Caps of the stored state: 256 cwds, 4096 file records (the oldest evicted),
 1024 job notices, 1024 calls not yet persisted plus 16 with a notice owed,
 64 live CLI background tasks, 32 grants. Full call results remain available
 through CallQuery; SessionState never embeds their output.
+
+#### Worker event payloads
+
+The following fields are in `payload_json`. Fields are required unless
+marked optional. The worker publishes `TURN_STARTED` with
+`{"turn_no":"<decimal uint64>","origin":"input"|"notification"|"cli"}`.
+`ASSISTANT`, `USER` and `RESULT` carry Claude Agent SDK message JSON.
+An ephemeral `ASSISTANT` carries an SDK `stream_event`. A completed block
+is published as a durable SDK assistant message. Blocks from the same
+response share the API `message.id`.
+
+For a text-stream abort, the measured SDK emits the partial assistant block
+with `aborted: true` before RESULT. Interrupt produces
+`error_during_execution`. NOW produces `success` with the partial text as
+its result. Both have `terminal_reason: "aborted_streaming"`. Interrupt
+also writes `[Request interrupted by user]` to the transcript. The fake
+worker publishes that annotation as a synthetic USER event. Its presence
+and `isSynthetic` flag in the SDK stream are unverified.
+
+A NOW tool-call probe observed an empty result and interruption text in the
+next model request's `tool_result`. The fake worker infers the SDK
+`tool_result` event and reuses that wording for Interrupt and NOW. It also
+infers the transcript annotation for a tool interrupted explicitly, and
+`subtype: "success"` with `terminal_reason: "aborted_tools"` for a tool
+interrupted by NOW.
+
+**APPROVAL_PENDING**
+
+| Field | Type and meaning |
+| --- | --- |
+| `approval_id` | String from RequestApproval |
+| `tool`, `device`, `tool_use_id` | Strings identifying the denied device tool use |
+| `display`, `reason` | Strings shown in the approval prompt |
+
+**PERMISSION_DENIED**
+
+| Field | Type and meaning |
+| --- | --- |
+| `type`, `subtype` | Strings `system` and `permission_denied` |
+| `uuid`, `session_id` | SDK message UUID and Claude session ID |
+| `tool_name`, `tool_use_id` | SDK tool name and the denied tool-use ID |
+| `agent_id` | Optional string for a subagent |
+| `decision_reason_type`, `decision_reason` | Optional decision source and explanation strings |
+| `message` | Rejection text carried in the error `tool_result` |
+
+After a permission denial the worker surfaces the rejection and requests
+approval. The current turn can finish while approval is pending. An
+approved input joins an active turn or starts one while idle. It asks the
+model to retry with a new tool-use ID. The worker only permits that retry
+when ConsumeGrant returns `allowed`.
+
+**BGTASK_STARTED**
+
+The worker forwards the CLI's own SDK `task_started` messages under this kind.
+
+| Field | Type and meaning |
+| --- | --- |
+| `type`, `subtype` | Strings `system` and `task_started` |
+| `uuid`, `session_id` | SDK message UUID and Claude session ID |
+| `task_id`, `description` | SDK task ID and display description strings |
+| `tool_use_id`, `task_type` | Optional originating tool-use ID and task type strings |
+| `is_backgrounded` | Optional boolean indicating a background task |
+
+**BGTASK_ENDED**
+
+The worker forwards the CLI's own SDK `task_notification` messages under this kind.
+
+| Field | Type and meaning |
+| --- | --- |
+| `type`, `subtype` | Strings `system` and `task_notification` |
+| `uuid`, `session_id` | SDK message UUID and Claude session ID |
+| `task_id` | Task ID from BGTASK_STARTED |
+| `tool_use_id` | Optional originating tool-use ID string |
+| `status` | `completed`, `failed`, or `stopped` |
+| `summary`, `output_file` | Display summary and output path strings. The path may be empty |
+| `reason` | Optional string `worker_restart` for an orphaned SDK task |
+
+**NOTIFICATION_DELIVERED**
+
+Device background jobs use this kind when the worker delivers their completion
+notice. Their lifecycle emits no BGTASK events.
+
+| Field | Type and meaning |
+| --- | --- |
+| `job_id`, `call_id`, `tool_use_id`, `device` | String IDs and device name of the delivered device job notice |
+| `state` | `exited`, `killed`, or `lost` |
+| `exit_code` | JSON integer from the daemon |
+| `output_path` | Device output path string, possibly empty |
+
+**TRANSCRIPT_GAP_DETECTED**
+
+| Field | Type and meaning |
+| --- | --- |
+| `subpath` | Transcript subpath string, empty for the main thread |
+| `unknown_parents` | Array of missing parent UUID strings |
+
+**ERROR**
+
+| Field | Type and meaning |
+| --- | --- |
+| `message` | Worker error description string |
 
 #### Broken transcripts
 

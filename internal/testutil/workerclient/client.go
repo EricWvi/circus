@@ -29,10 +29,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
+	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/loopback"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/coder/websocket"
 )
@@ -51,6 +52,8 @@ type Options struct {
 	// Token is the worker credential's bearer token and PrincipalID its
 	// worker id, which Welcome must name.
 	Token, PrincipalID string
+	// CAFile supplies the TLS roots for a privately signed server.
+	CAFile string
 	// BootID is sent in Hello; keep it across reconnects of one worker
 	// process. Empty sends none (as the call CLI does).
 	BootID string
@@ -81,16 +84,17 @@ type Stream struct {
 
 // Dial connects and completes the handshake.
 func Dial(ctx context.Context, o Options) (*Client, error) {
-	u := strings.TrimSuffix(o.URL, "/")
-	switch {
-	case strings.HasPrefix(u, "http://"):
-		u = "ws://" + strings.TrimPrefix(u, "http://")
-	case strings.HasPrefix(u, "https://"):
-		u = "wss://" + strings.TrimPrefix(u, "https://")
+	u, httpClient, err := loopback.Link(o.URL, o.CAFile, "/v1/link/worker")
+	if err != nil {
+		return nil, err
 	}
+	defer httpClient.CloseIdleConnections()
 	hctx, cancel := context.WithTimeout(ctx, wire.HelloTimeout)
 	defer cancel()
-	conn, resp, err := wire.DialWebSocket(hctx, u+"/v1/link/worker", &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer " + o.Token}}})
+	conn, resp, err := wire.DialWebSocket(hctx, u, &websocket.DialOptions{
+		HTTPClient: httpClient,
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + o.Token}},
+	})
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}
@@ -246,6 +250,29 @@ func (s *Stream) Unwatch(ctx context.Context) error {
 	return s.c.link.Send(ctx, &circusv1.WorkerUplink{RequestId: s.ID, Payload: &circusv1.WorkerUplink_Unwatch{Unwatch: &circusv1.Unwatch{}}})
 }
 
+// Abandon queues Unwatch before the caller reuses the operation slot.
+// If the link cannot accept Unwatch, close it so the server retires the slot.
+func (s *Stream) Abandon() {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	for {
+		if err := s.Unwatch(ctx); err == nil {
+			return
+		} else if !errors.Is(err, wire.ErrBusy) {
+			break
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+			continue
+		case <-s.c.Done():
+			return
+		case <-ctx.Done():
+		}
+		break
+	}
+	_ = s.c.Close()
+}
+
 // Events is an Attach stream.
 type Events struct{ *Stream }
 
@@ -275,6 +302,9 @@ func (r Reply) Wait(ctx context.Context) (*circusv1.SessionReply, error) {
 	defer r.c.forget(r.ID)
 	d, err := r.Stream.Next(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			r.Abandon()
+		}
 		return nil, err
 	}
 	if d.GetSessionReply() == nil {
@@ -325,16 +355,43 @@ func (c Call) Next(ctx context.Context) (*circusv1.CallUpdate, error) {
 	if err != nil {
 		return nil, err
 	}
-	if d.GetCallUpdate() == nil {
+	update := d.GetCallUpdate()
+	if update == nil {
 		return nil, fmt.Errorf("workerclient: Submit stream got %T", d.GetPayload())
 	}
-	return d.GetCallUpdate(), nil
+	if wire.Terminal(update) {
+		c.c.forget(c.ID)
+	}
+	return update, nil
 }
 
 // Submit sends SubmitCall.
 func (c *Client) Submit(ctx context.Context, sc *circusv1.SubmitCall) (Call, error) {
 	s, err := c.Open(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: sc}})
 	return Call{s}, err
+}
+
+// Query opens a one-reply operation to read the current call outcome.
+func (c *Client) Query(ctx context.Context, callID string) (*circusv1.CallUpdate, error) {
+	return c.callOnce(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: callID}}})
+}
+
+// Cancel opens a one-reply operation to record cancellation intent.
+func (c *Client) Cancel(ctx context.Context, callID string) (*circusv1.CallUpdate, error) {
+	return c.callOnce(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_CancelCall{CancelCall: &circusv1.CancelCall{CallId: callID}}})
+}
+
+func (c *Client) callOnce(ctx context.Context, m *circusv1.WorkerUplink) (*circusv1.CallUpdate, error) {
+	s, err := c.Open(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	defer c.forget(s.ID)
+	u, err := (Call{s}).Next(ctx)
+	if err != nil && ctx.Err() != nil {
+		s.Abandon()
+	}
+	return u, err
 }
 
 // Request builders.
