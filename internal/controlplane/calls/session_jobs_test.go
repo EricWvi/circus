@@ -11,6 +11,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 )
 
@@ -59,8 +60,13 @@ func background(id, session string) *circusv1.DeviceCall {
 // dispatch.
 func (j *jobFixture) submitAdmitted(id string) *calls.Subscription {
 	j.t.Helper()
+	return j.submitAdmittedWithContext(j.ctx, id)
+}
+
+func (j *jobFixture) submitAdmittedWithContext(ctx context.Context, id string) *calls.Subscription {
+	j.t.Helper()
 	a := calls.Admission{Epoch: uint64(j.fence.Epoch), ToolUseID: "tu-" + id, WorkerID: "w", BootID: "b", ConnID: "conn"}
-	s, err := j.router.SubmitSession(j.ctx, "u", "desk", background(id, "s"), a)
+	s, err := j.router.SubmitSession(ctx, "u", "desk", background(id, "s"), a)
 	must(j.t, err)
 	j.t.Cleanup(func() { _ = s.Close() })
 	j.dispatched(id)
@@ -76,9 +82,13 @@ func (j *jobFixture) dispatched(id string) {
 
 // startedJob sends id's result reporting background job job.
 func (j *jobFixture) startedJob(id, job string) {
-	send(j.t, j.ctx, j.link, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Result{Result: &circusv1.DeviceResult{CallId: id,
+	send(j.t, j.ctx, j.link, startedJobResult(id, job))
+}
+
+func startedJobResult(id, job string) *circusv1.DaemonUplink {
+	return &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Result{Result: &circusv1.DeviceResult{CallId: id,
 		Output: &circusv1.ToolOutput{Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: "started"}}}},
-		Detail: &circusv1.DeviceResult_Bash{Bash: &circusv1.BashResult{JobId: job, OutputPath: "/out/" + job}}}}})
+		Detail: &circusv1.DeviceResult_Bash{Bash: &circusv1.BashResult{JobId: job, OutputPath: "/out/" + job}}}}}
 }
 
 // jobEvent sends a job event naming session and call.
@@ -159,11 +169,10 @@ func TestSessionJobEndsBeforeResult(t *testing.T) {
 // not registered and nothing wakes the session.
 func TestSessionJobTableFull(t *testing.T) {
 	j := newJobFixture(t)
-	s := j.submitAdmitted("call")
+	s := j.submitAdmittedWithContext(t.Context(), "call")
 	// Fill the table after admission (the filler calls would otherwise
-	// count against the session's call caps). The fill is setup, not under
-	// test: it runs without the fixture's deadline, which a slow race build
-	// can exceed.
+	// count against the session's call caps). The subscription must survive
+	// the fill; start the result deadline only after this transaction commits.
 	must(t, j.db.Tx(t.Context(), func(ctx context.Context, tx store.Ops) error {
 		for i := range store.MaxSessionJobs {
 			id := fmt.Sprint("fill", i)
@@ -181,15 +190,19 @@ func TestSessionJobTableFull(t *testing.T) {
 		}
 		return nil
 	}))
-	j.startedJob("call", "00000000000a")
-	if u := nextResult(t, j.ctx, s); u.GetResult().GetBash().GetJobId() != "00000000000a" {
+	ctx := wait.Ctx(t)
+	send(t, ctx, j.link, startedJobResult("call", "00000000000a"))
+	if u := nextResult(t, ctx, s); u.GetResult().GetBash().GetJobId() != "00000000000a" {
 		t.Fatalf("result %v", u)
 	}
-	j.waitState("call", store.CallCompleted)
+	wait.For(t, func() bool {
+		call, err := j.db.GetCall(ctx, "call")
+		return err == nil && call.State == store.CallCompleted
+	})
 	if !j.router.Healthy() {
 		t.Fatal("a full job table marked the store unhealthy")
 	}
-	for _, job := range sessionJobs(t, j.ctx, j.db, j.fence) {
+	for _, job := range sessionJobs(t, ctx, j.db, j.fence) {
 		if job.CallID == "call" {
 			t.Fatalf("registered past the cap: %+v", job)
 		}

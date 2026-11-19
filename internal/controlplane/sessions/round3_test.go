@@ -113,8 +113,9 @@ func TestSkewedBootAccepted(t *testing.T) {
 	}
 	f.mu.Unlock()
 	c := f.dial(0, "skewed")
+	wait.For(t, func() bool { return connections(f) == 1 })
 	_ = c.Close()
-	wait.For(t, func() bool { return sessions.Attached(f.svc) == 0 && connections(f) == 0 })
+	wait.For(t, func() bool { return connections(f) == 0 })
 	// Still within one lease lifetime of its connect: refused.
 	if _, err := f.tryDial(0, "fixed"); err == nil || !strings.Contains(err.Error(), "BAD_HELLO") {
 		t.Fatalf("older boot within the lifetime: %v", err)
