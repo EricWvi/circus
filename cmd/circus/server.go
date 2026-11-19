@@ -20,6 +20,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/web"
 )
 
 const serverUsage = `usage:
@@ -90,6 +91,7 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	}
 	defer st.Close()
 	serverCfg := cfg.Server()
+	serverCfg.UI = webui.FS()
 	serverCfg.LogOutput, serverCfg.LogLevel = errOut, level
 	srv, err := controlplane.New(ctx, st, serverCfg)
 	if err != nil {

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"testing/synctest"
 	"time"
 
@@ -132,6 +133,34 @@ func (h *harness) get(t *testing.T, path, token string) (int, string) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(body)
+}
+
+func TestServerWebUI(t *testing.T) {
+	const index = `<html><head><meta name="circus-backend" content="server"></head><body>circus</body></html>`
+	ui := fstest.MapFS{"index.html": {Data: []byte(index)}}
+	h := newServer(t, controlplane.Config{UI: ui}, nil)
+	for _, tc := range []struct{ path, body string }{
+		{"/healthz", "ok\n"},
+		{"/join", "This is a circus join link. Run on the machine to enroll:\n\n  circus join '<the full link, including the part after #>'\n"},
+		{"/p/x", index},
+	} {
+		if status, body := h.get(t, tc.path, ""); status != http.StatusOK || body != tc.body {
+			t.Errorf("GET %s = %d %q, want 200 %q", tc.path, status, body, tc.body)
+		}
+	}
+	authClient := circusv1connect.NewAuthServiceClient(h.http, h.base)
+	who, err := authClient.WhoAmI(t.Context(), connect.NewRequest(&circusv1.WhoAmIRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if who.Msg.GetNeedsSetup() == nil {
+		t.Fatalf("WhoAmI response = %v, want needs setup", who.Msg)
+	}
+
+	disabled := newServer(t, controlplane.Config{}, nil)
+	if status, body := disabled.get(t, "/p/x", ""); status != http.StatusNotFound || body != "404 page not found\n" {
+		t.Errorf("GET /p/x with no UI = %d %q, want 404", status, body)
+	}
 }
 
 func (h *harness) token(t *testing.T, kind store.PrincipalKind, ttl time.Duration, now time.Time) string {

@@ -64,6 +64,12 @@ tasks:
     cmds:
       - go build -o bin/circus ./cmd/circus
 
+  build:webui:
+    desc: Build bin/circus with the embedded Web UI
+    cmds:
+      - VITE_CIRCUS_BACKEND=server task web:build
+      - go build -tags webui -o bin/circus ./cmd/circus
+
   fuzz:
     desc: Run every fuzz target for FUZZTIME (default 30s)
     cmds:

@@ -1,0 +1,9 @@
+**/node_modules
+web/dist
+bin
+.tmp
+.worktrees
+.local
+drafts
+memories
+.git

@@ -21,6 +21,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: node --test scripts/
       - uses: bufbuild/buf-setup-action@v1
         with:
           version: 1.73.0
@@ -35,6 +36,7 @@ jobs:
       - run: npm -w @circus/web run lint
       - run: npm -w @circus/web run test
       - run: npm -w @circus/web run build
+      - run: go build -tags webui -o /dev/null ./cmd/circus
       # The e2e harness builds bin/circus itself; Go, Bash and coreutils are
       # enough for it.
       - run: task e2e

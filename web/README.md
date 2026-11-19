@@ -8,6 +8,16 @@ task web:check   # typecheck, lint and test
 task web:build   # production build into web/dist
 ```
 
+## Serving the built UI from the control plane
+
+`task build:webui` builds `bin/circus` with the Web UI embedded in server mode.
+The release container image includes the same UI. Set `public_url` to the
+server's browser-facing origin for Origin checks and setup links.
+
+The API prefixes `/circus.v1.`, `/auth/`, and `/v1/` are reserved for API
+routes. Missing files under `/assets/` and missing paths with a file extension
+return 404. Other missing paths serve `index.html` for client-side routing.
+
 ## Backends
 
 `VITE_CIRCUS_BACKEND` chooses what the UI talks to. The choice is made in

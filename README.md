@@ -210,7 +210,6 @@ IdP to mark an email verified only when that account owns the address.
 Existing issuer/subject identities continue to identify their original user.
 Human accounts coexist with the
 legacy machine owner; machine credentials and `GET /v1/whoami` keep working.
-The frontend is outside this change; these endpoints provide its auth API.
 
 `ProjectService` and `MachineService.ListDevices` (`proto/circus/v1/project.proto`,
 `machine.proto`) serve the Web UI's projects and device list with the same
@@ -295,6 +294,41 @@ payload each) and counted in the watch streams' figure. See
 `internal/controlplane/gateway`, `internal/controlplane/workerlink`,
 `internal/controlplane/sessions` (doc.go and bus.go) and
 `internal/controlplane/calls/DESIGN.md`.
+
+## Releases and deployment
+
+Pushing a `v*` tag publishes the Linux amd64 image to GitHub Container
+Registry and CLI archives for Linux and macOS on amd64 and arm64 to
+[GitHub Releases](https://github.com/EricWvi/circus/releases).
+
+The image serves the embedded Web UI, APIs, and links from one origin. Copy
+`config.example.yaml` to `config.yaml`, set `listen: "0.0.0.0:8443"` inside the
+container, and set `public_url` to the browser-facing origin. Set
+`behind_proxy: true` when a TLS reverse proxy terminates HTTPS. The port
+mapping below is for a proxy running on the Docker host. Make the mounted
+configuration readable by UID 65532. For OIDC, you can pass the client secret
+in the container environment as `CIRCUS_OIDC_CLIENT_SECRET`.
+
+```sh
+docker run --rm -p 127.0.0.1:8443:8443 \
+  --mount "type=bind,source=$PWD/config.yaml,target=/etc/circus/config.yaml,readonly" \
+  --mount type=volume,source=circus-data,target=/data \
+  ghcr.io/ericwvi/circus:latest
+```
+
+To install the CLI, download the archive for your OS and architecture and
+extract its `circus` binary into a directory on your `PATH`. The CLI archives
+omit the Web UI, so `circus server` from an archive serves only the APIs.
+
+```sh
+tar -xzf circus-vX.Y.Z-linux-amd64.tar.gz
+mkdir -p ~/.local/bin
+install -m 0755 circus ~/.local/bin/circus
+```
+
+Run `circus update` to install the latest CLI release. It verifies the
+download's SHA-256 before replacing the executable. Use `circus update --force`
+to install an older release when GitHub's latest release is older than yours.
 
 ## Testing tiers
 

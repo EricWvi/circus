@@ -14,6 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.51.0
+	golang.org/x/mod v0.42.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/term v0.45.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261110000943-09e21b237f2c

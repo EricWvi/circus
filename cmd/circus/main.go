@@ -2,8 +2,8 @@
 // and its admin subcommands, `circus join` enrolls a machine, `circus daemon`
 // runs the device daemon (and its local `daemon call` harness), `circus call`
 // is the worker-credential debug client, `circus doctor` checks the stored
-// credentials against the control plane, and `circus version` prints the
-// build version.
+// credentials against the control plane, `circus update` installs the latest
+// CLI release, and `circus version` prints the build version.
 package main
 
 import (
@@ -15,15 +15,19 @@ import (
 
 var version = "dev"
 
+const usage = "usage: circus <version|update|daemon|server|join|doctor|call>"
+
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: circus <version|daemon|server|join|doctor|call>")
+		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(1)
 	}
 
 	switch os.Args[1] {
 	case "version":
 		fmt.Println(version)
+	case "update":
+		exitOn(updateCommand(os.Args[2:], os.Stdout, os.Stderr))
 	case "daemon":
 		if err := daemonCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -38,7 +42,7 @@ func main() {
 	case "doctor":
 		exitOn(doctorCommand(os.Args[2:], os.Stdout, os.Stderr))
 	default:
-		fmt.Fprintln(os.Stderr, "usage: circus <version|daemon|server|join|doctor|call>")
+		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(1)
 	}
 }

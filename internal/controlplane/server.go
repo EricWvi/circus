@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -61,6 +62,8 @@ type Config struct {
 	// PublicURL is the base URL clients use (https://host:port), returned by
 	// Enroll as control_plane_url; empty returns an empty URL.
 	PublicURL string
+	// UI contains the immutable built Web UI. Nil disables serving the UI.
+	UI fs.FS
 	// ShutdownTimeout bounds Run's graceful shutdown; zero means
 	// DefaultShutdownTimeout.
 	ShutdownTimeout time.Duration
@@ -223,6 +226,13 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("controlplane: instance id: %w", err)
 	}
 	s := &Server{cfg: cfg, st: st, instanceID: id.String(), mux: http.NewServeMux(), now: now, listen: net.Listen}
+	if cfg.UI != nil {
+		h, err := newWebHandler(cfg.UI)
+		if err != nil {
+			return nil, fmt.Errorf("controlplane: %w", err)
+		}
+		s.mux.Handle("/", h)
+	}
 	s.logger = slog.New(slog.NewJSONHandler(cfg.LogOutput, &slog.HandlerOptions{Level: cfg.LogLevel})).
 		With("instance_id", s.instanceID)
 	s.authn = auth.NewAuthenticator(st, auth.Options{Now: now, Logger: s.logger})
@@ -359,6 +369,7 @@ func (s *Server) Start() error {
 		defer close(s.timersDone)
 		_ = s.runner.Run(bgCtx)
 	}()
+	s.logger.Info("web UI", "served", s.cfg.UI != nil)
 	s.logger.Info("control plane listening", "addr", ln.Addr().String(), "mode", mode)
 	return nil
 }

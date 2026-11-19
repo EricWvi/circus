@@ -1,7 +1,7 @@
 import path from "node:path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { loadEnv, type ProxyOptions } from "vite"
+import { loadEnv, type Plugin, type ProxyOptions } from "vite"
 import { defineConfig } from "vitest/config"
 
 const DEFAULT_SERVER = "http://127.0.0.1:8443"
@@ -23,12 +23,23 @@ function controlPlaneProxy(target: string): Record<string, ProxyOptions> {
   }
 }
 
+const serverBackendMarker: Plugin = {
+  name: "circus-server-backend",
+  transformIndexHtml: () => [
+    {
+      tag: "meta",
+      attrs: { name: "circus-backend", content: "server" },
+      injectTo: "head",
+    },
+  ],
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, import.meta.dirname, "VITE_")
   const serverMode = env.VITE_CIRCUS_BACKEND === "server"
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), serverMode && serverBackendMarker],
     resolve: {
       alias: [
         { find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
