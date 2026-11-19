@@ -83,9 +83,10 @@ public_url: http://127.0.0.1:9543
 YAML
 circus server --config .tmp/config.yaml
 
-# Terminal 2: create an enrollment link (one token per role; both in one link).
-# The URL must match the server's listen address.
-circus server enroll-token create --role both --url http://127.0.0.1:9543 --config .tmp/config.yaml
+# Open the setup link logged by the server and create owner@example.com.
+# Terminal 2: issue an enrollment link for that user's email.
+circus server enroll-token create --user owner@example.com --role both \
+  --url http://127.0.0.1:9543 --config .tmp/config.yaml
 # -> http://127.0.0.1:9543/join#<daemonToken>.<workerToken>
 
 # Enroll this machine as both roles (paste the link, or pipe it in).
@@ -149,9 +150,11 @@ circus doctor
 # ...
 ```
 
-`circus server device list --config config.yaml` shows enrolled devices; `circus server
-device revoke <name> --config config.yaml` revokes one and frees its name for a new
-join. The daemon's local harness also still works without a server, reading
+`circus server device list --config config.yaml` and `circus server worker list
+--config config.yaml` show each machine's owner email. Use `circus server device
+revoke --user <email> <name> --config config.yaml` or the corresponding
+`worker revoke` command to revoke an identity and free its name for that user.
+The daemon's local harness also works without a server, reading
 one protojson `DeviceCall` per line from stdin:
 
 ```sh
@@ -208,12 +211,20 @@ the same issuer is rejected as `account_conflict`. A password-created super
 user can therefore bind its first OIDC identity. This trusts the configured
 IdP to mark an email verified only when that account owns the address.
 Existing issuer/subject identities continue to identify their original user.
-Human accounts coexist with the
-legacy machine owner; machine credentials and `GET /v1/whoami` keep working.
 
-`ProjectService` and `MachineService.ListDevices` (`proto/circus/v1/project.proto`,
-`machine.proto`) serve the Web UI's projects and device list with the same
-cookie and Origin rules; without a session they answer `UNAUTHENTICATED`.
+`ProjectService` and `MachineService` (`proto/circus/v1/project.proto`,
+`machine.proto`) use the same cookie and Origin rules. Any signed-in user
+can call `MachineService.CreateEnrollLink` to enroll devices, workers, or both
+for their account. The link uses `public_url`, expires after one hour, and
+carries one token per role. Web issuance allows up to 16 unused, unexpired
+tokens per user. CLI-issued tokens count toward this allowance, and the CLI
+can issue tokens regardless of that count. A user can enroll up to 32 live
+devices and 4 live workers. `ListDevices` lists only the caller's devices,
+including when the caller is the super user.
+
+Machines joined before this version must join again using a link issued for
+their Web account. Run `circus join --force` to replace the machine's old
+credentials.
 A project belongs to one Web user and has a name (trimmed, 1–64 characters,
 unique per user ignoring case), an optional git repository URL and 0–16
 locations. A location is a device and, optionally, an absolute path
@@ -222,14 +233,13 @@ default directory `~/circus/projects/<project_id>` (at most one per device),
 reported as `effective_path`. A user's projects hold at most 1000 entries and
 4 MiB of names, repository URLs and paths together. `UpdateProject` with
 `expected_updated_at_unix_ms` applies only to the version the caller read
-and otherwise answers `ABORTED`. Until machines can be enrolled
-for Web users, every device belongs to the legacy machine owner (`admin`):
-the super user sees and binds those devices, other users see none. A device's
-`online` comes from the live daemon links of this process.
+and otherwise answers `ABORTED`. Projects bind devices owned by their
+Web user. A device's `online` comes from the live daemon links of this process.
 
 `SessionService` (`proto/circus/v1/session.proto`) serves sessions to the
 Web UI with the same cookie and Origin rules. A session belongs to the Web
-user who owns its project; every call resolves the session through a
+user who owns its project. Only workers of that user serve its sessions,
+and session quotas apply per user. Every call resolves the session through a
 project of the caller and answers `NOT_FOUND` for anything else, and
 `ListSessions` without a project lists only the caller's projects'
 sessions. `CreateSession` starts in a project location (`location_index`,
@@ -247,8 +257,15 @@ Web user and 256 in all.
 See `docs/wire.md` section 7, "User-side API".
 
 `worker_connections` (default 8, at least 1; zero selects the default) bounds
-worker-credential connections; one credential may hold at most 4. A full cap
-answers HTTP 503. Each connection may have 64 operations open.
+authenticated worker connections. Each Web user and each credential may
+hold at most 4 connections. Two users can fill the default global worker
+connection cap. Increase `worker_connections` as the number of users grows.
+A full cap answers HTTP 503. Each connection may have 64 operations open.
+
+Each user gets half of each global router budget for subscription slots,
+pending call count and bytes, and buffered update bytes. This keeps one
+user from exhausting those budgets alone. Two users together can still
+fill them.
 
 The SQLite database defaults to `$XDG_DATA_HOME/circus/circus.db`
 (`~/.local/share/circus/circus.db`). Admin subcommands (`enroll-token`,
@@ -287,7 +304,7 @@ TLS/kernel buffers, bounded operation scratch, the runtime and GC headroom;
 set `GOMEMLIMIT` above it, for example `GOMEMLIMIT=7GiB` with at least
 8 GiB of memory for the process. The daemon connection limit (100 sockets)
 is fixed; worker sockets default to 8 (`worker_connections`, at most 4 per
-credential), each adding about 139 MiB to the worker links and 96 MiB to the
+user and per credential), each adding about 139 MiB to the worker links and 96 MiB to the
 session service at the default message limit. Live-only session events
 handed to the bus are charged to each watcher's queue (at most 256 KiB of
 payload each) and counted in the watch streams' figure. See
@@ -310,10 +327,19 @@ configuration readable by UID 65532. For OIDC, you can pass the client secret
 in the container environment as `CIRCUS_OIDC_CLIENT_SECRET`.
 
 ```sh
-docker run --rm -p 127.0.0.1:8443:8443 \
+docker run --rm --name circus -p 127.0.0.1:8443:8443 \
   --mount "type=bind,source=$PWD/config.yaml,target=/etc/circus/config.yaml,readonly" \
   --mount type=volume,source=circus-data,target=/data \
   ghcr.io/ericwvi/circus:latest
+```
+
+Open the setup link logged by the container and create the Web user before
+issuing an enrollment link for that account.
+
+```sh
+docker exec circus /usr/local/bin/circus server enroll-token create \
+  --config /etc/circus/config.yaml --user owner@example.com --role both \
+  --url https://circus.example.com
 ```
 
 To install the CLI, download the archive for your OS and architecture and

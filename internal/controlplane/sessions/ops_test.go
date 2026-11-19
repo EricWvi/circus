@@ -1,6 +1,7 @@
 package sessions_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -297,5 +298,73 @@ func TestStopEventConfiguredViewCap(t *testing.T) {
 	must(t, err)
 	if len(page.Events) != 1 || page.Events[0].Kind != store.EventKindSessionState || !page.Events[0].Truncated || page.Events[0].Payload != nil {
 		t.Fatalf("stop event past the configured cap %+v", page.Events)
+	}
+}
+
+// pagedRecoveryStore returns a short first page so the worker API follows
+// the continuation path. All later pages come directly from SQLite.
+type pagedRecoveryStore struct{ store.Store }
+
+func (s pagedRecoveryStore) Tx(ctx context.Context, fn func(context.Context, store.Ops) error) error {
+	return s.Store.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		return fn(ctx, pagedRecoveryOps{tx})
+	})
+}
+
+type pagedRecoveryOps struct{ store.Ops }
+
+func (s pagedRecoveryOps) GetRecovery(ctx context.Context, f store.Fence) (store.Recovery, error) {
+	rec, err := s.Ops.GetRecovery(ctx, f)
+	if err == nil && len(rec.Calls) > store.MaxPageSize {
+		rec.Calls, rec.CallsTruncated = rec.Calls[:store.MaxPageSize], true
+	}
+	return rec, err
+}
+
+func TestRecoveryLaterPagesFilterByUser(t *testing.T) {
+	f := newFixture(t, func(cfg *sessions.Config) { cfg.Store = pagedRecoveryStore{cfg.Store} })
+	c, _, epoch := held(t, f)
+	ctx, now := t.Context(), ms(f)
+	foreign := store.User{ID: "other", Email: "other@example.com", Role: store.RoleUser, CreatedAt: now}
+	device := store.Identity{Kind: store.KindDevice, ID: "other-device", Name: "other-device",
+		UserID: foreign.ID, MachineID: "other-machine", CreatedAt: now}
+	const count = 2*store.MaxPageSize + 1
+	must(t, f.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		if err := tx.CreateUser(ctx, foreign); err != nil {
+			return err
+		}
+		if err := tx.CreateIdentity(ctx, device); err != nil {
+			return err
+		}
+		for i := range count {
+			// Place foreign rows between the first page and subsequent
+			// rows of the session's owner.
+			at := now
+			if i >= store.MaxPageSize {
+				at += 2
+			}
+			for _, row := range []store.Call{
+				{CallID: fmt.Sprintf("own-%04d", i), UserID: f.user.ID, DeviceID: f.device.ID, SubmittedAt: at},
+				{CallID: fmt.Sprintf("foreign-%04d", i), UserID: foreign.ID, DeviceID: device.ID, SubmittedAt: now + 1},
+			} {
+				row.SessionID, row.Tool, row.State = "s1", "bash", store.CallAccepted
+				row.RequestHash = []byte("hash")
+				if err := tx.CreateCall(ctx, row); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}))
+
+	reply := call(t, c, wc.State("s1", epoch, circusv1.GetSessionState_SECTION_CALLS))
+	rows := reply.GetState().GetState().GetCalls()
+	if len(rows) != count {
+		t.Fatalf("recovered %d calls, want %d", len(rows), count)
+	}
+	for i, row := range rows {
+		if want := fmt.Sprintf("own-%04d", i); row.GetCallId() != want {
+			t.Fatalf("recovered call %d = %q, want %q", i, row.GetCallId(), want)
+		}
 	}
 }

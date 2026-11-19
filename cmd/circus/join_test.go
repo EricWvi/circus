@@ -25,6 +25,8 @@ import (
 	"github.com/EricWvi/circus/internal/store/sqlite"
 )
 
+const enrollmentEmail = "owner@example.com"
+
 // joinHarness runs a real control plane in process (plaintext on loopback)
 // and points the credential directory at a test directory. Tests using it
 // set the environment, so they do not run in parallel.
@@ -48,6 +50,9 @@ func newJoinHarness(t *testing.T) *joinHarness {
 	}
 	t.Cleanup(func() { st.Close() })
 	h.st = st
+	if err := st.CreateUser(t.Context(), store.User{ID: "owner", Email: enrollmentEmail, Role: store.RoleUser, CreatedAt: time.Now().UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
 	h.config = writeServerTestConfig(t, fmt.Sprintf("db: %q\n", h.db))
 	srv, err := controlplane.New(context.Background(), st, controlplane.Config{Listen: "127.0.0.1:0", DevInsecure: true, LogOutput: io.Discard})
 	if err != nil {
@@ -70,7 +75,7 @@ func newJoinHarness(t *testing.T) *joinHarness {
 func (h *joinHarness) link(role string) string {
 	h.t.Helper()
 	var out, errOut bytes.Buffer
-	if err := enrollTokenCreate([]string{"--role", role, "--url", h.base, "--config", h.config}, &out, &errOut); err != nil {
+	if err := enrollTokenCreate([]string{"--user", enrollmentEmail, "--role", role, "--url", h.base, "--config", h.config}, &out, &errOut); err != nil {
 		h.t.Fatalf("enroll-token create --role %s: %v", role, err)
 	}
 	return strings.TrimSpace(out.String())
@@ -262,7 +267,7 @@ func TestParseJoinLink(t *testing.T) {
 
 func mustUser(t *testing.T, st store.Store) store.User {
 	t.Helper()
-	u, err := st.GetUserByName(context.Background(), auth.DefaultUserName)
+	u, err := st.GetUserByEmail(t.Context(), enrollmentEmail)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +311,7 @@ func TestRejoinSameNameAfterRevoke(t *testing.T) {
 	old, _ := h.cred(credfile.RoleDaemon)
 	out, errOut, err := h.admin("device", "list")
 	if err != nil || !strings.Contains(out, "laptop") || !strings.Contains(out, old.PrincipalID) ||
-		!strings.Contains(out, "LAST CONNECTED") || !strings.Contains(errOut, "database: "+h.db) {
+		!strings.Contains(out, enrollmentEmail) || !strings.Contains(out, "LAST CONNECTED") || !strings.Contains(errOut, "database: "+h.db) {
 		t.Fatalf("device list: %v\n%s%s", err, out, errOut)
 	}
 	if out, _, _ := h.admin("worker", "list"); strings.Contains(out, "laptop") {
@@ -316,11 +321,11 @@ func TestRejoinSameNameAfterRevoke(t *testing.T) {
 	// While live, the same name is refused even with --force.
 	machine, _ := machineid.Get()
 	if _, err := h.join(h.link("daemon"), "--name", "laptop", "--force"); err == nil ||
-		!strings.Contains(err.Error(), "circus server device list") || !strings.Contains(err.Error(), "revoke laptop") ||
+		!strings.Contains(err.Error(), "circus server device list") || !strings.Contains(err.Error(), "revoke --user <email> laptop") ||
 		!strings.Contains(err.Error(), "This machine's id begins with "+machine[:12]) {
 		t.Fatalf("same name while live: %v", err)
 	}
-	if out, _, err := h.admin("device", "revoke", "laptop"); err != nil || !strings.Contains(out, "can join again") {
+	if out, _, err := h.admin("device", "revoke", "--user", enrollmentEmail, "laptop"); err != nil || !strings.Contains(out, "can join again") {
 		t.Fatalf("revoke: %v %q", err, out)
 	}
 	if out, _, _ := h.admin("device", "list"); strings.Contains(out, "laptop") {
@@ -340,8 +345,8 @@ func TestRejoinSameNameAfterRevoke(t *testing.T) {
 func TestAdminCommandsNeedExistingDatabase(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope", "circus.db")
 	for _, args := range [][]string{
-		{"enroll-token", "create", "--role", "daemon", "--url", "https://h:1"},
-		{"device", "revoke", "x"},
+		{"enroll-token", "create", "--user", enrollmentEmail, "--role", "daemon", "--url", "https://h:1"},
+		{"device", "revoke", "--user", enrollmentEmail, "x"},
 		{"worker", "list"},
 	} {
 		var out, errOut bytes.Buffer
@@ -514,5 +519,62 @@ func TestClientCAFileErrorNamesFlag(t *testing.T) {
 		if _, err := httpClient("https://example.com", ca); err == nil || !strings.Contains(err.Error(), "--ca-file") {
 			t.Fatalf("%s: %v", ca, err)
 		}
+	}
+}
+
+func TestAdminMachinesByUser(t *testing.T) {
+	h := newJoinHarness(t)
+	const otherEmail = "another@example.com"
+	if _, _, err := h.admin("enroll-token", "create", "--user", otherEmail, "--role", "both", "--url", h.base); err == nil || !strings.Contains(err.Error(), otherEmail) {
+		t.Fatalf("enrollment for unknown email: %v", err)
+	}
+	if err := h.st.CreateUser(t.Context(), store.User{ID: "another", Email: otherEmail, Role: store.RoleUser, CreatedAt: time.Now().UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.joinStdin(h.link("both"), "--name", "shared"); err != nil {
+		t.Fatal(err)
+	}
+	link, _, err := h.admin("enroll-token", "create", "--user", otherEmail, "--role", "both", "--url", h.base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.joinStdin(link, "--name", "shared", "--force"); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"device", "worker"} {
+		out, _, err := h.admin(kind, "list")
+		if err != nil || !strings.Contains(out, enrollmentEmail) || !strings.Contains(out, otherEmail) || strings.Count(out, "shared") != 2 {
+			t.Fatalf("%s list: %q, %v", kind, out, err)
+		}
+		if _, _, err := h.admin(kind, "revoke", "shared"); err == nil || !strings.Contains(err.Error(), "--user") {
+			t.Fatalf("%s revoke without user: %v", kind, err)
+		}
+		if _, _, err := h.admin(kind, "revoke", "--user", otherEmail, "shared"); err != nil {
+			t.Fatal(err)
+		}
+		out, _, err = h.admin(kind, "list")
+		if err != nil || !strings.Contains(out, enrollmentEmail) || strings.Contains(out, otherEmail) || strings.Count(out, "shared") != 1 {
+			t.Fatalf("%s list after revoking: %q, %v", kind, out, err)
+		}
+	}
+}
+
+func TestJoinShowsLiveIdentityLimitMessage(t *testing.T) {
+	h := newJoinHarness(t)
+	ctx := t.Context()
+	owner, err := h.st.GetUserByEmail(ctx, enrollmentEmail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range auth.MaxLiveWorkers {
+		id := fmt.Sprintf("worker-%d", i)
+		if err := h.st.CreateIdentity(ctx, store.Identity{Kind: store.KindWorker, ID: id, Name: id, UserID: owner.ID,
+			MachineID: "test-machine", CreatedAt: time.Now().UnixMilli()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = h.joinStdin(h.link("worker"), "--role", "worker", "--name", "extra")
+	if err == nil || err.Error() != "live worker limit reached; revoke one first" {
+		t.Fatalf("join error = %v", err)
 	}
 }

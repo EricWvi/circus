@@ -41,7 +41,7 @@ func TestSessionProjectMigration(t *testing.T) {
             applied_at INTEGER NOT NULL
         ) STRICT;
  INSERT INTO schema_migrations VALUES(1,1),(2,1),(3,1),(4,1),(5,1);
- INSERT INTO users(id,name,created_at,transcript_bytes) VALUES('owner','owner',1,67),('web','web',1,0);
+ INSERT INTO users(id,name,created_at,transcript_bytes,email,role) VALUES('owner','owner',1,67,'owner@example.com','user'),('web','web',1,0,'web@example.com','user');
  INSERT INTO devices(id,user_id,name,machine_id,created_at) VALUES('device','owner','device','machine',1);
  INSERT INTO workers(id,user_id,name,machine_id,created_at) VALUES('worker','owner','worker','machine',1);
  INSERT INTO projects(id,user_id,name,name_key,created_at,updated_at) VALUES('project','web','Project','project',1,1);
@@ -151,10 +151,13 @@ func TestSessionProjectMigration(t *testing.T) {
 	if fk != 1 {
 		t.Fatal("foreign keys disabled")
 	}
-	// All historical outcomes remain valid, and stopped works in both checks.
+	// New sessions use a project owned by the same user. All historical
+	// outcomes remain valid, and stopped works in both checks.
+	_, err = d.CreateProject(ctx, store.Project{ID: "new-project", UserID: "owner", Name: "New", CreatedAt: 10, UpdatedAt: 10})
+	must(err)
 	for i, outcome := range []store.TurnOutcome{store.TurnCompleted, store.TurnInterrupted, store.TurnError, store.TurnStopped} {
 		id := fmt.Sprintf("new%d", i)
-		must(d.CreateSession(ctx, store.Session{ID: id, UserID: "owner", ProjectID: "project", ClaudeSessionID: id, DefaultDeviceID: "device", CreatedAt: 10}, nil, 100))
+		must(d.CreateSession(ctx, store.Session{ID: id, UserID: "owner", ProjectID: "new-project", ClaudeSessionID: id, DefaultDeviceID: "device", CreatedAt: 10}, nil, 100))
 		lease, err := d.AcquireLease(ctx, store.LeaseRequest{SessionID: id, WorkerID: "worker", BootID: "boot", ConnID: "conn", Now: 10, ExpiresAt: 100})
 		must(err)
 		f := store.Fence{SessionID: id, Epoch: lease.Lease.Epoch, WorkerID: "worker", BootID: "boot", ConnID: "conn", Now: 11}

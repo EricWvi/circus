@@ -302,56 +302,92 @@ func TestCheckSettingsBusyTimeout(t *testing.T) {
 	}
 }
 
-// Upgrading the existing database leaves legacy machine ownership and bearer
-// credentials intact; only rows explicitly created as humans can sign in.
-func TestWebAuthMigrationKeepsMachineCredentials(t *testing.T) {
+func TestMachineOwnershipMigrationRetiresLegacyIdentities(t *testing.T) {
+	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), dbName)
 	raw, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer raw.Close()
-	ms, err := migrations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, m := range ms[:3] {
-		if _, err = raw.ExecContext(t.Context(), m.sql); err != nil {
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err = raw.ExecContext(t.Context(), `CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
- INSERT INTO schema_migrations VALUES (1,1),(2,1),(3,1);
+	ms, err := migrations()
+	must(err)
+	for _, m := range ms[:4] {
+		_, err = raw.ExecContext(ctx, m.sql)
+		must(err)
+	}
+	_, err = raw.ExecContext(ctx, `CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
+ INSERT INTO schema_migrations VALUES (1,1),(2,1),(3,1),(4,1);
  INSERT INTO users(id,name,created_at) VALUES ('legacy','admin',1);
- INSERT INTO devices(id,user_id,name,machine_id,created_at) VALUES ('device','legacy','laptop','machine',1);`); err != nil {
-		t.Fatal(err)
+ INSERT INTO users(id,name,created_at,email,role) VALUES ('web','web',1,'web@example.com','user');
+ INSERT INTO devices(id,user_id,name,machine_id,created_at) VALUES
+     ('legacy-device','legacy','desk','machine',1),('web-device','web','desk','machine',1);
+ INSERT INTO workers(id,user_id,name,machine_id,created_at) VALUES
+     ('legacy-worker','legacy','desk','machine',1),('web-worker','web','desk','machine',1);
+ INSERT INTO enroll_tokens(id,user_id,token_hash,kinds,created_at,expires_at,used_at) VALUES
+     ('unused','legacy',X'01','device',1,100,NULL),
+     ('used','legacy',X'02','device',1,100,2),
+     ('web','web',X'03','device',1,100,NULL);`)
+	must(err)
+	type credential struct {
+		kind         store.PrincipalKind
+		owner, token string
 	}
-	token, err := auth.NewToken()
-	if err != nil {
-		t.Fatal(err)
+	var credentials []credential
+	for _, kind := range []store.PrincipalKind{store.KindDevice, store.KindWorker} {
+		for _, owner := range []string{"legacy", "web"} {
+			id := owner + "-" + string(kind)
+			token, err := auth.NewToken()
+			must(err)
+			_, err = raw.ExecContext(ctx, `INSERT INTO credentials(id,principal_kind,principal_id,token_hash,created_at) VALUES (?,?,?,?,1)`,
+				id, kind, id, auth.HashToken(token))
+			must(err)
+			credentials = append(credentials, credential{kind, owner, token})
+		}
 	}
-	if _, err = raw.ExecContext(t.Context(), `INSERT INTO credentials(id,principal_kind,principal_id,token_hash,created_at) VALUES ('credential','device','device',?,1)`, auth.HashToken(token)); err != nil {
-		t.Fatal(err)
-	}
-	if err = raw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	st, err := Open(t.Context(), path, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	must(raw.Close())
+	st, err := Open(ctx, path, Options{})
+	must(err)
 	defer st.Close()
-	u, err := st.GetUserByName(t.Context(), "admin")
-	if err != nil || u.Email != "" || u.Role != "" || u.ID != "legacy" {
+	u, err := st.GetUser(ctx, "legacy")
+	if err != nil || u.Email != "" || u.Role != "" || u.Name != "admin" {
 		t.Fatalf("legacy user: %+v %v", u, err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/v1/whoami", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	principal, err := auth.NewAuthenticator(st, auth.Options{}).Authenticate(t.Context(), req)
-	if err != nil || principal.UserID != "legacy" || principal.ID != "device" {
-		t.Fatalf("legacy credential: %+v %v", principal, err)
+	a := auth.NewAuthenticator(st, auth.Options{})
+	for _, c := range credentials {
+		id, err := st.GetIdentity(ctx, c.kind, c.owner+"-"+string(c.kind))
+		must(err)
+		rec, err := st.LookupCredential(ctx, auth.HashToken(c.token))
+		must(err)
+		req := httptest.NewRequest(http.MethodGet, "/v1/whoami", nil)
+		req.Header.Set("Authorization", "Bearer "+c.token)
+		principal, err := a.Authenticate(ctx, req)
+		if c.owner == "legacy" {
+			if id.DeletedAt == 0 || !rec.Revoked() || !errors.Is(err, auth.ErrRevoked) {
+				t.Fatalf("legacy %s still available: deleted=%d revoked=%v error=%v", c.kind, id.DeletedAt, rec.Revoked(), err)
+			}
+		} else if id.DeletedAt != 0 || rec.Revoked() || err != nil || principal.UserID != c.owner {
+			t.Fatalf("Web %s: deleted=%d revoked=%v error=%v", c.kind, id.DeletedAt, rec.Revoked(), err)
+		}
 	}
-	if _, err = st.GetSuperUser(t.Context()); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("legacy owner became super: %v", err)
+	rows, err := st.q.QueryContext(ctx, `SELECT id FROM enroll_tokens ORDER BY id`)
+	must(err)
+	tokens, err := collect(rows, func(s scanner) (string, error) {
+		var id string
+		err := s.Scan(&id)
+		return id, err
+	})
+	must(err)
+	if len(tokens) != 2 || tokens[0] != "used" || tokens[1] != "web" {
+		t.Fatalf("remaining token rows = %v", tokens)
+	}
+	if _, err = st.GetSuperUser(ctx); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unexpected super user: %v", err)
 	}
 }

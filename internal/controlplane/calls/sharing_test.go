@@ -26,7 +26,7 @@ func sharedResult(t *testing.T) (*circusv1.DaemonUplink, int64) {
 func sharedBudget(cost int64) func(*calls.Config, *gateway.Config) {
 	return func(c *calls.Config, _ *gateway.Config) {
 		c.MaxMessageBytes = 64 << 10
-		c.MaxBufferedUpdateBytes = cost + cost/2
+		c.MaxBufferedUpdateBytes = 3 * cost
 		c.MaxSubscriptionBytes = cost
 	}
 }

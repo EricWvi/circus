@@ -36,12 +36,19 @@ const (
 	// MachineServiceListDevicesProcedure is the fully-qualified name of the MachineService's
 	// ListDevices RPC.
 	MachineServiceListDevicesProcedure = "/circus.v1.MachineService/ListDevices"
+	// MachineServiceCreateEnrollLinkProcedure is the fully-qualified name of the MachineService's
+	// CreateEnrollLink RPC.
+	MachineServiceCreateEnrollLinkProcedure = "/circus.v1.MachineService/CreateEnrollLink"
 )
 
 // MachineServiceClient is a client for the circus.v1.MachineService service.
 type MachineServiceClient interface {
 	// The caller's devices, ordered by name.
 	ListDevices(context.Context, *connect.Request[v1.ListDevicesRequest]) (*connect.Response[v1.ListDevicesResponse], error)
+	// Issues a one-time enrollment link for the caller's machines. Any
+	// signed-in user may call it. Tokens are returned only here; the server
+	// stores only their hashes.
+	CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error)
 }
 
 // NewMachineServiceClient constructs a client for the circus.v1.MachineService service. By default,
@@ -61,12 +68,19 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(machineServiceMethods.ByName("ListDevices")),
 			connect.WithClientOptions(opts...),
 		),
+		createEnrollLink: connect.NewClient[v1.CreateEnrollLinkRequest, v1.CreateEnrollLinkResponse](
+			httpClient,
+			baseURL+MachineServiceCreateEnrollLinkProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("CreateEnrollLink")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // machineServiceClient implements MachineServiceClient.
 type machineServiceClient struct {
-	listDevices *connect.Client[v1.ListDevicesRequest, v1.ListDevicesResponse]
+	listDevices      *connect.Client[v1.ListDevicesRequest, v1.ListDevicesResponse]
+	createEnrollLink *connect.Client[v1.CreateEnrollLinkRequest, v1.CreateEnrollLinkResponse]
 }
 
 // ListDevices calls circus.v1.MachineService.ListDevices.
@@ -74,10 +88,19 @@ func (c *machineServiceClient) ListDevices(ctx context.Context, req *connect.Req
 	return c.listDevices.CallUnary(ctx, req)
 }
 
+// CreateEnrollLink calls circus.v1.MachineService.CreateEnrollLink.
+func (c *machineServiceClient) CreateEnrollLink(ctx context.Context, req *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error) {
+	return c.createEnrollLink.CallUnary(ctx, req)
+}
+
 // MachineServiceHandler is an implementation of the circus.v1.MachineService service.
 type MachineServiceHandler interface {
 	// The caller's devices, ordered by name.
 	ListDevices(context.Context, *connect.Request[v1.ListDevicesRequest]) (*connect.Response[v1.ListDevicesResponse], error)
+	// Issues a one-time enrollment link for the caller's machines. Any
+	// signed-in user may call it. Tokens are returned only here; the server
+	// stores only their hashes.
+	CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error)
 }
 
 // NewMachineServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -93,10 +116,18 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithSchema(machineServiceMethods.ByName("ListDevices")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceCreateEnrollLinkHandler := connect.NewUnaryHandler(
+		MachineServiceCreateEnrollLinkProcedure,
+		svc.CreateEnrollLink,
+		connect.WithSchema(machineServiceMethods.ByName("CreateEnrollLink")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/circus.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineServiceListDevicesProcedure:
 			machineServiceListDevicesHandler.ServeHTTP(w, r)
+		case MachineServiceCreateEnrollLinkProcedure:
+			machineServiceCreateEnrollLinkHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -108,4 +139,8 @@ type UnimplementedMachineServiceHandler struct{}
 
 func (UnimplementedMachineServiceHandler) ListDevices(context.Context, *connect.Request[v1.ListDevicesRequest]) (*connect.Response[v1.ListDevicesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.ListDevices is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.CreateEnrollLink is not implemented"))
 }

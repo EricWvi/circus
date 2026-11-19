@@ -20,6 +20,9 @@ function controlPlaneProxy(target: string): Record<string, ProxyOptions> {
     "/circus.v1.": options,
     // The OpenID Connect redirects.
     "/auth/": options,
+    // Machine links (WebSocket) and CLI endpoints: machines enrolled with a
+    // link from the Web UI talk to the server at its public_url, this origin.
+    "/v1/": { ...options, ws: true },
   }
 }
 

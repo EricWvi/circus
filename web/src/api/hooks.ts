@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { useEffect } from "react"
 
+import { localDeadline } from "@/lib/enroll"
+
 import { useClient } from "./context"
 import { isApiError } from "./errors"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
 import { useSessionHold } from "./session-hold"
-import type { Project, ProjectService, SessionSummary, User } from "./types"
+import type { Device, EnrollLink, EnrollRole, Project, ProjectService, SessionSummary, User } from "./types"
 
 export function useAuth() {
   const client = useClient()
@@ -59,6 +61,40 @@ export function useDevices({ live = false }: { live?: boolean } = {}) {
     queryFn: () => client.machines.listDevices(),
     refetchInterval: live ? DEVICES_LIVE_INTERVAL_MS : false,
     refetchOnWindowFocus: live ? "always" : true,
+  })
+}
+
+/**
+ * Fetches the device list now, whatever the cache holds (joining a fetch
+ * already under way), and updates the cache with it. Fails at once instead
+ * of retrying.
+ */
+export function useFetchDevices(): () => Promise<Device[]> {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return () =>
+    queryClient.fetchQuery({
+      queryKey: queryKeys.devices,
+      queryFn: () => client.machines.listDevices(),
+      staleTime: 0,
+      retry: false,
+    })
+}
+
+/**
+ * Issues an enrollment link. The link is a secret that works once: the
+ * result lives only as long as the component that asked for it (no cache
+ * time), so nothing keeps it after the dialog closes. `deadlineUnixMs` is
+ * when it expires by this browser's clock (see `localDeadline`).
+ */
+export function useCreateEnrollLink() {
+  const client = useClient()
+  return useMutation({
+    mutationFn: async (role: EnrollRole): Promise<EnrollLink & { deadlineUnixMs: number }> => {
+      const link = await client.machines.createEnrollLink({ role })
+      return { ...link, deadlineUnixMs: localDeadline(link.expiresUnixMs, Date.now()) }
+    },
+    gcTime: 0,
   })
 }
 

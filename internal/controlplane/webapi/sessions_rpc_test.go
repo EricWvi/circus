@@ -589,9 +589,8 @@ func TestSendMessageViewCap(t *testing.T) {
 	wantField(t, err, connect.CodeInvalidArgument, "client_msg_id")
 }
 
-// TestCreateSessionOwnership: a location's device and a pinned worker must
-// be live identities of the caller's machine owner, whatever the store let
-// the project record.
+// TestCreateSessionOwnership checks that session locations and pinned
+// workers belong to the caller and are live.
 func TestCreateSessionOwnership(t *testing.T) {
 	h, super := newHarness(t)
 	ctx := t.Context()
@@ -617,15 +616,9 @@ func TestCreateSessionOwnership(t *testing.T) {
 	wantField(t, err, connect.CodeInvalidArgument, "pinned_worker_id")
 	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, PinnedWorkerId: new("w1")})
 	wantField(t, err, connect.CodeInvalidArgument, "pinned_worker_id")
-	// A location on another machine owner's device.
-	admin, err := h.st.GetUserByEmail(ctx, "admin@example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.st.UpdateProject(ctx, admin.ID, p.ProjectId, store.ProjectPatch{Locations: []store.ProjectLocation{{DeviceID: "d1", Path: "/work"}, {DeviceID: "d9", Path: "/x"}}, UpdatedAt: now + 1}, "other"); err == nil {
-		t.Fatal("the store bound a location of two owners")
-	}
-	if _, err := h.st.UpdateProject(ctx, admin.ID, p.ProjectId, store.ProjectPatch{Locations: []store.ProjectLocation{{DeviceID: "d9", Path: "/x"}}, UpdatedAt: now + 1}, "other"); err != nil {
+	_, err = super.update(t, &circusv1.UpdateProjectRequest{ProjectId: p.ProjectId, Locations: locations(loc("elsewhere", "/x"))})
+	wantField(t, err, connect.CodeInvalidArgument, "locations[0].device")
+	if _, err := h.st.DeleteIdentity(ctx, store.KindDevice, "d1", now); err != nil {
 		t.Fatal(err)
 	}
 	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId})
@@ -660,4 +653,41 @@ func TestStopEventInFullView(t *testing.T) {
 	if len(events) != 1 || events[0].Kind != "SESSION_STATE" {
 		t.Fatalf("events = %v", events)
 	}
+}
+
+type staleLocationStore struct {
+	store.Store
+}
+
+func (s staleLocationStore) Tx(ctx context.Context, fn func(context.Context, store.Ops) error) error {
+	return s.Store.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		return fn(ctx, staleLocationOps{tx})
+	})
+}
+
+type staleLocationOps struct{ store.Ops }
+
+func (s staleLocationOps) GetProject(ctx context.Context, userID, projectID string) (store.Project, error) {
+	p, err := s.Ops.GetProject(ctx, userID, projectID)
+	if err == nil && len(p.Locations) == 1 {
+		// Simulate a stored location created before the owner check.
+		p.Locations[0].DeviceID = "foreign-device"
+	}
+	return p, err
+}
+
+func TestCreateSessionRejectsForeignDeviceAtLocation(t *testing.T) {
+	h, super := newHarness(t, func(c *webapi.Config) { c.Store = staleLocationStore{c.Store} })
+	ctx := t.Context()
+	h.device(t, "d1", "desk", "linux")
+	h.signIn(t, "bob", "bob@example.com")
+	if err := h.st.CreateIdentity(ctx, store.Identity{
+		Kind: store.KindDevice, ID: "foreign-device", UserID: "bob", Name: "desk",
+		MachineID: "m2", OS: "linux", CreatedAt: h.clock.Load(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	project := super.mustCreate(t, "Project", loc("desk", "/work"))
+	_, err := super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: project.ProjectId})
+	wantField(t, err, connect.CodeFailedPrecondition, "location_index")
 }

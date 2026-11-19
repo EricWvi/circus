@@ -1,11 +1,12 @@
 import { BinaryWriter, WireType } from "@bufbuild/protobuf/wire"
 import { Code, ConnectError, createRouterTransport, type ServiceImpl } from "@connectrpc/connect"
 import { createConnectTransport } from "@connectrpc/connect-web"
-import { MachineService } from "@circus/proto/circus/v1/machine_pb"
+import { EnrollRole, MachineService } from "@circus/proto/circus/v1/machine_pb"
 import { ProjectService, type UpdateProjectRequest } from "@circus/proto/circus/v1/project_pb"
 import { describe, expect, it } from "vitest"
 
 import { ApiError } from "@/api/errors"
+import { enrollLinkErrorMessage } from "@/lib/enroll"
 
 import { createConnectMachines } from "./machines"
 import { createConnectProjects, toVersion } from "./projects"
@@ -216,4 +217,57 @@ describe("devices over Connect", () => {
       { name: "new", online: false, lastSeenUnixMs: 0, os: "", arch: "", version: "" },
     ])
   })
+
+  it.each([
+    ["daemon", EnrollRole.DAEMON],
+    ["worker", EnrollRole.WORKER],
+    ["both", EnrollRole.BOTH],
+  ] as const)("asks for a %s link", async (role, protoRole) => {
+    let received: EnrollRole | undefined
+    const client = machines({
+      createEnrollLink: (req) => {
+        received = req.role
+        return { link: "https://cp.example/join#a.b", expiresUnixMs: 1_700_000_360_000n, serverVersion: "v0.1.0" }
+      },
+    })
+    expect(await client.createEnrollLink({ role })).toEqual({
+      link: "https://cp.example/join#a.b",
+      expiresUnixMs: 1_700_000_360_000,
+      serverVersion: "v0.1.0",
+    })
+    expect(received).toBe(protoRole)
+  })
+
+  it.each([
+    [Code.ResourceExhausted, "resource_exhausted", "Too many unused links. Wait for some to expire, then try again."],
+    [
+      Code.FailedPrecondition,
+      "failed_precondition",
+      "The server has no public URL configured, so it can't issue links. Ask the server admin to set public_url.",
+    ],
+  ] as const)("reports a refused link by its code (%s)", async (code, apiCode, message) => {
+    const client = machines({
+      createEnrollLink: () => {
+        throw new ConnectError("at most 16 unused enrollment tokens", code)
+      },
+    })
+    const error = await rejection(client.createEnrollLink({ role: "daemon" }))
+    expect(error.code).toBe(apiCode)
+    // What people read comes from the code, not the server's text.
+    expect(enrollLinkErrorMessage(error)).toBe(message)
+  })
+
+  it("rejects a response without a link", async () => {
+    const client = machines({ createEnrollLink: () => ({ link: "", expiresUnixMs: 1n, serverVersion: "dev" }) })
+    expect((await rejection(client.createEnrollLink({ role: "daemon" }))).code).toBe("internal")
+  })
 })
+
+/** A machine client against a fake MachineService, over JSON like the browser's. */
+function machines(impl: Partial<ServiceImpl<typeof MachineService>>) {
+  return createConnectMachines(
+    createRouterTransport(({ service }) => service(MachineService, impl), {
+      transport: { useBinaryFormat: false },
+    }),
+  )
+}

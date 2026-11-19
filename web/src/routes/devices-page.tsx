@@ -1,10 +1,11 @@
-import { CheckIcon, CopyIcon, FolderIcon, MonitorSmartphoneIcon } from "lucide-react"
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Trans, useTranslation } from "react-i18next"
+import { FolderIcon, MonitorSmartphoneIcon, PlusIcon } from "lucide-react"
+import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Link } from "react-router"
 
 import { useDevices, useProjects } from "@/api/hooks"
 import type { Device, Project } from "@/api/types"
+import { AddDeviceDialog } from "@/components/devices/add-device-dialog"
 import { InfoTip } from "@/components/info-tip"
 import { PageHeader } from "@/components/page-header"
 import { DeviceStatusDot } from "@/components/status-dot"
@@ -18,20 +19,22 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { formatDateTime, formatTimeAgo } from "@/lib/time"
 import { projectPath } from "@/lib/tree"
 import { cn } from "@/lib/utils"
-
-/** How a device is added (see `circus server --help` and `circus join --help`). */
-export const ENROLL_COMMAND = "circus server enroll-token create --role daemon"
-export const JOIN_COMMAND = "circus join"
-export const DAEMON_COMMAND = "circus daemon"
 
 /** The signed-in user's devices: status, platform, and the projects on each. */
 export function DevicesPage() {
   const { t } = useTranslation()
   const devices = useDevices({ live: true })
   const projects = useProjects()
+  const [adding, setAdding] = useState(false)
+  const focus = useOverlayFocus()
+  const setAddOpen = (open: boolean) => {
+    focus.onOpenChange(open)
+    setAdding(open)
+  }
 
   let body
   // Only a failed first load shows the error; a failed refetch keeps the list.
@@ -47,7 +50,7 @@ export function DevicesPage() {
   } else if (!devices.data) {
     body = <LoadingList />
   } else if (devices.data.length === 0) {
-    body = <NoDevices />
+    body = <NoDevices onAdd={() => setAddOpen(true)} />
   } else {
     body = (
       <ul className="flex flex-col divide-y border">
@@ -67,12 +70,20 @@ export function DevicesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader>
+      <PageHeader
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+            <PlusIcon />
+            {t("devices.addDevice")}
+          </Button>
+        }
+      >
         <h1 className="min-w-0 truncate font-medium">{t("devices.title")}</h1>
       </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[760px] flex-col px-4 py-8">{body}</div>
       </div>
+      <AddDeviceDialog open={adding} onOpenChange={setAddOpen} onCloseAutoFocus={focus.onCloseAutoFocus} />
     </div>
   )
 }
@@ -162,12 +173,9 @@ function LoadingList() {
   )
 }
 
-/** No devices: what one is, and the commands that add one. */
-function NoDevices() {
+/** No devices: what one is, and the way to add one. */
+function NoDevices({ onAdd }: { onAdd: () => void }) {
   const { t } = useTranslation()
-  // Inline in a small note: the note's size, not the code font size (the
-  // unlayered rule in index.css would win over a utility class).
-  const code = <code className="text-foreground" style={{ fontSize: "1em", lineHeight: "inherit" }} />
   return (
     <Empty className="border border-dashed px-4 py-8 sm:px-6 sm:py-10">
       <EmptyHeader>
@@ -177,81 +185,12 @@ function NoDevices() {
         <EmptyTitle>{t("devices.emptyTitle")}</EmptyTitle>
         <EmptyDescription className="text-pretty">{t("devices.emptyDescription")}</EmptyDescription>
       </EmptyHeader>
-      <EmptyContent className="max-w-lg items-stretch text-left">
-        <ol className="flex flex-col gap-4">
-          <Step n={1} text={t("devices.stepCreateLink")} command={ENROLL_COMMAND}>
-            <Trans i18nKey="devices.stepCreateLinkNote" components={{ code }} />
-          </Step>
-          <Step n={2} text={t("devices.stepJoin")} command={JOIN_COMMAND} />
-          <Step n={3} text={t("devices.stepDaemon")} command={DAEMON_COMMAND} />
-        </ol>
+      <EmptyContent>
+        <Button onClick={onAdd}>
+          <PlusIcon />
+          {t("devices.addDevice")}
+        </Button>
       </EmptyContent>
     </Empty>
-  )
-}
-
-function Step({
-  n,
-  text,
-  command,
-  children,
-}: {
-  n: number
-  text: string
-  command: string
-  children?: ReactNode
-}) {
-  return (
-    <li className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
-      <span aria-hidden className="w-4 text-right text-muted-foreground tabular-nums">
-        {n}
-      </span>
-      <span>{text}</span>
-      <div className="col-start-2">
-        <CommandLine command={command} />
-      </div>
-      {children && <p className="col-start-2 text-xs text-muted-foreground">{children}</p>}
-    </li>
-  )
-}
-
-/** A shell command to copy: scrolls sideways on its own if it doesn't fit. */
-function CommandLine({ command }: { command: string }) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  const timer = useRef(0)
-  useEffect(() => () => window.clearTimeout(timer.current), [])
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(command)
-    } catch {
-      return
-    }
-    setCopied(true)
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <div className="flex min-w-0 items-center border bg-muted/50">
-      <pre className="min-w-0 flex-1 overflow-x-auto px-3 py-2 font-mono">
-        <code>{command}</code>
-      </pre>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="mr-1"
-        aria-label={copied ? t("devices.copied") : t("devices.copyCommand")}
-        title={copied ? t("devices.copied") : t("devices.copyCommand")}
-        onClick={() => void copy()}
-      >
-        {copied ? <CheckIcon /> : <CopyIcon />}
-      </Button>
-      <span className="sr-only" aria-live="polite">
-        {copied ? t("devices.copied") : ""}
-      </span>
-    </div>
   )
 }

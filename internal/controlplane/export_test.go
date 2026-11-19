@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/EricWvi/circus/internal/auth"
-	"github.com/EricWvi/circus/internal/store"
 )
 
 // HookGrace exposes Shutdown's post-deadline collection window to timing tests.
@@ -58,6 +57,3 @@ func InstanceID(s *Server) string { return s.instanceID }
 
 // Authenticator returns the server's single authenticator.
 func Authenticator(s *Server) *auth.Authenticator { return s.authn }
-
-// User returns the default user.
-func User(s *Server) store.User { return s.user }

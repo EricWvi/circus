@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -567,28 +566,14 @@ func (c interruptClock) After(d time.Duration) <-chan time.Time {
 
 func browserSessionAPI(t *testing.T, h *harness) (circusv1connect.SessionServiceClient, string) {
 	t.Helper()
-	var token string
-	for line := range strings.Lines(h.server.stderr.String()) {
-		var record struct{ URL string }
-		if json.Unmarshal([]byte(line), &record) == nil && record.URL != "" {
-			u, err := url.Parse(record.URL)
-			must(t, err)
-			if candidate := u.Query().Get("token"); candidate != "" {
-				token = candidate
-			}
-		}
-	}
-	if token == "" {
-		t.Fatal("no setup token in server logs")
-	}
 	jar, err := cookiejar.New(nil)
 	must(t, err)
 	httpClient := &http.Client{Jar: jar, Transport: http.DefaultTransport.(*http.Transport).Clone()}
 	t.Cleanup(httpClient.CloseIdleConnections)
 	ctx := testwait.Ctx(t)
 	auth := circusv1connect.NewAuthServiceClient(httpClient, h.base)
-	_, err = auth.Setup(ctx, connect.NewRequest(&pb.SetupRequest{
-		Token: token, Email: "fakeworker@example.test", Password: "fakeworker-test-password",
+	_, err = auth.Login(ctx, connect.NewRequest(&pb.LoginRequest{
+		Email: enrollmentEmail, Password: enrollmentPassword,
 	}))
 	must(t, err)
 	projects := circusv1connect.NewProjectServiceClient(httpClient, h.base)

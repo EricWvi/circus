@@ -111,7 +111,7 @@ func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.S
 	}
 	return o.unit(ctx, func(tx *ops) error {
 		var exists int
-		if err := tx.q.QueryRow(ctx, `SELECT 1 FROM projects WHERE id = ?`, s.ProjectID).Scan(&exists); err != nil {
+		if err := tx.q.QueryRow(ctx, `SELECT 1 FROM projects WHERE id = ? AND user_id = ?`, s.ProjectID, s.UserID).Scan(&exists); err != nil {
 			return mapErr(err)
 		}
 		var n int
@@ -363,12 +363,12 @@ func (o *ops) DeleteSession(ctx context.Context, sessionID string, now int64) er
 				return tx.chargeTranscript(ctx, sessionID, s.UserID, -total)
 			}
 			n, err := tx.exec(ctx, `DELETE FROM calls WHERE rowid IN (
-				SELECT rowid FROM calls WHERE session_id = ? LIMIT ?)`, sessionID, store.DeleteChunkRows)
+				SELECT rowid FROM calls WHERE session_id = ? AND user_id = ? LIMIT ?)`, sessionID, s.UserID, store.DeleteChunkRows)
 			if err != nil || n > 0 {
 				return err
 			}
 			// The bounded rest: every other table hangs off the session.
-			if _, err := tx.exec(ctx, `DELETE FROM jobs WHERE session_id = ? AND state <> 'running'`, sessionID); err != nil {
+			if _, err := tx.exec(ctx, `DELETE FROM jobs WHERE session_id = ? AND user_id = ? AND state <> 'running'`, sessionID, s.UserID); err != nil {
 				return err
 			}
 			if err := tx.chargeTranscript(ctx, sessionID, s.UserID, -s.TranscriptBytes); err != nil {
@@ -419,8 +419,8 @@ func (o *ops) deletable(ctx context.Context, sessionID string, now int64) (store
 		return s, fmt.Errorf("%w: worker %q holds the lease", store.ErrSessionActive, l.WorkerID)
 	}
 	var active int
-	if err := o.q.QueryRow(ctx, `SELECT COUNT(*) FROM calls WHERE session_id = ? AND state IN `+activeCallStates,
-		sessionID).Scan(&active); err != nil {
+	if err := o.q.QueryRow(ctx, `SELECT COUNT(*) FROM calls WHERE session_id = ? AND user_id = ? AND state IN `+activeCallStates,
+		sessionID, s.UserID).Scan(&active); err != nil {
 		return s, mapErr(err)
 	}
 	if active > 0 {
@@ -512,7 +512,8 @@ func (o *ops) pendingWork(ctx context.Context, sessionID string) (bool, error) {
 		EXISTS (SELECT 1 FROM session_inputs WHERE session_id = ?1 AND state = 'pending')
 		OR EXISTS (SELECT 1 FROM session_jobs sj JOIN jobs j
 			ON j.device_id = sj.device_id AND j.boot_id = sj.boot_id AND j.job_id = sj.job_id
-			WHERE sj.session_id = ?1 AND sj.notice = 'no' AND j.state <> 'running')`, sessionID).Scan(&work)
+			WHERE sj.session_id = ?1 AND sj.notice = 'no' AND j.state <> 'running'
+			AND j.user_id = (SELECT user_id FROM sessions WHERE session_id = ?1))`, sessionID).Scan(&work)
 	return work, mapErr(err)
 }
 
@@ -761,8 +762,8 @@ func (o *ops) GetRecovery(ctx context.Context, f store.Fence) (store.Recovery, e
 			return err
 		}
 		rows, err = tx.q.QueryContext(ctx, `SELECT `+callCols+` FROM calls
-			WHERE session_id = ? AND (persisted_at IS NULL OR notice_owed = 1)
-			ORDER BY submitted_at, call_id LIMIT ?`, f.SessionID, store.MaxRecoveryCalls+1)
+			WHERE session_id = ? AND user_id = ? AND (persisted_at IS NULL OR notice_owed = 1)
+			ORDER BY submitted_at, call_id LIMIT ?`, f.SessionID, s.UserID, store.MaxRecoveryCalls+1)
 		if err != nil {
 			return mapErr(err)
 		}
@@ -1053,25 +1054,25 @@ func (o *ops) AdmitSessionCall(ctx context.Context, f store.Fence, callID string
 		if err := s.State.Refusal(); err != nil {
 			return fmt.Errorf("%w: session %q", err, f.SessionID)
 		}
-		var owner string
-		err = mapErr(tx.q.QueryRow(ctx, `SELECT session_id FROM calls WHERE call_id = ?`, callID).Scan(&owner))
+		var sessionID, userID string
+		err = mapErr(tx.q.QueryRow(ctx, `SELECT session_id, user_id FROM calls WHERE call_id = ?`, callID).Scan(&sessionID, &userID))
 		switch {
-		case err == nil && owner != f.SessionID:
+		case err == nil && (sessionID != f.SessionID || userID != s.UserID):
 			return fmt.Errorf("%w: call %q of this session", store.ErrNotFound, callID)
 		case err != nil && !isNotFound(err):
 			return err
 		}
 		var active int
-		if err := tx.q.QueryRow(ctx, `SELECT COUNT(*) FROM calls WHERE session_id = ? AND call_id <> ? AND state IN `+
-			activeCallStates, f.SessionID, callID).Scan(&active); err != nil {
+		if err := tx.q.QueryRow(ctx, `SELECT COUNT(*) FROM calls WHERE session_id = ? AND user_id = ? AND call_id <> ? AND state IN `+
+			activeCallStates, f.SessionID, s.UserID, callID).Scan(&active); err != nil {
 			return mapErr(err)
 		}
 		if active >= maxActive {
 			return fmt.Errorf("%w: %d of %d", store.ErrTooManyCalls, active, maxActive)
 		}
 		var unpersisted int
-		if err := tx.q.QueryRow(ctx, `SELECT COUNT(*) FROM calls WHERE session_id = ? AND call_id <> ? AND persisted_at IS NULL`,
-			f.SessionID, callID).Scan(&unpersisted); err != nil {
+		if err := tx.q.QueryRow(ctx, `SELECT COUNT(*) FROM calls WHERE session_id = ? AND user_id = ? AND call_id <> ? AND persisted_at IS NULL`,
+			f.SessionID, s.UserID, callID).Scan(&unpersisted); err != nil {
 			return mapErr(err)
 		}
 		if unpersisted >= store.MaxUnpersistedSessionCalls {

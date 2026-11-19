@@ -46,7 +46,8 @@ func TestReadinessUsesRouterHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "device", UserID: s.user.ID, Name: "desk", MachineID: "machine", CreatedAt: 1}); err != nil {
+	u := createMachineTestUser(t, db)
+	if err = db.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "device", UserID: u.ID, Name: "desk", MachineID: "machine", CreatedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.Start(); err != nil {
@@ -69,7 +70,7 @@ func TestReadinessUsesRouterHealth(t *testing.T) {
 		return status == 200
 	})
 	faulty.fail.Store(true)
-	_, err = s.router.Submit(ctx, s.user.ID, "desk", &circusv1.DeviceCall{CallId: "call", SessionId: "session", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "true"}}})
+	_, err = s.router.Submit(ctx, u.ID, "desk", &circusv1.DeviceCall{CallId: "call", SessionId: "session", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "true"}}})
 	if err == nil {
 		t.Fatal("device lookup failure was not returned")
 	}
@@ -146,7 +147,8 @@ func TestAssembledSenderDelivers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, _, err := auth.CreateEnrollToken(ctx, db, s.user.ID, store.KindDevice, time.Hour, time.Now())
+	u := createMachineTestUser(t, db)
+	token, _, err := auth.CreateEnrollToken(ctx, db, u.ID, store.KindDevice, time.Hour, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

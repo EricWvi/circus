@@ -44,7 +44,7 @@ func Run(t *testing.T, b Backend) {
 		{"Projects", testProjects},
 		{"ProjectLocations", testProjectLocations},
 		{"ProjectOptionalParts", testProjectOptionalParts},
-		{"ProjectWithoutOwner", testProjectWithoutOwner},
+		{"ProjectForeignDevice", testProjectForeignDevice},
 		{"ProjectStale", testProjectStale},
 		{"ProjectInvisibleUpdates", testProjectInvisibleUpdates},
 		{"ProjectBytes", testProjectBytes},
@@ -59,6 +59,7 @@ func Run(t *testing.T, b Backend) {
 		{"DeleteIdentity", testDeleteIdentity},
 		{"Credentials", testCredentials},
 		{"EnrollTokens", testEnrollTokens},
+		{"CountUnusedEnrollTokens", testCountUnusedEnrollTokens},
 		{"EnrollTokenConcurrentUse", testEnrollTokenConcurrentUse},
 		{"CallCreate", testCallCreate},
 		{"CallTransitionTable", testCallTransitionTable},
@@ -81,6 +82,7 @@ func Run(t *testing.T, b Backend) {
 		{"TxTimerAtomicity", testTxTimerAtomicity},
 		{"SessionCreate", testSessionCreate},
 		{"SessionLists", testSessionLists},
+		{"SessionCallsAndJobsByOwner", testSessionCallsAndJobsByOwner},
 		{"SessionActivity", testSessionActivity},
 		{"SessionPagingActivity", testSessionPagingActivity},
 		{"UserProjectSessions", testUserProjectSessions},
@@ -219,7 +221,7 @@ func seed(t testing.TB, ops store.Ops) fixture {
 	must(t, ops.CreateUser(ctx, f.user))
 	must(t, ops.CreateIdentity(ctx, f.device))
 	must(t, ops.CreateIdentity(ctx, f.worker))
-	_, err := ops.CreateProject(ctx, store.Project{ID: "session-project", UserID: f.user.ID, Name: "Sessions", CreatedAt: t0, UpdatedAt: t0}, "")
+	_, err := ops.CreateProject(ctx, store.Project{ID: "session-project", UserID: f.user.ID, Name: "Sessions", CreatedAt: t0, UpdatedAt: t0})
 	must(t, err)
 	return f
 }

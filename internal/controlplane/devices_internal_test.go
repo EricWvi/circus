@@ -56,14 +56,6 @@ func TestOnlineDevicesFollowDaemonLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, _, err := auth.CreateEnrollToken(ctx, db, s.user.ID, store.KindDevice, time.Hour, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	e, err := auth.Enroll(ctx, db, auth.EnrollRequest{Token: token, Kind: store.KindDevice, Name: "desk", MachineID: "m", Hostname: "h", OS: "linux", Arch: "amd64", ClientVersion: "1.2.3"}, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err = s.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +66,7 @@ func TestOnlineDevicesFollowDaemonLink(t *testing.T) {
 	})
 	base := "http://" + s.Addr().String()
 
-	// Sign in as the super user, who sees the legacy owner's devices.
+	// Sign in as the super user, who owns the device.
 	m := regexp.MustCompile(`setup\?token=([A-Za-z0-9_-]+)`).FindStringSubmatch(logs.String())
 	if m == nil {
 		t.Fatal("no setup link logged")
@@ -83,7 +75,17 @@ func TestOnlineDevicesFollowDaemonLink(t *testing.T) {
 	client := &http.Client{Jar: jar, Timeout: 10 * time.Second, Transport: http.DefaultTransport.(*http.Transport).Clone()}
 	t.Cleanup(client.CloseIdleConnections)
 	authClient := circusv1connect.NewAuthServiceClient(client, base)
-	if _, err := authClient.Setup(ctx, connect.NewRequest(&circusv1.SetupRequest{Token: m[1], Email: "admin@example.com", Password: "password-123"})); err != nil {
+	setup, err := authClient.Setup(ctx, connect.NewRequest(&circusv1.SetupRequest{Token: m[1], Email: "admin@example.com", Password: "password-123"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerID := setup.Msg.GetUser().GetUserId()
+	token, _, err := auth.CreateEnrollToken(ctx, db, ownerID, store.KindDevice, time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := auth.Enroll(ctx, db, auth.EnrollRequest{Token: token, Kind: store.KindDevice, Name: "desk", MachineID: "m", Hostname: "h", OS: "linux", Arch: "amd64", ClientVersion: "1.2.3"}, time.Now())
+	if err != nil {
 		t.Fatal(err)
 	}
 	machines := circusv1connect.NewMachineServiceClient(client, base)
@@ -100,7 +102,7 @@ func TestOnlineDevicesFollowDaemonLink(t *testing.T) {
 	}
 	online := func() bool {
 		t.Helper()
-		ids, err := s.onlineDevices(ctx, s.user.ID)
+		ids, err := s.onlineDevices(ctx, ownerID)
 		if err != nil {
 			t.Fatal(err)
 		}

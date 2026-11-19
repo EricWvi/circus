@@ -148,6 +148,7 @@ const (
 	DefaultMaxConnections = 8
 	// maxPerCredential keeps one worker from taking every connection.
 	maxPerCredential = 4
+	maxPerUser       = 4
 	maxOperations    = 64
 	// pushPermits bounds, across all connections, the large router-owned
 	// updates taken from subscriptions and not yet accepted by the link.
@@ -169,7 +170,8 @@ const (
 // defaults) revalidates it. Clock (zero: real time) times the handshake,
 // rechecks and send retries; Wire.Clock times the links themselves.
 // MaxConnections (zero: DefaultMaxConnections) bounds authenticated worker
-// links; it sizes the worst-case memory (see the package comment).
+// links; it sizes the worst-case memory (see the package comment). Each
+// user and each credential may hold at most four authenticated links.
 type Config struct {
 	Auth           auth.LinkAuthenticator
 	Router         calls.Service
@@ -212,6 +214,7 @@ type Handler struct {
 type peer struct {
 	cancel     context.CancelFunc
 	credential string
+	user       string
 }
 
 // subscription is the part of *calls.Subscription a push uses.
@@ -389,19 +392,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Authentication is deliberately outside the bounded peer set: invalid
 	// credentials cannot occupy every connection slot. Authenticated handshakes
 	// count until they finish, so they cannot accumulate without bound.
-	p := &peer{cancel: cancel, credential: principal.CredentialID}
+	p := &peer{cancel: cancel, credential: principal.CredentialID, user: principal.UserID}
 	h.mu.Lock()
-	same := 0
+	sameCredential, sameUser := 0, 0
 	for q := range h.peers {
 		if q.credential == p.credential {
-			same++
+			sameCredential++
+		}
+		if q.user == p.user {
+			sameUser++
 		}
 	}
-	if h.closed || len(h.peers) >= h.cfg.MaxConnections || same >= maxPerCredential {
+	if h.closed || len(h.peers) >= h.cfg.MaxConnections || sameCredential >= maxPerCredential || sameUser >= maxPerUser {
 		h.mu.Unlock()
 		reason := "workerlink overloaded; retry after an existing worker link closes"
-		if same >= maxPerCredential {
+		switch {
+		case sameCredential >= maxPerCredential:
 			reason = "too many worker links for this credential; retry after one closes"
+		case sameUser >= maxPerUser:
+			reason = "too many worker links for this user; retry after one closes"
 		}
 		http.Error(w, reason, http.StatusServiceUnavailable)
 		return

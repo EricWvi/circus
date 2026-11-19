@@ -9,7 +9,7 @@ import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
 import { advance, renderWithBackend } from "@/test/render"
 
-import { DAEMON_COMMAND, DevicesPage, ENROLL_COMMAND, JOIN_COMMAND } from "./devices-page"
+import { DevicesPage } from "./devices-page"
 
 const NOW = Date.parse("2026-11-17T12:00:00Z")
 const DAY = 86_400_000
@@ -154,29 +154,19 @@ describe("the device list", () => {
 })
 
 describe("without devices", () => {
-  it("says so and shows the commands that add one, ready to copy", async () => {
-    const writeText = vi.fn(() => Promise.resolve())
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
-
+  it("says so and offers to add one", async () => {
     const state = seedState(NOW)
     state.devices = []
     await renderDevices(state)
 
     expect(screen.getByText("No devices yet")).toBeTruthy()
-    const shown = Array.from(document.querySelectorAll("pre code")).map((c) => c.textContent)
-    expect(shown).toEqual([ENROLL_COMMAND, JOIN_COMMAND, DAEMON_COMMAND])
-    expect(ENROLL_COMMAND).toBe("circus server enroll-token create --role daemon")
-    expect(JOIN_COMMAND).toBe("circus join")
-    expect(DAEMON_COMMAND).toBe("circus daemon")
-
-    const copyButtons = screen.getAllByRole("button", { name: "Copy command" })
-    expect(copyButtons).toHaveLength(3)
-    fireEvent.click(copyButtons[1])
+    // No admin CLI commands any more: adding is the dialog's job.
+    expect(document.querySelector("pre")).toBeNull()
+    expect(screen.queryByText(/enroll-token/)).toBeNull()
+    const empty = screen.getByText("No devices yet").closest("[data-slot=empty]") as HTMLElement
+    fireEvent.click(within(empty).getByRole("button", { name: "Add device" }))
     await advance(0)
-    expect(writeText).toHaveBeenCalledWith("circus join")
-    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy()
-    await advance(2000)
-    expect(screen.queryByRole("button", { name: "Copied" })).toBeNull()
+    expect(screen.getByRole("dialog", { name: "Add device" })).toBeTruthy()
   })
 })
 
@@ -212,6 +202,7 @@ async function renderDevicesFailing(state: MockState) {
     wrapClient: (client) => ({
       ...client,
       machines: {
+        ...client.machines,
         listDevices: () =>
           failing ? Promise.reject(new Error("boom")) : client.machines.listDevices(),
       },

@@ -216,7 +216,7 @@ func TestStopSessionJobsIsBarrierAndUserScoped(t *testing.T) {
 }
 
 func TestAckReleasesPendingAdmission(t *testing.T) {
-	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Pending.MaxCalls = 1 })
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Pending.MaxCalls = 2 })
 	l := f.connect("boot")
 	first, err := f.router.Submit(f.ctx, "u", "desk", call("first"))
 	must(t, err)
@@ -249,7 +249,7 @@ func TestEqualDuplicateAttachesWhenPendingScratchIsFull(t *testing.T) {
 	existingScratch := int64(2 * proto.Size(existing))
 	maxBytes := charge(existing) + existingScratch
 	f := setup(t, func(c *calls.Config, _ *gateway.Config) {
-		c.Pending.MaxBytes = maxBytes
+		c.Pending.MaxBytes = 2 * maxBytes
 	})
 	l := f.connect("boot")
 
@@ -283,7 +283,7 @@ func TestEqualDuplicateAttachesWhenPendingScratchIsFull(t *testing.T) {
 }
 
 func TestNewCallRejectsWhenScratchExhausted(t *testing.T) {
-	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Pending.MaxBytes = 1 })
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Pending.MaxBytes = 2 })
 	s, err := f.router.Submit(f.ctx, "u", "desk", call("new-scratch"))
 	must(t, err)
 	defer s.Close()
@@ -298,7 +298,7 @@ func TestNewCallRejectsWhenScratchExhausted(t *testing.T) {
 }
 
 func TestUndispatchedLostResubmitRejectsWhenScratchExhausted(t *testing.T) {
-	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Pending.MaxBytes = 1 })
+	f := setup(t, func(c *calls.Config, _ *gateway.Config) { c.Pending.MaxBytes = 2 })
 	original := call("lost-scratch")
 	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(original)
 	must(t, err)
@@ -497,4 +497,55 @@ func TestCancelDeliveryFailureAfterIntentIsRecorded(t *testing.T) {
 		t.Fatal("intent not recorded")
 	}
 	f.result(l, "call")
+}
+
+func TestPendingBudgetsShareByUser(t *testing.T) {
+	for _, budget := range []string{"count", "bytes"} {
+		t.Run(budget, func(t *testing.T) {
+			first := call("first")
+			const maxMessageBytes = 256 << 10
+			cost, err := wire.Charge(&circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{
+				SubmitCall: &circusv1.SubmitCall{Device: "desk", Call: first},
+			}}, maxMessageBytes)
+			must(t, err)
+			f := setup(t, func(c *calls.Config, _ *gateway.Config) {
+				if budget == "count" {
+					c.Pending.MaxCalls = 2
+				} else {
+					c.Pending.MaxBytes = 2 * (cost + int64(2*proto.Size(first)))
+				}
+			})
+			must(t, f.db.CreateUser(f.ctx, store.User{ID: "v", Name: "v", CreatedAt: 1}))
+			must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindDevice, ID: "other", UserID: "v", Name: "desk", MachineID: "m", CreatedAt: 1}))
+			// Both devices are within their disconnect grace periods.
+			for _, id := range []string{"d", "other"} {
+				now := f.clock.Now().UnixMilli()
+				_, err := f.db.SetConnected(f.ctx, store.KindDevice, id, "boot", now)
+				must(t, err)
+				must(t, f.db.SetDisconnected(f.ctx, store.KindDevice, id, now))
+			}
+			submit := func(user string, req *circusv1.DeviceCall) *circusv1.CallUpdate {
+				t.Helper()
+				sub, err := f.router.Submit(f.ctx, user, "desk", req)
+				must(t, err)
+				defer sub.Close()
+				update, err := sub.Next(f.ctx)
+				must(t, err)
+				return update
+			}
+			if u := submit("u", first); u.GetAccepted() == nil {
+				t.Fatalf("first call: %v", u)
+			}
+			if u := submit("u", call("extra")); u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_OVERLOADED {
+				t.Fatalf("same user over budget: %v", u)
+			}
+			if u := submit("v", call("other")); u.GetAccepted() == nil {
+				t.Fatalf("another user at available capacity: %v", u)
+			}
+			must(t, f.router.Cancel(f.ctx, "u", "first"))
+			if u := submit("u", call("retry")); u.GetAccepted() == nil {
+				t.Fatalf("slot did not reopen after cancel: %v", u)
+			}
+		})
+	}
 }

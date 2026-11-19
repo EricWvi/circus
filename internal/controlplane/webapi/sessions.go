@@ -265,10 +265,6 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 	case len(m.GetPinnedWorkerId()) > store.MaxIDBytes:
 		return nil, invalidField("pinned_worker_id", "worker id is too long")
 	}
-	owner, err := s.deviceOwner(ctx, u)
-	if err != nil {
-		return nil, s.internal(ctx, "device owner", err)
-	}
 	id, err := newID()
 	if err != nil {
 		return nil, s.internal(ctx, "session id", err)
@@ -282,9 +278,6 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		}
 		if err != nil {
 			return err
-		}
-		if owner == "" {
-			return fieldError(connect.CodeFailedPrecondition, "location_index", "you have no devices to run a session on")
 		}
 		if len(p.Locations) == 0 {
 			return fieldError(connect.CodeFailedPrecondition, "location_index", "the project has no locations")
@@ -305,7 +298,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		// (deleted) device stays deleted even when another machine takes
 		// its name. The project's reads derive DeviceRevoked and DeviceName
 		// from this same row.
-		if err != nil || device.DeletedAt != 0 || device.UserID != owner {
+		if err != nil || device.DeletedAt != 0 || device.UserID != u.ID {
 			return fieldError(connect.CodeFailedPrecondition, "location_index", "the location's device is not one of your devices")
 		}
 		if w := m.GetPinnedWorkerId(); w != "" {
@@ -313,7 +306,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 			if err != nil && !errors.Is(err, store.ErrNotFound) {
 				return err
 			}
-			if err != nil || worker.DeletedAt != 0 || worker.UserID != owner {
+			if err != nil || worker.DeletedAt != 0 || worker.UserID != u.ID {
 				return invalidField("pinned_worker_id", "unknown worker")
 			}
 		}
@@ -325,7 +318,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 			cwd = defaultDir(p.ID)
 		}
 		sess := store.Session{
-			ID: id, UserID: owner, ProjectID: p.ID, ClaudeSessionID: uuid.NewString(), State: store.SessionIdle,
+			ID: id, UserID: u.ID, ProjectID: p.ID, ClaudeSessionID: uuid.NewString(), State: store.SessionIdle,
 			DefaultDeviceID: l.DeviceID, Model: cfg.GetModel(), PermissionMode: cfg.GetPermissionMode(),
 			PinnedWorkerID: m.GetPinnedWorkerId(), CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		}
@@ -333,7 +326,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		if err := tx.CreateSession(ctx, sess, cwds, store.DefaultMaxSessionsPerUser); err != nil {
 			return err
 		}
-		if _, err := tx.UpdateProject(ctx, u.ID, p.ID, store.ProjectPatch{LastUsedLocation: &index, UpdatedAt: now}, ""); err != nil {
+		if _, err := tx.UpdateProject(ctx, u.ID, p.ID, store.ProjectPatch{LastUsedLocation: &index, UpdatedAt: now}); err != nil {
 			return err
 		}
 		stored, err := tx.GetSession(ctx, id, now)

@@ -121,23 +121,18 @@ type ProjectPatch struct {
 	UpdatedAt int64
 }
 
-// ProjectOps are the project operations. Projects belong to one user
-// (UserID); every read and write is scoped to it, and a project of another
-// user is ErrNotFound, as if absent. Writes check device ownership against
-// deviceOwnerID, the user whose devices the project's user may bind (see
-// the control plane's mapping); it may differ from the project's user, and
-// may be empty when the write binds no device.
+// ProjectOps stores projects and validates that locations use the project owner's devices.
 type ProjectOps interface {
 	// CreateProject inserts p and returns it as stored. p must have 0 to
 	// MaxProjectLocations distinct (device, path) locations and a
 	// LastUsedLocation indexing them, 0 if there are none (else
 	// ErrLocationIndex). Each device must be a live device of
-	// deviceOwnerID, else *LocationDeviceError.
+	// the project owner, else *LocationDeviceError.
 	// ErrExists if the id is taken or another project of the user has a
 	// name with the same ProjectNameKey; ErrLimit past MaxProjectsPerUser,
 	// ErrProjectBytes past MaxProjectBytesPerUser; ErrNotFound if the user
 	// does not exist.
-	CreateProject(ctx context.Context, p Project, deviceOwnerID string) (Project, error)
+	CreateProject(ctx context.Context, p Project) (Project, error)
 	// GetProject returns the user's project, or ErrNotFound.
 	GetProject(ctx context.Context, userID, projectID string) (Project, error)
 	// ListProjects returns the user's projects ordered by ProjectNameKey,
@@ -149,7 +144,7 @@ type ProjectOps interface {
 	// a stale ExpectedUpdatedAt ErrProjectStale, the byte budget
 	// ErrProjectBytes. A patch that sets nothing returns the project
 	// unchanged.
-	UpdateProject(ctx context.Context, userID, projectID string, patch ProjectPatch, deviceOwnerID string) (Project, error)
+	UpdateProject(ctx context.Context, userID, projectID string, patch ProjectPatch) (Project, error)
 	// DeleteProject deletes the user's empty project and locations in one
 	// transaction. Any session, even deletable, is ErrHasSessions and nothing
 	// is deleted. The service preflights all sessions, deletes them one by one

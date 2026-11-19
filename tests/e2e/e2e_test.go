@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,9 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
@@ -35,6 +38,11 @@ import (
 )
 
 var binary, root string
+
+const (
+	enrollmentEmail    = "owner@example.com"
+	enrollmentPassword = "password-123"
+)
 
 func TestMain(m *testing.M) {
 	os.Exit(runE2E(m))
@@ -237,6 +245,7 @@ type harness struct {
 	server, daemon      *child
 	st                  *sqlite.DB
 	worker              credfile.File
+	userID              string
 }
 
 func newHarness(t *testing.T, grace ...string) *harness {
@@ -248,7 +257,8 @@ func newHarness(t *testing.T, grace ...string) *harness {
 	h.db = filepath.Join(h.dir, "db")
 	h.env = append(os.Environ(), "HOME="+h.dir, "XDG_CONFIG_HOME="+filepath.Join(h.dir, "config"), "XDG_DATA_HOME="+filepath.Join(h.dir, "data"), "XDG_CACHE_HOME="+filepath.Join(h.dir, "cache"), "CIRCUS_E2E_CRASH_DISPATCH=0", "GORACE=atexit_sleep_ms=0")
 	h.startServer(false)
-	link := h.run("", 0, "server", "enroll-token", "create", "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"), "--role", "both", "--url", h.base)
+	h.createWebUser()
+	link := h.run("", 0, "server", "enroll-token", "create", "--user", enrollmentEmail, "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"), "--role", "both", "--url", h.base)
 	h.run(link, 0, "join", "--name", "desk")
 	var err error
 	h.worker, err = credfile.Load(filepath.Join(h.dir, "config/circus/worker.json"))
@@ -448,10 +458,30 @@ func (h *harness) offline() {
 		return err == nil && len(ids) == 1 && ids[0].LastDisconnectedAt >= ids[0].LastConnectedAt && ids[0].LastDisconnectedAt != 0
 	})
 }
-func (h *harness) user() string {
-	u, err := h.st.GetUserByName(h.t.Context(), "admin")
+func (h *harness) user() string { return h.userID }
+
+func (h *harness) createWebUser() {
+	h.t.Helper()
+	var token string
+	for line := range strings.Lines(h.server.stderr.String()) {
+		var rec struct{ URL string }
+		if json.Unmarshal([]byte(line), &rec) == nil && strings.Contains(rec.URL, "/setup?token=") {
+			setupURL, err := url.Parse(rec.URL)
+			must(h.t, err)
+			token = setupURL.Query().Get("token")
+			break
+		}
+	}
+	if token == "" {
+		h.t.Fatal("no setup link")
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	defer client.CloseIdleConnections()
+	res, err := circusv1connect.NewAuthServiceClient(client, h.base).Setup(h.t.Context(), connect.NewRequest(&circusv1.SetupRequest{
+		Token: token, Email: enrollmentEmail, Password: enrollmentPassword,
+	}))
 	must(h.t, err)
-	return u.ID
+	h.userID = res.Msg.GetUser().GetUserId()
 }
 func (h *harness) query(id string) *circusv1.CallUpdate {
 	h.t.Helper()
@@ -1175,7 +1205,7 @@ func TestRevocationEndsDaemon(t *testing.T) {
 	h.submit(c, active)
 	h.trackTool(pidfile)
 	wait(t, 3*time.Second, func() bool { return markerLines(t, marker) == 1 })
-	h.run("", 0, "server", "device", "revoke", "desk", "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"))
+	h.run("", 0, "server", "device", "revoke", "desk", "--user", enrollmentEmail, "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"))
 	// Access logging happens only after ServeHTTP released the live link.
 	wait(t, 6*time.Second, func() bool {
 		for line := range strings.Lines(h.server.stderr.String()) {
@@ -1215,7 +1245,7 @@ func TestRevocationEndsDaemon(t *testing.T) {
 	default:
 	}
 	// The subscription started before either revocation is still live here.
-	h.run("", 0, "server", "worker", "revoke", "desk", "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"))
+	h.run("", 0, "server", "worker", "revoke", "desk", "--user", enrollmentEmail, "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"))
 	// An active client notices revocation through its joined reader.
 	ctx, cancel := context.WithTimeout(t.Context(), testwait.Timeout)
 	defer cancel()

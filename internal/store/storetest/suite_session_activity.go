@@ -119,10 +119,13 @@ func testUserProjectSessions(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	_, err := s.CreateProject(ctx, newProject("human-project", "alice", "Human"), "")
+	_, err := s.CreateProject(ctx, newProject("human-project", "alice", "Human"))
 	must(t, err)
 	sess := newSession("human-session", f.fixture)
 	sess.ProjectID = "human-project"
+	mustIs(t, s.CreateSession(ctx, sess, nil, 100), store.ErrNotFound)
+	sess.UserID = f.alice.ID
+	sess.DefaultDeviceID = "alice-laptop"
 	must(t, s.CreateSession(ctx, sess, nil, 100))
 	for i := 0; i < 2; i++ {
 		mustIs(t, s.DeleteUser(ctx, "alice"), store.ErrHasSessions)
@@ -133,7 +136,7 @@ func testUserProjectSessions(t *testing.T, b Backend) {
 		must(t, err)
 	}
 	must(t, s.DeleteSession(ctx, sess.ID, t0))
-	must(t, s.DeleteUser(ctx, "alice"))
+	must(t, s.DeleteProject(ctx, "alice", "human-project", t0))
 	_, err = s.GetProject(ctx, "alice", "human-project")
 	mustIs(t, err, store.ErrNotFound)
 }

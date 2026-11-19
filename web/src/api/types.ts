@@ -131,8 +131,25 @@ export interface Device {
   version: string
 }
 
+/** Which identities an enrollment link enrolls: a device (daemon), a worker, or both. */
+export type EnrollRole = "daemon" | "worker" | "both"
+
+export interface EnrollLink {
+  /** `<public_url>/join#<token>[.<token>]`; works once and is shown only here. */
+  link: string
+  expiresUnixMs: number
+  /** The control plane's build version, such as "v0.1.0" or "dev". */
+  serverVersion: string
+}
+
 export interface MachineService {
   listDevices(): Promise<Device[]>
+  /**
+   * Issues a one-time link that enrolls machines for the caller. Fails with
+   * `resource_exhausted` while the caller has too many unused links, and
+   * with `failed_precondition` when the server has no public URL.
+   */
+  createEnrollLink(req: { role: EnrollRole }): Promise<EnrollLink>
 }
 
 export interface SessionSummary {

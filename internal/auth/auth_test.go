@@ -46,8 +46,8 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	u, err := auth.EnsureUser(ctx, st, auth.DefaultUserName, t0)
-	if err != nil {
+	u := store.User{ID: "owner", Email: "owner@example.com", Role: store.RoleUser, CreatedAt: t0.UnixMilli()}
+	if err := st.CreateUser(ctx, u); err != nil {
 		t.Fatal(err)
 	}
 	return &fixture{st: st, user: u}
@@ -259,14 +259,6 @@ func TestCreateEnrollTokenBounds(t *testing.T) {
 	_, rec, err := auth.CreateEnrollToken(ctx, f.st, f.user.ID, store.KindWorker, 0, t0)
 	if err != nil || rec.ExpiresAt != t0.Add(auth.DefaultEnrollTTL).UnixMilli() || len(rec.Kinds) != 1 || rec.Kinds[0] != store.KindWorker {
 		t.Fatalf("default token: %+v, %v", rec, err)
-	}
-}
-
-func TestEnsureUserIdempotent(t *testing.T) {
-	f := newFixture(t)
-	u, err := auth.EnsureUser(context.Background(), f.st, auth.DefaultUserName, t0.Add(time.Hour))
-	if err != nil || u != f.user {
-		t.Fatalf("EnsureUser again = %+v, %v; want %+v", u, err, f.user)
 	}
 }
 
@@ -561,8 +553,8 @@ func TestValidAcrossInstancesAndStoreFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	user, err := auth.EnsureUser(ctx, st, "admin", time.Now())
-	if err != nil {
+	user := store.User{ID: "owner", Email: "owner@example.com", Role: store.RoleUser, CreatedAt: time.Now().UnixMilli()}
+	if err := st.CreateUser(ctx, user); err != nil {
 		t.Fatal(err)
 	}
 	token, _, err := auth.CreateEnrollToken(ctx, st, user.ID, store.KindDevice, time.Hour, time.Now())

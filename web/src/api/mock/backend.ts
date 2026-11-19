@@ -4,6 +4,7 @@ import { ApiError } from "@/api/errors"
 import type {
   AuthState,
   CircusClient,
+  EnrollRole,
   Location,
   LoginMethods,
   Project,
@@ -459,6 +460,15 @@ export function createMockBackend({
             if (since === undefined || !device.online) return device
             return { ...device, online: false, lastSeenUnixMs: since }
           })
+      }),
+      // A link that enrolls nothing: the mock has no enrollment endpoint.
+      createEnrollLink: call(({ role }: { role: EnrollRole }) => {
+        currentUser()
+        const tokens = { daemon: 1, worker: 1, both: 2 }[role]
+        if (!tokens) throw invalid("role must be daemon, worker or both", "role")
+        const origin = globalThis.location?.origin ?? "http://localhost:5173"
+        const fragment = Array.from({ length: tokens }, () => nanoid(43)).join(".")
+        return { link: `${origin}/join#${fragment}`, expiresUnixMs: now() + 3_600_000, serverVersion: "dev" }
       }),
     },
 

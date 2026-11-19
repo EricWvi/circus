@@ -26,7 +26,7 @@ import (
 
 const joinUsage = `usage: circus join [-|<link>] [--role daemon|worker|both] [--name NAME] [--ca-file FILE] [--force]
 
-The link is the one printed by "circus server enroll-token create":
+Use a link issued through the Web API or by "circus server enroll-token create":
 https://host:port/join#<token> enrolls one role (daemon unless --role worker),
 https://host:port/join#<daemonToken>.<workerToken> enrolls both roles; there
 --role daemon or --role worker enrolls only that one.
@@ -87,7 +87,7 @@ func (l joinLink) plan(roleFlag string) ([]enrollment, error) {
 		case "worker":
 			return []enrollment{{credfile.RoleWorker, l.single}}, nil
 		case "both":
-			return nil, errors.New("this link holds one token for one role; --role both needs a link made with `enroll-token create --role both`")
+			return nil, errors.New("this link holds one token for one role; --role both needs a link issued for both roles")
 		}
 	} else {
 		switch roleFlag {
@@ -141,7 +141,7 @@ func joinCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 		}
 		if _, err := os.Stat(path); err == nil && !*force {
 			return fmt.Errorf("%s already exists: this machine has joined as %s. To join again pass --force; "+
-				"to keep the same name, first have an administrator run `circus server %s revoke <name>` (it frees the name), "+
+				"to keep the same name, first have an administrator run `circus server %s revoke --user <email> <name>` (it frees the name), "+
 				"otherwise choose another --name", path, e.role, adminNoun(e.role))
 		}
 		paths[e.role] = path
@@ -196,7 +196,7 @@ func joinCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 		}
 		if err := credfile.Save(paths[e.role], f); err != nil {
 			return partial(joined, e.role, fmt.Errorf("enrolled as %s %q (%s), but saving the credential failed: %w; "+
-				"have an administrator run `circus server %s revoke %s` (it frees the name), then join again with a new link",
+				"have an administrator run `circus server %s revoke --user <email> %s` (it frees the name), then join again with a new link",
 				e.role, *name, f.PrincipalID, err, adminNoun(e.role), *name))
 		}
 		if u := resp.Msg.GetControlPlaneUrl(); u != "" && u != link.base {
@@ -269,7 +269,7 @@ func joinError(err error, role credfile.Role) error {
 	switch connect.CodeOf(err) {
 	case connect.CodeUnauthenticated:
 		return fmt.Errorf("the control plane refused the link: it is unknown, already used, expired, or not issued for role %s; ask for a new link", role)
-	case connect.CodeAlreadyExists, connect.CodeInvalidArgument:
+	case connect.CodeAlreadyExists, connect.CodeInvalidArgument, connect.CodeResourceExhausted:
 		var ce *connect.Error
 		if errors.As(err, &ce) {
 			return errors.New(ce.Message())

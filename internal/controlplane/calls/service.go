@@ -30,6 +30,7 @@ type queryReply struct {
 // deferred: the device's route is synchronizing and its sync sends or answers
 // the query (the sync-first rule). A disconnect of conn, or of the syncing route, fails it.
 type queryWaiter struct {
+	user     string
 	reply    chan queryReply
 	device   string
 	boot     string // the call's dispatch boot
@@ -79,20 +80,20 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 	defer op.finish()
 	id := call.GetCallId()
 	if !identifier.Valid(id, false) {
-		return r.once(ctx, rejected("", circusv1.CallUpdate_Rejected_CODE_INVALID))
+		return r.once(ctx, user, rejected("", circusv1.CallUpdate_Rejected_CODE_INVALID))
 	}
 	if !identifier.Valid(call.GetSessionId(), false) || !identifier.Valid(call.GetAgentId(), true) || toolName(call) == "" || !boundedName(user) || !boundedName(name) {
-		return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
+		return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
 	}
 	// admit runs the session admission in the caller's Tx (or on its own
 	// for an attach, which writes nothing).
 	var admit func(ctx context.Context, tx store.Ops) error
 	if a != (Admission{}) {
 		if len(a.ToolUseID) > store.MaxIDBytes {
-			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
+			return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
 		}
 		if a.Epoch == 0 || a.Epoch > math.MaxInt64 || a.ToolUseID == "" || a.BootID == "" || a.ConnID == "" {
-			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_SESSION_FENCED))
+			return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_SESSION_FENCED))
 		}
 		admit = func(ctx context.Context, tx store.Ops) error {
 			f := store.Fence{SessionID: call.SessionId, Epoch: int64(a.Epoch), WorkerID: a.WorkerID, BootID: a.BootID, ConnID: a.ConnID, Now: r.config.Clock.Now().UnixMilli()}
@@ -103,13 +104,12 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 			return err
 		}
 	} else {
-		// A call naming an existing session of this user needs its lease.
-		// Another user's session is treated as no session, so the answer
-		// does not tell whether that id exists.
-		sess, err := r.config.Store.GetSession(op.ctx, call.SessionId, r.config.Clock.Now().UnixMilli())
+		// A call naming any existing session requires a lease. Use the
+		// same refusal regardless of who owns it.
+		_, err := r.config.Store.GetSession(op.ctx, call.SessionId, r.config.Clock.Now().UnixMilli())
 		switch {
-		case err == nil && sess.UserID == user:
-			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_SESSION_FENCED))
+		case err == nil:
+			return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_SESSION_FENCED))
 		case err != nil && !errors.Is(err, store.ErrNotFound):
 			r.storeFailed(err)
 			return nil, errors.Join(ErrStoreUnavailable, err)
@@ -120,13 +120,13 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 	if err != nil {
 		if errors.Is(err, wire.ErrTooLarge) {
 			// Input is bounded by the message limit; a large Write must be split by the caller.
-			return r.once(ctx, resultUpdate(&circusv1.DeviceResult{CallId: id, Output: &circusv1.ToolOutput{IsError: true, Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: "Error: content too large; write in chunks"}}}}}))
+			return r.once(ctx, user, resultUpdate(&circusv1.DeviceResult{CallId: id, Output: &circusv1.ToolOutput{IsError: true, Content: []*circusv1.ContentBlock{{Block: &circusv1.ContentBlock_Text{Text: "Error: content too large; write in chunks"}}}}}))
 		}
-		return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
+		return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
 	}
 	device, err := r.config.Store.GetIdentityByName(op.ctx, store.KindDevice, user, name)
 	if errors.Is(err, store.ErrNotFound) {
-		return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_UNKNOWN_DEVICE))
+		return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_UNKNOWN_DEVICE))
 	}
 	if err != nil {
 		r.storeFailed(err)
@@ -141,8 +141,8 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 		r.storeFailed(lookupErr)
 		return nil, errors.Join(ErrStoreUnavailable, lookupErr)
 	}
-	if errors.Is(lookupErr, store.ErrNotFound) && scratch > r.config.Pending.MaxBytes-r.pendingBytes {
-		return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
+	if errors.Is(lookupErr, store.ErrNotFound) && scratch > r.pendingBytesAvailable(user) {
+		return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
 	}
 	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(call)
 	if err != nil {
@@ -154,13 +154,13 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 			return nil, store.ErrNotFound // never disclose another user's call
 		}
 		if old.DeviceID != device.ID || !bytes.Equal(old.RequestHash, hash[:]) || old.ToolUseID != a.ToolUseID {
-			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_CALL_MISMATCH))
+			return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_CALL_MISMATCH))
 		}
 		if old.State != store.CallLost || old.DispatchedBootID != "" {
 			if admit != nil {
 				var ref refusal
 				if err := admit(op.ctx, r.config.Store); errors.As(err, &ref) {
-					return r.once(ctx, rejected(id, ref.code))
+					return r.once(ctx, user, rejected(id, ref.code))
 				} else if err != nil {
 					r.storeFailed(err)
 					return nil, errors.Join(ErrStoreUnavailable, err)
@@ -169,8 +169,8 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 			return r.attach(op, ctx, old)
 		}
 		// An undispatched lost call starts a new attempt and needs scratch.
-		if scratch > r.config.Pending.MaxBytes-r.pendingBytes {
-			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
+		if scratch > r.pendingBytesAvailable(user) {
+			return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
 		}
 	}
 	route, online, err := r.config.Registry.Lookup(op.ctx, device.ID)
@@ -183,17 +183,16 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 		offlineAt = r.offlineSince(device)
 	}
 	waiting := online || (device.CurrentBootID != "" && now < offlineAt+r.config.GracePeriod.Milliseconds())
-	if waiting && (len(r.pending) >= r.config.Pending.MaxCalls || cost+scratch > r.config.Pending.MaxBytes-r.pendingBytes) {
-		return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
+	if waiting && (len(r.pending) >= r.config.Pending.MaxCalls || r.users[user].pendingCalls >= r.config.Pending.MaxCalls/2 || cost+scratch > r.pendingBytesAvailable(user)) {
+		return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
 	}
-	s, err := r.newSub(ctx, id)
+	s, err := r.newSub(ctx, user, id)
 	if err != nil {
 		return nil, err
 	}
 	row := store.Call{CallID: id, UserID: user, DeviceID: device.ID, SessionID: call.SessionId, AgentID: call.AgentId, Tool: toolName(call), RequestHash: hash[:], RequestBytes: int64(len(data)), State: store.CallAccepted, SubmittedAt: now, ToolUseID: a.ToolUseID}
 	if waiting {
-		r.pending[strings.Clone(id)] = &pendingCall{call: wire.CloneOwned(call).(*circusv1.DeviceCall), cost: cost}
-		r.pendingBytes += cost
+		r.retain(user, id, call, cost)
 	}
 	initialDispatch := false
 	err = r.config.Store.Tx(op.ctx, func(ctx context.Context, tx store.Ops) error {
@@ -241,7 +240,7 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 		// Nothing was recorded; the store is healthy.
 		r.release(id)
 		r.detach(s, ErrClosed)
-		return r.once(ctx, rejected(id, ref.code))
+		return r.once(ctx, user, rejected(id, ref.code))
 	}
 	if err != nil {
 		r.storeFailed(err)
@@ -250,7 +249,7 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 		// Prove that no attempt committed before advertising a safe same-ID retry.
 		persisted, e := r.config.Store.GetCall(op.ctx, id)
 		if errors.Is(e, store.ErrNotFound) || (e == nil && lookupErr == nil && persisted.State == store.CallLost && persisted.DispatchedBootID == "") {
-			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_STORE_UNAVAILABLE))
+			return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_STORE_UNAVAILABLE))
 		}
 		return nil, errors.Join(ErrStoreUnavailable, err)
 	}
@@ -280,9 +279,9 @@ func (r *router) attach(op *operation, ctx context.Context, old store.Call) (*Su
 		if err != nil {
 			return nil, err
 		}
-		return r.onceAnswer(ctx, old.CallID, u, c)
+		return r.onceAnswer(ctx, old.UserID, old.CallID, u, c)
 	}
-	s, err := r.once(ctx, r.update(op.ctx, old))
+	s, err := r.once(ctx, old.UserID, r.update(op.ctx, old))
 	if err == nil && isActive(old.State) {
 		if route, ok := r.readyRoute(op.ctx, old.DeviceID, old.DispatchedBootID); ok {
 			logSendFailure("query", old.CallID, r.sendQuery(op.ctx, route, old.CallID))
@@ -438,17 +437,17 @@ func (r *router) QueryOnce(ctx context.Context, user, id string) (*Subscription,
 	if err != nil {
 		return nil, err
 	}
-	return r.onceAnswer(ctx, id, u, c)
+	return r.onceAnswer(ctx, user, id, u, c)
 }
 
 // onceAnswer transfers a query reply to a single-update subscription while
 // keeping its shared charge held continuously under r.mu.
-func (r *router) onceAnswer(ctx context.Context, id string, u *circusv1.CallUpdate, c *charge) (*Subscription, error) {
+func (r *router) onceAnswer(ctx context.Context, user, id string, u *circusv1.CallUpdate, c *charge) (*Subscription, error) {
 	defer r.releaseCharge(c)
 	if u == nil {
 		return nil, fmt.Errorf("calls: missing query answer for %q", id)
 	}
-	s, err := r.newSub(ctx, id)
+	s, err := r.newSub(ctx, user, id)
 	if err != nil {
 		return nil, err
 	}
@@ -513,10 +512,10 @@ func (r *router) query(op *operation, c store.Call) (*circusv1.CallUpdate, *char
 	if !online || route.Target.BootID != c.DispatchedBootID {
 		return r.unreachable(op.ctx, c, nil)
 	}
-	if r.queryCount+r.callbackCount >= r.config.MaxSubscriptions {
+	if r.subscriptionFull(c.UserID) {
 		return nil, nil, ErrOverloaded
 	}
-	q := &queryWaiter{reply: make(chan queryReply, 1), device: strings.Clone(c.DeviceID), boot: strings.Clone(c.DispatchedBootID)}
+	q := &queryWaiter{user: strings.Clone(c.UserID), reply: make(chan queryReply, 1), device: strings.Clone(c.DeviceID), boot: strings.Clone(c.DispatchedBootID)}
 	if lead := r.leader(c.CallID); lead != nil {
 		q.conn = lead.conn
 	} else if route.Ready {
@@ -527,6 +526,7 @@ func (r *router) query(op *operation, c store.Call) (*circusv1.CallUpdate, *char
 	}
 	r.queries[c.CallID] = append(r.queries[c.CallID], q)
 	r.queryCount++
+	r.changeSlots(q.user, 1)
 	// A waiting query owns a bounded waiter, not an execution slot. Keep one
 	// slot available for the inbound reply even with MaxOperations == 1.
 	<-r.operations
@@ -569,6 +569,7 @@ func (r *router) removeWaiter(id string, q *queryWaiter) {
 			list[len(list)-1] = nil
 			list = list[:len(list)-1]
 			r.queryCount--
+			r.changeSlots(q.user, -1)
 			break
 		}
 	}
@@ -617,7 +618,7 @@ func (r *router) answerOwned(id string, owned *circusv1.CallUpdate, c *charge, e
 		q.answered = true
 		response := queryReply{err: err}
 		if owned != nil {
-			if !r.acquireCharge(c) {
+			if !r.acquireCharge(q.user, c) {
 				response.err = ErrOverflow
 			} else {
 				response.update = owned
@@ -642,7 +643,7 @@ func (r *router) StopSessionJobs(ctx context.Context, user, session string) erro
 	previous := ""
 	var failures error
 	for {
-		rows, err := r.config.Store.ListJobs(op.ctx, store.JobFilter{SessionID: session, States: []store.JobState{store.JobRunning}, Limit: pageSize, After: after})
+		rows, err := r.config.Store.ListJobs(op.ctx, store.JobFilter{UserID: user, SessionID: session, States: []store.JobState{store.JobRunning}, Limit: pageSize, After: after})
 		if err != nil {
 			return err
 		}

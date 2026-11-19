@@ -25,7 +25,7 @@ func TestDeleteStopsBetweenChunks(t *testing.T) {
 	must(d.CreateUser(ctx, store.User{ID: "u1", Name: "u", CreatedAt: now}))
 	must(d.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "d1", UserID: "u1", Name: "d", MachineID: "m", CreatedAt: now}))
 	must(d.CreateIdentity(ctx, store.Identity{Kind: store.KindWorker, ID: "w1", UserID: "u1", Name: "w", MachineID: "m", CreatedAt: now}))
-	_, errProject := d.CreateProject(ctx, store.Project{ID: "p1", UserID: "u1", Name: "Project", CreatedAt: now, UpdatedAt: now}, "")
+	_, errProject := d.CreateProject(ctx, store.Project{ID: "p1", UserID: "u1", Name: "Project", CreatedAt: now, UpdatedAt: now})
 	must(errProject)
 	for _, id := range []string{"s1", "keep"} {
 		must(d.CreateSession(ctx, store.Session{ID: id, UserID: "u1", ProjectID: "p1", ClaudeSessionID: "c-" + id, DefaultDeviceID: "d1", CreatedAt: now}, nil, 10))

@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 )
 
-// UserRole is the human user's authority. Legacy machine owners have no role.
+// UserRole is the Web user's authority.
 type UserRole string
 
 const (
@@ -48,7 +48,7 @@ type WebSession struct {
 	CreatedAt, LastUsedAt, ExpiresAt int64
 }
 
-// WebAuthOps adds human identities alongside the existing machine owners.
+// WebAuthOps stores Web users, login identities and sessions.
 // All times are caller-supplied Unix milliseconds.
 type WebAuthOps interface {
 	// CreateSuperUser inserts the only super user and optional OIDC identity

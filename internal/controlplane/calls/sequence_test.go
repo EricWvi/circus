@@ -661,7 +661,7 @@ func (w *seqWorld) openControlPlane() {
 	must(t, err)
 	// The router's sender checks commit-before-send on every DispatchCall.
 	w.evidence = &evidenceSender{Sender: senderTo(&w.gateway), db: db, report: w.violation, refused: w.busyRefused}
-	w.router, err = calls.New(calls.Config{Store: w.store, Registry: w.registry, Sender: w.evidence, Clock: w.clock, MaxMessageBytes: 256 << 10, Pending: calls.PendingBudget{MaxCalls: 4}})
+	w.router, err = calls.New(calls.Config{Store: w.store, Registry: w.registry, Sender: w.evidence, Clock: w.clock, MaxMessageBytes: 256 << 10, Pending: calls.PendingBudget{MaxCalls: 8}})
 	must(t, err)
 	w.hooks = &seqHooks{Hooks: w.router, w: w, synced: make(map[string]bool), gates: make(map[string]*seqGate)}
 	w.beginStep()

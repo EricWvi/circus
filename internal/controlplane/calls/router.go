@@ -59,6 +59,7 @@ type router struct {
 	health        atomic.Uint64
 	pending       map[string]*pendingCall // <= Pending.MaxCalls
 	pendingBytes  int64
+	users         map[string]userUsage
 	subs          map[*Subscription]struct{} // with callbacks/queries <= MaxSubscriptions
 	bufferedBytes int64
 	devices       map[string]*deviceState   // <= MaxDevices current generations
@@ -71,8 +72,41 @@ type router struct {
 	unrecorded map[string]int64
 }
 
+// userUsage counts a user's share of the router's global budgets under mu.
+type userUsage struct {
+	slots, pendingCalls         int
+	pendingBytes, bufferedBytes int64
+}
+
+func (r *router) setUsage(user string, usage userUsage) {
+	if usage == (userUsage{}) {
+		delete(r.users, user)
+		return
+	}
+	if r.users == nil {
+		r.users = make(map[string]userUsage)
+	}
+	r.users[user] = usage
+}
+
+func (r *router) subscriptionFull(user string) bool {
+	return r.callbackCount+r.queryCount >= r.config.MaxSubscriptions ||
+		r.users[user].slots >= r.config.MaxSubscriptions/2
+}
+
+func (r *router) changeSlots(user string, delta int) {
+	usage := r.users[user]
+	usage.slots += delta
+	r.setUsage(user, usage)
+}
+
+func (r *router) pendingBytesAvailable(user string) int64 {
+	return min(r.config.Pending.MaxBytes-r.pendingBytes, r.config.Pending.MaxBytes/2-r.users[user].pendingBytes)
+}
+
 // pendingCall is retained request content and its ownership cost.
 type pendingCall struct {
+	user string
 	call *circusv1.DeviceCall
 	cost int64
 }
@@ -233,6 +267,19 @@ func newRouter(c Config) (Router, error) {
 			*v.v = v.d
 		}
 	}
+	for _, budget := range []struct {
+		name  string
+		limit int64
+	}{
+		{"MaxSubscriptions", int64(c.MaxSubscriptions)},
+		{"Pending.MaxCalls", int64(c.Pending.MaxCalls)},
+		{"Pending.MaxBytes", c.Pending.MaxBytes},
+		{"MaxBufferedUpdateBytes", c.MaxBufferedUpdateBytes},
+	} {
+		if budget.limit < 2 {
+			return nil, fmt.Errorf("calls: %s must be at least 2 for per-user shares", budget.name)
+		}
+	}
 	for _, v := range defaults {
 		if *v.v < 1 {
 			return nil, fmt.Errorf("calls: invalid limits")
@@ -241,7 +288,7 @@ func newRouter(c Config) (Router, error) {
 	if c.MaxSyncReplyBytes == 0 {
 		c.MaxSyncReplyBytes = 2 * int64(c.MaxMessageBytes)
 	}
-	if c.Pending.MaxBytes < 1 || c.MaxSubscriptionBytes < 1 || c.MaxBufferedUpdateBytes < 1 || c.MaxSyncRequests > 256 || c.MaxSyncReplyBytes < int64(c.MaxMessageBytes) {
+	if c.MaxSubscriptionBytes < 1 || c.MaxSyncRequests > 256 || c.MaxSyncReplyBytes < int64(c.MaxMessageBytes) {
 		return nil, fmt.Errorf("calls: invalid limits")
 	}
 	if c.GracePeriod <= 0 || c.SubscriberStall <= 0 || c.WatchdogSlack <= 0 || c.DeliveryTimeout <= 0 || c.ResendHorizon <= 0 {
@@ -506,10 +553,25 @@ func (r *router) Stats() Stats {
 	return s
 }
 
+// retain stores one pending call after its budget admission.
+func (r *router) retain(user, id string, call *circusv1.DeviceCall, cost int64) {
+	user = strings.Clone(user)
+	r.pending[strings.Clone(id)] = &pendingCall{user: user, call: wire.CloneOwned(call).(*circusv1.DeviceCall), cost: cost}
+	r.pendingBytes += cost
+	usage := r.users[user]
+	usage.pendingBytes += cost
+	usage.pendingCalls++
+	r.setUsage(user, usage)
+}
+
 // release drops retained request content.
 func (r *router) release(id string) {
 	if p, ok := r.pending[id]; ok {
 		r.pendingBytes -= p.cost
+		usage := r.users[p.user]
+		usage.pendingBytes -= p.cost
+		usage.pendingCalls--
+		r.setUsage(p.user, usage)
 		delete(r.pending, id)
 	}
 }

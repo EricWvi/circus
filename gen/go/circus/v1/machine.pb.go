@@ -21,6 +21,58 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type EnrollRole int32
+
+const (
+	EnrollRole_ENROLL_ROLE_UNSPECIFIED EnrollRole = 0
+	EnrollRole_ENROLL_ROLE_DAEMON      EnrollRole = 1
+	EnrollRole_ENROLL_ROLE_WORKER      EnrollRole = 2
+	EnrollRole_ENROLL_ROLE_BOTH        EnrollRole = 3
+)
+
+// Enum value maps for EnrollRole.
+var (
+	EnrollRole_name = map[int32]string{
+		0: "ENROLL_ROLE_UNSPECIFIED",
+		1: "ENROLL_ROLE_DAEMON",
+		2: "ENROLL_ROLE_WORKER",
+		3: "ENROLL_ROLE_BOTH",
+	}
+	EnrollRole_value = map[string]int32{
+		"ENROLL_ROLE_UNSPECIFIED": 0,
+		"ENROLL_ROLE_DAEMON":      1,
+		"ENROLL_ROLE_WORKER":      2,
+		"ENROLL_ROLE_BOTH":        3,
+	}
+)
+
+func (x EnrollRole) Enum() *EnrollRole {
+	p := new(EnrollRole)
+	*p = x
+	return p
+}
+
+func (x EnrollRole) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (EnrollRole) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_machine_proto_enumTypes[0].Descriptor()
+}
+
+func (EnrollRole) Type() protoreflect.EnumType {
+	return &file_circus_v1_machine_proto_enumTypes[0]
+}
+
+func (x EnrollRole) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use EnrollRole.Descriptor instead.
+func (EnrollRole) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{0}
+}
+
 type Device struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -191,6 +243,115 @@ func (x *ListDevicesResponse) GetDevices() []*Device {
 	return nil
 }
 
+type CreateEnrollLinkRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Which identities the link enrolls. Unspecified is INVALID_ARGUMENT.
+	Role          EnrollRole `protobuf:"varint,1,opt,name=role,proto3,enum=circus.v1.EnrollRole" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateEnrollLinkRequest) Reset() {
+	*x = CreateEnrollLinkRequest{}
+	mi := &file_circus_v1_machine_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateEnrollLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateEnrollLinkRequest) ProtoMessage() {}
+
+func (x *CreateEnrollLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_machine_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateEnrollLinkRequest.ProtoReflect.Descriptor instead.
+func (*CreateEnrollLinkRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CreateEnrollLinkRequest) GetRole() EnrollRole {
+	if x != nil {
+		return x.Role
+	}
+	return EnrollRole_ENROLL_ROLE_UNSPECIFIED
+}
+
+type CreateEnrollLinkResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// <public_url>/join#<token>[.<token>], as printed by the CLI. A link for
+	// both roles carries the daemon token first.
+	Link          string `protobuf:"bytes,1,opt,name=link,proto3" json:"link,omitempty"`
+	ExpiresUnixMs int64  `protobuf:"varint,2,opt,name=expires_unix_ms,json=expiresUnixMs,proto3" json:"expires_unix_ms,omitempty"`
+	// The control plane's build version (such as "v0.1.0" or "dev") for
+	// selecting the matching CLI release.
+	ServerVersion string `protobuf:"bytes,3,opt,name=server_version,json=serverVersion,proto3" json:"server_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateEnrollLinkResponse) Reset() {
+	*x = CreateEnrollLinkResponse{}
+	mi := &file_circus_v1_machine_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateEnrollLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateEnrollLinkResponse) ProtoMessage() {}
+
+func (x *CreateEnrollLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_machine_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateEnrollLinkResponse.ProtoReflect.Descriptor instead.
+func (*CreateEnrollLinkResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CreateEnrollLinkResponse) GetLink() string {
+	if x != nil {
+		return x.Link
+	}
+	return ""
+}
+
+func (x *CreateEnrollLinkResponse) GetExpiresUnixMs() int64 {
+	if x != nil {
+		return x.ExpiresUnixMs
+	}
+	return 0
+}
+
+func (x *CreateEnrollLinkResponse) GetServerVersion() string {
+	if x != nil {
+		return x.ServerVersion
+	}
+	return ""
+}
+
 var File_circus_v1_machine_proto protoreflect.FileDescriptor
 
 const file_circus_v1_machine_proto_rawDesc = "" +
@@ -205,9 +366,22 @@ const file_circus_v1_machine_proto_rawDesc = "" +
 	"\aversion\x18\x06 \x01(\tR\aversion\"\x14\n" +
 	"\x12ListDevicesRequest\"B\n" +
 	"\x13ListDevicesResponse\x12+\n" +
-	"\adevices\x18\x01 \x03(\v2\x11.circus.v1.DeviceR\adevices2^\n" +
+	"\adevices\x18\x01 \x03(\v2\x11.circus.v1.DeviceR\adevices\"D\n" +
+	"\x17CreateEnrollLinkRequest\x12)\n" +
+	"\x04role\x18\x01 \x01(\x0e2\x15.circus.v1.EnrollRoleR\x04role\"}\n" +
+	"\x18CreateEnrollLinkResponse\x12\x12\n" +
+	"\x04link\x18\x01 \x01(\tR\x04link\x12&\n" +
+	"\x0fexpires_unix_ms\x18\x02 \x01(\x03R\rexpiresUnixMs\x12%\n" +
+	"\x0eserver_version\x18\x03 \x01(\tR\rserverVersion*o\n" +
+	"\n" +
+	"EnrollRole\x12\x1b\n" +
+	"\x17ENROLL_ROLE_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12ENROLL_ROLE_DAEMON\x10\x01\x12\x16\n" +
+	"\x12ENROLL_ROLE_WORKER\x10\x02\x12\x14\n" +
+	"\x10ENROLL_ROLE_BOTH\x10\x032\xbb\x01\n" +
 	"\x0eMachineService\x12L\n" +
-	"\vListDevices\x12\x1d.circus.v1.ListDevicesRequest\x1a\x1e.circus.v1.ListDevicesResponseB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
+	"\vListDevices\x12\x1d.circus.v1.ListDevicesRequest\x1a\x1e.circus.v1.ListDevicesResponse\x12[\n" +
+	"\x10CreateEnrollLink\x12\".circus.v1.CreateEnrollLinkRequest\x1a#.circus.v1.CreateEnrollLinkResponseB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 
 var (
 	file_circus_v1_machine_proto_rawDescOnce sync.Once
@@ -221,21 +395,28 @@ func file_circus_v1_machine_proto_rawDescGZIP() []byte {
 	return file_circus_v1_machine_proto_rawDescData
 }
 
-var file_circus_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_circus_v1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_circus_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_circus_v1_machine_proto_goTypes = []any{
-	(*Device)(nil),              // 0: circus.v1.Device
-	(*ListDevicesRequest)(nil),  // 1: circus.v1.ListDevicesRequest
-	(*ListDevicesResponse)(nil), // 2: circus.v1.ListDevicesResponse
+	(EnrollRole)(0),                  // 0: circus.v1.EnrollRole
+	(*Device)(nil),                   // 1: circus.v1.Device
+	(*ListDevicesRequest)(nil),       // 2: circus.v1.ListDevicesRequest
+	(*ListDevicesResponse)(nil),      // 3: circus.v1.ListDevicesResponse
+	(*CreateEnrollLinkRequest)(nil),  // 4: circus.v1.CreateEnrollLinkRequest
+	(*CreateEnrollLinkResponse)(nil), // 5: circus.v1.CreateEnrollLinkResponse
 }
 var file_circus_v1_machine_proto_depIdxs = []int32{
-	0, // 0: circus.v1.ListDevicesResponse.devices:type_name -> circus.v1.Device
-	1, // 1: circus.v1.MachineService.ListDevices:input_type -> circus.v1.ListDevicesRequest
-	2, // 2: circus.v1.MachineService.ListDevices:output_type -> circus.v1.ListDevicesResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1, // 0: circus.v1.ListDevicesResponse.devices:type_name -> circus.v1.Device
+	0, // 1: circus.v1.CreateEnrollLinkRequest.role:type_name -> circus.v1.EnrollRole
+	2, // 2: circus.v1.MachineService.ListDevices:input_type -> circus.v1.ListDevicesRequest
+	4, // 3: circus.v1.MachineService.CreateEnrollLink:input_type -> circus.v1.CreateEnrollLinkRequest
+	3, // 4: circus.v1.MachineService.ListDevices:output_type -> circus.v1.ListDevicesResponse
+	5, // 5: circus.v1.MachineService.CreateEnrollLink:output_type -> circus.v1.CreateEnrollLinkResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_machine_proto_init() }
@@ -248,13 +429,14 @@ func file_circus_v1_machine_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_machine_proto_rawDesc), len(file_circus_v1_machine_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   3,
+			NumEnums:      1,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_circus_v1_machine_proto_goTypes,
 		DependencyIndexes: file_circus_v1_machine_proto_depIdxs,
+		EnumInfos:         file_circus_v1_machine_proto_enumTypes,
 		MessageInfos:      file_circus_v1_machine_proto_msgTypes,
 	}.Build()
 	File_circus_v1_machine_proto = out.File

@@ -12,12 +12,9 @@
 // "locations[1].path", ...). Messages are short English text; the Web UI
 // maps codes and fields to its own text.
 //
-// Which devices a Web user may see and bind is decided in one place,
-// deviceOwner; see its comment for the current rule.
-//
-// Sessions (sessions.go, watch.go) belong to the Web user who owns their
-// project; a session's user_id is the machine owner whose devices serve it
-// (deviceOwner). Every session call resolves the session through a project
+// Web users enroll machines, list their devices, and bind those devices to
+// their project locations. Sessions (sessions.go, watch.go) share the owner
+// of their project. Every session call resolves the session through a project
 // of the caller (ownSession) and answers NOT_FOUND otherwise. Writes run
 // in one store transaction with that check and any view event the control
 // plane records; after commit they announce new durable events on the

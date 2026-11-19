@@ -33,17 +33,15 @@
 // the machine they run on by MachineID, each with its own credentials, so one
 // role can be revoked without the other.
 //
-// Human users extend the existing owner rows with email, role and a password
-// hash. UserIdentity binds OIDC issuer/subject pairs; WebSession contains only
-// a cookie token hash, with caller-supplied idle and maximum deadlines. The
-// legacy machine owner has no human email or role and cannot sign in.
+// Web users own their machine identities. UserIdentity binds OIDC
+// issuer/subject pairs; WebSession contains only a cookie token hash, with
+// caller-supplied idle and maximum deadlines.
 //
 // Projects (ProjectOps) belong to one user and hold an optional repository
 // URL and 0 to 16 locations, each a device id and a path (empty for the
 // device's default directory, at most one per device). Names are unique per user under simple case
-// folding (ProjectNameKey). A location references its device by id and the
-// device may belong to another user than the project (the caller names the
-// device owner on every write); reads return the device's name.
+// folding (ProjectNameKey). A location references a device of the same user
+// by id; reads return the device's name.
 //
 // Package storetest holds the contract suite every implementation must pass
 // plus fault-injection and crash-restart harnesses; package sqlite is the

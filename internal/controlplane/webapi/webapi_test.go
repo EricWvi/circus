@@ -37,7 +37,7 @@ const password = "password-123"
 type harness struct {
 	st     *sqlite.DB
 	server *httptest.Server
-	owner  store.User // the legacy machine owner
+	owner  store.User // the super user
 	clock  atomic.Int64
 	bus    *sessions.Bus
 	waker  *recordingWaker
@@ -67,10 +67,6 @@ func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *clien
 	h.st = st
 	t.Cleanup(func() { st.Close() })
 	now := func() time.Time { return time.UnixMilli(h.clock.Load()) }
-	h.owner, err = auth.EnsureUser(t.Context(), st, auth.DefaultUserName, now())
-	if err != nil {
-		t.Fatal(err)
-	}
 	mux := http.NewServeMux()
 	// As the server's top-level handler does: a request starts without the
 	// write deadline the previous one on the connection left.
@@ -88,7 +84,7 @@ func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *clien
 		t.Fatal(err)
 	}
 	web.Register(mux)
-	cfg := webapi.Config{Store: st, Interceptor: web.Interceptor(), Now: now, Online: h.onlineDevices, Bus: h.bus, Waker: h.waker, Jobs: h.jobs}
+	cfg := webapi.Config{Store: st, Interceptor: web.Interceptor(), Now: now, Online: h.onlineDevices, Bus: h.bus, Waker: h.waker, Jobs: h.jobs, PublicURL: h.server.URL}
 	for _, option := range options {
 		option(&cfg)
 	}
@@ -111,6 +107,10 @@ func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *clien
 	}
 	super := h.browser(t)
 	if _, err := super.auth.Setup(t.Context(), connect.NewRequest(&circusv1.SetupRequest{Token: token, Email: "admin@example.com", Password: password})); err != nil {
+		t.Fatal(err)
+	}
+	h.owner, err = h.st.GetSuperUser(t.Context())
+	if err != nil {
 		t.Fatal(err)
 	}
 	return h, super
@@ -166,7 +166,7 @@ func (h *harness) signIn(t *testing.T, id, email string) *client {
 	return c
 }
 
-// device enrolls a device of the legacy owner, as enrollment would.
+// device creates a device of the super user.
 func (h *harness) device(t *testing.T, id, name, os string) store.Identity {
 	t.Helper()
 	d := store.Identity{Kind: store.KindDevice, ID: id, UserID: h.owner.ID, Name: name, MachineID: "m-" + id,
@@ -543,7 +543,7 @@ func TestProjectsIsolated(t *testing.T) {
 	_, err = super.projects.GetProject(ctx, connect.NewRequest(&circusv1.GetProjectRequest{ProjectId: "unknown"}))
 	wantCode(t, err, connect.CodeNotFound)
 
-	// A normal user has no devices yet, so no location is valid.
+	// This user has enrolled no devices, so no location is valid.
 	_, err = carol.create(t, "secret", loc("box", "/s"))
 	wantField(t, err, connect.CodeInvalidArgument, "locations[0].device")
 	if got := super.list(t); len(got) != 1 || got[0].Name != "secret" {
@@ -629,7 +629,7 @@ func TestDevices(t *testing.T) {
 		}
 	}
 
-	// A normal user sees no devices.
+	// A user who has enrolled no devices sees an empty list.
 	carol := h.signIn(t, "u-carol", "carol@example.com")
 	if got := carol.devices(t); len(got) != 0 {
 		t.Fatalf("carol's devices = %v", got)
@@ -818,7 +818,7 @@ type busyStore struct{ store.Store }
 func (busyStore) ListProjects(context.Context, string) ([]store.Project, error) {
 	return nil, store.ErrBusy
 }
-func (busyStore) CreateProject(context.Context, store.Project, string) (store.Project, error) {
+func (busyStore) CreateProject(context.Context, store.Project) (store.Project, error) {
 	return store.Project{}, store.ErrBusy
 }
 
@@ -907,7 +907,7 @@ func TestListProjectsAtBound(t *testing.T) {
 				}
 				p.Locations = append(p.Locations, store.ProjectLocation{DeviceID: d.ID, Path: path})
 			}
-			if _, err := tx.CreateProject(ctx, p, h.owner.ID); err != nil {
+			if _, err := tx.CreateProject(ctx, p); err != nil {
 				return err
 			}
 		}

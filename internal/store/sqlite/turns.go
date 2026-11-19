@@ -427,11 +427,11 @@ func (o *ops) markPersisted(ctx context.Context, f store.Fence, p store.TurnPers
 		{p.InputIDs, `UPDATE session_inputs SET state = 'persisted', text = NULL, persisted_at = ?
 			WHERE session_id = ? AND state = 'taken' AND taken_epoch = ? AND input_id IN `, []any{at, f.SessionID, f.Epoch}},
 		{p.CallIDs, `UPDATE calls SET persisted_at = COALESCE(persisted_at, ?), returned_at = COALESCE(returned_at, ?)
-			WHERE session_id = ? AND call_id IN `, []any{at, at, f.SessionID}},
+			WHERE session_id = ? AND ` + callMatchesSessionOwner + ` AND call_id IN `, []any{at, at, f.SessionID}},
 		{p.JobCallIDs, `UPDATE session_jobs SET notice = 'persisted', notice_at = ?
-			WHERE session_id = ? AND notice <> 'persisted' AND call_id IN `, []any{at, f.SessionID}},
+			WHERE session_id = ? AND ` + sessionJobDeviceMatchesOwner + ` AND notice <> 'persisted' AND call_id IN `, []any{at, f.SessionID}},
 		{p.BgTaskIDs, `DELETE FROM session_bgtasks WHERE session_id = ? AND task_id IN `, []any{f.SessionID}},
-		{p.LateCallIDs, `UPDATE calls SET notice_owed = 0 WHERE session_id = ? AND call_id IN `, []any{f.SessionID}},
+		{p.LateCallIDs, `UPDATE calls SET notice_owed = 0 WHERE session_id = ? AND ` + callMatchesSessionOwner + ` AND call_id IN `, []any{f.SessionID}},
 	} {
 		if len(m.ids) == 0 {
 			continue

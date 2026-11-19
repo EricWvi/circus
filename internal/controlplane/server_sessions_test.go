@@ -40,11 +40,12 @@ func TestSessionServiceMounted(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
 	t.Cleanup(client.CloseIdleConnections)
-	if _, err := circusv1connect.NewAuthServiceClient(client, h.base).Setup(ctx, connect.NewRequest(&circusv1.SetupRequest{Token: token, Email: "admin@example.com", Password: "password-123"})); err != nil {
+	setup, err := circusv1connect.NewAuthServiceClient(client, h.base).Setup(ctx, connect.NewRequest(&circusv1.SetupRequest{Token: token, Email: "admin@example.com", Password: "password-123"}))
+	if err != nil {
 		t.Fatal(err)
 	}
-	owner := controlplane.User(h.srv)
-	if err := h.st.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "d1", UserID: owner.ID, Name: "box", MachineID: "m1", OS: "linux", CreatedAt: time.Now().UnixMilli()}); err != nil {
+	owner := setup.Msg.GetUser()
+	if err := h.st.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "d1", UserID: owner.GetUserId(), Name: "box", MachineID: "m1", OS: "linux", CreatedAt: time.Now().UnixMilli()}); err != nil {
 		t.Fatal(err)
 	}
 	project, err := circusv1connect.NewProjectServiceClient(client, h.base).CreateProject(ctx, connect.NewRequest(&circusv1.CreateProjectRequest{

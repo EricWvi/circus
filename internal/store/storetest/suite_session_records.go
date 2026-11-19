@@ -549,3 +549,56 @@ func testSessionUnitAtomic(t *testing.T, b Backend) {
 	r := appendEntries(t, s, fence, "", 2, entry("v", "{}"))
 	mustEqual(t, "retried batch", r.Inserted, 1)
 }
+
+func testSessionCallsAndJobsByOwner(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createSession(t, s, f, "s")
+	fence := acquire(t, s, "s", "w1", "boot", t0)
+	other := fixture{
+		user:   store.User{ID: "other", Email: "other@example.com", Role: store.RoleUser, CreatedAt: t0},
+		device: store.Identity{ID: "other-device", Kind: store.KindDevice, UserID: "other", Name: "desk", MachineID: "m", CreatedAt: t0},
+	}
+	must(t, s.CreateUser(ctx, other.user))
+	must(t, s.CreateIdentity(ctx, other.device))
+	must(t, s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		for i := range store.MaxUnpersistedSessionCalls {
+			sessionCall(t, tx, other, fmt.Sprintf("other-%d", i), "s", store.CallRunning)
+		}
+		return nil
+	}))
+	must(t, s.AdmitSessionCall(ctx, fence, "next", 1))
+	must(t, s.AdmitSessionCall(ctx, fence, "next", store.MaxUnpersistedSessionCalls+1))
+	mustIs(t, s.AdmitSessionCall(ctx, fence, "other-0", store.MaxUnpersistedSessionCalls+1), store.ErrNotFound)
+	mustIs(t, s.PatchSessionRecords(ctx, fence, store.RecordsPatch{Jobs: []store.SessionJob{{CallID: "other-0", JobID: "foreign"}}}), store.ErrNotFound)
+	must(t, s.PatchSessionRecords(ctx, fence, store.RecordsPatch{ReturnedCallIDs: []string{"other-0"}, AwaitingCallIDs: []string{"other-0"}}))
+	row, err := s.GetCall(ctx, "other-0")
+	must(t, err)
+	mustEqual(t, "foreign call remains unmarked", []any{row.ReturnedAt, row.NoticeOwed}, []any{int64(0), false})
+	sessionCall(t, s, f, "mine", "s", store.CallCompleted)
+	recovery, err := s.GetRecovery(ctx, fence)
+	must(t, err)
+	mustEqual(t, "recovery call count", len(recovery.Calls), 1)
+	mustEqual(t, "recovery call", recovery.Calls[0].CallID, "mine")
+
+	for _, user := range []fixture{f, other} {
+		_, err := s.PutJob(ctx, store.Job{DeviceID: user.device.ID, UserID: user.user.ID,
+			BootID: "boot", JobID: "ended", SessionID: "s", State: store.JobExited, LastSeq: 1})
+		must(t, err)
+	}
+	_, _, _, err = s.StopSession(ctx, "s", t0+1, "test")
+	must(t, err)
+	_, err = s.ReleaseLease(ctx, at(fence, t0+1))
+	must(t, err)
+	must(t, s.CheckSessionDeletable(ctx, "s", t0+1))
+	must(t, s.DeleteSession(ctx, "s", t0+1))
+	_, err = s.GetCall(ctx, "mine")
+	mustIs(t, err, store.ErrNotFound)
+	_, err = s.GetCall(ctx, "other-0")
+	must(t, err)
+	jobs, err := s.ListJobs(ctx, store.JobFilter{SessionID: "s", Limit: 10})
+	must(t, err)
+	mustEqual(t, "remaining job count", len(jobs), 1)
+	mustEqual(t, "remaining job owner", jobs[0].UserID, other.user.ID)
+}

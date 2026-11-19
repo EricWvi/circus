@@ -2,15 +2,15 @@
 // @generated from file circus/v1/machine.proto (package circus.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file circus/v1/machine.proto.
  */
 export const file_circus_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UyXgoOTWFjaGluZVNlcnZpY2USTAoLTGlzdERldmljZXMSHS5jaXJjdXMudjEuTGlzdERldmljZXNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVzcG9uc2VCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM");
+  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UiPgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlIlkKGENyZWF0ZUVucm9sbExpbmtSZXNwb25zZRIMCgRsaW5rGAEgASgJEhcKD2V4cGlyZXNfdW5peF9tcxgCIAEoAxIWCg5zZXJ2ZXJfdmVyc2lvbhgDIAEoCSpvCgpFbnJvbGxSb2xlEhsKF0VOUk9MTF9ST0xFX1VOU1BFQ0lGSUVEEAASFgoSRU5ST0xMX1JPTEVfREFFTU9OEAESFgoSRU5ST0xMX1JPTEVfV09SS0VSEAISFAoQRU5ST0xMX1JPTEVfQk9USBADMrsBCg5NYWNoaW5lU2VydmljZRJMCgtMaXN0RGV2aWNlcxIdLmNpcmN1cy52MS5MaXN0RGV2aWNlc1JlcXVlc3QaHi5jaXJjdXMudjEuTGlzdERldmljZXNSZXNwb25zZRJbChBDcmVhdGVFbnJvbGxMaW5rEiIuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXF1ZXN0GiMuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXNwb25zZUI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw");
 
 /**
  * @generated from message circus.v1.Device
@@ -95,7 +95,90 @@ export const ListDevicesResponseSchema: GenMessage<ListDevicesResponse> = /*@__P
   messageDesc(file_circus_v1_machine, 2);
 
 /**
- * MachineService lists the machines the signed-in browser user may use.
+ * @generated from message circus.v1.CreateEnrollLinkRequest
+ */
+export type CreateEnrollLinkRequest = Message<"circus.v1.CreateEnrollLinkRequest"> & {
+  /**
+   * Which identities the link enrolls. Unspecified is INVALID_ARGUMENT.
+   *
+   * @generated from field: circus.v1.EnrollRole role = 1;
+   */
+  role: EnrollRole;
+};
+
+/**
+ * Describes the message circus.v1.CreateEnrollLinkRequest.
+ * Use `create(CreateEnrollLinkRequestSchema)` to create a new message.
+ */
+export const CreateEnrollLinkRequestSchema: GenMessage<CreateEnrollLinkRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 3);
+
+/**
+ * @generated from message circus.v1.CreateEnrollLinkResponse
+ */
+export type CreateEnrollLinkResponse = Message<"circus.v1.CreateEnrollLinkResponse"> & {
+  /**
+   * <public_url>/join#<token>[.<token>], as printed by the CLI. A link for
+   * both roles carries the daemon token first.
+   *
+   * @generated from field: string link = 1;
+   */
+  link: string;
+
+  /**
+   * @generated from field: int64 expires_unix_ms = 2;
+   */
+  expiresUnixMs: bigint;
+
+  /**
+   * The control plane's build version (such as "v0.1.0" or "dev") for
+   * selecting the matching CLI release.
+   *
+   * @generated from field: string server_version = 3;
+   */
+  serverVersion: string;
+};
+
+/**
+ * Describes the message circus.v1.CreateEnrollLinkResponse.
+ * Use `create(CreateEnrollLinkResponseSchema)` to create a new message.
+ */
+export const CreateEnrollLinkResponseSchema: GenMessage<CreateEnrollLinkResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 4);
+
+/**
+ * @generated from enum circus.v1.EnrollRole
+ */
+export enum EnrollRole {
+  /**
+   * @generated from enum value: ENROLL_ROLE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ENROLL_ROLE_DAEMON = 1;
+   */
+  DAEMON = 1,
+
+  /**
+   * @generated from enum value: ENROLL_ROLE_WORKER = 2;
+   */
+  WORKER = 2,
+
+  /**
+   * @generated from enum value: ENROLL_ROLE_BOTH = 3;
+   */
+  BOTH = 3,
+}
+
+/**
+ * Describes the enum circus.v1.EnrollRole.
+ */
+export const EnrollRoleSchema: GenEnum<EnrollRole> = /*@__PURE__*/
+  enumDesc(file_circus_v1_machine, 0);
+
+/**
+ * MachineService lists and enrolls machines for the signed-in browser user.
  * It needs a browser session cookie (UNAUTHENTICATED without one) and
  * follows the same Origin rule as ProjectService.
  *
@@ -111,6 +194,18 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof ListDevicesRequestSchema;
     output: typeof ListDevicesResponseSchema;
+  },
+  /**
+   * Issues a one-time enrollment link for the caller's machines. Any
+   * signed-in user may call it. Tokens are returned only here; the server
+   * stores only their hashes.
+   *
+   * @generated from rpc circus.v1.MachineService.CreateEnrollLink
+   */
+  createEnrollLink: {
+    methodKind: "unary";
+    input: typeof CreateEnrollLinkRequestSchema;
+    output: typeof CreateEnrollLinkResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_circus_v1_machine, 0);

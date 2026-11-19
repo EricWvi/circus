@@ -1,6 +1,7 @@
 package calls_test
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -22,14 +23,14 @@ func TestJobEndedHook(t *testing.T) {
 		c.JobEnded = func(id string) { mu.Lock(); defer mu.Unlock(); ended = append(ended, id) }
 	})
 	got := func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), ended...) }
-	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p", UserID: "u", Name: "p", CreatedAt: 1, UpdatedAt: 1}, "")
+	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p", UserID: "u", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
 	for _, id := range []string{"s-a", "s-b", "s-c"} {
 		must(t, f.db.CreateSession(f.ctx, store.Session{ID: id, UserID: "u", ProjectID: "p", ClaudeSessionID: "c-" + id, DefaultDeviceID: "d", CreatedAt: 1}, nil, 10))
 	}
 	must(t, f.db.CreateUser(f.ctx, store.User{ID: "u2", Name: "other", CreatedAt: 1}))
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindDevice, ID: "d2", UserID: "u2", Name: "desk2", MachineID: "m2", CreatedAt: 1}))
-	_, err = f.db.CreateProject(f.ctx, store.Project{ID: "p2", UserID: "u2", Name: "p", CreatedAt: 1, UpdatedAt: 1}, "")
+	_, err = f.db.CreateProject(f.ctx, store.Project{ID: "p2", UserID: "u2", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
 	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "theirs", UserID: "u2", ProjectID: "p2", ClaudeSessionID: "c2", DefaultDeviceID: "d2", CreatedAt: 1}, nil, 10))
 	l := f.connect("boot")
@@ -88,7 +89,7 @@ func TestJobEndedHook(t *testing.T) {
 func TestSessionAdmission(t *testing.T) {
 	f := setup(t)
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindWorker, ID: "w", UserID: "u", Name: "w", MachineID: "m", CreatedAt: 1}))
-	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p", UserID: "u", Name: "p", CreatedAt: 1, UpdatedAt: 1}, "")
+	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p", UserID: "u", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
 	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "s", UserID: "u", ProjectID: "p", ClaudeSessionID: "c", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10))
 	now := f.clock.Now().UnixMilli()
@@ -136,14 +137,12 @@ func TestSessionAdmission(t *testing.T) {
 	}
 }
 
-// TestNonSessionCallOtherUsersSession: a call without session fields that
-// names another user's session is routed like any non-session call, so the
-// answer does not tell whether that session id exists.
+// A non-session submit naming another user's session is refused before routing.
 func TestNonSessionCallOtherUsersSession(t *testing.T) {
 	f := setup(t)
 	must(t, f.db.CreateUser(f.ctx, store.User{ID: "u2", Name: "other", CreatedAt: 1}))
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindDevice, ID: "d2", UserID: "u2", Name: "desk2", MachineID: "m2", CreatedAt: 1}))
-	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p2", UserID: "u2", Name: "p", CreatedAt: 1, UpdatedAt: 1}, "")
+	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p2", UserID: "u2", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
 	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "theirs", UserID: "u2", ProjectID: "p2", ClaudeSessionID: "c2", DefaultDeviceID: "d2", CreatedAt: 1}, nil, 10))
 	s, err := f.router.Submit(f.ctx, "u", "desk", &circusv1.DeviceCall{CallId: "mine", SessionId: "theirs", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "true", Cwd: "/tmp"}}})
@@ -151,7 +150,10 @@ func TestNonSessionCallOtherUsersSession(t *testing.T) {
 	defer s.Close()
 	u, err := s.Next(f.ctx)
 	must(t, err)
-	if u.GetOffline() == nil {
-		t.Fatalf("update %v, want the routed call's offline outcome", u)
+	if u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_SESSION_FENCED {
+		t.Fatalf("update %v, want SESSION_FENCED", u)
+	}
+	if _, err := f.db.GetCall(f.ctx, "mine"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("refused call was stored: %v", err)
 	}
 }

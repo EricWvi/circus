@@ -103,7 +103,7 @@ type User struct {
 	Role         UserRole
 	PasswordHash string
 	ID           string
-	Name         string // unique; retained for machine owners
+	Name         string // unique; defaults to ID when omitted
 	CreatedAt    int64
 	// TranscriptBytes is the sum of the transcript bytes of the user's
 	// sessions, kept by AppendTranscript and DeleteSession for the per-user
@@ -130,6 +130,13 @@ type Identity struct {
 	LastDisconnectedAt int64
 	CreatedAt          int64
 	DeletedAt          int64
+}
+
+// IdentitySummary is a live device or worker with its owner's email for
+// administrative listings.
+type IdentitySummary struct {
+	ID, Name, MachineID, OwnerEmail string
+	CreatedAt, LastConnectedAt      int64
 }
 
 // Credential is a long-term token held by one identity. Only the token's
@@ -591,6 +598,7 @@ type Job struct {
 // JobFilter selects jobs for ListJobs. Limit is required (1..MaxPageSize).
 // Other empty fields do not filter; After is an exclusive keyset cursor.
 type JobFilter struct {
+	UserID    string
 	Limit     int
 	After     *JobCursor
 	DeviceID  string
@@ -886,10 +894,7 @@ const (
 // Session is one remote Claude Code session.
 type Session struct {
 	ID string // UUIDv7, chosen by the control plane; never reused
-	// UserID is the machine owner whose devices and workers serve the session.
-	// It may differ from the project's Web user (the super user's devices
-	// belong to the legacy owner returned by deviceOwner). The service
-	// authorizes through the project; the store does not compare these owners.
+	// UserID owns the project, session, and the devices and workers that serve it.
 	UserID    string
 	ProjectID string
 	Title     string
@@ -953,7 +958,7 @@ type SessionFilter struct {
 	UserID    string
 	ProjectID string
 	// WebUserID selects the sessions of the projects this Web user owns
-	// (projects.user_id), whoever the machine owner is.
+	// (projects.user_id).
 	WebUserID string
 	// Now is the read time in Unix milliseconds, required for approval expiry.
 	Now    int64

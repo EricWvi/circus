@@ -25,9 +25,9 @@ import (
 
 const serverUsage = `usage:
   circus server [--config config.yaml] [--debug]
-  circus server enroll-token create --role daemon|worker|both [--ttl 1h] [--url https://host:port] [--config config.yaml]
-  circus server device list|revoke <name> [--config config.yaml]
-  circus server worker list|revoke <name> [--config config.yaml]
+  circus server enroll-token create --user <email> --role daemon|worker|both [--ttl 1h] [--url https://host:port] [--config config.yaml]
+  circus server device|worker list [--config config.yaml]
+  circus server device|worker revoke --user <email> <name> [--config config.yaml]
 
 All server settings, including worker_connections and the database path,
 are read from the YAML file. See config.example.yaml. Admin commands open
@@ -92,6 +92,7 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	defer st.Close()
 	serverCfg := cfg.Server()
 	serverCfg.UI = webui.FS()
+	serverCfg.Version = version
 	serverCfg.LogOutput, serverCfg.LogLevel = errOut, level
 	srv, err := controlplane.New(ctx, st, serverCfg)
 	if err != nil {
@@ -117,6 +118,7 @@ func enrollTokenCreate(args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("server enroll-token create", flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	configPath := fs.String("config", "config.yaml", "YAML configuration file")
+	email := fs.String("user", "", "email of the Web user who will own the machines")
 	role := fs.String("role", "", "role the link enrolls: daemon, worker or both (one token per role)")
 	ttl := fs.Duration("ttl", auth.DefaultEnrollTTL, "token lifetime")
 	base := fs.String("url", "", "public base URL of the control plane (default https://<hostname>:"+defaultPort+")")
@@ -126,6 +128,9 @@ func enrollTokenCreate(args []string, out, errOut io.Writer) error {
 	}
 	if len(pos) != 0 {
 		return errors.New(serverUsage)
+	}
+	if store.NormalizeEmail(*email) == "" {
+		return errors.New("--user <email> is required")
 	}
 	var kinds []store.PrincipalKind
 	switch *role {
@@ -168,7 +173,7 @@ func enrollTokenCreate(args []string, out, errOut io.Writer) error {
 	}
 	defer st.Close()
 	now := time.Now()
-	user, err := auth.EnsureUser(ctx, st, auth.DefaultUserName, now)
+	user, err := userByEmail(ctx, st, *email)
 	if err != nil {
 		return err
 	}
@@ -204,12 +209,19 @@ func identityCommand(kind store.PrincipalKind, args []string, out, errOut io.Wri
 	fs := flag.NewFlagSet("server "+auth.AdminNoun(kind)+" "+sub, flag.ContinueOnError)
 	fs.SetOutput(errOut)
 	configPath := fs.String("config", "config.yaml", "YAML configuration file")
+	var email string
+	if sub == "revoke" {
+		fs.StringVar(&email, "user", "", "email of the Web user who owns the machine")
+	}
 	pos, err := parseArgs(fs, args[1:])
 	if err != nil {
 		return err
 	}
 	if sub == "revoke" && len(pos) != 1 || sub == "list" && len(pos) != 0 {
 		return errors.New(serverUsage)
+	}
+	if sub == "revoke" && store.NormalizeEmail(email) == "" {
+		return errors.New("--user <email> is required")
 	}
 	ctx := context.Background()
 	cfg, err := loadServerConfig(*configPath)
@@ -221,16 +233,16 @@ func identityCommand(kind store.PrincipalKind, args []string, out, errOut io.Wri
 		return err
 	}
 	defer st.Close()
-	user, err := auth.EnsureUser(ctx, st, auth.DefaultUserName, time.Now())
-	if err != nil {
-		return err
-	}
 	if sub == "list" {
-		ids, err := st.ListIdentities(ctx, kind, user.ID)
+		ids, err := st.ListIdentitySummaries(ctx, kind)
 		if err != nil {
 			return err
 		}
 		return printIdentities(out, ids)
+	}
+	user, err := userByEmail(ctx, st, email)
+	if err != nil {
+		return err
 	}
 	id, n, err := auth.RevokeByName(ctx, st, kind, user.ID, pos[0], time.Now())
 	if err != nil {
@@ -241,17 +253,24 @@ func identityCommand(kind store.PrincipalKind, args []string, out, errOut io.Wri
 	return nil
 }
 
-// printIdentities prints live identities as a table: name, id, machine id
-// prefix, creation and last connection time.
-func printIdentities(out io.Writer, ids []store.Identity) error {
+func userByEmail(ctx context.Context, st store.Store, email string) (store.User, error) {
+	u, err := st.GetUserByEmail(ctx, email)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.User{}, fmt.Errorf("unknown Web user %q", email)
+	}
+	return u, err
+}
+
+// printIdentities prints live identities with their owners and connection times.
+func printIdentities(out io.Writer, ids []store.IdentitySummary) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tID\tMACHINE\tCREATED\tLAST CONNECTED")
+	fmt.Fprintln(tw, "NAME\tOWNER EMAIL\tID\tMACHINE\tCREATED\tLAST CONNECTED")
 	for _, id := range ids {
 		machine := id.MachineID
 		if len(machine) > 12 {
 			machine = machine[:12]
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", id.Name, id.ID, machine, formatMillis(id.CreatedAt), formatMillis(id.LastConnectedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", id.Name, id.OwnerEmail, id.ID, machine, formatMillis(id.CreatedAt), formatMillis(id.LastConnectedAt))
 	}
 	return tw.Flush()
 }

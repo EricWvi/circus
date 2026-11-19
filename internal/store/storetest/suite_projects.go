@@ -11,28 +11,28 @@ import (
 	"github.com/EricWvi/circus/internal/store"
 )
 
-// projectFixture is the legacy machine owner with two devices and two Web
-// users who bind those devices in their projects.
+// projectFixture provides two users with their own devices for project locations.
 type projectFixture struct {
 	fixture
-	other         store.Identity // a second device of the owner
-	alice, bob    store.User     // Web users
-	foreignDevice store.Identity // a device of another owner
+	alice, bob store.User // Web users
 }
 
 func seedProjects(t testing.TB, s store.Store) projectFixture {
 	t.Helper()
 	ctx := context.Background()
 	f := projectFixture{fixture: seed(t, s)}
-	f.other = store.Identity{Kind: store.KindDevice, ID: "d2", UserID: f.user.ID, Name: "desktop", MachineID: "m2", OS: "windows", CreatedAt: t0}
-	must(t, s.CreateIdentity(ctx, f.other))
 	f.alice = store.User{ID: "alice", Email: "alice@example.com", Role: store.RoleUser, CreatedAt: t0}
 	f.bob = store.User{ID: "bob", Email: "bob@example.com", Role: store.RoleUser, CreatedAt: t0}
 	must(t, s.CreateUser(ctx, f.alice))
 	must(t, s.CreateUser(ctx, f.bob))
-	must(t, s.CreateUser(ctx, store.User{ID: "u2", Name: "elsewhere", CreatedAt: t0}))
-	f.foreignDevice = store.Identity{Kind: store.KindDevice, ID: "d9", UserID: "u2", Name: "laptop", MachineID: "m9", CreatedAt: t0}
-	must(t, s.CreateIdentity(ctx, f.foreignDevice))
+	for _, d := range []store.Identity{
+		{ID: "alice-laptop", UserID: f.alice.ID, Name: "laptop", MachineID: "m1", OS: "linux"},
+		{ID: "d2", UserID: f.alice.ID, Name: "desktop", MachineID: "m2", OS: "windows"},
+		{ID: "d9", UserID: f.bob.ID, Name: "laptop", MachineID: "m9"},
+	} {
+		d.Kind, d.CreatedAt = store.KindDevice, t0
+		must(t, s.CreateIdentity(ctx, d))
+	}
 	return f
 }
 
@@ -67,11 +67,10 @@ func testProjects(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	names := map[string]string{"d1": "laptop", "d2": "desktop"}
-	owner := f.user.ID
+	names := map[string]string{"alice-laptop": "laptop", "d2": "desktop"}
 
-	p := newProject("p1", f.alice.ID, "Circus", loc("d1", "/src/circus"), loc("d2", `C:\src`))
-	got, err := s.CreateProject(ctx, p, owner)
+	p := newProject("p1", f.alice.ID, "Circus", loc("alice-laptop", "/src/circus"), loc("d2", `C:\src`))
+	got, err := s.CreateProject(ctx, p)
 	must(t, err)
 	mustEqual(t, "created", got, withNames(p, names))
 	got, err = s.GetProject(ctx, f.alice.ID, "p1")
@@ -79,17 +78,17 @@ func testProjects(t *testing.T, b Backend) {
 	mustEqual(t, "get", got, withNames(p, names))
 
 	// Names are unique per user ignoring case, within one user only.
-	_, err = s.CreateProject(ctx, newProject("p2", f.alice.ID, "cIRCUS", loc("d1", "/x")), owner)
+	_, err = s.CreateProject(ctx, newProject("p2", f.alice.ID, "cIRCUS", loc("alice-laptop", "/x")))
 	mustIs(t, err, store.ErrExists)
-	_, err = s.CreateProject(ctx, newProject("p2", f.bob.ID, "circus", loc("d1", "/x")), owner)
+	_, err = s.CreateProject(ctx, newProject("p2", f.bob.ID, "circus", loc("d9", "/x")))
 	must(t, err)
 	// The id is taken.
-	_, err = s.CreateProject(ctx, newProject("p1", f.alice.ID, "other", loc("d1", "/x")), owner)
+	_, err = s.CreateProject(ctx, newProject("p1", f.alice.ID, "other", loc("alice-laptop", "/x")))
 	mustIs(t, err, store.ErrExists)
 
 	// Listing: by name ignoring case, then id; only the user's own.
 	for i, name := range []string{"beta", "Alpha", "gamma"} {
-		_, err := s.CreateProject(ctx, newProject(fmt.Sprintf("q%d", i), f.alice.ID, name, loc("d1", "/q")), owner)
+		_, err := s.CreateProject(ctx, newProject(fmt.Sprintf("q%d", i), f.alice.ID, name, loc("alice-laptop", "/q")))
 		must(t, err)
 	}
 	list, err := s.ListProjects(ctx, f.alice.ID)
@@ -108,7 +107,7 @@ func testProjects(t *testing.T, b Backend) {
 	// Ownership: another user's project is not found, for every operation.
 	_, err = s.GetProject(ctx, f.bob.ID, "p1")
 	mustIs(t, err, store.ErrNotFound)
-	_, err = s.UpdateProject(ctx, f.bob.ID, "p1", store.ProjectPatch{Name: ptr("mine"), UpdatedAt: t0 + 1}, owner)
+	_, err = s.UpdateProject(ctx, f.bob.ID, "p1", store.ProjectPatch{Name: ptr("mine"), UpdatedAt: t0 + 1})
 	mustIs(t, err, store.ErrNotFound)
 	mustIs(t, s.DeleteProject(ctx, f.bob.ID, "p1", t0), store.ErrNotFound)
 	_, err = s.GetProject(ctx, f.alice.ID, "missing")
@@ -116,28 +115,28 @@ func testProjects(t *testing.T, b Backend) {
 
 	// Rename: to its own name in another case is no conflict; to another
 	// project's name is.
-	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("CIRCUS"), UpdatedAt: t0 + 5}, owner)
+	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("CIRCUS"), UpdatedAt: t0 + 5})
 	must(t, err)
 	if got.Name != "CIRCUS" || got.UpdatedAt != t0+5 || got.CreatedAt != t0 {
 		t.Fatalf("renamed = %+v", got)
 	}
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("ALPHA"), UpdatedAt: t0 + 6}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("ALPHA"), UpdatedAt: t0 + 6})
 	mustIs(t, err, store.ErrExists)
 	// An empty patch changes nothing, not even the update time.
-	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{UpdatedAt: t0 + 7}, owner)
+	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{UpdatedAt: t0 + 7})
 	must(t, err)
 	if got.UpdatedAt != t0+5 {
 		t.Fatalf("empty patch touched the project: %+v", got)
 	}
 
 	// Explicit last used location: in range only.
-	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{LastUsedLocation: ptr(1), UpdatedAt: t0 + 8}, owner)
+	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{LastUsedLocation: ptr(1), UpdatedAt: t0 + 8})
 	must(t, err)
 	if got.LastUsedLocation != 1 {
 		t.Fatalf("last used = %d", got.LastUsedLocation)
 	}
 	for _, i := range []int{2, -1} {
-		_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{LastUsedLocation: ptr(i), UpdatedAt: t0 + 9}, owner)
+		_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{LastUsedLocation: ptr(i), UpdatedAt: t0 + 9})
 		mustIs(t, err, store.ErrLocationIndex)
 	}
 
@@ -152,15 +151,14 @@ func testProjectLocations(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	owner := f.user.ID
-	a, bb, c := loc("d1", "/a"), loc("d1", "/b"), loc("d1", "/c")
+	a, bb, c := loc("alice-laptop", "/a"), loc("alice-laptop", "/b"), loc("alice-laptop", "/c")
 	p := newProject("p1", f.alice.ID, "multi", a, bb, c)
 	p.LastUsedLocation = 2
-	_, err := s.CreateProject(ctx, p, owner)
+	_, err := s.CreateProject(ctx, p)
 	must(t, err)
 	replace := func(locs ...store.ProjectLocation) store.Project {
 		t.Helper()
-		got, err := s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: locs, UpdatedAt: t0 + 1}, owner)
+		got, err := s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: locs, UpdatedAt: t0 + 1})
 		must(t, err)
 		return got
 	}
@@ -175,20 +173,20 @@ func testProjectLocations(t *testing.T, b Backend) {
 		t.Fatalf("kept index = %d", got.LastUsedLocation)
 	}
 	mustEqual(t, "replaced locations", got.Locations, []store.ProjectLocation{
-		{DeviceID: "d1", DeviceName: "laptop", Path: "/b"}, {DeviceID: "d2", DeviceName: "desktop", Path: "/c"}, {DeviceID: "d1", DeviceName: "laptop", Path: "/a"}})
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{LastUsedLocation: ptr(2), UpdatedAt: t0 + 2}, owner)
+		{DeviceID: "alice-laptop", DeviceName: "laptop", Path: "/b"}, {DeviceID: "d2", DeviceName: "desktop", Path: "/c"}, {DeviceID: "alice-laptop", DeviceName: "laptop", Path: "/a"}})
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{LastUsedLocation: ptr(2), UpdatedAt: t0 + 2})
 	must(t, err)
-	if got := replace(loc("d1", "/x"), loc("d1", "/y")); got.LastUsedLocation != 1 {
+	if got := replace(loc("alice-laptop", "/x"), loc("alice-laptop", "/y")); got.LastUsedLocation != 1 {
 		t.Fatalf("clamped = %d", got.LastUsedLocation)
 	}
 
 	// An explicit index wins over following, checked against the new list.
-	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{a, bb, c}, LastUsedLocation: ptr(0), UpdatedAt: t0 + 3}, owner)
+	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{a, bb, c}, LastUsedLocation: ptr(0), UpdatedAt: t0 + 3})
 	must(t, err)
 	if got.LastUsedLocation != 0 || len(got.Locations) != 3 {
 		t.Fatalf("explicit = %+v", got)
 	}
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{a}, LastUsedLocation: ptr(1), UpdatedAt: t0 + 4}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{a}, LastUsedLocation: ptr(1), UpdatedAt: t0 + 4})
 	mustIs(t, err, store.ErrLocationIndex)
 
 	// Devices must be live devices of the owner; the error names the index.
@@ -196,7 +194,7 @@ func testProjectLocations(t *testing.T, b Backend) {
 	before, err := s.GetProject(ctx, f.alice.ID, "p1")
 	must(t, err)
 	for _, bad := range []string{"d9", "missing"} {
-		_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{a, loc(bad, "/z")}, Name: ptr("renamed"), UpdatedAt: t0 + 5}, owner)
+		_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{a, loc(bad, "/z")}, Name: ptr("renamed"), UpdatedAt: t0 + 5})
 		var de *store.LocationDeviceError
 		if !errors.As(err, &de) || de.Index != 1 || !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("device %s: error = %v", bad, err)
@@ -205,7 +203,7 @@ func testProjectLocations(t *testing.T, b Backend) {
 	after, err := s.GetProject(ctx, f.alice.ID, "p1")
 	must(t, err)
 	mustEqual(t, "after refused update", after, before)
-	_, err = s.CreateProject(ctx, newProject("p2", f.alice.ID, "foreign", loc("d9", "/z")), owner)
+	_, err = s.CreateProject(ctx, newProject("p2", f.alice.ID, "foreign", loc("d9", "/z")))
 	var de *store.LocationDeviceError
 	if !errors.As(err, &de) || de.Index != 0 {
 		t.Fatalf("foreign device: %v", err)
@@ -215,18 +213,18 @@ func testProjectLocations(t *testing.T, b Backend) {
 
 	// A deleted device can no longer be bound, but existing locations keep
 	// naming it, also after another device takes its name.
-	_, err = s.CreateProject(ctx, newProject("p3", f.alice.ID, "old", loc("d2", "/k")), owner)
+	_, err = s.CreateProject(ctx, newProject("p3", f.alice.ID, "old", loc("d2", "/k")))
 	must(t, err)
 	_, err = s.DeleteIdentity(ctx, store.KindDevice, "d2", t0+10)
 	must(t, err)
-	must(t, s.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "d3", UserID: owner, Name: "desktop", MachineID: "m3", CreatedAt: t0}))
+	must(t, s.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "d3", UserID: f.alice.ID, Name: "desktop", MachineID: "m3", CreatedAt: t0}))
 	got, err = s.GetProject(ctx, f.alice.ID, "p3")
 	must(t, err)
 	mustEqual(t, "location of a deleted device", got.Locations, []store.ProjectLocation{{DeviceID: "d2", DeviceName: "desktop", DeviceRevoked: true, Path: "/k"}})
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Locations: []store.ProjectLocation{loc("d2", "/k")}, UpdatedAt: t0 + 11}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Locations: []store.ProjectLocation{loc("d2", "/k")}, UpdatedAt: t0 + 11})
 	mustIs(t, err, store.ErrNotFound)
 	// Renaming keeps the locations without checking their devices again.
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Name: ptr("older"), UpdatedAt: t0 + 12}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Name: ptr("older"), UpdatedAt: t0 + 12})
 	must(t, err)
 }
 
@@ -234,8 +232,7 @@ func testProjectValidation(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	owner := f.user.ID
-	ok := newProject("p1", f.alice.ID, "ok", loc("d1", "/a"))
+	ok := newProject("p1", f.alice.ID, "ok", loc("alice-laptop", "/a"))
 	for _, tc := range []struct {
 		name string
 		edit func(*store.Project)
@@ -250,11 +247,13 @@ func testProjectValidation(t *testing.T, b Backend) {
 		{"too many locations", func(p *store.Project) {
 			p.Locations = nil
 			for i := range store.MaxProjectLocations + 1 {
-				p.Locations = append(p.Locations, loc("d1", fmt.Sprintf("/%d", i)))
+				p.Locations = append(p.Locations, loc("alice-laptop", fmt.Sprintf("/%d", i)))
 			}
 		}, store.ErrInvalid},
-		{"duplicate location", func(p *store.Project) { p.Locations = append(p.Locations, loc("d1", "/a")) }, store.ErrInvalid},
-		{"two defaults on one device", func(p *store.Project) { p.Locations = []store.ProjectLocation{loc("d1", ""), loc("d1", "")} }, store.ErrInvalid},
+		{"duplicate location", func(p *store.Project) { p.Locations = append(p.Locations, loc("alice-laptop", "/a")) }, store.ErrInvalid},
+		{"two defaults on one device", func(p *store.Project) {
+			p.Locations = []store.ProjectLocation{loc("alice-laptop", ""), loc("alice-laptop", "")}
+		}, store.ErrInvalid},
 		{"long repository URL", func(p *store.Project) { p.RepoURL = "https://h/" + strings.Repeat("x", store.MaxRepoURLBytes) }, store.ErrInvalid},
 		{"invalid UTF-8 repository URL", func(p *store.Project) { p.RepoURL = "https://h/\xff" }, store.ErrInvalid},
 		{"last used without locations", func(p *store.Project) { p.Locations = nil; p.LastUsedLocation = 1 }, store.ErrLocationIndex},
@@ -266,18 +265,18 @@ func testProjectValidation(t *testing.T, b Backend) {
 		p := ok
 		p.Locations = append([]store.ProjectLocation(nil), ok.Locations...)
 		tc.edit(&p)
-		_, err := s.CreateProject(ctx, p, owner)
+		_, err := s.CreateProject(ctx, p)
 		if !errors.Is(err, tc.want) {
 			t.Errorf("%s: error = %v, want %v", tc.name, err, tc.want)
 		}
 	}
 	// 64 code points of multi-byte text and a 4096-byte path are fine.
-	p := newProject("p1", f.alice.ID, strings.Repeat("語", 64), loc("d1", "/"+strings.Repeat("x", store.MaxPathBytes-1)))
-	_, err := s.CreateProject(ctx, p, owner)
+	p := newProject("p1", f.alice.ID, strings.Repeat("語", 64), loc("alice-laptop", "/"+strings.Repeat("x", store.MaxPathBytes-1)))
+	_, err := s.CreateProject(ctx, p)
 	must(t, err)
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr(""), UpdatedAt: t0 + 1}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr(""), UpdatedAt: t0 + 1})
 	mustIs(t, err, store.ErrInvalid)
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("x")}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("x")})
 	mustIs(t, err, store.ErrInvalid)
 	_, err = s.GetProject(ctx, f.alice.ID, "")
 	mustIs(t, err, store.ErrInvalid)
@@ -287,18 +286,21 @@ func testProjectCascade(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	_, err := s.CreateProject(ctx, newProject("p1", f.alice.ID, "a", loc("d1", "/a"), loc("d2", "/b")), f.user.ID)
+	_, err := s.CreateProject(ctx, newProject("p1", f.alice.ID, "a", loc("alice-laptop", "/a"), loc("d2", "/b")))
 	must(t, err)
-	_, err = s.CreateProject(ctx, newProject("p2", f.bob.ID, "a", loc("d1", "/a")), f.user.ID)
+	_, err = s.CreateProject(ctx, newProject("p2", f.bob.ID, "a", loc("d9", "/a")))
 	must(t, err)
 	// Deleting a project deletes its locations: the same id can be created
 	// again with the same locations.
 	must(t, s.DeleteProject(ctx, f.alice.ID, "p1", t0))
-	_, err = s.CreateProject(ctx, newProject("p1", f.alice.ID, "a", loc("d1", "/a"), loc("d2", "/b")), f.user.ID)
+	_, err = s.CreateProject(ctx, newProject("p1", f.alice.ID, "a", loc("alice-laptop", "/a"), loc("d2", "/b")))
 	must(t, err)
-	// Deleting a Web user deletes its projects, not other users' projects.
-	must(t, s.DeleteUser(ctx, f.alice.ID))
-	_, err = s.GetProject(ctx, f.alice.ID, "p1")
+	// Deleting a user with no devices deletes its projects only.
+	must(t, s.CreateUser(ctx, store.User{ID: "carol", Email: "carol@example.com", Role: store.RoleUser, CreatedAt: t0}))
+	_, err = s.CreateProject(ctx, newProject("carol-project", "carol", "Bare"))
+	must(t, err)
+	must(t, s.DeleteUser(ctx, "carol"))
+	_, err = s.GetProject(ctx, "carol", "carol-project")
 	mustIs(t, err, store.ErrNotFound)
 	_, err = s.GetProject(ctx, f.bob.ID, "p2")
 	must(t, err)
@@ -306,7 +308,7 @@ func testProjectCascade(t *testing.T, b Backend) {
 	// A transaction that fails after a project write leaves nothing.
 	boom := errors.New("boom")
 	err = s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
-		if _, err := tx.CreateProject(ctx, newProject("p3", f.bob.ID, "b", loc("d1", "/b")), f.user.ID); err != nil {
+		if _, err := tx.CreateProject(ctx, newProject("p3", f.bob.ID, "b", loc("d9", "/b"))); err != nil {
 			return err
 		}
 		return boom
@@ -317,7 +319,7 @@ func testProjectCascade(t *testing.T, b Backend) {
 	// A failed project write inside a committed transaction leaves nothing
 	// of itself.
 	must(t, s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
-		_, err := tx.CreateProject(ctx, newProject("p4", f.bob.ID, "c", loc("d1", "/c"), loc("d9", "/c")), f.user.ID)
+		_, err := tx.CreateProject(ctx, newProject("p4", f.bob.ID, "c", loc("d9", "/c"), loc("alice-laptop", "/c")))
 		mustIs(t, err, store.ErrNotFound)
 		return nil
 	}))
@@ -331,15 +333,15 @@ func testProjectLimit(t *testing.T, b Backend) {
 	f := seedProjects(t, s)
 	must(t, s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
 		for i := range store.MaxProjectsPerUser {
-			if _, err := tx.CreateProject(ctx, newProject(fmt.Sprintf("p%d", i), f.alice.ID, fmt.Sprintf("n%d", i), loc("d1", "/a")), f.user.ID); err != nil {
+			if _, err := tx.CreateProject(ctx, newProject(fmt.Sprintf("p%d", i), f.alice.ID, fmt.Sprintf("n%d", i), loc("alice-laptop", "/a"))); err != nil {
 				return err
 			}
 		}
 		return nil
 	}))
-	_, err := s.CreateProject(ctx, newProject("over", f.alice.ID, "over", loc("d1", "/a")), f.user.ID)
+	_, err := s.CreateProject(ctx, newProject("over", f.alice.ID, "over", loc("alice-laptop", "/a")))
 	mustIs(t, err, store.ErrLimit)
-	_, err = s.CreateProject(ctx, newProject("bobs", f.bob.ID, "over", loc("d1", "/a")), f.user.ID)
+	_, err = s.CreateProject(ctx, newProject("bobs", f.bob.ID, "over", loc("d9", "/a")))
 	must(t, err)
 }
 
@@ -359,7 +361,7 @@ func testProjectConcurrentCreate(t *testing.T, b Backend) {
 			if i%2 == 1 {
 				name = "sHARED"
 			}
-			_, errs[i] = handles[i%2].CreateProject(ctx, newProject(fmt.Sprintf("p%d", i), f.alice.ID, name, loc("d1", "/a")), f.user.ID)
+			_, errs[i] = handles[i%2].CreateProject(ctx, newProject(fmt.Sprintf("p%d", i), f.alice.ID, name, loc("alice-laptop", "/a")))
 		})
 	}
 	wg.Wait()
@@ -404,17 +406,16 @@ func testProjectOptionalParts(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	owner := f.user.ID
 
 	// A project with only a name, and one with only a repository URL.
-	bare, err := s.CreateProject(ctx, newProject("p1", f.alice.ID, "bare"), owner)
+	bare, err := s.CreateProject(ctx, newProject("p1", f.alice.ID, "bare"))
 	must(t, err)
 	if len(bare.Locations) != 0 || bare.LastUsedLocation != 0 || bare.RepoURL != "" {
 		t.Fatalf("bare = %+v", bare)
 	}
 	repo := newProject("p2", f.alice.ID, "repo")
 	repo.RepoURL = "git@github.com:owner/repo.git"
-	got, err := s.CreateProject(ctx, repo, owner)
+	got, err := s.CreateProject(ctx, repo)
 	must(t, err)
 	mustEqual(t, "repo-only project", got, repo)
 	list, err := s.ListProjects(ctx, f.alice.ID)
@@ -422,15 +423,15 @@ func testProjectOptionalParts(t *testing.T, b Backend) {
 	mustEqual(t, "listed", list, []store.Project{bare, repo})
 
 	// Default locations: one per device, next to explicit paths.
-	p := newProject("p3", f.alice.ID, "defaults", loc("d1", ""), loc("d1", "/src"), loc("d2", ""))
+	p := newProject("p3", f.alice.ID, "defaults", loc("alice-laptop", ""), loc("alice-laptop", "/src"), loc("d2", ""))
 	p.LastUsedLocation = 2
-	got, err = s.CreateProject(ctx, p, owner)
+	got, err = s.CreateProject(ctx, p)
 	must(t, err)
-	mustEqual(t, "defaults", got, withNames(p, map[string]string{"d1": "laptop", "d2": "desktop"}))
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Locations: []store.ProjectLocation{loc("d2", ""), loc("d2", "")}, UpdatedAt: t0 + 1}, owner)
+	mustEqual(t, "defaults", got, withNames(p, map[string]string{"alice-laptop": "laptop", "d2": "desktop"}))
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Locations: []store.ProjectLocation{loc("d2", ""), loc("d2", "")}, UpdatedAt: t0 + 1})
 	mustIs(t, err, store.ErrInvalid)
 	// The default location is followed like any other.
-	got, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Locations: []store.ProjectLocation{loc("d1", "/src"), loc("d2", "")}, UpdatedAt: t0 + 1}, owner)
+	got, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Locations: []store.ProjectLocation{loc("alice-laptop", "/src"), loc("d2", "")}, UpdatedAt: t0 + 1})
 	must(t, err)
 	if got.LastUsedLocation != 1 {
 		t.Fatalf("followed default = %d", got.LastUsedLocation)
@@ -438,28 +439,28 @@ func testProjectOptionalParts(t *testing.T, b Backend) {
 
 	// Removing every location resets the index to 0; with no locations
 	// only 0 is accepted.
-	got, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Locations: []store.ProjectLocation{}, UpdatedAt: t0 + 2}, owner)
+	got, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{Locations: []store.ProjectLocation{}, UpdatedAt: t0 + 2})
 	must(t, err)
 	if len(got.Locations) != 0 || got.LastUsedLocation != 0 {
 		t.Fatalf("emptied = %+v", got)
 	}
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{LastUsedLocation: ptr(1), UpdatedAt: t0 + 3}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{LastUsedLocation: ptr(1), UpdatedAt: t0 + 3})
 	mustIs(t, err, store.ErrLocationIndex)
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{LastUsedLocation: ptr(0), UpdatedAt: t0 + 3}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p3", store.ProjectPatch{LastUsedLocation: ptr(0), UpdatedAt: t0 + 3})
 	must(t, err)
 
 	// Repository URL: set, kept by other updates, cleared with "".
-	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{RepoURL: ptr("https://example.com/a.git"), UpdatedAt: t0 + 4}, owner)
+	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{RepoURL: ptr("https://example.com/a.git"), UpdatedAt: t0 + 4})
 	must(t, err)
 	if got.RepoURL != "https://example.com/a.git" || got.UpdatedAt != t0+4 {
 		t.Fatalf("set URL = %+v", got)
 	}
-	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("renamed"), UpdatedAt: t0 + 5}, owner)
+	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("renamed"), UpdatedAt: t0 + 5})
 	must(t, err)
 	if got.RepoURL != "https://example.com/a.git" {
 		t.Fatalf("rename dropped the URL: %+v", got)
 	}
-	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{RepoURL: ptr(""), UpdatedAt: t0 + 6}, owner)
+	got, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{RepoURL: ptr(""), UpdatedAt: t0 + 6})
 	must(t, err)
 	if got.RepoURL != "" {
 		t.Fatalf("cleared URL = %+v", got)
@@ -471,20 +472,19 @@ func testProjectOptionalParts(t *testing.T, b Backend) {
 	}
 }
 
-// testProjectWithoutOwner: a write that binds no device needs no device
-// owner (a user without devices).
-func testProjectWithoutOwner(t *testing.T, b Backend) {
+// testProjectForeignDevice checks that a project can only bind its owner's devices.
+func testProjectForeignDevice(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	_, err := s.CreateProject(ctx, newProject("p1", f.bob.ID, "mine"), "")
+	_, err := s.CreateProject(ctx, newProject("p1", f.bob.ID, "mine"))
 	must(t, err)
-	_, err = s.UpdateProject(ctx, f.bob.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{}, Name: ptr("x"), UpdatedAt: t0 + 1}, "")
+	_, err = s.UpdateProject(ctx, f.bob.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{}, Name: ptr("x"), UpdatedAt: t0 + 1})
 	must(t, err)
-	_, err = s.CreateProject(ctx, newProject("p2", f.bob.ID, "bound", loc("d1", "/a")), "")
-	mustIs(t, err, store.ErrInvalid)
-	_, err = s.UpdateProject(ctx, f.bob.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{loc("d1", "")}, UpdatedAt: t0 + 2}, "")
-	mustIs(t, err, store.ErrInvalid)
+	_, err = s.CreateProject(ctx, newProject("p2", f.bob.ID, "bound", loc("alice-laptop", "/a")))
+	mustIs(t, err, store.ErrNotFound)
+	_, err = s.UpdateProject(ctx, f.bob.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{loc("alice-laptop", "")}, UpdatedAt: t0 + 2})
+	mustIs(t, err, store.ErrNotFound)
 }
 
 // testProjectStale: ExpectedUpdatedAt guards against lost updates, and
@@ -493,22 +493,21 @@ func testProjectStale(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	owner := f.user.ID
-	p, err := s.CreateProject(ctx, newProject("p1", f.alice.ID, "shared", loc("d1", "/a")), owner)
+	p, err := s.CreateProject(ctx, newProject("p1", f.alice.ID, "shared", loc("alice-laptop", "/a")))
 	must(t, err)
 	read := p.UpdatedAt
 
 	// Two tabs read the same version. The first save wins; the second,
 	// made in the same millisecond, is refused and changes nothing.
-	first, err := s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("tab one"), ExpectedUpdatedAt: ptr(read), UpdatedAt: read}, owner)
+	first, err := s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("tab one"), ExpectedUpdatedAt: ptr(read), UpdatedAt: read})
 	must(t, err)
 	if first.UpdatedAt != read+1 {
 		t.Fatalf("same-millisecond update: updated at %d, want %d", first.UpdatedAt, read+1)
 	}
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{loc("d1", "/b")}, ExpectedUpdatedAt: ptr(read), UpdatedAt: read}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Locations: []store.ProjectLocation{loc("alice-laptop", "/b")}, ExpectedUpdatedAt: ptr(read), UpdatedAt: read})
 	mustIs(t, err, store.ErrProjectStale)
 	// A field set to its current value is still an edit of a stale form.
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("tab one"), ExpectedUpdatedAt: ptr(read), UpdatedAt: read}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("tab one"), ExpectedUpdatedAt: ptr(read), UpdatedAt: read})
 	mustIs(t, err, store.ErrProjectStale)
 	got, err := s.GetProject(ctx, f.alice.ID, "p1")
 	must(t, err)
@@ -516,20 +515,20 @@ func testProjectStale(t *testing.T, b Backend) {
 
 	// With the current version it applies; a clock behind the stored time
 	// still moves UpdatedAt forward.
-	second, err := s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{RepoURL: ptr("git@h:r"), ExpectedUpdatedAt: ptr(first.UpdatedAt), UpdatedAt: t0 - 1000}, owner)
+	second, err := s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{RepoURL: ptr("git@h:r"), ExpectedUpdatedAt: ptr(first.UpdatedAt), UpdatedAt: t0 - 1000})
 	must(t, err)
 	if second.UpdatedAt != first.UpdatedAt+1 {
 		t.Fatalf("clock behind: updated at %d, want %d", second.UpdatedAt, first.UpdatedAt+1)
 	}
 	// A clock ahead is taken as is; without ExpectedUpdatedAt nothing is
 	// compared.
-	third, err := s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("third"), UpdatedAt: t0 + 50_000}, owner)
+	third, err := s.UpdateProject(ctx, f.alice.ID, "p1", store.ProjectPatch{Name: ptr("third"), UpdatedAt: t0 + 50_000})
 	must(t, err)
 	if third.UpdatedAt != t0+50_000 {
 		t.Fatalf("clock ahead: updated at %d", third.UpdatedAt)
 	}
 	// Another user's project is not found, not stale.
-	_, err = s.UpdateProject(ctx, f.bob.ID, "p1", store.ProjectPatch{ExpectedUpdatedAt: ptr(int64(1)), UpdatedAt: t0}, owner)
+	_, err = s.UpdateProject(ctx, f.bob.ID, "p1", store.ProjectPatch{ExpectedUpdatedAt: ptr(int64(1)), UpdatedAt: t0})
 	mustIs(t, err, store.ErrNotFound)
 }
 
@@ -539,7 +538,6 @@ func testProjectBytes(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	owner := f.user.ID
 	path := func(i, j int) string {
 		p := fmt.Sprintf("/%03d-%02d-", i, j)
 		return p + strings.Repeat("x", store.MaxPathBytes-len(p))
@@ -552,24 +550,24 @@ func testProjectBytes(t *testing.T, b Backend) {
 			p := newProject(fmt.Sprintf("p%d", i), f.alice.ID, fmt.Sprintf("n%d", i))
 			names += len(p.Name)
 			for j := range store.MaxProjectLocations {
-				p.Locations = append(p.Locations, loc("d1", path(i, j)))
+				p.Locations = append(p.Locations, loc("alice-laptop", path(i, j)))
 			}
 			if i == 63 {
 				p.Locations[15].Path = p.Locations[15].Path[:store.MaxPathBytes-names]
 			}
-			if _, err := tx.CreateProject(ctx, p, owner); err != nil {
+			if _, err := tx.CreateProject(ctx, p); err != nil {
 				return err
 			}
 		}
 		return nil
 	}))
 	// At the bound: one more byte anywhere is refused, as ErrLimit too.
-	_, err := s.CreateProject(ctx, newProject("over", f.alice.ID, "x"), owner)
+	_, err := s.CreateProject(ctx, newProject("over", f.alice.ID, "x"))
 	mustIs(t, err, store.ErrProjectBytes)
 	mustIs(t, err, store.ErrLimit)
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p0", store.ProjectPatch{RepoURL: ptr("g"), UpdatedAt: t0 + 1}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p0", store.ProjectPatch{RepoURL: ptr("g"), UpdatedAt: t0 + 1})
 	mustIs(t, err, store.ErrProjectBytes)
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p0", store.ProjectPatch{Name: ptr("n0x"), UpdatedAt: t0 + 1}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p0", store.ProjectPatch{Name: ptr("n0x"), UpdatedAt: t0 + 1})
 	mustIs(t, err, store.ErrProjectBytes)
 	got, err := s.GetProject(ctx, f.alice.ID, "p0")
 	must(t, err)
@@ -578,24 +576,24 @@ func testProjectBytes(t *testing.T, b Backend) {
 	}
 	// Writes that do not grow the total still work: a rename of equal
 	// length, a shorter path, and then the freed byte can be used.
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p0", store.ProjectPatch{Name: ptr("m0"), UpdatedAt: t0 + 2}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p0", store.ProjectPatch{Name: ptr("m0"), UpdatedAt: t0 + 2})
 	must(t, err)
 	locs := append([]store.ProjectLocation(nil), got.Locations...)
 	for i := range locs {
 		locs[i].DeviceName = ""
 	}
 	locs[0].Path = locs[0].Path[:len(locs[0].Path)-1]
-	_, err = s.UpdateProject(ctx, f.alice.ID, "p0", store.ProjectPatch{Locations: locs, UpdatedAt: t0 + 3}, owner)
+	_, err = s.UpdateProject(ctx, f.alice.ID, "p0", store.ProjectPatch{Locations: locs, UpdatedAt: t0 + 3})
 	must(t, err)
-	_, err = s.CreateProject(ctx, newProject("one", f.alice.ID, "1"), owner)
+	_, err = s.CreateProject(ctx, newProject("one", f.alice.ID, "1"))
 	must(t, err)
-	_, err = s.CreateProject(ctx, newProject("two", f.alice.ID, "2"), owner)
+	_, err = s.CreateProject(ctx, newProject("two", f.alice.ID, "2"))
 	mustIs(t, err, store.ErrProjectBytes)
 	// Bob is not affected; deleting frees Alice's budget.
-	_, err = s.CreateProject(ctx, newProject("bob", f.bob.ID, strings.Repeat("b", 64), loc("d1", path(0, 0))), owner)
+	_, err = s.CreateProject(ctx, newProject("bob", f.bob.ID, strings.Repeat("b", 64), loc("d9", path(0, 0))))
 	must(t, err)
 	must(t, s.DeleteProject(ctx, f.alice.ID, "p1", t0))
-	_, err = s.CreateProject(ctx, newProject("two", f.alice.ID, "2"), owner)
+	_, err = s.CreateProject(ctx, newProject("two", f.alice.ID, "2"))
 	must(t, err)
 }
 
@@ -606,23 +604,22 @@ func testProjectInvisibleUpdates(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	owner := f.user.ID
-	p := newProject("p1", f.alice.ID, "same", loc("d1", "/a"), loc("d1", ""))
+	p := newProject("p1", f.alice.ID, "same", loc("alice-laptop", "/a"), loc("alice-laptop", ""))
 	p.RepoURL = "git@h:r"
-	created, err := s.CreateProject(ctx, p, owner)
+	created, err := s.CreateProject(ctx, p)
 	must(t, err)
 	read := created.UpdatedAt
 	update := func(patch store.ProjectPatch) store.Project {
 		t.Helper()
 		patch.UpdatedAt = t0 + 1000
-		got, err := s.UpdateProject(ctx, f.alice.ID, "p1", patch, owner)
+		got, err := s.UpdateProject(ctx, f.alice.ID, "p1", patch)
 		must(t, err)
 		return got
 	}
 
 	// Every field set to its current value: no change.
 	got := update(store.ProjectPatch{Name: ptr("same"), RepoURL: ptr("git@h:r"),
-		Locations: []store.ProjectLocation{loc("d1", "/a"), loc("d1", "")}, ExpectedUpdatedAt: ptr(read)})
+		Locations: []store.ProjectLocation{loc("alice-laptop", "/a"), loc("alice-laptop", "")}, ExpectedUpdatedAt: ptr(read)})
 	mustEqual(t, "same-value update", got, created)
 	// A different case is a visible change.
 	got = update(store.ProjectPatch{Name: ptr("SAME"), ExpectedUpdatedAt: ptr(read)})
@@ -648,7 +645,7 @@ func testProjectInvisibleUpdates(t *testing.T, b Backend) {
 		t.Fatalf("form after session start = %+v", got)
 	}
 	// Locations reordered are a change; the default follows.
-	got = update(store.ProjectPatch{Locations: []store.ProjectLocation{loc("d1", ""), loc("d1", "/a")}, ExpectedUpdatedAt: ptr(got.UpdatedAt)})
+	got = update(store.ProjectPatch{Locations: []store.ProjectLocation{loc("alice-laptop", ""), loc("alice-laptop", "/a")}, ExpectedUpdatedAt: ptr(got.UpdatedAt)})
 	if got.LastUsedLocation != 0 || got.UpdatedAt != read+2 {
 		t.Fatalf("reordered = %+v", got)
 	}

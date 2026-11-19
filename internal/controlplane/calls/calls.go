@@ -123,6 +123,7 @@ const MaxActiveSessionCalls = store.DefaultMaxActiveSessionCalls
 // The caller must Close or cancel Submit's ctx. Exactly one Next may be active.
 type Subscription struct {
 	owner       *router
+	user        string
 	callID      string
 	queue       []queuedUpdate // bounded by count, per-subscription bytes and global bytes
 	bytes       int64
@@ -190,7 +191,10 @@ type PendingBudget struct {
 // delivery allowance, and 10m resend horizon. Negative values are refused.
 // ResendHorizon is a replay policy and request-retention bound, not a safety
 // bound: the daemon's dispatch-age check enforces at-most-once execution.
-// No request/result cache exists outside pending and subscription buffers.
+// Each user may use half of the global pending, subscription-slot, and
+// buffered-update budgets. These global budgets must be at least 2 after
+// applying defaults. No request/result cache exists outside pending
+// and subscription buffers.
 // Sender delivers a command to one daemon connection generation; the gateway
 // implements it. Every call runs under the router's admission lock, so at most
 // one delivery is in flight. Delivery success means queued, not written,

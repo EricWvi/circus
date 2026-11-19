@@ -95,8 +95,8 @@ func setup(t *testing.T, configure ...func(*workerlink.Config)) *fixture {
 	st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "db"), sqlite.Options{})
 	must(t, err)
 	t.Cleanup(func() { _ = st.Close() })
-	u, err := auth.EnsureUser(t.Context(), st, "admin", time.Now())
-	must(t, err)
+	u := store.User{ID: "owner", Email: "owner@example.com", Role: store.RoleUser, CreatedAt: time.Now().UnixMilli()}
+	must(t, st.CreateUser(t.Context(), u))
 	enroll := func(k store.PrincipalKind, name string) auth.Enrollment {
 		token, _, err := auth.CreateEnrollToken(t.Context(), st, u.ID, k, time.Hour, time.Now())
 		must(t, err)
@@ -601,9 +601,8 @@ func status(t *testing.T, f *fixture, token string) int {
 	return res.StatusCode
 }
 
-// One credential gets at most four connections, so a busy worker cannot
-// lock out another credential (such as the CLI's); the total cap applies to
-// everyone, after authentication.
+// Worker links count against both the credential and the Web user as well
+// as the overall limit, after authentication.
 func TestConnectionCaps(t *testing.T) {
 	t.Run("per credential", func(t *testing.T) {
 		f := setup(t)
@@ -613,7 +612,18 @@ func TestConnectionCaps(t *testing.T) {
 		if got := status(t, f, f.f.Token); got != http.StatusServiceUnavailable {
 			t.Fatalf("fifth connection of one credential: %d", got)
 		}
-		linkedAs(t, f, f.otherToken) // another credential still gets in
+		linkedAs(t, f, otherUserWorkerToken(t, f))
+	})
+	t.Run("per user", func(t *testing.T) {
+		f := setup(t)
+		for range 2 {
+			raw(t, f)
+			rawAs(t, f, f.otherToken)
+		}
+		if got := status(t, f, f.otherToken); got != http.StatusServiceUnavailable {
+			t.Fatalf("fifth connection across two credentials of the same user: %d", got)
+		}
+		linkedAs(t, f, otherUserWorkerToken(t, f))
 	})
 	t.Run("total", func(t *testing.T) {
 		f := setup(t, func(c *workerlink.Config) { c.MaxConnections = 2 })
@@ -636,13 +646,27 @@ func TestConnectionCaps(t *testing.T) {
 		for range workerlink.MaxPerCredential {
 			raw(t, f)
 		}
+		token := otherUserWorkerToken(t, f)
 		for range workerlink.DefaultMaxConnections - workerlink.MaxPerCredential {
-			rawAs(t, f, f.otherToken)
+			rawAs(t, f, token)
 		}
-		if got := status(t, f, f.otherToken); got != http.StatusServiceUnavailable {
+		if got := status(t, f, token); got != http.StatusServiceUnavailable {
 			t.Fatalf("connection beyond the default total: %d", got)
 		}
 	})
+}
+
+func otherUserWorkerToken(t *testing.T, f *fixture) string {
+	t.Helper()
+	ctx := t.Context()
+	now := time.Now()
+	u := store.User{ID: "other", Email: "other@example.com", Role: store.RoleUser, CreatedAt: now.UnixMilli()}
+	must(t, f.st.CreateUser(ctx, u))
+	token, _, err := auth.CreateEnrollToken(ctx, f.st, u.ID, store.KindWorker, time.Hour, now)
+	must(t, err)
+	enrolled, err := auth.Enroll(ctx, f.st, auth.EnrollRequest{Token: token, Kind: store.KindWorker, Name: "worker", MachineID: "m"}, now)
+	must(t, err)
+	return enrolled.Token
 }
 
 // Waiting for the router (and the daemon behind it) holds no global permit:
@@ -829,7 +853,7 @@ func TestPushPermitsBoundAcrossConnections(t *testing.T) {
 func TestIdleRevocationClosesDefinitively(t *testing.T) {
 	f := setup(t)
 	c := client(t, f)
-	u, err := f.st.GetUserByName(t.Context(), "admin")
+	u, err := f.st.GetUserByEmail(t.Context(), "owner@example.com")
 	must(t, err)
 	_, _, err = auth.RevokeByName(t.Context(), f.st, store.KindWorker, u.ID, "desk", time.Now())
 	must(t, err)

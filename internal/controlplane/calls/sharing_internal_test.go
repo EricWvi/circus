@@ -3,6 +3,7 @@ package calls
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/store/sqlite"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 )
@@ -22,14 +24,14 @@ func TestQueryAnswerTransferKeepsCharge(t *testing.T) {
 		MaxMessageBytes: 64 << 10, MaxSubscriptionBytes: 1 << 20, MaxBufferedUpdateBytes: 1 << 20,
 	}, subs: make(map[*Subscription]struct{})}
 	u, c, err := r.own(dispatched("call"))
-	if err != nil || !r.acquireCharge(c) {
+	if err != nil || !r.acquireCharge("u", c) {
 		t.Fatalf("own reply: %v", err)
 	}
 	// A transfer must keep existing ownership, even with a budget tightened
 	// below current usage. Releasing first would require fresh admission.
 	r.config.MaxBufferedUpdateBytes = c.cost - 1
 	r.mu.Lock()
-	s, err := r.onceAnswer(t.Context(), "call", u, c)
+	s, err := r.onceAnswer(t.Context(), "u", "call", u, c)
 	r.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -235,11 +237,11 @@ func TestQueryClosedBeforeRelockReleasesAnswer(t *testing.T) {
 func TestSharedSubscriptionByteLimit(t *testing.T) {
 	r := queryTestRouter(t)
 	r.mu.Lock()
-	fast, err := r.newSub(t.Context(), "call")
+	fast, err := r.newSub(t.Context(), "u", "call")
 	if err != nil {
 		t.Fatal(err)
 	}
-	slow, err := r.newSub(t.Context(), "call")
+	slow, err := r.newSub(t.Context(), "u", "call")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +254,7 @@ func TestSharedSubscriptionByteLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.config.MaxSubscriptionBytes = first.cost + second.cost - 1
-	r.config.MaxBufferedUpdateBytes = first.cost + second.cost
+	r.config.MaxBufferedUpdateBytes = 2 * (first.cost + second.cost)
 	r.publish(accepted("call"))
 	r.mu.Unlock()
 	defer fast.Close()
@@ -291,16 +293,16 @@ func TestChargeAdmissionBoundary(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			r.config.MaxBufferedUpdateBytes = held.cost + next.cost - short
-			if !r.acquireCharge(held) {
+			r.config.MaxBufferedUpdateBytes = 2 * (held.cost + next.cost - short)
+			if !r.acquireCharge("u", held) {
 				t.Fatal("initial charge did not fit")
 			}
-			admitted := r.acquireCharge(next)
+			admitted := r.acquireCharge("u", next)
 			if admitted != (short == 0) {
 				t.Fatalf("admitted=%v with %d bytes short", admitted, short)
 			}
 			if admitted {
-				if r.bufferedBytes != r.config.MaxBufferedUpdateBytes {
+				if r.bufferedBytes != r.config.MaxBufferedUpdateBytes/2 {
 					t.Fatal("exact fit did not fill budget")
 				}
 				r.releaseCharge(next)
@@ -319,10 +321,10 @@ func TestOnceAnswerRejectsNil(t *testing.T) {
 	r := queryTestRouter(t)
 	r.mu.Lock()
 	_, c, err := r.own(dispatched("call"))
-	if err != nil || !r.acquireCharge(c) {
+	if err != nil || !r.acquireCharge("u", c) {
 		t.Fatalf("own reply: %v", err)
 	}
-	s, err := r.onceAnswer(t.Context(), "call", nil, c)
+	s, err := r.onceAnswer(t.Context(), "u", "call", nil, c)
 	r.mu.Unlock()
 	if err == nil || s != nil {
 		t.Fatal("nil query answer did not return an internal error")
@@ -397,5 +399,132 @@ func TestPublishAndAnswerChargeFailureAnswersAllWaiters(t *testing.T) {
 	r.mu.Unlock()
 	if stats := r.Stats(); stats.BufferedBytes != 0 || stats.QueryWaiters != 0 {
 		t.Fatalf("unchargeable update retained ownership: %+v", stats)
+	}
+}
+
+func TestSubscriptionSlotsShareByUser(t *testing.T) {
+	r := queryTestRouter(t)
+	r.config.MaxSubscriptions = 2
+	r.config.Store = &queryRowStore{row: store.Call{CallID: "call", UserID: "u", DeviceID: "d", DispatchedBootID: "boot", State: store.CallRunning}}
+	waiting, resume := pauseQuery(t, r)
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.Query(t.Context(), "u", "call")
+		done <- err
+	}()
+	wait.Recv(t, waiting)
+
+	r.mu.Lock()
+	_, sameErr := r.newSub(t.Context(), "u", "another-call")
+	other, otherErr := r.newSub(t.Context(), "v", "other-call")
+	_, totalErr := r.newSub(t.Context(), "w", "third-call")
+	r.answer("call", dispatched("call"), nil)
+	r.mu.Unlock()
+	resume()
+	if err := wait.Recv(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if other != nil {
+		defer other.Close()
+	}
+	if !errors.Is(sameErr, ErrOverloaded) || otherErr != nil || !errors.Is(totalErr, ErrOverloaded) {
+		t.Fatalf("slot refusals: same user %v, another user %v, total %v", sameErr, otherErr, totalErr)
+	}
+	r.mu.Lock()
+	sub, err := r.newSub(t.Context(), "u", "another-call")
+	r.mu.Unlock()
+	if err != nil {
+		t.Fatalf("query did not free user's slot: %v", err)
+	}
+	defer sub.Close()
+	if _, err := r.Query(t.Context(), "u", "call"); !errors.Is(err, ErrOverloaded) {
+		t.Fatalf("subscription did not count against same user's query slots: %v", err)
+	}
+}
+
+func TestBufferedUpdateBytesShareByUser(t *testing.T) {
+	r := queryTestRouter(t)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, first, err := r.own(accepted("first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, second, err := r.own(accepted("other"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.config.MaxBufferedUpdateBytes = 2 * max(first.cost, second.cost)
+	if !r.acquireCharge("u", first) || r.acquireCharge("u", second) || !r.acquireCharge("v", second) {
+		t.Fatal("buffer shares did not isolate the users")
+	}
+	r.releaseCharge(first)
+	r.releaseCharge(second)
+	if len(r.users) != 0 || r.bufferedBytes != 0 {
+		t.Fatalf("buffer shares were not released: %v", r.users)
+	}
+}
+
+func TestRouterValidatesSharedBudgets(t *testing.T) {
+	ctx := t.Context()
+	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cfg := queryTestRouter(t).config
+	cfg.Store = db
+	for _, tc := range []struct {
+		name string
+		set  func(*Config)
+	}{
+		{"MaxSubscriptions", func(c *Config) { c.MaxSubscriptions = 1 }},
+		{"Pending.MaxCalls", func(c *Config) { c.Pending.MaxCalls = 1 }},
+		{"Pending.MaxBytes", func(c *Config) { c.Pending.MaxBytes = 1 }},
+		{"MaxBufferedUpdateBytes", func(c *Config) { c.MaxBufferedUpdateBytes = 1 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			invalid := cfg
+			tc.set(&invalid)
+			r, err := New(invalid)
+			if r != nil {
+				defer r.Close(ctx)
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.name+" must be at least 2") {
+				t.Fatalf("New error = %v, want minimum for %s", err, tc.name)
+			}
+		})
+	}
+
+	cfg.MaxSubscriptions = 2
+	cfg.Pending = PendingBudget{MaxCalls: 2, MaxBytes: 2}
+	cfg.MaxBufferedUpdateBytes = 2
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatalf("minimum shared budgets: %v", err)
+	}
+	if err := r.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClosingSubscriptionsReleasesUserAccounting(t *testing.T) {
+	r := queryTestRouter(t)
+	r.config.MaxSubscriptions = 4
+	for i := range r.config.MaxSubscriptions/2 + 1 {
+		r.mu.Lock()
+		sub, err := r.once(t.Context(), "owner", dispatched("call"))
+		r.mu.Unlock()
+		if err != nil {
+			t.Fatalf("subscription %d: %v", i+1, err)
+		}
+		if err := sub.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.users) != 0 {
+		t.Fatalf("closed subscriptions retained user accounting: %v", r.users)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,7 +29,11 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/coder/websocket"
+
+	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
@@ -263,8 +268,30 @@ func TestServerJoinProcess(t *testing.T) {
 		}
 	}
 
+	setupLine, ok := logs.waitFor(5*time.Second, func(line string) bool { return strings.Contains(line, "/setup?token=") })
+	if !ok {
+		t.Fatal("no setup link")
+	}
+	var setupLog struct{ URL string }
+	if err := json.Unmarshal([]byte(setupLine), &setupLog); err != nil {
+		t.Fatal(err)
+	}
+	setupURL, err := url.Parse(setupLog.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = circusv1connect.NewAuthServiceClient(client, base).Setup(t.Context(), connect.NewRequest(&circusv1.SetupRequest{
+		Token: setupURL.Query().Get("token"), Email: enrollmentEmail, Password: "password-123",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := p.run("server", "enroll-token", "create", "--role", "daemon", "--url", base); err == nil || !strings.Contains(stderr, "--user") {
+		t.Fatalf("enroll-token create without user: %v %q", err, stderr)
+	}
+
 	// Enrollment token, written to the database directly while the server runs.
-	link, tokenErr, err := p.run("server", "enroll-token", "create", "--role", "daemon", "--ttl", "10m", "--url", base)
+	link, tokenErr, err := p.run("server", "enroll-token", "create", "--user", enrollmentEmail, "--role", "daemon", "--ttl", "10m", "--url", base)
 	if err != nil {
 		t.Fatalf("enroll-token create: %v\n%s", err, tokenErr)
 	}
@@ -322,7 +349,7 @@ func TestServerJoinProcess(t *testing.T) {
 	if _, out, err := p.run("join", link, "--name", "other", "--ca-file", certFile, "--force"); err == nil || !strings.Contains(out, "refused the link") {
 		t.Fatalf("reused link: %v %q", err, out)
 	}
-	link2, _, err := p.run("server", "enroll-token", "create", "--role", "daemon", "--url", base)
+	link2, _, err := p.run("server", "enroll-token", "create", "--user", enrollmentEmail, "--role", "daemon", "--url", base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,10 +361,10 @@ func TestServerJoinProcess(t *testing.T) {
 	}
 
 	// Revocation: 403 for the next request, and doctor says so.
-	if out, errOut, err := p.run("server", "device", "list"); err != nil || !strings.Contains(out, cred.PrincipalID) {
+	if out, errOut, err := p.run("server", "device", "list"); err != nil || !strings.Contains(out, cred.PrincipalID) || !strings.Contains(out, enrollmentEmail) {
 		t.Fatalf("device list: %v %q %q", err, out, errOut)
 	}
-	if out, errOut, err := p.run("server", "device", "revoke", "laptop"); err != nil || !strings.Contains(out, "Revoked 1") {
+	if out, errOut, err := p.run("server", "device", "revoke", "laptop", "--user", enrollmentEmail); err != nil || !strings.Contains(out, "Revoked 1") {
 		t.Fatalf("revoke: %v %q %q", err, out, errOut)
 	}
 	if s := get("/v1/whoami", cred.Token); s != http.StatusForbidden {

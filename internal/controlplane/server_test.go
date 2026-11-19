@@ -165,7 +165,11 @@ func TestServerWebUI(t *testing.T) {
 
 func (h *harness) token(t *testing.T, kind store.PrincipalKind, ttl time.Duration, now time.Time) string {
 	t.Helper()
-	tok, _, err := auth.CreateEnrollToken(context.Background(), h.st, controlplane.User(h.srv).ID, kind, ttl, now)
+	u := store.User{ID: "machine-test-user", Email: "owner@example.com", Role: store.RoleUser, CreatedAt: time.Now().UnixMilli()}
+	if err := h.st.CreateUser(t.Context(), u); err != nil && !errors.Is(err, store.ErrExists) {
+		t.Fatal(err)
+	}
+	tok, _, err := auth.CreateEnrollToken(t.Context(), h.st, u.ID, kind, ttl, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,8 +507,8 @@ func TestRunGracefulShutdown(t *testing.T) {
 func TestPurgeExpiredEnrollTokens(t *testing.T) {
 	st := openStore(t)
 	logs := &syncBuffer{}
-	user, err := auth.EnsureUser(context.Background(), st, auth.DefaultUserName, time.Now())
-	if err != nil {
+	user := store.User{ID: "owner", Email: "owner@example.com", Role: store.RoleUser, CreatedAt: time.Now().UnixMilli()}
+	if err := st.CreateUser(t.Context(), user); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := auth.CreateEnrollToken(context.Background(), st, user.ID, store.KindDevice, time.Second, time.Now().Add(-time.Hour)); err != nil {

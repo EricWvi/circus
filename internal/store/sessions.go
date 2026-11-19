@@ -225,10 +225,9 @@ type SessionOps interface {
 	// initial working directories cwds (AgentID "" is the main thread), in
 	// one transaction. Checked in the same transaction: the user has fewer
 	// than maxSessions sessions (ErrLimit otherwise), the default device and
-	// any pinned worker belong to the user, and ProjectID exists (ErrNotFound
-	// otherwise). UserID is the machine owner, which may differ from the
-	// project's Web user; the store does not cross-check them. The service
-	// authorizes through the project. Title starts empty and LastActivityAt
+	// any pinned worker and the project belong to the user (ErrNotFound
+	// otherwise). The service authorizes through the project.
+	// Title starts empty and LastActivityAt
 	// starts at CreatedAt. ErrExists
 	// if the session id or ClaudeSessionID is taken. len(cwds) ≤
 	// MaxSessionCwds. Not idempotent: a retried create with the same id

@@ -55,14 +55,12 @@ type Ops interface {
 	// of Ops so a session write and a call write can share one Tx.
 	SessionOps
 
-	// CreateUser inserts a regular human user or legacy machine owner.
+	// CreateUser inserts a regular user.
 	// Human email is normalized; an empty name becomes the id. Super users
 	// must use CreateSuperUser. ErrExists if id, name or email is taken.
 	CreateUser(ctx context.Context, u User) error
 	// GetUser returns the user with this id, or ErrNotFound.
 	GetUser(ctx context.Context, id string) (User, error)
-	// GetUserByName returns the user with this name, or ErrNotFound.
-	GetUserByName(ctx context.Context, name string) (User, error)
 
 	// CreateIdentity inserts a device or worker, by id.Kind. ErrExists if the
 	// id is taken or the user already has a live identity of that kind with
@@ -75,6 +73,11 @@ type Ops interface {
 	GetIdentityByName(ctx context.Context, kind PrincipalKind, userID, name string) (Identity, error)
 	// ListIdentities returns the user's live identities of this kind, by name.
 	ListIdentities(ctx context.Context, kind PrincipalKind, userID string) ([]Identity, error)
+	// CountLiveIdentities counts the user's non-deleted identities of this kind.
+	CountLiveIdentities(ctx context.Context, kind PrincipalKind, userID string) (int, error)
+	// ListIdentitySummaries returns live identities of this kind and their
+	// owners' emails, ordered by name and owner email.
+	ListIdentitySummaries(ctx context.Context, kind PrincipalKind) ([]IdentitySummary, error)
 	// SetConnected records a connection from boot bootID at time at and
 	// returns the boot recorded before ("" if never connected), read and
 	// replaced atomically. The caller compares the two to detect a daemon
@@ -108,6 +111,9 @@ type Ops interface {
 	// CreateEnrollToken inserts a one-time token. ErrExists if the id or
 	// hash is taken; ErrNotFound if the user does not exist.
 	CreateEnrollToken(ctx context.Context, t EnrollToken) error
+	// CountUnusedEnrollTokens counts the user's unused tokens with expiry
+	// strictly after now, in Unix milliseconds.
+	CountUnusedEnrollTokens(ctx context.Context, userID string, now int64) (int, error)
 	// UseEnrollToken marks the token with this hash used, if it is unused
 	// and now < ExpiresAt, and returns it. Of any number of concurrent uses
 	// exactly one succeeds. Otherwise it returns ErrTokenUnusable, whatever

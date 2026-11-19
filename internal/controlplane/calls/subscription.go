@@ -86,14 +86,15 @@ func (r *router) update(ctx context.Context, c store.Call) *circusv1.CallUpdate 
 	}
 }
 
-func (r *router) newSub(ctx context.Context, id string) (*Subscription, error) {
-	if r.callbackCount+r.queryCount >= r.config.MaxSubscriptions {
+func (r *router) newSub(ctx context.Context, user, id string) (*Subscription, error) {
+	if r.subscriptionFull(user) {
 		return nil, ErrOverloaded
 	}
-	s := &Subscription{owner: r, callID: strings.Clone(id), changed: make(chan struct{}), lastRead: r.config.Clock.Now()}
+	s := &Subscription{owner: r, user: strings.Clone(user), callID: strings.Clone(id), changed: make(chan struct{}), lastRead: r.config.Clock.Now()}
 	r.subs[s] = struct{}{}
 	r.callbacks.Add(1)
 	r.callbackCount++
+	r.changeSlots(s.user, 1)
 	s.stopContext = context.AfterFunc(ctx, func() { r.mu.Lock(); defer r.mu.Unlock(); r.detach(s, ErrClosed); r.finishContext(s) })
 	return s, nil
 }
@@ -123,6 +124,7 @@ func (r *router) finishContext(s *Subscription) {
 	}
 	s.contextDone = true
 	r.callbackCount--
+	r.changeSlots(s.user, -1)
 	r.callbacks.Done()
 }
 
@@ -132,7 +134,7 @@ func (r *router) enqueue(s *Subscription, owned *circusv1.CallUpdate, c *charge,
 	if _, ok := r.subs[s]; !ok || s.terminal {
 		return
 	}
-	if chargeErr != nil || len(s.queue) >= r.config.MaxUpdatesPerSubscription || c.cost > r.config.MaxSubscriptionBytes-s.bytes || !r.acquireCharge(c) {
+	if chargeErr != nil || len(s.queue) >= r.config.MaxUpdatesPerSubscription || c.cost > r.config.MaxSubscriptionBytes-s.bytes || !r.acquireCharge(s.user, c) {
 		r.detach(s, ErrOverflow)
 		return
 	}
@@ -149,16 +151,23 @@ func (r *router) enqueue(s *Subscription, owned *circusv1.CallUpdate, c *charge,
 // shared by queued subscription entries and unconsumed query replies.
 // Its refs and the router's shared total are protected by r.mu.
 type charge struct {
+	user string
 	cost int64
 	refs int
 }
 
-func (r *router) acquireCharge(c *charge) bool {
+func (r *router) acquireCharge(user string, c *charge) bool {
 	if c.refs == 0 {
-		if c.cost > r.config.MaxBufferedUpdateBytes-r.bufferedBytes {
+		usage := r.users[user]
+		if c.cost > min(r.config.MaxBufferedUpdateBytes-r.bufferedBytes, r.config.MaxBufferedUpdateBytes/2-usage.bufferedBytes) {
 			return false
 		}
+		c.user = user
 		r.bufferedBytes += c.cost
+		usage.bufferedBytes += c.cost
+		r.setUsage(user, usage)
+	} else if c.user != user {
+		return false
 	}
 	c.refs++
 	return true
@@ -171,6 +180,9 @@ func (r *router) releaseCharge(c *charge) {
 	c.refs--
 	if c.refs == 0 {
 		r.bufferedBytes -= c.cost
+		usage := r.users[c.user]
+		usage.bufferedBytes -= c.cost
+		r.setUsage(c.user, usage)
 	}
 }
 
@@ -216,8 +228,8 @@ func (r *router) publishAndAnswer(u *circusv1.CallUpdate) {
 	r.answerOwned(u.CallId, owned, c, err)
 }
 
-func (r *router) once(ctx context.Context, u *circusv1.CallUpdate) (*Subscription, error) {
-	s, err := r.newSub(ctx, u.CallId)
+func (r *router) once(ctx context.Context, user string, u *circusv1.CallUpdate) (*Subscription, error) {
+	s, err := r.newSub(ctx, user, u.CallId)
 	if err != nil {
 		return nil, err
 	}

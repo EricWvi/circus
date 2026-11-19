@@ -244,11 +244,6 @@ func (o *faultyOps) GetUser(ctx context.Context, id string) (u store.User, err e
 	return u, err
 }
 
-func (o *faultyOps) GetUserByName(ctx context.Context, name string) (u store.User, err error) {
-	err = o.read(ctx, func(s store.Ops) error { u, err = s.GetUserByName(ctx, name); return err })
-	return u, err
-}
-
 func (o *faultyOps) CreateIdentity(ctx context.Context, id store.Identity) error {
 	return o.write(ctx, func(s store.Ops) error { return s.CreateIdentity(ctx, id) })
 }
@@ -265,6 +260,16 @@ func (o *faultyOps) GetIdentityByName(ctx context.Context, kind store.PrincipalK
 
 func (o *faultyOps) ListIdentities(ctx context.Context, kind store.PrincipalKind, userID string) (v []store.Identity, err error) {
 	err = o.read(ctx, func(s store.Ops) error { v, err = s.ListIdentities(ctx, kind, userID); return err })
+	return v, err
+}
+
+func (o *faultyOps) CountLiveIdentities(ctx context.Context, kind store.PrincipalKind, userID string) (n int, err error) {
+	err = o.read(ctx, func(s store.Ops) error { n, err = s.CountLiveIdentities(ctx, kind, userID); return err })
+	return n, err
+}
+
+func (o *faultyOps) ListIdentitySummaries(ctx context.Context, kind store.PrincipalKind) (v []store.IdentitySummary, err error) {
+	err = o.read(ctx, func(s store.Ops) error { v, err = s.ListIdentitySummaries(ctx, kind); return err })
 	return v, err
 }
 
@@ -302,6 +307,11 @@ func (o *faultyOps) RevokeCredentials(ctx context.Context, kind store.PrincipalK
 
 func (o *faultyOps) CreateEnrollToken(ctx context.Context, t store.EnrollToken) error {
 	return o.write(ctx, func(s store.Ops) error { return s.CreateEnrollToken(ctx, t) })
+}
+
+func (o *faultyOps) CountUnusedEnrollTokens(ctx context.Context, userID string, now int64) (n int, err error) {
+	err = o.read(ctx, func(s store.Ops) error { n, err = s.CountUnusedEnrollTokens(ctx, userID, now); return err })
+	return n, err
 }
 
 func (o *faultyOps) UseEnrollToken(ctx context.Context, tokenHash []byte, now int64, usedBy string) (t store.EnrollToken, err error) {

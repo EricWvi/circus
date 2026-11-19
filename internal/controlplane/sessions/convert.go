@@ -395,7 +395,7 @@ func recoveryCalls(ctx context.Context, tx store.Ops, d *devices, f store.Fence,
 		last := calls[len(calls)-1]
 		after := &store.CallCursor{SubmittedAt: last.SubmittedAt, CallID: last.CallID}
 		for len(calls) < store.MaxRecoveryCalls {
-			page, err := tx.ListCalls(ctx, store.CallFilter{SessionID: f.SessionID, Recovery: true, Limit: store.MaxPageSize, After: after})
+			page, err := tx.ListCalls(ctx, store.CallFilter{UserID: d.user, SessionID: f.SessionID, Recovery: true, Limit: store.MaxPageSize, After: after})
 			if err != nil {
 				return nil, err
 			}

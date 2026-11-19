@@ -16,6 +16,8 @@ var (
 	// expired, or not issued for the requested role. The cases are
 	// deliberately indistinguishable.
 	ErrEnrollRejected = errors.New("enrollment token rejected: it is unknown, already used, expired, or not issued for this role")
+	// ErrIdentityLimit reports a full identity quota. The token remains unused.
+	ErrIdentityLimit = errors.New("live identity limit reached")
 	// ErrNameTaken reports that the token's user already has a live identity
 	// of the requested role with that name. The token is not consumed.
 	ErrNameTaken = errors.New("name already taken")
@@ -24,46 +26,40 @@ var (
 )
 
 const (
-	// DefaultUserName is the legacy machine owner. Human login users are
-	// separate rows, so existing machine credentials keep their ownership.
-	DefaultUserName = "admin"
 	// DefaultEnrollTTL is the default lifetime of a one-time token.
 	DefaultEnrollTTL = time.Hour
 	// MaxEnrollTTL bounds a one-time token's lifetime.
 	MaxEnrollTTL = 7 * 24 * time.Hour
+	// MaxLiveDevices and MaxLiveWorkers are per-user enrollment limits.
+	MaxLiveDevices = 32
+	MaxLiveWorkers = 4
 	// MaxNameLen bounds an identity name.
 	MaxNameLen = 63
 	// maxFieldLen bounds the free-form identity fields a client reports.
 	maxFieldLen = 255
 )
 
-// EnsureUser returns the user named name, creating it at time now if absent.
-// Concurrent callers (the server and an enroll-token command on the same
-// database) get the same user.
-func EnsureUser(ctx context.Context, st store.Store, name string, now time.Time) (store.User, error) {
-	u, err := st.GetUserByName(ctx, name)
-	if err == nil || !errors.Is(err, store.ErrNotFound) {
-		return u, err
-	}
-	id, err := newID()
+// CheckIdentityLimit reports ErrIdentityLimit when userID has no enrollment
+// slot for kind. Use the same transaction for this check and enrollment.
+func CheckIdentityLimit(ctx context.Context, st store.Ops, userID string, kind store.PrincipalKind) error {
+	n, err := st.CountLiveIdentities(ctx, kind, userID)
 	if err != nil {
-		return store.User{}, err
+		return err
 	}
-	u = store.User{ID: id, Name: name, CreatedAt: now.UnixMilli()}
-	switch err := st.CreateUser(ctx, u); {
-	case err == nil:
-		return u, nil
-	case errors.Is(err, store.ErrExists):
-		return st.GetUserByName(ctx, name)
-	default:
-		return store.User{}, err
+	limit := MaxLiveDevices
+	if kind == store.KindWorker {
+		limit = MaxLiveWorkers
 	}
+	if n >= limit {
+		return ErrIdentityLimit
+	}
+	return nil
 }
 
 // CreateEnrollToken stores a one-time token for one role of the user and
 // returns its text form, which the caller shows once and then forgets. ttl
 // zero means DefaultEnrollTTL; it must not exceed MaxEnrollTTL.
-func CreateEnrollToken(ctx context.Context, st store.Store, userID string, kind store.PrincipalKind, ttl time.Duration, now time.Time) (string, store.EnrollToken, error) {
+func CreateEnrollToken(ctx context.Context, st store.Ops, userID string, kind store.PrincipalKind, ttl time.Duration, now time.Time) (string, store.EnrollToken, error) {
 	if ttl == 0 {
 		ttl = DefaultEnrollTTL
 	}
@@ -118,8 +114,9 @@ type Enrollment struct {
 
 // Enroll exchanges a one-time token for a new identity of the requested kind
 // and its long-term credential, in one store transaction (see the package
-// doc). Token failures return ErrEnrollRejected, a taken name ErrNameTaken,
-// malformed fields ErrInvalidRequest; any other error is the store's.
+// doc). Token failures return ErrEnrollRejected, a full identity quota
+// ErrIdentityLimit, a taken name ErrNameTaken, and malformed fields
+// ErrInvalidRequest. Other errors come from the store.
 func Enroll(ctx context.Context, st store.Store, req EnrollRequest, now time.Time) (Enrollment, error) {
 	if !req.Kind.Valid() {
 		return Enrollment{}, fmt.Errorf("%w: unknown role %q", ErrInvalidRequest, req.Kind)
@@ -169,6 +166,9 @@ func Enroll(ctx context.Context, st store.Store, req EnrollRequest, now time.Tim
 		}
 		if !sameHash(tok.TokenHash, hash) || !slices.Contains(tok.Kinds, req.Kind) {
 			return ErrEnrollRejected
+		}
+		if err := CheckIdentityLimit(ctx, tx, tok.UserID, req.Kind); err != nil {
+			return err
 		}
 		id := store.Identity{
 			Kind: req.Kind, ID: identityID, UserID: tok.UserID, Name: req.Name,

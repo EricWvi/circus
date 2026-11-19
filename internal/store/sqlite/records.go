@@ -140,13 +140,14 @@ func (o *ops) PatchSessionRecords(ctx context.Context, f store.Fence, p store.Re
 		}
 
 		for _, j := range p.Jobs {
-			var device, boot, owner string
-			err := mapErr(tx.q.QueryRow(ctx, `SELECT device_id, dispatched_boot_id, session_id FROM calls WHERE call_id = ?`,
-				j.CallID).Scan(&device, nullStr{&boot}, &owner))
+			var device, boot string
+			err := mapErr(tx.q.QueryRow(ctx, `SELECT c.device_id, c.dispatched_boot_id FROM calls c
+				JOIN sessions s ON s.session_id = c.session_id AND s.user_id = c.user_id
+				WHERE c.call_id = ? AND c.session_id = ?`, j.CallID, sid).Scan(&device, nullStr{&boot}))
 			if err != nil && !isNotFound(err) {
 				return err
 			}
-			if err != nil || owner != sid || boot == "" {
+			if err != nil || boot == "" {
 				return fmt.Errorf("%w: dispatched call %q of this session", store.ErrNotFound, j.CallID)
 			}
 			if _, err := tx.exec(ctx, `INSERT INTO session_jobs (session_id, call_id, device_id, boot_id, job_id, tool_use_id,
@@ -157,27 +158,27 @@ func (o *ops) PatchSessionRecords(ctx context.Context, f store.Fence, p store.Re
 				return err
 			}
 		}
-		if n, err := tx.count(ctx, `SELECT COUNT(*) FROM session_jobs WHERE session_id = ?`, sid); err != nil {
+		if n, err := tx.count(ctx, `SELECT COUNT(*) FROM session_jobs WHERE session_id = ? AND `+sessionJobDeviceMatchesOwner, sid); err != nil {
 			return err
 		} else if n > store.MaxSessionJobs {
 			return fmt.Errorf("%w: %d session jobs", store.ErrLimit, n)
 		}
 
-		if err := tx.inIDs(ctx, `UPDATE calls SET returned_at = ? WHERE session_id = ? AND returned_at IS NULL AND call_id IN `,
+		if err := tx.inIDs(ctx, `UPDATE calls SET returned_at = ? WHERE session_id = ? AND `+callMatchesSessionOwner+` AND returned_at IS NULL AND call_id IN `,
 			p.ReturnedCallIDs, now, sid); err != nil {
 			return err
 		}
-		if err := tx.inIDs(ctx, `UPDATE calls SET notice_owed = 1 WHERE session_id = ? AND call_id IN `,
+		if err := tx.inIDs(ctx, `UPDATE calls SET notice_owed = 1 WHERE session_id = ? AND `+callMatchesSessionOwner+` AND call_id IN `,
 			p.AwaitingCallIDs, sid); err != nil {
 			return err
 		}
-		if n, err := tx.count(ctx, `SELECT COUNT(*) FROM calls WHERE session_id = ? AND notice_owed = 1`, sid); err != nil {
+		if n, err := tx.count(ctx, `SELECT COUNT(*) FROM calls WHERE session_id = ? AND `+callMatchesSessionOwner+` AND notice_owed = 1`, sid); err != nil {
 			return err
 		} else if n > store.MaxOwedCalls {
 			return fmt.Errorf("%w: %d calls owe a notice", store.ErrLimit, n)
 		}
 		if err := tx.inIDs(ctx, `UPDATE session_jobs SET notice = 'handed', notice_at = ? WHERE session_id = ?
-			AND notice = 'no' AND call_id IN `, p.HandedJobCalls, now, sid); err != nil {
+			AND `+sessionJobDeviceMatchesOwner+` AND notice = 'no' AND call_id IN `, p.HandedJobCalls, now, sid); err != nil {
 			return err
 		}
 
@@ -200,12 +201,19 @@ func (o *ops) PatchSessionRecords(ctx context.Context, f store.Fence, p store.Re
 	})
 }
 
+const callMatchesSessionOwner = `user_id = (SELECT s.user_id FROM sessions s WHERE s.session_id = calls.session_id)`
+
+const sessionJobDeviceMatchesOwner = `EXISTS (SELECT 1 FROM sessions s JOIN devices d ON d.user_id = s.user_id
+	WHERE s.session_id = session_jobs.session_id AND d.id = session_jobs.device_id)`
+
 // sessionJobQuery selects a session's jobs, with the state of their jobs
 // row, for scanSessionJob; it takes the session id.
 const sessionJobQuery = `SELECT sj.call_id, sj.device_id, sj.boot_id, sj.job_id, sj.tool_use_id,
 	sj.description, sj.output_path, j.state, j.exit_code, j.ended_at, sj.notice, sj.notice_at, sj.created_at
-	FROM session_jobs sj LEFT JOIN jobs j
-		ON j.device_id = sj.device_id AND j.boot_id = sj.boot_id AND j.job_id = sj.job_id
+	FROM session_jobs sj
+	JOIN sessions s ON s.session_id = sj.session_id
+	JOIN devices d ON d.id = sj.device_id AND d.user_id = s.user_id
+	LEFT JOIN jobs j ON j.device_id = sj.device_id AND j.boot_id = sj.boot_id AND j.job_id = sj.job_id AND j.user_id = s.user_id
 	WHERE sj.session_id = ?`
 
 func scanSessionJob(s scanner) (store.SessionJob, error) {
@@ -337,7 +345,7 @@ func (o *ops) RegisterSessionJob(ctx context.Context, j store.SessionJob) (bool,
 			sid, j.CallID, device, boot, j.JobID, nstr(j.ToolUseID), nstr(j.Description), nstr(j.OutputPath), j.CreatedAt); err != nil {
 			return err
 		}
-		if n, err := tx.count(ctx, `SELECT COUNT(*) FROM session_jobs WHERE session_id = ?`, sid); err != nil {
+		if n, err := tx.count(ctx, `SELECT COUNT(*) FROM session_jobs WHERE session_id = ? AND `+sessionJobDeviceMatchesOwner, sid); err != nil {
 			return err
 		} else if n > store.MaxSessionJobs {
 			return fmt.Errorf("%w: %d session jobs", store.ErrLimit, n)
@@ -412,8 +420,9 @@ func (o *ops) PurgeSessionJobs(ctx context.Context, before int64, limit int) (in
 		return 0, invalid("PurgeSessionJobs needs a time")
 	}
 	return o.exec(ctx, `DELETE FROM session_jobs WHERE (session_id, call_id) IN (
-		SELECT sj.session_id, sj.call_id FROM session_jobs sj JOIN jobs j
-			ON j.device_id = sj.device_id AND j.boot_id = sj.boot_id AND j.job_id = sj.job_id
+		SELECT sj.session_id, sj.call_id FROM session_jobs sj
+		JOIN sessions s ON s.session_id = sj.session_id
+		JOIN jobs j ON j.device_id = sj.device_id AND j.boot_id = sj.boot_id AND j.job_id = sj.job_id AND j.user_id = s.user_id
 		WHERE sj.notice = 'persisted' AND sj.notice_at <= ? AND j.state <> 'running'
 		ORDER BY sj.notice_at, sj.session_id, sj.call_id LIMIT ?)`, before, limit)
 }

@@ -4,12 +4,16 @@ package circus.v1;
 
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
-// MachineService lists the machines the signed-in browser user may use.
+// MachineService lists and enrolls machines for the signed-in browser user.
 // It needs a browser session cookie (UNAUTHENTICATED without one) and
 // follows the same Origin rule as ProjectService.
 service MachineService {
   // The caller's devices, ordered by name.
   rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+  // Issues a one-time enrollment link for the caller's machines. Any
+  // signed-in user may call it. Tokens are returned only here; the server
+  // stores only their hashes.
+  rpc CreateEnrollLink(CreateEnrollLinkRequest) returns (CreateEnrollLinkResponse);
 }
 
 message Device {
@@ -29,4 +33,24 @@ message Device {
 message ListDevicesRequest {}
 message ListDevicesResponse {
   repeated Device devices = 1;
+}
+
+message CreateEnrollLinkRequest {
+  // Which identities the link enrolls. Unspecified is INVALID_ARGUMENT.
+  EnrollRole role = 1;
+}
+enum EnrollRole {
+  ENROLL_ROLE_UNSPECIFIED = 0;
+  ENROLL_ROLE_DAEMON = 1;
+  ENROLL_ROLE_WORKER = 2;
+  ENROLL_ROLE_BOTH = 3;
+}
+message CreateEnrollLinkResponse {
+  // <public_url>/join#<token>[.<token>], as printed by the CLI. A link for
+  // both roles carries the daemon token first.
+  string link = 1;
+  int64 expires_unix_ms = 2;
+  // The control plane's build version (such as "v0.1.0" or "dev") for
+  // selecting the matching CLI release.
+  string server_version = 3;
 }

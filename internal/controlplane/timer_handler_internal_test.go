@@ -45,10 +45,7 @@ func TestEnrollmentCleanupIgnoresStaleClaim(t *testing.T) {
 	if err = st.SetTimer(ctx, timers.EnrollTokenExpiry, "purge", rows[0].DueAt+1000); err != nil {
 		t.Fatal(err)
 	}
-	u, err := st.GetUserByName(ctx, auth.DefaultUserName)
-	if err != nil {
-		t.Fatal(err)
-	}
+	u := createMachineTestUser(t, st)
 	if _, _, err = auth.CreateEnrollToken(ctx, st, u.ID, store.KindDevice, time.Second, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -116,10 +113,7 @@ func TestPeriodicCleanupPurgesWebSessions(t *testing.T) {
 	var logs bytes.Buffer
 	s, st := purgeTestServer(t, &logs)
 	now := time.Now()
-	u, err := st.GetUserByName(t.Context(), auth.DefaultUserName)
-	if err != nil {
-		t.Fatal(err)
-	}
+	u := createMachineTestUser(t, st)
 	created := now.Add(-store.WebSessionIdleTimeout - time.Second).UnixMilli()
 	expired := store.WebSession{TokenHash: auth.HashToken("expired"), UserID: u.ID, CreatedAt: created, LastUsedAt: created, ExpiresAt: now.Add(-time.Second).UnixMilli()}
 	active := store.WebSession{TokenHash: auth.HashToken("active"), UserID: u.ID, CreatedAt: now.UnixMilli(), LastUsedAt: now.UnixMilli(), ExpiresAt: now.Add(store.WebSessionIdleTimeout).UnixMilli()}
@@ -199,4 +193,13 @@ func TestSetupBannerFallback(t *testing.T) {
 			}
 		})
 	}
+}
+
+func createMachineTestUser(t *testing.T, st store.Store) store.User {
+	t.Helper()
+	u := store.User{ID: "owner", Email: "owner@example.com", Role: store.RoleUser, CreatedAt: time.Now().UnixMilli()}
+	if err := st.CreateUser(t.Context(), u); err != nil {
+		t.Fatal(err)
+	}
+	return u
 }

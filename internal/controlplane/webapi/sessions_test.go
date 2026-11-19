@@ -112,7 +112,7 @@ func (c *client) getSession(t *testing.T, id string) *circusv1.Session {
 	return resp.Msg
 }
 
-// lease gives the session's lease to a worker of the legacy owner and
+// lease gives the session's lease to a worker of the session owner and
 // returns its fence.
 func (h *harness) lease(t *testing.T, sessionID string) store.Fence {
 	t.Helper()
@@ -161,16 +161,18 @@ func (h *harness) events(t *testing.T, id string) []store.SessionEvent {
 	return page.Events
 }
 
-// foreignSession gives the Web user webUser a project with one session
-// served by the legacy owner's devices, through the store: the same
-// machine owner as the super user's sessions, another project owner.
+// foreignSession gives another Web user a project, device and session.
 func (h *harness) foreignSession(t *testing.T, webUser, projectID, sessionID string) {
 	t.Helper()
 	now := h.clock.Load()
-	if _, err := h.st.CreateProject(t.Context(), store.Project{ID: projectID, UserID: webUser, Name: projectID, CreatedAt: now, UpdatedAt: now}, ""); err != nil {
+	if _, err := h.st.CreateProject(t.Context(), store.Project{ID: projectID, UserID: webUser, Name: projectID, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.st.CreateSession(t.Context(), store.Session{ID: sessionID, UserID: h.owner.ID, ProjectID: projectID, ClaudeSessionID: "claude-" + sessionID, DefaultDeviceID: "d1", CreatedAt: now, UpdatedAt: now, LastActivityAt: now}, nil, 100); err != nil {
+	deviceID := webUser + "-device"
+	if err := h.st.CreateIdentity(t.Context(), store.Identity{Kind: store.KindDevice, ID: deviceID, UserID: webUser, Name: "desk", MachineID: deviceID, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.st.CreateSession(t.Context(), store.Session{ID: sessionID, UserID: webUser, ProjectID: projectID, ClaudeSessionID: "claude-" + sessionID, DefaultDeviceID: deviceID, CreatedAt: now, UpdatedAt: now, LastActivityAt: now}, nil, 100); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -234,8 +236,7 @@ func TestSessionAuthorization(t *testing.T) {
 	notFound("WatchSession", err)
 	_, err = bob.sessions.ListSessions(ctx, connect.NewRequest(&circusv1.ListSessionsRequest{ProjectId: p.ProjectId}))
 	notFound("ListSessions with the project", err)
-	// Unfiltered lists hold only the caller's projects' sessions, although
-	// both users' sessions run on the same machine owner's devices.
+	// Unfiltered lists hold only the caller's sessions.
 	list, err := bob.sessions.ListSessions(ctx, connect.NewRequest(&circusv1.ListSessionsRequest{}))
 	if err != nil || len(list.Msg.Sessions) != 1 || list.Msg.Sessions[0].SessionId != "bob-session" {
 		t.Fatalf("bob's list = %v, %v", list, err)
@@ -380,14 +381,8 @@ func TestCreateSessionLocations(t *testing.T) {
 	own := bob.mustCreate(t, "Bob's")
 	_, err = bob.createSession(t, &circusv1.CreateSessionRequest{ProjectId: own.ProjectId})
 	wantField(t, err, connect.CodeFailedPrecondition, "location_index")
-	// Even with a location bound to someone else's device in the store.
-	if _, err := h.st.UpdateProject(ctx, "bob", own.ProjectId, store.ProjectPatch{Locations: []store.ProjectLocation{{DeviceID: "d1"}}, UpdatedAt: h.clock.Load() + 1}, h.owner.ID); err != nil {
-		t.Fatal(err)
-	}
-	_, err = bob.createSession(t, &circusv1.CreateSessionRequest{ProjectId: own.ProjectId})
-	wantField(t, err, connect.CodeFailedPrecondition, "location_index")
 
-	// Every created session is the legacy machine owner's.
+	// Every created session is owned by the Web user.
 	for _, s := range []*circusv1.Session{first, second, third, pinned} {
 		stored, err := h.st.GetSession(ctx, s.SessionId, h.clock.Load())
 		if err != nil || stored.UserID != h.owner.ID || stored.DefaultDeviceID != "d1" || stored.ProjectID != p.ProjectId {

@@ -558,9 +558,9 @@ func TestPendingAdmissionLimits(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := setup(t, func(c *calls.Config, _ *gateway.Config) {
 				if name == "bytes" {
-					c.Pending.MaxBytes = 1
+					c.Pending.MaxBytes = 2
 				} else {
-					c.Pending.MaxCalls = 1
+					c.Pending.MaxCalls = 2
 				}
 			})
 			l := f.connect("boot")

@@ -119,8 +119,8 @@ func newFixture(t *testing.T, opts ...option) *fixture {
 	t.Cleanup(func() { _ = st.Close() })
 	f := &fixture{t: t, st: st, clk: clock.New(), bus: &bus{durable: map[string]uint64{}}}
 	now := f.clk.Now()
-	f.user, err = auth.EnsureUser(ctx, st, "admin", now)
-	must(t, err)
+	f.user = store.User{ID: "owner", Email: "owner@example.com", Role: store.RoleUser, CreatedAt: now.UnixMilli()}
+	must(t, st.CreateUser(ctx, f.user))
 	enroll := func(k store.PrincipalKind, name string) auth.Enrollment {
 		token, _, err := auth.CreateEnrollToken(ctx, st, f.user.ID, k, time.Hour, now)
 		must(t, err)
@@ -130,7 +130,7 @@ func newFixture(t *testing.T, opts ...option) *fixture {
 	}
 	f.device = enroll(store.KindDevice, "desk").Identity
 	f.workers = []auth.Enrollment{enroll(store.KindWorker, "w1"), enroll(store.KindWorker, "w2")}
-	_, err = st.CreateProject(ctx, store.Project{ID: "p1", UserID: f.user.ID, Name: "Project", CreatedAt: now.UnixMilli(), UpdatedAt: now.UnixMilli()}, "")
+	_, err = st.CreateProject(ctx, store.Project{ID: "p1", UserID: f.user.ID, Name: "Project", CreatedAt: now.UnixMilli(), UpdatedAt: now.UnixMilli()})
 	must(t, err)
 
 	registry, err := gateway.NewRegistry(8)

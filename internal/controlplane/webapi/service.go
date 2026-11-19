@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -57,6 +58,10 @@ type OnlineFunc func(ctx context.Context, userID string) (map[string]bool, error
 // Config configures the services.
 type Config struct {
 	Store store.Store
+	// PublicURL is the base URL for enrollment links.
+	PublicURL string
+	// Version is the control plane build version; empty means dev.
+	Version string
 	// Interceptor resolves the browser session and checks Origin:
 	// auth.WebService.Interceptor.
 	Interceptor connect.Interceptor
@@ -90,6 +95,8 @@ type Config struct {
 // Service implements ProjectService, MachineService and SessionService.
 type Service struct {
 	st           store.Store
+	publicURL    string
+	version      string
 	interceptor  connect.Interceptor
 	online       OnlineFunc
 	now          func() time.Time
@@ -116,8 +123,12 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("webapi: store, interceptor, online, bus, waker and jobs are required")
 	}
 	s := &Service{st: cfg.Store, interceptor: cfg.Interceptor, online: cfg.Online, now: cfg.Now, logger: cfg.Logger,
+		publicURL: strings.TrimRight(cfg.PublicURL, "/"), version: cfg.Version,
 		bus: cfg.Bus, waker: cfg.Waker, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
 		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout}
+	if s.version == "" {
+		s.version = "dev"
+	}
 	if s.now == nil {
 		s.now = time.Now
 	}
@@ -163,28 +174,6 @@ func user(ctx context.Context) (store.User, error) {
 		return store.User{}, connect.NewError(connect.CodeUnauthenticated, errors.New("sign in first"))
 	}
 	return u, nil
-}
-
-// deviceOwner returns the id of the user whose devices u may see and bind
-// to project locations, or "" when u may use none.
-//
-// Machines are still enrolled for the single legacy machine owner (the user
-// named auth.DefaultUserName, which has no email and cannot sign in), not
-// for Web users. Until enrollment binds machines to Web users, the super
-// user stands for that owner and sees its devices; every other Web user
-// sees none, and so cannot bind a location. Such a user may still create
-// projects with only a name or a repository URL; that is intended, since
-// those run nothing anywhere. Replace this function when machines get Web
-// owners.
-func (s *Service) deviceOwner(ctx context.Context, u store.User) (string, error) {
-	if u.Role != store.RoleSuper {
-		return "", nil
-	}
-	owner, err := s.st.GetUserByName(ctx, auth.DefaultUserName)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && owner.Email != "") {
-		return "", nil
-	}
-	return owner.ID, err
 }
 
 // fieldError is a refusal of one request field, with the field path in a

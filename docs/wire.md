@@ -1279,15 +1279,14 @@ when the store is busy, CANCELED or DEADLINE_EXCEEDED when the request
 ended, INTERNAL otherwise. Argument errors are INVALID_ARGUMENT with a
 google.rpc.BadRequest field violation naming the request field.
 
-CreateSession: the location's device must be a live device of the
-caller's machine owner, with the same name the location recorded;
-otherwise, and for a caller without devices or a project without
-locations, FAILED_PRECONDITION with a `location_index` field violation.
+CreateSession requires a project location on a live device of the caller.
+A missing location or unavailable device returns FAILED_PRECONDITION with
+a `location_index` field violation.
 An out-of-range location_index is INVALID_ARGUMENT. The server fills
 default_device and one main-thread working directory: the location's
 path, or `~/circus/projects/<project_id>` for a location without a path
 (not created or cloned by this call). pinned_worker_id must name a worker
-of the machine owner. The location becomes the project's
+of the caller. The location becomes the project's
 last_used_location in the same transaction, without moving the project's
 updated_at.
 
@@ -1335,10 +1334,8 @@ lists the pending approvals unexpired at the request time, with device
 names.
 
 Session.project_id is required in the store and references projects. The
-session's user_id remains the machine owner whose devices and workers serve
-it, while the project's user_id is the Web user. For the Web super user,
-the machine owner is the legacy owner returned by deviceOwner. The store
-does not cross-check these owners; the service authorizes through the
+session and its project have the same Web user as owner. That user's
+devices and workers serve the session. The service authorizes through the
 project.
 
 SendMessage deduplicates by (session_id,
@@ -1347,7 +1344,7 @@ A stopped session refuses SendMessage; a broken one accepts but does not
 deliver until repaired. ListSessions is paged (default 100, maximum 1000),
 optionally filtered by project_id, and ordered by last_activity_at descending,
 then session_id descending, with an exclusive keyset cursor. It leaves
-`config` unset; GetSession returns it. A machine owner has at most 1000
+`config` unset; GetSession returns it. A Web user has at most 1000
 sessions. Both reads return project_id, title, last_activity_at_unix_ms and
 pending_approval_count. Last activity starts at creation and never moves
 backwards: every stored durable event and every newly accepted user-kind
@@ -1393,8 +1390,7 @@ DeleteSession, running device job rows survive until they end.
 
 DeleteUser cascades its empty projects but refuses with ErrHasSessions if
 any owned project has sessions, deleting nothing; remove those sessions
-through the chunked deletion flow first. The machine owner may differ from
-the project's Web user, so this precondition is checked through projects.
+through the chunked deletion flow first.
 
 The development migration to project-backed sessions
 deletes all old session data, their calls and device jobs and resets user

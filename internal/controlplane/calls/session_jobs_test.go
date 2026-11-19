@@ -33,7 +33,7 @@ func newJobFixture(t *testing.T, configure ...func(*calls.Config, *gateway.Confi
 	}}, configure...)...)
 	f := j.fixture
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindWorker, ID: "w", UserID: "u", Name: "w", MachineID: "mw", CreatedAt: 1}))
-	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p", UserID: "u", Name: "p", CreatedAt: 1, UpdatedAt: 1}, "")
+	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p", UserID: "u", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
 	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "s", UserID: "u", ProjectID: "p", ClaudeSessionID: "c", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10))
 	now := f.clock.Now().UnixMilli()
@@ -212,16 +212,23 @@ func TestSessionJobTableFull(t *testing.T) {
 	}
 }
 
-// TestCrossUserJobRegistration: user u's call without session fields that
-// names user u2's session is routed, but its background job is not
-// registered with u2's session and wakes nothing.
+// A call already in flight when its session ID is assigned to another
+// user cannot register jobs with or wake that session.
 func TestCrossUserJobRegistration(t *testing.T) {
 	j := newJobFixture(t)
 	f := j.fixture
+	s, err := f.router.Submit(f.ctx, "u", "desk", background("mine", "theirs"))
+	must(t, err)
+	defer s.Close()
+	j.dispatched("mine")
+	s2, err := f.router.Submit(f.ctx, "u", "desk", background("mine2", "theirs"))
+	must(t, err)
+	defer s2.Close()
+	j.dispatched("mine2")
 	must(t, f.db.CreateUser(f.ctx, store.User{ID: "u2", Name: "other", CreatedAt: 1}))
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindDevice, ID: "d2", UserID: "u2", Name: "desk2", MachineID: "m2", CreatedAt: 1}))
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindWorker, ID: "w2", UserID: "u2", Name: "w2", MachineID: "m3", CreatedAt: 1}))
-	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p2", UserID: "u2", Name: "p", CreatedAt: 1, UpdatedAt: 1}, "")
+	_, err = f.db.CreateProject(f.ctx, store.Project{ID: "p2", UserID: "u2", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
 	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "theirs", UserID: "u2", ProjectID: "p2", ClaudeSessionID: "c2", DefaultDeviceID: "d2", CreatedAt: 1}, nil, 10))
 	now := f.clock.Now().UnixMilli()
@@ -229,10 +236,6 @@ func TestCrossUserJobRegistration(t *testing.T) {
 	must(t, err)
 	theirs := store.Fence{SessionID: "theirs", Epoch: r.Lease.Epoch, WorkerID: "w2", BootID: "b2", ConnID: "conn2", Now: now}
 
-	s, err := f.router.Submit(f.ctx, "u", "desk", background("mine", "theirs"))
-	must(t, err)
-	defer s.Close()
-	j.dispatched("mine")
 	j.startedJob("mine", "00000000000a")
 	nextResult(t, f.ctx, s)
 	f.waitState("mine", store.CallCompleted)
@@ -241,10 +244,6 @@ func TestCrossUserJobRegistration(t *testing.T) {
 	}
 	// A lost call of u naming u2's session does not register from its job
 	// events either.
-	s2, err := f.router.Submit(f.ctx, "u", "desk", background("mine2", "theirs"))
-	must(t, err)
-	defer s2.Close()
-	j.dispatched("mine2")
 	j.lose("mine2")
 	j.jobEvent("00000000000b", "theirs", "mine2", 1, circusv1.JobEvent_STATE_RUNNING)
 	if jobs := sessionJobs(t, f.ctx, f.db, theirs); len(jobs) != 0 {

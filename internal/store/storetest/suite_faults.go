@@ -197,7 +197,7 @@ func crashScript(f fixture) []crashStep {
 			return err
 		}},
 		{"project", 1, func(ctx context.Context, s store.Store) error {
-			_, err := s.CreateProject(ctx, newProject("session-project", "u1", "Sessions"), "")
+			_, err := s.CreateProject(ctx, newProject("session-project", "u1", "Sessions"))
 			return err
 		}},
 		{"session", 1, func(ctx context.Context, s store.Store) error {

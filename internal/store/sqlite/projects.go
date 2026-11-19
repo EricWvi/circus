@@ -119,14 +119,9 @@ func (o *ops) insertLocations(ctx context.Context, projectID string, locs []stor
 	return nil
 }
 
-func (o *ops) CreateProject(ctx context.Context, p store.Project, owner string) (store.Project, error) {
+func (o *ops) CreateProject(ctx context.Context, p store.Project) (store.Project, error) {
 	if err := store.CheckProject(p); err != nil {
 		return store.Project{}, err
-	}
-	if len(p.Locations) > 0 {
-		if err := store.CheckID("device owner id", owner); err != nil {
-			return store.Project{}, err
-		}
 	}
 	if !validIndex(p.LastUsedLocation, len(p.Locations)) {
 		return store.Project{}, store.ErrLocationIndex
@@ -148,7 +143,7 @@ func (o *ops) CreateProject(ctx context.Context, p store.Project, owner string) 
 			VALUES (?,?,?,?,?,?,?,?)`, p.ID, p.UserID, p.Name, key, nstr(p.RepoURL), p.LastUsedLocation, p.CreatedAt, p.UpdatedAt); err != nil {
 			return err
 		}
-		if err := tx.insertLocations(ctx, p.ID, p.Locations, owner); err != nil {
+		if err := tx.insertLocations(ctx, p.ID, p.Locations, p.UserID); err != nil {
 			return err
 		}
 		if err := tx.checkProjectBytes(ctx, p.UserID); err != nil {
@@ -163,7 +158,7 @@ func (o *ops) CreateProject(ctx context.Context, p store.Project, owner string) 
 	return out, nil
 }
 
-func (o *ops) UpdateProject(ctx context.Context, userID, projectID string, patch store.ProjectPatch, owner string) (store.Project, error) {
+func (o *ops) UpdateProject(ctx context.Context, userID, projectID string, patch store.ProjectPatch) (store.Project, error) {
 	if err := store.CheckID("user id", userID); err != nil {
 		return store.Project{}, err
 	}
@@ -177,11 +172,6 @@ func (o *ops) UpdateProject(ctx context.Context, userID, projectID string, patch
 	}
 	if patch.Locations != nil {
 		if err := store.CheckProjectLocations(patch.Locations); err != nil {
-			return store.Project{}, err
-		}
-	}
-	if len(patch.Locations) > 0 {
-		if err := store.CheckID("device owner id", owner); err != nil {
 			return store.Project{}, err
 		}
 	}
@@ -242,7 +232,7 @@ func (o *ops) UpdateProject(ctx context.Context, userID, projectID string, patch
 			if _, err := tx.exec(ctx, `DELETE FROM project_locations WHERE project_id = ?`, projectID); err != nil {
 				return err
 			}
-			if err := tx.insertLocations(ctx, projectID, patch.Locations, owner); err != nil {
+			if err := tx.insertLocations(ctx, projectID, patch.Locations, userID); err != nil {
 				return err
 			}
 		}

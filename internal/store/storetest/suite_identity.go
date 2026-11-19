@@ -18,16 +18,11 @@ func testUsers(t *testing.T, b Backend) {
 	got, err := s.GetUser(ctx, "u1")
 	must(t, err)
 	mustEqual(t, "GetUser", got, u)
-	got, err = s.GetUserByName(ctx, "admin")
-	must(t, err)
-	mustEqual(t, "GetUserByName", got, u)
 
 	mustIs(t, s.CreateUser(ctx, store.User{ID: "u1", Name: "other", CreatedAt: t0}), store.ErrExists)
 	mustIs(t, s.CreateUser(ctx, store.User{ID: "u2", Name: "admin", CreatedAt: t0}), store.ErrExists)
 	mustIs(t, s.CreateUser(ctx, store.User{ID: "", Name: "x"}), store.ErrInvalid)
 	_, err = s.GetUser(ctx, "nope")
-	mustIs(t, err, store.ErrNotFound)
-	_, err = s.GetUserByName(ctx, "nope")
 	mustIs(t, err, store.ErrNotFound)
 }
 
@@ -74,6 +69,9 @@ func testIdentities(t *testing.T, b Backend) {
 		list, err := s.ListIdentities(ctx, k, "u1")
 		must(t, err)
 		mustEqual(t, label("ListIdentities ", k), list, []store.Identity{want, reuse})
+		count, err := s.CountLiveIdentities(ctx, k, "u1")
+		must(t, err)
+		mustEqual(t, label("CountLiveIdentities ", k), count, len(list))
 
 		missingUser := want
 		missingUser.ID, missingUser.UserID = want.ID+"-nouser", "ghost"
@@ -152,6 +150,38 @@ func testCredentials(t *testing.T, b Backend) {
 	must(t, err)
 	if got.Revoked() {
 		t.Fatal("worker credential revoked with the device")
+	}
+}
+
+func testCountUnusedEnrollTokens(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	seed(t, s)
+	must(t, s.CreateUser(ctx, store.User{ID: "u2", Email: "other@example.com", Role: store.RoleUser, CreatedAt: t0}))
+	for _, tok := range []store.EnrollToken{
+		{ID: "live", UserID: "u1", ExpiresAt: t0 + 2},
+		{ID: "used", UserID: "u1", ExpiresAt: t0 + 2, UsedAt: t0},
+		{ID: "expired", UserID: "u1", ExpiresAt: t0},
+		{ID: "other", UserID: "u2", ExpiresAt: t0 + 3},
+	} {
+		tok.TokenHash = hash(tok.ID)
+		tok.Kinds = []store.PrincipalKind{store.KindDevice}
+		tok.CreatedAt = t0 - 1
+		must(t, s.CreateEnrollToken(ctx, tok))
+	}
+	for _, tc := range []struct {
+		userID string
+		now    int64
+		want   int
+	}{
+		{"u1", t0, 1},
+		{"u2", t0, 1},
+		{"u1", t0 + 2, 0},
+		{"missing", t0, 0},
+	} {
+		n, err := s.CountUnusedEnrollTokens(ctx, tc.userID, tc.now)
+		must(t, err)
+		mustEqual(t, "unused token count", n, tc.want)
 	}
 }
 

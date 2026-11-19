@@ -60,8 +60,10 @@ type Config struct {
 	// and tests. Start refuses it on any other address.
 	DevInsecure bool
 	// PublicURL is the base URL clients use (https://host:port), returned by
-	// Enroll as control_plane_url; empty returns an empty URL.
+	// Enroll as control_plane_url and used for Web enrollment links.
 	PublicURL string
+	// Version is the control plane build version; empty means dev.
+	Version string
 	// UI contains the immutable built Web UI. Nil disables serving the UI.
 	UI fs.FS
 	// ShutdownTimeout bounds Run's graceful shutdown; zero means
@@ -168,7 +170,6 @@ type Server struct {
 	instanceID string
 	logger     *slog.Logger
 	authn      *auth.Authenticator
-	user       store.User
 	webAuth    *auth.WebService
 	mux        *http.ServeMux
 	now        func() time.Time
@@ -201,9 +202,8 @@ type Server struct {
 	shutdownErr  error
 }
 
-// New validates cfg, ensures the default user exists in st and builds the
-// mux with the built-in endpoints and both links. It does not listen yet;
-// call Run, or Shutdown, to release what it built.
+// New validates cfg and builds the mux with the built-in endpoints and both
+// links. It does not listen yet; call Run or Shutdown to release what it built.
 func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("controlplane: %w", err)
@@ -236,10 +236,6 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	s.logger = slog.New(slog.NewJSONHandler(cfg.LogOutput, &slog.HandlerOptions{Level: cfg.LogLevel})).
 		With("instance_id", s.instanceID)
 	s.authn = auth.NewAuthenticator(st, auth.Options{Now: now, Logger: s.logger})
-	s.user, err = auth.EnsureUser(ctx, st, auth.DefaultUserName, now())
-	if err != nil {
-		return nil, fmt.Errorf("controlplane: default user: %w", err)
-	}
 
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { writeText(w, http.StatusOK, "ok\n") })
 	s.mux.HandleFunc("GET /readyz", s.serveReady)
@@ -293,7 +289,7 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	// finish; the session service closes with the call plane.
 	s.hooks = append(s.hooks, shutdownHook{"session watchers", func(context.Context) error { s.bus.Close(); return nil }})
 	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger,
-		Bus: s.bus, Waker: s.sessions, Jobs: s.router})
+		Bus: s.bus, Waker: s.sessions, Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version})
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
@@ -533,10 +529,12 @@ func (s *Server) serveReady(w http.ResponseWriter, r *http.Request) {
 	writeText(w, http.StatusOK, "ready\n")
 }
 
-// storeReady reads the default user's row: a real read through the store
-// that fails once the store is closed or unreachable.
+// storeReady probes the user table even before the initial setup.
 func (s *Server) storeReady(ctx context.Context) error {
-	_, err := s.st.GetUser(ctx, s.user.ID)
+	_, err := s.st.GetSuperUser(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
 	return err
 }
 

@@ -243,7 +243,9 @@ assumption.
 
 ## Backpressure and memory
 
-Pending has byte AND count bounds; ack/result/terminal outcome releases it.
+Pending has both byte and count bounds. Each user may use half of each
+global pending limit, rounded down. Acknowledgment, result or terminal
+outcome releases the charge.
 For a new call, reserve decoded request and serialization scratch before cloning
 or marshaling. An existing call, including an undispatched-Lost resubmit, instead
 performs one transient deterministic marshal while serialized under the router
@@ -254,14 +256,19 @@ enforces wire structural limits. Per-device sync cursors, public operations, que
 subscription buffers have explicit limits. No terminal-result cache exists.
 Every router-side holder of one settled or published update, including
 subscribers and query waiters, shares one immutable clone and one global charge.
-The global budget charges its decoded cost once until the last router-side
-holder releases it. Subscription byte limits charge every queued entry in full.
+The global and per-user budgets charge its decoded cost once until the last
+router-side holder releases it. Each user may use half of the global
+buffered-update byte budget. Per-subscription byte limits charge every queued
+entry in full.
 Next releases the queue entry's reference; exposing a buffered channel would hide
 consumption from accounting. Overflow/stall detaches only that
 subscriber, discards its queue, and reports ErrOverflow. Its execution continues;
 it can Query again. Context cancellation and Close release subscription state. Context callbacks
-are separately counted against MaxSubscriptions and joined by Close; waiting
-queries release execution slots so inbound replies can acquire one.
+are counted against MaxSubscriptions and joined by Close. Each user may hold
+half of MaxSubscriptions, rounded down, across subscription callbacks and
+query waiters together. A full share uses the same refusal as the global
+limit. Waiting queries release execution slots so inbound replies can acquire
+one.
 SubscriberStall (normally 15 seconds) bounds undrained final updates as well.
 The stall age starts when an empty queue receives its first unread update;
 idle time with an empty queue never causes immediate overflow on a later result.
@@ -446,9 +453,8 @@ large consumer's rate.
   the final cancel replay of one device's active calls, and every store
   transaction. A slow store or a JobEvent storm from one device therefore
   delays every link's Receive and can trip MaxConsumerStall and resync on
-  other devices. Acceptable at the current scale (single user, few devices,
-  SQLite's single writer). Per-device locks with marshalling and cloning
-  outside them are the follow-up. Lock hold times are measured by
+  other devices. Per-user limits reserve headroom for other callers.
+  The shared admission lock and SQLite writer still serialize those operations. Lock hold times are measured by
   measure_lock_test.go, TestMeasureLockHold (opt-in, about a minute; put
   the SQLite file on a real disk to include fsync):
 
@@ -485,6 +491,3 @@ large consumer's rate.
   reads that flag alone (offlineSince applies whenever no route exists);
   readers such as `circus doctor` or a UI must treat "no live route" as
   offline.
-- **Per-user subscription share is not implemented.** MaxSubscriptions is
-  global; one leaking worker can exhaust it. Acceptable with a single user;
-  planned for M3/M4.

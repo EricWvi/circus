@@ -37,7 +37,7 @@ func testSessionLists(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
 	f := seedProjects(t, s)
-	_, err := s.CreateProject(ctx, newProject("web-project", f.alice.ID, "Web"), "")
+	_, err := s.CreateProject(ctx, newProject("web-project", f.user.ID, "Web"))
 	must(t, err)
 	sess := newSession("s1", f.fixture)
 	sess.ProjectID = "missing"
@@ -45,7 +45,6 @@ func testSessionLists(t *testing.T, b Backend) {
 	sess.ProjectID = ""
 	mustIs(t, s.CreateSession(ctx, sess, nil, 100), store.ErrInvalid)
 	sess.ProjectID = "web-project"
-	// The Web project's owner differs from the machine owner, by design.
 	must(t, s.CreateSession(ctx, sess, nil, 100))
 	got := getSession(t, s, "s1")
 	mustEqual(t, "list fields", []any{got.ProjectID, got.UserID, got.Title, got.LastActivityAt, got.PendingApprovalCount}, []any{"web-project", "u1", "", t0, uint32(0)})
@@ -72,7 +71,7 @@ func testSessionLists(t *testing.T, b Backend) {
 	mustEqual(t, "keyset", ids(store.SessionFilter{Limit: 1, After: &store.SessionCursor{LastActivityAt: t0 + 20, ID: "s1"}}), []string{"s2"})
 	mustEqual(t, "tie keyset", ids(store.SessionFilter{Limit: 10, After: &store.SessionCursor{LastActivityAt: t0, ID: "s3"}}), []string(nil))
 	mustEqual(t, "project scope", ids(store.SessionFilter{ProjectID: "web-project", Limit: 10}), []string{"s1"})
-	mustEqual(t, "machine and project scope", ids(store.SessionFilter{ProjectID: "web-project", UserID: f.alice.ID, Limit: 10}), []string(nil))
+	mustEqual(t, "user and project scope", ids(store.SessionFilter{ProjectID: "web-project", UserID: f.alice.ID, Limit: 10}), []string(nil))
 	// An older input and an explicit title cannot move activity backwards.
 	submit(t, s, newInput("s1", 1))
 	must(t, s.SetSessionTitle(ctx, "s1", "Manual"))
@@ -202,7 +201,7 @@ func testProjectSessions(t *testing.T, b Backend) {
 	_, err = s.PutJob(ctx, store.Job{DeviceID: "d1", BootID: "b1", JobID: "ended", UserID: "u1", SessionID: "s1", State: store.JobExited, LastSeq: 1})
 	must(t, err)
 	// Keep an unrelated project's transcript charge intact.
-	_, err = s.CreateProject(ctx, newProject("keep-project", "alice", "Keep"), "")
+	_, err = s.CreateProject(ctx, newProject("keep-project", f.user.ID, "Keep"))
 	must(t, err)
 	keep := newSession("keep", f.fixture)
 	keep.ProjectID = "keep-project"
@@ -246,7 +245,7 @@ func testProjectSessions(t *testing.T, b Backend) {
 	must(t, err)
 	mustEqual(t, "charge preserved for other project", owner.TranscriptBytes, getSession(t, s, "keep").TranscriptBytes)
 	// An expired holder does not block the cascade.
-	_, err = s.CreateProject(ctx, newProject("expired-project", "alice", "Expired"), "")
+	_, err = s.CreateProject(ctx, newProject("expired-project", f.user.ID, "Expired"))
 	must(t, err)
 	expired := newSession("expired", f.fixture)
 	expired.ProjectID = "expired-project"
@@ -254,10 +253,10 @@ func testProjectSessions(t *testing.T, b Backend) {
 	acquire(t, s, "expired", "w1", "b1", t0)
 	_, _, _, err = s.StopSession(ctx, "expired", t0+1, "")
 	must(t, err)
-	mustIs(t, s.DeleteProject(ctx, "alice", "expired-project", t0+ttl), store.ErrHasSessions)
+	mustIs(t, s.DeleteProject(ctx, f.user.ID, "expired-project", t0+ttl), store.ErrHasSessions)
 	must(t, s.CheckSessionDeletable(ctx, "expired", t0+ttl))
 	must(t, s.DeleteSession(ctx, "expired", t0+ttl))
-	must(t, s.DeleteProject(ctx, "alice", "expired-project", t0+ttl))
+	must(t, s.DeleteProject(ctx, f.user.ID, "expired-project", t0+ttl))
 	mustIs(t, s.CheckSessionDeletable(ctx, "expired", t0+ttl), store.ErrNotFound)
 	mustIs(t, s.CheckSessionDeletable(ctx, "keep", 0), store.ErrInvalid)
 	mustIs(t, s.CheckSessionDeletable(ctx, "", t0), store.ErrInvalid)
@@ -271,12 +270,18 @@ func testSessionWebReads(t *testing.T, b Backend) {
 	ctx := t.Context()
 	f := seedProjects(t, s)
 	for _, p := range []store.Project{newProject("alice-1", f.alice.ID, "One"), newProject("alice-2", f.alice.ID, "Two"), newProject("bob-1", f.bob.ID, "Bob")} {
-		_, err := s.CreateProject(ctx, p, "")
+		_, err := s.CreateProject(ctx, p)
 		must(t, err)
 	}
 	for i, pair := range [][2]string{{"a1", "alice-1"}, {"a2", "alice-2"}, {"b1", "bob-1"}, {"m1", "session-project"}, {"a3", "alice-1"}} {
 		sess := newSession(pair[0], f.fixture)
 		sess.ProjectID, sess.CreatedAt = pair[1], t0+int64(i)
+		switch pair[0][0] {
+		case 'a':
+			sess.UserID, sess.DefaultDeviceID = f.alice.ID, "alice-laptop"
+		case 'b':
+			sess.UserID, sess.DefaultDeviceID = f.bob.ID, "d9"
+		}
 		must(t, s.CreateSession(ctx, sess, nil, 100))
 	}
 	ids := func(filter store.SessionFilter) []string {
@@ -290,10 +295,9 @@ func testSessionWebReads(t *testing.T, b Backend) {
 		}
 		return out
 	}
-	// Every session has the same machine owner; only the projects differ.
 	mustEqual(t, "alice", ids(store.SessionFilter{WebUserID: f.alice.ID}), []string{"a3", "a2", "a1"})
 	mustEqual(t, "bob", ids(store.SessionFilter{WebUserID: f.bob.ID}), []string{"b1"})
-	mustEqual(t, "machine owner's own project", ids(store.SessionFilter{WebUserID: f.user.ID}), []string{"m1"})
+	mustEqual(t, "seeded user", ids(store.SessionFilter{WebUserID: f.user.ID}), []string{"m1"})
 	mustEqual(t, "nobody", ids(store.SessionFilter{WebUserID: "nobody"}), []string(nil))
 	mustEqual(t, "with project", ids(store.SessionFilter{WebUserID: f.alice.ID, ProjectID: "alice-1"}), []string{"a3", "a1"})
 	mustEqual(t, "foreign project", ids(store.SessionFilter{WebUserID: f.alice.ID, ProjectID: "bob-1"}), []string(nil))
@@ -303,12 +307,14 @@ func testSessionWebReads(t *testing.T, b Backend) {
 
 	// Working directories: only the main thread's, by device id.
 	sess := newSession("cw", f.fixture)
-	must(t, s.CreateSession(ctx, sess, []store.SessionCwd{{DeviceID: f.other.ID, Cwd: `C:\work`, UpdatedAt: t0}, {DeviceID: f.device.ID, Cwd: "/work", UpdatedAt: t0}}, 100))
-	fence := acquire(t, s, "cw", "w1", "b1", t0)
-	must(t, s.PatchSessionRecords(ctx, fence, store.RecordsPatch{Cwds: []store.SessionCwd{{AgentID: "agent", DeviceID: f.device.ID, Cwd: "/agent", UpdatedAt: t0 + 1}, {DeviceID: f.device.ID, Cwd: "/moved", UpdatedAt: t0 + 1}}}))
+	sess.UserID, sess.ProjectID, sess.DefaultDeviceID = f.alice.ID, "alice-1", "alice-laptop"
+	must(t, s.CreateIdentity(ctx, store.Identity{Kind: store.KindWorker, ID: "alice-worker", UserID: f.alice.ID, Name: "worker", MachineID: "m1", CreatedAt: t0}))
+	must(t, s.CreateSession(ctx, sess, []store.SessionCwd{{DeviceID: "d2", Cwd: `C:\work`, UpdatedAt: t0}, {DeviceID: "alice-laptop", Cwd: "/work", UpdatedAt: t0}}, 100))
+	fence := acquire(t, s, "cw", "alice-worker", "b1", t0)
+	must(t, s.PatchSessionRecords(ctx, fence, store.RecordsPatch{Cwds: []store.SessionCwd{{AgentID: "agent", DeviceID: "alice-laptop", Cwd: "/agent", UpdatedAt: t0 + 1}, {DeviceID: "alice-laptop", Cwd: "/moved", UpdatedAt: t0 + 1}}}))
 	cwds, err := s.ListSessionCwds(ctx, "cw")
 	must(t, err)
-	mustEqual(t, "main thread cwds", cwds, []store.SessionCwd{{DeviceID: f.device.ID, Cwd: "/moved", UpdatedAt: t0 + 1}, {DeviceID: f.other.ID, Cwd: `C:\work`, UpdatedAt: t0}})
+	mustEqual(t, "main thread cwds", cwds, []store.SessionCwd{{DeviceID: "alice-laptop", Cwd: "/moved", UpdatedAt: t0 + 1}, {DeviceID: "d2", Cwd: `C:\work`, UpdatedAt: t0}})
 	cwds, err = s.ListSessionCwds(ctx, "a1")
 	must(t, err)
 	mustEqual(t, "no cwds", len(cwds), 0)
@@ -332,7 +338,7 @@ func testSessionWebReads(t *testing.T, b Backend) {
 	mustIs(t, s.SetInputEventSeq(ctx, "a1", "missing", 8), store.ErrNotFound)
 	mustIs(t, s.SetInputEventSeq(ctx, "a1", in.InputID, -1), store.ErrInvalid)
 	// The seq survives the input's persistence.
-	fence = acquire(t, s, "a1", "w1", "b1", t0+2)
+	fence = acquire(t, s, "a1", "alice-worker", "b1", t0+2)
 	taken, err := s.TakeInputs(ctx, at(fence, t0+2))
 	must(t, err)
 	mustEqual(t, "taken", []any{len(taken), taken[0].EventSeq}, []any{1, int64(7)})

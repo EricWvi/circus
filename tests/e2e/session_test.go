@@ -25,7 +25,7 @@ func TestSessionTurn(t *testing.T) {
 	devices, err := h.st.ListIdentities(ctx, store.KindDevice, user)
 	must(t, err)
 	now := time.Now().UnixMilli()
-	_, err = h.st.CreateProject(ctx, store.Project{ID: "e2e-project", UserID: user, Name: "e2e", CreatedAt: now, UpdatedAt: now}, "")
+	_, err = h.st.CreateProject(ctx, store.Project{ID: "e2e-project", UserID: user, Name: "e2e", CreatedAt: now, UpdatedAt: now})
 	must(t, err)
 	must(t, h.st.CreateSession(ctx, store.Session{ID: "e2e-session", UserID: user, ProjectID: "e2e-project", ClaudeSessionID: "e2e-claude",
 		DefaultDeviceID: devices[0].ID, CreatedAt: now}, nil, store.DefaultMaxSessionsPerUser))

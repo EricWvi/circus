@@ -196,10 +196,6 @@ func (o *ops) GetUser(ctx context.Context, id string) (store.User, error) {
 	return o.getUser(ctx, "id", id)
 }
 
-func (o *ops) GetUserByName(ctx context.Context, name string) (store.User, error) {
-	return o.getUser(ctx, "name", name)
-}
-
 // Identities.
 
 func identityTable(kind store.PrincipalKind) (string, error) {
@@ -268,6 +264,35 @@ func (o *ops) ListIdentities(ctx context.Context, kind store.PrincipalKind, user
 		return nil, mapErr(err)
 	}
 	return collect(rows, func(s scanner) (store.Identity, error) { return scanIdentity(s, kind) })
+}
+
+func (o *ops) CountLiveIdentities(ctx context.Context, kind store.PrincipalKind, userID string) (int, error) {
+	table, err := identityTable(kind)
+	if err != nil {
+		return 0, err
+	}
+	if userID == "" {
+		return 0, invalid("CountLiveIdentities needs a user id")
+	}
+	return o.count(ctx, `SELECT COUNT(*) FROM `+table+` WHERE user_id = ? AND deleted_at IS NULL`, userID)
+}
+
+func (o *ops) ListIdentitySummaries(ctx context.Context, kind store.PrincipalKind) ([]store.IdentitySummary, error) {
+	table, err := identityTable(kind)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := o.q.QueryContext(ctx, `SELECT m.id, m.name, m.machine_id, u.email, m.created_at, m.last_connected_at
+		FROM `+table+` m JOIN users u ON u.id = m.user_id
+		WHERE m.deleted_at IS NULL ORDER BY m.name, u.email, m.id`)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return collect(rows, func(s scanner) (store.IdentitySummary, error) {
+		var id store.IdentitySummary
+		err := s.Scan(&id.ID, &id.Name, &id.MachineID, nullStr{&id.OwnerEmail}, &id.CreatedAt, nullInt{&id.LastConnectedAt})
+		return id, mapErr(err)
+	})
 }
 
 func (o *ops) SetConnected(ctx context.Context, kind store.PrincipalKind, id, bootID string, at int64) (string, error) {
@@ -416,6 +441,13 @@ func (o *ops) CreateEnrollToken(ctx context.Context, t store.EnrollToken) error 
 	_, err = o.exec(ctx, `INSERT INTO enroll_tokens (`+enrollCols+`) VALUES (?,?,?,?,?,?,?,?)`,
 		t.ID, t.UserID, t.TokenHash, kinds, t.CreatedAt, t.ExpiresAt, nint(t.UsedAt), nstr(t.UsedBy))
 	return err
+}
+
+func (o *ops) CountUnusedEnrollTokens(ctx context.Context, userID string, now int64) (int, error) {
+	if userID == "" || now == 0 {
+		return 0, invalid("CountUnusedEnrollTokens needs a user id and time")
+	}
+	return o.count(ctx, `SELECT COUNT(*) FROM enroll_tokens WHERE user_id = ? AND used_at IS NULL AND expires_at > ?`, userID, now)
 }
 
 func (o *ops) UseEnrollToken(ctx context.Context, tokenHash []byte, now int64, usedBy string) (store.EnrollToken, error) {
@@ -703,7 +735,7 @@ func (o *ops) ListJobs(ctx context.Context, f store.JobFilter) ([]store.Job, err
 		where, args = append(where, "(device_id, boot_id, job_id) > (?, ?, ?)"), append(args, f.After.DeviceID, f.After.BootID, f.After.JobID)
 	}
 	for _, c := range []struct{ col, v string }{
-		{"device_id", f.DeviceID}, {"boot_id", f.BootID}, {"session_id", f.SessionID}, {"call_id", f.CallID},
+		{"user_id", f.UserID}, {"device_id", f.DeviceID}, {"boot_id", f.BootID}, {"session_id", f.SessionID}, {"call_id", f.CallID},
 	} {
 		if c.v != "" {
 			where, args = append(where, c.col+" = ?"), append(args, c.v)

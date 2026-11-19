@@ -36,46 +36,43 @@ func locationsField(i int, field string) string { return fmt.Sprintf("locations[
 // returns them with device ids and normalized paths (empty for a device's
 // default directory). The first problem, in request order, is reported: a
 // location's device before its path. No locations is fine.
-func (s *Service) resolveLocations(ctx context.Context, u store.User, in []*circusv1.Project_Location) ([]store.ProjectLocation, string, error) {
+func (s *Service) resolveLocations(ctx context.Context, u store.User, in []*circusv1.Project_Location) ([]store.ProjectLocation, error) {
 	if len(in) > store.MaxProjectLocations {
-		return nil, "", invalidField("locations", fmt.Sprintf("at most %d locations", store.MaxProjectLocations))
+		return nil, invalidField("locations", fmt.Sprintf("at most %d locations", store.MaxProjectLocations))
 	}
-	owner, err := s.deviceOwner(ctx, u)
+	if len(in) == 0 {
+		return []store.ProjectLocation{}, nil
+	}
+	list, err := s.st.ListIdentities(ctx, store.KindDevice, u.ID)
 	if err != nil {
-		return nil, "", s.internal(ctx, "device owner", err)
+		return nil, s.internal(ctx, "list devices", err)
 	}
-	devices := map[string]store.Identity{}
-	if owner != "" {
-		list, err := s.st.ListIdentities(ctx, store.KindDevice, owner)
-		if err != nil {
-			return nil, "", s.internal(ctx, "list devices", err)
-		}
-		for _, d := range list {
-			devices[d.Name] = d
-		}
+	devices := make(map[string]store.Identity, len(list))
+	for _, d := range list {
+		devices[d.Name] = d
 	}
 	out := make([]store.ProjectLocation, 0, len(in))
 	seen := map[[2]string]bool{} // (device id, path); path "" is the default
 	for i, l := range in {
 		d, ok := devices[l.GetDevice()]
 		if len(l.GetDevice()) > maxDeviceNameBytes || !ok {
-			return nil, "", invalidField(locationsField(i, "device"), "unknown device")
+			return nil, invalidField(locationsField(i, "device"), "unknown device")
 		}
 		path, problem := checkPath(l.GetPath(), d.OS)
 		if problem != "" {
-			return nil, "", invalidField(locationsField(i, "path"), problem)
+			return nil, invalidField(locationsField(i, "path"), problem)
 		}
 		key := [2]string{d.ID, path}
 		if seen[key] && path == "" {
-			return nil, "", invalidField(locationsField(i, "path"), "duplicate default location for this device")
+			return nil, invalidField(locationsField(i, "path"), "duplicate default location for this device")
 		}
 		if seen[key] {
-			return nil, "", invalidField(locationsField(i, "path"), "location is listed twice")
+			return nil, invalidField(locationsField(i, "path"), "location is listed twice")
 		}
 		seen[key] = true
 		out = append(out, store.ProjectLocation{DeviceID: d.ID, DeviceName: d.Name, Path: path})
 	}
-	return out, owner, nil
+	return out, nil
 }
 
 // writeError maps the error of a project write.
@@ -126,7 +123,7 @@ func (s *Service) CreateProject(ctx context.Context, req *connect.Request[circus
 	if problem != "" {
 		return nil, invalidField("repo_url", problem)
 	}
-	locs, owner, err := s.resolveLocations(ctx, u, req.Msg.GetLocations())
+	locs, err := s.resolveLocations(ctx, u, req.Msg.GetLocations())
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +132,7 @@ func (s *Service) CreateProject(ctx context.Context, req *connect.Request[circus
 		return nil, s.internal(ctx, "project id", err)
 	}
 	now := s.now().UnixMilli()
-	p, err := s.st.CreateProject(ctx, store.Project{ID: id, UserID: u.ID, Name: name, Locations: locs, RepoURL: repoURL, CreatedAt: now, UpdatedAt: now}, owner)
+	p, err := s.st.CreateProject(ctx, store.Project{ID: id, UserID: u.ID, Name: name, Locations: locs, RepoURL: repoURL, CreatedAt: now, UpdatedAt: now})
 	if err != nil {
 		return nil, s.writeError(ctx, "create project", err)
 	}
@@ -200,9 +197,8 @@ func (s *Service) UpdateProject(ctx context.Context, req *connect.Request[circus
 		}
 		patch.RepoURL = &repoURL
 	}
-	var owner string
 	if m.Locations != nil {
-		if patch.Locations, owner, err = s.resolveLocations(ctx, u, m.GetLocations().GetLocations()); err != nil {
+		if patch.Locations, err = s.resolveLocations(ctx, u, m.GetLocations().GetLocations()); err != nil {
 			return nil, err
 		}
 	}
@@ -216,7 +212,7 @@ func (s *Service) UpdateProject(ctx context.Context, req *connect.Request[circus
 	if m.ExpectedUpdatedAtUnixMs != nil {
 		patch.ExpectedUpdatedAt = new(m.GetExpectedUpdatedAtUnixMs())
 	}
-	p, err := s.st.UpdateProject(ctx, u.ID, m.GetProjectId(), patch, owner)
+	p, err := s.st.UpdateProject(ctx, u.ID, m.GetProjectId(), patch)
 	if err != nil {
 		return nil, s.writeError(ctx, "update project", err)
 	}

@@ -51,8 +51,8 @@ func newSessionLink(t *testing.T, clk clock.Clock, hook func(*circusv1.WorkerDow
 	must(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	now := time.Now()
-	u, err := auth.EnsureUser(ctx, st, "admin", now)
-	must(t, err)
+	u := store.User{ID: "owner", Email: "owner@example.com", Role: store.RoleUser, CreatedAt: now.UnixMilli()}
+	must(t, st.CreateUser(ctx, u))
 	enroll := func(k store.PrincipalKind, name string) auth.Enrollment {
 		token, _, err := auth.CreateEnrollToken(ctx, st, u.ID, k, time.Hour, now)
 		must(t, err)
@@ -62,7 +62,7 @@ func newSessionLink(t *testing.T, clk clock.Clock, hook func(*circusv1.WorkerDow
 	}
 	device, worker := enroll(store.KindDevice, "desk"), enroll(store.KindWorker, "w")
 	at := clk.Now().UnixMilli()
-	_, err = st.CreateProject(ctx, store.Project{ID: "p", UserID: u.ID, Name: "p", CreatedAt: at, UpdatedAt: at}, "")
+	_, err = st.CreateProject(ctx, store.Project{ID: "p", UserID: u.ID, Name: "p", CreatedAt: at, UpdatedAt: at})
 	must(t, err)
 	must(t, st.CreateSession(ctx, store.Session{ID: "s1", UserID: u.ID, ProjectID: "p", ClaudeSessionID: "c", DefaultDeviceID: device.Identity.ID, CreatedAt: at}, nil, 10))
 	_, err = st.SubmitInput(ctx, store.Input{InputID: "i1", SessionID: "s1", ClientMsgID: "m", Kind: store.InputUser, Text: "hi", Priority: store.InputNormal, CreatedAt: at})

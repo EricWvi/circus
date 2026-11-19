@@ -59,17 +59,15 @@ broken.
 
 ## Running against the control plane
 
-Run these in three terminals from the repository root.
+Run the control plane and the Web UI in separate terminals from the
+repository root.
 
 ```sh
 # Terminal 1: the control plane, with web/dev.server.yaml
 # (127.0.0.1:8443, plaintext, database in .tmp/dev/circus.db).
 task web:dev:server
 
-# Terminal 2: enroll once and run the scripted worker.
-task web:dev:worker
-
-# Terminal 3: the Web UI in server mode.
+# Terminal 2: the Web UI in server mode.
 task web:dev BACKEND=server
 ```
 
@@ -83,22 +81,38 @@ line; the `url` field):
 The link already points at the Vite origin, because `public_url` in the dev
 config is `http://localhost:5173`. Open it in the browser and create the super
 user. The token is valid only for that server run. Restart the server for a
-new one. The worker keeps its enrollment in `.tmp/dev/circus/worker.json`.
-To start over, stop the dev processes and remove the database and the
-development credentials in `.tmp/dev/circus/`.
+new one. Then, in a third terminal, enroll the scripted worker for the Web
+account you will use to create sessions.
+
+```sh
+task web:dev:worker USER_EMAIL=dev@example.com
+```
+
+Replace `dev@example.com` with the email you used during setup. The worker
+reuses its enrollment in `.tmp/dev/circus/worker.json`. To enroll it for a
+different Web account, stop the worker and remove that file before rerunning
+the task with the new email. To start with a fresh server as well, stop the
+dev processes and remove the database and development credentials under
+`.tmp/dev/circus/`.
 
 Sessions need a project location on an enrolled device. Enroll a local
-device once and run its daemon in another terminal to enable real tool calls.
+device for the same Web user and run its daemon in another terminal.
 
 ```sh
 export XDG_CONFIG_HOME="$PWD/.tmp/dev"
 export XDG_STATE_HOME="$PWD/.tmp/dev/state"
 export XDG_CACHE_HOME="$PWD/.tmp/dev/cache"
 go run ./cmd/circus server enroll-token create --config web/dev.server.yaml \
-  --role daemon --url http://127.0.0.1:8443 |
+  --user dev@example.com --role daemon --url http://127.0.0.1:8443 |
   go run ./cmd/circus join --role daemon --name web-dev-device
 go run ./cmd/circus daemon
 ```
+
+Alternatively, sign in as that user and use **Add device** on `/devices`.
+The dev server is a development build, so the dialog prints only the join
+and daemon lines; run them with a locally built CLI (with the `XDG_*`
+variables above). Its link points at `public_url`, the Vite origin, so the
+machine reaches the server through the Vite proxy.
 
 Create a project with a location on `web-dev-device` and enter an existing
 absolute directory on that device. Create a session in the project and send
@@ -125,8 +139,9 @@ unreachable, while it tries to flush events and release session leases.
 
 How the pieces fit:
 
-- Vite proxies `/circus.v1.*` (Connect RPCs) and `/auth/*` (OIDC redirects)
-  to `VITE_CIRCUS_SERVER` (default `http://127.0.0.1:8443`). The proxy keeps
+- Vite proxies `/circus.v1.*` (Connect RPCs), `/auth/*` (OIDC redirects) and
+  `/v1/*` (machine links, including WebSockets) to `VITE_CIRCUS_SERVER`
+  (default `http://127.0.0.1:8443`). The proxy keeps
   the browser's `Host` and `Origin`, so the server's Origin check compares
   against `public_url`, the Vite origin.
 - The session cookie has no `Domain` and the server redirects to relative

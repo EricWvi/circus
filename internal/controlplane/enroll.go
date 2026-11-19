@@ -28,11 +28,11 @@ func KindForRole(r circusv1.Role) (store.PrincipalKind, bool) {
 
 // enrollService implements EnrollService.Enroll on auth.Enroll.
 //
-// Failure codes: every token failure (unknown, used, expired, wrong role) is
-// Unauthenticated with one fixed message, so a caller cannot tell them
-// apart; a taken name AlreadyExists;
-// a malformed request InvalidArgument; a busy store Unavailable; anything
-// else Internal with a fixed message, details in the log only.
+// All token failures return Unauthenticated with the same message. A full
+// identity quota returns ResourceExhausted and a taken name returns
+// AlreadyExists. A malformed request returns InvalidArgument and a busy
+// store returns Unavailable. Other errors return Internal with a fixed
+// message, with details logged on the server.
 type enrollService struct{ s *Server }
 
 func (e *enrollService) Enroll(ctx context.Context, req *connect.Request[circusv1.EnrollRequest]) (*connect.Response[circusv1.EnrollResponse], error) {
@@ -48,6 +48,9 @@ func (e *enrollService) Enroll(ctx context.Context, req *connect.Request[circusv
 	}, e.s.now())
 	switch {
 	case err == nil:
+	case errors.Is(err, auth.ErrIdentityLimit):
+		log.InfoContext(ctx, "enrollment rejected", "reason", "live identity limit reached")
+		return nil, connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("live %s limit reached; revoke one first", auth.AdminNoun(kind)))
 	case errors.Is(err, auth.ErrEnrollRejected):
 		// The store reports unknown, used and expired tokens as one error,
 		// so the log cannot say which either; a role mismatch is folded in.
@@ -59,7 +62,7 @@ func (e *enrollService) Enroll(ctx context.Context, req *connect.Request[circusv
 		// hint asks for a machine id check before any revocation.
 		return nil, connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("%s. Choose another with --name. "+
 			"Only if that %s is this machine's own earlier identity (compare the MACHINE column of `circus server %s list` "+
-			"with this machine's id) may an administrator free the name with `circus server %s revoke %s`",
+			"with this machine's id) may an administrator free the name with `circus server %s revoke --user <email> %s`",
 			err, auth.AdminNoun(kind), auth.AdminNoun(kind), auth.AdminNoun(kind), m.GetName()))
 	case errors.Is(err, auth.ErrInvalidRequest):
 		log.InfoContext(ctx, "enrollment rejected", "reason", "invalid request", "error", err)

@@ -43,3 +43,20 @@ export function formatTimeAgo(
 export function formatDateTime(unixMs: number, language: string = currentLanguage()): string {
   return new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(unixMs)
 }
+
+/**
+ * How long until a future moment, as a phrase for a sentence: "in 59
+ * minutes", "in 1 hour" (in Chinese 59分钟后, 1小时后). Minutes round up, so
+ * the phrase never reaches zero before the moment itself.
+ */
+export function formatTimeUntil(
+  unixMs: number,
+  now: number = Date.now(),
+  language: string = currentLanguage(),
+): string {
+  const minutes = Math.max(1, Math.ceil((unixMs - now) / MINUTE))
+  const format = new Intl.RelativeTimeFormat(language, { numeric: "always" })
+  if (minutes < 60) return format.format(minutes, "minute")
+  if (minutes < 24 * 60) return format.format(Math.floor(minutes / 60), "hour")
+  return format.format(Math.floor(minutes / (24 * 60)), "day")
+}

@@ -13,7 +13,8 @@ tls_key: ""
 behind_proxy: true
 # Development plaintext on loopback only; also disables Secure on browser cookies.
 dev_insecure: false
-# Browser origin; required for OIDC and used for Origin checks and setup links.
+# Browser origin; used for Origin checks, setup and Web enrollment links.
+# Required for OIDC and Web enrollment links.
 # Paths other than /, queries and fragments are rejected.
 public_url: "https://circus.example.com"
 
@@ -27,7 +28,14 @@ heartbeat_timeout: 15s
 # Zero uses twice wire.MinBudget; smaller pools are refused.
 send_pool_bytes: 0
 receive_pool_bytes: 0
-worker_connections: 8 # At least 1; zero selects 8. Each credential can hold at most 4.
+# Global authenticated worker link cap. At least 1; zero selects 8.
+# Each Web user and each credential may hold at most 4 worker links.
+# Two users can fill the default cap.
+# Increase worker_connections as the number of users grows.
+# Each user gets half of each global router budget for subscription slots,
+# pending call count and bytes, and buffered update bytes. This keeps one
+# user from exhausting those budgets alone. Two users together can fill them.
+worker_connections: 8
 debug: false # --debug overrides this key.
 
 # Optional. Register <public_url>/auth/oidc/callback at the provider.

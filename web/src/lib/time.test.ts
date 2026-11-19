@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { formatRelative, formatTimeAgo } from "./time"
+import { formatRelative, formatTimeAgo, formatTimeUntil } from "./time"
 
 describe("formatRelative", () => {
   const now = Date.parse("2026-11-15T12:00:00Z")
@@ -38,5 +38,25 @@ describe("formatTimeAgo", () => {
     expect(formatTimeAgo(ago(5 * 60_000), now, "zh-CN")).toBe("5分钟前")
     expect(formatTimeAgo(ago(2 * 3_600_000), now, "zh-CN")).toBe("2小时前")
     expect(formatTimeAgo(ago(3 * 86_400_000), now, "zh-CN")).toBe("3天前")
+  })
+})
+
+describe("formatTimeUntil", () => {
+  const now = Date.parse("2026-11-17T12:00:00Z")
+  const MINUTE = 60_000
+
+  it.each([
+    [60 * MINUTE, "in 1 hour", "1小时后"],
+    [60 * MINUTE - 1, "in 1 hour", "1小时后"],
+    [59 * MINUTE + 1, "in 1 hour", "1小时后"],
+    [59 * MINUTE, "in 59 minutes", "59分钟后"],
+    [MINUTE + 1, "in 2 minutes", "2分钟后"],
+    [1, "in 1 minute", "1分钟后"],
+    [0, "in 1 minute", "1分钟后"],
+    [3 * 60 * MINUTE, "in 3 hours", "3小时后"],
+    [2 * 24 * 60 * MINUTE, "in 2 days", "2天后"],
+  ])("%d ms ahead", (ahead, en, zh) => {
+    expect(formatTimeUntil(now + ahead, now, "en")).toBe(en)
+    expect(formatTimeUntil(now + ahead, now, "zh-CN")).toBe(zh)
   })
 })
