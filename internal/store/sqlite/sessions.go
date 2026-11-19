@@ -182,6 +182,9 @@ func (o *ops) ListSessions(ctx context.Context, f store.SessionFilter) ([]store.
 	if err := store.CheckOptionalID("project id", f.ProjectID); err != nil {
 		return nil, err
 	}
+	if err := store.CheckOptionalID("web user id", f.WebUserID); err != nil {
+		return nil, err
+	}
 	if f.Now == 0 {
 		return nil, invalid("ListSessions needs a time")
 	}
@@ -192,6 +195,9 @@ func (o *ops) ListSessions(ctx context.Context, f store.SessionFilter) ([]store.
 	}
 	if f.ProjectID != "" {
 		where, args = append(where, "project_id = ?"), append(args, f.ProjectID)
+	}
+	if f.WebUserID != "" {
+		where, args = append(where, "project_id IN (SELECT id FROM projects WHERE user_id = ?)"), append(args, f.WebUserID)
 	}
 	if f.After != nil {
 		where, args = append(where, "(last_activity_at, session_id) < (?, ?)"), append(args, f.After.LastActivityAt, f.After.ID)
@@ -216,6 +222,31 @@ func (o *ops) ListSessions(ctx context.Context, f store.SessionFilter) ([]store.
 		return nil, mapErr(err)
 	}
 	return collect(rows, scanSession)
+}
+
+func (o *ops) ListSessionCwds(ctx context.Context, sessionID string) ([]store.SessionCwd, error) {
+	if err := store.CheckID("session id", sessionID); err != nil {
+		return nil, err
+	}
+	var out []store.SessionCwd
+	err := o.unit(ctx, func(tx *ops) error {
+		var one int
+		if err := tx.q.QueryRow(ctx, `SELECT 1 FROM sessions WHERE session_id = ?`, sessionID).Scan(&one); err != nil {
+			return mapErr(err)
+		}
+		rows, err := tx.q.QueryContext(ctx, `SELECT agent_id, device_id, cwd, updated_at FROM session_cwds
+			WHERE session_id = ? AND agent_id = '' ORDER BY device_id LIMIT ?`, sessionID, store.MaxSessionCwds)
+		if err != nil {
+			return mapErr(err)
+		}
+		out, err = collect(rows, func(s scanner) (store.SessionCwd, error) {
+			var c store.SessionCwd
+			err := s.Scan(&c.AgentID, &c.DeviceID, &c.Cwd, &c.UpdatedAt)
+			return c, mapErr(err)
+		})
+		return err
+	})
+	return out, err
 }
 
 func (o *ops) StopSession(ctx context.Context, sessionID string, at int64, reason string) (store.Session, store.Lease, bool, error) {
@@ -679,6 +710,19 @@ func (o *ops) AcquireLease(ctx context.Context, r store.LeaseRequest) (store.Lea
 		return store.LeaseAcquired{}, err
 	}
 	return out, nil
+}
+
+func (o *ops) HasLiveLease(ctx context.Context, workerID, bootID string, now int64) (bool, error) {
+	if err := store.CheckID("worker id", workerID); err != nil {
+		return false, err
+	}
+	if err := store.CheckID("boot id", bootID); err != nil {
+		return false, err
+	}
+	var live bool
+	err := o.q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM session_leases
+		WHERE holder_worker_id = ? AND holder_boot_id = ? AND expires_at > ?)`, workerID, bootID, now).Scan(&live)
+	return live, mapErr(err)
 }
 
 func (o *ops) GetLease(ctx context.Context, sessionID string) (store.Lease, error) {

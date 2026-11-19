@@ -49,6 +49,19 @@ type Service interface {
 	// offline outcomes are CallUpdates; infrastructure failures return errors.
 	// ctx owns the subscription lifetime; cancelling it never cancels execution.
 	Submit(ctx context.Context, userID, deviceName string, call *circusv1.DeviceCall) (*Subscription, error)
+	// SubmitSession is Submit for a call a session's lease holder makes: the
+	// call is created, resubmitted or attached to only in a transaction
+	// that proves a's fence (store.AdmitSessionCall) for call.session_id,
+	// and its tool_use_id joins the deduplication identity. A refusal is a
+	// terminal Rejected update and records nothing: SESSION_FENCED (no such
+	// lease at a.Epoch on this connection, or a.Epoch or a.ToolUseID
+	// missing), SESSION_STOPPED (stopped or broken session), OVERLOADED
+	// (the session's caps of non-terminal or unpersisted calls), INVALID
+	// (a tool_use_id over 128 bytes). A submission without session fields
+	// (zero Admission) is Submit; it is refused with SESSION_FENCED only
+	// when call.session_id names an existing session, so no call of a
+	// session runs without its lease.
+	SubmitSession(ctx context.Context, userID, deviceName string, call *circusv1.DeviceCall, a Admission) (*Subscription, error)
 	// Cancel cancels accepted calls durably, or records intent for dispatched,
 	// running and unknown calls before ordered delivery. Completion wins races;
 	// cancelling an existing terminal call is a no-op. No implicit job stop occurs.
@@ -88,6 +101,18 @@ type Service interface {
 	// joins owned work within ctx. Durable nonterminal calls/timers survive close.
 	Close(context.Context) error
 }
+
+// Admission is a SubmitCall's claim on its session lease: the epoch and
+// tool_use_id it carries and the connection it arrived on. The zero value
+// is a submission without a session.
+type Admission struct {
+	Epoch                    uint64
+	ToolUseID                string
+	WorkerID, BootID, ConnID string
+}
+
+// MaxActiveSessionCalls is a session's cap of calls not in a terminal state.
+const MaxActiveSessionCalls = store.DefaultMaxActiveSessionCalls
 
 // Subscription is a bounded per-call update stream. It retains at most
 // MaxUpdatesPerSubscription entries and MaxSubscriptionBytes, also charged to
@@ -226,6 +251,12 @@ type Config struct {
 	// limits two sync replies are outstanding at once. Results pushed by the
 	// daemon outside the sync share that queue; see DESIGN.md.
 	MaxSyncReplyBytes int64
+	// JobEnded, when set, is called after a stored device job of a session
+	// reached a terminal state (exited, killed, lost), with the job's
+	// session id. It runs under the router's admission lock, so it must
+	// return at once and never call the router (sessions.Waker.Wake does
+	// neither).
+	JobEnded func(sessionID string)
 	// lockObserver, when set (by tests, through export_test.go), receives how
 	// long each locked segment of an operation held the router-wide
 	// admission lock. It is nil in production: the cost is one nil check per

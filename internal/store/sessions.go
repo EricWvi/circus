@@ -161,9 +161,12 @@ import "context"
 // The worker link's session operations and the SessionService RPCs map to
 // these methods (worker operations take the connection's Fence):
 //
-//	AcquireLease (fresh)        AcquireLease (LeaseRequest.Fresh), then GetRecovery and
-//	                            GetSessionRecords in the same Tx for the lease reply;
-//	                            Lease.transcript_gap_turn_no is Session.TranscriptGapTurnNo
+//	AcquireLease (fresh)        AcquireLease (LeaseRequest.Fresh) in one Tx; the lease
+//	                            reply is read in a second, fenced Tx (GetRecovery,
+//	                            GetSessionRecords, GetSession), so a write acquires and
+//	                            a read builds the reply; a lease lost in between is
+//	                            answered Fenced. Lease.transcript_gap_turn_no is
+//	                            Session.TranscriptGapTurnNo
 //	Persisted.gap_notice_turn_no  TurnPersisted.GapNoticeTurnNo (ReportTurn, PatchSessionRecords)
 //	ResumeLeases                ResumeLeases
 //	ReleaseLease                ReleaseLease (LeaseLoss.Repeated → ok.deduplicated)
@@ -195,9 +198,12 @@ import "context"
 //	(lease upkeep, no message)  ExtendLeases; ExtendLeasesAfterRestart once at start;
 //	                            ExpireLeases; ReleaseWorkerLeases on a new boot
 //	CreateSession               CreateSession
-//	SendMessage                 SubmitInput
+//	SendMessage                 SubmitInput, then for a new input AppendEvents (the
+//	                            INPUT_ACCEPTED view event) and SetInputEventSeq in the
+//	                            same Tx
 //	WatchSession                ReadEvents
-//	ListSessions / GetSession   ListSessions / GetSession
+//	ListSessions / GetSession   ListSessions (SessionFilter.WebUserID) / GetSession and
+//	                            ListSessionCwds
 //	ListApprovals               ListApprovals
 //	ResolveApproval             ResolveApproval
 //	Interrupt                   InterruptSession
@@ -245,6 +251,11 @@ type SessionOps interface {
 	// moving above the cursor is skipped until refresh; deleted sessions
 	// disappear, and new sessions above the cursor appear on refresh.
 	ListSessions(ctx context.Context, f SessionFilter) ([]Session, error)
+	// ListSessionCwds returns the session's main-thread working directories
+	// (AgentID ""), ordered by device id, at most MaxSessionCwds. It takes no
+	// fence: the user-facing API shows them. ErrNotFound if the session is
+	// absent.
+	ListSessionCwds(ctx context.Context, sessionID string) ([]SessionCwd, error)
 	// SetSessionTitle unconditionally sets a nonempty title of at most
 	// MaxSessionTitleBytes. Character validation is the service's job.
 	// ErrNotFound if absent. It does not move LastActivityAt.
@@ -348,6 +359,10 @@ type SessionOps interface {
 	// ErrNotFound (no such session, or the worker is not the session
 	// user's).
 	AcquireLease(ctx context.Context, r LeaseRequest) (LeaseAcquired, error)
+	// HasLiveLease reports whether workerID holds, under bootID, any lease
+	// that has not expired at now. The worker link uses it to tell whether
+	// the worker's current boot is still alive.
+	HasLiveLease(ctx context.Context, workerID, bootID string, now int64) (bool, error)
 	// GetLease returns the session's lease row, held or not, or
 	// ErrNotFound.
 	GetLease(ctx context.Context, sessionID string) (Lease, error)
@@ -484,6 +499,11 @@ type SessionOps interface {
 	// transaction, even before a worker publishes. Approval inputs and
 	// retries do not move activity. SubmitInput appends no view event itself.
 	SubmitInput(ctx context.Context, in Input) (InputSubmitted, error)
+	// SetInputEventSeq records seq as the view event of the session's input
+	// inputID, so a repeated SubmitInput returns it (Input.EventSeq). The
+	// control plane calls it in the transaction that submitted the input and
+	// appended the event. seq ≥ 0; ErrNotFound if the input is absent.
+	SetInputEventSeq(ctx context.Context, sessionID, inputID string, seq int64) error
 	// TakeInputs marks every pending input taken by f.Epoch and returns all
 	// inputs taken by f.Epoch and not yet persisted, oldest first (at most
 	// MaxOpenInputs). Fenced. Idempotent: a retry returns the same inputs
@@ -543,6 +563,20 @@ type SessionOps interface {
 	// (see TurnPersisted). Ids of other sessions are ignored. Repeats are
 	// harmless. At most MaxPatchItems items in all.
 	PatchSessionRecords(ctx context.Context, f Fence, p RecordsPatch) error
+	// RegisterSessionJob registers, without a fence, the device job j a
+	// session call started (the control plane calls it when the call's
+	// result reports a background job, in the transaction that settles the
+	// call). j's CallID, JobID, ToolUseID, Description, OutputPath and
+	// CreatedAt are read; device and boot come from the calls row. It returns false, with
+	// nothing written, when the call is not a dispatched call of an
+	// existing session of the call's own user (a call outside any session,
+	// or one naming another user's session); ErrLimit, with nothing
+	// written, past MaxSessionJobs; ErrExists, with nothing written, when
+	// the job (device, boot, job id) is already registered for another
+	// call. A repeat updates the row, but an empty Description or
+	// OutputPath keeps the stored one. The caller registers only calls that
+	// passed session admission.
+	RegisterSessionJob(ctx context.Context, j SessionJob) (bool, error)
 	// GetSessionRecords returns, fenced, a page of the session's records:
 	// the sections r selects, in the order cwds, files, jobs, background
 	// tasks, grants, each in its key order, starting after r.After, and
@@ -569,11 +603,12 @@ type SessionOps interface {
 	// beyond it plus one is ErrInvalid and consumes nothing; one exactly
 	// next is consumed, and if any of its events fails validation (an
 	// over-cap field, or a kind only the control plane records,
-	// EventKindTranscriptGapAccepted, EventKindTurnInterrupted or
-	// EventKindTurnStopped) the whole batch is recorded as
+	// ControlPlaneOnlyKind) the whole batch is recorded as
 	// dropped (Session.DroppedEventBatches + 1) and the result reports
 	// Dropped with a DropReason matching ErrInvalid; the error is nil, so
-	// the consumption commits. Fenced and store errors consume nothing. A
+	// the consumption commits. A worker batch with no events (its events
+	// were all live-only, which never enter the store) consumes its batch
+	// sequence and stores nothing. Fenced and store errors consume nothing. A
 	// payload over MaxEventPayloadBytes is stored without its bytes
 	// (Truncated, PayloadBytes keeps the size). When the session's stored
 	// payload bytes would pass maxViewBytes, the session is marked

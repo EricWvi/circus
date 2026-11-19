@@ -132,19 +132,28 @@ message SessionEvent {
   uint64 seq = 1;
   int64 ts_unix_ms = 2;
   // Shared with worker-published events. TURN_STARTED payload includes origin.
+  // Kinds 8, 9, 10, 15, 17 and 18 are recorded by the control plane only: a
+  // worker event batch containing one of them is dropped as INVALID.
   enum Kind {
     KIND_UNSPECIFIED = 0;
     KIND_TURN_STARTED = 1;
     KIND_ASSISTANT = 2;
+    // An SDK user message a worker publishes. The user's own messages enter
+    // the view as INPUT_ACCEPTED.
     KIND_USER = 3;
     KIND_TOOL_PROGRESS = 4;
     KIND_RESULT = 5;
     KIND_PERMISSION_DENIED = 6;
     KIND_APPROVAL_PENDING = 7;
+    // Recorded by the control plane only, when the user resolves an
+    // approval.
     KIND_APPROVAL_RESOLVED = 8;
     // Control-plane-only durable boundary for a turn ending INTERRUPTED.
     // payload_json: {"turn_no":"<uint64>","outcome":"interrupted"}.
     KIND_TURN_INTERRUPTED = 9;
+    // Recorded by the control plane only. A stop records
+    // {"state":"stopped","reason":"user"} (StopSession) or
+    // {"state":"stopped","reason":"transcript_full"} (the transcript quota).
     KIND_SESSION_STATE = 10;
     KIND_BGTASK_STARTED = 11;
     KIND_BGTASK_ENDED = 12;
@@ -161,6 +170,10 @@ message SessionEvent {
     // Control-plane-only durable boundary for a turn ending STOPPED.
     // payload_json: {"turn_no":"<uint64>","outcome":"stopped"}.
     KIND_TURN_STOPPED = 17;
+    // Recorded by the control plane only, when SendMessage accepts a new
+    // input; SendMessageResponse.event_seq is its seq. payload_json:
+    // {"input_id":..., "client_msg_id":..., "priority":..., "text":...}.
+    KIND_INPUT_ACCEPTED = 18;
   }
   Kind kind = 3;
   // Opaque SDK message JSON; durable view payloads over 256 KiB are truncated.
@@ -198,6 +211,7 @@ message SendMessageRequest {
 }
 message SendMessageResponse {
   string input_id = 1;
+  // The seq of the INPUT_ACCEPTED event recorded with the input.
   uint64 event_seq = 2;
 }
 message WatchSessionRequest {

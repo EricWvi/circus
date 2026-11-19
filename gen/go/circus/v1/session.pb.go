@@ -254,21 +254,30 @@ func (Session_State) EnumDescriptor() ([]byte, []int) {
 }
 
 // Shared with worker-published events. TURN_STARTED payload includes origin.
+// Kinds 8, 9, 10, 15, 17 and 18 are recorded by the control plane only: a
+// worker event batch containing one of them is dropped as INVALID.
 type SessionEvent_Kind int32
 
 const (
-	SessionEvent_KIND_UNSPECIFIED       SessionEvent_Kind = 0
-	SessionEvent_KIND_TURN_STARTED      SessionEvent_Kind = 1
-	SessionEvent_KIND_ASSISTANT         SessionEvent_Kind = 2
+	SessionEvent_KIND_UNSPECIFIED  SessionEvent_Kind = 0
+	SessionEvent_KIND_TURN_STARTED SessionEvent_Kind = 1
+	SessionEvent_KIND_ASSISTANT    SessionEvent_Kind = 2
+	// An SDK user message a worker publishes. The user's own messages enter
+	// the view as INPUT_ACCEPTED.
 	SessionEvent_KIND_USER              SessionEvent_Kind = 3
 	SessionEvent_KIND_TOOL_PROGRESS     SessionEvent_Kind = 4
 	SessionEvent_KIND_RESULT            SessionEvent_Kind = 5
 	SessionEvent_KIND_PERMISSION_DENIED SessionEvent_Kind = 6
 	SessionEvent_KIND_APPROVAL_PENDING  SessionEvent_Kind = 7
+	// Recorded by the control plane only, when the user resolves an
+	// approval.
 	SessionEvent_KIND_APPROVAL_RESOLVED SessionEvent_Kind = 8
 	// Control-plane-only durable boundary for a turn ending INTERRUPTED.
 	// payload_json: {"turn_no":"<uint64>","outcome":"interrupted"}.
-	SessionEvent_KIND_TURN_INTERRUPTED       SessionEvent_Kind = 9
+	SessionEvent_KIND_TURN_INTERRUPTED SessionEvent_Kind = 9
+	// Recorded by the control plane only. A stop records
+	// {"state":"stopped","reason":"user"} (StopSession) or
+	// {"state":"stopped","reason":"transcript_full"} (the transcript quota).
 	SessionEvent_KIND_SESSION_STATE          SessionEvent_Kind = 10
 	SessionEvent_KIND_BGTASK_STARTED         SessionEvent_Kind = 11
 	SessionEvent_KIND_BGTASK_ENDED           SessionEvent_Kind = 12
@@ -285,6 +294,10 @@ const (
 	// Control-plane-only durable boundary for a turn ending STOPPED.
 	// payload_json: {"turn_no":"<uint64>","outcome":"stopped"}.
 	SessionEvent_KIND_TURN_STOPPED SessionEvent_Kind = 17
+	// Recorded by the control plane only, when SendMessage accepts a new
+	// input; SendMessageResponse.event_seq is its seq. payload_json:
+	// {"input_id":..., "client_msg_id":..., "priority":..., "text":...}.
+	SessionEvent_KIND_INPUT_ACCEPTED SessionEvent_Kind = 18
 )
 
 // Enum value maps for SessionEvent_Kind.
@@ -308,6 +321,7 @@ var (
 		15: "KIND_TRANSCRIPT_GAP_ACCEPTED",
 		16: "KIND_TRANSCRIPT_GAP_DETECTED",
 		17: "KIND_TURN_STOPPED",
+		18: "KIND_INPUT_ACCEPTED",
 	}
 	SessionEvent_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED":             0,
@@ -328,6 +342,7 @@ var (
 		"KIND_TRANSCRIPT_GAP_ACCEPTED": 15,
 		"KIND_TRANSCRIPT_GAP_DETECTED": 16,
 		"KIND_TURN_STOPPED":            17,
+		"KIND_INPUT_ACCEPTED":          18,
 	}
 )
 
@@ -866,9 +881,10 @@ func (x *SendMessageRequest) GetPriority() InputPriority {
 }
 
 type SendMessageResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	InputId       string                 `protobuf:"bytes,1,opt,name=input_id,json=inputId,proto3" json:"input_id,omitempty"`
-	EventSeq      uint64                 `protobuf:"varint,2,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	InputId string                 `protobuf:"bytes,1,opt,name=input_id,json=inputId,proto3" json:"input_id,omitempty"`
+	// The seq of the INPUT_ACCEPTED event recorded with the input.
+	EventSeq      uint64 `protobuf:"varint,2,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1942,7 +1958,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\fSTATE_QUEUED\x10\x02\x12\x11\n" +
 	"\rSTATE_RUNNING\x10\x03\x12\x11\n" +
 	"\rSTATE_STOPPED\x10\x04\x12\x10\n" +
-	"\fSTATE_BROKEN\x10\x05\"\x93\x05\n" +
+	"\fSTATE_BROKEN\x10\x05\"\xac\x05\n" +
 	"\fSessionEvent\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x1c\n" +
 	"\n" +
@@ -1950,7 +1966,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x04kind\x18\x03 \x01(\x0e2\x1c.circus.v1.SessionEvent.KindR\x04kind\x12!\n" +
 	"\fpayload_json\x18\x04 \x01(\tR\vpayloadJson\x12\x1c\n" +
 	"\tephemeral\x18\x05 \x01(\bR\tephemeral\x12\x1c\n" +
-	"\ttruncated\x18\x06 \x01(\bR\ttruncated\"\xc1\x03\n" +
+	"\ttruncated\x18\x06 \x01(\bR\ttruncated\"\xda\x03\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11KIND_TURN_STARTED\x10\x01\x12\x12\n" +
@@ -1971,7 +1987,8 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"KIND_ERROR\x10\x0e\x12 \n" +
 	"\x1cKIND_TRANSCRIPT_GAP_ACCEPTED\x10\x0f\x12 \n" +
 	"\x1cKIND_TRANSCRIPT_GAP_DETECTED\x10\x10\x12\x15\n" +
-	"\x11KIND_TURN_STOPPED\x10\x11\"\xea\x01\n" +
+	"\x11KIND_TURN_STOPPED\x10\x11\x12\x17\n" +
+	"\x13KIND_INPUT_ACCEPTED\x10\x12\"\xea\x01\n" +
 	"\x14CreateSessionRequest\x120\n" +
 	"\x06config\x18\x01 \x01(\v2\x18.circus.v1.SessionConfigR\x06config\x12-\n" +
 	"\x10pinned_worker_id\x18\x02 \x01(\tH\x00R\x0epinnedWorkerId\x88\x01\x01\x12\x1d\n" +

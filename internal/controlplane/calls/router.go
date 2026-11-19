@@ -517,14 +517,35 @@ func (r *router) release(id string) {
 // settle moves c to a terminal state, cancels its watchdog in the same Tx and,
 // after commit, releases content and notifies subscribers and query waiters.
 func (r *router) settle(ctx context.Context, c store.Call, to store.CallState, patch store.CallPatch, u *circusv1.CallUpdate) error {
-	changed := false
+	return r.settleWith(ctx, c, to, patch, u, nil)
+}
+
+// settleWith is settle with more writes (also) in its Tx, run only when the
+// transition applied. A session call settled LOST registers, in the same
+// Tx, the jobs already stored for it (registerJobsOfLostCall).
+func (r *router) settleWith(ctx context.Context, c store.Call, to store.CallState, patch store.CallPatch, u *circusv1.CallUpdate, also func(context.Context, store.Ops) error) error {
+	changed, wake := false, false
 	err := r.config.Store.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
 		var err error
+		wake = false
 		changed, err = tx.TransitionCall(ctx, c.CallID, store.CallExpect{States: []store.CallState{c.State}, BootID: c.DispatchedBootID}, to, patch)
 		if err != nil || !changed {
 			return err
 		}
-		return tx.CancelTimer(ctx, timers.CallWatchdog, c.CallID)
+		if err := tx.CancelTimer(ctx, timers.CallWatchdog, c.CallID); err != nil {
+			return err
+		}
+		if to == store.CallLost {
+			lost := c
+			lost.State = store.CallLost
+			if wake, err = registerJobsOfLostCall(ctx, tx, lost, "", ""); err != nil {
+				return err
+			}
+		}
+		if also != nil {
+			return also(ctx, tx)
+		}
+		return nil
 	})
 	if err != nil {
 		r.storeFailed(err)
@@ -534,6 +555,9 @@ func (r *router) settle(ctx context.Context, c store.Call, to store.CallState, p
 	if changed {
 		r.release(c.CallID)
 		r.publishAndAnswer(u)
+	}
+	if wake {
+		r.jobEnded(c.SessionID)
 	}
 	return nil
 }

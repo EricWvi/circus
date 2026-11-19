@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -42,7 +43,35 @@ func isActive(s store.CallState) bool {
 	return s == store.CallDispatched || s == store.CallRunning || s == store.CallUnknown
 }
 
+// refusal is a session admission refusal: the terminal rejection a
+// SubmitCall gets instead of a call.
+type refusal struct {
+	code circusv1.CallUpdate_Rejected_Code
+}
+
+func (e refusal) Error() string { return "calls: session admission refused: " + e.code.String() }
+
+// admissionCode maps an AdmitSessionCall refusal; ok is false for a store
+// failure.
+func admissionCode(err error) (circusv1.CallUpdate_Rejected_Code, bool) {
+	switch {
+	case errors.Is(err, store.ErrFenced), errors.Is(err, store.ErrNotFound):
+		return circusv1.CallUpdate_Rejected_CODE_SESSION_FENCED, true
+	case errors.Is(err, store.ErrStopped), errors.Is(err, store.ErrBroken):
+		return circusv1.CallUpdate_Rejected_CODE_SESSION_STOPPED, true
+	case errors.Is(err, store.ErrTooManyCalls):
+		return circusv1.CallUpdate_Rejected_CODE_OVERLOADED, true
+	case errors.Is(err, store.ErrInvalid):
+		return circusv1.CallUpdate_Rejected_CODE_INVALID, true
+	}
+	return 0, false
+}
+
 func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.DeviceCall) (*Subscription, error) {
+	return r.SubmitSession(ctx, user, name, call, Admission{})
+}
+
+func (r *router) SubmitSession(ctx context.Context, user, name string, call *circusv1.DeviceCall, a Admission) (*Subscription, error) {
 	op, err := r.enter(ctx, false, "submit")
 	if err != nil {
 		return nil, err
@@ -54,6 +83,37 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 	}
 	if !identifier.Valid(call.GetSessionId(), false) || !identifier.Valid(call.GetAgentId(), true) || toolName(call) == "" || !boundedName(user) || !boundedName(name) {
 		return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
+	}
+	// admit runs the session admission in the caller's Tx (or on its own
+	// for an attach, which writes nothing).
+	var admit func(ctx context.Context, tx store.Ops) error
+	if a != (Admission{}) {
+		if len(a.ToolUseID) > store.MaxIDBytes {
+			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
+		}
+		if a.Epoch == 0 || a.Epoch > math.MaxInt64 || a.ToolUseID == "" || a.BootID == "" || a.ConnID == "" {
+			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_SESSION_FENCED))
+		}
+		admit = func(ctx context.Context, tx store.Ops) error {
+			f := store.Fence{SessionID: call.SessionId, Epoch: int64(a.Epoch), WorkerID: a.WorkerID, BootID: a.BootID, ConnID: a.ConnID, Now: r.config.Clock.Now().UnixMilli()}
+			err := tx.AdmitSessionCall(ctx, f, id, MaxActiveSessionCalls)
+			if code, ok := admissionCode(err); ok {
+				return refusal{code}
+			}
+			return err
+		}
+	} else {
+		// A call naming an existing session of this user needs its lease.
+		// Another user's session is treated as no session, so the answer
+		// does not tell whether that id exists.
+		sess, err := r.config.Store.GetSession(op.ctx, call.SessionId, r.config.Clock.Now().UnixMilli())
+		switch {
+		case err == nil && sess.UserID == user:
+			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_SESSION_FENCED))
+		case err != nil && !errors.Is(err, store.ErrNotFound):
+			r.storeFailed(err)
+			return nil, errors.Join(ErrStoreUnavailable, err)
+		}
 	}
 	envelope := &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: name, Call: call}}}
 	cost, err := wire.Charge(envelope, r.config.MaxMessageBytes)
@@ -93,10 +153,19 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 		if old.UserID != user {
 			return nil, store.ErrNotFound // never disclose another user's call
 		}
-		if old.DeviceID != device.ID || !bytes.Equal(old.RequestHash, hash[:]) {
+		if old.DeviceID != device.ID || !bytes.Equal(old.RequestHash, hash[:]) || old.ToolUseID != a.ToolUseID {
 			return r.once(ctx, rejected(id, circusv1.CallUpdate_Rejected_CODE_CALL_MISMATCH))
 		}
 		if old.State != store.CallLost || old.DispatchedBootID != "" {
+			if admit != nil {
+				var ref refusal
+				if err := admit(op.ctx, r.config.Store); errors.As(err, &ref) {
+					return r.once(ctx, rejected(id, ref.code))
+				} else if err != nil {
+					r.storeFailed(err)
+					return nil, errors.Join(ErrStoreUnavailable, err)
+				}
+			}
 			return r.attach(op, ctx, old)
 		}
 		// An undispatched lost call starts a new attempt and needs scratch.
@@ -121,13 +190,18 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 	if err != nil {
 		return nil, err
 	}
-	row := store.Call{CallID: id, UserID: user, DeviceID: device.ID, SessionID: call.SessionId, AgentID: call.AgentId, Tool: toolName(call), RequestHash: hash[:], RequestBytes: int64(len(data)), State: store.CallAccepted, SubmittedAt: now}
+	row := store.Call{CallID: id, UserID: user, DeviceID: device.ID, SessionID: call.SessionId, AgentID: call.AgentId, Tool: toolName(call), RequestHash: hash[:], RequestBytes: int64(len(data)), State: store.CallAccepted, SubmittedAt: now, ToolUseID: a.ToolUseID}
 	if waiting {
 		r.pending[strings.Clone(id)] = &pendingCall{call: wire.CloneOwned(call).(*circusv1.DeviceCall), cost: cost}
 		r.pendingBytes += cost
 	}
 	initialDispatch := false
 	err = r.config.Store.Tx(op.ctx, func(ctx context.Context, tx store.Ops) error {
+		if admit != nil {
+			if err := admit(ctx, tx); err != nil {
+				return err
+			}
+		}
 		if lookupErr == nil {
 			ok, err := tx.TransitionCall(ctx, id, store.CallExpect{States: []store.CallState{store.CallLost}, Undispatched: true}, store.CallAccepted, store.CallPatch{SubmittedAt: now})
 			if err != nil {
@@ -163,6 +237,12 @@ func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.D
 		}
 		return nil
 	})
+	if ref := (refusal{}); errors.As(err, &ref) {
+		// Nothing was recorded; the store is healthy.
+		r.release(id)
+		r.detach(s, ErrClosed)
+		return r.once(ctx, rejected(id, ref.code))
+	}
 	if err != nil {
 		r.storeFailed(err)
 		r.release(id)

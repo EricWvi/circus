@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -21,6 +22,10 @@ import (
 const (
 	maxProjectRequestBytes = 256 << 10
 	maxMachineRequestBytes = 4 << 10
+	// maxSessionRequestBytes: the largest SessionService request is a
+	// SendMessage of 256 KiB of text, up to six times that in JSON when
+	// every byte is escaped as \u00XX.
+	maxSessionRequestBytes = 2 << 20
 )
 
 // Response size limits. The largest ProjectService response is a full
@@ -35,6 +40,14 @@ const (
 const (
 	maxProjectResponseBytes = 16 << 20
 	maxMachineResponseBytes = 4 << 20
+	// maxSessionResponseBytes bounds one SessionService message. The
+	// largest are a full ListSessions (1000 sessions with titles of at most
+	// 1024 bytes, up to six times that in JSON, about 7 MiB), a GetSession
+	// with 256 working directories of 4 KiB (up to six times that in JSON,
+	// about 6 MiB) and a WatchSession event (a stored payload is at most
+	// 256 KiB, an ephemeral one at most the bus's queue budget, 256 KiB; up
+	// to six times that in JSON).
+	maxSessionResponseBytes = 16 << 20
 )
 
 // OnlineFunc returns the ids of the devices of userID that have a daemon
@@ -53,30 +66,72 @@ type Config struct {
 	Now func() time.Time
 	// Logger receives store failures; nil discards them.
 	Logger *slog.Logger
+	// Bus fans committed session events out to WatchSession streams; the
+	// server shares it with the worker link.
+	Bus *sessions.Bus
+	// Waker hints the scheduler after commits a worker must act on.
+	Waker sessions.Waker
+	// Jobs stops the background device jobs of a stopped session.
+	Jobs JobStopper
+	// WatchKeepalive is how long a WatchSession stream may stay silent
+	// before a keepalive; zero means DefaultWatchKeepalive.
+	WatchKeepalive time.Duration
+	// WatchRecheck is how often a stream checks its browser session; zero
+	// means DefaultWatchRecheck.
+	WatchRecheck time.Duration
+	// WatchMaxLifetime ends a stream after about this long (±10 %); zero
+	// means DefaultWatchMaxLifetime.
+	WatchMaxLifetime time.Duration
+	// WatchWriteTimeout ends a SessionService response whose writes made no
+	// progress for this long; zero means DefaultWatchWriteTimeout.
+	WatchWriteTimeout time.Duration
 }
 
-// Service implements ProjectService and MachineService.
+// Service implements ProjectService, MachineService and SessionService.
 type Service struct {
-	st          store.Store
-	interceptor connect.Interceptor
-	online      OnlineFunc
-	now         func() time.Time
-	logger      *slog.Logger
+	st           store.Store
+	interceptor  connect.Interceptor
+	online       OnlineFunc
+	now          func() time.Time
+	logger       *slog.Logger
+	bus          *sessions.Bus
+	waker        sessions.Waker
+	jobs         JobStopper
+	keepalive    time.Duration
+	recheck      time.Duration
+	maxLifetime  time.Duration
+	writeTimeout time.Duration
 }
 
 var (
 	_ circusv1connect.ProjectServiceHandler = (*Service)(nil)
 	_ circusv1connect.MachineServiceHandler = (*Service)(nil)
+	_ circusv1connect.SessionServiceHandler = (*Service)(nil)
 )
 
-// New returns the services. Store, Interceptor and Online are required.
+// New returns the services. Store, Interceptor, Online, Bus, Waker and Jobs
+// are required.
 func New(cfg Config) (*Service, error) {
-	if cfg.Store == nil || cfg.Interceptor == nil || cfg.Online == nil {
-		return nil, errors.New("webapi: store, interceptor and online are required")
+	if cfg.Store == nil || cfg.Interceptor == nil || cfg.Online == nil || cfg.Bus == nil || cfg.Waker == nil || cfg.Jobs == nil {
+		return nil, errors.New("webapi: store, interceptor, online, bus, waker and jobs are required")
 	}
-	s := &Service{st: cfg.Store, interceptor: cfg.Interceptor, online: cfg.Online, now: cfg.Now, logger: cfg.Logger}
+	s := &Service{st: cfg.Store, interceptor: cfg.Interceptor, online: cfg.Online, now: cfg.Now, logger: cfg.Logger,
+		bus: cfg.Bus, waker: cfg.Waker, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
+		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout}
 	if s.now == nil {
 		s.now = time.Now
+	}
+	if s.keepalive <= 0 {
+		s.keepalive = DefaultWatchKeepalive
+	}
+	if s.recheck <= 0 {
+		s.recheck = DefaultWatchRecheck
+	}
+	if s.maxLifetime <= 0 {
+		s.maxLifetime = DefaultWatchMaxLifetime
+	}
+	if s.writeTimeout <= 0 {
+		s.writeTimeout = DefaultWatchWriteTimeout
 	}
 	if s.logger == nil {
 		s.logger = slog.New(slog.DiscardHandler)
@@ -84,7 +139,7 @@ func New(cfg Config) (*Service, error) {
 	return s, nil
 }
 
-// Register mounts both services on mux.
+// Register mounts the services on mux.
 func (s *Service) Register(mux *http.ServeMux) {
 	path, h := circusv1connect.NewProjectServiceHandler(s, connect.WithReadMaxBytes(maxProjectRequestBytes),
 		connect.WithSendMaxBytes(maxProjectResponseBytes), connect.WithInterceptors(s.interceptor))
@@ -92,6 +147,13 @@ func (s *Service) Register(mux *http.ServeMux) {
 	path, h = circusv1connect.NewMachineServiceHandler(s, connect.WithReadMaxBytes(maxMachineRequestBytes),
 		connect.WithSendMaxBytes(maxMachineResponseBytes), connect.WithInterceptors(s.interceptor))
 	mux.Handle(path, h)
+	// Without response compression a stream's encoding buffer is bounded by
+	// the message it sends (see the memory bound in sessions/bus.go); a
+	// reverse proxy may still compress.
+	path, h = circusv1connect.NewSessionServiceHandler(s, connect.WithReadMaxBytes(maxSessionRequestBytes),
+		connect.WithSendMaxBytes(maxSessionResponseBytes), connect.WithInterceptors(s.interceptor),
+		connect.WithCompression("gzip", nil, nil))
+	mux.Handle(path, withStreamWriter(h, s.writeTimeout))
 }
 
 // user returns the signed-in Web user, or UNAUTHENTICATED.

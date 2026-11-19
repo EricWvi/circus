@@ -7,7 +7,7 @@ import (
 )
 
 // Session operations. CheckSessionDeletable, CheckFence, AdmitSessionCall, LoadTranscript,
-// HasTranscriptUUID and ReadEvents are reads, like Get* and List*; every
+// HasTranscriptUUID, ListSessionCwds and ReadEvents are reads, like Get* and List*; every
 // other method is a write point. DeleteSession is one write point however
 // many transactions it runs.
 
@@ -23,6 +23,15 @@ func (o *faultyOps) GetSession(ctx context.Context, sessionID string, now int64)
 func (o *faultyOps) ListSessions(ctx context.Context, f store.SessionFilter) (v []store.Session, err error) {
 	err = o.read(ctx, func(x store.Ops) error { v, err = x.ListSessions(ctx, f); return err })
 	return v, err
+}
+
+func (o *faultyOps) ListSessionCwds(ctx context.Context, sessionID string) (v []store.SessionCwd, err error) {
+	err = o.read(ctx, func(x store.Ops) error { v, err = x.ListSessionCwds(ctx, sessionID); return err })
+	return v, err
+}
+
+func (o *faultyOps) SetInputEventSeq(ctx context.Context, sessionID, inputID string, seq int64) error {
+	return o.write(ctx, func(x store.Ops) error { return x.SetInputEventSeq(ctx, sessionID, inputID, seq) })
 }
 
 func (o *faultyOps) StopSession(ctx context.Context, sessionID string, at int64, reason string) (s store.Session, l store.Lease, changed bool, err error) {
@@ -56,6 +65,11 @@ func (o *faultyOps) AcquireLease(ctx context.Context, r store.LeaseRequest) (v s
 
 func (o *faultyOps) GetRecovery(ctx context.Context, f store.Fence) (v store.Recovery, err error) {
 	err = o.read(ctx, func(x store.Ops) error { v, err = x.GetRecovery(ctx, f); return err })
+	return v, err
+}
+
+func (o *faultyOps) HasLiveLease(ctx context.Context, workerID, bootID string, now int64) (v bool, err error) {
+	err = o.read(ctx, func(x store.Ops) error { v, err = x.HasLiveLease(ctx, workerID, bootID, now); return err })
 	return v, err
 }
 
@@ -146,6 +160,11 @@ func (o *faultyOps) ListTurns(ctx context.Context, f store.TurnFilter) (v []stor
 
 func (o *faultyOps) PatchSessionRecords(ctx context.Context, f store.Fence, p store.RecordsPatch) error {
 	return o.write(ctx, func(x store.Ops) error { return x.PatchSessionRecords(ctx, f, p) })
+}
+
+func (o *faultyOps) RegisterSessionJob(ctx context.Context, j store.SessionJob) (v bool, err error) {
+	err = o.write(ctx, func(x store.Ops) error { v, err = x.RegisterSessionJob(ctx, j); return err })
+	return v, err
 }
 
 func (o *faultyOps) GetSessionRecords(ctx context.Context, f store.Fence, r store.RecordsRequest) (v store.SessionRecords, err error) {

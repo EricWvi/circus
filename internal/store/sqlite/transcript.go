@@ -64,11 +64,12 @@ func (o *ops) AppendTranscript(ctx context.Context, f store.Fence, b store.Trans
 		// A charge cap refuses the batch and stops the session in the same
 		// transaction; the refusal is a result, so the stop commits.
 		full := func(reason error) error {
-			if _, err := tx.exec(ctx, `UPDATE sessions SET state = 'stopped', stopped_at = ?1, reason = 'TRANSCRIPT_FULL',
-				updated_at = ?1 WHERE session_id = ?2 AND state <> 'stopped'`, f.Now, f.SessionID); err != nil {
+			n, err := tx.exec(ctx, `UPDATE sessions SET state = 'stopped', stopped_at = ?1, reason = 'TRANSCRIPT_FULL',
+				updated_at = ?1 WHERE session_id = ?2 AND state <> 'stopped'`, f.Now, f.SessionID)
+			if err != nil {
 				return err
 			}
-			out = store.TranscriptAppended{LastSeq: lastSeq, SessionBytes: s.TranscriptBytes, Full: true, FullReason: reason}
+			out = store.TranscriptAppended{LastSeq: lastSeq, SessionBytes: s.TranscriptBytes, Full: true, FullReason: reason, Stopped: n > 0}
 			return nil
 		}
 		seen := map[string]bool{}

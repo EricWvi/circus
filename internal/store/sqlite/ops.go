@@ -679,8 +679,8 @@ func (o *ops) PutJob(ctx context.Context, j store.Job) (bool, error) {
 	}
 	n, err := o.exec(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (device_id, boot_id, job_id) DO UPDATE SET
-			session_id = COALESCE(excluded.session_id, jobs.session_id),
-			call_id    = COALESCE(excluded.call_id, jobs.call_id),
+			session_id = COALESCE(jobs.session_id, excluded.session_id),
+			call_id    = COALESCE(jobs.call_id, excluded.call_id),
 			state      = excluded.state,
 			exit_code  = COALESCE(excluded.exit_code, jobs.exit_code),
 			last_seq   = excluded.last_seq,
@@ -703,7 +703,7 @@ func (o *ops) ListJobs(ctx context.Context, f store.JobFilter) ([]store.Job, err
 		where, args = append(where, "(device_id, boot_id, job_id) > (?, ?, ?)"), append(args, f.After.DeviceID, f.After.BootID, f.After.JobID)
 	}
 	for _, c := range []struct{ col, v string }{
-		{"device_id", f.DeviceID}, {"boot_id", f.BootID}, {"session_id", f.SessionID},
+		{"device_id", f.DeviceID}, {"boot_id", f.BootID}, {"session_id", f.SessionID}, {"call_id", f.CallID},
 	} {
 		if c.v != "" {
 			where, args = append(where, c.col+" = ?"), append(args, c.v)

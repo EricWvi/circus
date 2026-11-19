@@ -58,6 +58,28 @@ func checkName(raw string) (string, string) {
 	return name, ""
 }
 
+// maxTitleRunes bounds a session title set with UpdateSession, in Unicode
+// code points; store.MaxSessionTitleBytes bounds its bytes.
+const maxTitleRunes = 200
+
+// checkTitle trims a session title and returns it, or a short reason it is
+// refused: 1 to 200 characters, at most 1024 bytes, no forbidden display
+// characters (store.IsForbiddenDisplayRune).
+func checkTitle(raw string) (string, string) {
+	title := jsTrim(raw)
+	switch {
+	case title == "":
+		return "", "enter a title"
+	case utf8.RuneCountInString(title) > maxTitleRunes:
+		return "", "title is longer than 200 characters"
+	case len(title) > store.MaxSessionTitleBytes:
+		return "", "title is longer than 1024 bytes"
+	case strings.ContainsFunc(title, store.IsForbiddenDisplayRune):
+		return "", "title has control or invisible characters"
+	}
+	return title, ""
+}
+
 // isWindows reports whether os (a GOOS value) uses Windows paths. Every
 // other value, including an empty one, uses POSIX paths.
 func isWindows(os string) bool { return strings.ToLower(os) == "windows" }

@@ -22,6 +22,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
@@ -38,22 +39,26 @@ type harness struct {
 	server *httptest.Server
 	owner  store.User // the legacy machine owner
 	clock  atomic.Int64
+	bus    *sessions.Bus
+	waker  *recordingWaker
+	jobs   *recordingJobs
 
 	mu     sync.Mutex
 	online map[string]bool // device id → link connected
 }
 
-// client is one browser: a cookie jar and the three services.
+// client is one browser: a cookie jar and the services.
 type client struct {
 	http     *http.Client
 	auth     circusv1connect.AuthServiceClient
 	projects circusv1connect.ProjectServiceClient
 	machines circusv1connect.MachineServiceClient
+	sessions circusv1connect.SessionServiceClient
 }
 
 func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *client) {
 	t.Helper()
-	h := &harness{online: map[string]bool{}}
+	h := &harness{online: map[string]bool{}, bus: sessions.NewBus(sessions.BusOptions{}), waker: &recordingWaker{}, jobs: &recordingJobs{}}
 	h.clock.Store(time.Date(2026, 11, 17, 8, 0, 0, 0, time.UTC).UnixMilli())
 	st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "web.db"), sqlite.Options{})
 	if err != nil {
@@ -67,8 +72,15 @@ func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *clien
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	h.server = httptest.NewServer(mux)
+	// As the server's top-level handler does: a request starts without the
+	// write deadline the previous one on the connection left.
+	h.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+		mux.ServeHTTP(w, r)
+	}))
 	t.Cleanup(h.server.Close)
+	// Watch streams end before the server waits for its handlers.
+	t.Cleanup(h.bus.Close)
 	var logs bytes.Buffer
 	web, err := auth.NewWebService(t.Context(), st, auth.WebConfig{PublicURL: h.server.URL, DevInsecure: true, Now: now,
 		BcryptCost: bcrypt.MinCost, Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
@@ -76,7 +88,7 @@ func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *clien
 		t.Fatal(err)
 	}
 	web.Register(mux)
-	cfg := webapi.Config{Store: st, Interceptor: web.Interceptor(), Now: now, Online: h.onlineDevices}
+	cfg := webapi.Config{Store: st, Interceptor: web.Interceptor(), Now: now, Online: h.onlineDevices, Bus: h.bus, Waker: h.waker, Jobs: h.jobs}
 	for _, option := range options {
 		option(&cfg)
 	}
@@ -133,6 +145,7 @@ func (h *harness) browser(t *testing.T) *client {
 		auth:     circusv1connect.NewAuthServiceClient(c, h.server.URL),
 		projects: circusv1connect.NewProjectServiceClient(c, h.server.URL),
 		machines: circusv1connect.NewMachineServiceClient(c, h.server.URL),
+		sessions: circusv1connect.NewSessionServiceClient(c, h.server.URL),
 	}
 }
 

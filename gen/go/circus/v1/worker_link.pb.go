@@ -463,6 +463,10 @@ const (
 	SessionReply_Rejected_CODE_LIMIT           SessionReply_Rejected_Code = 5
 	SessionReply_Rejected_CODE_STOPPED         SessionReply_Rejected_Code = 6
 	SessionReply_Rejected_CODE_NOT_OFFERED     SessionReply_Rejected_Code = 7
+	// RequestApproval or ConsumeGrant on a broken session. Not retryable:
+	// the worker stops calling them until TranscriptRepaired, or until a
+	// RecoverSession ends its lease.
+	SessionReply_Rejected_CODE_BROKEN SessionReply_Rejected_Code = 8
 )
 
 // Enum value maps for SessionReply_Rejected_Code.
@@ -476,6 +480,7 @@ var (
 		5: "CODE_LIMIT",
 		6: "CODE_STOPPED",
 		7: "CODE_NOT_OFFERED",
+		8: "CODE_BROKEN",
 	}
 	SessionReply_Rejected_Code_value = map[string]int32{
 		"CODE_UNSPECIFIED":       0,
@@ -486,6 +491,7 @@ var (
 		"CODE_LIMIT":             5,
 		"CODE_STOPPED":           6,
 		"CODE_NOT_OFFERED":       7,
+		"CODE_BROKEN":            8,
 	}
 )
 
@@ -2142,8 +2148,9 @@ func (x *TranscriptEntry) GetJson() string {
 // TakeInputs atomically takes pending inputs and returns all inputs taken in
 // this epoch but not yet persisted, including those returned by earlier calls.
 // At most 32. Push each to the SDK with uuid=input_id; do not push it twice
-// within an epoch. While the session is broken it takes no new input and
-// returns only those already taken. A new epoch first returns inputs taken by
+// within an epoch. While the session is broken it takes nothing and returns
+// nothing; after the repair it returns everything taken in this epoch and not
+// yet persisted, as usual. A new epoch first returns inputs taken by
 // any earlier epoch to pending, except those whose uuid is already in the
 // transcript, which are marked persisted.
 type TakeInputs struct {
@@ -2709,10 +2716,10 @@ type PublishEvents struct {
 	// consumed one is acknowledged with deduplicated=true and no write; one
 	// beyond the last plus one is INVALID and consumes nothing. ok consumes it;
 	// so does a batch at the next sequence that fails validation (an over-cap
-	// field, or a kind only the control plane records such as
-	// TRANSCRIPT_GAP_ACCEPTED, TURN_INTERRUPTED or TURN_STOPPED): it is recorded
-	// as dropped and answered INVALID,
-	// and the worker continues with the next sequence. A worker treats every
+	// field, or a kind only the control plane records: APPROVAL_RESOLVED,
+	// TURN_INTERRUPTED, SESSION_STATE, TRANSCRIPT_GAP_ACCEPTED, TURN_STOPPED or
+	// INPUT_ACCEPTED, kinds 8, 9, 10, 15, 17 and 18): it is recorded as dropped
+	// and answered INVALID, and the worker continues with the next sequence. A worker treats every
 	// INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
 	// and Fenced consume nothing. Retrying must preserve content.
 	BatchSeq      uint64 `protobuf:"varint,2,opt,name=batch_seq,json=batchSeq,proto3" json:"batch_seq,omitempty"`
@@ -5757,7 +5764,7 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\"\r\n" +
-	"\vListDevices\"\xd4\x14\n" +
+	"\vListDevices\"\xe5\x14\n" +
 	"\fSessionReply\x12,\n" +
 	"\x02ok\x18\x01 \x01(\v2\x1a.circus.v1.SessionReply.OkH\x00R\x02ok\x128\n" +
 	"\x06fenced\x18\x02 \x01(\v2\x1e.circus.v1.SessionReply.FencedH\x00R\x06fenced\x12>\n" +
@@ -5776,10 +5783,10 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\x02Ok\x12\"\n" +
 	"\fdeduplicated\x18\x01 \x01(\bR\fdeduplicated\x1a\x1e\n" +
 	"\x06Fenced\x12\x14\n" +
-	"\x05epoch\x18\x01 \x01(\x04R\x05epoch\x1a\x92\x02\n" +
+	"\x05epoch\x18\x01 \x01(\x04R\x05epoch\x1a\xa3\x02\n" +
 	"\bRejected\x129\n" +
 	"\x04code\x18\x01 \x01(\x0e2%.circus.v1.SessionReply.Rejected.CodeR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xb0\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xc1\x01\n" +
 	"\x04Code\x12\x14\n" +
 	"\x10CODE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fCODE_INVALID\x10\x01\x12\x12\n" +
@@ -5789,7 +5796,8 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
 	"CODE_LIMIT\x10\x05\x12\x10\n" +
 	"\fCODE_STOPPED\x10\x06\x12\x14\n" +
-	"\x10CODE_NOT_OFFERED\x10\a\x1a\xd7\x02\n" +
+	"\x10CODE_NOT_OFFERED\x10\a\x12\x0f\n" +
+	"\vCODE_BROKEN\x10\b\x1a\xd7\x02\n" +
 	"\x05Lease\x12\x14\n" +
 	"\x05epoch\x18\x01 \x01(\x04R\x05epoch\x12*\n" +
 	"\x11claude_session_id\x18\x02 \x01(\tR\x0fclaudeSessionId\x12%\n" +

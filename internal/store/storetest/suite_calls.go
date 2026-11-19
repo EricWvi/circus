@@ -384,7 +384,14 @@ func testJobs(t *testing.T, b Backend) {
 	newer := j
 	newer.LastSeq, newer.SessionID, newer.CallID, newer.UpdatedAt = 6, "s1", "c1", t0+1
 	mustEqual(t, "newer", put(newer), true)
-	done := store.Job{DeviceID: "d1", BootID: "b1", JobID: "j1", UserID: "u1", State: store.JobExited, ExitCode: ptr(int32(3)), LastSeq: 7, EndedAt: t0 + 2, UpdatedAt: t0 + 2}
+	// Session and call are write-once: a later event naming others does
+	// not move the job.
+	moved := newer
+	moved.LastSeq, moved.SessionID, moved.CallID = 7, "s9", "c9"
+	mustEqual(t, "moved", put(moved), true)
+	mustEqual(t, "not moved", list(store.JobFilter{Limit: store.MaxPageSize, CallID: "c1"})[0].SessionID, "s1")
+	mustEqual(t, "not moved to c9", len(list(store.JobFilter{Limit: store.MaxPageSize, CallID: "c9"})), 0)
+	done := store.Job{DeviceID: "d1", BootID: "b1", JobID: "j1", UserID: "u1", State: store.JobExited, ExitCode: ptr(int32(3)), LastSeq: 8, EndedAt: t0 + 2, UpdatedAt: t0 + 2}
 	mustEqual(t, "exit", put(done), true)
 	want := done
 	want.SessionID, want.CallID, want.StartedAt = "s1", "c1", t0
@@ -397,6 +404,8 @@ func testJobs(t *testing.T, b Backend) {
 	mustEqual(t, "j3", put(j3), true)
 	mustEqual(t, "by boot", len(list(store.JobFilter{Limit: store.MaxPageSize, DeviceID: "d1", BootID: "b1"})), 2)
 	mustEqual(t, "by session", list(store.JobFilter{Limit: store.MaxPageSize, SessionID: "s2"}), []store.Job{j2})
+	mustEqual(t, "by call", list(store.JobFilter{Limit: store.MaxPageSize, DeviceID: "d1", BootID: "b1", CallID: "c1"}), []store.Job{want})
+	mustEqual(t, "by another call", len(list(store.JobFilter{Limit: store.MaxPageSize, CallID: "c9"})), 0)
 	mustEqual(t, "running", len(list(store.JobFilter{Limit: store.MaxPageSize, States: []store.JobState{store.JobRunning}})), 2)
 
 	// The device reconnects with boot b2: running jobs of other boots are

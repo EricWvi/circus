@@ -17,8 +17,7 @@ func checkEvents(events []store.EventInput, worker bool) error {
 		if err := store.CheckText("event kind", e.Kind, store.MaxCodeBytes, false); err != nil {
 			return err
 		}
-		if worker && (e.Kind == store.EventKindTranscriptGapAccepted ||
-			e.Kind == store.EventKindTurnInterrupted || e.Kind == store.EventKindTurnStopped) {
+		if worker && store.ControlPlaneOnlyKind(e.Kind) {
 			return invalid("event kind %s is recorded by the control plane only", e.Kind)
 		}
 		if err := store.CheckOptionalID("event format", e.Format); err != nil {
@@ -51,7 +50,10 @@ func (o *ops) AppendEvents(ctx context.Context, sessionID string, pub *store.Eve
 	if maxViewBytes < 1 {
 		return store.EventsAppended{}, invalid("AppendEvents needs a positive view cap")
 	}
-	eventsErr := checkEvents(events, pub != nil)
+	var eventsErr error
+	if pub == nil || len(events) > 0 {
+		eventsErr = checkEvents(events, pub != nil)
+	}
 	if pub == nil {
 		if eventsErr != nil {
 			return store.EventsAppended{}, eventsErr
@@ -100,6 +102,9 @@ func (o *ops) AppendEvents(ctx context.Context, sessionID string, pub *store.Eve
 				out.Dropped, out.DropReason = true, eventsErr
 				return nil
 			}
+		}
+		if len(events) == 0 {
+			return nil // a worker batch of live-only events: consumed, nothing stored
 		}
 		var err error
 		out.Seqs, err = tx.storeEvents(ctx, sessionID, events, maxViewBytes)

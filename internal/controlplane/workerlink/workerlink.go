@@ -1,4 +1,31 @@
-// Package workerlink serves the worker call subset at /v1/link/worker.
+// Package workerlink serves the worker link at /v1/link/worker: device calls
+// through the call router, and session operations through the session
+// service (Config.Sessions).
+//
+// Sessions: a worker Hello.boot_id must be empty (a call-only client) or a
+// UUIDv7 not older than the worker's current boot (else BAD_HELLO); the
+// connection is registered with the session service before its first
+// message is read, which releases an older boot's leases. Attach opens a
+// hint stream that holds its operation slot until Unwatch or disconnect; a
+// second Attach or one breaking its field caps closes the link. Session
+// writes, Attach and ResumeLeases are handled inline in the receive loop;
+// their one SessionReply goes to the connection's reply queue, whose one
+// sender hands it to the link, retrying a busy send pool, so the receive
+// loop does not wait for the pool. The queue holds at most 16 MiB of encoded
+// replies (one larger alone; only then does the loop wait), and a queued
+// reply keeps its operation slot until it reaches the link. Reads run in
+// their operation's goroutine under the service's global read permits; a
+// reply the pool refuses gives its read permit back and is retried, without
+// a permit when it is at most smallUpdateBytes, else under one of the push
+// permits, or, with none free, rebuilt under a push permit taken once one
+// has freed (that wait holds no permit; the permit is then kept through the
+// rebuild and its send, all within one send deadline started at the drop).
+// Every Unwatch is also passed to the session service, which abandons the
+// lease of a recent AcquireLease whose reply may already have gone out. A
+// slot is released before its reply is sent, as for calls. A SubmitCall carrying
+// session_epoch or tool_use_id is admitted by the router against the lease
+// bound to this connection (calls.Admission). With Config.Sessions nil the
+// session payloads close the link as unexpected.
 //
 // Each SubmitCall, CallQuery and CancelCall opens one operation under the
 // envelope's client-chosen request_id; every CallUpdate sent for it carries
@@ -110,8 +137,10 @@ import (
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
+	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -126,6 +155,11 @@ const (
 	// smallUpdateBytes is the largest charged cost (wire.Charge) an update
 	// may have to be sent without a push permit.
 	smallUpdateBytes = 256 << 10
+	// maxInlineReplyBytes bounds the encoded inline session replies one
+	// connection holds before they reach the link.
+	maxInlineReplyBytes = 16 << 20
+	// maxBootIDBytes bounds Hello.boot_id; longer is BAD_HELLO.
+	maxBootIDBytes = 128
 	// sendBusyLimit must stay below wire.Options.MaxConsumerStall (15s default).
 	sendBusyLimit = 10 * time.Second
 )
@@ -145,6 +179,10 @@ type Config struct {
 	Logger         *slog.Logger
 	Recheck        auth.RecheckPolicy
 	MaxConnections int
+	// Sessions serves Attach, SessionRequest, ResumeLeases and ListDevices
+	// and records worker boots. Nil leaves the link a call link: those
+	// payloads close it as unexpected.
+	Sessions *sessions.Service
 }
 
 // Handler owns every admitted handshake, subscription and query. Shutdown
@@ -160,8 +198,13 @@ type Handler struct {
 	push semaphore
 	// submit and query are Router.Submit and Router.QueryOnce; tests replace
 	// them to drive updates.
-	submit func(ctx context.Context, user, device string, call *circusv1.DeviceCall) (subscription, error)
+	submit func(ctx context.Context, user, device string, call *circusv1.DeviceCall, a calls.Admission) (subscription, error)
 	query  func(ctx context.Context, user, id string) (subscription, error)
+	// maxInline is maxInlineReplyBytes (lowered by tests).
+	maxInline int
+	// sessionSend, when set by tests, runs before each SessionReply send
+	// attempt; its error replaces the attempt's.
+	sessionSend func(m *circusv1.WorkerDownlink) error
 	// beforeSend and afterSend, when set by tests, run before each update is
 	// handed to the link and after the link accepted it.
 	beforeSend, afterSend func(context.Context, *circusv1.CallUpdate)
@@ -190,6 +233,91 @@ func (s semaphore) acquire(ctx context.Context) bool {
 	}
 }
 func (s semaphore) release() { <-s }
+
+// tryAcquire takes a permit only if one is free.
+func (s semaphore) tryAcquire() bool {
+	select {
+	case s <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// inlineReply is one inline SessionReply waiting for the connection's
+// reply sender.
+type inlineReply struct {
+	rid   uint64
+	op    *operation
+	reply *circusv1.SessionReply
+	size  int
+}
+
+// replyQueue is one connection's FIFO of inline replies, bounded by the
+// encoded bytes it holds (a single reply larger than the bound is admitted
+// alone).
+type replyQueue struct {
+	mu      sync.Mutex
+	items   []inlineReply
+	bytes   int
+	max     int
+	changed chan struct{}
+}
+
+func newReplyQueue(max int) *replyQueue { return &replyQueue{max: max, changed: make(chan struct{})} }
+
+func (q *replyQueue) signal() { close(q.changed); q.changed = make(chan struct{}) }
+
+// put queues it, waiting while the queue is full; false when ctx ended.
+func (q *replyQueue) put(ctx context.Context, it inlineReply) bool {
+	for {
+		q.mu.Lock()
+		if q.bytes == 0 || q.bytes+it.size <= q.max {
+			q.items = append(q.items, it)
+			q.bytes += it.size
+			q.signal()
+			q.mu.Unlock()
+			return true
+		}
+		ch := q.changed
+		q.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return false
+		}
+	}
+}
+
+// next takes the oldest reply, waiting for one; false when ctx ended.
+// Its bytes stay counted until done.
+func (q *replyQueue) next(ctx context.Context) (inlineReply, bool) {
+	for {
+		q.mu.Lock()
+		if len(q.items) > 0 {
+			it := q.items[0]
+			q.items[0] = inlineReply{}
+			q.items = q.items[1:]
+			q.mu.Unlock()
+			return it, true
+		}
+		ch := q.changed
+		q.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return inlineReply{}, false
+		}
+	}
+}
+
+// done releases the bytes of a reply handed to the link (or dropped).
+func (q *replyQueue) done(size int) {
+	q.mu.Lock()
+	q.bytes -= size
+	q.signal()
+	q.mu.Unlock()
+}
 
 // New validates configuration and creates an independent, bounded wire budget.
 func New(c Config) (*Handler, error) {
@@ -225,9 +353,9 @@ func New(c Config) (*Handler, error) {
 		return nil, err
 	}
 	c.Wire = opts
-	h := &Handler{cfg: c, peers: make(map[*peer]struct{}), changed: make(chan struct{}), push: make(semaphore, pushPermits)}
-	h.submit = func(ctx context.Context, user, device string, call *circusv1.DeviceCall) (subscription, error) {
-		s, err := c.Router.Submit(ctx, user, device, call)
+	h := &Handler{cfg: c, peers: make(map[*peer]struct{}), changed: make(chan struct{}), push: make(semaphore, pushPermits), maxInline: maxInlineReplyBytes}
+	h.submit = func(ctx context.Context, user, device string, call *circusv1.DeviceCall, a calls.Admission) (subscription, error) {
+		s, err := c.Router.SubmitSession(ctx, user, device, call, a)
 		if err != nil {
 			return nil, err
 		}
@@ -297,7 +425,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() { defer close(abortDone); <-ctx.Done(); _ = conn.Close() }()
 	defer func() { cancel(); <-abortDone }()
 	handshake, finish := clock.WithTimeout(ctx, h.cfg.Clock, wire.HelloTimeout)
-	_, opts, err := wire.AcceptHello(handshake, conn, wire.WorkerUplink, h.cfg.Wire, func(*circusv1.Hello) *circusv1.Welcome {
+	hello, opts, err := wire.AcceptHello(handshake, conn, wire.WorkerUplink, h.cfg.Wire, func(hello *circusv1.Hello) *circusv1.Welcome {
+		if len(hello.GetBootId()) > maxBootIDBytes {
+			return nil
+		}
+		// A boot id that is not a UUIDv7, or older than the worker's
+		// current boot (a replaced process), is BAD_HELLO and releases
+		// nothing. A store failure here is not a refusal: Connect checks
+		// again and closes the link, which the worker retries.
+		if h.cfg.Sessions != nil && errors.Is(h.cfg.Sessions.CheckBoot(handshake, principal.ID, hello.GetBootId()), sessions.ErrBoot) {
+			return nil
+		}
 		return &circusv1.Welcome{PrincipalId: principal.ID, InstanceId: h.cfg.InstanceID, ServerTimeUnixMs: h.cfg.Clock.Now().UnixMilli()}
 	})
 	finish()
@@ -313,6 +451,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() { cancel(); _ = link.Close(); wg.Wait() }()
 	wg.Add(1)
 	go func() { defer wg.Done(); h.recheck(ctx, cancel, principal.CredentialID) }()
+	var sc *sessions.Conn
+	if h.cfg.Sessions != nil {
+		sc, err = h.cfg.Sessions.Connect(ctx, sessions.ConnInfo{WorkerID: principal.ID, UserID: principal.UserID, BootID: hello.GetBootId(),
+			Fail: func(reason string) {
+				h.cfg.Logger.WarnContext(ctx, "worker session hint closed link", "reason", reason)
+				cancel()
+			}})
+		if err != nil {
+			h.cfg.Logger.WarnContext(ctx, "worker connection refused", "error", err)
+			return
+		}
+		defer sc.Close()
+	}
 	ops := newOperations(maxOperations)
 	// protocolError closes the link for a client that broke the request-ID
 	// or operation-cap rules; the client cannot be answered in band.
@@ -417,6 +568,189 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			forward(rid, op, id, sub, true)
 		}()
 	}
+	// sendReply sends rid's one SessionReply after its slot was released.
+	// A failure other than the operation ending closes the link.
+	// sendSession hands one SessionReply to the link (one attempt).
+	sendSession := func(sendCtx context.Context, m *circusv1.WorkerDownlink) error {
+		if h.sessionSend != nil {
+			if err := h.sessionSend(m); err != nil {
+				return err
+			}
+		}
+		return link.Send(sendCtx, m)
+	}
+	// sendReply sends rid's one SessionReply after its slot was released,
+	// retrying a busy send pool. A failure other than the operation ending
+	// closes the link. It reports whether the reply reached the link.
+	sendReply := func(opCtx context.Context, rid uint64, r *circusv1.SessionReply) bool {
+		m := &circusv1.WorkerDownlink{RequestId: rid, Payload: &circusv1.WorkerDownlink_SessionReply{SessionReply: r}}
+		err := h.sendWithBusyRetry(opCtx, func(sendCtx context.Context) error { return sendSession(sendCtx, m) })
+		if err != nil && opCtx.Err() == nil {
+			h.cfg.Logger.WarnContext(ctx, "worker send closed link", "error", err)
+			cancel()
+		}
+		return err == nil
+	}
+	// Inline replies go through this connection's reply queue and its one
+	// sender, so the receive loop never waits for the shared send pool. A
+	// queued reply keeps its operation slot until it reaches the link, and
+	// the queue holds at most maxInlineReplyBytes (one larger reply alone):
+	// only when that much is queued does the receive loop wait for it.
+	replies := newReplyQueue(h.maxInline)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			it, ok := replies.next(ctx)
+			if !ok {
+				return
+			}
+			if ops.end(it.rid, it.op) {
+				sendReply(it.op.ctx, it.rid, it.reply)
+			}
+			it.op.cancel()
+			replies.done(it.size)
+		}
+	}()
+	answer := func(rid uint64, op *operation, r *circusv1.SessionReply) {
+		if !replies.put(ctx, inlineReply{rid: rid, op: op, reply: r, size: proto.Size(r)}) {
+			op.cancel()
+		}
+	}
+	// read builds a read reply in the operation's own goroutine under one
+	// of the service's global read permits and makes one send attempt. When
+	// the send pool is busy, the read permit is given back before any wait:
+	// a reply of at most smallUpdateBytes is retried without a permit (as
+	// small call updates are); a larger one is retried under one of the
+	// global push permits. With none free it is dropped; the goroutine waits
+	// for a push permit holding nothing, keeps it, waits for a read permit
+	// again, rebuilds the reply and sends it under the kept permit (a busy
+	// pool is retried under that same permit, never a second one). Every
+	// wait after the drop (push permit, read permit, the rebuilt reply's
+	// busy retries) shares one sendBusyLimit deadline started at the drop;
+	// past it the link closes. Reads are idempotent and recheck their fence. So at most
+	// ReadConcurrency replies are being built, at most pushPermits large
+	// ones wait for the pool or hold a permit for a rebuild (a push permit
+	// is held across a read-permit wait for at most sendBusyLimit), and no
+	// busy retry holds a read permit.
+	read := func(rid uint64, op *operation, fn sessions.ReadFunc) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer op.cancel()
+			defer ops.end(rid, op)
+			var m *circusv1.WorkerDownlink
+			var sent func()
+			ended := false
+			// build makes the reply; false when there is nothing to send.
+			build := func() bool {
+				r, after, err := fn(op.ctx)
+				if err != nil {
+					if op.ctx.Err() == nil {
+						h.cfg.Logger.WarnContext(ctx, "worker session reply closed link", "error", err)
+						cancel()
+					}
+					return false
+				}
+				if !ended {
+					if !ops.end(rid, op) {
+						return false
+					}
+					ended = true
+				}
+				m = &circusv1.WorkerDownlink{RequestId: rid, Payload: &circusv1.WorkerDownlink_SessionReply{SessionReply: r}}
+				sent = after
+				return true
+			}
+			attempt := func(sendCtx context.Context) error { return sendSession(sendCtx, m) }
+			const (
+				done = iota
+				retry
+				retryPermit
+				rebuild
+			)
+			var err error
+			// permit: a push permit this goroutine holds, taken while it held
+			// nothing; it is kept for the rebuilt reply's send.
+			permit := false
+			// waitCtx bounds every wait: the operation's context until the
+			// reply is first dropped, then a sendBusyLimit deadline started
+			// at that drop and shared by every later wait (the push permit,
+			// the read permit, the rebuilt reply's busy retries), so a
+			// rebuild gets no fresh sendBusyLimit and a long first wait for a
+			// read permit does not count against it.
+			waitCtx, dropped := op.ctx, false
+			stop := func() {}
+			defer func() {
+				stop()
+				if permit {
+					h.push.release()
+				}
+			}()
+			for {
+				if waitCtx.Err() != nil {
+					if op.ctx.Err() == nil {
+						h.cfg.Logger.WarnContext(ctx, "worker send closed link", "error", "send pool busy too long")
+						cancel()
+					}
+					return
+				}
+				next := done
+				ok := h.cfg.Sessions.Read(waitCtx, func() {
+					if !build() {
+						m = nil
+						return
+					}
+					if err = attempt(op.ctx); !errors.Is(err, wire.ErrBusy) {
+						return
+					}
+					switch {
+					case proto.Size(m) <= smallUpdateBytes:
+						next = retry
+					case permit:
+						next = retryPermit
+					case h.push.tryAcquire():
+						permit = true
+						next = retryPermit
+					default:
+						next, m, sent = rebuild, nil, nil
+					}
+				})
+				if !ok {
+					continue // the deadline check above ends the loop
+				}
+				if next != rebuild {
+					if next == retry || next == retryPermit {
+						err = h.sendWithBusyRetry(waitCtx, attempt)
+					}
+					break
+				}
+				// Wait for a free push permit, holding nothing, keep it, and
+				// start over: the rebuilt reply is sent under it.
+				if !dropped {
+					dropped = true
+					waitCtx, stop = clock.WithTimeout(op.ctx, h.cfg.Clock, sendBusyLimit)
+				}
+				if !h.push.acquire(waitCtx) {
+					continue // the deadline check above ends the loop
+				}
+				permit = true
+			}
+			if m == nil {
+				return
+			}
+			if err != nil {
+				if op.ctx.Err() == nil {
+					h.cfg.Logger.WarnContext(ctx, "worker send closed link", "error", err)
+					cancel()
+				}
+				return // not delivered: no sent()
+			}
+			if sent != nil {
+				sent()
+			}
+		}()
+	}
 	for {
 		m, err := link.Receive(ctx)
 		if err != nil {
@@ -435,7 +769,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// overtake it. The only long block is a stuck store transaction, bounded
 			// by the store's busy timeout. The router copies content; the goroutine
 			// retains only sub, whose lifetime is the operation's context.
-			sub, err := h.submit(op.ctx, principal.UserID, v.SubmitCall.Device, v.SubmitCall.Call)
+			adm := calls.Admission{Epoch: v.SubmitCall.GetSessionEpoch(), ToolUseID: v.SubmitCall.GetToolUseId()}
+			if adm != (calls.Admission{}) {
+				adm.WorkerID, adm.BootID = principal.ID, hello.GetBootId()
+				if sc != nil {
+					adm.ConnID = sc.ID()
+				}
+			}
+			sub, err := h.submit(op.ctx, principal.UserID, v.SubmitCall.Device, v.SubmitCall.Call, adm)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -483,6 +824,59 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			ops.unwatch(rid)
+			if sc != nil {
+				sc.Unwatched(rid)
+			}
+		case *circusv1.WorkerUplink_Attach:
+			if sc == nil {
+				h.cfg.Logger.WarnContext(ctx, "worker protocol error closed link", "reason", "unexpected payload")
+				return
+			}
+			op, ok := admit(rid)
+			if !ok {
+				continue
+			}
+			// The stream holds its slot until Unwatch or disconnect; its
+			// events are sent by the session service's sender for this
+			// connection, which ends with op.ctx.
+			err := sc.Attach(op.ctx, v.Attach, func(evCtx context.Context, ev *circusv1.WorkerEvent) error {
+				m := &circusv1.WorkerDownlink{RequestId: rid, Payload: &circusv1.WorkerDownlink_WorkerEvent{WorkerEvent: ev}}
+				return h.sendWithBusyRetry(evCtx, func(sendCtx context.Context) error { return link.Send(sendCtx, m) })
+			})
+			if err != nil {
+				protocolError(err.Error(), rid)
+			}
+		case *circusv1.WorkerUplink_Session:
+			if sc == nil {
+				h.cfg.Logger.WarnContext(ctx, "worker protocol error closed link", "reason", "unexpected payload")
+				return
+			}
+			op, ok := admit(rid)
+			if !ok {
+				continue
+			}
+			r, fn := sc.Handle(op.ctx, rid, v.Session)
+			if fn != nil {
+				read(rid, op, fn)
+			} else {
+				answer(rid, op, r)
+			}
+		case *circusv1.WorkerUplink_ResumeLeases:
+			if sc == nil {
+				h.cfg.Logger.WarnContext(ctx, "worker protocol error closed link", "reason", "unexpected payload")
+				return
+			}
+			if op, ok := admit(rid); ok {
+				answer(rid, op, sc.Resume(op.ctx, v.ResumeLeases))
+			}
+		case *circusv1.WorkerUplink_ListDevices:
+			if sc == nil {
+				h.cfg.Logger.WarnContext(ctx, "worker protocol error closed link", "reason", "unexpected payload")
+				return
+			}
+			if op, ok := admit(rid); ok {
+				read(rid, op, sc.ListDevices())
+			}
 		case *circusv1.WorkerUplink_Heartbeat:
 		default:
 			h.cfg.Logger.WarnContext(ctx, "worker protocol error closed link", "reason", "unexpected payload")

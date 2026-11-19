@@ -20,6 +20,7 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
 	"github.com/EricWvi/circus/internal/loopback"
@@ -172,6 +173,11 @@ type Server struct {
 	// registry holds the live daemon links: the authority on which devices
 	// are online.
 	registry gateway.Registry
+	// sessions is the worker-link session service, which also schedules
+	// sessions (sessions.Waker); bus carries committed session events to
+	// watchers. Both are shared with the user-facing session API.
+	sessions *sessions.Service
+	bus      *sessions.Bus
 
 	mu         sync.Mutex
 	started    bool
@@ -271,7 +277,13 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 		return nil, errors.Join(err, s.Shutdown(cleanup))
 	}
 	s.webAuth.Register(s.mux)
-	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger})
+	// The bus and the session service (the scheduler) were built with the
+	// call plane; the worker link and SessionService share them. Watch
+	// streams end when the listener has closed, so in-flight requests can
+	// finish; the session service closes with the call plane.
+	s.hooks = append(s.hooks, shutdownHook{"session watchers", func(context.Context) error { s.bus.Close(); return nil }})
+	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger,
+		Bus: s.bus, Waker: s.sessions, Jobs: s.router})
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()

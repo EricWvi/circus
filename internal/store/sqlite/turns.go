@@ -10,13 +10,13 @@ import (
 // Inputs.
 
 const inputCols = `input_id, session_id, client_msg_id, kind, text, priority, state, taken_epoch,
-	created_at, taken_at, persisted_at`
+	created_at, taken_at, persisted_at, event_seq`
 
 func scanInput(s scanner) (store.Input, error) {
 	var in store.Input
 	var kind, priority, state string
 	err := s.Scan(&in.InputID, &in.SessionID, &in.ClientMsgID, &kind, nullStr{&in.Text}, &priority, &state,
-		nullInt{&in.TakenEpoch}, &in.CreatedAt, nullInt{&in.TakenAt}, nullInt{&in.PersistedAt})
+		nullInt{&in.TakenEpoch}, &in.CreatedAt, nullInt{&in.TakenAt}, nullInt{&in.PersistedAt}, &in.EventSeq)
 	in.Kind, in.Priority, in.State = store.InputKind(kind), store.InputPriority(priority), store.InputState(state)
 	return in, mapErr(err)
 }
@@ -129,6 +129,26 @@ func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmi
 	}
 	out.Session, err = o.getSession(ctx, in.SessionID, in.CreatedAt)
 	return out, err
+}
+
+func (o *ops) SetInputEventSeq(ctx context.Context, sessionID, inputID string, seq int64) error {
+	if err := store.CheckID("session id", sessionID); err != nil {
+		return err
+	}
+	if err := store.CheckID("input id", inputID); err != nil {
+		return err
+	}
+	if seq < 0 {
+		return invalid("event seq must not be negative")
+	}
+	n, err := o.exec(ctx, `UPDATE session_inputs SET event_seq = ? WHERE session_id = ? AND input_id = ?`, seq, sessionID, inputID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: input %q of session %q", store.ErrNotFound, inputID, sessionID)
+	}
+	return nil
 }
 
 func (o *ops) TakeInputs(ctx context.Context, f store.Fence) ([]store.Input, error) {

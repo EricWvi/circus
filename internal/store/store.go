@@ -161,9 +161,11 @@ type Ops interface {
 	// the stored one and the stored job is still running; stale or repeated
 	// events, and any event for a job that has ended (exited, killed, lost),
 	// return false with no change.
-	// Empty SessionID or CallID never overwrite stored values, so a job row
-	// created from an event can be completed by a later one
-	// (a job event may arrive before the call's result).
+	// SessionID and CallID are write-once: an empty one never overwrites a
+	// stored value and a stored one is never replaced, so a job row created
+	// from an event can be completed by a later one (a job event may arrive
+	// before the call's result), but a job never moves to another call or
+	// session.
 	PutJob(ctx context.Context, j Job) (bool, error)
 	// ListJobs returns at most f.Limit rows ordered by (device_id, boot_id, job_id).
 	ListJobs(ctx context.Context, f JobFilter) ([]Job, error)

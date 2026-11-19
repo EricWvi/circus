@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode/utf8"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
@@ -260,6 +261,23 @@ func (r *router) complete(ctx context.Context, c store.Call, v *circusv1.DeviceR
 		if c.State == store.CallCompleted {
 			r.answer(c.CallID, resultUpdate(v), nil)
 		}
+		if b := v.GetBash(); c.State == store.CallLost && b.GetJobId() != "" {
+			// A late result of a lost session call: register the job it
+			// started if its events are already stored.
+			wake := false
+			err := r.config.Store.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+				var err error
+				wake, err = registerJobsOfLostCall(ctx, tx, c, b.JobId, b.OutputPath)
+				return err
+			})
+			if err != nil {
+				r.storeFailed(err)
+				return err
+			}
+			if wake {
+				r.jobEnded(c.SessionID)
+			}
+		}
 		return nil
 	}
 	now := r.config.Clock.Now().UnixMilli()
@@ -267,12 +285,34 @@ func (r *router) complete(ctx context.Context, c store.Call, v *circusv1.DeviceR
 	if v.Fault != nil {
 		patch.FaultCode = v.Fault.Code.String()
 	}
+	// A session call whose result started a device background job registers
+	// the job with its session in the same Tx, so the session's holder is
+	// told when it ends (JobEnded). Only a call admitted under the session's
+	// lease (it carries a tool_use_id) does: a call without session fields
+	// may name any session id, even another user's.
+	var also func(context.Context, store.Ops) error
+	registered := false
 	if b := v.GetBash(); b != nil {
 		exit := b.ExitCode
 		patch.ExitCode = &exit
 		patch.JobID = b.JobId
+		if b.JobId != "" && c.SessionID != "" && c.ToolUseID != "" {
+			job := store.SessionJob{CallID: c.CallID, JobID: b.JobId, ToolUseID: c.ToolUseID, OutputPath: b.OutputPath, CreatedAt: now}
+			if p := r.pending[c.CallID]; p != nil {
+				job.Description = truncate(p.call.GetBash().GetDescription(), store.MaxDescriptionBytes)
+			}
+			also = func(ctx context.Context, tx store.Ops) error {
+				ok, err := registerJob(ctx, tx, job)
+				registered = ok
+				return err
+			}
+		}
 	}
-	err := r.settle(ctx, c, store.CallCompleted, patch, resultUpdate(v))
+	err := r.settleWith(ctx, c, store.CallCompleted, patch, resultUpdate(v), also)
+	if err == nil && registered && r.config.JobEnded != nil {
+		// The job may have ended before its result arrived.
+		r.config.JobEnded(c.SessionID)
+	}
 	if err != nil {
 		// The content is authoritative even while metadata storage is broken.
 		// The durable watchdog keeps a query repair path.
@@ -281,4 +321,16 @@ func (r *router) complete(ctx context.Context, c store.Call, v *circusv1.DeviceR
 		r.publishAndAnswer(u)
 	}
 	return err
+}
+
+// truncate cuts s to at most n bytes at a UTF-8 boundary.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	s = s[:n]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
 }

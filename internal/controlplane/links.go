@@ -9,14 +9,16 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/wire"
 )
 
 // buildCallPlane composes the call path (registry, call router, daemon
-// gateway and worker call handler) with this server's single authenticator,
-// mounts both links, and registers its readiness check and its one shutdown
-// step. On error it closes what it built.
+// gateway and worker link) and the session service with its event bus with
+// this server's single authenticator, mounts both links, and registers its
+// readiness check and its one shutdown step. On error it closes what it
+// built.
 func (s *Server) buildCallPlane(ctx context.Context) error {
 	c := s.cfg
 	registry, err := gateway.NewRegistry(100)
@@ -35,23 +37,45 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		}
 		return g.Deliver(ctx, t, m)
 	}))
-	r, err := calls.New(calls.Config{Store: s.st, Registry: registry, Sender: sender, Clock: clk, MaxMessageBytes: c.MaxMessageBytes, GracePeriod: c.GracePeriod})
+	// The router tells the session scheduler about ended jobs; the session
+	// service stops jobs through the router. Each reaches the other through
+	// a variable set before any traffic.
+	var svc *sessions.Service
+	jobEnded := func(sessionID string) {
+		if svc != nil {
+			svc.Wake(sessionID, circusv1.WorkerEvent_Nudge_REASON_JOB)
+		}
+	}
+	r, err := calls.New(calls.Config{Store: s.st, Registry: registry, Sender: sender, Clock: clk, MaxMessageBytes: c.MaxMessageBytes, GracePeriod: c.GracePeriod, JobEnded: jobEnded})
 	if err != nil {
+		return err
+	}
+	bus := sessions.NewBus(sessions.DefaultBusOptions())
+	svc, err = sessions.New(sessions.Config{Store: s.st, Bus: bus, InstanceID: s.instanceID, Clock: clk, Logger: s.logger,
+		StopJobs: r.StopSessionJobs, Online: s.onlineDevices, MaxMessageBytes: c.MaxMessageBytes})
+	if err == nil {
+		err = svc.Start(ctx)
+	}
+	if err != nil {
+		_ = r.Close(ctx)
 		return err
 	}
 	opts := wire.Options{Clock: clk, MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}
 	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, Registry: registry, Hooks: r, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
 	if err != nil {
+		_ = svc.Close(ctx)
 		_ = r.Close(ctx)
 		return err
 	}
-	w, err := workerlink.New(workerlink.Config{Auth: s.authn, Router: r, InstanceID: s.instanceID, Clock: clk, Wire: opts, Logger: s.logger, MaxConnections: c.WorkerConnections})
+	w, err := workerlink.New(workerlink.Config{Auth: s.authn, Router: r, InstanceID: s.instanceID, Clock: clk, Wire: opts, Logger: s.logger, MaxConnections: c.WorkerConnections, Sessions: svc})
 	if err != nil {
 		_ = g.Shutdown(ctx)
+		_ = svc.Close(ctx)
 		_ = r.Close(ctx)
 		return err
 	}
 	s.router = r
+	s.sessions, s.bus = svc, bus
 	s.registry = registry
 	s.mux.Handle("/v1/link/daemon", g)
 	s.mux.Handle("/v1/link/worker", w)
@@ -65,7 +89,7 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		return nil
 	}})
 	s.closeCalls = func(ctx context.Context) error {
-		return closeCallPlane(ctx, w, g, r, s.stopBg, s.timersDone)
+		return closeCallPlane(ctx, workerSide{w, svc}, g, r, s.stopBg, s.timersDone)
 	}
 	s.hooks = append(s.hooks, shutdownHook{"call plane", s.closeCalls})
 	return nil
@@ -74,6 +98,18 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 type shutdownWorker interface {
 	Shutdown(context.Context) error
 }
+
+// workerSide shuts the worker link down, then the session service (its
+// scheduler and lease upkeep), before the router closes.
+type workerSide struct {
+	link     shutdownWorker
+	sessions *sessions.Service
+}
+
+func (w workerSide) Shutdown(ctx context.Context) error {
+	return errors.Join(w.link.Shutdown(ctx), w.sessions.Close(ctx))
+}
+
 type shutdownGateway interface {
 	Shutdown(context.Context) error
 }

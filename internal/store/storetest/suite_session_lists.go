@@ -262,3 +262,78 @@ func testProjectSessions(t *testing.T, b Backend) {
 	mustIs(t, s.CheckSessionDeletable(ctx, "keep", 0), store.ErrInvalid)
 	mustIs(t, s.CheckSessionDeletable(ctx, "", t0), store.ErrInvalid)
 }
+
+// testSessionWebReads covers what the user-facing API reads and records
+// beyond the worker link: the Web user filter, main-thread working
+// directories and the view event of an input.
+func testSessionWebReads(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seedProjects(t, s)
+	for _, p := range []store.Project{newProject("alice-1", f.alice.ID, "One"), newProject("alice-2", f.alice.ID, "Two"), newProject("bob-1", f.bob.ID, "Bob")} {
+		_, err := s.CreateProject(ctx, p, "")
+		must(t, err)
+	}
+	for i, pair := range [][2]string{{"a1", "alice-1"}, {"a2", "alice-2"}, {"b1", "bob-1"}, {"m1", "session-project"}, {"a3", "alice-1"}} {
+		sess := newSession(pair[0], f.fixture)
+		sess.ProjectID, sess.CreatedAt = pair[1], t0+int64(i)
+		must(t, s.CreateSession(ctx, sess, nil, 100))
+	}
+	ids := func(filter store.SessionFilter) []string {
+		t.Helper()
+		filter.Now, filter.Limit = t0, 10
+		rows, err := s.ListSessions(ctx, filter)
+		must(t, err)
+		var out []string
+		for _, v := range rows {
+			out = append(out, v.ID)
+		}
+		return out
+	}
+	// Every session has the same machine owner; only the projects differ.
+	mustEqual(t, "alice", ids(store.SessionFilter{WebUserID: f.alice.ID}), []string{"a3", "a2", "a1"})
+	mustEqual(t, "bob", ids(store.SessionFilter{WebUserID: f.bob.ID}), []string{"b1"})
+	mustEqual(t, "machine owner's own project", ids(store.SessionFilter{WebUserID: f.user.ID}), []string{"m1"})
+	mustEqual(t, "nobody", ids(store.SessionFilter{WebUserID: "nobody"}), []string(nil))
+	mustEqual(t, "with project", ids(store.SessionFilter{WebUserID: f.alice.ID, ProjectID: "alice-1"}), []string{"a3", "a1"})
+	mustEqual(t, "foreign project", ids(store.SessionFilter{WebUserID: f.alice.ID, ProjectID: "bob-1"}), []string(nil))
+	mustEqual(t, "keyset", ids(store.SessionFilter{WebUserID: f.alice.ID, After: &store.SessionCursor{LastActivityAt: t0 + 4, ID: "a3"}}), []string{"a2", "a1"})
+	_, err := s.ListSessions(ctx, store.SessionFilter{WebUserID: strings.Repeat("x", store.MaxIDBytes+1), Now: t0, Limit: 1})
+	mustIs(t, err, store.ErrInvalid)
+
+	// Working directories: only the main thread's, by device id.
+	sess := newSession("cw", f.fixture)
+	must(t, s.CreateSession(ctx, sess, []store.SessionCwd{{DeviceID: f.other.ID, Cwd: `C:\work`, UpdatedAt: t0}, {DeviceID: f.device.ID, Cwd: "/work", UpdatedAt: t0}}, 100))
+	fence := acquire(t, s, "cw", "w1", "b1", t0)
+	must(t, s.PatchSessionRecords(ctx, fence, store.RecordsPatch{Cwds: []store.SessionCwd{{AgentID: "agent", DeviceID: f.device.ID, Cwd: "/agent", UpdatedAt: t0 + 1}, {DeviceID: f.device.ID, Cwd: "/moved", UpdatedAt: t0 + 1}}}))
+	cwds, err := s.ListSessionCwds(ctx, "cw")
+	must(t, err)
+	mustEqual(t, "main thread cwds", cwds, []store.SessionCwd{{DeviceID: f.device.ID, Cwd: "/moved", UpdatedAt: t0 + 1}, {DeviceID: f.other.ID, Cwd: `C:\work`, UpdatedAt: t0}})
+	cwds, err = s.ListSessionCwds(ctx, "a1")
+	must(t, err)
+	mustEqual(t, "no cwds", len(cwds), 0)
+	_, err = s.ListSessionCwds(ctx, "missing")
+	mustIs(t, err, store.ErrNotFound)
+
+	// The input's view event, remembered for a repeated submission.
+	in := newInput("a1", 1)
+	mustEqual(t, "new input", submit(t, s, in).Input.EventSeq, int64(0))
+	mustIs(t, s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		if err := tx.SetInputEventSeq(ctx, "a1", in.InputID, 7); err != nil {
+			return err
+		}
+		return errRollback
+	}), errRollback)
+	mustEqual(t, "rolled back", submit(t, s, in).Input.EventSeq, int64(0))
+	must(t, s.SetInputEventSeq(ctx, "a1", in.InputID, 7))
+	again := submit(t, s, in)
+	mustEqual(t, "repeat", []any{again.Created, again.Input.EventSeq}, []any{false, int64(7)})
+	mustIs(t, s.SetInputEventSeq(ctx, "a2", in.InputID, 8), store.ErrNotFound)
+	mustIs(t, s.SetInputEventSeq(ctx, "a1", "missing", 8), store.ErrNotFound)
+	mustIs(t, s.SetInputEventSeq(ctx, "a1", in.InputID, -1), store.ErrInvalid)
+	// The seq survives the input's persistence.
+	fence = acquire(t, s, "a1", "w1", "b1", t0+2)
+	taken, err := s.TakeInputs(ctx, at(fence, t0+2))
+	must(t, err)
+	mustEqual(t, "taken", []any{len(taken), taken[0].EventSeq}, []any{1, int64(7)})
+}

@@ -272,6 +272,7 @@ func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circus
 			if err != nil {
 				break
 			}
+			s.bus.Deleted(id)
 		}
 		if err == nil {
 			err = s.st.DeleteProject(ctx, u.ID, projectID, s.now().UnixMilli())

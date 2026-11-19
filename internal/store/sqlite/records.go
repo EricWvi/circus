@@ -313,6 +313,44 @@ var recordSections = []recordSection{
 		}},
 }
 
+func (o *ops) RegisterSessionJob(ctx context.Context, j store.SessionJob) (bool, error) {
+	if err := checkRecordsPatch(store.RecordsPatch{Jobs: []store.SessionJob{j}}); err != nil {
+		return false, err
+	}
+	registered := false
+	err := o.unit(ctx, func(tx *ops) error {
+		var device, boot, sid string
+		// Only a call of the session's own user registers a job there.
+		err := mapErr(tx.q.QueryRow(ctx, `SELECT c.device_id, c.dispatched_boot_id, c.session_id FROM calls c
+			JOIN sessions s ON s.session_id = c.session_id AND s.user_id = c.user_id WHERE c.call_id = ?`, j.CallID).Scan(&device, nullStr{&boot}, &sid))
+		if isNotFound(err) || (err == nil && boot == "") {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.exec(ctx, `INSERT INTO session_jobs (session_id, call_id, device_id, boot_id, job_id, tool_use_id,
+			description, output_path, created_at) VALUES (?,?,?,?,?,?,?,?,?)
+			ON CONFLICT (session_id, call_id) DO UPDATE SET job_id = excluded.job_id, tool_use_id = excluded.tool_use_id,
+			description = COALESCE(excluded.description, session_jobs.description),
+			output_path = COALESCE(excluded.output_path, session_jobs.output_path)`,
+			sid, j.CallID, device, boot, j.JobID, nstr(j.ToolUseID), nstr(j.Description), nstr(j.OutputPath), j.CreatedAt); err != nil {
+			return err
+		}
+		if n, err := tx.count(ctx, `SELECT COUNT(*) FROM session_jobs WHERE session_id = ?`, sid); err != nil {
+			return err
+		} else if n > store.MaxSessionJobs {
+			return fmt.Errorf("%w: %d session jobs", store.ErrLimit, n)
+		}
+		registered = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return registered, nil
+}
+
 func (o *ops) GetSessionRecords(ctx context.Context, f store.Fence, r store.RecordsRequest) (store.SessionRecords, error) {
 	if r.Sections == 0 || r.Sections&^store.RecordAll != 0 {
 		return store.SessionRecords{}, invalid("unknown record sections %b", r.Sections)

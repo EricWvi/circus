@@ -12,10 +12,14 @@ import (
 // accessLog logs one line per request: method, path, status and duration.
 // The query string, headers and body are not logged, so neither a bearer
 // token nor an enrollment token can reach the log. Health probes log at
-// debug level.
+// debug level. It also clears the connection's write deadline first: the
+// server sets no WriteTimeout, so net/http keeps whatever deadline the
+// previous request on a kept-alive connection left (SessionService leaves
+// one that bounds its last write).
 func (s *Server) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 		if s.webAuth != nil {
 			s.webAuth.ObserveProxyRequest(r)
 		}

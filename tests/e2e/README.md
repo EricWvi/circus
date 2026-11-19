@@ -54,6 +54,12 @@ metadata, marker files or bounded polling; no sleep establishes test ordering.
   period, 64 Accepted watches fill one connection; the next Submit is refused
   locally, and after closing one stream (Unwatch) it is admitted at once by
   the server while the unwatched call stays Accepted and uncancelled.
+- TestSessionTurn: a session with pending input (written to the server's
+  database) is offered to a worker that attaches over the test client
+  (`internal/testutil/workerclient`); the worker acquires it, takes the
+  input, reports the turn, runs a device call admitted by its lease through
+  the real daemon (a call at another epoch is `SESSION_FENCED`) and
+  releases.
 - TestWorkerRestartWhileHalfOpen: a worker connection goes half-open (a
   local proxy stops moving bytes without closing), a CLI call is running on
   the same credential, and a restarted worker still connects and gets a

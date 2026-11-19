@@ -156,8 +156,10 @@ func testEventBatches(t *testing.T, b Backend) {
 	r, err = pub(fence, 4, ev("RESULT"))
 	must(t, err)
 	mustEqual(t, "continues", r.Seqs, []int64{2})
-	// Both turn boundaries are control-plane-only, like gap acceptance.
-	for i, kind := range []string{store.EventKindTurnInterrupted, store.EventKindTurnStopped} {
+	// Turn boundaries, accepted inputs, resolved approvals and session
+	// states are control-plane-only, like gap acceptance.
+	for i, kind := range []string{store.EventKindTurnInterrupted, store.EventKindTurnStopped, store.EventKindInputAccepted,
+		store.EventKindApprovalResolved, store.EventKindSessionState} {
 		batch := int64(i + 5)
 		r, err = pub(fence, batch, append(ev("ASSISTANT"), ev(kind)...))
 		must(t, err)
@@ -181,6 +183,17 @@ func testEventBatches(t *testing.T, b Backend) {
 	r, err = pub(next, 1, ev("RESULT"))
 	must(t, err)
 	mustEqual(t, "new epoch", r.Seqs, []int64{3})
+	// A batch of live-only events reaches the store empty: consumed,
+	// nothing stored, not counted as dropped.
+	r, err = pub(next, 2, nil)
+	must(t, err)
+	mustEqual(t, "empty batch", []any{r.Dropped, r.Deduplicated, len(r.Seqs), last(), getSession(t, s, "s1").DroppedEventBatches},
+		[]any{false, false, 0, int64(3), int64(7)})
+	r, err = pub(next, 2, nil)
+	must(t, err)
+	mustEqual(t, "empty batch consumed", r.Deduplicated, true)
+	_, err = s.AppendEvents(ctx, "s1", nil, nil, store.DefaultMaxViewBytes)
+	mustIs(t, err, store.ErrInvalid)
 	// A batch holds at most MaxEventBatch events.
 	many := func(n int) []store.EventInput {
 		out := make([]store.EventInput, n)
@@ -634,7 +647,11 @@ func testTranscriptFullInTx(t *testing.T, b Backend) {
 	}))
 	mustIs(t, r.FullReason, store.ErrTranscriptFull)
 	sess := getSession(t, s, "s1")
-	mustEqual(t, "stopped", []any{r.Full, r.Inserted, sess.State, sess.Reason, sess.TranscriptBytes}, []any{true, 0, store.SessionStopped, "TRANSCRIPT_FULL", int64(0)})
+	mustEqual(t, "stopped", []any{r.Full, r.Stopped, r.Inserted, sess.State, sess.Reason, sess.TranscriptBytes}, []any{true, true, 0, store.SessionStopped, "TRANSCRIPT_FULL", int64(0)})
+	// Full again: already stopped, so not stopped by this call.
+	again, err := s.AppendTranscript(ctx, fence, store.TranscriptBatch{BatchSeq: 1, Entries: []store.TranscriptEntry{{JSON: []byte(strings.Repeat("x", 200))}}}, q)
+	must(t, err)
+	mustEqual(t, "full again", []any{again.Full, again.Stopped}, []any{true, false})
 	// The holder may still flush what fits.
 	ok, err := s.AppendTranscript(ctx, fence, store.TranscriptBatch{BatchSeq: 1, Entries: []store.TranscriptEntry{{JSON: []byte("{}")}}}, q)
 	must(t, err)
@@ -668,4 +685,124 @@ func testGrantReplayTrim(t *testing.T, b Backend) {
 	ok, err := s.ConsumeGrant(ctx, at(fence, t0+2_001), store.GrantKey{Tool: "bash", DeviceID: "d1", MatchKey: mk("g0")}, "tu-g0")
 	must(t, err)
 	mustEqual(t, "the oldest live record kept", ok, true)
+}
+
+// testHasLiveLease: a worker boot has a live lease while it holds one that
+// has not expired.
+func testHasLiveLease(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createSession(t, s, f, "s1")
+	live := func(boot string, now int64) bool {
+		ok, err := s.HasLiveLease(ctx, "w1", boot, now)
+		must(t, err)
+		return ok
+	}
+	mustEqual(t, "before", live("b1", t0), false)
+	fence := acquire(t, s, "s1", "w1", "b1", t0)
+	mustEqual(t, "held", []bool{live("b1", t0), live("b2", t0), live("b1", t0+ttl)}, []bool{true, false, false})
+	_, err := s.ReleaseLease(ctx, fence)
+	must(t, err)
+	mustEqual(t, "released", live("b1", t0), false)
+	_, err = s.HasLiveLease(ctx, "", "b1", t0)
+	mustIs(t, err, store.ErrInvalid)
+}
+
+// testRegisterSessionJob: the control plane registers a session call's
+// device job without a fence; calls outside a session are skipped.
+func testRegisterSessionJob(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createSession(t, s, f, "s1")
+	fence := acquire(t, s, "s1", "w1", "b1", t0)
+	sessionCall(t, s, f, "c1", "s1", store.CallCompleted)
+	sessionCall(t, s, f, "loose", "no-such-session", store.CallCompleted)
+	sessionCall(t, s, f, "early", "s1", store.CallAccepted)
+	ok, err := s.RegisterSessionJob(ctx, store.SessionJob{CallID: "c1", JobID: "j1", ToolUseID: "tu", Description: "d", OutputPath: "/out", CreatedAt: t0})
+	must(t, err)
+	mustEqual(t, "registered", ok, true)
+	for _, id := range []string{"loose", "early", "ghost"} {
+		ok, err := s.RegisterSessionJob(ctx, store.SessionJob{CallID: id, JobID: "j"})
+		must(t, err)
+		mustEqual(t, "skipped "+id, ok, false)
+	}
+	r, err := s.GetSessionRecords(ctx, fence, store.RecordsRequest{Sections: store.RecordJobs, MaxBytes: 1 << 20})
+	must(t, err)
+	mustEqual(t, "jobs", len(r.Jobs), 1)
+	mustEqual(t, "job", []any{r.Jobs[0].CallID, r.Jobs[0].JobID, r.Jobs[0].DeviceID, r.Jobs[0].OutputPath}, []any{"c1", "j1", "d1", "/out"})
+	_, err = s.RegisterSessionJob(ctx, store.SessionJob{CallID: "c1", JobID: ""})
+	mustIs(t, err, store.ErrInvalid)
+
+	// A repeat with an empty description or output path keeps the stored
+	// ones; non-empty ones replace them.
+	ok, err = s.RegisterSessionJob(ctx, store.SessionJob{CallID: "c1", JobID: "j1", ToolUseID: "tu"})
+	must(t, err)
+	mustEqual(t, "repeat", ok, true)
+	r, err = s.GetSessionRecords(ctx, fence, store.RecordsRequest{Sections: store.RecordJobs, MaxBytes: 1 << 20})
+	must(t, err)
+	mustEqual(t, "kept", []string{r.Jobs[0].Description, r.Jobs[0].OutputPath}, []string{"d", "/out"})
+	ok, err = s.RegisterSessionJob(ctx, store.SessionJob{CallID: "c1", JobID: "j1", ToolUseID: "tu", Description: "d2", OutputPath: "/out2"})
+	must(t, err)
+	mustEqual(t, "replace", ok, true)
+	r, err = s.GetSessionRecords(ctx, fence, store.RecordsRequest{Sections: store.RecordJobs, MaxBytes: 1 << 20})
+	must(t, err)
+	mustEqual(t, "replaced", []string{r.Jobs[0].Description, r.Jobs[0].OutputPath}, []string{"d2", "/out2"})
+	ok, err = s.RegisterSessionJob(ctx, store.SessionJob{CallID: "c1", JobID: "j1", ToolUseID: "tu", Description: "d", OutputPath: "/out"})
+	must(t, err)
+	mustEqual(t, "restore", ok, true)
+
+	// The same device job under another call of the session: ErrExists,
+	// nothing written.
+	sessionCall(t, s, f, "c2", "s1", store.CallCompleted)
+	_, err = s.RegisterSessionJob(ctx, store.SessionJob{CallID: "c2", JobID: "j1"})
+	mustIs(t, err, store.ErrExists)
+	r, err = s.GetSessionRecords(ctx, fence, store.RecordsRequest{Sections: store.RecordJobs, MaxBytes: 1 << 20})
+	must(t, err)
+	mustEqual(t, "after the conflict", []string{r.Jobs[0].CallID, fmt.Sprint(len(r.Jobs))}, []string{"c1", "1"})
+
+	// A call of another user naming the session registers nothing.
+	must(t, s.CreateUser(ctx, store.User{ID: "u2", Name: "other", CreatedAt: t0}))
+	must(t, s.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "d2", UserID: "u2", Name: "desk", MachineID: "m2", CreatedAt: t0}))
+	foreign := newCall("foreign", f)
+	foreign.UserID, foreign.DeviceID, foreign.SessionID, foreign.ToolUseID = "u2", "d2", "s1", "tu-foreign"
+	createIn(t, s, foreign, store.CallCompleted)
+	ok, err = s.RegisterSessionJob(ctx, store.SessionJob{CallID: "foreign", JobID: "j9", Description: "foreign text"})
+	must(t, err)
+	mustEqual(t, "another user's call", ok, false)
+	r, err = s.GetSessionRecords(ctx, fence, store.RecordsRequest{Sections: store.RecordJobs, MaxBytes: 1 << 20})
+	must(t, err)
+	mustEqual(t, "jobs after another user's call", len(r.Jobs), 1)
+
+	// Exactly MaxSessionJobs rows; one more is refused with nothing
+	// written, and a repeat at the cap still updates.
+	must(t, s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		for i := range store.MaxSessionJobs {
+			sessionCall(t, tx, f, fmt.Sprint("cap", i), "s1", store.CallCompleted)
+		}
+		return nil
+	}))
+	for i := range store.MaxSessionJobs - 1 {
+		ok, err := s.RegisterSessionJob(ctx, store.SessionJob{CallID: fmt.Sprint("cap", i), JobID: fmt.Sprint("k", i)})
+		must(t, err)
+		mustEqual(t, "under the cap", ok, true)
+	}
+	last := fmt.Sprint("cap", store.MaxSessionJobs-1)
+	_, err = s.RegisterSessionJob(ctx, store.SessionJob{CallID: last, JobID: "over"})
+	mustIs(t, err, store.ErrLimit)
+	ok, err = s.RegisterSessionJob(ctx, store.SessionJob{CallID: "c1", JobID: "j1", OutputPath: "/again"})
+	must(t, err)
+	mustEqual(t, "repeat at the cap", ok, true)
+	all, err := s.GetSessionRecords(ctx, fence, store.RecordsRequest{Sections: store.RecordJobs, MaxBytes: store.MaxTranscriptPageBytes})
+	must(t, err)
+	mustEqual(t, "jobs at the cap", []any{len(all.Jobs), all.Next == nil}, []any{store.MaxSessionJobs, true})
+	for _, j := range all.Jobs {
+		if j.CallID == last {
+			t.Fatalf("refused job written: %+v", j)
+		}
+		if j.CallID == "c1" && j.OutputPath != "/again" {
+			t.Fatalf("repeat not applied: %+v", j)
+		}
+	}
 }

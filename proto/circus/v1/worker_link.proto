@@ -380,8 +380,9 @@ message TranscriptEntry {
 // TakeInputs atomically takes pending inputs and returns all inputs taken in
 // this epoch but not yet persisted, including those returned by earlier calls.
 // At most 32. Push each to the SDK with uuid=input_id; do not push it twice
-// within an epoch. While the session is broken it takes no new input and
-// returns only those already taken. A new epoch first returns inputs taken by
+// within an epoch. While the session is broken it takes nothing and returns
+// nothing; after the repair it returns everything taken in this epoch and not
+// yet persisted, as usual. A new epoch first returns inputs taken by
 // any earlier epoch to pending, except those whose uuid is already in the
 // transcript, which are marked persisted.
 message TakeInputs {}
@@ -609,10 +610,10 @@ message PublishEvents {
   // consumed one is acknowledged with deduplicated=true and no write; one
   // beyond the last plus one is INVALID and consumes nothing. ok consumes it;
   // so does a batch at the next sequence that fails validation (an over-cap
-  // field, or a kind only the control plane records such as
-  // TRANSCRIPT_GAP_ACCEPTED, TURN_INTERRUPTED or TURN_STOPPED): it is recorded
-  // as dropped and answered INVALID,
-  // and the worker continues with the next sequence. A worker treats every
+  // field, or a kind only the control plane records: APPROVAL_RESOLVED,
+  // TURN_INTERRUPTED, SESSION_STATE, TRANSCRIPT_GAP_ACCEPTED, TURN_STOPPED or
+  // INPUT_ACCEPTED, kinds 8, 9, 10, 15, 17 and 18): it is recorded as dropped
+  // and answered INVALID, and the worker continues with the next sequence. A worker treats every
   // INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
   // and Fenced consume nothing. Retrying must preserve content.
   uint64 batch_seq = 2;
@@ -723,6 +724,10 @@ message SessionReply {
       CODE_LIMIT = 5;
       CODE_STOPPED = 6;
       CODE_NOT_OFFERED = 7;
+      // RequestApproval or ConsumeGrant on a broken session. Not retryable:
+      // the worker stops calling them until TranscriptRepaired, or until a
+      // RecoverSession ends its lease.
+      CODE_BROKEN = 8;
     }
   }
   // At most 25.5 MiB with every cap reached. state carries every section

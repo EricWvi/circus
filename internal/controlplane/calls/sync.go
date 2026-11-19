@@ -3,6 +3,7 @@ package calls
 import (
 	"context"
 	"errors"
+	"slices"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
@@ -179,7 +180,9 @@ func (r *router) connectAndLose(op *operation, conn gateway.Connection, d *devic
 		}
 		now := r.config.Clock.Now().UnixMilli()
 		var losses []store.LostCall
+		var wakes []string // sessions of lost calls whose ended jobs were registered
 		err := r.config.Store.Tx(op.ctx, func(ctx context.Context, tx store.Ops) error {
+			wakes = wakes[:0]
 			if first {
 				if _, err := tx.SetConnected(ctx, store.KindDevice, conn.Target.DeviceID, conn.Target.BootID, now); err != nil {
 					return err
@@ -200,6 +203,17 @@ func (r *router) connectAndLose(op *operation, conn gateway.Connection, d *devic
 				if err := tx.CancelTimer(ctx, timers.CallWatchdog, l.CallID); err != nil {
 					return err
 				}
+				c, err := tx.GetCall(ctx, l.CallID)
+				if err != nil {
+					return err
+				}
+				wake, err := registerJobsOfLostCall(ctx, tx, c, "", "")
+				if err != nil {
+					return err
+				}
+				if wake && !slices.Contains(wakes, c.SessionID) {
+					wakes = append(wakes, c.SessionID)
+				}
 			}
 			return nil
 		})
@@ -208,6 +222,9 @@ func (r *router) connectAndLose(op *operation, conn gateway.Connection, d *devic
 			return err
 		}
 		r.markHealthy()
+		for _, id := range wakes {
+			r.jobEnded(id)
+		}
 		for _, l := range losses {
 			r.release(l.CallID)
 			u := lost(l.CallID, "DAEMON_RESTARTED")

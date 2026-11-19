@@ -596,7 +596,9 @@ type JobFilter struct {
 	DeviceID  string
 	BootID    string
 	SessionID string
-	States    []JobState
+	// CallID selects the jobs a call started.
+	CallID string
+	States []JobState
 }
 
 // Timer is one durable timer, unique by (Kind, SubjectID), for
@@ -950,6 +952,9 @@ type SessionCursor struct {
 type SessionFilter struct {
 	UserID    string
 	ProjectID string
+	// WebUserID selects the sessions of the projects this Web user owns
+	// (projects.user_id), whoever the machine owner is.
+	WebUserID string
 	// Now is the read time in Unix milliseconds, required for approval expiry.
 	Now    int64
 	States []SessionState
@@ -1141,6 +1146,9 @@ type TranscriptAppended struct {
 	// nil.
 	Full       bool
 	FullReason error
+	// Stopped reports that this call stopped the session (it was not
+	// stopped before), so the caller records the stop once.
+	Stopped bool
 }
 
 // TranscriptPageRequest selects one LoadTranscript page of the fenced
@@ -1207,6 +1215,9 @@ type Input struct {
 	CreatedAt   int64
 	TakenAt     int64
 	PersistedAt int64
+	// EventSeq is the seq of the view event the control plane recorded for
+	// the input (SetInputEventSeq); 0 when none was recorded or stored.
+	EventSeq int64
 }
 
 // InputSubmitted is SubmitInput's result: the stored input, whether this
@@ -1489,6 +1500,26 @@ const (
 	EventKindTurnStopped     = "TURN_STOPPED"
 	EventKindTurnInterrupted = "TURN_INTERRUPTED"
 )
+
+// Other kinds only the control plane records: a new user input
+// (SendMessage), a resolved approval, and a session state change such as a
+// stop.
+const (
+	EventKindInputAccepted    = "INPUT_ACCEPTED"
+	EventKindApprovalResolved = "APPROVAL_RESOLVED"
+	EventKindSessionState     = "SESSION_STATE"
+)
+
+// ControlPlaneOnlyKind reports whether only the control plane records events
+// of kind: a worker event batch containing one is dropped as invalid.
+func ControlPlaneOnlyKind(kind string) bool {
+	switch kind {
+	case EventKindTranscriptGapAccepted, EventKindTurnInterrupted, EventKindTurnStopped,
+		EventKindInputAccepted, EventKindApprovalResolved, EventKindSessionState:
+		return true
+	}
+	return false
+}
 
 // EventPublish marks events a worker publishes: the fence of its
 // connection and the batch sequence, from 1 per epoch.

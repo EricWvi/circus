@@ -2,6 +2,7 @@ package calls
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math"
 
@@ -40,12 +41,143 @@ func (r *router) OnJobEvent(ctx context.Context, conn gateway.Connection, event 
 			return err
 		}
 	}
-	if _, err = r.config.Store.PutJob(op.ctx, r.job(conn, event)); err != nil {
+	j := r.job(conn, event)
+	wake := false
+	err = r.config.Store.Tx(op.ctx, func(ctx context.Context, tx store.Ops) error {
+		wake = false
+		changed, err := tx.PutJob(ctx, j)
+		if err != nil || !changed {
+			return err
+		}
+		if err = registerLostCallJob(ctx, tx, j, event.OutputPath); err != nil {
+			return err
+		}
+		wake, err = r.endWake(ctx, tx, j)
+		return err
+	})
+	if err != nil {
 		r.storeFailed(err)
 		return err
 	}
+	if wake {
+		r.jobEnded(j.SessionID)
+	}
 	d.seq = event.Seq
 	return nil
+}
+
+// endWake reports, for a stored job j that just changed, whether its end
+// wakes its session: j is terminal and names a session of the job's own
+// user (the daemon's connection's). The session id is the daemon's claim,
+// so another user's or a made-up session is never woken.
+func (r *router) endWake(ctx context.Context, ops store.Ops, j store.Job) (bool, error) {
+	if !j.State.Terminal() || j.SessionID == "" || r.config.JobEnded == nil {
+		return false, nil
+	}
+	s, err := ops.GetSession(ctx, j.SessionID, r.config.Clock.Now().UnixMilli())
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return s.UserID == j.UserID, nil
+}
+
+// jobEnded tells the session scheduler that a job of the session ended (or
+// was registered already ended), so the session's holder fetches the
+// notice or the session is offered.
+func (r *router) jobEnded(sessionID string) {
+	if r.config.JobEnded != nil {
+		r.config.JobEnded(sessionID)
+	}
+}
+
+// maxLostCallJobs bounds the jobs looked up for one lost call (a call
+// starts at most one; more rows only come from a non-conforming daemon).
+const maxLostCallJobs = 4
+
+// The jobs of a call settled LOST: its result never arrived (or arrived
+// after the loss), so complete never registered the job, and the session's
+// holder would never learn that it ended. They are registered when a
+// changed job event or snapshot entry names the call (registerLostCallJob),
+// and at the loss and at a late result from the jobs already stored for the
+// call (registerJobsOfLostCall). A job's call and session are write-once in
+// the jobs table, so a job named under another call later stays with its
+// first one.
+
+// registerLostCallJob registers, in tx, the changed job j when the call it
+// names settled LOST; see registerLostJob for the checks. The caller's end
+// wake (endWake) then tells the holder of an ended job.
+func registerLostCallJob(ctx context.Context, tx store.Ops, j store.Job, outputPath string) error {
+	c, err := tx.GetCall(ctx, j.CallID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, err = registerLostJob(ctx, tx, c, j, outputPath)
+	return err
+}
+
+// registerJobsOfLostCall registers, in tx, the stored jobs of the LOST call
+// c, looked up by its device, dispatch boot and call id. outputPath is used
+// for the job with id jobID (a late result's). It reports whether one that
+// already ended was registered, which the caller wakes the session for.
+func registerJobsOfLostCall(ctx context.Context, tx store.Ops, c store.Call, jobID, outputPath string) (bool, error) {
+	if c.State != store.CallLost || c.ToolUseID == "" || c.DispatchedBootID == "" {
+		return false, nil
+	}
+	jobs, err := tx.ListJobs(ctx, store.JobFilter{DeviceID: c.DeviceID, BootID: c.DispatchedBootID, CallID: c.CallID, Limit: maxLostCallJobs})
+	if err != nil {
+		return false, err
+	}
+	wake := false
+	for _, j := range jobs {
+		path := ""
+		if j.JobID == jobID {
+			path = outputPath
+		}
+		ok, err := registerLostJob(ctx, tx, c, j, path)
+		if err != nil {
+			return false, err
+		}
+		wake = wake || ok && j.State.Terminal()
+	}
+	return wake, nil
+}
+
+// registerLostJob registers, in tx, the job j with the session of call c
+// when c settled LOST. Like complete, it registers only for a call admitted
+// under the session's lease (it carries a tool_use_id), and only when j is
+// the call's: the same user, session, device, dispatch boot and call.
+// Refusals are handled by registerJob. A repeat updates the row.
+func registerLostJob(ctx context.Context, tx store.Ops, c store.Call, j store.Job, outputPath string) (bool, error) {
+	if c.State != store.CallLost || c.ToolUseID == "" || c.CallID != j.CallID || c.UserID != j.UserID || c.SessionID != j.SessionID ||
+		c.DeviceID != j.DeviceID || c.DispatchedBootID != j.BootID {
+		return false, nil
+	}
+	if len(outputPath) > store.MaxPathBytes {
+		outputPath = ""
+	}
+	return registerJob(ctx, tx, store.SessionJob{CallID: c.CallID, JobID: j.JobID, ToolUseID: c.ToolUseID, OutputPath: outputPath, CreatedAt: j.UpdatedAt})
+}
+
+// registerJob registers job in tx. Registration is a side effect of call
+// settlement, job events and device connects, and never fails them for a
+// refusal the daemon's reports can provoke: a full job table (ErrLimit), a
+// job the table cannot hold (ErrInvalid), or a device job already
+// registered under another call (ErrExists, a daemon naming one job under
+// two calls). Those are logged and skipped (only the registration's own
+// writes roll back); other store errors fail the caller's Tx.
+func registerJob(ctx context.Context, tx store.Ops, job store.SessionJob) (bool, error) {
+	ok, err := tx.RegisterSessionJob(ctx, job)
+	if errors.Is(err, store.ErrLimit) || errors.Is(err, store.ErrInvalid) || errors.Is(err, store.ErrExists) {
+		slog.Warn("session job not registered", "call_id", job.CallID, "job_id", job.JobID, "error", err)
+		return false, nil
+	}
+	return ok, err
 }
 
 func validateJob(j *circusv1.JobEvent) error {
@@ -113,10 +245,25 @@ func (r *router) OnJobSnapshot(ctx context.Context, conn gateway.Connection, s *
 		}
 		seen[j.JobId] = struct{}{}
 	}
+	ended := make([]store.Job, 0, len(s.Jobs)) // bounded by MaxSnapshotJobs
 	err = r.config.Store.Tx(op.ctx, func(ctx context.Context, tx store.Ops) error {
-		for _, j := range s.Jobs {
-			if _, err := tx.PutJob(ctx, r.job(conn, j)); err != nil {
+		ended = ended[:0]
+		for _, e := range s.Jobs {
+			j := r.job(conn, e)
+			changed, err := tx.PutJob(ctx, j)
+			if err != nil {
 				return err
+			}
+			if !changed {
+				continue
+			}
+			if err = registerLostCallJob(ctx, tx, j, e.OutputPath); err != nil {
+				return err
+			}
+			if wake, err := r.endWake(ctx, tx, j); err != nil {
+				return err
+			} else if wake {
+				ended = append(ended, j)
 			}
 		}
 		return nil
@@ -124,6 +271,9 @@ func (r *router) OnJobSnapshot(ctx context.Context, conn gateway.Connection, s *
 	if err != nil {
 		r.storeFailed(err)
 		return err
+	}
+	for _, j := range ended {
+		r.jobEnded(j.SessionID)
 	}
 	// The router currently requests only unfiltered snapshots. A truncated one
 	// omitted jobs to fit its caps, so omissions prove nothing.
@@ -174,6 +324,14 @@ func (r *router) settleOmissions(ctx context.Context, conn gateway.Connection, s
 				return err
 			}
 			if changed {
+				wake, err := r.endWake(ctx, r.config.Store, gone)
+				if err != nil {
+					r.storeFailed(err)
+					return err
+				}
+				if wake {
+					r.jobEnded(gone.SessionID)
+				}
 				slog.Info("job lost", "device_id", j.DeviceID, "boot_id", j.BootID, "job_id", j.JobID, "reason", "missing from daemon snapshot")
 			}
 		}

@@ -228,6 +228,25 @@ for Web users, every device belongs to the legacy machine owner (`admin`):
 the super user sees and binds those devices, other users see none. A device's
 `online` comes from the live daemon links of this process.
 
+`SessionService` (`proto/circus/v1/session.proto`) serves sessions to the
+Web UI with the same cookie and Origin rules. A session belongs to the Web
+user who owns its project; every call resolves the session through a
+project of the caller and answers `NOT_FOUND` for anything else, and
+`ListSessions` without a project lists only the caller's projects'
+sessions. `CreateSession` starts in a project location (`location_index`,
+or the project's last used one, which it then records) on a device of the
+caller that is not revoked (`FAILED_PRECONDITION` otherwise); the server
+fills `default_device` and the working directory (the location's path, or
+its default directory, not created yet). `SendMessage` records the
+message as a durable `KIND_INPUT_ACCEPTED` view event and returns its seq; a repeated
+`client_msg_id` returns the same input and seq. `WatchSession` replays the
+durable events after `after_seq`, then follows live events, ephemeral ones
+included; idle streams get a keepalive every 25 s (an ephemeral event of
+kind `KIND_UNSPECIFIED`). A stream ends after about an hour (±10 %), and within 30 s of
+its browser session being signed out or expiring. At most 32 streams per
+Web user and 256 in all.
+See `docs/wire.md` section 7, "User-side API".
+
 `worker_connections` (default 8, at least 1; zero selects the default) bounds
 worker-credential connections; one credential may hold at most 4. A full cap
 answers HTTP 503. Each connection may have 64 operations open.
@@ -260,13 +279,21 @@ The daemon-link pools are not the whole process budget. At the default
 | Daemon links, wire | about 1,286 MiB | pools 256 + 524 MiB (2·Smin, 2·Rmin) plus 100 sockets × (5 MiB + 64 KiB) = 506 MiB; one borrowed inbound message per socket comes on top |
 | Worker links (own fixed pools; scales with `worker_connections`, default 8) | about 2,557 MiB | pools 256 + 524 MiB; 8 sockets × (5 MiB + 64 KiB + one borrowed inbound message of 2·M + 6 MiB + 4 KiB) = 1,112 MiB; 4 push permits shared by all worker sockets, each one large outbound message (2·M + 6 MiB + 4 KiB) = 536 MiB; small outbound updates (≤ 256 KiB charged) sent without a permit, at most one per operation: 8 × 64 × 256 KiB = 128 MiB |
 | Call router | 512 MiB | pending requests 256 MiB plus distinct buffered updates 256 MiB (one global charge per shared immutable clone) |
+| Session service (worker-link side) | about 1,030 MiB | 2 read replies built at once, each ≤ 2·M = 128 MiB, so ≤ 256 MiB together; per worker socket one inline operation's converted request (≤ M) plus its queue of inline replies (≤ 16 MiB encoded, about 32 MiB decoded): 8 × 96 MiB = 768 MiB; session table, Wake queue, hint queues and extension keys ≤ about 11 MiB |
+| Session watch streams | about 888 MiB | 256 streams × about 3.47 MiB each: the bus queue and the batch being delivered (2 × 272 KiB), one replay page (about 294 KiB), the stored event being converted (256 KiB, plus 512 KiB when its UTF-8 must be repaired) and its JSON encoding (up to 1.5 MiB, in a pooled buffer of up to about 1.9 MiB; SessionService does not compress responses); see `internal/controlplane/sessions/bus.go` |
 
-That is about 4.3 GiB before SQLite, TLS/kernel buffers, bounded operation
-scratch, the runtime and GC headroom; set `GOMEMLIMIT` above it. The
-daemon connection limit (100 sockets) is fixed; worker sockets default to 8
-(`worker_connections`, at most 4 per credential), each adding about 139 MiB
-at the default message limit. See
-`internal/controlplane/gateway`, `internal/controlplane/workerlink` and
+That is about 6.1 GiB (4,355 MiB for the links and the router, 1,030 MiB
+for the session service, 888 MiB for watch streams) before SQLite,
+TLS/kernel buffers, bounded operation scratch, the runtime and GC headroom;
+set `GOMEMLIMIT` above it, for example `GOMEMLIMIT=7GiB` with at least
+8 GiB of memory for the process. The daemon connection limit (100 sockets)
+is fixed; worker sockets default to 8 (`worker_connections`, at most 4 per
+credential), each adding about 139 MiB to the worker links and 96 MiB to the
+session service at the default message limit. Live-only session events
+handed to the bus are charged to each watcher's queue (at most 256 KiB of
+payload each) and counted in the watch streams' figure. See
+`internal/controlplane/gateway`, `internal/controlplane/workerlink`,
+`internal/controlplane/sessions` (doc.go and bus.go) and
 `internal/controlplane/calls/DESIGN.md`.
 
 ## Testing tiers

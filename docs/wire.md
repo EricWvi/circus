@@ -5,8 +5,8 @@ link clients: the device daemon (`/v1/link/daemon`) and workers
 (`/v1/link/worker`). It is written so that a peer can be implemented without
 reading Go. Transport behaviour is implemented in Go; numeric transport
 limits name their Go symbols (package `wire` unless qualified). Session
-processing rules define the contract for the session implementation; the
-currently unimplemented processing is identified below.
+processing rules define the contract the control plane's session service
+(`internal/controlplane/sessions`) implements.
 
 Protocol version: **1** (`ProtocolVersion`). Messages are the proto3 messages
 in `proto/circus/v1/` (`link.proto`, `daemon_link.proto`,
@@ -109,20 +109,32 @@ default 10 s, on the daemon).
 | Field | Daemon link | Worker link |
 | --- | --- | --- |
 | `protocol_version` | MUST be 1 | MUST be 1 |
-| `boot_id` | MUST be 1-128 bytes; a fresh UUIDv7 per process start, kept across reconnects | MUST be 1-128 bytes; a fresh UUIDv7 per worker process, kept across reconnects |
+| `boot_id` | MUST be 1-128 bytes; a fresh UUIDv7 per process start, kept across reconnects | A worker process MUST send a fresh UUIDv7 (canonical lowercase form) per process, kept across reconnects; it is required to Attach or drive sessions. A client that only submits calls without a session (the call CLI) sends none. Anything else, or a UUIDv7 older than the worker's current boot while that boot is alive (below), is `CODE_BAD_HELLO` |
 | `client_version` | informational | informational |
 | `os`, `arch`, `hostname`, `machine_id` | sent, informational | not checked |
 
-The control plane uses a changed worker `boot_id` to release all leases of
-that worker's previous process. Workers MUST ensure their old CLI processes
-have exited before a new process resumes sessions. Worker boot validation,
-previous-boot lease release, and setting boot_id in the Go worker client are
-**to be implemented**; the current Go server still accepts an empty worker
-boot_id. The whole Hello envelope must decode within 64 KiB (`MaxMetadataBytes`).
+The control plane records each worker connection's nonempty `boot_id` as
+the worker's current boot, and every connection of a boot that is still
+current releases every lease the worker holds under another boot before it
+is served (an
+open turn becomes interrupted, the old connections get `LeaseRevoked`);
+connections of any boot but the current one get no Offers. Boots are
+ordered by their UUIDv7 timestamp, then by their remaining bytes. A Hello
+with a boot older than the current one (a replaced process still
+reconnecting) is refused with `CODE_BAD_HELLO`, releasing nothing, while
+the current boot is alive: it has a connection to this control plane, it
+connected or its last connection closed within the last 60 seconds, or it
+holds a lease that has not expired. Otherwise the older-looking boot is accepted and becomes current
+(the timestamps come from the workers' clocks, so a boot minted on a clock
+that was ahead cannot lock later boots out once it is gone). Reject is
+terminal for the refused process. Workers MUST ensure their old
+CLI processes have exited before a new process connects. The Go call client (`internal/workerclient`, used by `circus
+call`) sends no boot_id. The whole Hello envelope must decode within 64 KiB
+(`MaxMetadataBytes`).
 
 **Server decision (`AcceptHello`)**, in this order:
 1. Frame does not decode, or its payload is not `hello` → Reject `CODE_BAD_HELLO`.
-2. Link-specific check fails (daemon: `boot_id` empty or longer than 128 bytes) → `CODE_BAD_HELLO`.
+2. Link-specific check fails (daemon: `boot_id` empty or longer than 128 bytes; worker: `boot_id` nonempty and not a canonical UUIDv7, or older than the worker's current boot while that boot is alive) → `CODE_BAD_HELLO`.
 3. `protocol_version != 1` → `CODE_VERSION_UNSUPPORTED`.
 4. Otherwise → Welcome.
 
@@ -622,16 +634,16 @@ Semantics:
 
 ### Session processing contract
 
-**Server-side session processing is to be implemented.** The generated
-messages, scheduling classes/keys and structural limits (including the
-one-op rule) exist; today sending Attach, SessionRequest, ResumeLeases or
-ListDevices takes the existing `unexpected payload` path and closes the
-link. The Connect SessionService also has generated bindings only.
-SubmitCall's lease admission, its per-session caps and validation of its new
-session fields, and the Attach field caps (the one field-cap violation
-that closes the link), are **to be implemented**; existing call routing continues
-without them until that integration is added. Everything below is the
-contract that implementation follows.
+The control plane implements this contract in `internal/controlplane/sessions`
+(scheduling, leases, every session operation) with `workerlink` dispatching
+to it and the call router admitting session calls. Writes, Attach and
+ResumeLeases run inline in the connection's receive loop, in receive order,
+each in one store transaction bounded by 5 s (`STORE_UNAVAILABLE` past it);
+reads (LoadTranscript, ListTranscriptKeys, GetSessionState, ListDevices and
+AcquireLease's Lease reply) run off the loop, at most two at once across all
+connections.
+The user-facing Connect SessionService (the user-side API below) is served
+by `internal/controlplane/webapi`.
 
 #### Fencing and leases
 
@@ -647,8 +659,12 @@ A SubmitCall MUST carry a nonzero `session_epoch` and the model's opaque
 `tool_use_id` (1-128 UTF-8 bytes), and passes the same fence for
 `call.session_id`. Otherwise `rejected SESSION_FENCED` is terminal: this
 submission was neither recorded nor executed (a call recorded by an earlier
-submission of the same `call_id` is unaffected). A stopped session gives
-`rejected SESSION_STOPPED`, also terminal and unrecorded.
+submission of the same `call_id` is unaffected). A stopped (or broken)
+session gives `rejected SESSION_STOPPED`, also terminal and unrecorded. A
+`tool_use_id` over 128 bytes is `rejected INVALID`. A SubmitCall with
+neither field (the call CLI's) is not a session call: it is routed as
+before, unless `call.session_id` names an existing session, which gives
+`SESSION_FENCED`.
 
 **Connection binding.** A lease is bound to the connection that acquired or
 last resumed it. ResumeLeases and an idempotent AcquireLease rebind it to the
@@ -669,7 +685,8 @@ re-sent Nudges until the connection has an Attach stream.
 
 **Lifetime.** A lease lives 60 seconds. The control plane extends every lease
 bound to a live connection every 20 seconds, without a renewal message; a
-lease bound to a closed connection expires naturally. After a control-plane
+lease bound to a closed connection expires naturally (expired leases are
+released within 5 seconds). After a control-plane
 start, no lease expires sooner than one lifetime later, so holders can
 reconnect and ResumeLeases even after a longer outage. Workers reconnect with
 backoff capped at 10 seconds. A new worker process uses a new `boot_id`; the
@@ -695,6 +712,25 @@ epoch's deduplication (a reattached `batch_seq` 1 would be acknowledged
 without being written). A lost AcquireLease reply is therefore retried with
 AcquireLease, also after a reconnect: the retry finds the lease held by this
 boot, and with `fresh` advances the epoch once more.
+
+After a successful AcquireLease (fresh or reattached) the worker calls
+TakeInputs: the Lease reply carries the state, stopped flag and interrupt
+level, but not the inputs, and a pending INPUT or APPROVAL reason is not
+cleared by the acquisition. Reasons still pending when the Lease reply has
+been handed to the link are nudged right after it. A lease is extended
+while its AcquireLease operation is open, however long its reply waits;
+once the operation has ended without the reply reaching the link (the send
+failed, the link closed) or was unwatched, the lease is no longer extended
+and expires, unless the worker resumes or acquires it again.
+
+A worker that unwatched an AcquireLease MUST treat the session as possibly
+held by it (the reply may have been on its way when the Unwatch was sent;
+the client drops it): before it gives the session up, it retries
+AcquireLease with `fresh` and then releases what it got. The control
+plane's marking of unwatched acquisitions is best effort (it remembers
+only each connection's last 16 AcquireLease operations), so a lease the
+worker never learned of may stay held until it expires or the connection
+closes.
 
 A worker sends at most one AcquireLease per session at a time. A session
 with an AcquireLease in flight counts as held: hints for it are ignored
@@ -728,11 +764,29 @@ interrupt) while the lease is held.
 
 WorkerEvent hints are level-triggered: they may be coalesced or repeated,
 carry no authoritative state, and never replace the fence. The control plane
-keeps each session's pending reasons and re-sends them:
-- after `Attach`, every Offer still pending for this worker, on the
-  attaching connection;
+keeps each session's pending reasons until the holder acts on them
+(TakeInputs clears INPUT and APPROVAL; GetSessionState including jobs clears
+JOB; ReportTurn ENDED clears INTERRUPT; a delivered Lease reply clears JOB,
+INTERRUPT and STOP, which it carries; otherwise STOP stays until the lease
+ends). A lease's first resumption after a control-plane restart adds INPUT
+and JOB, and INTERRUPT when the running turn is at or below the stored
+interrupt level, since earlier hints may be lost. Every Nudge carries the
+session's stored interrupt level (also after a resumption). The control
+plane re-sends:
+- after `Attach`, every Offer still pending for this worker on the
+  attaching connection: an Offer held by another connection of the same
+  worker and boot moves to it;
 - after each successful ResumeLeases outcome, that session's pending Nudge
   reasons.
+
+**Scheduling.** A session with pending work and no live lease is offered
+to its pinned worker, or else to the user's attached connection (of the
+worker's newest boot) that is not full (leases plus Offers below
+`max_sessions`) and has the fewest leases and Offers; with none it stays
+queued until a connection attaches or frees capacity. An Offer stays
+reserved for its connection for 30 seconds; then the fallback scan (every 30
+seconds) offers it again, possibly elsewhere. An AcquireLease refused for any
+reason withdraws an Offer the session no longer needs.
 
 | Hint | Worker action |
 | --- | --- |
@@ -740,7 +794,7 @@ keeps each session's pending reasons and re-sends them:
 | Nudge, session not held | AcquireLease with `fresh` (NOT_OFFERED unless this boot still holds the lease). |
 | Any hint, AcquireLease in flight | Ignore it until the reply arrives; the session counts as held. |
 | Nudge INPUT or APPROVAL | TakeInputs (an approved request arrives as a `KIND_APPROVAL` input). |
-| Nudge JOB | GetSessionState with `SECTION_JOBS`. |
+| Nudge JOB | GetSessionState with `SECTION_JOBS`. The control plane registers a session call's background job with the session (`SessionState.jobs`) when the call's result reports it (`BashResult.job_id`), or, for a call settled lost without its result, when it is settled lost (from the job already stored for the call's device and boot), when a late result arrives, or when a JobEvent or snapshot entry of the job from that device and boot names the call; only calls admitted under the session's lease (`tool_use_id`) of the session's own user register. Its end, by event or snapshot, sends Nudge JOB (only when the session is one of the reporting daemon's user) to the holder, or offers the session when no lease is held (an ended job whose notice was not handed is pending work). The job's description is filled only when the call's request is still held at the result. |
 | Nudge INTERRUPT | Interrupt the current turn only if its `turn_no` ≤ `Nudge.interrupt_turn_no`. If STARTED has not been answered yet, wait for its `turn_no`, then compare. |
 | Nudge STOP | Stopping is permanent, so the hint suffices: flush, close the query, ReleaseLease with `REASON_STOPPED`. |
 | LeaseRevoked for the held epoch | The fencing procedure above. |
@@ -766,8 +820,9 @@ has flushed and released. The holder observes it through
 
 On any STOPPED the worker closes the query and sends ReleaseLease with
 `REASON_STOPPED`. `TRANSCRIPT_FULL` stops the session atomically with that
-rejection; the worker then releases with `REASON_STOPPED` rather than
-dropping entries.
+rejection (recording the stop event `KIND_SESSION_STATE`
+`{"state":"stopped","reason":"transcript_full"}` in the same transaction);
+the worker then releases with `REASON_STOPPED` rather than dropping entries.
 
 #### Operations
 
@@ -823,8 +878,9 @@ PublishEvents `batch_seq` starts at 1 per epoch: a repeat is
 `ok.deduplicated` without writing, a gap is `INVALID` and consumes nothing,
 and a retry carries identical content. Unlike appends, a batch at the next
 sequence that fails validation (an over-cap field, or a kind only the
-control plane records: `TRANSCRIPT_GAP_ACCEPTED`, `TURN_INTERRUPTED` or
-`TURN_STOPPED`) consumes its
+control plane records: `APPROVAL_RESOLVED` (8), `TURN_INTERRUPTED` (9),
+`SESSION_STATE` (10), `TRANSCRIPT_GAP_ACCEPTED` (15), `TURN_STOPPED` (17) or
+`INPUT_ACCEPTED` (18)) consumes its
 `batch_seq`: the control plane records it as dropped and answers `INVALID`,
 and the worker continues with the next sequence, so one bad event cannot
 freeze the view. A worker treats every PublishEvents `INVALID` as consumed:
@@ -940,7 +996,11 @@ On `mirror_error`, close the query and send ENDED with
 BROKEN. A CLI failure without mirror_error is ENDED with ERROR and without
 the flag (then release); it does not make the session BROKEN. While BROKEN:
 appends are accepted (for the repair), inputs already taken stay taken and
-unpersisted, and new inputs are accepted but not taken. The holder
+unpersisted, and new inputs are accepted but not taken: TakeInputs returns
+nothing while BROKEN, and after the repair everything taken in the epoch and
+not yet persisted. RequestApproval and ConsumeGrant answer `rejected
+BROKEN`; the worker stops calling them until TranscriptRepaired, or until a
+RecoverSession ends its lease. The holder
 re-imports the missing batches with ordinary appends (uuid deduplication
 drops entries already stored), marks the repaired turn's items with
 `PatchSessionState.persisted`, then sends TranscriptRepaired. A BROKEN
@@ -1054,7 +1114,9 @@ two hours).
 #### Rejections and field caps
 
 SessionReply.rejected codes are INVALID, NOT_FOUND, STORE_UNAVAILABLE,
-TRANSCRIPT_FULL, LIMIT, STOPPED and NOT_OFFERED. STORE_UNAVAILABLE is
+TRANSCRIPT_FULL, LIMIT, STOPPED, NOT_OFFERED and BROKEN (RequestApproval
+and ConsumeGrant on a broken session; SubmitCall on a broken session is
+`SESSION_STOPPED`). STORE_UNAVAILABLE is
 retryable and means nothing was written; retry with the same idempotency
 keys. A transport request_id is never an idempotency key and changes after
 reconnect. Pending approvals and unused grants each have a cap of 32 per
@@ -1099,7 +1161,76 @@ location_index (otherwise the project's last_used_location) and pinned
 worker. The selected location's device must not be revoked.
 config.default_device and config.cwds must be empty; the control plane fills
 them from the project location. model and permission_mode may be supplied.
-These service handlers remain to be implemented.
+
+Authorization: a session belongs to the Web user who owns its project.
+Every call resolves the session (for ResolveApproval, the approval's
+session) through a project of the caller, in the transaction of the
+write it authorizes, and answers NOT_FOUND for anything else, including
+the sessions of other users' projects. ListSessions with project_id
+first requires that project of the caller (NOT_FOUND otherwise); without
+it, the store lists the sessions of every project the caller owns. Store
+errors map to fixed messages: NOT_FOUND, FAILED_PRECONDITION for a
+stopped session (and DeleteSession's and RecoverSession's preconditions),
+RESOURCE_EXHAUSTED for the session, input and stream caps,
+ALREADY_EXISTS for a client_msg_id reused with other content, UNAVAILABLE
+when the store is busy, CANCELED or DEADLINE_EXCEEDED when the request
+ended, INTERNAL otherwise. Argument errors are INVALID_ARGUMENT with a
+google.rpc.BadRequest field violation naming the request field.
+
+CreateSession: the location's device must be a live device of the
+caller's machine owner, with the same name the location recorded;
+otherwise, and for a caller without devices or a project without
+locations, FAILED_PRECONDITION with a `location_index` field violation.
+An out-of-range location_index is INVALID_ARGUMENT. The server fills
+default_device and one main-thread working directory: the location's
+path, or `~/circus/projects/<project_id>` for a location without a path
+(not created or cloned by this call). pinned_worker_id must name a worker
+of the machine owner. The location becomes the project's
+last_used_location in the same transaction, without moving the project's
+updated_at.
+
+The control plane records these durable view events itself, in the
+transaction of the change, with JSON payloads:
+
+| RPC | Kind | Payload |
+| --- | --- | --- |
+| SendMessage, new input | `KIND_INPUT_ACCEPTED` | `{"input_id","client_msg_id","priority":"normal"\|"now","text"}`, encoded without HTML escaping; not a boundary, so a filled view drops it and event_seq is 0 |
+| ResolveApproval of a pending approval | `KIND_APPROVAL_RESOLVED` (boundary) | `{"approval_id","state":"approved"\|"denied"\|"expired"}`; expired when it expired before the resolution (the call then answers FAILED_PRECONDITION) |
+| StopSession that stopped the session | `KIND_SESSION_STATE` (boundary) | `{"state":"stopped","reason":"user"}`; a stop by the transcript quota (worker link) records `{"state":"stopped","reason":"transcript_full"}` |
+
+These kinds (with `TURN_INTERRUPTED`, `TURN_STOPPED` and
+`TRANSCRIPT_GAP_ACCEPTED`) are recorded by the control plane only; a worker
+publishes `KIND_USER` for the SDK's user messages.
+
+A repeated SendMessage returns the seq stored with its input. After
+commit the server announces new durable events to watchers and hints the
+scheduler: SendMessage with a new input INPUT, plus INTERRUPT for
+INPUT_PRIORITY_NOW while a turn runs (NOW does not raise the interrupt
+level); an approval APPROVAL; an Interrupt that raised the level
+INTERRUPT; a StopSession that stopped the session STOP; RecoverSession
+INPUT. Every StopSession also asks the session's devices to stop its
+background jobs (best effort; a device offline is skipped and a later
+StopSession retries). The approval input reads "The user approved this
+<tool> call on device "<name>" once: <display>" followed by "Retry it
+now."; its grant lasts ten minutes. SendMessage refuses empty or blank
+text, and a message whose INPUT_ACCEPTED event payload would exceed the 256 KiB
+payload cap (the stored form of an over-cap payload keeps no bytes at
+all, `truncated` set): INVALID_ARGUMENT with a `text` field violation. The
+check is on the payload as encoded above, so the largest accepted text is
+256 KiB less the envelope for plain text, and less for text with quotes,
+backslashes or control characters, which JSON escapes. client_msg_id may
+not start with `approval:`, the prefix of approval inputs
+(INVALID_ARGUMENT, `client_msg_id`). Resolving an approval that has expired,
+at the call or before, answers FAILED_PRECONDITION: it had no effect (an
+expiry the call itself detected is recorded). Resolving one already
+approved or denied succeeds without effect, whatever `approve` says.
+
+UpdateSession trims with the ECMAScript rule of project names and refuses
+an empty title, more than 200 characters, more than 1024 bytes and the
+characters forbidden in project names. ListSessions page tokens are
+opaque and carry the keyset of the last session returned. ListApprovals
+lists the pending approvals unexpired at the request time, with device
+names.
 
 Session.project_id is required in the store and references projects. The
 session's user_id remains the machine owner whose devices and workers serve
@@ -1170,7 +1301,39 @@ users, devices, workers and projects survive. The outcome checks accept
 stopped alongside the historical completed, interrupted and error values.
 
 WatchSession replays durable events strictly after after_seq, then
-streams live events. SessionEvent carries seq, ts_unix_ms, shared kind,
+streams live events. The stream subscribes to the process's event bus
+before its last replay read and sends an event only when its seq is above
+the last one sent, so replay and live meet without a gap or duplicate;
+evicted events are skipped. On a durable announcement the stream reads
+the store only up to the announced seq before the items queued after it.
+Ephemeral events are sent only live, in publication order relative to the
+announcements; one queued before an announcement the stream has already
+passed is skipped. This ordering is best effort: a durable event is
+announced after its commit, and a stream that reads the store between the
+two sends it before an ephemeral event published in that window. A stream that falls
+behind loses ephemeral events (each stream queues at most 256 of them and
+256 KiB of payload; a larger one never fits), never durable ones. A
+stream whose replay is empty starts with a keepalive, and a keepalive
+follows every 25 s without another message: an ephemeral event with kind
+KIND_UNSPECIFIED, seq 0 and no payload, which clients ignore. At most 32
+streams per Web user and 256 in all (RESOURCE_EXHAUSTED). The stream ends
+NOT_FOUND when the session is deleted (also by DeleteProject), UNAVAILABLE
+when the server shuts down or after about an hour (each stream draws its
+lifetime within ±10 %; the client reconnects with after_seq), and UNAUTHENTICATED within 30 s of its browser session being
+signed out, expiring or losing its user (the stream rechecks the cookie's
+session; a recheck counts as use of the session, like any request). Writes
+that make no progress for 30 s end the stream (a response is written in
+chunks of at most 32 KiB, each under its own deadline, so a slow link
+that keeps reading is never cut). Deletion and shutdown cut a write in
+progress at once. When no write is in progress, the stream's final status
+and the end of the response are written under the write timeout, so a
+client that does not read can keep the stream for up to 30 s more. A
+stream cut in the middle of a write leaves no status: the client sees a
+transport error (Connect `unknown`, "unexpected EOF") instead of
+NOT_FOUND or UNAVAILABLE. Clients treat it like UNAVAILABLE and reconnect
+with after_seq; a deleted session then answers NOT_FOUND. SessionService responses are not
+compressed by the server. Repeated replays read the store, which is a single
+SQLite connection; their cost is bounded only by the stream caps. SessionEvent carries seq, ts_unix_ms, shared kind,
 opaque payload_json, ephemeral and truncated. TURN_STARTED payload includes
 origin. Ephemeral events have seq=0 and are not stored or replayed. Durable
 view payloads over 256 KiB are truncated; after the 64 MiB view fills only
@@ -1204,7 +1367,7 @@ worker client accepts any valid value.)
 **What a conforming minimal worker needs:**
 1. **Transport and handshake** (sections 1-2): TLS/loopback rule, Bearer
    header, no subprotocol, binary frames only, Hello with
-   `protocol_version = 1` and a fresh process boot_id (kept across reconnects),
+   `protocol_version = 1` and a fresh UUIDv7 process boot_id (kept across reconnects),
    the Welcome checks plus the in-flight check above.
 2. **Receive:** for each frame, decode the envelope and check the frame
    limits; if it is a `fragment`, feed the **single reassembly buffer**
@@ -1263,7 +1426,7 @@ consumer-stall pauses). Its own memory bound is one partial message
 - [ ] Uses `wss` (TLS ≥ 1.2, CA file if configured); plaintext only to a loopback name *and* a loopback dialed address; follows no redirects.
 - [ ] Sends `Authorization: Bearer <43-char token>`, no subprotocol, no compression, no foreign `Origin`.
 - [ ] Treats 401/403 as terminal, 503 as retry-later.
-- [ ] Sends exactly one Hello (`protocol_version = 1`; both roles: `boot_id` 1-128 bytes, fresh UUIDv7 per process, retained across reconnects) and nothing else before Welcome; completes the handshake within 10 s.
+- [ ] Sends exactly one Hello (`protocol_version = 1`; daemon and worker process: `boot_id` a fresh UUIDv7 per process, retained across reconnects; a call-only client sends none) and nothing else before Welcome; completes the handshake within 10 s.
 - [ ] Treats Reject as terminal; checks `negotiated_version == 1`, `principal_id`, `max_message_bytes` against its cap, a valid limit set, and (if relying on section 8) `max_in_flight_messages == 1`. Daemon: requires `server_time_unix_ms > 0` and uses it as the dispatch-age anchor.
 - [ ] Sends only binary frames, each one envelope with exactly one known payload.
 - [ ] Sends envelopes > F as fragments: chunks ≤ F, `message_id` nonzero and strictly increasing, `index` from 0 without gaps, `total_size` only on index 0, `last` exactly on the final chunk, no nested fragments.

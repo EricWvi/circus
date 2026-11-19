@@ -15,6 +15,8 @@ type timerEffects struct {
 	query   *store.Call  // watchdog query to send on a ready route
 	route   gateway.Connection
 	offline string // device whose unrecorded disconnect was persisted
+	// wake is a session whose lost call's ended job was registered.
+	wake string
 }
 
 func (r *router) HandleTimer(ctx context.Context, claim store.Timer) error {
@@ -43,6 +45,9 @@ func (r *router) HandleTimer(ctx context.Context, claim store.Timer) error {
 		return err
 	}
 	r.markHealthy()
+	if fx.wake != "" {
+		r.jobEnded(fx.wake)
+	}
 	if fx.offline != "" {
 		delete(r.unrecorded, fx.offline)
 	}
@@ -157,9 +162,14 @@ func (r *router) watchdogDue(ctx context.Context, tx store.Ops, callID string, f
 	}
 	if reason != "" {
 		ok, err := tx.TransitionCall(ctx, c.CallID, store.CallExpect{States: []store.CallState{c.State}, BootID: c.DispatchedBootID}, store.CallLost, store.CallPatch{FinishedAt: now, OutcomeReason: reason})
-		if ok {
-			c.State, c.OutcomeReason = store.CallLost, reason
-			fx.changes = append(fx.changes, c)
+		if err != nil || !ok {
+			return err
+		}
+		c.State, c.OutcomeReason = store.CallLost, reason
+		fx.changes = append(fx.changes, c)
+		wake, err := registerJobsOfLostCall(ctx, tx, c, "", "")
+		if wake {
+			fx.wake = c.SessionID
 		}
 		return err
 	}
