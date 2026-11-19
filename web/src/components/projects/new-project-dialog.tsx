@@ -115,7 +115,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
         }}
       />
       <FieldSet className="gap-2">
-        <FieldLegend variant="label" className="mb-0">
+        <FieldLegend variant="label" className="mb-2">
           {t("projects.locations")}
         </FieldLegend>
         <LocationEditor

@@ -148,6 +148,7 @@ func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
 	leakcheck.StateDir(t, filepath.Join(isolated, "state", "circus", "daemon"))
 	leakcheck.OutputRoot(t, filepath.Join(isolated, "cache", "circus", "output"))
 	t.Setenv("HOME", isolated)
+	t.Setenv("CIRCUS_HOME", "")
 	t.Setenv("XDG_STATE_HOME", filepath.Join(isolated, "state"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(isolated, "cache"))
 	t.Setenv("TMPDIR", isolated)
@@ -223,6 +224,7 @@ func TestDaemonDefaultCredentialsAndAuthenticationExit(t *testing.T) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	}))
 	defer server.Close()
+	t.Setenv("CIRCUS_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	path, err := credfile.Path(credfile.RoleDaemon)
 	if err != nil {

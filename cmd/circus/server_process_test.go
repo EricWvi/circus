@@ -64,7 +64,7 @@ func buildCircus(t *testing.T, dir string) string {
 	bin := filepath.Join(dir, "bin", "circus")
 	cmd := exec.Command(gobin, "build", "-o", bin, ".")
 	cmd.Env = append(os.Environ(), "GOCACHE="+caches.GOCACHE, "GOMODCACHE="+caches.GOMODCACHE,
-		"HOME="+dir, "XDG_CONFIG_HOME="+filepath.Join(dir, "config"), "XDG_CACHE_HOME="+filepath.Join(dir, "cache"))
+		"HOME="+dir, "CIRCUS_HOME=", "XDG_CONFIG_HOME="+filepath.Join(dir, "config"), "XDG_CACHE_HOME="+filepath.Join(dir, "cache"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
@@ -165,6 +165,7 @@ func TestServerJoinProcess(t *testing.T) {
 	p := &processEnv{t: t, bin: buildCircus(t, filepath.Join(root, "build")), dir: root}
 	p.env = append(os.Environ(),
 		"HOME="+home,
+		"CIRCUS_HOME=",
 		"XDG_CONFIG_HOME="+filepath.Join(home, "config"),
 		"XDG_DATA_HOME="+filepath.Join(home, "data"),
 		"XDG_CACHE_HOME="+filepath.Join(home, "cache"),

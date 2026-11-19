@@ -3,7 +3,8 @@
 // `circus doctor` (the M3 worker will read worker.json the same way).
 //
 // One file per machine-role principal: daemon.json and
-// worker.json under $XDG_CONFIG_HOME/circus (default ~/.config/circus). The
+// worker.json under $CIRCUS_HOME/config when CIRCUS_HOME is set, otherwise
+// $XDG_CONFIG_HOME/circus (default ~/.config/circus). The
 // file holds a long-term bearer token, so it is written 0600 inside a 0700
 // directory and replaced atomically.
 package credfile
@@ -15,6 +16,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/EricWvi/circus/internal/circushome"
 )
 
 // Role names a machine-role principal and selects its file name.
@@ -44,9 +47,12 @@ type File struct {
 // ErrNotFound reports that no credential file exists at the path.
 var ErrNotFound = errors.New("credfile: no credential file; run `circus join` first")
 
-// Dir returns the credential directory: $XDG_CONFIG_HOME/circus, falling back
-// to ~/.config/circus.
+// Dir returns the credential directory: $CIRCUS_HOME/config, else
+// $XDG_CONFIG_HOME/circus, falling back to ~/.config/circus.
 func Dir() (string, error) {
+	if d, err := circushome.Dir("config"); err != nil || d != "" {
+		return d, err
+	}
 	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" && filepath.IsAbs(x) {
 		return filepath.Join(x, "circus"), nil
 	}

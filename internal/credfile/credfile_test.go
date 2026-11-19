@@ -115,6 +115,7 @@ func TestValidation(t *testing.T) {
 }
 
 func TestPath(t *testing.T) {
+	t.Setenv("CIRCUS_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "/xdg")
 	got, err := Path(RoleWorker)
 	if err != nil {
@@ -135,5 +136,17 @@ func TestPath(t *testing.T) {
 	}
 	if _, err := Path("admin"); err == nil {
 		t.Fatal("Path accepted an unknown role")
+	}
+}
+
+func TestPathUnderCircusHome(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/xdg")
+	t.Setenv("CIRCUS_HOME", "/srv/circus-dev")
+	got, err := Path(RoleDaemon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "/srv/circus-dev/config/daemon.json" {
+		t.Fatalf("got %q", got)
 	}
 }

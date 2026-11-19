@@ -711,6 +711,10 @@ func isolateHome() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// CIRCUS_HOME would take precedence over the XDG paths set here.
+	if err := os.Unsetenv("CIRCUS_HOME"); err != nil {
+		return "", err
+	}
 	for key, value := range map[string]string{"HOME": home, "XDG_CACHE_HOME": filepath.Join(home, ".cache"), "XDG_STATE_HOME": filepath.Join(home, ".local", "state")} {
 		if err := os.Setenv(key, value); err != nil {
 			return "", err

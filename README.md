@@ -164,6 +164,26 @@ circus daemon call <<'EOF'
 EOF
 ```
 
+## Development CLI
+
+The CLI keeps its local files in the XDG directories: credentials in
+`$XDG_CONFIG_HOME/circus` (`daemon.json`, `worker.json`), daemon state in
+`$XDG_STATE_HOME/circus` and background command output in
+`$XDG_CACHE_HOME/circus`. Set `CIRCUS_HOME` to move all three under one
+directory instead (`$CIRCUS_HOME/config`, `$CIRCUS_HOME/state`,
+`$CIRCUS_HOME/cache`; a relative value is relative to the working
+directory). It changes only circus's own paths, so tools the daemon runs
+still see the usual XDG defaults.
+
+`task cli -- <args>` runs the CLI from source with `CIRCUS_HOME=.tmp/dev`,
+next to an installed circus without sharing its credentials:
+
+```sh
+task cli -- join --name dev-box     # paste a link from the Web UI
+task cli -- daemon
+task cli -- doctor
+```
+
 ## Operating the server
 
 `circus server --config config.yaml` reads a required YAML file (default:

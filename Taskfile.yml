@@ -129,12 +129,19 @@ tasks:
       CIRCUS_DEV_USER_EMAIL: "{{.USER_EMAIL}}"
     cmds:
       - |
-        export XDG_CONFIG_HOME="$PWD/.tmp/dev"
-        if [ ! -f "$XDG_CONFIG_HOME/circus/worker.json" ]; then
+        export CIRCUS_HOME="$PWD/.tmp/dev"
+        if [ ! -f "$CIRCUS_HOME/config/worker.json" ]; then
           worker_join_link="$(go run ./cmd/circus server enroll-token create --config web/dev.server.yaml --user "$CIRCUS_DEV_USER_EMAIL" --role worker --url http://127.0.0.1:8443)"
           printf '%s\n' "$worker_join_link" | go run ./cmd/circus join --role worker --name web-dev-worker
         fi
         go run -tags dev ./cmd/circus-fakeworker --name web-dev-worker
+
+  cli:
+    desc: Run the circus CLI from source with its files under .tmp/dev (task cli -- <args>)
+    env:
+      CIRCUS_HOME: "{{.ROOT_DIR}}/.tmp/dev"
+    cmds:
+      - go run ./cmd/circus {{.CLI_ARGS}}
 
   web:build:
     desc: Build the Web UI into web/dist

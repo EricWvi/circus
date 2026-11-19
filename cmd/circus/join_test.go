@@ -43,6 +43,7 @@ func newJoinHarness(t *testing.T) *joinHarness {
 	t.Helper()
 	dir := t.TempDir()
 	h := &joinHarness{t: t, db: filepath.Join(dir, "circus.db"), cfgDir: filepath.Join(dir, "config")}
+	t.Setenv("CIRCUS_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", h.cfgDir)
 	st, err := sqlite.Open(context.Background(), h.db, sqlite.Options{})
 	if err != nil {

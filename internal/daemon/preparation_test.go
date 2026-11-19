@@ -163,6 +163,7 @@ func TestDefaultToolsDoesNotCollectEnvironment(t *testing.T) {
 	state := filepath.Join(root, "state")
 	leakcheck.StateDir(t, filepath.Join(state, "circus", "daemon"))
 	leakcheck.OutputRoot(t, filepath.Join(root, "cache", "circus", "output"))
+	t.Setenv("CIRCUS_HOME", "")
 	t.Setenv("XDG_STATE_HOME", state)
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
 	marker := filepath.Join(root, "touched")

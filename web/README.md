@@ -89,30 +89,31 @@ task web:dev:worker USER_EMAIL=dev@example.com
 ```
 
 Replace `dev@example.com` with the email you used during setup. The worker
-reuses its enrollment in `.tmp/dev/circus/worker.json`. To enroll it for a
+reuses its enrollment in `.tmp/dev/config/worker.json`. To enroll it for a
 different Web account, stop the worker and remove that file before rerunning
 the task with the new email. To start with a fresh server as well, stop the
-dev processes and remove the database and development credentials under
-`.tmp/dev/circus/`.
+dev processes and remove the database `.tmp/dev/circus.db` and the
+development CLI files under `.tmp/dev/config`, `.tmp/dev/state` and
+`.tmp/dev/cache`.
 
-Sessions need a project location on an enrolled device. Enroll a local
-device for the same Web user and run its daemon in another terminal.
+Sessions need a project location on an enrolled device. `task cli -- <args>`
+runs the CLI from source with `CIRCUS_HOME=.tmp/dev`, so its credentials,
+daemon state and command output stay under `.tmp/dev` and never touch an
+installed circus (see "Development CLI" in the repository README). Enroll a
+local device for the same Web user and run its daemon in another terminal:
 
 ```sh
-export XDG_CONFIG_HOME="$PWD/.tmp/dev"
-export XDG_STATE_HOME="$PWD/.tmp/dev/state"
-export XDG_CACHE_HOME="$PWD/.tmp/dev/cache"
 go run ./cmd/circus server enroll-token create --config web/dev.server.yaml \
   --user dev@example.com --role daemon --url http://127.0.0.1:8443 |
-  go run ./cmd/circus join --role daemon --name web-dev-device
-go run ./cmd/circus daemon
+  task cli -- join --role daemon --name web-dev-device
+task cli -- daemon
 ```
 
 Alternatively, sign in as that user and use **Add device** on `/devices`.
 The dev server is a development build, so the dialog prints only the join
-and daemon lines; run them with a locally built CLI (with the `XDG_*`
-variables above). Its link points at `public_url`, the Vite origin, so the
-machine reaches the server through the Vite proxy.
+and daemon lines; run them with `task cli --` in place of `circus`. Its link
+points at `public_url`, the Vite origin, so the machine reaches the server
+through the Vite proxy.
 
 Create a project with a location on `web-dev-device` and enter an existing
 absolute directory on that device. Create a session in the project and send

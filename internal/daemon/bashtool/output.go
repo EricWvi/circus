@@ -9,6 +9,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/EricWvi/circus/internal/circushome"
 )
 
 type outputOptions struct {
@@ -34,6 +36,11 @@ type outputStore struct {
 func (e *outputStore) outputRoot() string {
 	if e.options.TempDir != "" {
 		return filepath.Join(e.options.TempDir, fmt.Sprintf("circus-%d", os.Getuid()))
+	}
+	if dir, err := circushome.Dir("cache"); err != nil {
+		return ""
+	} else if dir != "" {
+		return filepath.Join(dir, "output")
 	}
 	cache := os.Getenv("XDG_CACHE_HOME")
 	if !filepath.IsAbs(cache) {

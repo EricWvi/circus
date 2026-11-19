@@ -102,7 +102,9 @@
 // lifetime limit produces KILLED. A natural exit during Stop keeps its actual
 // exit code and EXITED state. TaskStop reports no task for ended or foreign jobs.
 //
-// Snapshot state lives in $XDG_STATE_HOME/circus/daemon, falling back to
+// With CIRCUS_HOME set, snapshot state lives in $CIRCUS_HOME/state/daemon and
+// the output root is $CIRCUS_HOME/cache/output. Otherwise:
+// snapshot state lives in $XDG_STATE_HOME/circus/daemon, falling back to
 // ~/.local/state/circus/daemon when XDG_STATE_HOME is unset or not absolute,
 // under locked instance directories. Output root
 // is $XDG_CACHE_HOME/circus/output, falling back to ~/.cache/circus/output when
