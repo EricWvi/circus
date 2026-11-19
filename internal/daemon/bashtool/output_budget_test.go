@@ -135,7 +135,7 @@ func TestTotalOutputCapAfterBackgroundShellExit(t *testing.T) {
 	b, root, _ := reviewBashWithLimits(t, 1<<20, 10000)
 	small := reviewRun(t, b, root, `printf '%04096d' 0; echo ready > small.ready; while [ ! -f release-small ]; do sleep 0.02; done`, true).GetBash()
 	await(t, func() bool { _, err := os.Stat(filepath.Join(root, "small.ready")); return err == nil })
-	large := reviewRun(t, b, root, `(echo $BASHPID > child.pid; while [ ! -f start-large ]; do sleep 0.02; done; printf '%08192d' 0; while :; do sleep 0.02; done) & echo x`, true).GetBash()
+	large := reviewRun(t, b, root, `(while [ ! -f start-large ]; do sleep 0.02; done; printf '%08192d' 0; while :; do sleep 0.02; done) & echo $! > child.pid; echo x`, true).GetBash()
 	// The visible outer job has ended, but its output still belongs to a live
 	// child group. The capture must keep its original descriptor and budget
 	// record alive after the visible background job finishes.
@@ -143,7 +143,7 @@ func TestTotalOutputCapAfterBackgroundShellExit(t *testing.T) {
 		info, ok := b.jobs.Get(large.JobId)
 		return ok && info.State == circusv1.JobEvent_STATE_EXITED
 	})
-	await(t, func() bool { _, err := os.Stat(filepath.Join(root, "child.pid")); return err == nil })
+	// The outer shell writes the PID before it exits, so the file is complete.
 	pid := childPID(t, root)
 	out, err := os.Open(large.OutputPath)
 	if err != nil {
