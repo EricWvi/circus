@@ -142,6 +142,7 @@ export const en = {
     copied: "Copied",
     add: {
       description: "Run a command on the machine to install circus and join it to your account.",
+      descriptionDev: "Run a command on the machine to join it to your account.",
       role: "Role",
       roles: {
         daemon: "Device",
@@ -164,7 +165,7 @@ export const en = {
       generateNew: "Generate new link",
       runOnMachine: "Run on the machine:",
       devBuild:
-        "This server is a development build ({{version}}), so there is no release to download. Build the circus CLI from source and put it on your PATH, then run:",
+        "This server is a development build ({{version}}), so there is no release to download. Run this from the root of a circus checkout (the CLI runs from source with its files under .tmp/dev):",
       workerNote: "Start the worker process separately; it isn't released yet.",
       expires: "The link works once and expires {{in}}. Don't share it.",
       expired: "This link expired",

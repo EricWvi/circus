@@ -98,8 +98,9 @@ const shellQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
  * release, download the matching CLI to a temporary file and unpack it into
  * ~/.local/bin; then join (as a worker only for the worker role) and, when
  * the link enrolls a device, start its daemon. A development build has no
- * download, so the chain starts at the join and calls `circus` from the
- * PATH. The worker process itself is not started here.
+ * download, so the chain starts at the join and runs the CLI from a circus
+ * checkout with `task cli --` (source build, files under .tmp/dev). The
+ * worker process itself is not started here.
  *
  * The command starts with a space, so shells that leave such commands out
  * of their history (bash with `ignorespace`, zsh with HIST_IGNORE_SPACE)
@@ -118,7 +119,7 @@ export function enrollCommand({
   platform: Platform
 }): string {
   const release = isReleaseVersion(serverVersion)
-  const circus = release ? "~/.local/bin/circus" : "circus"
+  const circus = release ? "~/.local/bin/circus" : "task cli --"
   const steps: string[] = []
   if (release) {
     const archive = `${RELEASES}/${serverVersion}/circus-${serverVersion}-${platform}.tar.gz`

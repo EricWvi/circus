@@ -89,13 +89,13 @@ describe("enrollCommand", () => {
 
   it("leaves the download out for a development build", () => {
     expect(enrollCommand({ link, role: "daemon", serverVersion: "dev", platform: "linux-amd64" })).toBe(
-      " printf '%s\\n' 'https://cp.example/join#d.w' | circus join &&\n  circus daemon",
+      " printf '%s\\n' 'https://cp.example/join#d.w' | task cli -- join &&\n  task cli -- daemon",
     )
   })
 
   it("quotes the link for the shell", () => {
     expect(enrollCommand({ link: "https://x/join#a'b", role: "worker", serverVersion: "dev", platform: "linux-amd64" })).toBe(
-      " printf '%s\\n' 'https://x/join#a'\\''b' | circus join --role worker",
+      " printf '%s\\n' 'https://x/join#a'\\''b' | task cli -- join --role worker",
     )
   })
 })

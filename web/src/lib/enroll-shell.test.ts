@@ -9,7 +9,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { enrollCommand } from "./enroll"
 
 /**
- * Runs the command in sh with stand-ins for curl, tar and circus that
+ * Runs the command in sh with stand-ins for curl, tar, circus and task (whose
+ * `task cli -- <args>` runs the circus stand-in) that
  * record their calls in a log (circus join also records the link it read)
  * and fail on request.
  */
@@ -31,6 +32,7 @@ describe("enrollCommand in a POSIX shell", () => {
 if [ "$1" = join ]; then read -r link; echo "link $link" >> "$LOG"; [ "$FAIL" = join ] && exit 1; fi
 exit 0`,
     )
+    script("task", `[ "$1" = cli ] && [ "$2" = -- ] || exit 2; shift 2; exec circus "$@"`)
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 

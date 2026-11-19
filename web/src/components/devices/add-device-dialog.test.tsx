@@ -195,12 +195,14 @@ describe("the add device dialog", () => {
     await generate()
     expect(
       dialog().getByText(
-        "This server is a development build (dev), so there is no release to download. Build the circus CLI from source and put it on your PATH, then run:",
+        "This server is a development build (dev), so there is no release to download. Run this from the root of a circus checkout (the CLI runs from source with its files under .tmp/dev):",
       ),
     ).toBeTruthy()
+    expect(dialog().getByText("Run a command on the machine to join it to your account.")).toBeTruthy()
+    expect(dialog().queryByText(/to install circus/)).toBeNull()
     expect(lines()).toHaveLength(2)
-    expect(lines()[0]).toMatch(/^ printf '%s\\n' 'http:\/\/localhost:\d+\/join#[\w-]{43}' \| circus join &&$/)
-    expect(lines()[1]).toBe("  circus daemon")
+    expect(lines()[0]).toMatch(/^ printf '%s\\n' 'http:\/\/localhost:\d+\/join#[\w-]{43}' \| task cli -- join &&$/)
+    expect(lines()[1]).toBe("  task cli -- daemon")
     // No download, so no platform to choose.
     expect(dialog().queryByRole("combobox", { name: "Platform" })).toBeNull()
   })

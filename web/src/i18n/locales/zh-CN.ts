@@ -145,6 +145,7 @@ export const zhCN = {
     copied: "已复制",
     add: {
       description: "在要添加的机器上运行一条命令，安装 circus 并把它加入你的账户。",
+      descriptionDev: "在要添加的机器上运行一条命令，把它加入你的账户。",
       role: "角色",
       roles: {
         daemon: "设备",
@@ -167,7 +168,7 @@ export const zhCN = {
       generateNew: "生成新链接",
       runOnMachine: "在要添加的机器上运行：",
       devBuild:
-        "这台服务器是开发版本（{{version}}），没有可下载的发布版。请从源码构建 circus CLI 并放入 PATH，然后运行：",
+        "这台服务器是开发版本（{{version}}），没有可下载的发布版。在 circus 仓库根目录运行（从源码运行 CLI，文件放在 .tmp/dev）：",
       workerNote: "worker 进程需要另行启动，它还没有发布。",
       expires: "链接仅可使用一次，{{in}}过期。请勿分享。",
       expired: "链接已过期",

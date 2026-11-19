@@ -141,14 +141,17 @@ function AddDevice() {
   }
 
   const link = create.data
+  // A development build has nothing to install; the server says which it is
+  // only with the link.
+  const devBuild = link !== undefined && !isReleaseVersion(link.serverVersion)
   return (
     <>
       <DialogHeader>
         <DialogTitle>{t("devices.addDevice")}</DialogTitle>
-        <DialogDescription>{t("devices.add.description")}</DialogDescription>
+        <DialogDescription>{t(devBuild ? "devices.add.descriptionDev" : "devices.add.description")}</DialogDescription>
       </DialogHeader>
       <RoleChoice value={role} onChange={setRole} disabled={link !== undefined || busy} />
-      {!(link && !isReleaseVersion(link.serverVersion)) && (
+      {!devBuild && (
         <PlatformChoice value={platform} onChange={setPlatform} />
       )}
       {create.isError && (
