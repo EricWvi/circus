@@ -60,6 +60,9 @@ type effects struct {
 	after     func(string, error) error
 	delay     func(string)
 	started   func(*capture)
+
+	// backgroundTimeout lets tests control when the job's lifetime expires.
+	backgroundTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 }
 
 func (e *effects) attempt(step string, action func() error) error {
@@ -337,7 +340,11 @@ func (j *backgroundJob) Stop() error        { j.once.Do(j.cancel); <-j.done; ret
 func (c *capture) background(lifetime time.Duration) (*backgroundJob, error) {
 	b := c.bash
 	c.move(captureBackground, ownerBackground)
-	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
+	withTimeout := context.WithTimeout
+	if b.effects.backgroundTimeout != nil {
+		withTimeout = b.effects.backgroundTimeout
+	}
+	ctx, cancel := withTimeout(context.Background(), lifetime)
 	job := &backgroundJob{done: make(chan struct{}), cancel: cancel}
 	c.job = job
 	go func() {

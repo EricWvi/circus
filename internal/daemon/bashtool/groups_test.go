@@ -191,23 +191,43 @@ func TestBackgroundAndPromotedLeftovers(t *testing.T) {
 			// Prime the snapshot so the short caller deadline measures execution,
 			// not cold shell-environment collection.
 			reviewRun(t, b, root, "true", false)
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-			defer cancel()
+			const timeout = 100 * time.Millisecond
+			ctx := t.Context()
+			var lifetime *triggeredDeadline
 			command := `echo outer; sleep 20 & echo $! > child.pid; echo x`
-			if !background {
+			if background {
+				// Expire the job's lifetime after its shell exits naturally so
+				// this test exercises the handoff to the leftover tracker.
+				b.effects.backgroundTimeout = func(parent context.Context, duration time.Duration) (context.Context, context.CancelFunc) {
+					if duration != timeout {
+						t.Errorf("background lifetime = %s, want %s", duration, timeout)
+					}
+					lifetime = &triggeredDeadline{Context: parent, done: make(chan struct{}), deadline: time.Now().Add(duration)}
+					return context.WithCancel(lifetime)
+				}
+			} else {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+				defer cancel()
 				command = `echo outer; sleep 0.35; sleep 20 & echo $! > child.pid; echo x`
 			}
-			r, err := b.Run(ctx, &circusv1.DeviceCall{CallId: "leftovers", TimeoutMs: 100, SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: command, RunInBackground: background}}})
+			r, err := b.Run(ctx, &circusv1.DeviceCall{CallId: "leftovers", TimeoutMs: uint32(timeout.Milliseconds()), SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: command, RunInBackground: background}}})
 			if err != nil || r.GetBash().JobId == "" {
 				t.Fatalf("%v %v", r, err)
 			}
 			leakcheck.Expect(r.GetBash().GetOutputPath())
 			event := reviewEvent(t, events, true)
-			if event.JobId != r.GetBash().JobId || event.State != circusv1.JobEvent_STATE_EXITED {
+			if event.JobId != r.GetBash().JobId || event.State != circusv1.JobEvent_STATE_EXITED || event.ExitCode != 0 {
 				t.Fatal(event)
 			}
 			pid := childPID(t, root)
 			// The original background lifetime must not become a child lifetime.
+			if background {
+				if lifetime == nil {
+					t.Fatal("background lifetime was not armed")
+				}
+				lifetime.expire()
+			}
 			time.Sleep(200 * time.Millisecond)
 			if err := syscall.Kill(pid, 0); err != nil {
 				t.Fatal("leftover did not survive outer job", err)

@@ -26,6 +26,49 @@ func (c *waitingContext) Done() <-chan struct{} {
 	return c.Context.Done()
 }
 
+func TestHangingStartupSharesWarmFailure(t *testing.T) {
+	t.Parallel()
+	b, root, _ := reviewBash(t, 0)
+	ctx := t.Context()
+	waiter := &waitingContext{Context: ctx, waiting: make(chan struct{})}
+	started := make(chan struct{})
+	var attempts atomic.Int32
+	b.snapshots.options.CollectorTimeout = 150 * time.Millisecond
+	b.snapshots.options.Collector = func(collectCtx context.Context, _ *exec.Cmd) error {
+		if attempts.Add(1) == 1 {
+			close(started)
+			// Keep the warm collection pending until Run reaches load's wait.
+			select {
+			case <-waiter.waiting:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		<-collectCtx.Done()
+		return collectCtx.Err()
+	}
+	b.Warm()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("snapshot warm-up did not start")
+	}
+
+	call := &circusv1.DeviceCall{Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "echo must-not-run", Cwd: root}}}
+	checkFailure := func(ctx context.Context, wantAttempts int32) {
+		t.Helper()
+		r, err := b.Run(ctx, call)
+		if r != nil || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "collect bash environment") {
+			t.Fatalf("result=%v error=%v", r, err)
+		}
+		if got := attempts.Load(); got != wantAttempts {
+			t.Fatalf("collector attempts=%d, want %d", got, wantAttempts)
+		}
+	}
+	checkFailure(waiter, 2) // The interactive and fallback attempts belong to the warm collection.
+	checkFailure(ctx, 4)    // An independent call can collect again after the warm failure.
+}
+
 func TestCollectionOwnerCancellationDoesNotFailWaiter(t *testing.T) {
 	t.Parallel()
 	root := unitTempDir(t)

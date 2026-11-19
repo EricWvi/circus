@@ -194,19 +194,22 @@ func TestSnapshotAboveNegotiatedLimitIsTruncated(t *testing.T) {
 }
 
 func TestAckHasControlPriority(t *testing.T) {
-	gate := &writeGate{predicate: func(m *circusv1.DaemonUplink) bool { return m.GetFragment() != nil }, entered: make(chan struct{}), permit: make(chan struct{})}
+	// Hold the first small result in flight. It uses the round's small-message
+	// slot, so the queued small result can only be selected in a round where
+	// the scheduler gets to consider the urgent ack first.
+	gate := &writeGate{predicate: func(m *circusv1.DaemonUplink) bool { return m.GetResult().GetCallId() == "first" }, entered: make(chan struct{}), permit: make(chan struct{})}
 	defer gate.open()
-	big, small := make(chan struct{}), make(chan struct{})
+	first, small := make(chan struct{}), make(chan struct{})
 	h := start(t, func(o *daemonlink.Options) {
 		o.Tools = func(*jobs.Manager) []daemon.Tool {
 			return []daemon.Tool{tool{func(ctx context.Context, c *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
 				switch c.CallId {
-				case "big":
+				case "first":
 					select {
-					case <-big:
+					case <-first:
 					case <-ctx.Done():
 					}
-					return result(strings.Repeat("x", 128<<10)), nil
+					return result("first"), nil
 				case "small":
 					select {
 					case <-small:
@@ -221,14 +224,14 @@ func TestAckHasControlPriority(t *testing.T) {
 		}
 	}, func(c wire.Conn) wire.Conn { gate.Conn = c; return gate })
 	l, _, hello := h.handshake(t)
-	dispatch(t, l, hello.BootId, call("big"))
+	dispatch(t, l, hello.BootId, call("first"))
 	ack(t, l)
 	dispatch(t, l, hello.BootId, call("small"))
 	ack(t, l)
-	close(big)
+	close(first)
 	recv(t, gate.entered)
 	close(small)
-	eventually(t, func() bool { return h.client.Stats().Wire.QueuedMessages >= 2 }) // partial + small result
+	eventually(t, func() bool { return h.client.Stats().Wire.QueuedMessages >= 2 }) // in-flight and queued results
 	dispatch(t, l, hello.BootId, call("urgent"))
 	eventually(t, func() bool { return h.client.Stats().Wire.QueuedMessages >= 3 })
 	gate.open()

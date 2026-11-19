@@ -409,32 +409,3 @@ func TestDispatcherShutdownStopsInternalGroups(t *testing.T) {
 		t.Fatal("dispatcher shutdown left an internal group", err)
 	}
 }
-
-func TestHangingStartupSharesWarmFailure(t *testing.T) {
-	t.Parallel()
-	w := newWorkerWithOptions(t, func(o *bashtool.Options) {
-		o.CollectorTimeout = 150 * time.Millisecond
-		writeFile(t, filepath.Join(o.Home, ".bashrc"), []byte(`printf x >> "$HOME/attempts"; sleep 5`))
-	})
-	w.bash.Warm()
-	waitFile(t, filepath.Join(w.options.Home, "attempts"))
-	started := time.Now()
-	r := w.bashCall(t, "echo must-not-run", false, 1000)
-	body := r.Output.Content[0].GetText()
-	if !r.Output.IsError || !strings.Contains(body, "collect bash environment: context deadline exceeded") || strings.Contains(body, "tool did not stop") {
-		t.Fatal(r)
-	}
-	if time.Since(started) > time.Second {
-		t.Fatal("waiter started a second collection")
-	}
-	data, err := os.ReadFile(filepath.Join(w.options.Home, "attempts"))
-	if err != nil || string(data) != "xx" {
-		t.Fatalf("collection attempts=%q err=%v", data, err)
-	}
-	// An independent cold call can retry, rather than caching a failure forever.
-	r = w.bashCall(t, "echo must-not-run", false, 1000)
-	data, err = os.ReadFile(filepath.Join(w.options.Home, "attempts"))
-	if !r.Output.IsError || err != nil || string(data) != "xxxx" {
-		t.Fatalf("retry=%v attempts=%q err=%v", r, data, err)
-	}
-}
