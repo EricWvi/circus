@@ -161,8 +161,10 @@ func TestSessionJobTableFull(t *testing.T) {
 	j := newJobFixture(t)
 	s := j.submitAdmitted("call")
 	// Fill the table after admission (the filler calls would otherwise
-	// count against the session's call caps).
-	must(t, j.db.Tx(j.ctx, func(ctx context.Context, tx store.Ops) error {
+	// count against the session's call caps). The fill is setup, not under
+	// test: it runs without the fixture's deadline, which a slow race build
+	// can exceed.
+	must(t, j.db.Tx(t.Context(), func(ctx context.Context, tx store.Ops) error {
 		for i := range store.MaxSessionJobs {
 			id := fmt.Sprint("fill", i)
 			if err := tx.CreateCall(ctx, store.Call{CallID: id, UserID: "u", DeviceID: "d", SessionID: "s", Tool: "bash", RequestHash: make([]byte, 32),
