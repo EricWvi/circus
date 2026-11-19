@@ -19,3 +19,20 @@ export function GoogleMark(props: MarkProps) {
     </svg>
   )
 }
+
+/**
+ * A solid key for sign-in with the configured OIDC provider, matching the
+ * filled brand marks next to it. Decorative: the button carries the name.
+ */
+export function KeyMark(props: MarkProps) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <g transform="translate(12 12) scale(1.3) translate(-12 -12) translate(1.5 0) rotate(-45 10.5 12)">
+        <path
+          fillRule="evenodd"
+          d="M12.75 10.3H20v6.2h-2.6v-2.8h-1.2v1.8h-2.4v-1.8h-1.05A6 6 0 1 1 12.75 10.3ZM3.6 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0Z"
+        />
+      </g>
+    </svg>
+  )
+}

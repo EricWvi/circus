@@ -137,7 +137,6 @@ export const en = {
     loading: "Loading devices",
     loadFailed: "Couldn't load devices.",
     emptyTitle: "No devices yet",
-    emptyDescription: "A device is a machine where sessions run their tools. Add one to start sessions on it.",
     addDevice: "Add device",
     copyCommand: "Copy command",
     copied: "Copied",

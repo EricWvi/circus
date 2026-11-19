@@ -412,29 +412,19 @@ describe("the add device dialog", () => {
       expect(waiting()).toBeTruthy()
     })
 
-    it("waits for the first list when generating before it loaded", async () => {
+    it("offers no way to add a device until the list has loaded", async () => {
       let loaded: () => void = () => {}
       const gate = new Promise<void>((resolve) => (loaded = resolve))
       let calls = 0
-      const { state, requested } = await renderPage({
+      await renderPage({
         issue: release(),
         listDevices: (real) => () => (calls++ === 0 ? gate.then(real) : real()),
       })
       expect(screen.getByRole("list", { name: "Loading devices" })).toBeTruthy()
-      await openDialog()
-      fireEvent.click(dialog().getByRole("button", { name: "Generate link" }))
-      await advance(10)
-      expect(requested).toEqual([])
-
+      expect(screen.queryByRole("button", { name: "Add device" })).toBeNull()
       loaded()
       await advance(10)
-      expect(requested).toEqual(["daemon"])
-      expect(command()).not.toBeNull()
-      expect(waiting()).toBeTruthy()
-
-      state.devices.push(device("new-box"))
-      await advance(DEVICES_LIVE_INTERVAL_MS)
-      expect(screen.getByRole("dialog", { name: "new-box is connected" })).toBeTruthy()
+      expect(screen.getAllByRole("button", { name: "Add device" }).length).toBeGreaterThan(0)
     })
 
     it("takes the first list that arrives when it can't be fetched for the link", async () => {
@@ -545,13 +535,13 @@ describe("the add device dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "添加设备" }))
     await advance(0)
     const zh = within(screen.getByRole("dialog", { name: "添加设备" }))
-    expect(zh.getByText("在要添加的机器上运行一条命令，安装circus并把它加入你的账户。")).toBeTruthy()
+    expect(zh.getByText("在要添加的机器上运行一条命令，安装 circus 并把它加入你的账户。")).toBeTruthy()
     expect(zh.getByRole("radio", { name: /^设备/ })).toBeTruthy()
     expect(zh.getByText("在该机器上为你的会话运行工具（circus daemon）。")).toBeTruthy()
     fireEvent.click(zh.getByRole("button", { name: "生成链接" }))
     await advance(10)
     expect(zh.getByText("在要添加的机器上运行：")).toBeTruthy()
-    expect(zh.getByText("链接仅可使用一次，1小时后过期。请勿分享。")).toBeTruthy()
+    expect(zh.getByText("链接仅可使用一次，1 小时后过期。请勿分享。")).toBeTruthy()
     expect(zh.getByText("正在等待设备加入…")).toBeTruthy()
   })
 })

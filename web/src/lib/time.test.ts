@@ -15,9 +15,9 @@ describe("formatRelative", () => {
 
   it("formats in the given language", () => {
     expect(formatRelative(ago(10_000), now, "zh-CN")).toBe("刚刚")
-    expect(formatRelative(ago(5 * 60_000), now, "zh-CN")).toBe("5分钟前")
-    expect(formatRelative(ago(3 * 3_600_000), now, "zh-CN")).toBe("3小时前")
-    expect(formatRelative(ago(86_400_000), now, "zh-CN")).toBe("1天前")
+    expect(formatRelative(ago(5 * 60_000), now, "zh-CN")).toBe("5 分钟前")
+    expect(formatRelative(ago(3 * 3_600_000), now, "zh-CN")).toBe("3 小时前")
+    expect(formatRelative(ago(86_400_000), now, "zh-CN")).toBe("1 天前")
     expect(formatRelative(Date.parse("2026-11-01T12:00:00Z"), now, "zh-CN")).toBe("11月1日")
     expect(formatRelative(Date.parse("2026-11-01T12:00:00Z"), now, "en")).toBe("Nov 1")
   })
@@ -35,9 +35,9 @@ describe("formatTimeAgo", () => {
     expect(formatTimeAgo(ago(10_000), now, "en")).toBe("just now")
     expect(formatTimeAgo(ago(2 * 3_600_000), now, "en")).toBe("2h ago")
     expect(formatTimeAgo(ago(10_000), now, "zh-CN")).toBe("刚刚")
-    expect(formatTimeAgo(ago(5 * 60_000), now, "zh-CN")).toBe("5分钟前")
-    expect(formatTimeAgo(ago(2 * 3_600_000), now, "zh-CN")).toBe("2小时前")
-    expect(formatTimeAgo(ago(3 * 86_400_000), now, "zh-CN")).toBe("3天前")
+    expect(formatTimeAgo(ago(5 * 60_000), now, "zh-CN")).toBe("5 分钟前")
+    expect(formatTimeAgo(ago(2 * 3_600_000), now, "zh-CN")).toBe("2 小时前")
+    expect(formatTimeAgo(ago(3 * 86_400_000), now, "zh-CN")).toBe("3 天前")
   })
 })
 
@@ -46,15 +46,15 @@ describe("formatTimeUntil", () => {
   const MINUTE = 60_000
 
   it.each([
-    [60 * MINUTE, "in 1 hour", "1小时后"],
-    [60 * MINUTE - 1, "in 1 hour", "1小时后"],
-    [59 * MINUTE + 1, "in 1 hour", "1小时后"],
-    [59 * MINUTE, "in 59 minutes", "59分钟后"],
-    [MINUTE + 1, "in 2 minutes", "2分钟后"],
-    [1, "in 1 minute", "1分钟后"],
-    [0, "in 1 minute", "1分钟后"],
-    [3 * 60 * MINUTE, "in 3 hours", "3小时后"],
-    [2 * 24 * 60 * MINUTE, "in 2 days", "2天后"],
+    [60 * MINUTE, "in 1 hour", "1 小时后"],
+    [60 * MINUTE - 1, "in 1 hour", "1 小时后"],
+    [59 * MINUTE + 1, "in 1 hour", "1 小时后"],
+    [59 * MINUTE, "in 59 minutes", "59 分钟后"],
+    [MINUTE + 1, "in 2 minutes", "2 分钟后"],
+    [1, "in 1 minute", "1 分钟后"],
+    [0, "in 1 minute", "1 分钟后"],
+    [3 * 60 * MINUTE, "in 3 hours", "3 小时后"],
+    [2 * 24 * 60 * MINUTE, "in 2 days", "2 天后"],
   ])("%d ms ahead", (ahead, en, zh) => {
     expect(formatTimeUntil(now + ahead, now, "en")).toBe(en)
     expect(formatTimeUntil(now + ahead, now, "zh-CN")).toBe(zh)

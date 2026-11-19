@@ -3,7 +3,9 @@ import type { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 
 import { Brand } from "@/components/brand"
+import { KeyMark } from "@/components/auth/brand-marks"
 import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 
@@ -48,12 +50,17 @@ export function OrDivider() {
   )
 }
 
-/** "Continue with <provider>" for the configured OIDC provider. */
+/**
+ * "Continue with <provider>" for the configured OIDC provider. Compact is an
+ * icon button for a row of sign-in icons; the phrase moves to its tooltip
+ * and accessible name.
+ */
 export function OidcButton({
   displayName,
   pending,
   disabled,
   onClick,
+  compact = false,
 }: {
   displayName: string
   /** This flow is starting. */
@@ -61,8 +68,33 @@ export function OidcButton({
   /** Another way of signing in is in progress. */
   disabled: boolean
   onClick: () => void
+  compact?: boolean
 }) {
   const { t } = useTranslation()
+  const label = t("auth.continueWith", { provider: displayName })
+  const spinner = <Spinner aria-label={t("auth.continuingWith", { provider: displayName })} />
+  const icon = pending ? spinner : <KeyRoundIcon />
+  if (compact) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-lg"
+            aria-label={label}
+            disabled={pending || disabled}
+            onClick={onClick}
+          >
+            {pending ? spinner : <KeyMark />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={4}>
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
   return (
     <Button
       type="button"
@@ -71,12 +103,8 @@ export function OidcButton({
       disabled={pending || disabled}
       onClick={onClick}
     >
-      {pending ? (
-        <Spinner aria-label={t("auth.continuingWith", { provider: displayName })} />
-      ) : (
-        <KeyRoundIcon />
-      )}
-      {t("auth.continueWith", { provider: displayName })}
+      {icon}
+      {label}
     </Button>
   )
 }

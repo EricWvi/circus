@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button"
 import {
   Empty,
   EmptyContent,
-  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
@@ -72,10 +71,13 @@ export function DevicesPage() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         actions={
-          <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-            <PlusIcon />
-            {t("devices.addDevice")}
-          </Button>
+          // With no devices, the empty state's own button is the only one.
+          devices.data && devices.data.length > 0 ? (
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+              <PlusIcon />
+              {t("devices.addDevice")}
+            </Button>
+          ) : undefined
         }
       >
         <h1 className="min-w-0 truncate font-medium">{t("devices.title")}</h1>
@@ -183,7 +185,6 @@ function NoDevices({ onAdd }: { onAdd: () => void }) {
           <MonitorSmartphoneIcon />
         </EmptyMedia>
         <EmptyTitle>{t("devices.emptyTitle")}</EmptyTitle>
-        <EmptyDescription className="text-pretty">{t("devices.emptyDescription")}</EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
         <Button onClick={onAdd}>

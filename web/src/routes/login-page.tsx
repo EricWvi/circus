@@ -108,15 +108,17 @@ export function LoginPage() {
         </Button>
       </form>
       <OrDivider />
-      {methods?.oidc && (
-        <OidcButton
-          displayName={methods.oidc.displayName}
-          pending={oidcLogin.isPending}
-          disabled={login.isPending}
-          onClick={continueWithOidc}
-        />
-      )}
+      {/* One row of icon buttons; the names are in their tooltips. */}
       <div className="flex justify-center gap-2">
+        {methods?.oidc && (
+          <OidcButton
+            compact
+            displayName={methods.oidc.displayName}
+            pending={oidcLogin.isPending}
+            disabled={login.isPending}
+            onClick={continueWithOidc}
+          />
+        )}
         <UnavailableProvider name="GitHub">
           <GitHubMark />
         </UnavailableProvider>

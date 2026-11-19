@@ -6,7 +6,7 @@ const DAY = 24 * HOUR
 
 /**
  * Compact relative time in the active language: "now", "5m", "3h", "2d" (in
- * Chinese 刚刚, 5分钟前, 3小时前, 2天前), and a short date after a week.
+ * Chinese 刚刚, 5 分钟前, 3 小时前, 2 天前), and a short date after a week.
  */
 export function formatRelative(
   unixMs: number,
@@ -24,7 +24,7 @@ export function formatRelative(
 
 /**
  * How long ago, as a phrase for a sentence: "just now", "5m ago", "2h ago",
- * "yesterday" (in Chinese 刚刚, 5分钟前, 2小时前, 昨天).
+ * "yesterday" (in Chinese 刚刚, 5 分钟前, 2 小时前, 昨天).
  */
 export function formatTimeAgo(
   unixMs: number,
@@ -34,9 +34,9 @@ export function formatTimeAgo(
   const diff = Math.max(0, now - unixMs)
   if (diff < MINUTE) return i18n.t("time.justNow", { lng: language })
   const format = new Intl.RelativeTimeFormat(language, { style: "narrow", numeric: "auto" })
-  if (diff < HOUR) return format.format(-Math.floor(diff / MINUTE), "minute")
-  if (diff < DAY) return format.format(-Math.floor(diff / HOUR), "hour")
-  return format.format(-Math.floor(diff / DAY), "day")
+  if (diff < HOUR) return spaceDigits(format.format(-Math.floor(diff / MINUTE), "minute"))
+  if (diff < DAY) return spaceDigits(format.format(-Math.floor(diff / HOUR), "hour"))
+  return spaceDigits(format.format(-Math.floor(diff / DAY), "day"))
 }
 
 /** A full date and time for hover text: "Nov 15, 2026, 12:00 PM" (2026年11月15日 12:00). */
@@ -46,7 +46,7 @@ export function formatDateTime(unixMs: number, language: string = currentLanguag
 
 /**
  * How long until a future moment, as a phrase for a sentence: "in 59
- * minutes", "in 1 hour" (in Chinese 59分钟后, 1小时后). Minutes round up, so
+ * minutes", "in 1 hour" (in Chinese 59 分钟后, 1 小时后). Minutes round up, so
  * the phrase never reaches zero before the moment itself.
  */
 export function formatTimeUntil(
@@ -56,7 +56,15 @@ export function formatTimeUntil(
 ): string {
   const minutes = Math.max(1, Math.ceil((unixMs - now) / MINUTE))
   const format = new Intl.RelativeTimeFormat(language, { numeric: "always" })
-  if (minutes < 60) return format.format(minutes, "minute")
-  if (minutes < 24 * 60) return format.format(Math.floor(minutes / 60), "hour")
-  return format.format(Math.floor(minutes / (24 * 60)), "day")
+  if (minutes < 60) return spaceDigits(format.format(minutes, "minute"))
+  if (minutes < 24 * 60) return spaceDigits(format.format(Math.floor(minutes / 60), "hour"))
+  return spaceDigits(format.format(Math.floor(minutes / (24 * 60)), "day"))
+}
+
+/**
+ * Puts a space between digits and Chinese characters, as the Chinese UI text
+ * does: Intl writes "5分钟前", the catalog "5 分钟前".
+ */
+function spaceDigits(text: string): string {
+  return text.replace(/(\d)(?=[\u4e00-\u9fff])/g, "$1 ").replace(/([\u4e00-\u9fff])(?=\d)/g, "$1 ")
 }

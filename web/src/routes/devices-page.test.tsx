@@ -147,7 +147,7 @@ describe("the device list", () => {
     await renderDevices(seedWithSpare())
     expect(screen.getByRole("heading", { level: 1, name: "设备" })).toBeTruthy()
     expect(row("devbox").getByText("在线")).toBeTruthy()
-    expect(row("devbox").getByText("守护进程0.1.0")).toBeTruthy()
+    expect(row("devbox").getByText("守护进程 0.1.0")).toBeTruthy()
     expect(row("eric-win").getByText("前天在线")).toBeTruthy()
     expect(row("spare").getByText("从未连接")).toBeTruthy()
   })
@@ -160,6 +160,8 @@ describe("without devices", () => {
     await renderDevices(state)
 
     expect(screen.getByText("No devices yet")).toBeTruthy()
+    // The empty state's button is the only one; the header has none.
+    expect(screen.getAllByRole("button", { name: "Add device" })).toHaveLength(1)
     // No admin CLI commands any more: adding is the dialog's job.
     expect(document.querySelector("pre")).toBeNull()
     expect(screen.queryByText(/enroll-token/)).toBeNull()
