@@ -61,7 +61,13 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="offcanvas">
       <SidebarHeader className="gap-3 px-3 pt-3">
-        <Brand className="h-7 px-1" />
+        <Link
+          to="/"
+          className="w-fit rounded-md outline-hidden ring-sidebar-ring focus-visible:ring-2"
+          onClick={() => isMobile && setOpenMobile(false)}
+        >
+          <Brand className="h-7 px-1" />
+        </Link>
         <Button
           variant="outline"
           className="h-8 w-full justify-start gap-2 bg-background px-2 font-normal text-muted-foreground"
