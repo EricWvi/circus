@@ -99,9 +99,12 @@ const shellQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
  * download the matching CLI to a temporary file and unpack it there (so a
  * machine set up before skips the download, and one with another version
  * gets the server's); then join (as a worker only for the worker role) and, when
- * the link enrolls a device, start its daemon. A development build has no
- * download, so the chain starts at the join and runs the CLI from a circus
- * checkout with `task cli --` (source build, files under .tmp/dev). The
+ * the link enrolls a device, install its daemon as a service of the user's
+ * (started at boot or login, again when it fails, and restarted by
+ * `circus update`). A development build has no download, so the chain
+ * starts at the join and runs the CLI from a circus checkout with
+ * `task cli --` (source build, files under .tmp/dev); that build can't be
+ * a service, so it runs the daemon in the foreground. The
  * worker process itself is not started here.
  *
  * The command starts with a space, so shells that leave such commands out
@@ -136,7 +139,7 @@ export function enrollCommand({
     )
   }
   steps.push(`printf '%s\\n' ${shellQuote(link)} | ${circus} join${role === "worker" ? " --role worker" : ""}`)
-  if (role !== "worker") steps.push(`${circus} daemon`)
+  if (role !== "worker") steps.push(release ? `${circus} daemon install` : `${circus} daemon`)
   return steps.map((step, i) => (i === 0 ? " " : "  ") + step).join(" &&\n")
 }
 

@@ -147,7 +147,7 @@ describe("the add device dialog", () => {
         `    tar -xzf "$t" -C ~/.local/bin circus && rm -f "$t"`,
         `  } &&`,
         `  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join &&`,
-        "  ~/.local/bin/circus daemon",
+        "  ~/.local/bin/circus daemon install",
       ].join("\n"),
     )
     expect(dialog().getByText("The link works once and expires in 1 hour. Don't share it.")).toBeTruthy()
@@ -184,7 +184,7 @@ describe("the add device dialog", () => {
     expect(requested).toEqual(["both"])
     expect(lines().slice(5)).toEqual([
       `  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join &&`,
-      "  ~/.local/bin/circus daemon",
+      "  ~/.local/bin/circus daemon install",
     ])
     expect(lines()[2]).toContain("/v1.2.0-rc.1/circus-v1.2.0-rc.1-linux-amd64.tar.gz")
     expect(dialog().getByText(/worker process/)).toBeTruthy()

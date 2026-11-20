@@ -66,21 +66,21 @@ exit 0`,
   it("runs every step of a release in order", () => {
     expect(run(releaseCommand)).toEqual({
       status: 0,
-      calls: [`curl ${archive}`, "tar", "circus join", `link ${tricky}`, "circus daemon"],
+      calls: [`curl ${archive}`, "tar", "circus join", `link ${tricky}`, "circus daemon install"],
     })
   })
 
   it("skips the download when the server's version is installed", () => {
     expect(run(releaseCommand, "", "v0.2.0")).toEqual({
       status: 0,
-      calls: ["circus join", `link ${tricky}`, "circus daemon"],
+      calls: ["circus join", `link ${tricky}`, "circus daemon install"],
     })
   })
 
   it("replaces an installed CLI of another version", () => {
     expect(run(releaseCommand, "", "v0.1.0")).toEqual({
       status: 0,
-      calls: [`curl ${archive}`, "tar", "circus join", `link ${tricky}`, "circus daemon"],
+      calls: [`curl ${archive}`, "tar", "circus join", `link ${tricky}`, "circus daemon install"],
     })
   })
 

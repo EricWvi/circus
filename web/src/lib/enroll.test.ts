@@ -79,7 +79,7 @@ describe("enrollCommand", () => {
         `    tar -xzf "$t" -C ~/.local/bin circus && rm -f "$t"`,
         `  } &&`,
         `  printf '%s\\n' 'https://cp.example/join#d.w' | ~/.local/bin/circus join &&`,
-        "  ~/.local/bin/circus daemon",
+        "  ~/.local/bin/circus daemon install",
       ].join("\n"),
     )
   })
