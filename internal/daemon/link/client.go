@@ -1,8 +1,8 @@
 // Package link runs the daemon's single outbound control-plane connection.
 //
-// State: dial -> raw Hello/Welcome -> connected -> backoff -> dial. HTTP 401/403,
-// any Reject and an incompatible Welcome (principal, version or message limit)
-// terminate Run. Ordinary failures use equal jitter in
+// State: dial -> raw Hello/Welcome -> connected -> backoff -> dial. HTTP 401/403
+// marked as Circus rejections, any Reject, and an incompatible Welcome
+// (principal, version or message limit) terminate Run. Ordinary failures use equal jitter in
 // [base/2, base]; base doubles from 500ms to 30s, and a connection lasting 60s
 // resets it. GoAway supplies the next delay, but never less than base/2, so a
 // zero or tiny delay cannot cause a tight reconnect loop. BootID never changes
@@ -173,7 +173,7 @@ type Client struct {
 // New validates credentials/TLS policy and creates a fresh UUIDv7 boot.
 func New(o Options) (*Client, error) {
 	if o.Credentials.Role != credfile.RoleDaemon || o.Credentials.Token == "" || o.Credentials.PrincipalID == "" {
-		return nil, errors.New("daemon link: daemon credentials required")
+		return nil, &terminalError{"daemon link: daemon credentials required"}
 	}
 	endpoint, httpClient, err := loopback.Link(o.Credentials.ControlPlaneURL, o.Credentials.CAFile, "/v1/link/daemon")
 	if err != nil {
@@ -331,6 +331,14 @@ func (c *Client) detach(a *connection) { c.live.CompareAndSwap(a, nil) }
 type terminalError struct{ message string }
 
 func (e *terminalError) Error() string { return e.message }
+
+// IsTerminal reports whether retrying the link requires a configuration or
+// protocol change. Run returns these errors without reconnecting.
+func IsTerminal(err error) bool {
+	var terminal *terminalError
+	return errors.As(err, &terminal)
+}
+
 func rejectError(r *circusv1.Reject) error {
 	if r.Code == circusv1.Reject_CODE_VERSION_UNSUPPORTED {
 		return &terminalError{fmt.Sprintf("daemon link: protocol version unsupported; server supports %d..%d", r.MinVersion, r.MaxVersion)}
@@ -364,9 +372,8 @@ func (c *Client) Run(ctx context.Context) (err error) {
 				base = 500 * time.Millisecond
 			}
 		}
-		var fatal *terminalError
-		if errors.As(connectErr, &fatal) {
-			return fatal
+		if IsTerminal(connectErr) {
+			return connectErr
 		}
 		if ctx.Err() != nil {
 			break
@@ -397,7 +404,8 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 	defer cancel()
 	raw, response, err := c.opts.Dial(handshake, c.endpoint, &websocket.DialOptions{HTTPClient: c.http, HTTPHeader: http.Header{"Authorization": []string{"Bearer " + c.opts.Credentials.Token}}})
 	if err != nil {
-		if response != nil && (response.StatusCode == 401 || response.StatusCode == 403) {
+		if response != nil && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) &&
+			response.Header.Get(wire.LinkAuthHeader) == wire.LinkAuthRejected {
 			return nil, &terminalError{fmt.Sprintf("daemon link: HTTP %d authentication rejected; rejoin or replace revoked credentials", response.StatusCode)}
 		}
 		return nil, err

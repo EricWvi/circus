@@ -151,7 +151,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validConnection(Connection{Target: Target{InstanceID: h.config.InstanceID, ConnectionID: id, DeviceID: principal.ID, BootID: "pending"}, UserID: principal.UserID, DeviceName: principal.Name}) || principal.CredentialID == "" || len(principal.CredentialID) > 128 {
-		http.Error(w, "invalid principal", http.StatusUnauthorized)
+		auth.RejectLink(w, "invalid principal", http.StatusUnauthorized)
 		return
 	}
 	principal.UserID = strings.Clone(principal.UserID)

@@ -517,9 +517,10 @@ func (c *checker) verify() {
 	global.mu.Unlock()
 }
 
-// checkStateDir allows the documented layout: .instances.lock, instance-*
-// with .lock and at most one snapshot-* holding snapshot.sh and environment.
+// checkStateDir allows daemon.lock, .instances.lock and instance-* with
+// .lock and at most one snapshot-* holding snapshot.sh and environment.
 var stateEntries = []*regexp.Regexp{
+	regexp.MustCompile(`^daemon\.lock$`),
 	regexp.MustCompile(`^\.instances\.lock$`),
 	regexp.MustCompile(`^instance-[^/]+$`),
 	regexp.MustCompile(`^instance-[^/]+/\.lock$`),

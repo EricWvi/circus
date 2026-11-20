@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,53 @@ import (
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+func TestDaemonArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name, command, credentials string
+		service                    bool
+		args                       []string
+		wantErr                    bool
+	}{
+		{name: "foreground"},
+		{name: "foreground credentials", args: []string{"--credentials", "foreground.json"}, credentials: "foreground.json"},
+		{name: "foreground credentials equals", args: []string{"--credentials=foreground.json"}, credentials: "foreground.json"},
+		{name: "foreground default credentials", args: []string{"--credentials="}},
+		{name: "foreground credentials named like a command", args: []string{"--credentials", "install"}, credentials: "install"},
+		{name: "service", args: []string{"--service"}, service: true},
+		{name: "service credentials", args: []string{"--service", "--credentials", "daemon.json"}, service: true, credentials: "daemon.json"},
+		{name: "service flag on install", args: []string{"install", "--service"}, wantErr: true},
+		{name: "install", args: []string{"install"}, command: "install"},
+		{name: "install credentials", args: []string{"install", "--credentials", "service creds.json"}, command: "install", credentials: "service creds.json"},
+		{name: "install credentials equals", args: []string{"install", "--credentials=service.json"}, command: "install", credentials: "service.json"},
+		{name: "uninstall", args: []string{"uninstall"}, command: "uninstall"},
+		{name: "start", args: []string{"start"}, command: "start"},
+		{name: "stop", args: []string{"stop"}, command: "stop"},
+		{name: "restart", args: []string{"restart"}, command: "restart"},
+		{name: "status", args: []string{"status"}, command: "status"},
+		{name: "unknown command", args: []string{"unknown"}, wantErr: true},
+		{name: "install missing credentials", args: []string{"install", "--credentials"}, wantErr: true},
+		{name: "install empty credentials", args: []string{"install", "--credentials="}, wantErr: true},
+		{name: "credentials on status", args: []string{"status", "--credentials=service.json"}, wantErr: true},
+		{name: "extra argument", args: []string{"stop", "extra"}, wantErr: true},
+		{name: "extra foreground argument", args: []string{"--credentials=foo", "start"}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			command, credentials, service, err := parseDaemonArgs(tc.args, io.Discard)
+			if (err != nil) != tc.wantErr || command != tc.command || credentials != tc.credentials || service != tc.service {
+				t.Errorf("parseDaemonArgs(%q) = %q, %q, %t, %v", tc.args, command, credentials, service, err)
+			}
+		})
+	}
+	var help bytes.Buffer
+	if err := daemonCommand([]string{"--help"}, nil, io.Discard, &help); err != nil || !strings.Contains(help.String(), "daemon install") {
+		t.Errorf("daemon help = %q, %v", help.String(), err)
+	}
+	help.Reset()
+	if err := daemonCommand([]string{"call", "--help"}, nil, io.Discard, &help); !errors.Is(err, flag.ErrHelp) || !strings.Contains(help.String(), "wait") {
+		t.Errorf("daemon call help = %q, %v", help.String(), err)
+	}
+}
 
 type harnessTool struct {
 	run func(context.Context, *circusv1.DeviceCall) (*circusv1.DeviceResult, error)
@@ -199,11 +247,12 @@ func TestDaemonCommandRegistryFlagsAndErrors(t *testing.T) {
 }
 
 func TestDaemonHelpAndCredentialErrors(t *testing.T) {
+	t.Setenv("CIRCUS_HOME", t.TempDir())
 	var out, errOut bytes.Buffer
 	if err := daemonCommand([]string{"--help"}, strings.NewReader(""), &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"credentials", "daemon call", "SIGTERM"} {
+	for _, want := range []string{"credentials", "daemon call", "SIGTERM", "used by the installed service"} {
 		if !strings.Contains(errOut.String(), want) {
 			t.Fatalf("help missing %s: %s", want, errOut.String())
 		}
@@ -221,11 +270,13 @@ func TestDaemonDefaultCredentialsAndAuthenticationExit(t *testing.T) {
 		if r.URL.Path != "/v1/link/daemon" || r.Header.Get("Authorization") != "Bearer daemon-secret" {
 			t.Errorf("unexpected upgrade: %s %q", r.URL.Path, r.Header.Get("Authorization"))
 		}
+		w.Header().Set("Circus-Auth", "rejected")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	}))
 	defer server.Close()
 	t.Setenv("CIRCUS_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	path, err := credfile.Path(credfile.RoleDaemon)
 	if err != nil {
 		t.Fatal(err)

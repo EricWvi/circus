@@ -598,6 +598,10 @@ func status(t *testing.T, f *fixture, token string) int {
 	res, err := http.DefaultClient.Do(req)
 	must(t, err)
 	_ = res.Body.Close()
+	wantMarker := res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden
+	if got := res.Header.Get("Circus-Auth"); (got == "rejected") != wantMarker {
+		t.Errorf("worker link HTTP %d: unexpected Circus-Auth %q", res.StatusCode, got)
+	}
 	return res.StatusCode
 }
 
@@ -860,8 +864,8 @@ func TestIdleRevocationClosesDefinitively(t *testing.T) {
 	// The first recheck after the revoke closes the link (auth's Watch tests
 	// pin its timing).
 	advanceUntilDone(t, f, c, time.Second)
-	if _, err = workerclient.Dial(t.Context(), workerclient.Options{Credentials: f.f}); err == nil {
-		t.Fatal("revoked upgrade accepted")
+	if got := status(t, f, f.f.Token); got != http.StatusForbidden {
+		t.Fatalf("revoked worker credential: HTTP %d", got)
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -21,6 +20,7 @@ import (
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/credfile"
+	"github.com/EricWvi/circus/internal/daemonservice"
 	"github.com/EricWvi/circus/internal/machineid"
 )
 
@@ -204,11 +204,23 @@ func joinCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 		}
 		fmt.Fprintf(out, "Joined as %s %q (%s).\nCredential saved to %s.\n", e.role, *name, f.PrincipalID, paths[e.role])
 		joined = append(joined, e.role)
-	}
-	if slices.Contains(joined, credfile.RoleDaemon) {
-		fmt.Fprintln(out, "Start it with: circus daemon")
+		if e.role == credfile.RoleDaemon {
+			restartJoinedDaemon(paths[e.role], out, errOut)
+		}
 	}
 	return nil
+}
+
+func restartJoinedDaemon(path string, out, errOut io.Writer) {
+	restarted, err := daemonservice.RestartWithCredentials(path)
+	switch {
+	case err != nil:
+		fmt.Fprintf(errOut, "warning: could not restart the circus device daemon service: %v\n", err)
+	case restarted:
+		fmt.Fprintln(out, "Restarted the circus device daemon service.")
+	default:
+		fmt.Fprintln(out, "Start the daemon with `circus daemon install` (service) or `circus daemon` (foreground).")
+	}
 }
 
 // adminNoun names a role as the server CLI does: the daemon role is a

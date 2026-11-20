@@ -76,8 +76,8 @@ func TestHTTPAuthenticationAndRawVersionReject(t *testing.T) {
 			t.Fatal(err)
 		}
 		res.Body.Close()
-		if res.StatusCode != want {
-			t.Fatalf("token %q: %s, want %d", token, res.Status, want)
+		if res.StatusCode != want || res.Header.Get("Circus-Auth") != "rejected" {
+			t.Fatalf("token %q: %s with Circus-Auth %q, want %d with rejected", token, res.Status, res.Header.Get("Circus-Auth"), want)
 		}
 	}
 	// No need for a real bearer credential in the stub; this is the raw protocol seam.

@@ -237,22 +237,6 @@ func (e *snapshotStore) load(ctx context.Context) (string, []string, *snapshotLe
 	}
 }
 
-// defaultStateDir is $CIRCUS_HOME/state/daemon, else
-// $XDG_STATE_HOME/circus/daemon, else ~/.local/state/circus/daemon.
-func defaultStateDir(home string) (string, error) {
-	if dir, err := circushome.Dir("state"); err != nil || dir != "" {
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(dir, "daemon"), nil
-	}
-	state := os.Getenv("XDG_STATE_HOME")
-	if !filepath.IsAbs(state) {
-		state = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(state, "circus", "daemon"), nil
-}
-
 func (e *snapshotStore) collect(ctx context.Context, refreshing bool) (string, []string, error) {
 	home, err := userHome(e.options.Home)
 	if err != nil {
@@ -260,7 +244,7 @@ func (e *snapshotStore) collect(ctx context.Context, refreshing bool) (string, [
 	}
 	state := e.options.StateDir
 	if state == "" {
-		state, err = defaultStateDir(home)
+		state, err = circushome.DaemonState(home)
 		if err != nil {
 			return "", nil, err
 		}

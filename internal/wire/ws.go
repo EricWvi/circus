@@ -14,6 +14,13 @@ import (
 	"github.com/coder/websocket"
 )
 
+const (
+	// LinkAuthHeader identifies an authentication response from the control plane.
+	LinkAuthHeader = "Circus-Auth"
+	// LinkAuthRejected marks an HTTP response that rejected the link credential.
+	LinkAuthRejected = "rejected"
+)
+
 // WebSocket owns a coder connection and the underlying transport's abort handle.
 // Retaining the transport is necessary: coder CloseNow cannot interrupt a Close
 // already in progress. AcceptWebSocket/DialWebSocket capture it without exposing

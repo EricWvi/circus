@@ -427,7 +427,7 @@ func TestTerminalRejectionsStopWithoutRetry(t *testing.T) {
 				t.Fatal(err)
 			}
 			err := recv(t, h.done)
-			if err == nil || !strings.Contains(err.Error(), strings.TrimPrefix(code.String(), "CODE_")) && code != circusv1.Reject_CODE_VERSION_UNSUPPORTED {
+			if !daemonlink.IsTerminal(err) || !strings.Contains(err.Error(), strings.TrimPrefix(code.String(), "CODE_")) && code != circusv1.Reject_CODE_VERSION_UNSUPPORTED {
 				t.Fatalf("error: %v", err)
 			}
 			if code == circusv1.Reject_CODE_VERSION_UNSUPPORTED && !strings.Contains(err.Error(), "2..4") {
@@ -441,21 +441,32 @@ func TestTerminalRejectionsStopWithoutRetry(t *testing.T) {
 		})
 	}
 	for _, status := range []int{401, 403} {
-		t.Run(fmt.Sprint(status), func(t *testing.T) {
-			var attempts atomic.Int32
-			h := start(t, func(o *daemonlink.Options) {
-				o.Dial = func(context.Context, string, *websocket.DialOptions) (wire.Conn, *http.Response, error) {
-					attempts.Add(1)
-					return nil, &http.Response{StatusCode: status}, errors.New("upgrade denied")
+		for _, marked := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%d/marked=%t", status, marked), func(t *testing.T) {
+				var attempts atomic.Int32
+				h := start(t, func(o *daemonlink.Options) {
+					o.Dial = func(context.Context, string, *websocket.DialOptions) (wire.Conn, *http.Response, error) {
+						n := attempts.Add(1)
+						response := &http.Response{StatusCode: status, Header: make(http.Header)}
+						if marked || n > 1 {
+							response.Header.Set(wire.LinkAuthHeader, wire.LinkAuthRejected)
+						}
+						return nil, response, errors.New("upgrade denied")
+					}
+				}, nil)
+				wantAttempts := int32(1)
+				if !marked {
+					h.retry(t, 500*time.Millisecond)
+					wantAttempts++
 				}
-			}, nil)
-			err := recv(t, h.done)
-			h.done <- nil
-			h.clk.Advance(time.Hour)
-			if err == nil || !strings.Contains(err.Error(), fmt.Sprint(status)) || attempts.Load() != 1 {
-				t.Fatalf("attempts=%d error=%v", attempts.Load(), err)
-			}
-		})
+				err := recv(t, h.done)
+				h.done <- nil
+				h.clk.Advance(time.Hour)
+				if !daemonlink.IsTerminal(err) || !strings.Contains(err.Error(), fmt.Sprint(status)) || attempts.Load() != wantAttempts {
+					t.Fatalf("attempts=%d, want %d, error=%v", attempts.Load(), wantAttempts, err)
+				}
+			})
+		}
 	}
 }
 
@@ -481,7 +492,7 @@ func TestIncompatibleWelcomeStopsWithoutRetry(t *testing.T) {
 				t.Fatal(err)
 			}
 			err := recv(t, h.done)
-			if err == nil || !strings.Contains(err.Error(), "incompatible Welcome") {
+			if !daemonlink.IsTerminal(err) || !strings.Contains(err.Error(), "incompatible Welcome") {
 				t.Fatalf("error: %v", err)
 			}
 			h.done <- nil

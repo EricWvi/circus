@@ -48,8 +48,14 @@ type asset struct {
 
 type downloader func(context.Context, string, int64) ([]byte, error)
 
+// Result reports the update outcome and the executable path replaced, if any.
+type Result struct {
+	Message      string
+	ReplacedPath string
+}
+
 // Run checks for the latest release and replaces the running executable if needed.
-func Run(ctx context.Context, current string, force bool, out io.Writer) (string, error) {
+func Run(ctx context.Context, current string, force bool, out io.Writer) (Result, error) {
 	client := releaseClient()
 	defer client.CloseIdleConnections()
 	return update(ctx, httpDownloader(client, current), current, runtime.GOOS+"-"+runtime.GOARCH, force, out, os.Executable)
@@ -130,51 +136,52 @@ func (r idleReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func update(ctx context.Context, download downloader, current, target string, force bool, out io.Writer, executable func() (string, error)) (string, error) {
+func update(ctx context.Context, download downloader, current, target string, force bool, out io.Writer, executable func() (string, error)) (Result, error) {
 	switch target {
 	case "linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64":
 	default:
-		return "", fmt.Errorf("no circus release for this platform (%s)", target)
+		return Result{}, fmt.Errorf("no circus release for this platform (%s)", target)
 	}
 	data, err := download(ctx, manifestURL, manifestLimit)
 	if err != nil {
-		return "", fmt.Errorf("download latest.json: %w", err)
+		return Result{}, fmt.Errorf("download latest.json: %w", err)
 	}
 	var m manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return "", fmt.Errorf("invalid latest.json: %w", err)
+		return Result{}, fmt.Errorf("invalid latest.json: %w", err)
 	}
 	a, digest, err := selectAsset(m, target)
 	if err != nil {
-		return "", err
+		return Result{}, err
 	}
 	currentValid := semver.IsValid(current)
 	if currentValid {
 		switch semver.Compare(m.Version, current) {
 		case 0:
-			return "circus is already at " + current, nil
+			return Result{Message: "circus is already at " + current}, nil
 		case -1:
 			if !force {
-				return "", fmt.Errorf("latest release %s is older than this circus (%s); pass --force to install it", m.Version, current)
+				return Result{}, fmt.Errorf("latest release %s is older than this circus (%s); pass --force to install it", m.Version, current)
 			}
 		}
 	}
 	archive, err := download(ctx, a.URL, archiveLimit)
 	if err != nil {
-		return "", fmt.Errorf("download %s: %w", a.Name, err)
+		return Result{}, fmt.Errorf("download %s: %w", a.Name, err)
 	}
 	if sha256.Sum256(archive) != digest {
-		return "", fmt.Errorf("SHA-256 mismatch for %s", a.Name)
+		return Result{}, fmt.Errorf("SHA-256 mismatch for %s", a.Name)
 	}
 	if !currentValid {
 		if _, err := fmt.Fprintf(out, "Replacing %s with %s\n", current, m.Version); err != nil {
-			return "", err
+			return Result{}, err
 		}
 	}
-	if err := install(ctx, executable, archive); err != nil {
-		return "", err
+	path, err := install(ctx, executable, archive)
+	if err != nil {
+		return Result{}, err
 	}
-	return "Updated circus to " + m.Version, nil
+	return Result{Message: "Updated circus to " + m.Version, ReplacedPath: path}, nil
 }
 
 func selectAsset(m manifest, target string) (asset, [sha256.Size]byte, error) {
@@ -209,14 +216,14 @@ func selectAsset(m manifest, target string) (asset, [sha256.Size]byte, error) {
 	return *selected, digest, nil
 }
 
-func install(ctx context.Context, executable func() (string, error), archive []byte) error {
+func install(ctx context.Context, executable func() (string, error), archive []byte) (string, error) {
 	path, err := executable()
 	if err != nil {
-		return fmt.Errorf("locate current executable: %w", err)
+		return "", fmt.Errorf("locate current executable: %w", err)
 	}
 	path, err = filepath.EvalSymlinks(path)
 	if err != nil {
-		return fmt.Errorf("resolve current executable: %w", err)
+		return "", fmt.Errorf("resolve current executable: %w", err)
 	}
 	mode := os.FileMode(0o755)
 	if info, err := os.Stat(path); err == nil {
@@ -224,29 +231,29 @@ func install(ctx context.Context, executable func() (string, error), archive []b
 	}
 	staged, err := os.CreateTemp(filepath.Dir(path), ".circus-update-*")
 	if err != nil {
-		return installationError(err)
+		return "", installationError(err)
 	}
 	defer os.Remove(staged.Name())
 	defer staged.Close()
 	if err := extract(archive, staged); err != nil {
-		return fmt.Errorf("prepare release archive: %w", err)
+		return "", fmt.Errorf("prepare release archive: %w", err)
 	}
 	if err := staged.Chmod(mode); err != nil {
-		return installationError(err)
+		return "", installationError(err)
 	}
 	if err := staged.Sync(); err != nil {
-		return installationError(err)
+		return "", installationError(err)
 	}
 	if err := staged.Close(); err != nil {
-		return installationError(err)
+		return "", installationError(err)
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return "", err
 	}
 	if err := os.Rename(staged.Name(), path); err != nil {
-		return installationError(err)
+		return "", installationError(err)
 	}
-	return nil
+	return path, nil
 }
 
 func installationError(err error) error {

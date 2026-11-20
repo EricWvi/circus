@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os/signal"
+	"runtime"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/credfile"
@@ -17,17 +20,163 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	daemonlink "github.com/EricWvi/circus/internal/daemon/link"
+	"github.com/EricWvi/circus/internal/daemonlock"
+	"github.com/EricWvi/circus/internal/daemonservice"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+const daemonUsage = `usage: circus daemon [--credentials path] [--service]
+       circus daemon call [-wait=true]
+       circus daemon install [--credentials path]
+       circus daemon <uninstall|start|stop|restart|status>`
+
 func daemonCommand(args []string, in io.Reader, out, errOut io.Writer) error {
-	if len(args) == 0 || args[0] != "call" {
-		return daemonRun(args, errOut)
+	if len(args) > 0 && args[0] == "call" {
+		return daemonCallCommand(args[1:], in, out, errOut)
 	}
+	command, credentials, service, err := parseDaemonArgs(args, errOut)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	switch command {
+	case "install":
+		if err := daemonservice.Install(credentials, out); err != nil {
+			return err
+		}
+		st, err := daemonservice.GetAfterInstall()
+		if st.Running && err == nil {
+			fmt.Fprintln(out, "✓ Installed and started the circus device daemon service.")
+		} else {
+			fmt.Fprintln(out, "✓ Installed the circus device daemon service.")
+			if err != nil {
+				fmt.Fprintf(errOut, "WARNING: Could not confirm that the circus daemon service is running: %v. See the logs: %s\n", err, st.Logs)
+			} else {
+				fmt.Fprintf(errOut, "WARNING: The circus daemon service is not running. See the logs: %s\n", st.Logs)
+			}
+		}
+		for _, warning := range st.Advice {
+			fmt.Fprintln(errOut, "WARNING:", warning)
+		}
+		printDaemonLocation(out, st)
+		return nil
+	case "uninstall":
+		return daemonAction(out, daemonservice.Uninstall, "Removed")
+	case "start":
+		return daemonAction(out, daemonservice.Start, "Started")
+	case "stop":
+		return daemonAction(out, daemonservice.Stop, "Stopped")
+	case "restart":
+		return daemonAction(out, daemonservice.Restart, "Restarted")
+	case "status":
+		return daemonStatus(out)
+	default:
+		return daemonRun(credentials, service, errOut)
+	}
+}
+
+func parseDaemonArgs(args []string, errOut io.Writer) (command, credentials string, service bool, err error) {
+	name := "daemon"
+	usage := daemonUsage
+	if len(args) > 0 {
+		switch args[0] {
+		case "install", "uninstall", "start", "stop", "restart", "status":
+			command, args = args[0], args[1:]
+			name += " " + command
+			usage = "usage: circus " + name
+			if command == "install" {
+				usage += " [--credentials path]"
+			}
+		}
+	}
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(errOut)
+	flags.Usage = func() {
+		fmt.Fprintln(errOut, usage)
+		if command == "" {
+			fmt.Fprintln(errOut, "\nRun the outbound daemon client until SIGINT or SIGTERM.")
+		}
+		flags.PrintDefaults()
+	}
+	if command == "" || command == "install" {
+		flags.StringVar(&credentials, "credentials", "", "daemon credential file (default: circus/daemon.json in the config directory)")
+	}
+	if command == "" {
+		flags.BoolVar(&service, "service", false, "used by the installed service")
+	}
+	if err := flags.Parse(args); err != nil {
+		return "", "", false, err
+	}
+	if flags.NArg() != 0 {
+		return "", "", false, errors.New(usage)
+	}
+	if command == "install" && flags.NFlag() > 0 && credentials == "" {
+		return "", "", false, errors.New("--credentials requires a path")
+	}
+	return command, credentials, service, nil
+}
+
+func daemonAction(out io.Writer, action func() error, verb string) error {
+	if err := action(); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(out, "✓", verb, "the circus device daemon service.")
+	return err
+}
+
+func daemonStatus(out io.Writer) error {
+	st, err := daemonservice.Get()
+	if err != nil {
+		return err
+	}
+	if !st.Installed {
+		fmt.Fprintln(out, "The circus device daemon service is not installed. Run `circus daemon install`.")
+		return nil
+	}
+	state := "not running"
+	if st.Running {
+		state = "running"
+	}
+	if st.PID > 0 {
+		state += fmt.Sprintf(" (PID %d)", st.PID)
+	}
+	fmt.Fprintf(out, "The circus device daemon service is installed and %s.\n", state)
+	if st.State != "" {
+		fmt.Fprintln(out, "  State     ", st.State)
+	}
+	if st.LastExit != "" {
+		fmt.Fprintln(out, "  Last exit ", st.LastExit)
+	}
+	start := "only when started"
+	if st.Enabled {
+		start = "at login"
+		if st.AtBoot {
+			start = "at boot or login"
+		}
+	}
+	fmt.Fprintln(out, "  Starts    ", start)
+	printDaemonLocation(out, st)
+	if st.StoppedAfterExit {
+		fmt.Fprintf(out, "See the logs for why it stopped: %s\n", st.Logs)
+	}
+	for _, advice := range st.Advice {
+		fmt.Fprintln(out, advice)
+	}
+	return nil
+}
+
+func printDaemonLocation(out io.Writer, st daemonservice.Status) {
+	fmt.Fprintln(out, "  File      ", st.File)
+	fmt.Fprintln(out, "  Logs      ", st.Logs)
+}
+
+func daemonCallCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 	flags := flag.NewFlagSet("daemon call", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	wait := flags.Bool("wait", true, "wait for completed calls")
-	if err := flags.Parse(args[1:]); err != nil {
+	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
@@ -176,40 +325,79 @@ func daemonCall(in io.Reader, out io.Writer, tools []daemon.Tool, wait bool) err
 }
 
 // daemonRun reads role credentials and runs until SIGINT/SIGTERM.
-func daemonRun(args []string, errOut io.Writer) error {
-	flags := flag.NewFlagSet("daemon", flag.ContinueOnError)
-	flags.SetOutput(errOut)
-	credentials := flags.String("credentials", "", "daemon credential file (default $XDG_CONFIG_HOME/circus/daemon.json)")
-	flags.Usage = func() {
-		fmt.Fprintln(errOut, "Usage: circus daemon [--credentials path]\n       circus daemon call [-wait=true]\n\nRun the outbound daemon client until SIGINT or SIGTERM.")
-		flags.PrintDefaults()
+func daemonRun(path string, service bool, errOut io.Writer) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	mode := daemonlock.Foreground
+	if service {
+		mode = daemonlock.Service
 	}
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	lock, err := acquireDaemonLock(ctx, mode)
+	if err != nil {
+		if ctx.Err() != nil {
 			return nil
+		}
+		if service {
+			return logServiceExit(errOut, err)
 		}
 		return err
 	}
-	if flags.NArg() != 0 {
-		return errors.New("usage: circus daemon [--credentials path] | circus daemon call [-wait=true]")
-	}
-	path := *credentials
+	defer lock.Close()
+
 	if path == "" {
-		var err error
 		path, err = credfile.Path(credfile.RoleDaemon)
-		if err != nil {
-			return err
+	}
+	if err != nil {
+		if service {
+			return logServiceExit(errOut, err)
 		}
+		return err
 	}
 	file, err := credfile.Load(path)
 	if err != nil {
+		if service {
+			return logServiceExit(errOut, fmt.Errorf("load daemon credentials at %q: %w", path, err))
+		}
 		return err
 	}
 	client, err := daemonlink.New(daemonlink.Options{Credentials: file, ClientVersion: version})
 	if err != nil {
+		if service {
+			return logServiceExit(errOut, err)
+		}
 		return err
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	err = client.Run(ctx)
+	if service && daemonlink.IsTerminal(err) {
+		return logServiceExit(errOut, err)
+	}
+	return err
+}
+
+func acquireDaemonLock(ctx context.Context, mode daemonlock.Mode) (*daemonlock.Lock, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	return client.Run(ctx)
+	for {
+		lock, err := daemonlock.Acquire(mode)
+		var held *daemonlock.HeldError
+		if mode != daemonlock.Service || !errors.As(err, &held) || held.Mode != daemonlock.Service {
+			return lock, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+var errDaemonServiceStopped = errors.New("daemon service stopped itself")
+
+func logServiceExit(errOut io.Writer, err error) error {
+	message := strings.NewReplacer("\r", "\\r", "\n", "\\n").Replace(err.Error())
+	fmt.Fprintln(errOut, "circus daemon service stopped:", message)
+	if runtime.GOOS == "linux" {
+		return errDaemonServiceStopped
+	}
+	return nil
 }

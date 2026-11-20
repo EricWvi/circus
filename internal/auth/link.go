@@ -13,6 +13,7 @@ import (
 
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/EricWvi/circus/internal/wire"
 )
 
 // LinkAuthenticator is what a link handler needs from the host's single
@@ -35,11 +36,11 @@ func Admit(w http.ResponseWriter, r *http.Request, a LinkAuthenticator, logger *
 	case errors.Is(err, ErrUnauthenticated):
 		log.InfoContext(r.Context(), "request rejected", "status", http.StatusUnauthorized, "reason", "unknown or malformed token")
 		w.Header().Set("WWW-Authenticate", "Bearer")
-		http.Error(w, "unauthenticated", http.StatusUnauthorized)
+		RejectLink(w, "unauthenticated", http.StatusUnauthorized)
 		return Principal{}, false
 	case errors.Is(err, ErrRevoked):
 		log.InfoContext(r.Context(), "request rejected", "status", http.StatusForbidden, "reason", "credential revoked")
-		http.Error(w, "credential revoked", http.StatusForbidden)
+		RejectLink(w, "credential revoked", http.StatusForbidden)
 		return Principal{}, false
 	case err != nil:
 		log.ErrorContext(r.Context(), "authentication failed", "error", err)
@@ -53,10 +54,16 @@ func Admit(w http.ResponseWriter, r *http.Request, a LinkAuthenticator, logger *
 		for i, k := range kinds {
 			roles[i] = RoleName(k)
 		}
-		http.Error(w, fmt.Sprintf("wrong role: a %s credential was supplied; use a %s credential", RoleName(p.Kind), strings.Join(roles, " or ")), http.StatusForbidden)
+		RejectLink(w, fmt.Sprintf("wrong role: a %s credential was supplied; use a %s credential", RoleName(p.Kind), strings.Join(roles, " or ")), http.StatusForbidden)
 		return Principal{}, false
 	}
 	return p, true
+}
+
+// RejectLink marks a link authentication rejection as originating at Circus.
+func RejectLink(w http.ResponseWriter, message string, status int) {
+	w.Header().Set(wire.LinkAuthHeader, wire.LinkAuthRejected)
+	http.Error(w, message, status)
 }
 
 // RecheckPolicy bounds how long a live link may outlast a revocation of its

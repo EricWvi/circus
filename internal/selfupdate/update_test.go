@@ -182,7 +182,7 @@ func TestUpdate(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			var notice bytes.Buffer
-			message, err := update(ctx, httpDownloader(client, current), current, target, tc.variant == "force", &notice, func() (string, error) {
+			result, err := update(ctx, httpDownloader(client, current), current, target, tc.variant == "force", &notice, func() (string, error) {
 				if tc.variant == "current" {
 					t.Fatal("already current but still resolving the executable")
 				}
@@ -201,16 +201,23 @@ func TestUpdate(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Errorf("error = %v, want %q", err, tc.wantErr)
 				}
+				if result.ReplacedPath != "" {
+					t.Errorf("failed update reported a replacement: %+v", result)
+				}
 				if tc.variant == "cancel" && !errors.Is(err, context.Canceled) {
 					t.Errorf("error = %v, want context.Canceled", err)
 				}
 			case tc.variant == "current":
-				if err != nil || message != "circus is already at "+testVersion {
-					t.Errorf("update = %q, %v", message, err)
+				if err != nil || result.Message != "circus is already at "+testVersion || result.ReplacedPath != "" {
+					t.Errorf("update = %+v, %v", result, err)
 				}
 			default:
-				if err != nil || message != "Updated circus to "+testVersion {
-					t.Errorf("update = %q, %v", message, err)
+				resolved, resolveErr := filepath.EvalSymlinks(bin)
+				if resolveErr != nil {
+					t.Fatal(resolveErr)
+				}
+				if err != nil || result.Message != "Updated circus to "+testVersion || result.ReplacedPath != resolved {
+					t.Errorf("update = %+v, %v", result, err)
 				}
 				wantBinary = newBinary
 			}

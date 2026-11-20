@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -577,5 +578,96 @@ func TestJoinShowsLiveIdentityLimitMessage(t *testing.T) {
 	_, err = h.joinStdin(h.link("worker"), "--role", "worker", "--name", "extra")
 	if err == nil || err.Error() != "live worker limit reached; revoke one first" {
 		t.Fatalf("join error = %v", err)
+	}
+}
+
+func TestRejoinRestartsInstalledDaemon(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses a systemctl fake")
+	}
+	for _, tc := range []struct {
+		name                       string
+		fail, otherPath, otherHome bool
+	}{
+		{name: "matching service"},
+		{name: "restart failure", fail: true},
+		{name: "different credentials", otherPath: true},
+		{name: "different circus home with the same credentials", otherHome: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newJoinHarness(t)
+			if _, err := h.join(h.link("daemon"), "--name", "laptop"); err != nil {
+				t.Fatal(err)
+			}
+			old, ok := h.cred(credfile.RoleDaemon)
+			if !ok {
+				t.Fatal("missing original credential")
+			}
+			if _, _, err := h.admin("device", "revoke", "--user", enrollmentEmail, "laptop"); err != nil {
+				t.Fatal(err)
+			}
+			link := h.link("daemon")
+			unit := filepath.Join(h.cfgDir, "systemd", "user", "circus-daemon.service")
+			if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+				t.Fatal(err)
+			}
+			bin := t.TempDir()
+			seen := filepath.Join(bin, "credentials-at-restart")
+			credentials, err := credfile.Path(credfile.RoleDaemon)
+			if err != nil {
+				t.Fatal(err)
+			}
+			servicePath, serviceHome := credentials, ""
+			if tc.otherPath {
+				servicePath = filepath.Join(h.cfgDir, "other-credentials.json")
+			}
+			if tc.otherHome {
+				serviceHome = filepath.Join(h.cfgDir, "another-home")
+			}
+			definition := fmt.Sprintf("[Service]\nExecStart=/opt/circus daemon --service --credentials %q\nEnvironment=%q\n", servicePath, "CIRCUS_HOME="+serviceHome)
+			if err := os.WriteFile(unit, []byte(definition), 0600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("JOIN_TEST_CREDENTIALS", credentials)
+			t.Setenv("JOIN_TEST_SEEN", seen)
+			t.Setenv("PATH", bin)
+			script := `#!/bin/sh
+if [ "$*" != "--user restart circus-daemon.service" ]; then exit 2; fi
+/bin/cp "$JOIN_TEST_CREDENTIALS" "$JOIN_TEST_SEEN" || exit 2
+`
+			if tc.fail {
+				script += "printf 'restart failed in test\\n' >&2\nexit 1\n"
+			}
+			if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var out, errOut bytes.Buffer
+			if err := joinCommand([]string{link, "--name", "laptop", "--force"}, strings.NewReader(""), &out, &errOut); err != nil {
+				t.Fatal(err)
+			}
+			fresh, ok := h.cred(credfile.RoleDaemon)
+			if !ok || fresh.PrincipalID == old.PrincipalID {
+				t.Fatal("credential was not replaced")
+			}
+			if tc.otherPath || tc.otherHome {
+				_, seenErr := os.Stat(seen)
+				if !errors.Is(seenErr, os.ErrNotExist) || !strings.Contains(out.String(), "Start the daemon with `circus daemon install`") ||
+					strings.Contains(out.String(), "Restarted") || errOut.Len() != 0 {
+					t.Fatalf("join with separate service: %q %q, restart marker: %v", out.String(), errOut.String(), seenErr)
+				}
+				return
+			}
+			atRestart, err := credfile.Load(seen)
+			if err != nil || atRestart != fresh {
+				t.Fatalf("restart did not see the new credentials: %v", err)
+			}
+			if tc.fail {
+				if !strings.Contains(errOut.String(), "warning: could not restart") || !strings.Contains(errOut.String(), "restart failed in test") {
+					t.Fatalf("warning = %q", errOut.String())
+				}
+			} else if !strings.Contains(out.String(), "Restarted the circus device daemon service.") {
+				t.Fatalf("join output = %q", out.String())
+			}
+		})
 	}
 }

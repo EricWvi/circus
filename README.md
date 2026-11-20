@@ -28,6 +28,7 @@ debug client. The TypeScript worker is planned for M3 and not built yet.
 | `internal/daemon/jobs/` | Background job lifecycle, ownership, events and retention |
 | `internal/daemon/link/` | The daemon's single outbound control-plane connection |
 | `internal/daemon/toolcontext/` | Execution timer signal shared by dispatcher and tools |
+| `internal/daemonservice/` | Per-user systemd and launchd services for the device daemon |
 | `internal/wire/` | Bounded protobuf transport over authenticated binary WebSocket, its scheduling table and the raw Hello handshake |
 | `internal/wire/wiretest/` | Bounded in-memory duplex Conn with directional faults |
 | `internal/store/` | Control-plane domain types and the Store interface |
@@ -92,9 +93,9 @@ circus server enroll-token create --user owner@example.com --role both \
 # Enroll this machine as both roles (paste the link, or pipe it in).
 circus join --name desk
 
-# Start the device daemon. It reconnects after network and server failures,
-# but exits when the server refuses its credential (HTTP 401/403, for example
-# after revocation) or rejects its handshake (such as an unsupported version).
+# Start the device daemon in the foreground. It reconnects after network
+# and server failures. It exits if the server refuses its credential
+# (HTTP 401/403) or rejects its handshake (such as an unsupported version).
 circus daemon
 
 # Terminal 3: run a tool on the device. Tool text goes to stdout; JSON
@@ -164,6 +165,48 @@ circus daemon call <<'EOF'
 EOF
 ```
 
+## Device daemon service
+
+After `circus join`, use an installed `circus` executable to run the device
+daemon as a per-user service. The service starts immediately and restarts
+after failures. If the daemon cannot load its credentials or the control plane
+rejects its credentials or handshake, the daemon logs the reason and stays
+stopped. Each daemon state directory admits one daemon process at a time.
+Daemons using the same credentials in different state directories displace
+each other on the control plane. Stop a foreground daemon before installing
+the service in the same state directory.
+
+```sh
+circus daemon install                   # optionally pass --credentials path
+circus daemon status                    # includes the service file and log command
+circus daemon stop                      # stop until the next boot/login or start
+circus daemon start
+circus daemon restart
+circus daemon uninstall                # stop and remove the service
+```
+
+- **Linux (systemd)** writes `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/circus-daemon.service`.
+  Read logs with `journalctl --user -u circus-daemon.service -f`.
+  The service starts when the user logs in and stops at logout. Run
+  `sudo loginctl enable-linger <user>` to start it at boot and keep it running
+  after logout. Use the same `XDG_CONFIG_HOME` for subsequent service commands.
+- **macOS (launchd)** writes `~/Library/LaunchAgents/com.github.ericwvi.circus.daemon.plist`.
+  The agent starts at login and writes stdout and stderr to
+  `~/Library/Logs/circus/daemon.log`.
+
+Installation records the daemon's environment from the current shell,
+including `PATH`, proxy and TLS certificate settings, XDG directories,
+`CIRCUS_HOME`, `HOME`, `SHELL`, `USER` and locale settings. It resolves
+`CIRCUS_HOME` and any explicit credentials path to absolute paths. Rerun
+`circus daemon install` after changing the daemon's settings. Bash commands
+rebuild their environment from login Bash startup files, using the daemon's
+home, shell and `LANG`. `circus update` restarts a running service when it
+replaces the executable that service uses.
+On Linux, `circus update` may start a service that stopped itself with exit
+status 78, even after a subsequent `circus daemon stop`.
+A daemon newer than its control plane keeps retrying a revoked credential
+until the server is updated to identify its authentication rejections.
+
 ## Development CLI
 
 The CLI keeps its local files in the XDG directories: credentials in
@@ -183,6 +226,9 @@ task cli -- join --name dev-box     # paste a link from the Web UI
 task cli -- daemon
 task cli -- doctor
 ```
+
+Run the development daemon in the foreground with `task cli -- daemon`.
+Service installation requires an installed executable.
 
 ## Operating the server
 

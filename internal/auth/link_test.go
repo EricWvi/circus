@@ -202,6 +202,10 @@ func TestAdmitStatusMapping(t *testing.T) {
 	} {
 		rec := httptest.NewRecorder()
 		p, ok := auth.Admit(rec, httptest.NewRequest("GET", "/v1/link/daemon", nil), tc.a, logger, store.KindDevice)
+		if got := rec.Result().Header.Get("Circus-Auth"); (got == "rejected") != (tc.status == 401 || tc.status == 403) {
+			t.Errorf("status %d: unexpected Circus-Auth %q", tc.status, got)
+		}
+
 		if tc.status == 200 {
 			if !ok || p.ID != "d" || rec.Code != 200 {
 				t.Fatalf("device refused: %d", rec.Code)

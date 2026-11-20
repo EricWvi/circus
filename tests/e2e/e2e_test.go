@@ -255,7 +255,7 @@ func newHarness(t *testing.T, grace ...string) *harness {
 		h.grace = grace[0]
 	}
 	h.db = filepath.Join(h.dir, "db")
-	h.env = append(os.Environ(), "HOME="+h.dir, "CIRCUS_HOME=", "XDG_CONFIG_HOME="+filepath.Join(h.dir, "config"), "XDG_DATA_HOME="+filepath.Join(h.dir, "data"), "XDG_CACHE_HOME="+filepath.Join(h.dir, "cache"), "CIRCUS_E2E_CRASH_DISPATCH=0", "GORACE=atexit_sleep_ms=0")
+	h.env = append(os.Environ(), "HOME="+h.dir, "CIRCUS_HOME=", "XDG_CONFIG_HOME="+filepath.Join(h.dir, "config"), "XDG_DATA_HOME="+filepath.Join(h.dir, "data"), "XDG_STATE_HOME="+filepath.Join(h.dir, "state"), "XDG_CACHE_HOME="+filepath.Join(h.dir, "cache"), "CIRCUS_E2E_CRASH_DISPATCH=0", "GORACE=atexit_sleep_ms=0")
 	h.startServer(false)
 	h.createWebUser()
 	link := h.run("", 0, "server", "enroll-token", "create", "--user", enrollmentEmail, "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"), "--role", "both", "--url", h.base)
