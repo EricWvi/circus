@@ -352,11 +352,119 @@ func (x *CreateEnrollLinkResponse) GetServerVersion() string {
 	return ""
 }
 
+type ListDirectoryRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name of one of the caller's devices.
+	Device string `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	// As ListDirectoryQuery.path: empty or "~" is the home directory, "~/x" is
+	// under it, anything else must be absolute. At most 4096 bytes.
+	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	IncludeHidden bool   `protobuf:"varint,3,opt,name=include_hidden,json=includeHidden,proto3" json:"include_hidden,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDirectoryRequest) Reset() {
+	*x = ListDirectoryRequest{}
+	mi := &file_circus_v1_machine_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDirectoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDirectoryRequest) ProtoMessage() {}
+
+func (x *ListDirectoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_machine_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDirectoryRequest.ProtoReflect.Descriptor instead.
+func (*ListDirectoryRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListDirectoryRequest) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *ListDirectoryRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ListDirectoryRequest) GetIncludeHidden() bool {
+	if x != nil {
+		return x.IncludeHidden
+	}
+	return false
+}
+
+type ListDirectoryResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The daemon's ListDirectoryResult, passed through.
+	Result        *ListDirectoryResult `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDirectoryResponse) Reset() {
+	*x = ListDirectoryResponse{}
+	mi := &file_circus_v1_machine_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDirectoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDirectoryResponse) ProtoMessage() {}
+
+func (x *ListDirectoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_machine_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDirectoryResponse.ProtoReflect.Descriptor instead.
+func (*ListDirectoryResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListDirectoryResponse) GetResult() *ListDirectoryResult {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
 var File_circus_v1_machine_proto protoreflect.FileDescriptor
 
 const file_circus_v1_machine_proto_rawDesc = "" +
 	"\n" +
-	"\x17circus/v1/machine.proto\x12\tcircus.v1\"\x9d\x01\n" +
+	"\x17circus/v1/machine.proto\x12\tcircus.v1\x1a\x1bcircus/v1/daemon_link.proto\"\x9d\x01\n" +
 	"\x06Device\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06online\x18\x02 \x01(\bR\x06online\x12)\n" +
@@ -372,16 +480,23 @@ const file_circus_v1_machine_proto_rawDesc = "" +
 	"\x18CreateEnrollLinkResponse\x12\x12\n" +
 	"\x04link\x18\x01 \x01(\tR\x04link\x12&\n" +
 	"\x0fexpires_unix_ms\x18\x02 \x01(\x03R\rexpiresUnixMs\x12%\n" +
-	"\x0eserver_version\x18\x03 \x01(\tR\rserverVersion*o\n" +
+	"\x0eserver_version\x18\x03 \x01(\tR\rserverVersion\"i\n" +
+	"\x14ListDirectoryRequest\x12\x16\n" +
+	"\x06device\x18\x01 \x01(\tR\x06device\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12%\n" +
+	"\x0einclude_hidden\x18\x03 \x01(\bR\rincludeHidden\"O\n" +
+	"\x15ListDirectoryResponse\x126\n" +
+	"\x06result\x18\x01 \x01(\v2\x1e.circus.v1.ListDirectoryResultR\x06result*o\n" +
 	"\n" +
 	"EnrollRole\x12\x1b\n" +
 	"\x17ENROLL_ROLE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12ENROLL_ROLE_DAEMON\x10\x01\x12\x16\n" +
 	"\x12ENROLL_ROLE_WORKER\x10\x02\x12\x14\n" +
-	"\x10ENROLL_ROLE_BOTH\x10\x032\xbb\x01\n" +
+	"\x10ENROLL_ROLE_BOTH\x10\x032\x8f\x02\n" +
 	"\x0eMachineService\x12L\n" +
 	"\vListDevices\x12\x1d.circus.v1.ListDevicesRequest\x1a\x1e.circus.v1.ListDevicesResponse\x12[\n" +
-	"\x10CreateEnrollLink\x12\".circus.v1.CreateEnrollLinkRequest\x1a#.circus.v1.CreateEnrollLinkResponseB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
+	"\x10CreateEnrollLink\x12\".circus.v1.CreateEnrollLinkRequest\x1a#.circus.v1.CreateEnrollLinkResponse\x12R\n" +
+	"\rListDirectory\x12\x1f.circus.v1.ListDirectoryRequest\x1a .circus.v1.ListDirectoryResponseB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 
 var (
 	file_circus_v1_machine_proto_rawDescOnce sync.Once
@@ -396,7 +511,7 @@ func file_circus_v1_machine_proto_rawDescGZIP() []byte {
 }
 
 var file_circus_v1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_circus_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_circus_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_circus_v1_machine_proto_goTypes = []any{
 	(EnrollRole)(0),                  // 0: circus.v1.EnrollRole
 	(*Device)(nil),                   // 1: circus.v1.Device
@@ -404,19 +519,25 @@ var file_circus_v1_machine_proto_goTypes = []any{
 	(*ListDevicesResponse)(nil),      // 3: circus.v1.ListDevicesResponse
 	(*CreateEnrollLinkRequest)(nil),  // 4: circus.v1.CreateEnrollLinkRequest
 	(*CreateEnrollLinkResponse)(nil), // 5: circus.v1.CreateEnrollLinkResponse
+	(*ListDirectoryRequest)(nil),     // 6: circus.v1.ListDirectoryRequest
+	(*ListDirectoryResponse)(nil),    // 7: circus.v1.ListDirectoryResponse
+	(*ListDirectoryResult)(nil),      // 8: circus.v1.ListDirectoryResult
 }
 var file_circus_v1_machine_proto_depIdxs = []int32{
 	1, // 0: circus.v1.ListDevicesResponse.devices:type_name -> circus.v1.Device
 	0, // 1: circus.v1.CreateEnrollLinkRequest.role:type_name -> circus.v1.EnrollRole
-	2, // 2: circus.v1.MachineService.ListDevices:input_type -> circus.v1.ListDevicesRequest
-	4, // 3: circus.v1.MachineService.CreateEnrollLink:input_type -> circus.v1.CreateEnrollLinkRequest
-	3, // 4: circus.v1.MachineService.ListDevices:output_type -> circus.v1.ListDevicesResponse
-	5, // 5: circus.v1.MachineService.CreateEnrollLink:output_type -> circus.v1.CreateEnrollLinkResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	8, // 2: circus.v1.ListDirectoryResponse.result:type_name -> circus.v1.ListDirectoryResult
+	2, // 3: circus.v1.MachineService.ListDevices:input_type -> circus.v1.ListDevicesRequest
+	4, // 4: circus.v1.MachineService.CreateEnrollLink:input_type -> circus.v1.CreateEnrollLinkRequest
+	6, // 5: circus.v1.MachineService.ListDirectory:input_type -> circus.v1.ListDirectoryRequest
+	3, // 6: circus.v1.MachineService.ListDevices:output_type -> circus.v1.ListDevicesResponse
+	5, // 7: circus.v1.MachineService.CreateEnrollLink:output_type -> circus.v1.CreateEnrollLinkResponse
+	7, // 8: circus.v1.MachineService.ListDirectory:output_type -> circus.v1.ListDirectoryResponse
+	6, // [6:9] is the sub-list for method output_type
+	3, // [3:6] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_machine_proto_init() }
@@ -424,13 +545,14 @@ func file_circus_v1_machine_proto_init() {
 	if File_circus_v1_machine_proto != nil {
 		return
 	}
+	file_circus_v1_daemon_link_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_machine_proto_rawDesc), len(file_circus_v1_machine_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

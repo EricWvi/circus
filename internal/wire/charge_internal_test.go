@@ -11,8 +11,8 @@ import (
 )
 
 // Every repeatedLimits entry names a real repeated field, and every repeated
-// field reachable from an envelope has an entry: a misspelt name would lift
-// the cap from both the decoder and Charge.
+// field reachable from an envelope has an entry, except advisory Hello
+// features. A misspelt name would lift the cap from the decoder and Charge.
 func TestRepeatedLimitsMatchSchema(t *testing.T) {
 	inTable := map[protoreflect.FullName]bool{}
 	for _, r := range repeatedLimits {
@@ -35,7 +35,9 @@ func TestRepeatedLimitsMatchSchema(t *testing.T) {
 		seen[d.FullName()] = true
 		for i := 0; i < d.Fields().Len(); i++ {
 			f := d.Fields().Get(i)
-			if f.IsList() && !inTable[f.FullName()] {
+			// Excess Hello features are ignored after decoding. The handshake's
+			// whole-envelope byte and field limits bound their transport cost.
+			if f.IsList() && !inTable[f.FullName()] && f.FullName() != "circus.v1.Hello.features" {
 				t.Errorf("repeated field %s has no entry in repeatedLimits", f.FullName())
 			}
 			if f.Message() != nil {
@@ -141,6 +143,7 @@ func pathToField(d protoreflect.MessageDescriptor, target protoreflect.FullName,
 func TestRepeatedLimitsMatchWireDoc(t *testing.T) {
 	want := map[protoreflect.FullName]int{
 		"circus.v1.JobSnapshot.jobs":                        4096,
+		"circus.v1.ListDirectoryResult.entries":             1000,
 		"circus.v1.ToolOutput.content":                      128,
 		"circus.v1.BashRequest.working_dirs":                256,
 		"circus.v1.CallUpdate.DeviceOffline.online_devices": 256,

@@ -112,6 +112,13 @@ default 10 s, on the daemon).
 | `boot_id` | MUST be 1-128 bytes; a fresh UUIDv7 per process start, kept across reconnects | A worker process MUST send a fresh UUIDv7 (canonical lowercase form) per process, kept across reconnects; it is required to Attach or drive sessions. A client that only submits calls without a session (the call CLI) sends none. Anything else, or a UUIDv7 older than the worker's current boot while that boot is alive (below), is `CODE_BAD_HELLO` |
 | `client_version` | informational | informational |
 | `os`, `arch`, `hostname`, `machine_id` | sent, informational | not checked |
+| `features` | optional capabilities for this connection | no features defined |
+
+The control plane considers the first 32 feature names and drops entries
+outside 1–64 bytes of `[a-z0-9_.]`. Unknown names have no effect. The
+daemon advertises `device_query.list_directory` when it accepts directory
+queries. The control plane sends a feature-dependent message only when the
+daemon advertised the feature in its current Hello.
 
 The control plane records each worker connection's nonempty `boot_id` as
 the worker's current boot, and every connection of a boot that is still
@@ -211,8 +218,8 @@ Each envelope has a single `oneof payload`.
 
 | Envelope | Payload fields (number) |
 | --- | --- |
-| `DaemonUplink` | hello 1, heartbeat 2, fragment 3, call_ack 10, result 11, call_status 12, job_event 13, job_snapshot 14 |
-| `DaemonDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, go_away 5, dispatch_call 10, cancel_call 11, call_query 12, list_jobs 13, stop_session_jobs 14 |
+| `DaemonUplink` | hello 1, heartbeat 2, fragment 3, call_ack 10, result 11, call_status 12, job_event 13, job_snapshot 14, device_query_result 15 |
+| `DaemonDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, go_away 5, dispatch_call 10, cancel_call 11, call_query 12, list_jobs 13, stop_session_jobs 14, device_query 15 |
 | `WorkerUplink` | hello 1, heartbeat 2, fragment 3, submit_call 10, cancel_call 11, call_query 12, unwatch 13, attach 14, session 15, resume_leases 16, list_devices 17 |
 | `WorkerDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, call_update 10, session_reply 12, worker_event 13 (11 and `job_event` reserved) |
 
@@ -243,6 +250,7 @@ scheduling metadata; nothing about them is on the wire.
 | heartbeat, go_away, call_ack | Control | none |
 | list_jobs, stop_session_jobs, unwatch, attach, resume_leases | Barrier | none |
 | dispatch_call, submit_call, cancel_call, call_query, call_update | Data | `call/<call_id>` |
+| device_query, device_query_result | Data | `device_query/<request_id>` for valid IDs |
 | job_event (daemon uplink) | Data | one key for the whole boot |
 | session (worker uplink) | Data | `session/<session_id>` |
 | list_devices, session_reply, worker_event | Data | none |
@@ -394,8 +402,9 @@ closing; other senders MUST NOT send what the scan would reject.
 | --- | --- |
 | dispatch_call, submit_call, result, call_status, call_ack, call_update, session, session_reply | M |
 | job_snapshot | 8 MiB (`MaxSnapshotBytes`) |
+| device_query_result | 4 MiB (`MaxDirectoryResultBytes`) |
 | fragment | F + 128 (`FrameOverhead`) |
-| everything else (hello, welcome, reject, heartbeat, go_away, cancel_call, call_query, unwatch, list_jobs, stop_session_jobs, job_event, attach, resume_leases, list_devices, worker_event) | 64 KiB (`MaxMetadataBytes`) |
+| everything else (hello, welcome, reject, heartbeat, go_away, cancel_call, call_query, device_query, unwatch, list_jobs, stop_session_jobs, job_event, attach, resume_leases, list_devices, worker_event) | 64 KiB (`MaxMetadataBytes`) |
 
 Further size rules:
 - call_status, call_ack, call_update: envelope size minus the encoded size of
@@ -421,6 +430,7 @@ Further size rules:
 | Message nodes (envelope counts as one) | 8192 (`MaxDecodeNodes`) |
 | Field occurrences: every tag at every level, unknown fields included; a packed repeated field counts once | 65536 (`MaxDecodeFields`) |
 | `JobSnapshot.jobs` elements | 4096 (`MaxSnapshotJobs`) |
+| `ListDirectoryResult.entries` elements | 1000 (`MaxDirectoryEntries`) |
 | `ToolOutput.content` elements | 128 |
 | `BashRequest.working_dirs` elements | 256 |
 | `CallUpdate.DeviceOffline.online_devices` elements | 256 |
@@ -493,6 +503,61 @@ A peer must not assume:
   fragment being written);
 - contiguous `message_id`s, or that only messages larger than F are
   fragmented.
+
+### Device queries on daemon links
+
+`DaemonDownlink.device_query` asks the daemon for read-only information
+outside a session. The control plane gives each query a fresh
+`request_id` and tracks at most 16 on the current connection. It drops
+unmatched results, removes requests on cancellation or after 10 seconds,
+and fails pending requests as soon as the link closes or is superseded.
+Queries have no persistent state, boot ID, resend or deduplication.
+
+`DaemonUplink.device_query_result` echoes the ID and carries either a
+query error or the listing. An ID outside 1–128 bytes of
+`[A-Za-z0-9_-]` gets `CODE_INVALID` with an empty ID. A missing or
+unknown query type gets `CODE_UNSUPPORTED`. The daemon runs up to four
+filesystem queries concurrently and answers additional queries with
+`CODE_BUSY`. During shutdown it uses `CODE_SHUTTING_DOWN` while the
+link can still send. An empty outcome fails the matching request.
+
+Directory listings resolve empty paths, `~`, and `~/...` using the
+daemon user's home. Other paths must be absolute. Paths may contain up
+to 4096 bytes and no NUL. Results carry the lexically cleaned path
+and parent, preserving symlinks in the path. At the root, the parent is
+empty. The home is also lexically cleaned. An unknown, relative or
+non-UTF-8 home is empty, and paths that need it return
+`DIRECTORY_ERROR_INVALID_PATH`.
+
+Listings include subdirectories and symbolic links whose targets are
+directories or could not be checked within the probe budget. Dot-prefixed
+names are included on request. Names that are not valid UTF-8 count toward
+the 20000 raw entries but are omitted from the result. The daemon sorts
+directories by name in byte order and returns up to 1000. It uses a
+one-entry lookahead to set `truncated` only if more raw entries exist or
+it omits entries at the result cap.
+
+Path and filesystem failures are carried in `ListDirectoryResult.error`.
+If reading the listed directory has not returned after five seconds, the
+daemon replies with `DIRECTORY_ERROR_TIMEOUT`. The blocked directory read
+holds its query slot until it returns, including across reconnects.
+
+After reading the directory, the daemon checks symlink targets and
+`.git` markers on a best-effort basis using a separate pool of 16
+probe slots. Each query can probe until two seconds from its start or
+one second before its query deadline, whichever is earlier. If time
+runs out or no probe slot is free, it returns the listing with the
+markers it has. Unchecked entries get `git_repository = false` and
+unchecked symlinks keep `symlink = true`, so a listed symlink may point
+to a file and listing it yields `DIRECTORY_ERROR_NOT_DIRECTORY`. Blocked
+probes hold only their probe slots until the syscall returns; the daemon
+logs a warning when a listing finds every probe slot busy. On
+filesystems that do not report entry types (some FUSE filesystems, XFS
+without ftype), reading the directory itself stats each entry, so a hung
+mount below the listed directory can still make the listing time out.
+
+If a listing exceeds the link's size limits, the daemon reports
+`DIRECTORY_ERROR_IO`. Listings larger than a frame use regular fragmentation.
 
 Go sender detail, for reference only (`Link.next`): each scheduling round
 writes at most one eligible control frame, then one small business frame,

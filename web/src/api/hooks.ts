@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { useEffect } from "react"
 
 import { localDeadline } from "@/lib/enroll"
@@ -7,7 +7,7 @@ import { useClient } from "./context"
 import { isApiError } from "./errors"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
 import { useSessionHold } from "./session-hold"
-import type { Device, EnrollLink, EnrollRole, Project, ProjectService, SessionSummary, User } from "./types"
+import type { Device, DirectoryListing, EnrollLink, EnrollRole, Project, ProjectService, SessionSummary, User } from "./types"
 
 export function useAuth() {
   const client = useClient()
@@ -79,6 +79,34 @@ export function useFetchDevices(): () => Promise<Device[]> {
       staleTime: 0,
       retry: false,
     })
+}
+
+/**
+ * A directory on a device, asked live. While another directory loads, the
+ * previous listing stays (`isPlaceholderData`). A listing is also cached
+ * under the path the device resolved, so "~" and the home directory's own
+ * path share one answer. Failures are not retried: the picker offers that.
+ * `fetch` waits for the listing, joining a request under way.
+ */
+export function useDirectory(req: { device: string; path: string; includeHidden: boolean }) {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  const { device, path, includeHidden } = req
+  const options = {
+    queryKey: queryKeys.directory(device, path, includeHidden),
+    queryFn: async (): Promise<DirectoryListing> => {
+      const listing = await client.machines.listDirectory({ device, path, includeHidden })
+      if (listing.path !== "" && listing.path !== path && listing.error === undefined) {
+        queryClient.setQueryData(queryKeys.directory(device, listing.path, includeHidden), listing)
+      }
+      return listing
+    },
+    staleTime: 5_000,
+    gcTime: 60_000,
+    retry: false,
+  }
+  const query = useQuery({ ...options, placeholderData: keepPreviousData, refetchOnWindowFocus: false })
+  return { query, fetch: () => queryClient.fetchQuery(options) }
 }
 
 /**

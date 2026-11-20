@@ -142,8 +142,59 @@ export interface EnrollLink {
   serverVersion: string
 }
 
+/** Why a directory was not listed; the path itself is the problem, not the device. */
+export type DirectoryError =
+  /** Relative, too long, or contains NUL. */
+  | "invalid_path"
+  | "not_found"
+  | "not_directory"
+  | "permission_denied"
+  /** Reading took longer than the device allows (such as a hung network mount). */
+  | "timeout"
+  /** Any other I/O error. */
+  | "io"
+
+export interface DirectoryEntry {
+  /** Base name, without separators. */
+  name: string
+  /** The directory contains a ".git" entry. */
+  gitRepository: boolean
+  /** A symbolic link to a directory. */
+  symlink: boolean
+}
+
+/** One directory on a device, as `listDirectory` found it. */
+export interface DirectoryListing {
+  /**
+   * The listed directory: absolute and lexically cleaned, symbolic links
+   * not resolved. Empty when the request's path couldn't be resolved.
+   */
+  path: string
+  /** Parent of `path` (lexically); empty at the root. */
+  parent: string
+  /** The home directory of the user the device's circus runs as. */
+  home: string
+  /** Subdirectories, sorted by name in byte order. Empty when `error` is set. */
+  entries: DirectoryEntry[]
+  /** Only the first entries (by name) were kept. */
+  truncated: boolean
+  /** Set when the directory was not listed. */
+  error?: DirectoryError
+}
+
 export interface MachineService {
   listDevices(): Promise<Device[]>
+  /**
+   * Lists the subdirectories of a directory on one of the caller's
+   * devices, asking the device live. `path` is empty or "~" for the home
+   * directory, "~/x" under it, or absolute. Fails with `not_found` for an
+   * unknown device, `failed_precondition` when it is offline, `unavailable`
+   * when its link drops or its circus is too old to answer,
+   * `deadline_exceeded` when it doesn't answer in time and
+   * `resource_exhausted` when too many requests are in flight. Problems
+   * with the path come back in the listing's `error`.
+   */
+  listDirectory(req: { device: string; path: string; includeHidden: boolean }): Promise<DirectoryListing>
   /**
    * Issues a one-time link that enrolls machines for the caller. Fails with
    * `resource_exhausted` while the caller has too many unused links, and

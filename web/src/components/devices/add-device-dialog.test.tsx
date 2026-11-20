@@ -48,6 +48,7 @@ async function renderPage({
   const wrapClient = (client: CircusClient): CircusClient => ({
     ...client,
     machines: {
+      ...client.machines,
       listDevices: listDevices ? listDevices(client.machines.listDevices) : client.machines.listDevices,
       createEnrollLink: (req) => {
         requested.push(req.role)

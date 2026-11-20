@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package circus.v1;
 
+import "circus/v1/daemon_link.proto";
+
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
 // MachineService lists and enrolls machines for the signed-in browser user.
@@ -14,6 +16,15 @@ service MachineService {
   // signed-in user may call it. Tokens are returned only here; the server
   // stores only their hashes.
   rpc CreateEnrollLink(CreateEnrollLinkRequest) returns (CreateEnrollLinkResponse);
+  // Lists the subdirectories of a directory on one of the caller's devices,
+  // asking its daemon live. Errors: NOT_FOUND for an unknown device;
+  // FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
+  // closes before the answer, or the daemon does not support the query
+  // (older version); DEADLINE_EXCEEDED after 10 seconds without an answer;
+  // RESOURCE_EXHAUSTED when the caller already has 8 directory requests in
+  // flight or the daemon is busy. Problems with the path itself are not RPC
+  // errors: they come back in ListDirectoryResponse.result.error.
+  rpc ListDirectory(ListDirectoryRequest) returns (ListDirectoryResponse);
 }
 
 message Device {
@@ -53,4 +64,17 @@ message CreateEnrollLinkResponse {
   // The control plane's build version (such as "v0.1.0" or "dev") for
   // selecting the matching CLI release.
   string server_version = 3;
+}
+
+message ListDirectoryRequest {
+  // Name of one of the caller's devices.
+  string device = 1;
+  // As ListDirectoryQuery.path: empty or "~" is the home directory, "~/x" is
+  // under it, anything else must be absolute. At most 4096 bytes.
+  string path = 2;
+  bool include_hidden = 3;
+}
+message ListDirectoryResponse {
+  // The daemon's ListDirectoryResult, passed through.
+  ListDirectoryResult result = 1;
 }

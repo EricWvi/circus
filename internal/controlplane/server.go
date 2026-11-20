@@ -177,6 +177,7 @@ type Server struct {
 	// registry holds the live daemon links: the authority on which devices
 	// are online.
 	registry gateway.Registry
+	query    webapi.QueryFunc
 	// sessions is the worker-link session service, which also schedules
 	// sessions (sessions.Waker); bus carries committed session events to
 	// watchers. Both are shared with the user-facing session API.
@@ -289,7 +290,7 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	// finish; the session service closes with the call plane.
 	s.hooks = append(s.hooks, shutdownHook{"session watchers", func(context.Context) error { s.bus.Close(); return nil }})
 	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger,
-		Bus: s.bus, Waker: s.sessions, Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version})
+		Bus: s.bus, Waker: s.sessions, Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query})
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()

@@ -32,12 +32,8 @@ import {
   type RowErrors,
 } from "@/lib/location-form"
 
-/**
- * Classes for a control that is unavailable while the form is busy. It
- * stays enabled (and keeps focus) but ignores pointers and looks disabled;
- * handlers check `busy` themselves.
- */
-export const busyClass = "aria-disabled:pointer-events-none aria-disabled:opacity-50"
+import { busyClass } from "./busy"
+import { FolderPickerField } from "./folder-picker"
 
 /**
  * Edits a project's locations: one row per device and optional path. An
@@ -133,7 +129,16 @@ export function LocationEditor({
                   {rowErrors.device && <FieldError>{rowErrors.device}</FieldError>}
                 </div>
                 <div className="col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1 sm:col-start-2 sm:row-start-1">
-                  <div className="relative">
+                  <FolderPickerField
+                    device={device}
+                    deviceName={row.device}
+                    path={row.path}
+                    busy={busy}
+                    onSelect={(path) => {
+                      update(row.key, { path })
+                      onTouch(row.key, "path")
+                    }}
+                  >
                     <Input
                       ref={(el) => {
                         if (el && focusPath.current === row.key) {
@@ -150,12 +155,12 @@ export function LocationEditor({
                       autoCapitalize="none"
                       autoComplete="off"
                       spellCheck={false}
-                      className={isDefault ? "pr-20" : undefined}
+                      className={isDefault ? "pr-[6.75rem]" : "pr-8"}
                       onChange={(e) => update(row.key, { path: e.target.value })}
                       onBlur={() => onTouch(row.key, "path")}
                     />
                     {isDefault && <DefaultMark hint={defaultPathHint} />}
-                  </div>
+                  </FolderPickerField>
                   {rowErrors.path && <FieldError>{rowErrors.path}</FieldError>}
                 </div>
                 <div className="col-start-2 row-start-1 sm:col-start-3">
@@ -203,7 +208,7 @@ function DefaultMark({ hint }: { hint: string }) {
     <InfoTip content={hint} contentClassName="max-w-xs break-all">
       <span
         tabIndex={0}
-        className="absolute top-1/2 right-1.5 flex -translate-y-1/2 cursor-default items-center gap-1 rounded-sm px-1 py-0.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="absolute top-1/2 right-8 flex -translate-y-1/2 cursor-default items-center gap-1 rounded-sm px-1 py-0.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         {t("projects.defaultPathMark")}
         <InfoIcon className="size-3" aria-hidden />

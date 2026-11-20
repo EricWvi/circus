@@ -19,6 +19,8 @@ export const queryKeys = {
   devices: ["devices"] as const,
   sessions: (projectId?: string) => ["sessions", projectId ?? "all"] as const,
   allSessions: ["sessions"] as const,
+  directory: (device: string, path: string, includeHidden: boolean) =>
+    ["directory", device, path, includeHidden] as const,
 }
 
 /**

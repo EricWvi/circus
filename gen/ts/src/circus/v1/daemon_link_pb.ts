@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/daemon_link.proto.
  */
 export const file_circus_v1_daemon_link: GenFile = /*@__PURE__*/
-  fileDesc("ChtjaXJjdXMvdjEvZGFlbW9uX2xpbmsucHJvdG8SCWNpcmN1cy52MSLrAgoMRGFlbW9uVXBsaW5rEiEKBWhlbGxvGAEgASgLMhAuY2lyY3VzLnYxLkhlbGxvSAASKQoJaGVhcnRiZWF0GAIgASgLMhQuY2lyY3VzLnYxLkhlYXJ0YmVhdEgAEicKCGZyYWdtZW50GAMgASgLMhMuY2lyY3VzLnYxLkZyYWdtZW50SAASJgoIY2FsbF9hY2sYCiABKAsyEi5jaXJjdXMudjEuQ2FsbEFja0gAEikKBnJlc3VsdBgLIAEoCzIXLmNpcmN1cy52MS5EZXZpY2VSZXN1bHRIABIsCgtjYWxsX3N0YXR1cxgMIAEoCzIVLmNpcmN1cy52MS5DYWxsU3RhdHVzSAASKAoJam9iX2V2ZW50GA0gASgLMhMuY2lyY3VzLnYxLkpvYkV2ZW50SAASLgoMam9iX3NuYXBzaG90GA4gASgLMhYuY2lyY3VzLnYxLkpvYlNuYXBzaG90SABCCQoHcGF5bG9hZCLQAwoORGFlbW9uRG93bmxpbmsSJQoHd2VsY29tZRgBIAEoCzISLmNpcmN1cy52MS5XZWxjb21lSAASIwoGcmVqZWN0GAIgASgLMhEuY2lyY3VzLnYxLlJlamVjdEgAEikKCWhlYXJ0YmVhdBgDIAEoCzIULmNpcmN1cy52MS5IZWFydGJlYXRIABInCghmcmFnbWVudBgEIAEoCzITLmNpcmN1cy52MS5GcmFnbWVudEgAEiQKB2dvX2F3YXkYBSABKAsyES5jaXJjdXMudjEuR29Bd2F5SAASMAoNZGlzcGF0Y2hfY2FsbBgKIAEoCzIXLmNpcmN1cy52MS5EaXNwYXRjaENhbGxIABIsCgtjYW5jZWxfY2FsbBgLIAEoCzIVLmNpcmN1cy52MS5DYW5jZWxDYWxsSAASKgoKY2FsbF9xdWVyeRgMIAEoCzIULmNpcmN1cy52MS5DYWxsUXVlcnlIABIoCglsaXN0X2pvYnMYDSABKAsyEy5jaXJjdXMudjEuTGlzdEpvYnNIABI3ChFzdG9wX3Nlc3Npb25fam9icxgOIAEoCzIaLmNpcmN1cy52MS5TdG9wU2Vzc2lvbkpvYnNIAEIJCgdwYXlsb2FkImoKDERpc3BhdGNoQ2FsbBIjCgRjYWxsGAEgASgLMhUuY2lyY3VzLnYxLkRldmljZUNhbGwSFgoOdGFyZ2V0X2Jvb3RfaWQYAiABKAkSHQoVZGlzcGF0Y2hlZF9hdF91bml4X21zGAMgASgDInkKB0NhbGxBY2sSDwoHY2FsbF9pZBgBIAEoCRInCgZzdGF0dXMYAiABKAsyFS5jaXJjdXMudjEuQ2FsbFN0YXR1c0gAEikKCXJlamVjdGlvbhgDIAEoCzIULmNpcmN1cy52MS5SZWplY3Rpb25IAEIJCgdvdXRjb21lItABCglSZWplY3Rpb24SJwoEY29kZRgBIAEoDjIZLmNpcmN1cy52MS5SZWplY3Rpb24uQ29kZRIPCgdtZXNzYWdlGAIgASgJIogBCgRDb2RlEhQKEENPREVfVU5TUEVDSUZJRUQQABIWChJDT0RFX0JPT1RfTUlTTUFUQ0gQARIQCgxDT0RFX0lOVkFMSUQQAhIWChJDT0RFX0NBTExfTUlTTUFUQ0gQAxIQCgxDT0RFX0VYUElSRUQQBBIWChJDT0RFX1NIVVRUSU5HX0RPV04QBSIeCghMaXN0Sm9icxISCgpzZXNzaW9uX2lkGAEgASgJIlAKC0pvYlNuYXBzaG90EgsKA3NlcRgBIAEoBBIhCgRqb2JzGAIgAygLMhMuY2lyY3VzLnYxLkpvYkV2ZW50EhEKCXRydW5jYXRlZBgDIAEoCCIlCg9TdG9wU2Vzc2lvbkpvYnMSEgoKc2Vzc2lvbl9pZBgBIAEoCUI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw", [file_circus_v1_device, file_circus_v1_link]);
+  fileDesc("ChtjaXJjdXMvdjEvZGFlbW9uX2xpbmsucHJvdG8SCWNpcmN1cy52MSKoAwoMRGFlbW9uVXBsaW5rEiEKBWhlbGxvGAEgASgLMhAuY2lyY3VzLnYxLkhlbGxvSAASKQoJaGVhcnRiZWF0GAIgASgLMhQuY2lyY3VzLnYxLkhlYXJ0YmVhdEgAEicKCGZyYWdtZW50GAMgASgLMhMuY2lyY3VzLnYxLkZyYWdtZW50SAASJgoIY2FsbF9hY2sYCiABKAsyEi5jaXJjdXMudjEuQ2FsbEFja0gAEikKBnJlc3VsdBgLIAEoCzIXLmNpcmN1cy52MS5EZXZpY2VSZXN1bHRIABIsCgtjYWxsX3N0YXR1cxgMIAEoCzIVLmNpcmN1cy52MS5DYWxsU3RhdHVzSAASKAoJam9iX2V2ZW50GA0gASgLMhMuY2lyY3VzLnYxLkpvYkV2ZW50SAASLgoMam9iX3NuYXBzaG90GA4gASgLMhYuY2lyY3VzLnYxLkpvYlNuYXBzaG90SAASOwoTZGV2aWNlX3F1ZXJ5X3Jlc3VsdBgPIAEoCzIcLmNpcmN1cy52MS5EZXZpY2VRdWVyeVJlc3VsdEgAQgkKB3BheWxvYWQigAQKDkRhZW1vbkRvd25saW5rEiUKB3dlbGNvbWUYASABKAsyEi5jaXJjdXMudjEuV2VsY29tZUgAEiMKBnJlamVjdBgCIAEoCzIRLmNpcmN1cy52MS5SZWplY3RIABIpCgloZWFydGJlYXQYAyABKAsyFC5jaXJjdXMudjEuSGVhcnRiZWF0SAASJwoIZnJhZ21lbnQYBCABKAsyEy5jaXJjdXMudjEuRnJhZ21lbnRIABIkCgdnb19hd2F5GAUgASgLMhEuY2lyY3VzLnYxLkdvQXdheUgAEjAKDWRpc3BhdGNoX2NhbGwYCiABKAsyFy5jaXJjdXMudjEuRGlzcGF0Y2hDYWxsSAASLAoLY2FuY2VsX2NhbGwYCyABKAsyFS5jaXJjdXMudjEuQ2FuY2VsQ2FsbEgAEioKCmNhbGxfcXVlcnkYDCABKAsyFC5jaXJjdXMudjEuQ2FsbFF1ZXJ5SAASKAoJbGlzdF9qb2JzGA0gASgLMhMuY2lyY3VzLnYxLkxpc3RKb2JzSAASNwoRc3RvcF9zZXNzaW9uX2pvYnMYDiABKAsyGi5jaXJjdXMudjEuU3RvcFNlc3Npb25Kb2JzSAASLgoMZGV2aWNlX3F1ZXJ5GA8gASgLMhYuY2lyY3VzLnYxLkRldmljZVF1ZXJ5SABCCQoHcGF5bG9hZCJqCgxEaXNwYXRjaENhbGwSIwoEY2FsbBgBIAEoCzIVLmNpcmN1cy52MS5EZXZpY2VDYWxsEhYKDnRhcmdldF9ib290X2lkGAIgASgJEh0KFWRpc3BhdGNoZWRfYXRfdW5peF9tcxgDIAEoAyJ5CgdDYWxsQWNrEg8KB2NhbGxfaWQYASABKAkSJwoGc3RhdHVzGAIgASgLMhUuY2lyY3VzLnYxLkNhbGxTdGF0dXNIABIpCglyZWplY3Rpb24YAyABKAsyFC5jaXJjdXMudjEuUmVqZWN0aW9uSABCCQoHb3V0Y29tZSLQAQoJUmVqZWN0aW9uEicKBGNvZGUYASABKA4yGS5jaXJjdXMudjEuUmVqZWN0aW9uLkNvZGUSDwoHbWVzc2FnZRgCIAEoCSKIAQoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASFgoSQ09ERV9CT09UX01JU01BVENIEAESEAoMQ09ERV9JTlZBTElEEAISFgoSQ09ERV9DQUxMX01JU01BVENIEAMSEAoMQ09ERV9FWFBJUkVEEAQSFgoSQ09ERV9TSFVUVElOR19ET1dOEAUiHgoITGlzdEpvYnMSEgoKc2Vzc2lvbl9pZBgBIAEoCSJQCgtKb2JTbmFwc2hvdBILCgNzZXEYASABKAQSIQoEam9icxgCIAMoCzITLmNpcmN1cy52MS5Kb2JFdmVudBIRCgl0cnVuY2F0ZWQYAyABKAgiJQoPU3RvcFNlc3Npb25Kb2JzEhIKCnNlc3Npb25faWQYASABKAkiYwoLRGV2aWNlUXVlcnkSEgoKcmVxdWVzdF9pZBgBIAEoCRI3Cg5saXN0X2RpcmVjdG9yeRgKIAEoCzIdLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UXVlcnlIAEIHCgVxdWVyeSKaAQoRRGV2aWNlUXVlcnlSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIsCgVlcnJvchgCIAEoCzIbLmNpcmN1cy52MS5EZXZpY2VRdWVyeUVycm9ySAASOAoObGlzdF9kaXJlY3RvcnkYCiABKAsyHi5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3VsdEgAQgkKB291dGNvbWUiwAEKEERldmljZVF1ZXJ5RXJyb3ISLgoEY29kZRgBIAEoDjIgLmNpcmN1cy52MS5EZXZpY2VRdWVyeUVycm9yLkNvZGUSDwoHbWVzc2FnZRgCIAEoCSJrCgRDb2RlEhQKEENPREVfVU5TUEVDSUZJRUQQABIQCgxDT0RFX0lOVkFMSUQQARIUChBDT0RFX1VOU1VQUE9SVEVEEAISDQoJQ09ERV9CVVNZEAMSFgoSQ09ERV9TSFVUVElOR19ET1dOEAQiOgoSTGlzdERpcmVjdG9yeVF1ZXJ5EgwKBHBhdGgYASABKAkSFgoOaW5jbHVkZV9oaWRkZW4YAiABKAgiqgEKE0xpc3REaXJlY3RvcnlSZXN1bHQSDAoEcGF0aBgBIAEoCRIOCgZwYXJlbnQYAiABKAkSDAoEaG9tZRgDIAEoCRIqCgdlbnRyaWVzGAQgAygLMhkuY2lyY3VzLnYxLkRpcmVjdG9yeUVudHJ5EhEKCXRydW5jYXRlZBgFIAEoCBIoCgVlcnJvchgGIAEoDjIZLmNpcmN1cy52MS5EaXJlY3RvcnlFcnJvciJHCg5EaXJlY3RvcnlFbnRyeRIMCgRuYW1lGAEgASgJEhYKDmdpdF9yZXBvc2l0b3J5GAIgASgIEg8KB3N5bWxpbmsYAyABKAgq8QEKDkRpcmVjdG9yeUVycm9yEh8KG0RJUkVDVE9SWV9FUlJPUl9VTlNQRUNJRklFRBAAEiAKHERJUkVDVE9SWV9FUlJPUl9JTlZBTElEX1BBVEgQARIdChlESVJFQ1RPUllfRVJST1JfTk9UX0ZPVU5EEAISIQodRElSRUNUT1JZX0VSUk9SX05PVF9ESVJFQ1RPUlkQAxIlCiFESVJFQ1RPUllfRVJST1JfUEVSTUlTU0lPTl9ERU5JRUQQBBIbChdESVJFQ1RPUllfRVJST1JfVElNRU9VVBAFEhYKEkRJUkVDVE9SWV9FUlJPUl9JTxAGQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_link]);
 
 /**
  * DaemonUplink is one daemon-to-control-plane WSS binary message.
@@ -82,6 +82,12 @@ export type DaemonUplink = Message<"circus.v1.DaemonUplink"> & {
      */
     value: JobSnapshot;
     case: "jobSnapshot";
+  } | {
+    /**
+     * @generated from field: circus.v1.DeviceQueryResult device_query_result = 15;
+     */
+    value: DeviceQueryResult;
+    case: "deviceQueryResult";
   } | { case: undefined; value?: undefined };
 };
 
@@ -168,6 +174,12 @@ export type DaemonDownlink = Message<"circus.v1.DaemonDownlink"> & {
      */
     value: StopSessionJobs;
     case: "stopSessionJobs";
+  } | {
+    /**
+     * @generated from field: circus.v1.DeviceQuery device_query = 15;
+     */
+    value: DeviceQuery;
+    case: "deviceQuery";
   } | { case: undefined; value?: undefined };
 };
 
@@ -397,4 +409,332 @@ export type StopSessionJobs = Message<"circus.v1.StopSessionJobs"> & {
  */
 export const StopSessionJobsSchema: GenMessage<StopSessionJobs> = /*@__PURE__*/
   messageDesc(file_circus_v1_daemon_link, 7);
+
+/**
+ * DeviceQuery is a read-only request the control plane makes on its own,
+ * outside any session (for example, browsing directories while editing a
+ * project). It is not persisted, deduplicated, fenced to a boot or resent:
+ * if the link closes before the result arrives, the control plane fails the
+ * request. It has no ordering relative to calls, ListJobs or
+ * StopSessionJobs and is never a barrier. The daemon answers every
+ * DeviceQuery it receives with exactly one DeviceQueryResult carrying the same
+ * request_id, including queries it cannot parse or does not support. The
+ * control plane sends a query type only to a daemon whose Hello.features
+ * lists it.
+ *
+ * @generated from message circus.v1.DeviceQuery
+ */
+export type DeviceQuery = Message<"circus.v1.DeviceQuery"> & {
+  /**
+   * Required: 1-128 bytes, charset [A-Za-z0-9_-]; unique among the link's
+   * outstanding queries.
+   *
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from oneof circus.v1.DeviceQuery.query
+   */
+  query: {
+    /**
+     * @generated from field: circus.v1.ListDirectoryQuery list_directory = 10;
+     */
+    value: ListDirectoryQuery;
+    case: "listDirectory";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message circus.v1.DeviceQuery.
+ * Use `create(DeviceQuerySchema)` to create a new message.
+ */
+export const DeviceQuerySchema: GenMessage<DeviceQuery> = /*@__PURE__*/
+  messageDesc(file_circus_v1_daemon_link, 8);
+
+/**
+ * DeviceQueryResult answers one DeviceQuery.
+ *
+ * @generated from message circus.v1.DeviceQueryResult
+ */
+export type DeviceQueryResult = Message<"circus.v1.DeviceQueryResult"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * Exactly one outcome.
+   *
+   * @generated from oneof circus.v1.DeviceQueryResult.outcome
+   */
+  outcome: {
+    /**
+     * @generated from field: circus.v1.DeviceQueryError error = 2;
+     */
+    value: DeviceQueryError;
+    case: "error";
+  } | {
+    /**
+     * @generated from field: circus.v1.ListDirectoryResult list_directory = 10;
+     */
+    value: ListDirectoryResult;
+    case: "listDirectory";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message circus.v1.DeviceQueryResult.
+ * Use `create(DeviceQueryResultSchema)` to create a new message.
+ */
+export const DeviceQueryResultSchema: GenMessage<DeviceQueryResult> = /*@__PURE__*/
+  messageDesc(file_circus_v1_daemon_link, 9);
+
+/**
+ * DeviceQueryError reports that the daemon did not run a query.
+ *
+ * @generated from message circus.v1.DeviceQueryError
+ */
+export type DeviceQueryError = Message<"circus.v1.DeviceQueryError"> & {
+  /**
+   * @generated from field: circus.v1.DeviceQueryError.Code code = 1;
+   */
+  code: DeviceQueryError_Code;
+
+  /**
+   * @generated from field: string message = 2;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message circus.v1.DeviceQueryError.
+ * Use `create(DeviceQueryErrorSchema)` to create a new message.
+ */
+export const DeviceQueryErrorSchema: GenMessage<DeviceQueryError> = /*@__PURE__*/
+  messageDesc(file_circus_v1_daemon_link, 10);
+
+/**
+ * @generated from enum circus.v1.DeviceQueryError.Code
+ */
+export enum DeviceQueryError_Code {
+  /**
+   * @generated from enum value: CODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Malformed query, such as a missing request_id or an empty oneof.
+   *
+   * @generated from enum value: CODE_INVALID = 1;
+   */
+  INVALID = 1,
+
+  /**
+   * The daemon does not know this query type.
+   *
+   * @generated from enum value: CODE_UNSUPPORTED = 2;
+   */
+  UNSUPPORTED = 2,
+
+  /**
+   * Too many queries are running on the daemon; retry later.
+   *
+   * @generated from enum value: CODE_BUSY = 3;
+   */
+  BUSY = 3,
+
+  /**
+   * The daemon is shutting down.
+   *
+   * @generated from enum value: CODE_SHUTTING_DOWN = 4;
+   */
+  SHUTTING_DOWN = 4,
+}
+
+/**
+ * Describes the enum circus.v1.DeviceQueryError.Code.
+ */
+export const DeviceQueryError_CodeSchema: GenEnum<DeviceQueryError_Code> = /*@__PURE__*/
+  enumDesc(file_circus_v1_daemon_link, 10, 0);
+
+/**
+ * ListDirectoryQuery lists the subdirectories of one directory on the device.
+ *
+ * @generated from message circus.v1.ListDirectoryQuery
+ */
+export type ListDirectoryQuery = Message<"circus.v1.ListDirectoryQuery"> & {
+  /**
+   * Empty means the daemon user's home directory. "~" and a leading "~/"
+   * expand to that home directory. Otherwise an absolute path; a relative
+   * path is DIRECTORY_ERROR_INVALID_PATH. At most 4096 bytes.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * Also list directories whose names start with ".".
+   *
+   * @generated from field: bool include_hidden = 2;
+   */
+  includeHidden: boolean;
+};
+
+/**
+ * Describes the message circus.v1.ListDirectoryQuery.
+ * Use `create(ListDirectoryQuerySchema)` to create a new message.
+ */
+export const ListDirectoryQuerySchema: GenMessage<ListDirectoryQuery> = /*@__PURE__*/
+  messageDesc(file_circus_v1_daemon_link, 11);
+
+/**
+ * ListDirectoryResult is the outcome of one ListDirectoryQuery.
+ *
+ * @generated from message circus.v1.ListDirectoryResult
+ */
+export type ListDirectoryResult = Message<"circus.v1.ListDirectoryResult"> & {
+  /**
+   * The listed directory: absolute and lexically cleaned (no trailing
+   * separator except at the root; "." and ".." removed). Symbolic links in it
+   * are not resolved. Set even when error is set, if the path could be
+   * resolved.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * Parent of path (lexically); empty at the root.
+   *
+   * @generated from field: string parent = 2;
+   */
+  parent: string;
+
+  /**
+   * The daemon user's home directory, empty if unknown or not valid UTF-8.
+   * A path that requires an unavailable home yields INVALID_PATH.
+   *
+   * @generated from field: string home = 3;
+   */
+  home: string;
+
+  /**
+   * Subdirectories (including symbolic links to directories), sorted by name
+   * in byte order. Empty when error is set. Names that are not valid UTF-8
+   * are omitted and count only toward the raw entry limit.
+   *
+   * @generated from field: repeated circus.v1.DirectoryEntry entries = 4;
+   */
+  entries: DirectoryEntry[];
+
+  /**
+   * entries were capped at 1000, or the daemon stopped reading the directory
+   * after 20000 raw entries. Entries kept are the first by name among those read.
+   *
+   * @generated from field: bool truncated = 5;
+   */
+  truncated: boolean;
+
+  /**
+   * UNSPECIFIED when the directory was listed; otherwise why it was not.
+   *
+   * @generated from field: circus.v1.DirectoryError error = 6;
+   */
+  error: DirectoryError;
+};
+
+/**
+ * Describes the message circus.v1.ListDirectoryResult.
+ * Use `create(ListDirectoryResultSchema)` to create a new message.
+ */
+export const ListDirectoryResultSchema: GenMessage<ListDirectoryResult> = /*@__PURE__*/
+  messageDesc(file_circus_v1_daemon_link, 12);
+
+/**
+ * @generated from message circus.v1.DirectoryEntry
+ */
+export type DirectoryEntry = Message<"circus.v1.DirectoryEntry"> & {
+  /**
+   * Base name, without separators.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * Best effort: true when a ".git" entry (directory or file) was found.
+   * False also covers entries the daemon could not check.
+   *
+   * @generated from field: bool git_repository = 2;
+   */
+  gitRepository: boolean;
+
+  /**
+   * Best effort: a symbolic link to a directory or an unchecked symbolic
+   * link whose target may not be a directory.
+   *
+   * @generated from field: bool symlink = 3;
+   */
+  symlink: boolean;
+};
+
+/**
+ * Describes the message circus.v1.DirectoryEntry.
+ * Use `create(DirectoryEntrySchema)` to create a new message.
+ */
+export const DirectoryEntrySchema: GenMessage<DirectoryEntry> = /*@__PURE__*/
+  messageDesc(file_circus_v1_daemon_link, 13);
+
+/**
+ * @generated from enum circus.v1.DirectoryError
+ */
+export enum DirectoryError {
+  /**
+   * @generated from enum value: DIRECTORY_ERROR_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The path is relative, too long, or contains NUL.
+   *
+   * @generated from enum value: DIRECTORY_ERROR_INVALID_PATH = 1;
+   */
+  INVALID_PATH = 1,
+
+  /**
+   * @generated from enum value: DIRECTORY_ERROR_NOT_FOUND = 2;
+   */
+  NOT_FOUND = 2,
+
+  /**
+   * @generated from enum value: DIRECTORY_ERROR_NOT_DIRECTORY = 3;
+   */
+  NOT_DIRECTORY = 3,
+
+  /**
+   * @generated from enum value: DIRECTORY_ERROR_PERMISSION_DENIED = 4;
+   */
+  PERMISSION_DENIED = 4,
+
+  /**
+   * Reading took longer than the daemon's limit (such as a hung network mount).
+   *
+   * @generated from enum value: DIRECTORY_ERROR_TIMEOUT = 5;
+   */
+  TIMEOUT = 5,
+
+  /**
+   * Any other I/O error; ListDirectoryResult has no message, see daemon logs.
+   *
+   * @generated from enum value: DIRECTORY_ERROR_IO = 6;
+   */
+  IO = 6,
+}
+
+/**
+ * Describes the enum circus.v1.DirectoryError.
+ */
+export const DirectoryErrorSchema: GenEnum<DirectoryError> = /*@__PURE__*/
+  enumDesc(file_circus_v1_daemon_link, 0);
 

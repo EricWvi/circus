@@ -52,6 +52,10 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 			if id := body.Descriptor().Fields().ByName("session_id"); f.Name() == "session" && id != nil {
 				body.Set(id, protoreflect.ValueOfString(callID))
 			}
+			queryID := string(f.Name()) + "-test"
+			if f.Name() == "device_query" || f.Name() == "device_query_result" {
+				body.Set(body.Descriptor().Fields().ByName("request_id"), protoreflect.ValueOfString(queryID))
+			}
 			r.Set(f, protoreflect.ValueOfMessage(body))
 			class, key, err := wire.Classify(m)
 			expected := wire.Data
@@ -65,6 +69,10 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 				t.Errorf("class for %s: %v", f.FullName(), class)
 			}
 			switch f.Name() {
+			case "device_query", "device_query_result":
+				if key != "device_query/"+queryID {
+					t.Errorf("device query ordering key for %s: %q", f.FullName(), key)
+				}
 			case "session":
 				if key != "session/"+callID {
 					t.Errorf("session ordering key for %s: %q", f.FullName(), key)

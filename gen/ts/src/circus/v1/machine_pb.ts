@@ -4,13 +4,15 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { ListDirectoryResult } from "./daemon_link_pb.js";
+import { file_circus_v1_daemon_link } from "./daemon_link_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file circus/v1/machine.proto.
  */
 export const file_circus_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UiPgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlIlkKGENyZWF0ZUVucm9sbExpbmtSZXNwb25zZRIMCgRsaW5rGAEgASgJEhcKD2V4cGlyZXNfdW5peF9tcxgCIAEoAxIWCg5zZXJ2ZXJfdmVyc2lvbhgDIAEoCSpvCgpFbnJvbGxSb2xlEhsKF0VOUk9MTF9ST0xFX1VOU1BFQ0lGSUVEEAASFgoSRU5ST0xMX1JPTEVfREFFTU9OEAESFgoSRU5ST0xMX1JPTEVfV09SS0VSEAISFAoQRU5ST0xMX1JPTEVfQk9USBADMrsBCg5NYWNoaW5lU2VydmljZRJMCgtMaXN0RGV2aWNlcxIdLmNpcmN1cy52MS5MaXN0RGV2aWNlc1JlcXVlc3QaHi5jaXJjdXMudjEuTGlzdERldmljZXNSZXNwb25zZRJbChBDcmVhdGVFbnJvbGxMaW5rEiIuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXF1ZXN0GiMuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXNwb25zZUI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw");
+  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UiPgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlIlkKGENyZWF0ZUVucm9sbExpbmtSZXNwb25zZRIMCgRsaW5rGAEgASgJEhcKD2V4cGlyZXNfdW5peF9tcxgCIAEoAxIWCg5zZXJ2ZXJfdmVyc2lvbhgDIAEoCSJMChRMaXN0RGlyZWN0b3J5UmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCRIWCg5pbmNsdWRlX2hpZGRlbhgDIAEoCCJHChVMaXN0RGlyZWN0b3J5UmVzcG9uc2USLgoGcmVzdWx0GAEgASgLMh4uY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXN1bHQqbwoKRW5yb2xsUm9sZRIbChdFTlJPTExfUk9MRV9VTlNQRUNJRklFRBAAEhYKEkVOUk9MTF9ST0xFX0RBRU1PThABEhYKEkVOUk9MTF9ST0xFX1dPUktFUhACEhQKEEVOUk9MTF9ST0xFX0JPVEgQAzKPAgoOTWFjaGluZVNlcnZpY2USTAoLTGlzdERldmljZXMSHS5jaXJjdXMudjEuTGlzdERldmljZXNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVzcG9uc2USWwoQQ3JlYXRlRW5yb2xsTGluaxIiLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVxdWVzdBojLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVzcG9uc2USUgoNTGlzdERpcmVjdG9yeRIfLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVxdWVzdBogLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzcG9uc2VCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM", [file_circus_v1_daemon_link]);
 
 /**
  * @generated from message circus.v1.Device
@@ -147,6 +149,57 @@ export const CreateEnrollLinkResponseSchema: GenMessage<CreateEnrollLinkResponse
   messageDesc(file_circus_v1_machine, 4);
 
 /**
+ * @generated from message circus.v1.ListDirectoryRequest
+ */
+export type ListDirectoryRequest = Message<"circus.v1.ListDirectoryRequest"> & {
+  /**
+   * Name of one of the caller's devices.
+   *
+   * @generated from field: string device = 1;
+   */
+  device: string;
+
+  /**
+   * As ListDirectoryQuery.path: empty or "~" is the home directory, "~/x" is
+   * under it, anything else must be absolute. At most 4096 bytes.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * @generated from field: bool include_hidden = 3;
+   */
+  includeHidden: boolean;
+};
+
+/**
+ * Describes the message circus.v1.ListDirectoryRequest.
+ * Use `create(ListDirectoryRequestSchema)` to create a new message.
+ */
+export const ListDirectoryRequestSchema: GenMessage<ListDirectoryRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 5);
+
+/**
+ * @generated from message circus.v1.ListDirectoryResponse
+ */
+export type ListDirectoryResponse = Message<"circus.v1.ListDirectoryResponse"> & {
+  /**
+   * The daemon's ListDirectoryResult, passed through.
+   *
+   * @generated from field: circus.v1.ListDirectoryResult result = 1;
+   */
+  result?: ListDirectoryResult | undefined;
+};
+
+/**
+ * Describes the message circus.v1.ListDirectoryResponse.
+ * Use `create(ListDirectoryResponseSchema)` to create a new message.
+ */
+export const ListDirectoryResponseSchema: GenMessage<ListDirectoryResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 6);
+
+/**
  * @generated from enum circus.v1.EnrollRole
  */
 export enum EnrollRole {
@@ -206,6 +259,23 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof CreateEnrollLinkRequestSchema;
     output: typeof CreateEnrollLinkResponseSchema;
+  },
+  /**
+   * Lists the subdirectories of a directory on one of the caller's devices,
+   * asking its daemon live. Errors: NOT_FOUND for an unknown device;
+   * FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
+   * closes before the answer, or the daemon does not support the query
+   * (older version); DEADLINE_EXCEEDED after 10 seconds without an answer;
+   * RESOURCE_EXHAUSTED when the caller already has 8 directory requests in
+   * flight or the daemon is busy. Problems with the path itself are not RPC
+   * errors: they come back in ListDirectoryResponse.result.error.
+   *
+   * @generated from rpc circus.v1.MachineService.ListDirectory
+   */
+  listDirectory: {
+    methodKind: "unary";
+    input: typeof ListDirectoryRequestSchema;
+    output: typeof ListDirectoryResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_circus_v1_machine, 0);

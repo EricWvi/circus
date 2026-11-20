@@ -43,6 +43,10 @@ type peer struct {
 	done      chan struct{} // closed once ServeHTTP released the peer
 	// registered is this peer's registration order (0 until registered).
 	registered uint64
+	// Query state belongs to this connection and is guarded by handler.mu.
+	features      map[string]struct{}
+	queries       map[string]pendingQuery
+	queriesClosed bool
 }
 
 func newHandler(c Config) (Handler, error) {
@@ -119,6 +123,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		cancel()
 		h.mu.Lock()
+		p.closeQueries()
 		conn, link, info := p.conn, p.link, p.info
 		h.mu.Unlock()
 		if link != nil {
@@ -191,6 +196,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	p.link = link
 	p.info = info
+	p.features = helloFeatures(hello.Features)
+	p.queries = make(map[string]pendingQuery)
 	if h.closed {
 		h.mu.Unlock()
 		return
@@ -216,11 +223,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var predecessor *peer
 	if previous != nil {
 		predecessor = h.peers[previous.Target.ConnectionID]
+		if predecessor != nil {
+			predecessor.closeQueries()
+		}
 	}
 	h.mu.Unlock()
 	auth.RefreshHelloMetadata(ctx, h.config.MetadataStore, h.config.Logger, principal, hello)
 	if previous != nil {
-		slog.Warn("daemon connection superseded", "instance_id", h.config.InstanceID, "device_id", principal.ID, "boot_changed", previous.Target.BootID != hello.BootId)
+		h.config.Logger.WarnContext(ctx, "daemon connection superseded", "device_id", principal.ID, "boot_changed", previous.Target.BootID != hello.BootId)
 		if predecessor != nil {
 			h.requestClose(predecessor, circusv1.GoAway_REASON_SUPERSEDED)
 		}
@@ -247,6 +257,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	defer func() { cancel(); _ = link.Close(); <-syncDone }()
+	defer func() {
+		h.mu.Lock()
+		p.closeQueries()
+		h.mu.Unlock()
+	}()
 	for {
 		m, err := link.Receive(ctx)
 		if err != nil {
@@ -264,6 +279,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			err = h.config.Hooks.OnJobEvent(ctx, info, v.JobEvent)
 		case *circusv1.DaemonUplink_JobSnapshot:
 			err = h.config.Hooks.OnJobSnapshot(ctx, info, v.JobSnapshot)
+		case *circusv1.DaemonUplink_DeviceQueryResult:
+			h.resolveQuery(p, v.DeviceQueryResult)
 		case *circusv1.DaemonUplink_Heartbeat:
 		default:
 			err = fmt.Errorf("gateway: unexpected business message")
@@ -289,6 +306,9 @@ func (h *handler) recheck(ctx context.Context, p *peer, principal auth.Principal
 	})
 }
 func (h *handler) requestClose(p *peer, reason circusv1.GoAway_Reason) {
+	h.mu.Lock()
+	p.closeQueries()
+	h.mu.Unlock()
 	p.closeOnce.Do(func() {
 		go func() {
 			defer close(p.closing)

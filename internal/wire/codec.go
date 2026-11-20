@@ -36,11 +36,13 @@ func (k Kind) newMessage() proto.Message {
 
 // Transport resource limits, independent of application ID validation.
 const (
-	MaxMetadataBytes = 64 << 10
-	MaxSnapshotBytes = 8 << 20
-	MaxSnapshotJobs  = 4096
-	MaxDecodeNodes   = 8192
-	MaxDecodeFields  = 65536
+	MaxMetadataBytes        = 64 << 10
+	MaxSnapshotBytes        = 8 << 20
+	MaxSnapshotJobs         = 4096
+	MaxDirectoryResultBytes = 4 << 20
+	MaxDirectoryEntries     = 1000
+	MaxDecodeNodes          = 8192
+	MaxDecodeFields         = 65536
 	// MaxTranscriptBatchBytes bounds the encoded entries of one
 	// AppendTranscript batch, unless the batch is a single larger entry.
 	MaxTranscriptBatchBytes = 8 << 20
@@ -77,6 +79,8 @@ func payloadLimit(name protoreflect.Name, fragmentBytes, messageBytes int) int {
 		return messageBytes
 	case "job_snapshot":
 		return MaxSnapshotBytes
+	case "device_query_result":
+		return MaxDirectoryResultBytes
 	case "fragment":
 		return fragmentBytes + FrameOverhead
 	default:

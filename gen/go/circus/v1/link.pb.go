@@ -145,7 +145,13 @@ type Hello struct {
 	Arch          string `protobuf:"bytes,5,opt,name=arch,proto3" json:"arch,omitempty"`
 	Hostname      string `protobuf:"bytes,6,opt,name=hostname,proto3" json:"hostname,omitempty"`
 	// Hash of the platform machine identifier, shared by roles on one machine.
-	MachineId     string `protobuf:"bytes,7,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	MachineId string `protobuf:"bytes,7,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	// Optional capabilities beyond protocol_version, each 1-64 bytes of
+	// [a-z0-9_.], at most 32 entries; unknown names are ignored. A peer sends a
+	// message that depends on a feature only if the other side listed it,
+	// because receivers close the link on unexpected messages. Daemon features:
+	// "device_query.list_directory" (accepts DeviceQuery.list_directory).
+	Features      []string `protobuf:"bytes,8,rep,name=features,proto3" json:"features,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -227,6 +233,13 @@ func (x *Hello) GetMachineId() string {
 		return x.MachineId
 	}
 	return ""
+}
+
+func (x *Hello) GetFeatures() []string {
+	if x != nil {
+		return x.Features
+	}
+	return nil
 }
 
 // Welcome accepts a Hello whose protocol_version is supported (currently only 1).
@@ -646,7 +659,7 @@ var File_circus_v1_link_proto protoreflect.FileDescriptor
 
 const file_circus_v1_link_proto_rawDesc = "" +
 	"\n" +
-	"\x14circus/v1/link.proto\x12\tcircus.v1\"\xd1\x01\n" +
+	"\x14circus/v1/link.proto\x12\tcircus.v1\"\xed\x01\n" +
 	"\x05Hello\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x17\n" +
 	"\aboot_id\x18\x02 \x01(\tR\x06bootId\x12%\n" +
@@ -655,7 +668,8 @@ const file_circus_v1_link_proto_rawDesc = "" +
 	"\x04arch\x18\x05 \x01(\tR\x04arch\x12\x1a\n" +
 	"\bhostname\x18\x06 \x01(\tR\bhostname\x12\x1d\n" +
 	"\n" +
-	"machine_id\x18\a \x01(\tR\tmachineId\"\xcf\x03\n" +
+	"machine_id\x18\a \x01(\tR\tmachineId\x12\x1a\n" +
+	"\bfeatures\x18\b \x03(\tR\bfeatures\"\xcf\x03\n" +
 	"\aWelcome\x12!\n" +
 	"\fprincipal_id\x18\x01 \x01(\tR\vprincipalId\x12\x1f\n" +
 	"\vinstance_id\x18\x02 \x01(\tR\n" +

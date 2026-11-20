@@ -4,9 +4,13 @@ import (
 	"fmt"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/identifier"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
+
+// FeatureListDirectory is the daemon Hello capability for directory queries.
+const FeatureListDirectory = "device_query.list_directory"
 
 // classify is the one scheduling table: Send's class and ordering key for
 // every envelope payload. Raw handshake and transport-owned Fragment are
@@ -48,6 +52,13 @@ func classify(m proto.Message) (Class, string, error) {
 		b := r.Get(f).Message()
 		id := b.Descriptor().Fields().ByName("call_id")
 		return Data, "call/" + b.Get(id).String(), nil
+	case "device_query", "device_query_result":
+		b := r.Get(f).Message()
+		id := b.Get(b.Descriptor().Fields().ByName("request_id")).String()
+		if !identifier.Valid(id, false) {
+			return Data, "", nil
+		}
+		return Data, "device_query/" + id, nil
 	case "call_update":
 		return Data, "call/" + m.(*circusv1.WorkerDownlink).GetCallUpdate().GetCallId(), nil
 	case "session":

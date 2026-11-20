@@ -21,6 +21,12 @@ message Hello {
   string hostname = 6;
   // Hash of the platform machine identifier, shared by roles on one machine.
   string machine_id = 7;
+  // Optional capabilities beyond protocol_version, each 1-64 bytes of
+  // [a-z0-9_.], at most 32 entries; unknown names are ignored. A peer sends a
+  // message that depends on a feature only if the other side listed it,
+  // because receivers close the link on unexpected messages. Daemon features:
+  // "device_query.list_directory" (accepts DeviceQuery.list_directory).
+  repeated string features = 8;
 }
 
 // Welcome accepts a Hello whose protocol_version is supported (currently only 1).

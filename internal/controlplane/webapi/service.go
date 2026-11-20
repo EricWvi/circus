@@ -6,11 +6,14 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
+	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/google/uuid"
@@ -22,7 +25,8 @@ import (
 // backslash is escaped), so 16 × 8 KiB plus names and framing.
 const (
 	maxProjectRequestBytes = 256 << 10
-	maxMachineRequestBytes = 4 << 10
+	// A directory path can occupy up to six JSON bytes per input byte.
+	maxMachineRequestBytes = 32 << 10
 	// maxSessionRequestBytes: the largest SessionService request is a
 	// SendMessage of 256 KiB of text, up to six times that in JSON when
 	// every byte is escaped as \u00XX.
@@ -55,6 +59,9 @@ const (
 // link connected now.
 type OnlineFunc func(ctx context.Context, userID string) (map[string]bool, error)
 
+// QueryFunc sends an ephemeral query to a device's current daemon link.
+type QueryFunc func(ctx context.Context, deviceID string, q *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error)
+
 // Config configures the services.
 type Config struct {
 	Store store.Store
@@ -67,6 +74,8 @@ type Config struct {
 	Interceptor connect.Interceptor
 	// Online reports live daemon links (the gateway's registry).
 	Online OnlineFunc
+	// Query sends live device queries. Nil reports that devices are offline.
+	Query QueryFunc
 	// Now supplies time; nil means time.Now.
 	Now func() time.Time
 	// Logger receives store failures; nil discards them.
@@ -94,20 +103,23 @@ type Config struct {
 
 // Service implements ProjectService, MachineService and SessionService.
 type Service struct {
-	st           store.Store
-	publicURL    string
-	version      string
-	interceptor  connect.Interceptor
-	online       OnlineFunc
-	now          func() time.Time
-	logger       *slog.Logger
-	bus          *sessions.Bus
-	waker        sessions.Waker
-	jobs         JobStopper
-	keepalive    time.Duration
-	recheck      time.Duration
-	maxLifetime  time.Duration
-	writeTimeout time.Duration
+	st               store.Store
+	publicURL        string
+	version          string
+	interceptor      connect.Interceptor
+	online           OnlineFunc
+	now              func() time.Time
+	logger           *slog.Logger
+	bus              *sessions.Bus
+	waker            sessions.Waker
+	jobs             JobStopper
+	keepalive        time.Duration
+	recheck          time.Duration
+	maxLifetime      time.Duration
+	writeTimeout     time.Duration
+	query            QueryFunc
+	directoryMu      sync.Mutex
+	directoryQueries map[string]int
 }
 
 var (
@@ -125,7 +137,13 @@ func New(cfg Config) (*Service, error) {
 	s := &Service{st: cfg.Store, interceptor: cfg.Interceptor, online: cfg.Online, now: cfg.Now, logger: cfg.Logger,
 		publicURL: strings.TrimRight(cfg.PublicURL, "/"), version: cfg.Version,
 		bus: cfg.Bus, waker: cfg.Waker, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
-		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout}
+		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout,
+		query: cfg.Query, directoryQueries: make(map[string]int)}
+	if s.query == nil {
+		s.query = func(context.Context, string, *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {
+			return nil, gateway.ErrDeviceOffline
+		}
+	}
 	if s.version == "" {
 		s.version = "dev"
 	}

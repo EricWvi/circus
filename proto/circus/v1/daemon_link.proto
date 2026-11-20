@@ -27,6 +27,7 @@ message DaemonUplink {
     CallStatus call_status = 12;
     JobEvent job_event = 13;
     JobSnapshot job_snapshot = 14;
+    DeviceQueryResult device_query_result = 15;
   }
 }
 
@@ -50,6 +51,7 @@ message DaemonDownlink {
     CallQuery call_query = 12;
     ListJobs list_jobs = 13;
     StopSessionJobs stop_session_jobs = 14;
+    DeviceQuery device_query = 15;
   }
 }
 
@@ -114,4 +116,107 @@ message JobSnapshot {
 message StopSessionJobs {
   // Required: 1-128 bytes, charset [A-Za-z0-9_-].
   string session_id = 1;
+}
+
+// DeviceQuery is a read-only request the control plane makes on its own,
+// outside any session (for example, browsing directories while editing a
+// project). It is not persisted, deduplicated, fenced to a boot or resent:
+// if the link closes before the result arrives, the control plane fails the
+// request. It has no ordering relative to calls, ListJobs or
+// StopSessionJobs and is never a barrier. The daemon answers every
+// DeviceQuery it receives with exactly one DeviceQueryResult carrying the same
+// request_id, including queries it cannot parse or does not support. The
+// control plane sends a query type only to a daemon whose Hello.features
+// lists it.
+message DeviceQuery {
+  // Required: 1-128 bytes, charset [A-Za-z0-9_-]; unique among the link's
+  // outstanding queries.
+  string request_id = 1;
+  oneof query {
+    ListDirectoryQuery list_directory = 10;
+  }
+}
+
+// DeviceQueryResult answers one DeviceQuery.
+message DeviceQueryResult {
+  string request_id = 1;
+  // Exactly one outcome.
+  oneof outcome {
+    DeviceQueryError error = 2;
+    ListDirectoryResult list_directory = 10;
+  }
+}
+
+// DeviceQueryError reports that the daemon did not run a query.
+message DeviceQueryError {
+  enum Code {
+    CODE_UNSPECIFIED = 0;
+    // Malformed query, such as a missing request_id or an empty oneof.
+    CODE_INVALID = 1;
+    // The daemon does not know this query type.
+    CODE_UNSUPPORTED = 2;
+    // Too many queries are running on the daemon; retry later.
+    CODE_BUSY = 3;
+    // The daemon is shutting down.
+    CODE_SHUTTING_DOWN = 4;
+  }
+  Code code = 1;
+  string message = 2;
+}
+
+// ListDirectoryQuery lists the subdirectories of one directory on the device.
+message ListDirectoryQuery {
+  // Empty means the daemon user's home directory. "~" and a leading "~/"
+  // expand to that home directory. Otherwise an absolute path; a relative
+  // path is DIRECTORY_ERROR_INVALID_PATH. At most 4096 bytes.
+  string path = 1;
+  // Also list directories whose names start with ".".
+  bool include_hidden = 2;
+}
+
+// ListDirectoryResult is the outcome of one ListDirectoryQuery.
+message ListDirectoryResult {
+  // The listed directory: absolute and lexically cleaned (no trailing
+  // separator except at the root; "." and ".." removed). Symbolic links in it
+  // are not resolved. Set even when error is set, if the path could be
+  // resolved.
+  string path = 1;
+  // Parent of path (lexically); empty at the root.
+  string parent = 2;
+  // The daemon user's home directory, empty if unknown or not valid UTF-8.
+  // A path that requires an unavailable home yields INVALID_PATH.
+  string home = 3;
+  // Subdirectories (including symbolic links to directories), sorted by name
+  // in byte order. Empty when error is set. Names that are not valid UTF-8
+  // are omitted and count only toward the raw entry limit.
+  repeated DirectoryEntry entries = 4;
+  // entries were capped at 1000, or the daemon stopped reading the directory
+  // after 20000 raw entries. Entries kept are the first by name among those read.
+  bool truncated = 5;
+  // UNSPECIFIED when the directory was listed; otherwise why it was not.
+  DirectoryError error = 6;
+}
+
+message DirectoryEntry {
+  // Base name, without separators.
+  string name = 1;
+  // Best effort: true when a ".git" entry (directory or file) was found.
+  // False also covers entries the daemon could not check.
+  bool git_repository = 2;
+  // Best effort: a symbolic link to a directory or an unchecked symbolic
+  // link whose target may not be a directory.
+  bool symlink = 3;
+}
+
+enum DirectoryError {
+  DIRECTORY_ERROR_UNSPECIFIED = 0;
+  // The path is relative, too long, or contains NUL.
+  DIRECTORY_ERROR_INVALID_PATH = 1;
+  DIRECTORY_ERROR_NOT_FOUND = 2;
+  DIRECTORY_ERROR_NOT_DIRECTORY = 3;
+  DIRECTORY_ERROR_PERMISSION_DENIED = 4;
+  // Reading took longer than the daemon's limit (such as a hung network mount).
+  DIRECTORY_ERROR_TIMEOUT = 5;
+  // Any other I/O error; ListDirectoryResult has no message, see daemon logs.
+  DIRECTORY_ERROR_IO = 6;
 }

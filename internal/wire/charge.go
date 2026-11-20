@@ -16,6 +16,7 @@ var repeatedLimits = [...]struct {
 	limit int
 }{
 	{"circus.v1.JobSnapshot.jobs", MaxSnapshotJobs},
+	{"circus.v1.ListDirectoryResult.entries", MaxDirectoryEntries},
 	{"circus.v1.ToolOutput.content", 128},
 	{"circus.v1.BashRequest.working_dirs", 256},
 	{"circus.v1.CallUpdate.DeviceOffline.online_devices", 256},

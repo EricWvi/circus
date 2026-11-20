@@ -26,6 +26,7 @@ import {
 } from "@/api/validation"
 import type { ConversationStore, SessionEvent } from "@/lib/types"
 
+import { listMockDirectory } from "./directories"
 import {
   MOCK_LOGIN_METHODS,
   OIDC_SETUP_EMAIL,
@@ -112,6 +113,8 @@ export interface MockBackendOptions {
 /** Failed sign-ins per email within the window before further tries are refused. */
 export const MAX_LOGIN_FAILURES = 5
 export const LOGIN_FAILURE_WINDOW_MS = 60_000
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 const invalid = (message: string, field?: string) =>
   new ApiError("invalid_argument", message, field)
@@ -469,6 +472,20 @@ export function createMockBackend({
         const origin = globalThis.location?.origin ?? "http://localhost:5173"
         const fragment = Array.from({ length: tokens }, () => nanoid(43)).join(".")
         return { link: `${origin}/join#${fragment}`, expiresUnixMs: now() + 3_600_000, serverVersion: "dev" }
+      }),
+      // A fake tree, the same on every device (see `directories.ts`).
+      listDirectory: callAsync(async (req: { device: string; path: string; includeHidden: boolean }) => {
+        await sleep(latency())
+        const owner = currentUser()
+        const device = state.devices.find((d) => d.owner === owner && d.name === req.device)
+        if (!device) throw new ApiError("not_found", "No such device.")
+        if (!device.online || forcedOffline.has(device.name)) {
+          throw new ApiError("failed_precondition", "The device is offline.")
+        }
+        const { delayMs, outcome } = listMockDirectory(device.os, req)
+        if (delayMs > 0) await sleep(delayMs)
+        if (outcome instanceof ApiError) throw outcome
+        return outcome
       }),
     },
 

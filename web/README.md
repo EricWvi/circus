@@ -41,6 +41,14 @@ printed in the browser console), `?mock=reset` restores the demo data and
 commas. The demo accounts are `eric@example.com` (super user) and
 `dev@example.com`, both with password `circus`.
 
+The folder picker of a location's path browses a fake folder tree, the same
+on every mock device (`src/api/mock/directories.ts`): a home folder with
+projects, git repositories, hidden, linked and unreadable folders, an empty
+one and `many-folders` (more than a listing keeps). Folders under `/mnt`
+misbehave: `slow` answers after two seconds, `stale-nfs` times out,
+`busy`, `unreachable` and `hung` fail the request as a busy, unreachable
+(or too old) and silent device. Offline devices fail as offline.
+
 In server mode only `?mock=reset` does something (it resets the simulated
 sessions); auth, projects and devices come from the server.
 

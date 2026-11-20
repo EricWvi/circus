@@ -71,6 +71,7 @@ import (
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
+	"github.com/EricWvi/circus/internal/daemon/dirlist"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	"github.com/EricWvi/circus/internal/identifier"
 	"github.com/EricWvi/circus/internal/loopback"
@@ -103,6 +104,8 @@ type Options struct {
 	MachineIDSource func(context.Context) (string, error)
 	// Jitter returns a value in [0,1]; nil uses rand.Float64.
 	Jitter func() float64
+	// DirectoryFS supplies the filesystem for directory queries. Nil uses the host.
+	DirectoryFS dirlist.FileSystem
 }
 
 // Stats reports connection lifecycle diagnostics; it retains no payloads.
@@ -155,19 +158,23 @@ var errCallbackOverflow = errors.New("daemon link: notification queue overflow")
 // Client owns a Dispatcher, job manager and at most one active link.
 // Run must be called exactly once. Construct one Client per process start.
 type Client struct {
-	opts       Options
-	bootID     string
-	dispatcher *daemon.Dispatcher
-	jobs       *jobs.Manager
-	http       *http.Client
-	endpoint   string
-	machineID  string
-	hostname   string
-	mu         sync.Mutex // guards stats; never held while calling other components
-	stats      Stats
-	running    atomic.Bool
-	stopping   atomic.Bool
-	live       atomic.Pointer[connection]
+	opts        Options
+	bootID      string
+	dispatcher  *daemon.Dispatcher
+	jobs        *jobs.Manager
+	http        *http.Client
+	endpoint    string
+	machineID   string
+	hostname    string
+	mu          sync.Mutex // guards stats; never held while calling other components
+	stats       Stats
+	running     atomic.Bool
+	stopping    atomic.Bool
+	live        atomic.Pointer[connection]
+	querySlots  chan struct{}
+	queryCtx    context.Context
+	stopQueries context.CancelFunc
+	directories *dirlist.Lister
 }
 
 // New validates credentials/TLS policy and creates a fresh UUIDv7 boot.
@@ -248,7 +255,8 @@ func New(o Options) (*Client, error) {
 			return wire.DialWebSocket(ctx, url, options)
 		}
 	}
-	c := &Client{opts: o, bootID: id.String(), endpoint: endpoint, http: httpClient, machineID: machine, hostname: hostname}
+	c := &Client{opts: o, bootID: id.String(), endpoint: endpoint, http: httpClient, machineID: machine, hostname: hostname,
+		querySlots: make(chan struct{}, maxDeviceQueries), directories: dirlist.New(o.DirectoryFS, o.Logger)}
 	c.jobs = jobs.NewManager(jobs.Options{Clock: o.Clock, OnEvent: func(e *circusv1.JobEvent) {
 		c.send(c.live.Load(), &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_JobEvent{JobEvent: e}})
 	}, OnOverflow: c.overflow})
@@ -268,6 +276,7 @@ func New(o Options) (*Client, error) {
 		_ = c.jobs.Shutdown(context.Background())
 		return nil, err
 	}
+	c.queryCtx, c.stopQueries = context.WithCancel(context.Background())
 	return c, nil
 }
 
@@ -416,7 +425,8 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 			_ = raw.Close()
 		}
 	}()
-	hello := &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, BootId: c.bootID, ClientVersion: c.opts.ClientVersion, Os: runtime.GOOS, Arch: runtime.GOARCH, Hostname: c.hostname, MachineId: c.machineID}
+	hello := &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, BootId: c.bootID, ClientVersion: c.opts.ClientVersion, Os: runtime.GOOS, Arch: runtime.GOARCH, Hostname: c.hostname, MachineId: c.machineID,
+		Features: []string{wire.FeatureListDirectory}}
 	welcome, options, err := wire.DialHello(handshake, raw, wire.DaemonUplink, hello, c.opts.Credentials.PrincipalID, c.opts.Wire)
 	var rejected *wire.RejectError
 	switch {
@@ -508,6 +518,8 @@ func (c *Client) reader(a *connection) (time.Duration, error) {
 			c.dispatcher.Cancel(p.CancelCall.GetCallId())
 		case *circusv1.DaemonDownlink_CallQuery:
 			c.send(a, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallStatus{CallStatus: c.dispatcher.Query(p.CallQuery.GetCallId())}})
+		case *circusv1.DaemonDownlink_DeviceQuery:
+			c.deviceQuery(a, p.DeviceQuery)
 		case *circusv1.DaemonDownlink_ListJobs:
 			// Cap the reply to what this link accepts, so an oversize snapshot is
 			// truncated instead of failing the connection on every resync.
@@ -574,6 +586,7 @@ func (c *Client) stop(a *connection) error {
 	defer cancel()
 	cleanup, cancelCleanup := clock.WithTimeout(total, c.opts.Clock, c.opts.ShutdownTimeout-c.opts.FlushReserve)
 	c.stopping.Store(true)
+	c.stopQueries()
 	jobsDone := make(chan error, 1)
 	go func() { jobsDone <- c.jobs.Shutdown(cleanup) }()
 	err := c.dispatcher.Shutdown(cleanup)

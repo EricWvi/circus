@@ -21,6 +21,70 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type DirectoryError int32
+
+const (
+	DirectoryError_DIRECTORY_ERROR_UNSPECIFIED DirectoryError = 0
+	// The path is relative, too long, or contains NUL.
+	DirectoryError_DIRECTORY_ERROR_INVALID_PATH      DirectoryError = 1
+	DirectoryError_DIRECTORY_ERROR_NOT_FOUND         DirectoryError = 2
+	DirectoryError_DIRECTORY_ERROR_NOT_DIRECTORY     DirectoryError = 3
+	DirectoryError_DIRECTORY_ERROR_PERMISSION_DENIED DirectoryError = 4
+	// Reading took longer than the daemon's limit (such as a hung network mount).
+	DirectoryError_DIRECTORY_ERROR_TIMEOUT DirectoryError = 5
+	// Any other I/O error; ListDirectoryResult has no message, see daemon logs.
+	DirectoryError_DIRECTORY_ERROR_IO DirectoryError = 6
+)
+
+// Enum value maps for DirectoryError.
+var (
+	DirectoryError_name = map[int32]string{
+		0: "DIRECTORY_ERROR_UNSPECIFIED",
+		1: "DIRECTORY_ERROR_INVALID_PATH",
+		2: "DIRECTORY_ERROR_NOT_FOUND",
+		3: "DIRECTORY_ERROR_NOT_DIRECTORY",
+		4: "DIRECTORY_ERROR_PERMISSION_DENIED",
+		5: "DIRECTORY_ERROR_TIMEOUT",
+		6: "DIRECTORY_ERROR_IO",
+	}
+	DirectoryError_value = map[string]int32{
+		"DIRECTORY_ERROR_UNSPECIFIED":       0,
+		"DIRECTORY_ERROR_INVALID_PATH":      1,
+		"DIRECTORY_ERROR_NOT_FOUND":         2,
+		"DIRECTORY_ERROR_NOT_DIRECTORY":     3,
+		"DIRECTORY_ERROR_PERMISSION_DENIED": 4,
+		"DIRECTORY_ERROR_TIMEOUT":           5,
+		"DIRECTORY_ERROR_IO":                6,
+	}
+)
+
+func (x DirectoryError) Enum() *DirectoryError {
+	p := new(DirectoryError)
+	*p = x
+	return p
+}
+
+func (x DirectoryError) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DirectoryError) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_daemon_link_proto_enumTypes[0].Descriptor()
+}
+
+func (DirectoryError) Type() protoreflect.EnumType {
+	return &file_circus_v1_daemon_link_proto_enumTypes[0]
+}
+
+func (x DirectoryError) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DirectoryError.Descriptor instead.
+func (DirectoryError) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{0}
+}
+
 type Rejection_Code int32
 
 const (
@@ -63,11 +127,11 @@ func (x Rejection_Code) String() string {
 }
 
 func (Rejection_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_daemon_link_proto_enumTypes[0].Descriptor()
+	return file_circus_v1_daemon_link_proto_enumTypes[1].Descriptor()
 }
 
 func (Rejection_Code) Type() protoreflect.EnumType {
-	return &file_circus_v1_daemon_link_proto_enumTypes[0]
+	return &file_circus_v1_daemon_link_proto_enumTypes[1]
 }
 
 func (x Rejection_Code) Number() protoreflect.EnumNumber {
@@ -77,6 +141,65 @@ func (x Rejection_Code) Number() protoreflect.EnumNumber {
 // Deprecated: Use Rejection_Code.Descriptor instead.
 func (Rejection_Code) EnumDescriptor() ([]byte, []int) {
 	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{4, 0}
+}
+
+type DeviceQueryError_Code int32
+
+const (
+	DeviceQueryError_CODE_UNSPECIFIED DeviceQueryError_Code = 0
+	// Malformed query, such as a missing request_id or an empty oneof.
+	DeviceQueryError_CODE_INVALID DeviceQueryError_Code = 1
+	// The daemon does not know this query type.
+	DeviceQueryError_CODE_UNSUPPORTED DeviceQueryError_Code = 2
+	// Too many queries are running on the daemon; retry later.
+	DeviceQueryError_CODE_BUSY DeviceQueryError_Code = 3
+	// The daemon is shutting down.
+	DeviceQueryError_CODE_SHUTTING_DOWN DeviceQueryError_Code = 4
+)
+
+// Enum value maps for DeviceQueryError_Code.
+var (
+	DeviceQueryError_Code_name = map[int32]string{
+		0: "CODE_UNSPECIFIED",
+		1: "CODE_INVALID",
+		2: "CODE_UNSUPPORTED",
+		3: "CODE_BUSY",
+		4: "CODE_SHUTTING_DOWN",
+	}
+	DeviceQueryError_Code_value = map[string]int32{
+		"CODE_UNSPECIFIED":   0,
+		"CODE_INVALID":       1,
+		"CODE_UNSUPPORTED":   2,
+		"CODE_BUSY":          3,
+		"CODE_SHUTTING_DOWN": 4,
+	}
+)
+
+func (x DeviceQueryError_Code) Enum() *DeviceQueryError_Code {
+	p := new(DeviceQueryError_Code)
+	*p = x
+	return p
+}
+
+func (x DeviceQueryError_Code) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeviceQueryError_Code) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_daemon_link_proto_enumTypes[2].Descriptor()
+}
+
+func (DeviceQueryError_Code) Type() protoreflect.EnumType {
+	return &file_circus_v1_daemon_link_proto_enumTypes[2]
+}
+
+func (x DeviceQueryError_Code) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeviceQueryError_Code.Descriptor instead.
+func (DeviceQueryError_Code) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{10, 0}
 }
 
 // DaemonUplink is one daemon-to-control-plane WSS binary message.
@@ -101,6 +224,7 @@ type DaemonUplink struct {
 	//	*DaemonUplink_CallStatus
 	//	*DaemonUplink_JobEvent
 	//	*DaemonUplink_JobSnapshot
+	//	*DaemonUplink_DeviceQueryResult
 	Payload       isDaemonUplink_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -215,6 +339,15 @@ func (x *DaemonUplink) GetJobSnapshot() *JobSnapshot {
 	return nil
 }
 
+func (x *DaemonUplink) GetDeviceQueryResult() *DeviceQueryResult {
+	if x != nil {
+		if x, ok := x.Payload.(*DaemonUplink_DeviceQueryResult); ok {
+			return x.DeviceQueryResult
+		}
+	}
+	return nil
+}
+
 type isDaemonUplink_Payload interface {
 	isDaemonUplink_Payload()
 }
@@ -251,6 +384,10 @@ type DaemonUplink_JobSnapshot struct {
 	JobSnapshot *JobSnapshot `protobuf:"bytes,14,opt,name=job_snapshot,json=jobSnapshot,proto3,oneof"`
 }
 
+type DaemonUplink_DeviceQueryResult struct {
+	DeviceQueryResult *DeviceQueryResult `protobuf:"bytes,15,opt,name=device_query_result,json=deviceQueryResult,proto3,oneof"`
+}
+
 func (*DaemonUplink_Hello) isDaemonUplink_Payload() {}
 
 func (*DaemonUplink_Heartbeat) isDaemonUplink_Payload() {}
@@ -266,6 +403,8 @@ func (*DaemonUplink_CallStatus) isDaemonUplink_Payload() {}
 func (*DaemonUplink_JobEvent) isDaemonUplink_Payload() {}
 
 func (*DaemonUplink_JobSnapshot) isDaemonUplink_Payload() {}
+
+func (*DaemonUplink_DeviceQueryResult) isDaemonUplink_Payload() {}
 
 // DaemonDownlink is one control-plane-to-daemon WSS binary message.
 // No business message precedes Welcome. Every same-call DispatchCall,
@@ -289,6 +428,7 @@ type DaemonDownlink struct {
 	//	*DaemonDownlink_CallQuery
 	//	*DaemonDownlink_ListJobs
 	//	*DaemonDownlink_StopSessionJobs
+	//	*DaemonDownlink_DeviceQuery
 	Payload       isDaemonDownlink_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -421,6 +561,15 @@ func (x *DaemonDownlink) GetStopSessionJobs() *StopSessionJobs {
 	return nil
 }
 
+func (x *DaemonDownlink) GetDeviceQuery() *DeviceQuery {
+	if x != nil {
+		if x, ok := x.Payload.(*DaemonDownlink_DeviceQuery); ok {
+			return x.DeviceQuery
+		}
+	}
+	return nil
+}
+
 type isDaemonDownlink_Payload interface {
 	isDaemonDownlink_Payload()
 }
@@ -465,6 +614,10 @@ type DaemonDownlink_StopSessionJobs struct {
 	StopSessionJobs *StopSessionJobs `protobuf:"bytes,14,opt,name=stop_session_jobs,json=stopSessionJobs,proto3,oneof"`
 }
 
+type DaemonDownlink_DeviceQuery struct {
+	DeviceQuery *DeviceQuery `protobuf:"bytes,15,opt,name=device_query,json=deviceQuery,proto3,oneof"`
+}
+
 func (*DaemonDownlink_Welcome) isDaemonDownlink_Payload() {}
 
 func (*DaemonDownlink_Reject) isDaemonDownlink_Payload() {}
@@ -484,6 +637,8 @@ func (*DaemonDownlink_CallQuery) isDaemonDownlink_Payload() {}
 func (*DaemonDownlink_ListJobs) isDaemonDownlink_Payload() {}
 
 func (*DaemonDownlink_StopSessionJobs) isDaemonDownlink_Payload() {}
+
+func (*DaemonDownlink_DeviceQuery) isDaemonDownlink_Payload() {}
 
 // DispatchCall fences execution to one daemon boot.
 type DispatchCall struct {
@@ -858,11 +1013,463 @@ func (x *StopSessionJobs) GetSessionId() string {
 	return ""
 }
 
+// DeviceQuery is a read-only request the control plane makes on its own,
+// outside any session (for example, browsing directories while editing a
+// project). It is not persisted, deduplicated, fenced to a boot or resent:
+// if the link closes before the result arrives, the control plane fails the
+// request. It has no ordering relative to calls, ListJobs or
+// StopSessionJobs and is never a barrier. The daemon answers every
+// DeviceQuery it receives with exactly one DeviceQueryResult carrying the same
+// request_id, including queries it cannot parse or does not support. The
+// control plane sends a query type only to a daemon whose Hello.features
+// lists it.
+type DeviceQuery struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Required: 1-128 bytes, charset [A-Za-z0-9_-]; unique among the link's
+	// outstanding queries.
+	RequestId string `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// Types that are valid to be assigned to Query:
+	//
+	//	*DeviceQuery_ListDirectory
+	Query         isDeviceQuery_Query `protobuf_oneof:"query"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceQuery) Reset() {
+	*x = DeviceQuery{}
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceQuery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceQuery) ProtoMessage() {}
+
+func (x *DeviceQuery) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceQuery.ProtoReflect.Descriptor instead.
+func (*DeviceQuery) Descriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DeviceQuery) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *DeviceQuery) GetQuery() isDeviceQuery_Query {
+	if x != nil {
+		return x.Query
+	}
+	return nil
+}
+
+func (x *DeviceQuery) GetListDirectory() *ListDirectoryQuery {
+	if x != nil {
+		if x, ok := x.Query.(*DeviceQuery_ListDirectory); ok {
+			return x.ListDirectory
+		}
+	}
+	return nil
+}
+
+type isDeviceQuery_Query interface {
+	isDeviceQuery_Query()
+}
+
+type DeviceQuery_ListDirectory struct {
+	ListDirectory *ListDirectoryQuery `protobuf:"bytes,10,opt,name=list_directory,json=listDirectory,proto3,oneof"`
+}
+
+func (*DeviceQuery_ListDirectory) isDeviceQuery_Query() {}
+
+// DeviceQueryResult answers one DeviceQuery.
+type DeviceQueryResult struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// Exactly one outcome.
+	//
+	// Types that are valid to be assigned to Outcome:
+	//
+	//	*DeviceQueryResult_Error
+	//	*DeviceQueryResult_ListDirectory
+	Outcome       isDeviceQueryResult_Outcome `protobuf_oneof:"outcome"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceQueryResult) Reset() {
+	*x = DeviceQueryResult{}
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceQueryResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceQueryResult) ProtoMessage() {}
+
+func (x *DeviceQueryResult) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceQueryResult.ProtoReflect.Descriptor instead.
+func (*DeviceQueryResult) Descriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DeviceQueryResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *DeviceQueryResult) GetOutcome() isDeviceQueryResult_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return nil
+}
+
+func (x *DeviceQueryResult) GetError() *DeviceQueryError {
+	if x != nil {
+		if x, ok := x.Outcome.(*DeviceQueryResult_Error); ok {
+			return x.Error
+		}
+	}
+	return nil
+}
+
+func (x *DeviceQueryResult) GetListDirectory() *ListDirectoryResult {
+	if x != nil {
+		if x, ok := x.Outcome.(*DeviceQueryResult_ListDirectory); ok {
+			return x.ListDirectory
+		}
+	}
+	return nil
+}
+
+type isDeviceQueryResult_Outcome interface {
+	isDeviceQueryResult_Outcome()
+}
+
+type DeviceQueryResult_Error struct {
+	Error *DeviceQueryError `protobuf:"bytes,2,opt,name=error,proto3,oneof"`
+}
+
+type DeviceQueryResult_ListDirectory struct {
+	ListDirectory *ListDirectoryResult `protobuf:"bytes,10,opt,name=list_directory,json=listDirectory,proto3,oneof"`
+}
+
+func (*DeviceQueryResult_Error) isDeviceQueryResult_Outcome() {}
+
+func (*DeviceQueryResult_ListDirectory) isDeviceQueryResult_Outcome() {}
+
+// DeviceQueryError reports that the daemon did not run a query.
+type DeviceQueryError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          DeviceQueryError_Code  `protobuf:"varint,1,opt,name=code,proto3,enum=circus.v1.DeviceQueryError_Code" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceQueryError) Reset() {
+	*x = DeviceQueryError{}
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceQueryError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceQueryError) ProtoMessage() {}
+
+func (x *DeviceQueryError) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceQueryError.ProtoReflect.Descriptor instead.
+func (*DeviceQueryError) Descriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DeviceQueryError) GetCode() DeviceQueryError_Code {
+	if x != nil {
+		return x.Code
+	}
+	return DeviceQueryError_CODE_UNSPECIFIED
+}
+
+func (x *DeviceQueryError) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+// ListDirectoryQuery lists the subdirectories of one directory on the device.
+type ListDirectoryQuery struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Empty means the daemon user's home directory. "~" and a leading "~/"
+	// expand to that home directory. Otherwise an absolute path; a relative
+	// path is DIRECTORY_ERROR_INVALID_PATH. At most 4096 bytes.
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Also list directories whose names start with ".".
+	IncludeHidden bool `protobuf:"varint,2,opt,name=include_hidden,json=includeHidden,proto3" json:"include_hidden,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDirectoryQuery) Reset() {
+	*x = ListDirectoryQuery{}
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDirectoryQuery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDirectoryQuery) ProtoMessage() {}
+
+func (x *ListDirectoryQuery) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDirectoryQuery.ProtoReflect.Descriptor instead.
+func (*ListDirectoryQuery) Descriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListDirectoryQuery) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ListDirectoryQuery) GetIncludeHidden() bool {
+	if x != nil {
+		return x.IncludeHidden
+	}
+	return false
+}
+
+// ListDirectoryResult is the outcome of one ListDirectoryQuery.
+type ListDirectoryResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The listed directory: absolute and lexically cleaned (no trailing
+	// separator except at the root; "." and ".." removed). Symbolic links in it
+	// are not resolved. Set even when error is set, if the path could be
+	// resolved.
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Parent of path (lexically); empty at the root.
+	Parent string `protobuf:"bytes,2,opt,name=parent,proto3" json:"parent,omitempty"`
+	// The daemon user's home directory, empty if unknown or not valid UTF-8.
+	// A path that requires an unavailable home yields INVALID_PATH.
+	Home string `protobuf:"bytes,3,opt,name=home,proto3" json:"home,omitempty"`
+	// Subdirectories (including symbolic links to directories), sorted by name
+	// in byte order. Empty when error is set. Names that are not valid UTF-8
+	// are omitted and count only toward the raw entry limit.
+	Entries []*DirectoryEntry `protobuf:"bytes,4,rep,name=entries,proto3" json:"entries,omitempty"`
+	// entries were capped at 1000, or the daemon stopped reading the directory
+	// after 20000 raw entries. Entries kept are the first by name among those read.
+	Truncated bool `protobuf:"varint,5,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	// UNSPECIFIED when the directory was listed; otherwise why it was not.
+	Error         DirectoryError `protobuf:"varint,6,opt,name=error,proto3,enum=circus.v1.DirectoryError" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDirectoryResult) Reset() {
+	*x = ListDirectoryResult{}
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDirectoryResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDirectoryResult) ProtoMessage() {}
+
+func (x *ListDirectoryResult) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDirectoryResult.ProtoReflect.Descriptor instead.
+func (*ListDirectoryResult) Descriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListDirectoryResult) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ListDirectoryResult) GetParent() string {
+	if x != nil {
+		return x.Parent
+	}
+	return ""
+}
+
+func (x *ListDirectoryResult) GetHome() string {
+	if x != nil {
+		return x.Home
+	}
+	return ""
+}
+
+func (x *ListDirectoryResult) GetEntries() []*DirectoryEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *ListDirectoryResult) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+func (x *ListDirectoryResult) GetError() DirectoryError {
+	if x != nil {
+		return x.Error
+	}
+	return DirectoryError_DIRECTORY_ERROR_UNSPECIFIED
+}
+
+type DirectoryEntry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Base name, without separators.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Best effort: true when a ".git" entry (directory or file) was found.
+	// False also covers entries the daemon could not check.
+	GitRepository bool `protobuf:"varint,2,opt,name=git_repository,json=gitRepository,proto3" json:"git_repository,omitempty"`
+	// Best effort: a symbolic link to a directory or an unchecked symbolic
+	// link whose target may not be a directory.
+	Symlink       bool `protobuf:"varint,3,opt,name=symlink,proto3" json:"symlink,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DirectoryEntry) Reset() {
+	*x = DirectoryEntry{}
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DirectoryEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DirectoryEntry) ProtoMessage() {}
+
+func (x *DirectoryEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DirectoryEntry.ProtoReflect.Descriptor instead.
+func (*DirectoryEntry) Descriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DirectoryEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DirectoryEntry) GetGitRepository() bool {
+	if x != nil {
+		return x.GitRepository
+	}
+	return false
+}
+
+func (x *DirectoryEntry) GetSymlink() bool {
+	if x != nil {
+		return x.Symlink
+	}
+	return false
+}
+
 var File_circus_v1_daemon_link_proto protoreflect.FileDescriptor
 
 const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcircus/v1/daemon_link.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\"\xbb\x03\n" +
+	"\x1bcircus/v1/daemon_link.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\"\x8b\x04\n" +
 	"\fDaemonUplink\x12(\n" +
 	"\x05hello\x18\x01 \x01(\v2\x10.circus.v1.HelloH\x00R\x05hello\x124\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x14.circus.v1.HeartbeatH\x00R\theartbeat\x121\n" +
@@ -873,8 +1480,9 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"\vcall_status\x18\f \x01(\v2\x15.circus.v1.CallStatusH\x00R\n" +
 	"callStatus\x122\n" +
 	"\tjob_event\x18\r \x01(\v2\x13.circus.v1.JobEventH\x00R\bjobEvent\x12;\n" +
-	"\fjob_snapshot\x18\x0e \x01(\v2\x16.circus.v1.JobSnapshotH\x00R\vjobSnapshotB\t\n" +
-	"\apayload\"\xbe\x04\n" +
+	"\fjob_snapshot\x18\x0e \x01(\v2\x16.circus.v1.JobSnapshotH\x00R\vjobSnapshot\x12N\n" +
+	"\x13device_query_result\x18\x0f \x01(\v2\x1c.circus.v1.DeviceQueryResultH\x00R\x11deviceQueryResultB\t\n" +
+	"\apayload\"\xfb\x04\n" +
 	"\x0eDaemonDownlink\x12.\n" +
 	"\awelcome\x18\x01 \x01(\v2\x12.circus.v1.WelcomeH\x00R\awelcome\x12+\n" +
 	"\x06reject\x18\x02 \x01(\v2\x11.circus.v1.RejectH\x00R\x06reject\x124\n" +
@@ -888,7 +1496,8 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"\n" +
 	"call_query\x18\f \x01(\v2\x14.circus.v1.CallQueryH\x00R\tcallQuery\x122\n" +
 	"\tlist_jobs\x18\r \x01(\v2\x13.circus.v1.ListJobsH\x00R\blistJobs\x12H\n" +
-	"\x11stop_session_jobs\x18\x0e \x01(\v2\x1a.circus.v1.StopSessionJobsH\x00R\x0fstopSessionJobsB\t\n" +
+	"\x11stop_session_jobs\x18\x0e \x01(\v2\x1a.circus.v1.StopSessionJobsH\x00R\x0fstopSessionJobs\x12;\n" +
+	"\fdevice_query\x18\x0f \x01(\v2\x16.circus.v1.DeviceQueryH\x00R\vdeviceQueryB\t\n" +
 	"\apayload\"\x92\x01\n" +
 	"\fDispatchCall\x12)\n" +
 	"\x04call\x18\x01 \x01(\v2\x15.circus.v1.DeviceCallR\x04call\x12$\n" +
@@ -918,7 +1527,51 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"\ttruncated\x18\x03 \x01(\bR\ttruncated\"0\n" +
 	"\x0fStopSessionJobs\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionIdB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
+	"session_id\x18\x01 \x01(\tR\tsessionId\"}\n" +
+	"\vDeviceQuery\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12F\n" +
+	"\x0elist_directory\x18\n" +
+	" \x01(\v2\x1d.circus.v1.ListDirectoryQueryH\x00R\rlistDirectoryB\a\n" +
+	"\x05query\"\xbb\x01\n" +
+	"\x11DeviceQueryResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x123\n" +
+	"\x05error\x18\x02 \x01(\v2\x1b.circus.v1.DeviceQueryErrorH\x00R\x05error\x12G\n" +
+	"\x0elist_directory\x18\n" +
+	" \x01(\v2\x1e.circus.v1.ListDirectoryResultH\x00R\rlistDirectoryB\t\n" +
+	"\aoutcome\"\xcf\x01\n" +
+	"\x10DeviceQueryError\x124\n" +
+	"\x04code\x18\x01 \x01(\x0e2 .circus.v1.DeviceQueryError.CodeR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"k\n" +
+	"\x04Code\x12\x14\n" +
+	"\x10CODE_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fCODE_INVALID\x10\x01\x12\x14\n" +
+	"\x10CODE_UNSUPPORTED\x10\x02\x12\r\n" +
+	"\tCODE_BUSY\x10\x03\x12\x16\n" +
+	"\x12CODE_SHUTTING_DOWN\x10\x04\"O\n" +
+	"\x12ListDirectoryQuery\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12%\n" +
+	"\x0einclude_hidden\x18\x02 \x01(\bR\rincludeHidden\"\xd9\x01\n" +
+	"\x13ListDirectoryResult\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x16\n" +
+	"\x06parent\x18\x02 \x01(\tR\x06parent\x12\x12\n" +
+	"\x04home\x18\x03 \x01(\tR\x04home\x123\n" +
+	"\aentries\x18\x04 \x03(\v2\x19.circus.v1.DirectoryEntryR\aentries\x12\x1c\n" +
+	"\ttruncated\x18\x05 \x01(\bR\ttruncated\x12/\n" +
+	"\x05error\x18\x06 \x01(\x0e2\x19.circus.v1.DirectoryErrorR\x05error\"e\n" +
+	"\x0eDirectoryEntry\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
+	"\x0egit_repository\x18\x02 \x01(\bR\rgitRepository\x12\x18\n" +
+	"\asymlink\x18\x03 \x01(\bR\asymlink*\xf1\x01\n" +
+	"\x0eDirectoryError\x12\x1f\n" +
+	"\x1bDIRECTORY_ERROR_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cDIRECTORY_ERROR_INVALID_PATH\x10\x01\x12\x1d\n" +
+	"\x19DIRECTORY_ERROR_NOT_FOUND\x10\x02\x12!\n" +
+	"\x1dDIRECTORY_ERROR_NOT_DIRECTORY\x10\x03\x12%\n" +
+	"!DIRECTORY_ERROR_PERMISSION_DENIED\x10\x04\x12\x1b\n" +
+	"\x17DIRECTORY_ERROR_TIMEOUT\x10\x05\x12\x16\n" +
+	"\x12DIRECTORY_ERROR_IO\x10\x06B5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 
 var (
 	file_circus_v1_daemon_link_proto_rawDescOnce sync.Once
@@ -932,60 +1585,76 @@ func file_circus_v1_daemon_link_proto_rawDescGZIP() []byte {
 	return file_circus_v1_daemon_link_proto_rawDescData
 }
 
-var file_circus_v1_daemon_link_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_circus_v1_daemon_link_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_circus_v1_daemon_link_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_circus_v1_daemon_link_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_circus_v1_daemon_link_proto_goTypes = []any{
-	(Rejection_Code)(0),     // 0: circus.v1.Rejection.Code
-	(*DaemonUplink)(nil),    // 1: circus.v1.DaemonUplink
-	(*DaemonDownlink)(nil),  // 2: circus.v1.DaemonDownlink
-	(*DispatchCall)(nil),    // 3: circus.v1.DispatchCall
-	(*CallAck)(nil),         // 4: circus.v1.CallAck
-	(*Rejection)(nil),       // 5: circus.v1.Rejection
-	(*ListJobs)(nil),        // 6: circus.v1.ListJobs
-	(*JobSnapshot)(nil),     // 7: circus.v1.JobSnapshot
-	(*StopSessionJobs)(nil), // 8: circus.v1.StopSessionJobs
-	(*Hello)(nil),           // 9: circus.v1.Hello
-	(*Heartbeat)(nil),       // 10: circus.v1.Heartbeat
-	(*Fragment)(nil),        // 11: circus.v1.Fragment
-	(*DeviceResult)(nil),    // 12: circus.v1.DeviceResult
-	(*CallStatus)(nil),      // 13: circus.v1.CallStatus
-	(*JobEvent)(nil),        // 14: circus.v1.JobEvent
-	(*Welcome)(nil),         // 15: circus.v1.Welcome
-	(*Reject)(nil),          // 16: circus.v1.Reject
-	(*GoAway)(nil),          // 17: circus.v1.GoAway
-	(*CancelCall)(nil),      // 18: circus.v1.CancelCall
-	(*CallQuery)(nil),       // 19: circus.v1.CallQuery
-	(*DeviceCall)(nil),      // 20: circus.v1.DeviceCall
+	(DirectoryError)(0),         // 0: circus.v1.DirectoryError
+	(Rejection_Code)(0),         // 1: circus.v1.Rejection.Code
+	(DeviceQueryError_Code)(0),  // 2: circus.v1.DeviceQueryError.Code
+	(*DaemonUplink)(nil),        // 3: circus.v1.DaemonUplink
+	(*DaemonDownlink)(nil),      // 4: circus.v1.DaemonDownlink
+	(*DispatchCall)(nil),        // 5: circus.v1.DispatchCall
+	(*CallAck)(nil),             // 6: circus.v1.CallAck
+	(*Rejection)(nil),           // 7: circus.v1.Rejection
+	(*ListJobs)(nil),            // 8: circus.v1.ListJobs
+	(*JobSnapshot)(nil),         // 9: circus.v1.JobSnapshot
+	(*StopSessionJobs)(nil),     // 10: circus.v1.StopSessionJobs
+	(*DeviceQuery)(nil),         // 11: circus.v1.DeviceQuery
+	(*DeviceQueryResult)(nil),   // 12: circus.v1.DeviceQueryResult
+	(*DeviceQueryError)(nil),    // 13: circus.v1.DeviceQueryError
+	(*ListDirectoryQuery)(nil),  // 14: circus.v1.ListDirectoryQuery
+	(*ListDirectoryResult)(nil), // 15: circus.v1.ListDirectoryResult
+	(*DirectoryEntry)(nil),      // 16: circus.v1.DirectoryEntry
+	(*Hello)(nil),               // 17: circus.v1.Hello
+	(*Heartbeat)(nil),           // 18: circus.v1.Heartbeat
+	(*Fragment)(nil),            // 19: circus.v1.Fragment
+	(*DeviceResult)(nil),        // 20: circus.v1.DeviceResult
+	(*CallStatus)(nil),          // 21: circus.v1.CallStatus
+	(*JobEvent)(nil),            // 22: circus.v1.JobEvent
+	(*Welcome)(nil),             // 23: circus.v1.Welcome
+	(*Reject)(nil),              // 24: circus.v1.Reject
+	(*GoAway)(nil),              // 25: circus.v1.GoAway
+	(*CancelCall)(nil),          // 26: circus.v1.CancelCall
+	(*CallQuery)(nil),           // 27: circus.v1.CallQuery
+	(*DeviceCall)(nil),          // 28: circus.v1.DeviceCall
 }
 var file_circus_v1_daemon_link_proto_depIdxs = []int32{
-	9,  // 0: circus.v1.DaemonUplink.hello:type_name -> circus.v1.Hello
-	10, // 1: circus.v1.DaemonUplink.heartbeat:type_name -> circus.v1.Heartbeat
-	11, // 2: circus.v1.DaemonUplink.fragment:type_name -> circus.v1.Fragment
-	4,  // 3: circus.v1.DaemonUplink.call_ack:type_name -> circus.v1.CallAck
-	12, // 4: circus.v1.DaemonUplink.result:type_name -> circus.v1.DeviceResult
-	13, // 5: circus.v1.DaemonUplink.call_status:type_name -> circus.v1.CallStatus
-	14, // 6: circus.v1.DaemonUplink.job_event:type_name -> circus.v1.JobEvent
-	7,  // 7: circus.v1.DaemonUplink.job_snapshot:type_name -> circus.v1.JobSnapshot
-	15, // 8: circus.v1.DaemonDownlink.welcome:type_name -> circus.v1.Welcome
-	16, // 9: circus.v1.DaemonDownlink.reject:type_name -> circus.v1.Reject
-	10, // 10: circus.v1.DaemonDownlink.heartbeat:type_name -> circus.v1.Heartbeat
-	11, // 11: circus.v1.DaemonDownlink.fragment:type_name -> circus.v1.Fragment
-	17, // 12: circus.v1.DaemonDownlink.go_away:type_name -> circus.v1.GoAway
-	3,  // 13: circus.v1.DaemonDownlink.dispatch_call:type_name -> circus.v1.DispatchCall
-	18, // 14: circus.v1.DaemonDownlink.cancel_call:type_name -> circus.v1.CancelCall
-	19, // 15: circus.v1.DaemonDownlink.call_query:type_name -> circus.v1.CallQuery
-	6,  // 16: circus.v1.DaemonDownlink.list_jobs:type_name -> circus.v1.ListJobs
-	8,  // 17: circus.v1.DaemonDownlink.stop_session_jobs:type_name -> circus.v1.StopSessionJobs
-	20, // 18: circus.v1.DispatchCall.call:type_name -> circus.v1.DeviceCall
-	13, // 19: circus.v1.CallAck.status:type_name -> circus.v1.CallStatus
-	5,  // 20: circus.v1.CallAck.rejection:type_name -> circus.v1.Rejection
-	0,  // 21: circus.v1.Rejection.code:type_name -> circus.v1.Rejection.Code
-	14, // 22: circus.v1.JobSnapshot.jobs:type_name -> circus.v1.JobEvent
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	17, // 0: circus.v1.DaemonUplink.hello:type_name -> circus.v1.Hello
+	18, // 1: circus.v1.DaemonUplink.heartbeat:type_name -> circus.v1.Heartbeat
+	19, // 2: circus.v1.DaemonUplink.fragment:type_name -> circus.v1.Fragment
+	6,  // 3: circus.v1.DaemonUplink.call_ack:type_name -> circus.v1.CallAck
+	20, // 4: circus.v1.DaemonUplink.result:type_name -> circus.v1.DeviceResult
+	21, // 5: circus.v1.DaemonUplink.call_status:type_name -> circus.v1.CallStatus
+	22, // 6: circus.v1.DaemonUplink.job_event:type_name -> circus.v1.JobEvent
+	9,  // 7: circus.v1.DaemonUplink.job_snapshot:type_name -> circus.v1.JobSnapshot
+	12, // 8: circus.v1.DaemonUplink.device_query_result:type_name -> circus.v1.DeviceQueryResult
+	23, // 9: circus.v1.DaemonDownlink.welcome:type_name -> circus.v1.Welcome
+	24, // 10: circus.v1.DaemonDownlink.reject:type_name -> circus.v1.Reject
+	18, // 11: circus.v1.DaemonDownlink.heartbeat:type_name -> circus.v1.Heartbeat
+	19, // 12: circus.v1.DaemonDownlink.fragment:type_name -> circus.v1.Fragment
+	25, // 13: circus.v1.DaemonDownlink.go_away:type_name -> circus.v1.GoAway
+	5,  // 14: circus.v1.DaemonDownlink.dispatch_call:type_name -> circus.v1.DispatchCall
+	26, // 15: circus.v1.DaemonDownlink.cancel_call:type_name -> circus.v1.CancelCall
+	27, // 16: circus.v1.DaemonDownlink.call_query:type_name -> circus.v1.CallQuery
+	8,  // 17: circus.v1.DaemonDownlink.list_jobs:type_name -> circus.v1.ListJobs
+	10, // 18: circus.v1.DaemonDownlink.stop_session_jobs:type_name -> circus.v1.StopSessionJobs
+	11, // 19: circus.v1.DaemonDownlink.device_query:type_name -> circus.v1.DeviceQuery
+	28, // 20: circus.v1.DispatchCall.call:type_name -> circus.v1.DeviceCall
+	21, // 21: circus.v1.CallAck.status:type_name -> circus.v1.CallStatus
+	7,  // 22: circus.v1.CallAck.rejection:type_name -> circus.v1.Rejection
+	1,  // 23: circus.v1.Rejection.code:type_name -> circus.v1.Rejection.Code
+	22, // 24: circus.v1.JobSnapshot.jobs:type_name -> circus.v1.JobEvent
+	14, // 25: circus.v1.DeviceQuery.list_directory:type_name -> circus.v1.ListDirectoryQuery
+	13, // 26: circus.v1.DeviceQueryResult.error:type_name -> circus.v1.DeviceQueryError
+	15, // 27: circus.v1.DeviceQueryResult.list_directory:type_name -> circus.v1.ListDirectoryResult
+	2,  // 28: circus.v1.DeviceQueryError.code:type_name -> circus.v1.DeviceQueryError.Code
+	16, // 29: circus.v1.ListDirectoryResult.entries:type_name -> circus.v1.DirectoryEntry
+	0,  // 30: circus.v1.ListDirectoryResult.error:type_name -> circus.v1.DirectoryError
+	31, // [31:31] is the sub-list for method output_type
+	31, // [31:31] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_daemon_link_proto_init() }
@@ -1004,6 +1673,7 @@ func file_circus_v1_daemon_link_proto_init() {
 		(*DaemonUplink_CallStatus)(nil),
 		(*DaemonUplink_JobEvent)(nil),
 		(*DaemonUplink_JobSnapshot)(nil),
+		(*DaemonUplink_DeviceQueryResult)(nil),
 	}
 	file_circus_v1_daemon_link_proto_msgTypes[1].OneofWrappers = []any{
 		(*DaemonDownlink_Welcome)(nil),
@@ -1016,18 +1686,26 @@ func file_circus_v1_daemon_link_proto_init() {
 		(*DaemonDownlink_CallQuery)(nil),
 		(*DaemonDownlink_ListJobs)(nil),
 		(*DaemonDownlink_StopSessionJobs)(nil),
+		(*DaemonDownlink_DeviceQuery)(nil),
 	}
 	file_circus_v1_daemon_link_proto_msgTypes[3].OneofWrappers = []any{
 		(*CallAck_Status)(nil),
 		(*CallAck_Rejection)(nil),
+	}
+	file_circus_v1_daemon_link_proto_msgTypes[8].OneofWrappers = []any{
+		(*DeviceQuery_ListDirectory)(nil),
+	}
+	file_circus_v1_daemon_link_proto_msgTypes[9].OneofWrappers = []any{
+		(*DeviceQueryResult_Error)(nil),
+		(*DeviceQueryResult_ListDirectory)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_daemon_link_proto_rawDesc), len(file_circus_v1_daemon_link_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   8,
+			NumEnums:      3,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

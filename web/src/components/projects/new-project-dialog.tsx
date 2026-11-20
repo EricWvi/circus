@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react"
+import { useRef, useState, type FormEvent, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router"
 
@@ -20,8 +20,10 @@ import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { useQuietAutoFocus } from "@/hooks/use-quiet-autofocus"
 import { defaultDevice, newRow } from "@/lib/location-form"
 
-import { busyClass, LocationEditor } from "./location-editor"
+import { busyClass } from "./busy"
+import { LocationEditor } from "./location-editor"
 import { NewProjectContext } from "./new-project-context"
+import { PickerFrameContext } from "./picker-frame"
 import { RepoUrlField } from "./repo-url-field"
 import { useProjectForm } from "./use-project-form"
 
@@ -29,6 +31,8 @@ import { useProjectForm } from "./use-project-form"
 export function NewProjectDialogProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
   const focus = useOverlayFocus()
+  // Folder pickers center on the dialog rather than on their path field.
+  const panel = useRef<HTMLDivElement>(null)
 
   const change = (next: boolean) => {
     focus.onOpenChange(next)
@@ -39,8 +43,10 @@ export function NewProjectDialogProvider({ children }: { children: ReactNode }) 
     <NewProjectContext.Provider value={() => change(true)}>
       {children}
       <Dialog open={open} onOpenChange={change}>
-        <DialogContent className="gap-5 sm:max-w-xl" onCloseAutoFocus={focus.onCloseAutoFocus}>
-          <NewProjectForm onDone={() => change(false)} />
+        <DialogContent ref={panel} className="gap-5 sm:max-w-xl" onCloseAutoFocus={focus.onCloseAutoFocus}>
+          <PickerFrameContext.Provider value={panel}>
+            <NewProjectForm onDone={() => change(false)} />
+          </PickerFrameContext.Provider>
         </DialogContent>
       </Dialog>
     </NewProjectContext.Provider>

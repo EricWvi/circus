@@ -39,6 +39,9 @@ const (
 	// MachineServiceCreateEnrollLinkProcedure is the fully-qualified name of the MachineService's
 	// CreateEnrollLink RPC.
 	MachineServiceCreateEnrollLinkProcedure = "/circus.v1.MachineService/CreateEnrollLink"
+	// MachineServiceListDirectoryProcedure is the fully-qualified name of the MachineService's
+	// ListDirectory RPC.
+	MachineServiceListDirectoryProcedure = "/circus.v1.MachineService/ListDirectory"
 )
 
 // MachineServiceClient is a client for the circus.v1.MachineService service.
@@ -49,6 +52,15 @@ type MachineServiceClient interface {
 	// signed-in user may call it. Tokens are returned only here; the server
 	// stores only their hashes.
 	CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error)
+	// Lists the subdirectories of a directory on one of the caller's devices,
+	// asking its daemon live. Errors: NOT_FOUND for an unknown device;
+	// FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
+	// closes before the answer, or the daemon does not support the query
+	// (older version); DEADLINE_EXCEEDED after 10 seconds without an answer;
+	// RESOURCE_EXHAUSTED when the caller already has 8 directory requests in
+	// flight or the daemon is busy. Problems with the path itself are not RPC
+	// errors: they come back in ListDirectoryResponse.result.error.
+	ListDirectory(context.Context, *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error)
 }
 
 // NewMachineServiceClient constructs a client for the circus.v1.MachineService service. By default,
@@ -74,6 +86,12 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(machineServiceMethods.ByName("CreateEnrollLink")),
 			connect.WithClientOptions(opts...),
 		),
+		listDirectory: connect.NewClient[v1.ListDirectoryRequest, v1.ListDirectoryResponse](
+			httpClient,
+			baseURL+MachineServiceListDirectoryProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("ListDirectory")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -81,6 +99,7 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type machineServiceClient struct {
 	listDevices      *connect.Client[v1.ListDevicesRequest, v1.ListDevicesResponse]
 	createEnrollLink *connect.Client[v1.CreateEnrollLinkRequest, v1.CreateEnrollLinkResponse]
+	listDirectory    *connect.Client[v1.ListDirectoryRequest, v1.ListDirectoryResponse]
 }
 
 // ListDevices calls circus.v1.MachineService.ListDevices.
@@ -93,6 +112,11 @@ func (c *machineServiceClient) CreateEnrollLink(ctx context.Context, req *connec
 	return c.createEnrollLink.CallUnary(ctx, req)
 }
 
+// ListDirectory calls circus.v1.MachineService.ListDirectory.
+func (c *machineServiceClient) ListDirectory(ctx context.Context, req *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error) {
+	return c.listDirectory.CallUnary(ctx, req)
+}
+
 // MachineServiceHandler is an implementation of the circus.v1.MachineService service.
 type MachineServiceHandler interface {
 	// The caller's devices, ordered by name.
@@ -101,6 +125,15 @@ type MachineServiceHandler interface {
 	// signed-in user may call it. Tokens are returned only here; the server
 	// stores only their hashes.
 	CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error)
+	// Lists the subdirectories of a directory on one of the caller's devices,
+	// asking its daemon live. Errors: NOT_FOUND for an unknown device;
+	// FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
+	// closes before the answer, or the daemon does not support the query
+	// (older version); DEADLINE_EXCEEDED after 10 seconds without an answer;
+	// RESOURCE_EXHAUSTED when the caller already has 8 directory requests in
+	// flight or the daemon is busy. Problems with the path itself are not RPC
+	// errors: they come back in ListDirectoryResponse.result.error.
+	ListDirectory(context.Context, *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error)
 }
 
 // NewMachineServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -122,12 +155,20 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithSchema(machineServiceMethods.ByName("CreateEnrollLink")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceListDirectoryHandler := connect.NewUnaryHandler(
+		MachineServiceListDirectoryProcedure,
+		svc.ListDirectory,
+		connect.WithSchema(machineServiceMethods.ByName("ListDirectory")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/circus.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineServiceListDevicesProcedure:
 			machineServiceListDevicesHandler.ServeHTTP(w, r)
 		case MachineServiceCreateEnrollLinkProcedure:
 			machineServiceCreateEnrollLinkHandler.ServeHTTP(w, r)
+		case MachineServiceListDirectoryProcedure:
+			machineServiceListDirectoryHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -143,4 +184,8 @@ func (UnimplementedMachineServiceHandler) ListDevices(context.Context, *connect.
 
 func (UnimplementedMachineServiceHandler) CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.CreateEnrollLink is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) ListDirectory(context.Context, *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.ListDirectory is not implemented"))
 }

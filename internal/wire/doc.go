@@ -7,6 +7,7 @@
 //
 // Send(ctx, message) classifies each message itself and preserves FIFO for each
 // nonempty ordering key: a call key for Dispatch/Submit/Query/Cancel/updates,
+// a request key for DeviceQuery and DeviceQueryResult with a valid request ID,
 // one boot-wide event key for JobEvent, Barrier for ListJobs/StopSessionJobs and
 // the worker's Unwatch, and
 // Control for heartbeat/GoAway/ack. Ordering keys are cloned and capped
@@ -24,6 +25,8 @@
 // Status-only envelopes and all metadata outside embedded results stay within
 // 64 KiB, enough for IDs, state, diagnostics and bounded device lists. Other
 // metadata envelopes and each JobEvent also have a 64 KiB cap.
+// Device query results may fragment and have a 4 MiB envelope cap and a
+// 1000-entry directory limit. Hello features are filtered after decoding.
 // JobSnapshot has independent aggregate 8 MiB and 4096-entry limits: even 4096
 // maximum-size events (4096*64 KiB plus framing) must fit the tighter aggregate
 // cap. These are transport budgets, NOT a claimed jobs.Manager capacity: the
