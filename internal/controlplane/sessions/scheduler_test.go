@@ -106,6 +106,11 @@ func TestWakeHeldNudges(t *testing.T) {
 	if !hasReason(n, circusv1.WorkerEvent_Nudge_REASON_JOB) || !hasReason(n, circusv1.WorkerEvent_Nudge_REASON_APPROVAL) {
 		t.Fatalf("nudge %v", n)
 	}
+	// The Nudge may come from the Lease reply's delivery before the
+	// scheduler evaluates the Wake; that evaluation raises the reasons
+	// again at a newer generation (a spurious Nudge by design), so the
+	// holder acts only after it.
+	f.settle()
 	call(t, c, wc.State("s1", epoch, circusv1.GetSessionState_SECTION_JOBS))
 	call(t, c, wc.TakeInputs("s1", epoch))
 	_ = c.Close()

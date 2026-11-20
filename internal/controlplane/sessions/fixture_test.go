@@ -3,6 +3,7 @@ package sessions_test
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"sync"
@@ -70,7 +71,20 @@ func (f *fixture) serve() {
 	f.h, err = workerlink.New(workerlink.Config{Auth: auth.NewAuthenticator(f.st, auth.Options{}), Router: f.router, InstanceID: "test",
 		Wire: wire.Options{MaxMessageBytes: 1 << 20}, Sessions: f.svc, Logger: f.cfg.Logger})
 	must(f.t, err)
-	f.srv = httptest.NewServer(f.h)
+	h := f.h
+	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.links.Add(1)
+		defer f.links.Add(-1)
+		h.ServeHTTP(w, r)
+	}))
+}
+
+// released waits until the server has finished serving every worker link,
+// so their connection slots are free again: a client sees its link closed
+// before the server has unregistered it and released its slot.
+func (f *fixture) released() {
+	f.t.Helper()
+	wait.For(f.t, func() bool { return f.links.Load() == 0 })
 }
 
 // restart stops the worker link and the session service, as a control
@@ -105,6 +119,8 @@ type fixture struct {
 	boots   map[string]string
 	cfg     sessions.Config
 	mu      sync.Mutex
+	// links counts the worker link requests the server is serving.
+	links atomic.Int64
 }
 
 type option func(*sessions.Config)
@@ -212,10 +228,13 @@ func (f *fixture) tryDial(i int, label string) (*workerclient.Client, error) {
 }
 
 // attach attaches c with capacity max and waits until the server has
-// processed the Attach (it has no reply), unless the link closes.
+// processed the Attach (it has no reply), unless the link closes. It waits
+// for a connection that was not attached before rather than for a higher
+// count: a connection the client closed just before may still be attached
+// and leave while this Attach is processed.
 func (f *fixture) attach(c *workerclient.Client, max uint32) workerclient.Events {
 	f.t.Helper()
-	before := sessions.Attached(f.svc)
+	before := sessions.AttachedConns(f.svc)
 	ev, err := c.Attach(wait.Ctx(f.t), &circusv1.Attach{MaxSessions: max, SdkVersion: "sdk", ClaudeVersion: "cli"})
 	must(f.t, err)
 	wait.For(f.t, func() bool {
@@ -224,7 +243,12 @@ func (f *fixture) attach(c *workerclient.Client, max uint32) workerclient.Events
 			return true
 		default:
 		}
-		return sessions.Attached(f.svc) > before
+		for id := range sessions.AttachedConns(f.svc) {
+			if !before[id] {
+				return true
+			}
+		}
+		return false
 	})
 	return ev
 }

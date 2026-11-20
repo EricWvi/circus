@@ -41,6 +41,19 @@ func Attached(s *Service) int {
 	return n
 }
 
+// AttachedConns returns the ids of the connections with an Attach stream.
+func AttachedConns(s *Service) map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]bool{}
+	for id, c := range s.conns {
+		if c.attached {
+			out[id] = true
+		}
+	}
+	return out
+}
+
 // DisableFallback turns the periodic rescan off, so a test sees what the
 // other paths do alone.
 func DisableFallback(s *Service) {

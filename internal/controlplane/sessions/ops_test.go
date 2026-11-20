@@ -246,7 +246,9 @@ func closed(t *testing.T, c *wc.Client) {
 	}
 }
 
-// TestAttachRules: an Attach that breaks a rule closes the link.
+// TestAttachRules: an Attach that breaks a rule closes the link. Each case
+// waits until the server has released the closed link, so the cases never
+// add up to the per-credential connection cap.
 func TestAttachRules(t *testing.T) {
 	f := newFixture(t)
 	for name, a := range map[string]*circusv1.Attach{
@@ -260,6 +262,7 @@ func TestAttachRules(t *testing.T) {
 			_, err := c.Attach(wait.Ctx(t), a)
 			must(t, err)
 			closed(t, c)
+			f.released()
 		})
 	}
 	t.Run("twice", func(t *testing.T) {
@@ -268,11 +271,13 @@ func TestAttachRules(t *testing.T) {
 		must(t, ev.Unwatch(wait.Ctx(t)))
 		f.attach(c, 1)
 		closed(t, c)
+		f.released()
 	})
 	t.Run("no boot", func(t *testing.T) {
 		c := f.dial(0, "")
 		f.attach(c, 1)
 		closed(t, c)
+		f.released()
 	})
 	t.Run("long boot", func(t *testing.T) {
 		_, err := wc.Dial(wait.Ctx(t), wc.Options{URL: f.srv.URL, Token: f.workers[0].Token, PrincipalID: f.workers[0].Identity.ID, BootID: strings.Repeat("b", 129)})
