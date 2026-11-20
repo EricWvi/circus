@@ -63,6 +63,8 @@ type effects struct {
 
 	// backgroundTimeout lets tests control when the job's lifetime expires.
 	backgroundTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+	// collectorTimeout lets tests control when a collector attempt times out.
+	collectorTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 }
 
 func (e *effects) attempt(step string, action func() error) error {

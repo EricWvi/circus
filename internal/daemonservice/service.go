@@ -240,22 +240,21 @@ func GetAfterInstall() (Status, error) {
 	return pollInstallStatus(2 * time.Second)
 }
 
+// The timeout only decides whether to query again. Each query runs to
+// completion: a manager or loginctl query killed at the deadline would report
+// a partial status, dropping the running state or the linger advice.
 func pollInstallStatus(timeout time.Duration) (Status, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+	deadline := time.Now().Add(timeout)
 	for {
-		st, err := getStatus(ctx)
+		st, err := getStatus(context.Background())
 		if goos == "darwin" && err == nil && st.Running {
 			return st, nil
 		}
-		select {
-		case <-ctx.Done():
+		wait := time.Until(deadline)
+		if wait <= 0 {
 			return st, err
-		case <-time.After(100 * time.Millisecond):
-			if ctx.Err() != nil {
-				return st, err
-			}
 		}
+		time.Sleep(min(wait, 100*time.Millisecond))
 	}
 }
 

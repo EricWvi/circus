@@ -125,15 +125,7 @@ func sample() {
 		if ownerOf(p) != nil || p.state == "Z" {
 			continue
 		}
-		// A subtest may write into its parent's shared root; the most
-		// specific (longest-named) matching test owns the process.
-		var owner *checker
-		for _, c := range checkers {
-			if (owner == nil || len(c.state.t.Name()) > len(owner.state.t.Name())) && c.owns(p) {
-				owner = c
-			}
-		}
-		if owner != nil {
+		if owner := attribute(p, checkers); owner != nil {
 			owners.mu.Lock()
 			seen := fmt.Sprintf("cwd=%q cmdline=%q", cwd(p.pid), cmdline(p.pid))
 			for _, key := range ownerKeys(p) {
@@ -145,4 +137,31 @@ func sample() {
 			owners.mu.Unlock()
 		}
 	}
+}
+
+// attribute returns the test that owns p, or nil while that is ambiguous. A
+// subtest may write into its parent's shared root, so among nested matching
+// tests the most specific (longest-named) one owns the process. A match by
+// an unrelated test makes the process ambiguous: a child between fork and
+// exec still holds a copy of every descriptor of the test process, including
+// the files of other parallel tests, and keeps its pid, start time, group and
+// session through exec. Pinning it then would make another test's check
+// kill it.
+func attribute(p process, checkers []*checker) *checker {
+	var matches []*checker
+	var owner *checker
+	for _, c := range checkers {
+		if c.owns(p) {
+			matches = append(matches, c)
+			if owner == nil || len(c.state.t.Name()) > len(owner.state.t.Name()) {
+				owner = c
+			}
+		}
+	}
+	for _, c := range matches {
+		if c != owner && !strings.HasPrefix(owner.state.t.Name(), c.state.t.Name()+"/") {
+			return nil
+		}
+	}
+	return owner
 }

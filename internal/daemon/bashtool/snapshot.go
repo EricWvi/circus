@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -347,8 +346,15 @@ printf '%s\n' 'shopt -s expand_aliases'
 		// an early-exiting fallback appear successful.
 		_ = os.Remove(snapshot)
 		_ = os.Remove(exports)
-		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
-		collectCtx, cancel := context.WithTimeout(ctx, e.collectorTimeout())
+		// Output goes to the null device itself, not through a copying pipe:
+		// a member the collector leaves running, which in an interactive shell
+		// always holds stderr as fd 255, would hold Wait until the timeout.
+		cmd.Stdout, cmd.Stderr = nil, nil
+		withTimeout := context.WithTimeout
+		if e.effects != nil && e.effects.collectorTimeout != nil {
+			withTimeout = e.effects.collectorTimeout
+		}
+		collectCtx, cancel := withTimeout(ctx, e.collectorTimeout())
 		if e.options.Collector != nil {
 			err = e.options.Collector(collectCtx, cmd)
 		} else if err = cmd.Start(); err == nil {

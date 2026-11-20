@@ -104,7 +104,12 @@ func gate(t *testing.T, path string) {
 func (h *captureHarness) start(name, mode string, children bool, exitCode int, trap string, lifetime uint32) *drivenCapture {
 	command := `echo ready > ready; while [ ! -f exit ]; do for f in write-*; do [ -f "$f" ] || continue; n=$(cat "$f"); id=${f#write-}; if [ -f "hold-$id" ]; then : > "writing-$id"; while [ ! -f "go-$id" ]; do sleep 0.005; done; fi; head -c "$n" /dev/zero; mv "$f" "done-$id"; done; sleep 0.005; done; exit ` + fmt.Sprint(exitCode)
 	if trap != "" {
-		command = `trap '` + trap + `' TERM; ` + command
+		// The shell awaits TERM in the wait builtin, which returns at once for
+		// a trapped signal so the trap runs. Bash (seen with 5.3.9) sometimes
+		// never runs the trap for a TERM that arrives during the polling loop
+		// above, which forks every few milliseconds; the stop then correctly
+		// escalates to KILL after its grace, so the trap would go untested.
+		command = `trap '` + trap + `' TERM; sleep 30 & echo ready > ready; wait; exit ` + fmt.Sprint(exitCode)
 	}
 	if children {
 		command = `(echo child > child-ready; while [ ! -f child-exit ]; do sleep 0.01; done) & echo $! > child.pid; ` + command
@@ -312,6 +317,19 @@ func TestCaptureTransitions(t *testing.T) {
 				limit = 1024
 			}
 			h := newCaptureHarness(t, limit, 0)
+			var lifetime *triggeredDeadline
+			if row.event == "lifetime" {
+				// The lifetime expires only once the shell has installed its
+				// trap; a loaded shell can take longer than the lifetime to
+				// start, and its TERM would then not reach the trap.
+				h.b.effects.backgroundTimeout = func(parent context.Context, duration time.Duration) (context.Context, context.CancelFunc) {
+					if want := time.Duration(row.lifetime) * time.Millisecond; duration != want {
+						t.Errorf("background lifetime = %s, want %s", duration, want)
+					}
+					lifetime = &triggeredDeadline{Context: parent, done: make(chan struct{}), deadline: time.Now().Add(duration)}
+					return context.WithCancel(lifetime)
+				}
+			}
 			r := h.start("A", row.mode, row.children, row.exit, row.trap, row.lifetime)
 			inspector, err := os.Open(r.c.out.Name())
 			if err != nil {
@@ -334,6 +352,7 @@ func TestCaptureTransitions(t *testing.T) {
 			case "cap":
 				h.fill(r, 2048, true)
 			case "lifetime":
+				lifetime.expire()
 			}
 			if row.mode == "foreground" {
 				reply := h.returned(r)

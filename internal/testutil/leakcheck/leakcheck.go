@@ -409,11 +409,14 @@ func (c *checker) verify() {
 	// 1. Processes.
 	procs := waitForProcesses(func() []process {
 		var found []process
+		checkers := activeCheckers()
 		for _, p := range scanDescendants() {
 			if c.procsBefore[p.key()] {
 				continue
 			}
-			if all || ownerOf(p) == c || c.owns(p) {
+			// A process the sampler gave to another test is never claimed here,
+			// nor one that an unrelated test's roots match as well.
+			if owner := ownerOf(p); all || owner == c || owner == nil && c.owns(p) && attribute(p, checkers) == c {
 				found = append(found, p)
 			}
 		}

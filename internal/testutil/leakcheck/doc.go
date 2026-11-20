@@ -36,11 +36,14 @@
 // Config.MemoryLimit (default 128 MiB, tripled under -race).
 //
 // A process belongs to a test when its cwd, an open file or its command line
-// is below one of the test's roots. A background sampler (every 25 ms, read
-// only) remembers the owning test of each process group and session, so a
-// zombie, which has no cwd, files or command line, is still attributed and
-// reported with the command it was last seen running. Verdicts scan all of
-// /proc, so a process being reparented to the subreaper is not missed.
+// is below one of the test's roots, and no unrelated test's roots match it
+// too: a child between fork and exec still holds every descriptor of the
+// test process, so it stays unattributed until exec. A background sampler
+// (every 25 ms, read only) remembers the owning test of each process, its
+// process group and its session, so a zombie, which has no cwd, files or
+// command line, is still attributed and reported with the command it was
+// last seen running. Verdicts scan all of /proc, so a process being
+// reparented to the subreaper is not missed.
 //
 // When a test and all of its ancestors are sequential, no other test runs
 // concurrently, so every new descendant and every new descriptor counts,

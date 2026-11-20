@@ -14,8 +14,11 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/clock"
+	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
+	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
 func TestEvalQuoting(t *testing.T) {
@@ -336,18 +339,17 @@ func TestBackgroundLifetimeTrapStillKilled(t *testing.T) {
 func TestCollectorTimeDoesNotConsumeCommandTimeout(t *testing.T) {
 	t.Parallel()
 	started := make(chan struct{}, 1)
+	release := make(chan struct{})
 	w := newWorkerWithOptions(t, func(o *bashtool.Options) {
 		o.Collector = func(ctx context.Context, cmd *exec.Cmd) error {
 			select {
 			case started <- struct{}{}:
 			default:
 			}
-			timer := time.NewTimer(1200 * time.Millisecond)
-			defer timer.Stop()
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-timer.C:
+			case <-release:
 			}
 			if err := cmd.Start(); err != nil {
 				return err
@@ -355,23 +357,75 @@ func TestCollectorTimeDoesNotConsumeCommandTimeout(t *testing.T) {
 			return cmd.Wait()
 		}
 	})
+	// The command budget runs on the dispatcher's clock, so collection can
+	// outlast the whole budget there while the shell's own run time, which
+	// is not under test, never counts against it.
+	clk := clock.New()
+	d, err := daemon.NewDispatcher(daemon.Options{Tools: leakcheck.AuditTools(t, clk.Now, []daemon.Tool{w.bash}), Clock: clk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := d.Shutdown(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	const budget = time.Second
+	run := func(id string) {
+		t.Helper()
+		_ = os.Remove(filepath.Join(w.start, "running"))
+		_ = os.Remove(filepath.Join(w.start, "finish"))
+		call := &circusv1.DeviceCall{CallId: id, SessionId: "fixture-session", TimeoutMs: uint32(budget.Milliseconds()), Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{
+			Command: `echo running > running; while [ ! -f finish ]; do sleep 0.01; done; echo done`, Cwd: w.start}}}
+		if _, err := d.Submit(call); err != nil {
+			t.Fatal(err)
+		}
+		wait.Recv(t, started)
+		// Collection takes longer than the whole budget.
+		clk.Advance(budget + budget/2)
+		select {
+		case release <- struct{}{}:
+		case <-time.After(wait.Timeout):
+			t.Fatal("collector was not waiting")
+		}
+		type reply struct {
+			status *circusv1.CallStatus
+			err    error
+		}
+		replied := make(chan reply, 1)
+		go func() { status, err := d.Wait(wait.Ctx(t), id); replied <- reply{status, err} }()
+		var got *reply
+		wait.For(t, func() bool {
+			select {
+			case r := <-replied:
+				got = &r // The call ended without the shell running.
+				return true
+			default:
+			}
+			_, err := os.Stat(filepath.Join(w.start, "running"))
+			return err == nil
+		})
+		if got == nil {
+			// The budget starts before the shell does, so this leaves it 1 ms.
+			clk.Advance(budget - time.Millisecond)
+			writeFile(t, filepath.Join(w.start, "finish"), nil)
+			r := wait.Recv(t, replied)
+			got = &r
+		}
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		r := got.status.GetResult()
+		if r.Output.IsError || r.GetBash().TimedOut || r.Output.Content[0].GetText() != "done" {
+			t.Fatal(r)
+		}
+	}
 	// Daemon startup explicitly warms collection, before any Bash call.
 	w.bash.Warm()
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("snapshot warm-up did not start")
-	}
-	r := w.bashCall(t, `sleep 0.8; echo done`, false, 1000)
-	if r.Output.IsError || r.GetBash().TimedOut || r.Output.Content[0].GetText() != "done" {
-		t.Fatal(r)
-	}
+	run("warm")
 	// A later refresh gets the same separation from the execution budget.
 	writeFile(t, filepath.Join(w.options.Home, ".bashrc"), []byte("export REFRESH=1\n"))
-	r = w.bashCall(t, `sleep 0.8; echo done`, false, 1000)
-	if r.Output.IsError || r.Output.Content[0].GetText() != "done" {
-		t.Fatal(r)
-	}
+	run("refresh")
 }
 
 func TestPromotionDrainsDeadlineOutput(t *testing.T) {

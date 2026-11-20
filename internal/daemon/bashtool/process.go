@@ -24,11 +24,16 @@ func startWait(cmd *exec.Cmd) <-chan processOutcome {
 	return waited
 }
 
-// waitProcess owns the sole Wait call and terminates the entire process group.
+// waitProcess owns the sole Wait call and terminates the entire process group,
+// also after the shell exits on its own: members it left running would
+// outlive it, and members it did not reap are reparented to the daemon as PID
+// 1 or a child subreaper, where nothing else would reap them.
 func waitProcess(ctx context.Context, cmd *exec.Cmd) (int, error) {
 	waited := startWait(cmd)
 	select {
 	case outcome := <-waited:
+		stopGroup(cmd.Process.Pid)
+		reapKilledGroup(cmd.Process.Pid)
 		return outcome.code, outcome.err
 	case <-ctx.Done():
 		_ = stopProcess(cmd, waited)

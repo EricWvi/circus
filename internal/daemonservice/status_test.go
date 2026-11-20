@@ -225,3 +225,18 @@ func TestLaunchdInstallStatusWaitsForRunning(t *testing.T) {
 	disabled := "launchctl print-disabled " + launchDomain()
 	f.checkCalls(t, print, disabled, print, disabled)
 }
+
+func TestSystemdInstallStatusCompletesQueriesAfterTimeout(t *testing.T) {
+	f := fakeService(t, "linux")
+	saveCredential(t, "", "daemon")
+	if err := Install("", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	// The linger query outlasts the whole poll timeout. Its answer must still
+	// be part of the result instead of being cut off at the deadline.
+	writeTestFile(t, filepath.Join(f.bin, "loginctl"), "#!/bin/sh\n/bin/sleep 0.3\nprintf 'no\\n'\n", 0o700)
+	st, err := pollInstallStatus(10 * time.Millisecond)
+	if err != nil || !st.Installed || len(st.Advice) != 1 || !strings.Contains(st.Advice[0], "sudo loginctl enable-linger ") {
+		t.Fatalf("install status = %+v, %v", st, err)
+	}
+}

@@ -101,8 +101,11 @@ func TestPromotionRegistrationFailureCleansOutput(t *testing.T) {
 	if err := b.jobs.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
+	// The deadline expires once the command runs, so Run always takes the
+	// promotion path; a wall-clock deadline can expire before a loaded
+	// machine has started the shell.
+	ctx := &triggeredDeadline{Context: context.Background(), done: make(chan struct{}), deadline: time.Now().Add(time.Second)}
+	b.effects.started = func(*capture) { ctx.expire() }
 	_, err := b.Run(ctx, &circusv1.DeviceCall{CallId: "registration", SessionId: "review", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Cwd: root, Command: `echo started; exec sleep 20`}}})
 	if !errors.Is(err, jobs.ErrShutdown) {
 		t.Fatal(err)

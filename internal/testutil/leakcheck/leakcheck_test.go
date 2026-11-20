@@ -316,3 +316,81 @@ func TestCallAudit(t *testing.T) {
 	close(release)
 	want(t, report, `call "stuck" (read) is still executing`)
 }
+
+// named gives a fake test its own name; attribution compares test names.
+type named struct {
+	*recorder
+	name string
+}
+
+func (n named) Name() string { return n.name }
+
+// A child between fork and exec holds every descriptor of the test process,
+// including other parallel tests' files. Matching tests that are not nested
+// make it ambiguous: it is pinned to no test until only its own test matches,
+// and the other test's check neither reports nor kills it.
+func TestAmbiguousProcessIsNotPinnedToAnotherTest(t *testing.T) {
+	own, other := scratch(t), scratch(t)
+	ownTest := named{newRecorder(t), "TestParent/short"}
+	otherTest := named{newRecorder(t), "TestParent/a-longer-sibling-name"}
+	Track(ownTest, own)
+	Track(otherTest, other)
+	foreign, err := os.Create(filepath.Join(other, "output"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// fd 3 stands in for the other test's descriptor that a child holds until
+	// exec; the shell then closes it and execs, keeping its pid and group.
+	cmd := exec.Command("/bin/sh", "-c", `read -r _; exec 3>&-; exec /bin/sleep 30`)
+	cmd.Dir = own
+	cmd.ExtraFiles = []*os.File{foreign}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	gate, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Close()
+	err = cmd.Start()
+	_ = foreign.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	defer func() {
+		_ = cmd.Process.Kill()
+		<-waited
+	}()
+	shell, ok := readStat(cmd.Process.Pid)
+	if !ok {
+		t.Fatal("no /proc entry for the child")
+	}
+	sample()
+	if owner := ownerOf(shell); owner != nil {
+		t.Fatalf("ambiguous process pinned to %s", owner.state.t.Name())
+	}
+	if _, err := gate.Write([]byte("\n")); err != nil {
+		t.Fatal(err)
+	}
+	fd3 := fmt.Sprintf("/proc/%d/fd/3", cmd.Process.Pid)
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if _, err := os.Lstat(fd3); os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the child kept the foreign descriptor")
+		}
+		time.Sleep(pollInterval)
+	}
+	sample()
+	if owner := ownerOf(shell); owner == nil || owner.state.t != ownTest {
+		t.Fatalf("process not attributed to its own test: %v", owner)
+	}
+	if report := otherTest.finish(); report != "" {
+		t.Fatalf("another test's check reported the process:\n%s", report)
+	}
+	if err := syscall.Kill(cmd.Process.Pid, 0); err != nil {
+		t.Fatalf("another test's check killed the process: %v", err)
+	}
+	want(t, ownTest.finish(), "processes", fmt.Sprintf("pid=%d", cmd.Process.Pid), "sleep 30")
+}
