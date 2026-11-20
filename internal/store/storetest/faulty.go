@@ -248,6 +248,11 @@ func (o *faultyOps) CreateIdentity(ctx context.Context, id store.Identity) error
 	return o.write(ctx, func(s store.Ops) error { return s.CreateIdentity(ctx, id) })
 }
 
+func (o *faultyOps) UpdateHelloMetadata(ctx context.Context, kind store.PrincipalKind, id string, metadata store.HelloMetadata) (changed bool, err error) {
+	err = o.write(ctx, func(s store.Ops) error { changed, err = s.UpdateHelloMetadata(ctx, kind, id, metadata); return err })
+	return
+}
+
 func (o *faultyOps) GetIdentity(ctx context.Context, kind store.PrincipalKind, id string) (v store.Identity, err error) {
 	err = o.read(ctx, func(s store.Ops) error { v, err = s.GetIdentity(ctx, kind, id); return err })
 	return v, err

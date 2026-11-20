@@ -174,6 +174,7 @@ const (
 // user and each credential may hold at most four authenticated links.
 type Config struct {
 	Auth           auth.LinkAuthenticator
+	MetadataStore  auth.HelloMetadataStore
 	Router         calls.Service
 	InstanceID     string
 	Clock          clock.Clock
@@ -473,6 +474,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		defer sc.Close()
 	}
+	auth.RefreshHelloMetadata(ctx, h.cfg.MetadataStore, h.cfg.Logger, principal, hello)
 	ops := newOperations(maxOperations)
 	// protocolError closes the link for a client that broke the request-ID
 	// or operation-cap rules; the client cannot be answered in band.

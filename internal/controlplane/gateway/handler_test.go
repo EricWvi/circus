@@ -125,11 +125,16 @@ func (r revocable) Valid(context.Context, string) (bool, error) {
 // daemonLink performs the raw Hello/Welcome exchange and returns a daemon link.
 func daemonLink(t *testing.T, ctx context.Context, url, boot string, c *clock.Fake) *wire.Link {
 	t.Helper()
+	return daemonLinkWithHello(t, ctx, url, &circusv1.Hello{BootId: boot, ProtocolVersion: wire.ProtocolVersion}, c)
+}
+
+func daemonLinkWithHello(t *testing.T, ctx context.Context, url string, hello *circusv1.Hello, c *clock.Fake) *wire.Link {
+	t.Helper()
 	conn, _, err := wire.DialWebSocket(ctx, "ws"+strings.TrimPrefix(url, "http")+"/v1/link/daemon", dialOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := proto.Marshal(&circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Hello{Hello: &circusv1.Hello{BootId: boot, ProtocolVersion: 1}}})
+	data, _ := proto.Marshal(&circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Hello{Hello: hello}})
 	if err = conn.WriteMessage(ctx, data); err != nil {
 		t.Fatal(err)
 	}
@@ -150,6 +155,94 @@ func daemonLink(t *testing.T, ctx context.Context, url, boot string, c *clock.Fa
 	}
 	t.Cleanup(func() { _ = l.Close() })
 	return l
+}
+
+type metadataStoreFunc func(context.Context, store.PrincipalKind, string, store.HelloMetadata) (bool, error)
+
+func (f metadataStoreFunc) UpdateHelloMetadata(ctx context.Context, kind store.PrincipalKind, id string, metadata store.HelloMetadata) (bool, error) {
+	return f(ctx, kind, id, metadata)
+}
+
+type ackHooks struct {
+	hooks
+	ack chan string
+}
+
+func (h ackHooks) OnCallAck(_ context.Context, _ gateway.Connection, ack *circusv1.CallAck) error {
+	h.ack <- ack.GetCallId()
+	return nil
+}
+
+func TestHelloMetadataStoreErrorLeavesLinkUsable(t *testing.T) {
+	type update struct {
+		kind       store.PrincipalKind
+		id         string
+		metadata   store.HelloMetadata
+		registered bool
+	}
+	c := clock.New()
+	r, _ := gateway.NewRegistry(2)
+	started := make(chan update, 1)
+	fail := make(chan struct{})
+	metadataStore := metadataStoreFunc(func(ctx context.Context, kind store.PrincipalKind, id string, metadata store.HelloMetadata) (bool, error) {
+		_, registered, err := r.Lookup(ctx, id)
+		if err != nil {
+			return false, err
+		}
+		started <- update{kind, id, metadata, registered}
+		select {
+		case <-fail:
+			return false, errors.New("metadata store unavailable")
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
+	})
+	logs := &lockedLogs{}
+	acks := make(chan string, 2)
+	h, err := gateway.New(gateway.Config{
+		InstanceID: "i", Clock: c, Auth: authStub{}, Registry: r, Hooks: ackHooks{ack: acks},
+		MetadataStore: metadataStore, Logger: slog.New(slog.NewJSONHandler(logs, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(h)
+	defer s.Close()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
+		defer cancel()
+		if err := h.Shutdown(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
+	ctx := wait.Ctx(t)
+	link := daemonLinkWithHello(t, ctx, s.URL, &circusv1.Hello{
+		ProtocolVersion: wire.ProtocolVersion, BootId: "boot", ClientVersion: "0.2.0",
+		Os: "linux", Arch: "arm64", Hostname: strings.Repeat("界", 100),
+	}, c)
+	defer link.Close()
+	want := update{store.KindDevice, "d", store.HelloMetadata{ClientVersion: "0.2.0", OS: "linux", Arch: "arm64"}, true}
+	if got := wait.Recv(t, started); got != want {
+		t.Fatalf("metadata update = %+v, want %+v", got, want)
+	}
+	checkLink := func(id string) {
+		t.Helper()
+		ack := &circusv1.CallAck{CallId: id, Outcome: &circusv1.CallAck_Status{
+			Status: &circusv1.CallStatus{CallId: id, State: circusv1.CallStatus_STATE_RUNNING},
+		}}
+		if err := link.Send(ctx, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallAck{CallAck: ack}}); err != nil {
+			t.Fatal(err)
+		}
+		if got := wait.Recv(t, acks); got != id {
+			t.Fatalf("ack = %q, want %q", got, id)
+		}
+	}
+	checkLink("while-update-pending")
+	close(fail)
+	wait.For(t, func() bool {
+		return strings.Contains(logs.String(), `"level":"WARN"`) && strings.Contains(logs.String(), "metadata store unavailable")
+	})
+	checkLink("after-update-error")
 }
 
 // A second connection with the same credential supersedes the

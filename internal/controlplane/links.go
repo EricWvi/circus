@@ -61,13 +61,13 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		return err
 	}
 	opts := wire.Options{Clock: clk, MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}
-	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, Registry: registry, Hooks: r, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
+	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, MetadataStore: s.st, Registry: registry, Hooks: r, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
 	if err != nil {
 		_ = svc.Close(ctx)
 		_ = r.Close(ctx)
 		return err
 	}
-	w, err := workerlink.New(workerlink.Config{Auth: s.authn, Router: r, InstanceID: s.instanceID, Clock: clk, Wire: opts, Logger: s.logger, MaxConnections: c.WorkerConnections, Sessions: svc})
+	w, err := workerlink.New(workerlink.Config{Auth: s.authn, MetadataStore: s.st, Router: r, InstanceID: s.instanceID, Clock: clk, Wire: opts, Logger: s.logger, MaxConnections: c.WorkerConnections, Sessions: svc})
 	if err != nil {
 		_ = g.Shutdown(ctx)
 		_ = svc.Close(ctx)

@@ -154,6 +154,7 @@ type Config struct {
 	InstanceID                      string
 	Clock                           clock.Clock
 	Auth                            auth.LinkAuthenticator
+	MetadataStore                   auth.HelloMetadataStore
 	Registry                        Registry
 	Hooks                           Hooks
 	Logger                          *slog.Logger

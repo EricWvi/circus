@@ -22,10 +22,15 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/clock"
+	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/testutil/wait"
+	"github.com/EricWvi/circus/internal/wire"
+	"github.com/coder/websocket"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -990,4 +995,75 @@ func TestInvisibleUpdates(t *testing.T) {
 	// Now the form's version is old: an edit is refused.
 	_, err = super.update(t, &circusv1.UpdateProjectRequest{ProjectId: p.ProjectId, Name: new("again"), ExpectedUpdatedAtUnixMs: new(p.UpdatedAtUnixMs)})
 	wantField(t, err, connect.CodeAborted, "")
+}
+
+type deviceListHooks struct{ gateway.Hooks }
+
+func (deviceListHooks) OnConnected(context.Context, gateway.Connection) error    { return nil }
+func (deviceListHooks) OnDisconnected(context.Context, gateway.Connection) error { return nil }
+
+func TestDeviceListShowsDaemonHelloVersion(t *testing.T) {
+	h, browser := newHarness(t)
+	ctx := wait.Ctx(t)
+	now := time.UnixMilli(h.clock.Load())
+	token, _, err := auth.CreateEnrollToken(ctx, h.st, h.owner.ID, store.KindDevice, time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := auth.Enroll(ctx, h.st, auth.EnrollRequest{
+		Token: token, Kind: store.KindDevice, Name: "laptop", MachineID: "machine", ClientVersion: "0.1.0",
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := func() string {
+		devices := browser.devices(t)
+		if len(devices) != 1 {
+			t.Fatalf("ListDevices returned %d devices, want 1", len(devices))
+		}
+		return devices[0].GetVersion()
+	}
+	if got := version(); got != "0.1.0" {
+		t.Fatalf("enrolled version = %q, want 0.1.0", got)
+	}
+
+	registry, err := gateway.NewRegistry(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := gateway.New(gateway.Config{
+		InstanceID: "test", Clock: clock.Real{}, Auth: auth.NewAuthenticator(h.st, auth.Options{}), MetadataStore: h.st, Registry: registry, Hooks: deviceListHooks{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(g)
+	defer server.Close()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
+		defer cancel()
+		if err := g.Shutdown(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
+	conn, _, err := wire.DialWebSocket(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/v1/link/daemon", &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + device.Token}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, _, err := wire.DialHello(ctx, conn, wire.DaemonUplink, &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, BootId: "boot", ClientVersion: "0.2.0"}, device.Identity.ID, wire.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	t.Cleanup(func() {
+		if got != "0.2.0" {
+			t.Errorf("ListDevices version = %q, want 0.2.0", got)
+		}
+	})
+	wait.For(t, func() bool {
+		got = version()
+		return got == "0.2.0"
+	})
 }

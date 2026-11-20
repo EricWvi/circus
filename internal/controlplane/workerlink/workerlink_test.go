@@ -110,11 +110,12 @@ func setup(t *testing.T, configure ...func(*workerlink.Config)) *fixture {
 	svc := &service{started: make(chan string, 256)}
 	clk := clock.New()
 	cfg := workerlink.Config{
-		Auth:       authenticator,
-		Router:     svc,
-		InstanceID: "instance",
-		Clock:      clk,
-		Wire:       wire.Options{MaxMessageBytes: 1 << 20},
+		Auth:          authenticator,
+		MetadataStore: st,
+		Router:        svc,
+		InstanceID:    "instance",
+		Clock:         clk,
+		Wire:          wire.Options{MaxMessageBytes: 1 << 20},
 	}
 	for _, fn := range configure {
 		fn(&cfg)
@@ -148,6 +149,24 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestHelloRefreshesWorkerMetadata(t *testing.T) {
+	f := setup(t)
+	conn := raw(t, f)
+	hello := &circusv1.Hello{
+		ProtocolVersion: wire.ProtocolVersion, ClientVersion: "0.2.0", Os: "darwin", Arch: "arm64", Hostname: "new-host",
+	}
+	write(t, conn, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_Hello{Hello: hello}})
+	if got := read(t, conn).GetWelcome().GetPrincipalId(); got != f.f.PrincipalID {
+		t.Fatalf("Welcome principal = %q, want %q", got, f.f.PrincipalID)
+	}
+	wait.For(t, func() bool {
+		worker, err := f.st.GetIdentity(t.Context(), store.KindWorker, f.f.PrincipalID)
+		must(t, err)
+		return worker.ClientVersion == hello.ClientVersion && worker.OS == hello.Os && worker.Arch == hello.Arch && worker.Hostname == hello.Hostname
+	})
+}
+
 func raw(t *testing.T, f *fixture) *wire.WebSocket { t.Helper(); return rawAs(t, f, f.f.Token) }
 func rawAs(t *testing.T, f *fixture, token string) *wire.WebSocket {
 	t.Helper()

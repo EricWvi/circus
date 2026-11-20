@@ -236,6 +236,27 @@ func (o *ops) CreateIdentity(ctx context.Context, id store.Identity) error {
 	return err
 }
 
+func (o *ops) UpdateHelloMetadata(ctx context.Context, kind store.PrincipalKind, id string, metadata store.HelloMetadata) (bool, error) {
+	table, err := identityTable(kind)
+	if err != nil {
+		return false, err
+	}
+	n, err := o.exec(ctx, `UPDATE `+table+` SET
+		client_version = COALESCE(:version, client_version),
+		os = COALESCE(:os, os),
+		arch = COALESCE(:arch, arch),
+		hostname = COALESCE(:hostname, hostname)
+		WHERE id = :id AND deleted_at IS NULL AND (
+			(:version IS NOT NULL AND client_version IS NOT :version) OR
+			(:os IS NOT NULL AND os IS NOT :os) OR
+			(:arch IS NOT NULL AND arch IS NOT :arch) OR
+			(:hostname IS NOT NULL AND hostname IS NOT :hostname)
+		)`, sql.Named("id", id), sql.Named("version", nstr(metadata.ClientVersion)),
+		sql.Named("os", nstr(metadata.OS)), sql.Named("arch", nstr(metadata.Arch)),
+		sql.Named("hostname", nstr(metadata.Hostname)))
+	return n > 0, err
+}
+
 func (o *ops) GetIdentity(ctx context.Context, kind store.PrincipalKind, id string) (store.Identity, error) {
 	table, err := identityTable(kind)
 	if err != nil {

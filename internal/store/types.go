@@ -132,6 +132,14 @@ type Identity struct {
 	DeletedAt          int64
 }
 
+// HelloMetadata is the mutable identity metadata reported during link handshakes.
+type HelloMetadata struct {
+	ClientVersion string
+	OS            string
+	Arch          string
+	Hostname      string
+}
+
 // IdentitySummary is a live device or worker with its owner's email for
 // administrative listings.
 type IdentitySummary struct {

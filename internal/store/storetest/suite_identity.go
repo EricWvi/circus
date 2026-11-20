@@ -10,6 +10,41 @@ import (
 	"github.com/EricWvi/circus/internal/store"
 )
 
+func testUpdateHelloMetadata(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	for _, identity := range []store.Identity{f.device, f.worker} {
+		t.Run(string(identity.Kind), func(t *testing.T) {
+			want := identity
+			update := func(metadata store.HelloMetadata, changed bool) {
+				t.Helper()
+				gotChanged, err := s.UpdateHelloMetadata(ctx, identity.Kind, identity.ID, metadata)
+				must(t, err)
+				mustEqual(t, "changed", gotChanged, changed)
+				got, err := s.GetIdentity(ctx, identity.Kind, identity.ID)
+				must(t, err)
+				mustEqual(t, "identity", got, want)
+			}
+
+			metadata := store.HelloMetadata{ClientVersion: "0.2.0", OS: "darwin", Arch: "arm64", Hostname: "updated"}
+			want.ClientVersion, want.OS, want.Arch, want.Hostname = metadata.ClientVersion, metadata.OS, metadata.Arch, metadata.Hostname
+			update(metadata, true)
+			update(metadata, false)
+			update(store.HelloMetadata{}, false)
+
+			want.ClientVersion = "0.3.0"
+			update(store.HelloMetadata{ClientVersion: want.ClientVersion}, true)
+
+			want.DeletedAt = t0 + 1
+			deleted, err := s.DeleteIdentity(ctx, identity.Kind, identity.ID, want.DeletedAt)
+			must(t, err)
+			mustEqual(t, "deleted", deleted, true)
+			update(metadata, false)
+		})
+	}
+}
+
 func testUsers(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()

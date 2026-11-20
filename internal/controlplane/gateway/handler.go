@@ -218,6 +218,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		predecessor = h.peers[previous.Target.ConnectionID]
 	}
 	h.mu.Unlock()
+	auth.RefreshHelloMetadata(ctx, h.config.MetadataStore, h.config.Logger, principal, hello)
 	if previous != nil {
 		slog.Warn("daemon connection superseded", "instance_id", h.config.InstanceID, "device_id", principal.ID, "boot_changed", previous.Target.BootID != hello.BootId)
 		if predecessor != nil {

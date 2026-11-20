@@ -66,6 +66,9 @@ type Ops interface {
 	// id is taken or the user already has a live identity of that kind with
 	// that name; ErrNotFound if the user does not exist.
 	CreateIdentity(ctx context.Context, id Identity) error
+	// UpdateHelloMetadata updates only nonempty metadata on a live identity.
+	// It reports whether a row changed. Missing, deleted and unchanged rows are no-ops.
+	UpdateHelloMetadata(ctx context.Context, kind PrincipalKind, id string, metadata HelloMetadata) (bool, error)
 	// GetIdentity returns the identity, deleted or not, or ErrNotFound.
 	GetIdentity(ctx context.Context, kind PrincipalKind, id string) (Identity, error)
 	// GetIdentityByName returns the user's live identity with this name, or
