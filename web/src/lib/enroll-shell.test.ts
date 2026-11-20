@@ -12,7 +12,7 @@ import { enrollCommand } from "./enroll"
  * Runs the command in sh with stand-ins for curl, tar, circus and task (whose
  * `task cli -- <args>` runs the circus stand-in) that
  * record their calls in a log (circus join also records the link it read)
- * and fail on request.
+ * and fail on request. `circus version` prints $VERSION and isn't logged.
  */
 describe("enrollCommand in a POSIX shell", () => {
   let dir = ""
@@ -28,7 +28,8 @@ describe("enrollCommand in a POSIX shell", () => {
     script("tar", `echo tar >> "$LOG"; [ "$FAIL" = tar ] && exit 2; cp "$CIRCUS" "$4/circus"`)
     script(
       "circus",
-      `echo "circus $*" >> "$LOG"
+      `if [ "$1" = version ]; then echo "$VERSION"; exit 0; fi
+echo "circus $*" >> "$LOG"
 if [ "$1" = join ]; then read -r link; echo "link $link" >> "$LOG"; [ "$FAIL" = join ] && exit 1; fi
 exit 0`,
     )
@@ -36,7 +37,12 @@ exit 0`,
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-  function run(command: string, fail = "") {
+  function run(command: string, fail = "", installed = "") {
+    if (installed) {
+      mkdirSync(join(dir, "home", ".local", "bin"), { recursive: true })
+      writeFileSync(join(dir, "home", ".local", "bin", "circus"), readFileSync(join(dir, "bin", "circus")))
+      chmodSync(join(dir, "home", ".local", "bin", "circus"), 0o755)
+    }
     const log = join(dir, "log")
     writeFileSync(log, "")
     const result = spawnSync("sh", ["-c", command], {
@@ -46,6 +52,7 @@ exit 0`,
         LOG: log,
         CIRCUS: join(dir, "bin", "circus"),
         FAIL: fail,
+        VERSION: installed,
       },
       encoding: "utf8",
     })
@@ -58,6 +65,20 @@ exit 0`,
 
   it("runs every step of a release in order", () => {
     expect(run(releaseCommand)).toEqual({
+      status: 0,
+      calls: [`curl ${archive}`, "tar", "circus join", `link ${tricky}`, "circus daemon"],
+    })
+  })
+
+  it("skips the download when the server's version is installed", () => {
+    expect(run(releaseCommand, "", "v0.2.0")).toEqual({
+      status: 0,
+      calls: ["circus join", `link ${tricky}`, "circus daemon"],
+    })
+  })
+
+  it("replaces an installed CLI of another version", () => {
+    expect(run(releaseCommand, "", "v0.1.0")).toEqual({
       status: 0,
       calls: [`curl ${archive}`, "tar", "circus join", `link ${tricky}`, "circus daemon"],
     })

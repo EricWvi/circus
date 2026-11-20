@@ -70,12 +70,14 @@ describe("isReleaseVersion", () => {
 describe("enrollCommand", () => {
   const link = "https://cp.example/join#d.w"
 
-  it("downloads a release to a file, unpacks it, joins and starts the daemon, as one chain", () => {
+  it("downloads a release unless it is installed, joins and starts the daemon, as one chain", () => {
     expect(enrollCommand({ link, role: "both", serverVersion: "v0.2.0", platform: "darwin-amd64" })).toBe(
       [
-        ` mkdir -p ~/.local/bin && t="$(mktemp)" &&`,
-        `  curl -fsSL -o "$t" https://github.com/EricWvi/circus/releases/download/v0.2.0/circus-v0.2.0-darwin-amd64.tar.gz &&`,
-        `  tar -xzf "$t" -C ~/.local/bin circus && rm -f "$t" &&`,
+        ` [ "$(~/.local/bin/circus version 2>/dev/null)" = v0.2.0 ] || {`,
+        `    mkdir -p ~/.local/bin && t="$(mktemp)" &&`,
+        `    curl -fsSL -o "$t" https://github.com/EricWvi/circus/releases/download/v0.2.0/circus-v0.2.0-darwin-amd64.tar.gz &&`,
+        `    tar -xzf "$t" -C ~/.local/bin circus && rm -f "$t"`,
+        `  } &&`,
         `  printf '%s\\n' 'https://cp.example/join#d.w' | ~/.local/bin/circus join &&`,
         "  ~/.local/bin/circus daemon",
       ].join("\n"),

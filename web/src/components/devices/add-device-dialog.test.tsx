@@ -141,9 +141,11 @@ describe("the add device dialog", () => {
     expect(requested).toEqual(["daemon"])
     expect(command()).toBe(
       [
-        ` mkdir -p ~/.local/bin && t="$(mktemp)" &&`,
-        `  curl -fsSL -o "$t" https://github.com/EricWvi/circus/releases/download/v0.3.0/circus-v0.3.0-linux-amd64.tar.gz &&`,
-        `  tar -xzf "$t" -C ~/.local/bin circus && rm -f "$t" &&`,
+        ` [ "$(~/.local/bin/circus version 2>/dev/null)" = v0.3.0 ] || {`,
+        `    mkdir -p ~/.local/bin && t="$(mktemp)" &&`,
+        `    curl -fsSL -o "$t" https://github.com/EricWvi/circus/releases/download/v0.3.0/circus-v0.3.0-linux-amd64.tar.gz &&`,
+        `    tar -xzf "$t" -C ~/.local/bin circus && rm -f "$t"`,
+        `  } &&`,
         `  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join &&`,
         "  ~/.local/bin/circus daemon",
       ].join("\n"),
@@ -160,17 +162,17 @@ describe("the add device dialog", () => {
     fireEvent.click(dialog().getByRole("radio", { name: /^Worker/ }))
     await generate()
     expect(requested).toEqual(["worker"])
-    expect(lines()).toHaveLength(4)
-    expect(lines()[3]).toBe(`  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join --role worker`)
+    expect(lines()).toHaveLength(6)
+    expect(lines()[5]).toBe(`  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join --role worker`)
     expect(dialog().getByText("Start the worker process separately; it isn't released yet.")).toBeTruthy()
 
     // The platform only picks the download, so it changes the command in place.
     await choosePlatform("macOS Apple Silicon")
-    expect(lines()[1]).toContain("/v0.3.0/circus-v0.3.0-darwin-arm64.tar.gz &&")
+    expect(lines()[2]).toContain("/v0.3.0/circus-v0.3.0-darwin-arm64.tar.gz &&")
     await choosePlatform("Linux ARM64")
-    expect(lines()[1]).toContain("-linux-arm64.tar.gz")
+    expect(lines()[2]).toContain("-linux-arm64.tar.gz")
     await choosePlatform("macOS Intel")
-    expect(lines()[1]).toContain("-darwin-amd64.tar.gz")
+    expect(lines()[2]).toContain("-darwin-amd64.tar.gz")
     expect(requested).toEqual(["worker"])
   })
 
@@ -180,11 +182,11 @@ describe("the add device dialog", () => {
     fireEvent.click(dialog().getByRole("radio", { name: /^Both/ }))
     await generate()
     expect(requested).toEqual(["both"])
-    expect(lines().slice(3)).toEqual([
+    expect(lines().slice(5)).toEqual([
       `  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join &&`,
       "  ~/.local/bin/circus daemon",
     ])
-    expect(lines()[1]).toContain("/v1.2.0-rc.1/circus-v1.2.0-rc.1-linux-amd64.tar.gz")
+    expect(lines()[2]).toContain("/v1.2.0-rc.1/circus-v1.2.0-rc.1-linux-amd64.tar.gz")
     expect(dialog().getByText(/worker process/)).toBeTruthy()
   })
 

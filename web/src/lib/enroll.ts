@@ -95,8 +95,10 @@ const shellQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
 /**
  * The shell command that sets up a machine with `link`, as one chain for a
  * POSIX shell where each step runs only if the one before succeeded: for a
- * release, download the matching CLI to a temporary file and unpack it into
- * ~/.local/bin; then join (as a worker only for the worker role) and, when
+ * release, unless ~/.local/bin/circus already is the server's version,
+ * download the matching CLI to a temporary file and unpack it there (so a
+ * machine set up before skips the download, and one with another version
+ * gets the server's); then join (as a worker only for the worker role) and, when
  * the link enrolls a device, start its daemon. A development build has no
  * download, so the chain starts at the join and runs the CLI from a circus
  * checkout with `task cli --` (source build, files under .tmp/dev). The
@@ -124,9 +126,13 @@ export function enrollCommand({
   if (release) {
     const archive = `${RELEASES}/${serverVersion}/circus-${serverVersion}-${platform}.tar.gz`
     steps.push(
-      `mkdir -p ~/.local/bin && t="$(mktemp)"`,
-      `curl -fsSL -o "$t" ${archive}`,
-      `tar -xzf "$t" -C ~/.local/bin circus && rm -f "$t"`,
+      [
+        `[ "$(~/.local/bin/circus version 2>/dev/null)" = ${serverVersion} ] || {`,
+        `    mkdir -p ~/.local/bin && t="$(mktemp)" &&`,
+        `    curl -fsSL -o "$t" ${archive} &&`,
+        `    tar -xzf "$t" -C ~/.local/bin circus && rm -f "$t"`,
+        `  }`,
+      ].join("\n"),
     )
   }
   steps.push(`printf '%s\\n' ${shellQuote(link)} | ${circus} join${role === "worker" ? " --role worker" : ""}`)
