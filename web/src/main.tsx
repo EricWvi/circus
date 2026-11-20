@@ -7,6 +7,7 @@ import { createQueryClient } from "./api/query-client"
 import { App } from "./App"
 import { ThemeProvider } from "./components/theme/theme-provider"
 import { startI18n } from "./i18n/preference"
+import { installOverlayScrollbars } from "./lib/overlay-scrollbars"
 import { createAppRouter } from "./router"
 import { startCodeFont } from "./settings/code-font"
 import { ConversationStoreContext } from "./state/conversations-context"
@@ -19,6 +20,8 @@ import "./index.css"
 // The language and the code font are settled before anything renders.
 startI18n()
 startCodeFont()
+// Thin overlay thumbs where scrollbars take width, as on Windows.
+installOverlayScrollbars()
 const backend = startBackend()
 const queryClient = createQueryClient()
 const router = createAppRouter()
