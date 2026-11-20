@@ -376,27 +376,32 @@ func testSessionFencing(t *testing.T, b Backend) {
 		{"connection", store.Fence{SessionID: "s1", Epoch: good.Epoch, WorkerID: "w1", BootID: "b1", ConnID: "other-conn", Now: t0 + 1}},
 		{"expired", at(good, t0+ttl)},
 	}
+	// Each call runs within its own deadline: a hang fails fast, while the
+	// table (hundreds of calls) is not timed as a whole.
 	for _, m := range fencedMethods {
-		ctx := deadline(t) // per method: a hang fails fast, the table may run long
 		resume := m.name == "ResumeLeases"
 		// The holder's call succeeds (rolled back), so the fence alone
 		// decides the cases below.
-		mustIs(t, s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
-			if err := m.call(ctx, tx, good); err != nil {
-				t.Fatalf("%s with the holder's fence: %v", m.name, err)
-			}
-			return errRollback
+		mustIs(t, within(t, func(ctx context.Context) error {
+			return s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+				if err := m.call(ctx, tx, good); err != nil {
+					t.Fatalf("%s with the holder's fence: %v", m.name, err)
+				}
+				return errRollback
+			})
 		}), errRollback)
 		for _, c := range bad {
 			if resume && c.name == "connection" {
 				continue // any connection of the boot may resume: see testLeaseConnection
 			}
 			before := snapSession(t, s, good)
-			mustFenced(t, m.call(ctx, s, c.fence), good.Epoch)
+			mustFenced(t, within(t, func(ctx context.Context) error { return m.call(ctx, s, c.fence) }), good.Epoch)
 			// Inside a Tx whose fn ignores the error and commits.
-			must(t, s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
-				mustFenced(t, m.call(ctx, tx, c.fence), good.Epoch)
-				return nil
+			must(t, within(t, func(ctx context.Context) error {
+				return s.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+					mustFenced(t, m.call(ctx, tx, c.fence), good.Epoch)
+					return nil
+				})
 			}))
 			mustEqual(t, label(m.name, " with a wrong ", c.name), snapSession(t, s, good), before)
 		}

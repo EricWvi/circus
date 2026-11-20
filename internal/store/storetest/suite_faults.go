@@ -143,6 +143,11 @@ type crashStep struct {
 	run    func(ctx context.Context, s store.Store) error
 }
 
+// within runs the step under its own deadline.
+func (st crashStep) within(t testing.TB, s store.Store) error {
+	return within(t, func(ctx context.Context) error { return st.run(ctx, s) })
+}
+
 func crashScript(f fixture) []crashStep {
 	call := newCall("c1", f)
 	cred := store.Credential{ID: "c-d", Kind: store.KindDevice, PrincipalID: "d1", TokenHash: hash("dev"), CreatedAt: t0}
@@ -326,28 +331,27 @@ func takeSnapshot(t testing.TB, s store.Ops) snapshot {
 // commit leaves nothing), then finishes the script on the restarted store
 // and checks it reaches the same end state as an uninterrupted run.
 func testCrashAtEveryWritePoint(t *testing.T, b Backend) {
-	// One deadline per crash point: a single shared one covers dozens of
-	// restarts and expires under heavy parallel -race load.
-	ctx := deadline(t)
+	// Each step runs under its own deadline: a step left hanging by the
+	// crash fails fast, while the dozens of restarts, snapshots and steps
+	// around it are not timed (under parallel -race load they take long).
 	script := crashScript(fixtureRows())
 
 	ref, _ := open(t, b)
 	prefix := []snapshot{takeSnapshot(t, ref)}
 	total := 0
 	for _, st := range script {
-		must(t, st.run(ctx, NewFaulty(ref)))
+		must(t, st.within(t, NewFaulty(ref)))
 		prefix = append(prefix, takeSnapshot(t, ref))
 		total += st.points
 	}
 
 	for n := 1; n <= total; n++ {
-		ctx := deadline(t)
 		p := StartProcess(t, b, t.TempDir())
 		p.CrashAfterWrite(n)
 		crashedIn, end := -1, 0
 		for i, st := range script {
 			end += st.points
-			err := st.run(ctx, p.Store())
+			err := st.within(t, p.Store())
 			if errors.Is(err, ErrCrashed) {
 				crashedIn = i
 				break
@@ -366,7 +370,7 @@ func testCrashAtEveryWritePoint(t *testing.T, b Backend) {
 		p.Restart()
 		mustEqual(t, label("n=", n, " after restart (", durable, " steps durable)"), takeSnapshot(t, p.Store()), prefix[durable])
 		for _, st := range script[durable:] {
-			if err := st.run(ctx, p.Store()); err != nil {
+			if err := st.within(t, p.Store()); err != nil {
 				t.Fatalf("n=%d resume step %s: %v", n, st.name, err)
 			}
 		}

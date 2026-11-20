@@ -315,8 +315,10 @@ func TestFakeWorkerSessions(t *testing.T) {
 		s.send("/fake bash sleep 12", pb.InputPriority_INPUT_PRIORITY_NORMAL)
 		use := watch.until(contains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
 		var id string
+		// The call is in flight once dispatched; the daemon's ack moves it to
+		// running at any moment, so a poll after the ack must match too.
 		testwait.For(t, func() bool {
-			rows, err := h.st.ListCalls(s.ctx, store.CallFilter{UserID: h.user(), SessionID: s.id, States: []store.CallState{store.CallDispatched}, Limit: 10})
+			rows, err := h.st.ListCalls(s.ctx, store.CallFilter{UserID: h.user(), SessionID: s.id, States: []store.CallState{store.CallDispatched, store.CallRunning}, Limit: 10})
 			must(t, err)
 			if len(rows) == 0 {
 				return false

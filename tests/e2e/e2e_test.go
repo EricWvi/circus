@@ -67,6 +67,9 @@ func sweepE2ERuns(tmp string) error {
 			// Runs predating run.lock have no liveness lock. Delete only their
 			// old directories, preserving a concurrently created young run.
 			info, statErr := entry.Info()
+			if errors.Is(statErr, os.ErrNotExist) {
+				continue // its run removed it meanwhile
+			}
 			if statErr != nil {
 				return statErr
 			}

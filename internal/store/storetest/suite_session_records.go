@@ -213,7 +213,7 @@ func testSessionEvents(t *testing.T, b Backend) {
 // grant and the retry input in one transaction, single consumption.
 func testSessionApprovals(t *testing.T, b Backend) {
 	s, dir := open(t, b)
-	ctx := deadline(t)
+	ctx := t.Context()
 	f := seed(t, s)
 	createSession(t, s, f, "s1")
 	fence := at(acquire(t, s, "s1", "w1", "b1", t0), t0+1)
@@ -256,8 +256,11 @@ func testSessionApprovals(t *testing.T, b Backend) {
 	must(t, err)
 	mustEqual(t, "grant", recs.Grants, []store.Grant{{GrantID: "a1", SessionID: "s1", Key: key, CreatedAt: t0 + 10, ExpiresAt: t0 + 600_000}})
 
-	// Consumed once, even by two handles at the same moment.
+	// Consumed once, even by two handles at the same moment. Only this race
+	// could hang (two handles on one database), so only it has a deadline;
+	// the rest of the test runs hundreds of writes and is not timed.
 	other := reopen(t, b, dir)
+	raceCtx := deadline(t)
 	var wg sync.WaitGroup
 	wins := make([]bool, 2)
 	for i, h := range []store.Store{s, other} {
@@ -266,7 +269,7 @@ func testSessionApprovals(t *testing.T, b Backend) {
 			defer wg.Done()
 			must(t, retryBusy(func() error {
 				var err error
-				wins[i], err = h.ConsumeGrant(ctx, fence, key, fmt.Sprint("tu-race", i))
+				wins[i], err = h.ConsumeGrant(raceCtx, fence, key, fmt.Sprint("tu-race", i))
 				return err
 			}))
 		}()

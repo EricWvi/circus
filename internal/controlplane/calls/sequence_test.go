@@ -460,11 +460,16 @@ func (seqTool) Name() string { return "bash" }
 // daemon cancels it (cancel, deadline or shutdown).
 func (t seqTool) Run(ctx context.Context, call *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
 	m := t.d.dev.w.m
-	if seqShuffleStarts.Load() {
+	shuffle := seqShuffleStarts.Load()
+	if shuffle {
 		// Vary the start order of tools started together (replay test).
+		seqStarting.Add(1)
 		time.Sleep(time.Duration(rand.IntN(3000)) * time.Microsecond)
 	}
 	e := m.startExec(call.GetCallId(), t.d.boot, call.GetBash().GetCommand(), ctx)
+	if shuffle {
+		seqStarting.Add(-1)
+	}
 	outcome := "ok"
 	select {
 	case <-e.release:
@@ -484,7 +489,9 @@ func (d *seqDaemon) dial(ctx context.Context, _ string, opts *websocket.DialOpti
 	if !d.dev.up.Load() {
 		return nil, nil, errSeqDown
 	}
-	conn, response, err := wire.DialWebSocket(ctx, d.dev.w.wsURL.Load().(string), opts)
+	o := *opts
+	o.HTTPClient = d.dev.w.net.client // counts the connection's traffic for settle
+	conn, response, err := wire.DialWebSocket(ctx, d.dev.w.wsURL.Load().(string), &o)
 	if err != nil {
 		return nil, response, err
 	}
@@ -561,6 +568,7 @@ type seqWorld struct {
 	violations   []string
 	shutdownSeen int
 	pumps        sync.WaitGroup // seqConn pump goroutines
+	net          *seqNet        // traffic between the daemons and the gateway
 }
 
 // seqResult is what one seed produced.
@@ -573,7 +581,7 @@ func runSequence(t *testing.T, seed uint64, steps int) *seqResult {
 	baseline := goleak.IgnoreCurrent()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
-	w := &seqWorld{t: t, seed: seed, rng: rand.New(rand.NewPCG(seed, 0x5eed)), ctx: ctx, clock: clock.New(), dbPath: filepath.Join(t.TempDir(), "db"), quiet: slog.New(slog.NewTextHandler(io.Discard, nil)), cov: make(map[string]int)}
+	w := &seqWorld{t: t, seed: seed, rng: rand.New(rand.NewPCG(seed, 0x5eed)), ctx: ctx, clock: clock.New(), dbPath: filepath.Join(t.TempDir(), "db"), quiet: slog.New(slog.NewTextHandler(io.Discard, nil)), cov: make(map[string]int), net: newSeqNet()}
 	w.m = newSeqModel(w)
 	previous := slog.Default()
 	slog.SetDefault(w.quiet)
@@ -667,7 +675,9 @@ func (w *seqWorld) openControlPlane() {
 	w.beginStep()
 	w.gateway, err = gateway.New(gateway.Config{InstanceID: "instance", Clock: w.clock, Auth: seqAuth{w.devices}, Registry: w.registry, Hooks: w.hooks, MaxConnections: 16, LinkOptions: wire.Options{MaxMessageBytes: 256 << 10, MaxFragmentBytes: 16 << 10, DisableHeartbeat: true}})
 	must(t, err)
-	w.server = httptest.NewServer(w.gateway)
+	w.server = httptest.NewUnstartedServer(w.gateway)
+	w.server.Listener = w.net.listen(w.server.Listener)
+	w.server.Start()
 	w.wsURL.Store("ws" + strings.TrimPrefix(w.server.URL, "http") + "/v1/link/daemon")
 	w.runner, err = timers.New(timers.Config{Store: seqClaims{Faulty: w.fault}, Clock: w.clock, InstanceID: "instance", Lease: time.Minute, PollInterval: time.Second, BatchSize: 64, Handler: func(ctx context.Context, tm store.Timer) error {
 		return w.hooks.note("timer "+tm.Kind, w.router.HandleTimer(ctx, tm))
@@ -778,7 +788,11 @@ func (w *seqWorld) stopDaemon(d *seqDaemon, graceful bool) {
 // settle waits until the system is idle: no hook or router operation in
 // flight, no queued or unreceived wire message, every finished tool's result
 // handed to the link, every sync finished, every due timer handled and every
-// caused dial attempted, stable over consecutive polls.
+// caused dial attempted, stable over consecutive polls; and nothing in
+// flight that those gauges cannot see (inFlight): no byte or close on a
+// socket, no goroutine handling a message, no tool starting. Without the
+// last check a goroutine descheduled in such a gap ended settle early on a
+// loaded machine, and a seed did not replay.
 func (w *seqWorld) settle(what string) {
 	deadline := time.Now().Add(w.timeout(30 * time.Second))
 	var last seqActivity
@@ -786,8 +800,18 @@ func (w *seqWorld) settle(what string) {
 	reason := ""
 	for {
 		w.m.drainSubs()
+		// inFlight stops the world, so it runs only once the previous poll
+		// was idle, and before unsettled: its store read starts a
+		// database/sql goroutine that would still be runnable right after.
+		hidden := ""
+		if reason == "" && stable > 0 {
+			hidden = w.inFlight()
+		}
 		reason = w.unsettled()
 		act := w.activity()
+		if reason == "" {
+			reason = hidden
+		}
 		if reason == "" && act == last {
 			stable++
 		} else {

@@ -150,8 +150,20 @@ func Run(t *testing.T, b Backend) {
 // deadline returns a ctx for a test whose bugs would hang rather than
 // fail, such as a Faulty lock left held: the stuck call then returns the
 // ctx's error after a few seconds instead of the test binary timing out.
+// It bounds wall time, which under parallel -race load is many times the
+// work done, so it suits a short test or section; a long one bounds each
+// operation with within instead.
 func deadline(t testing.TB) context.Context {
 	return wait.Ctx(t)
+}
+
+// within runs op under a deadline of its own (see deadline): a hang in op
+// fails fast, while the test around it, however many operations it runs,
+// is not timed as a whole.
+func within(t testing.TB, op func(context.Context) error) error {
+	ctx, cancel := context.WithTimeout(t.Context(), wait.Timeout)
+	defer cancel()
+	return op(ctx)
 }
 
 // open opens a fresh database for one test.
