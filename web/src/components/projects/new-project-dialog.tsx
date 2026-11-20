@@ -66,6 +66,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
     initial: () => ({ name: "", repoUrl: "", rows: [newRow(devices.data ?? [])] }),
     devices: devices.data,
     otherProjects: projects.data ?? [],
+    deriveName: true,
   })
   const remote = useFolderRemote({
     rows: form.rows,
@@ -109,34 +110,6 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
       <DialogHeader>
         <DialogTitle>{t("projects.newProject")}</DialogTitle>
       </DialogHeader>
-      <Field>
-        <FieldLabel htmlFor="new-project-name">{t("common.name")}</FieldLabel>
-        <Input
-          id="new-project-name"
-          {...quietAutoFocus}
-          autoComplete="off"
-          value={form.name}
-          aria-invalid={form.errors.name ? true : undefined}
-          onChange={(e) => form.setName(e.target.value)}
-          onBlur={(e) => {
-            quietAutoFocus.onBlur()
-            if (e.target.value !== "") form.touch("name")
-          }}
-        />
-        {form.errors.name && <FieldError>{form.errors.name}</FieldError>}
-      </Field>
-      <RepoUrlField
-        id="new-project-repo-url"
-        value={form.repoUrl}
-        error={form.errors.repoUrl}
-        busy={create.isPending}
-        suggestion={remote.suggestion}
-        onChange={remote.editRepoUrl}
-        onBlur={() => {
-          if (form.repoUrl !== "") form.touch("repoUrl")
-        }}
-        onUseSuggestion={remote.applySuggested}
-      />
       <FieldSet className="gap-2">
         <FieldLegend variant="label" className="mb-2">
           {t("projects.locations")}
@@ -153,8 +126,38 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
           onChange={form.setRows}
           onTouch={(key, field) => form.touch(`${key}.${field}`)}
           onPathCommit={remote.pathCommitted}
+          defaultPathNote={t(form.repoUrl.trim() === "" ? "projects.defaultPathEmpty" : "projects.defaultPathCloned")}
+          firstPathFocus={quietAutoFocus}
         />
       </FieldSet>
+      <RepoUrlField
+        id="new-project-repo-url"
+        value={form.repoUrl}
+        error={form.errors.repoUrl}
+        busy={create.isPending}
+        suggestion={remote.suggestion}
+        onChange={remote.editRepoUrl}
+        onBlur={() => {
+          if (form.repoUrl !== "") form.touch("repoUrl")
+        }}
+        onUseSuggestion={remote.applySuggested}
+      />
+      <Field>
+        <FieldLabel htmlFor="new-project-name">{t("common.name")}</FieldLabel>
+        <Input
+          id="new-project-name"
+          autoComplete="off"
+          value={form.name}
+          // Used when the name is left empty.
+          placeholder={form.derivedName}
+          aria-invalid={form.errors.name ? true : undefined}
+          onChange={(e) => form.setName(e.target.value)}
+          onBlur={(e) => {
+            if (e.target.value !== "") form.touch("name")
+          }}
+        />
+        {form.errors.name && <FieldError>{form.errors.name}</FieldError>}
+      </Field>
       {form.errors.form && (
         <p role="alert" className="text-sm text-destructive">
           {form.errors.form}

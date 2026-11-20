@@ -6,14 +6,17 @@ import type { Device, ProjectLocation } from "@/api/types"
 import {
   addedRow,
   defaultDevice,
+  derivedProjectName,
   hasEarlierDefault,
   isReplaced,
   formChanged,
   hasErrors,
   locationsChanged,
   mapServerError,
+  pathBaseName,
   pickLocation,
   projectErrorMessage,
+  repoNameOf,
   rowsOf,
   shortDefaultPath,
   sortDevices,
@@ -274,5 +277,53 @@ describe("shortDefaultPath", () => {
     expect(shortDefaultPath(`~/circus/projects/${id}`, { head: 4, tail: 4 })).toBe("~/circus/projects/01a1…8a7e")
     expect(shortDefaultPath("~/circus/projects/circus")).toBe("~/circus/projects/circus")
     expect(shortDefaultPath("~/circus/projects/…")).toBe("~/circus/projects/…")
+  })
+})
+
+describe("derived project names", () => {
+  it.each([
+    ["/home/eric/src/circus", "circus"],
+    ["/home/eric/src/circus/", "circus"],
+    ["  ~/src/dotfiles  ", "dotfiles"],
+    ["C:\\Users\\eric\\src\\toolbox\\", "toolbox"],
+    ["/", ""],
+    ["~", ""],
+    ["C:\\", ""],
+    ["/srv/..", ""],
+  ])("takes the last folder of %j", (path, name) => {
+    expect(pathBaseName(path)).toBe(name)
+  })
+
+  it.each([
+    ["https://github.com/owner/repo.git", "repo"],
+    ["https://github.com/owner/repo", "repo"],
+    ["https://github.com/owner/repo/", "repo"],
+    ["ssh://git@host:22/owner/repo.git", "repo"],
+    ["git@github.com:owner/repo.git", "repo"],
+    ["git@host:repo", "repo"],
+    ["git://host/owner/my%20repo.git", "my repo"],
+    ["file:///srv/git/repo.git", "repo"],
+    ["https://github.com", ""],
+    ["not a url", ""],
+    ["", ""],
+  ])("takes the repository name of %j", (url, name) => {
+    expect(repoNameOf(url)).toBe(name)
+  })
+
+  const rows = (...paths: string[]) => paths.map((path, i) => ({ key: String(i), device: "devbox", path }))
+
+  it("prefers the first location with a path, then the repository URL", () => {
+    const repoUrl = "git@github.com:owner/repo.git"
+    expect(derivedProjectName({ rows: rows("", "/srv/palace", "/srv/other"), repoUrl }, [])).toBe("palace")
+    expect(derivedProjectName({ rows: rows(""), repoUrl }, [])).toBe("repo")
+    expect(derivedProjectName({ rows: [], repoUrl }, [])).toBe("repo")
+    expect(derivedProjectName({ rows: rows(""), repoUrl: "" }, [])).toBeUndefined()
+  })
+
+  it("derives nothing that isn't a valid, unused name", () => {
+    expect(derivedProjectName({ rows: rows("/srv/" + "x".repeat(65)), repoUrl: "" }, [])).toBeUndefined()
+    expect(derivedProjectName({ rows: rows("/srv/Palace"), repoUrl: "" }, [{ name: "palace" }])).toBeUndefined()
+    // A path's own name counts even when it gives none: no fallback to the URL.
+    expect(derivedProjectName({ rows: rows("/"), repoUrl: "https://h/o/repo.git" }, [])).toBeUndefined()
   })
 })

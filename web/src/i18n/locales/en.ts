@@ -250,6 +250,8 @@ export const en = {
     repoUrlReadFrom: "Read from <src>{{device}}:{{path}}</src>",
     repoUrlFolderUses: "<src>{{device}}:{{path}}</src> uses <url>{{url}}</url>",
     useRepoUrl: "Use this URL",
+    defaultPathCloned: "Cloned here the first time a session starts",
+    defaultPathEmpty: "An empty folder is created here",
     defaultPathMark: "default",
     defaultPathHint:
       "Leave the path empty to use the default folder, {{path}}. It's created on the device the first time a session starts here, with the repository cloned into it if the project has one.",

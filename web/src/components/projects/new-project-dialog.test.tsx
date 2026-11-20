@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { SLOW_GIT_REMOTE_MS } from "@/api/mock/directories"
 import type { CircusClient } from "@/api/types"
+import { i18n } from "@/i18n/i18n"
 import { advance, renderWithBackend } from "@/test/render"
 
 import { useOpenNewProject } from "./new-project-context"
@@ -336,3 +337,106 @@ describe("new project repository URL from a folder", () => {
     expect(reads).toEqual([{ device: "devbox", path: "/srv/palace" }])
   })
 })
+
+describe("new project layout", () => {
+  const pathField = (n: number) =>
+    screen.getByRole("textbox", { name: new RegExp(`^(Path for location ${n}|位置 ${n} 的路径)$`) })
+  const note = (n = 1) => {
+    const id = pathField(n).getAttribute("aria-describedby")
+    return id ? document.getElementById(id)?.textContent : undefined
+  }
+  const submit = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Create" }))
+    await advance(500)
+  }
+
+  it("puts locations first, then the repository URL, then the name, and focuses the first path quietly", async () => {
+    await openDialog()
+    const order = [path(), repoUrl(), nameInput()]
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+    expect(document.activeElement).toBe(path())
+    expect(path().hasAttribute("data-quiet-focus")).toBe(true)
+    act(() => nameInput().focus())
+    expect(path().hasAttribute("data-quiet-focus")).toBe(false)
+  })
+
+  it("says what happens in the default directory, by whether there is a repository URL", async () => {
+    await openDialog()
+    expect(note()).toBe("An empty folder is created here")
+    fireEvent.change(repoUrl(), { target: { value: "git@github.com:owner/repo.git" } })
+    expect(note()).toBe("Cloned here the first time a session starts")
+    await i18n.changeLanguage("zh-CN")
+    try {
+      expect(note()).toBe("首次开会话时克隆到这里")
+      fireEvent.change(repoUrl(), { target: { value: " " } })
+      expect(note()).toBe("将在这里新建空文件夹")
+    } finally {
+      await i18n.changeLanguage("en")
+    }
+    // Not once the row has a path.
+    fireEvent.change(path(), { target: { value: "/srv/palace" } })
+    expect(note()).toBeUndefined()
+  })
+
+  it("has no note on a row that needs a path, which shows its error instead", async () => {
+    await openDialog()
+    // Four devices: the fifth row is on devbox again, whose default directory is taken.
+    for (let i = 0; i < 4; i++) {
+      fireEvent.click(screen.getByRole("button", { name: "Add location" }))
+      await advance(10)
+    }
+    expect(note(4)).toBe("An empty folder is created here")
+    expect(note(5)).toBeUndefined()
+    fireEvent.click(screen.getByRole("button", { name: "Create" }))
+    await advance(50)
+    expect(pathField(5).getAttribute("aria-invalid")).toBe("true")
+    expect(note(5)).toBeUndefined()
+    expect(note(1)).toBe("An empty folder is created here")
+  })
+
+  it("derives the name from the repository URL, and saves it", async () => {
+    const { state } = await openDialog()
+    expect(nameInput().placeholder).toBe("")
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/hello-world.git" } })
+    expect(nameInput().placeholder).toBe("hello-world")
+    await submit()
+    expect(state.projects.find((p) => p.name === "hello-world")?.repoUrl).toBe(
+      "https://github.com/owner/hello-world.git",
+    )
+  })
+
+  it("prefers the picked folder's name over the repository's", async () => {
+    const { state } = await openDialog()
+    fireEvent.change(path(), { target: { value: "/home/eric/src" } })
+    await pick("dotfiles")
+    expect(repoUrl().value).toBe("git@github.com:eric/dotfiles.git")
+    expect(nameInput().placeholder).toBe("dotfiles")
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/other.git" } })
+    expect(nameInput().placeholder).toBe("dotfiles")
+    await submit()
+    expect(state.projects.find((p) => p.name === "dotfiles")?.locations[0].path).toBe("/home/eric/src/dotfiles")
+  })
+
+  it("saves a typed name over the derived one", async () => {
+    const { state } = await openDialog()
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/hello-world.git" } })
+    fireEvent.change(nameInput(), { target: { value: "  Mine  " } })
+    await submit()
+    expect(state.projects.some((p) => p.name === "hello-world")).toBe(false)
+    expect(state.projects.find((p) => p.name === "Mine")).toBeDefined()
+  })
+
+  it("derives nothing from a taken name, and asks for one", async () => {
+    const { state } = await openDialog()
+    const count = state.projects.length
+    // "circus" is already a project.
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/eric/circus.git" } })
+    expect(nameInput().placeholder).toBe("")
+    await submit()
+    expect(state.projects).toHaveLength(count)
+    expect(nameInput().getAttribute("aria-invalid")).toBe("true")
+  })
+})
+

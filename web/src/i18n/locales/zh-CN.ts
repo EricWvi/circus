@@ -251,6 +251,8 @@ export const zhCN = {
     repoUrlReadFrom: "读取自 <src>{{device}}:{{path}}</src>",
     repoUrlFolderUses: "<src>{{device}}:{{path}}</src> 使用 <url>{{url}}</url>",
     useRepoUrl: "改用此地址",
+    defaultPathCloned: "首次开会话时克隆到这里",
+    defaultPathEmpty: "将在这里新建空文件夹",
     defaultPathMark: "默认",
     defaultPathHint:
       "路径留空时使用默认文件夹 {{path}}。第一次在这里开始会话时会在设备上创建它；如果项目有仓库地址，还会把仓库克隆进去。",

@@ -204,6 +204,60 @@ export function validateName(
   return undefined
 }
 
+/**
+ * The last folder of a path, as typed for any OS ("/" and "\" both
+ * separate): "" for a root, a drive or the home directory alone.
+ */
+export function pathBaseName(path: string): string {
+  const parts = path.trim().split(/[\\/]+/).filter((p) => p !== "")
+  const last = parts.at(-1) ?? ""
+  if (last === "~" || last === "." || last === ".." || /^[A-Za-z]:$/.test(last)) return ""
+  return last
+}
+
+/**
+ * The repository's name in a URL the field accepts: its last path segment
+ * without ".git" ("https://host/owner/repo.git", "ssh://git@host:22/owner/repo",
+ * "git@host:owner/repo.git" all give "repo"). "" when there is none.
+ */
+export function repoNameOf(repoUrl: string): string {
+  const checked = checkRepoUrl(repoUrl)
+  if (!checked.ok || checked.value === "") return ""
+  const url = checked.value
+  let path: string
+  if (url.includes("://")) {
+    try {
+      path = new URL(url).pathname
+    } catch {
+      return ""
+    }
+  } else {
+    path = url.slice(url.indexOf(":") + 1)
+  }
+  let name = path.split("/").filter((p) => p !== "").at(-1) ?? ""
+  try {
+    name = decodeURIComponent(name)
+  } catch {
+    // Kept as written.
+  }
+  return name.replace(/\.git$/, "")
+}
+
+/**
+ * The name a new project gets when none is typed: the last folder of the
+ * first location with a path, or else the repository's name. Undefined when
+ * there is no source, or when what it gives isn't a valid, unused name.
+ */
+export function derivedProjectName(
+  form: Pick<FormValues, "rows" | "repoUrl">,
+  others: readonly { name: string }[],
+): string | undefined {
+  const located = form.rows.find((r) => r.path.trim() !== "")
+  const name = (located ? pathBaseName(located.path) : repoNameOf(form.repoUrl)).trim()
+  if (name === "" || validateName(name, others) !== undefined) return undefined
+  return name
+}
+
 export function validateRepoUrl(repoUrl: string): string | undefined {
   const checked = checkRepoUrl(repoUrl)
   return checked.ok ? undefined : checked.problem

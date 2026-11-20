@@ -1,5 +1,5 @@
 import { InfoIcon, PlusIcon, XIcon } from "lucide-react"
-import { useRef, useState } from "react"
+import { useId, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import type { Device } from "@/api/types"
@@ -55,6 +55,8 @@ export function LocationEditor({
   onChange,
   onTouch,
   onPathCommit,
+  defaultPathNote,
+  firstPathFocus,
 }: {
   rows: readonly LocationRow[]
   /** Undefined while loading. */
@@ -81,6 +83,10 @@ export function LocationEditor({
     how: PathCommit,
     leavingToSubmit?: boolean,
   ) => void
+  /** What happens in the default directory, on a line under each row that uses it. */
+  defaultPathNote?: string
+  /** Initial focus for the first row's path field (see `useQuietAutoFocus`). */
+  firstPathFocus?: { autoFocus: boolean; "data-quiet-focus"?: string; onBlur: () => void }
 }) {
   const { t } = useTranslation()
   const mobile = useIsMobile()
@@ -104,6 +110,7 @@ export function LocationEditor({
   // focus the button, the path's blur names no related target; the press
   // tells where focus is going instead.
   const browsePressed = useRef<string | null>(null)
+  const noteIdPrefix = useId()
   const isSubmit = (to: EventTarget | null) => to instanceof HTMLButtonElement && to.type === "submit"
 
   const add = () => {
@@ -128,6 +135,9 @@ export function LocationEditor({
             const explicit = hasEarlierDefault(rows, i)
             const isDefault = row.path === "" && !explicit
             const replaced = isReplaced(row, sorted)
+            const note = isDefault && defaultPathNote && !rowErrors.path ? defaultPathNote : null
+            const noteId = noteIdPrefix + row.key
+            const focusProps = i === 0 ? firstPathFocus : undefined
             return (
               <li
                 key={row.key}
@@ -146,8 +156,10 @@ export function LocationEditor({
                     onClose={() => onTouch(row.key, "device")}
                   />
                   {replaced && !rowErrors.device && (
-                    // Runs on under the (empty) space below the path field.
-                    <p className="text-xs text-muted-foreground sm:w-max sm:max-w-[34rem]">{t("projects.replacedHint")}</p>
+                    // Runs on under the space below the path field, while that is empty.
+                    <p className={`text-xs text-muted-foreground ${note ? "" : "sm:w-max sm:max-w-[34rem]"}`}>
+                      {t("projects.replacedHint")}
+                    </p>
                   )}
                   {rowErrors.device && <FieldError>{rowErrors.device}</FieldError>}
                 </div>
@@ -181,6 +193,9 @@ export function LocationEditor({
                     }}
                   >
                     <Input
+                      autoFocus={focusProps?.autoFocus}
+                      data-quiet-focus={focusProps?.["data-quiet-focus"]}
+                      aria-describedby={note ? noteId : undefined}
                       ref={(el) => {
                         if (el && focusPath.current === row.key) {
                           focusPath.current = null
@@ -199,6 +214,7 @@ export function LocationEditor({
                       className={isDefault ? "pr-[6.75rem]" : "pr-8"}
                       onChange={(e) => update(row.key, { path: e.target.value })}
                       onBlur={(e) => {
+                        focusProps?.onBlur()
                         onTouch(row.key, "path")
                         const to = e.relatedTarget
                         const toBrowse =
@@ -220,6 +236,11 @@ export function LocationEditor({
                     {isDefault && <DefaultMark hint={defaultPathHint} />}
                   </FolderPickerField>
                   {rowErrors.path && <FieldError>{rowErrors.path}</FieldError>}
+                  {note && (
+                    <p id={noteId} className="text-xs text-muted-foreground">
+                      {note}
+                    </p>
+                  )}
                 </div>
                 <div className="col-start-2 row-start-1 sm:col-start-3">
                   <Button

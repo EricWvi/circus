@@ -433,3 +433,23 @@ describe("the repository URL of a location's folder", () => {
     expect(saved.repoUrl).toBe("")
   })
 })
+
+describe("layout", () => {
+  it("keeps name, repository URL and locations in that order, without default-directory notes or a derived name", async () => {
+    await renderSettings("circus")
+    const repo = document.getElementById("project-repo-url") as HTMLInputElement
+    const firstPath = screen.getByRole("textbox", { name: "Path for location 1" })
+    expect(nameInput().compareDocumentPosition(repo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(repo.compareDocumentPosition(firstPath) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Add location" }))
+    await advance(10)
+    // The new row uses its device's default directory.
+    const added = screen.getByRole("textbox", { name: "Path for location 3" })
+    expect((added as HTMLInputElement).value).toBe("")
+    expect(added.hasAttribute("aria-describedby")).toBe(false)
+    expect(screen.queryByText("An empty folder is created here")).toBeNull()
+    fireEvent.change(nameInput(), { target: { value: "" } })
+    expect(nameInput().placeholder).toBe("")
+  })
+})
+

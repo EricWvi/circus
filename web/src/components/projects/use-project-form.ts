@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 import type { Device, Location } from "@/api/types"
 import { i18n } from "@/i18n/i18n"
 import {
+  derivedProjectName,
   hasErrors,
   mapServerError,
   noErrors,
@@ -96,6 +97,7 @@ export function useProjectForm({
   devices,
   otherProjects,
   savedLocations,
+  deriveName = false,
 }: {
   initial: () => FormValues
   devices: Device[] | undefined
@@ -105,6 +107,11 @@ export function useProjectForm({
    * once they differ (see `validateForm`).
    */
   savedLocations?: readonly SavedLocation[]
+  /**
+   * An empty name falls back to one derived from the locations or the
+   * repository URL (see `derivedProjectName`), when there is one.
+   */
+  deriveName?: boolean
 }) {
   // Messages are made during render; re-render when the language changes.
   useTranslation()
@@ -124,7 +131,10 @@ export function useProjectForm({
   const dismiss = (ids: readonly string[]) =>
     setServerState((s) => s && { ...s, dismissed: new Set([...s.dismissed, ...ids]) })
 
+  const derivedName = deriveName ? derivedProjectName(values, otherProjects) : undefined
   const local = validateForm(values, devices ?? [], otherProjects, savedLocations)
+  // An empty name isn't missing while there is one to derive.
+  if (derivedName !== undefined && name.trim() === "") local.name = undefined
   const shows = (id: string) => submitted || touched.has(id)
 
   const rowErrors: Record<string, RowErrors> = {}
@@ -149,6 +159,8 @@ export function useProjectForm({
     repoUrl,
     rows,
     values,
+    /** The name used when none is typed, if any (with `deriveName`). */
+    derivedName,
     errors: {
       name: (shows("name") ? local.name : undefined) ?? server.name,
       repoUrl: (shows("repoUrl") ? local.repoUrl : undefined) ?? server.repoUrl,
@@ -171,7 +183,7 @@ export function useProjectForm({
       setServerState(null)
       if (hasErrors(local)) return null
       submittedValues.current = values
-      return { name: name.trim(), repoUrl: repoUrl.trim(), locations: toLocations(rows) }
+      return { name: name.trim() || (derivedName ?? ""), repoUrl: repoUrl.trim(), locations: toLocations(rows) }
     },
     /** Gives rows without a device the default one, leaving everything else. */
     fillDevice(device: string) {
