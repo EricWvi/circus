@@ -26,12 +26,13 @@ import {
 } from "@/api/validation"
 import type { ConversationStore, SessionEvent } from "@/lib/types"
 
-import { listMockDirectory } from "./directories"
+import { listMockDirectory, readMockGitRemote } from "./directories"
 import {
   MOCK_LOGIN_METHODS,
   OIDC_SETUP_EMAIL,
   SEED_SUPER_EMAIL,
   settleSession,
+  type MockDevice,
   type MockLocation,
   type MockProject,
   type MockState,
@@ -181,6 +182,17 @@ export function createMockBackend({
     const user = state.users.find((u) => u.userId === state.cookie)
     if (!user) throw new ApiError("unauthenticated", "Sign in to continue.")
     return user.userId
+  }
+
+  /** One of the signed-in user's devices that is online, for a live device query. */
+  function onlineDevice(name: string): MockDevice {
+    const owner = currentUser()
+    const device = state.devices.find((d) => d.owner === owner && d.name === name)
+    if (!device) throw new ApiError("not_found", "No such device.")
+    if (!device.online || forcedOffline.has(device.name)) {
+      throw new ApiError("failed_precondition", "The device is offline.")
+    }
+    return device
   }
 
   const hasSuper = () => state.users.some((u) => u.role === "super")
@@ -476,16 +488,19 @@ export function createMockBackend({
       // A fake tree, the same on every device (see `directories.ts`).
       listDirectory: callAsync(async (req: { device: string; path: string; includeHidden: boolean }) => {
         await sleep(latency())
-        const owner = currentUser()
-        const device = state.devices.find((d) => d.owner === owner && d.name === req.device)
-        if (!device) throw new ApiError("not_found", "No such device.")
-        if (!device.online || forcedOffline.has(device.name)) {
-          throw new ApiError("failed_precondition", "The device is offline.")
-        }
+        const device = onlineDevice(req.device)
         const { delayMs, outcome } = listMockDirectory(device.os, req)
         if (delayMs > 0) await sleep(delayMs)
         if (outcome instanceof ApiError) throw outcome
         return outcome
+      }),
+      // The same fake tree's repositories (see `directories.ts`).
+      getGitRemote: callAsync(async (req: { device: string; path: string }) => {
+        await sleep(latency())
+        const device = onlineDevice(req.device)
+        const { delayMs, remote } = readMockGitRemote(device.os, req)
+        if (delayMs > 0) await sleep(delayMs)
+        return remote
       }),
     },
 

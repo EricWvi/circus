@@ -4,7 +4,7 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { ListDirectoryResult } from "./daemon_link_pb.js";
+import type { GitRemoteResult, ListDirectoryResult } from "./daemon_link_pb.js";
 import { file_circus_v1_daemon_link } from "./daemon_link_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/machine.proto.
  */
 export const file_circus_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UiPgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlIlkKGENyZWF0ZUVucm9sbExpbmtSZXNwb25zZRIMCgRsaW5rGAEgASgJEhcKD2V4cGlyZXNfdW5peF9tcxgCIAEoAxIWCg5zZXJ2ZXJfdmVyc2lvbhgDIAEoCSJMChRMaXN0RGlyZWN0b3J5UmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCRIWCg5pbmNsdWRlX2hpZGRlbhgDIAEoCCJHChVMaXN0RGlyZWN0b3J5UmVzcG9uc2USLgoGcmVzdWx0GAEgASgLMh4uY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXN1bHQqbwoKRW5yb2xsUm9sZRIbChdFTlJPTExfUk9MRV9VTlNQRUNJRklFRBAAEhYKEkVOUk9MTF9ST0xFX0RBRU1PThABEhYKEkVOUk9MTF9ST0xFX1dPUktFUhACEhQKEEVOUk9MTF9ST0xFX0JPVEgQAzKPAgoOTWFjaGluZVNlcnZpY2USTAoLTGlzdERldmljZXMSHS5jaXJjdXMudjEuTGlzdERldmljZXNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVzcG9uc2USWwoQQ3JlYXRlRW5yb2xsTGluaxIiLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVxdWVzdBojLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVzcG9uc2USUgoNTGlzdERpcmVjdG9yeRIfLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVxdWVzdBogLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzcG9uc2VCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM", [file_circus_v1_daemon_link]);
+  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UiPgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlIlkKGENyZWF0ZUVucm9sbExpbmtSZXNwb25zZRIMCgRsaW5rGAEgASgJEhcKD2V4cGlyZXNfdW5peF9tcxgCIAEoAxIWCg5zZXJ2ZXJfdmVyc2lvbhgDIAEoCSJMChRMaXN0RGlyZWN0b3J5UmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCRIWCg5pbmNsdWRlX2hpZGRlbhgDIAEoCCJHChVMaXN0RGlyZWN0b3J5UmVzcG9uc2USLgoGcmVzdWx0GAEgASgLMh4uY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXN1bHQiMwoTR2V0R2l0UmVtb3RlUmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCSJCChRHZXRHaXRSZW1vdGVSZXNwb25zZRIqCgZyZXN1bHQYASABKAsyGi5jaXJjdXMudjEuR2l0UmVtb3RlUmVzdWx0Km8KCkVucm9sbFJvbGUSGwoXRU5ST0xMX1JPTEVfVU5TUEVDSUZJRUQQABIWChJFTlJPTExfUk9MRV9EQUVNT04QARIWChJFTlJPTExfUk9MRV9XT1JLRVIQAhIUChBFTlJPTExfUk9MRV9CT1RIEAMy4AIKDk1hY2hpbmVTZXJ2aWNlEkwKC0xpc3REZXZpY2VzEh0uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVxdWVzdBoeLmNpcmN1cy52MS5MaXN0RGV2aWNlc1Jlc3BvbnNlElsKEENyZWF0ZUVucm9sbExpbmsSIi5jaXJjdXMudjEuQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QaIy5jaXJjdXMudjEuQ3JlYXRlRW5yb2xsTGlua1Jlc3BvbnNlElIKDUxpc3REaXJlY3RvcnkSHy5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlcXVlc3QaIC5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3BvbnNlEk8KDEdldEdpdFJlbW90ZRIeLmNpcmN1cy52MS5HZXRHaXRSZW1vdGVSZXF1ZXN0Gh8uY2lyY3VzLnYxLkdldEdpdFJlbW90ZVJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_daemon_link]);
 
 /**
  * @generated from message circus.v1.Device
@@ -200,6 +200,51 @@ export const ListDirectoryResponseSchema: GenMessage<ListDirectoryResponse> = /*
   messageDesc(file_circus_v1_machine, 6);
 
 /**
+ * @generated from message circus.v1.GetGitRemoteRequest
+ */
+export type GetGitRemoteRequest = Message<"circus.v1.GetGitRemoteRequest"> & {
+  /**
+   * Name of one of the caller's devices.
+   *
+   * @generated from field: string device = 1;
+   */
+  device: string;
+
+  /**
+   * As ListDirectoryRequest.path.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+};
+
+/**
+ * Describes the message circus.v1.GetGitRemoteRequest.
+ * Use `create(GetGitRemoteRequestSchema)` to create a new message.
+ */
+export const GetGitRemoteRequestSchema: GenMessage<GetGitRemoteRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 7);
+
+/**
+ * @generated from message circus.v1.GetGitRemoteResponse
+ */
+export type GetGitRemoteResponse = Message<"circus.v1.GetGitRemoteResponse"> & {
+  /**
+   * The daemon's GitRemoteResult, passed through.
+   *
+   * @generated from field: circus.v1.GitRemoteResult result = 1;
+   */
+  result?: GitRemoteResult | undefined;
+};
+
+/**
+ * Describes the message circus.v1.GetGitRemoteResponse.
+ * Use `create(GetGitRemoteResponseSchema)` to create a new message.
+ */
+export const GetGitRemoteResponseSchema: GenMessage<GetGitRemoteResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 8);
+
+/**
  * @generated from enum circus.v1.EnrollRole
  */
 export enum EnrollRole {
@@ -276,6 +321,21 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof ListDirectoryRequestSchema;
     output: typeof ListDirectoryResponseSchema;
+  },
+  /**
+   * Reads the origin remote URL of the git repository at a directory on one
+   * of the caller's devices, asking its daemon live. RPC errors are the same
+   * as ListDirectory's (the 8-request per-user cap is shared with it), with
+   * UNAVAILABLE also when the daemon does not list
+   * "device_query.git_remote". Problems with the path or repository come
+   * back in GetGitRemoteResponse.result.error.
+   *
+   * @generated from rpc circus.v1.MachineService.GetGitRemote
+   */
+  getGitRemote: {
+    methodKind: "unary";
+    input: typeof GetGitRemoteRequestSchema;
+    output: typeof GetGitRemoteResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_circus_v1_machine, 0);

@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/daemon_link.proto.
  */
 export const file_circus_v1_daemon_link: GenFile = /*@__PURE__*/
-  fileDesc("ChtjaXJjdXMvdjEvZGFlbW9uX2xpbmsucHJvdG8SCWNpcmN1cy52MSKoAwoMRGFlbW9uVXBsaW5rEiEKBWhlbGxvGAEgASgLMhAuY2lyY3VzLnYxLkhlbGxvSAASKQoJaGVhcnRiZWF0GAIgASgLMhQuY2lyY3VzLnYxLkhlYXJ0YmVhdEgAEicKCGZyYWdtZW50GAMgASgLMhMuY2lyY3VzLnYxLkZyYWdtZW50SAASJgoIY2FsbF9hY2sYCiABKAsyEi5jaXJjdXMudjEuQ2FsbEFja0gAEikKBnJlc3VsdBgLIAEoCzIXLmNpcmN1cy52MS5EZXZpY2VSZXN1bHRIABIsCgtjYWxsX3N0YXR1cxgMIAEoCzIVLmNpcmN1cy52MS5DYWxsU3RhdHVzSAASKAoJam9iX2V2ZW50GA0gASgLMhMuY2lyY3VzLnYxLkpvYkV2ZW50SAASLgoMam9iX3NuYXBzaG90GA4gASgLMhYuY2lyY3VzLnYxLkpvYlNuYXBzaG90SAASOwoTZGV2aWNlX3F1ZXJ5X3Jlc3VsdBgPIAEoCzIcLmNpcmN1cy52MS5EZXZpY2VRdWVyeVJlc3VsdEgAQgkKB3BheWxvYWQigAQKDkRhZW1vbkRvd25saW5rEiUKB3dlbGNvbWUYASABKAsyEi5jaXJjdXMudjEuV2VsY29tZUgAEiMKBnJlamVjdBgCIAEoCzIRLmNpcmN1cy52MS5SZWplY3RIABIpCgloZWFydGJlYXQYAyABKAsyFC5jaXJjdXMudjEuSGVhcnRiZWF0SAASJwoIZnJhZ21lbnQYBCABKAsyEy5jaXJjdXMudjEuRnJhZ21lbnRIABIkCgdnb19hd2F5GAUgASgLMhEuY2lyY3VzLnYxLkdvQXdheUgAEjAKDWRpc3BhdGNoX2NhbGwYCiABKAsyFy5jaXJjdXMudjEuRGlzcGF0Y2hDYWxsSAASLAoLY2FuY2VsX2NhbGwYCyABKAsyFS5jaXJjdXMudjEuQ2FuY2VsQ2FsbEgAEioKCmNhbGxfcXVlcnkYDCABKAsyFC5jaXJjdXMudjEuQ2FsbFF1ZXJ5SAASKAoJbGlzdF9qb2JzGA0gASgLMhMuY2lyY3VzLnYxLkxpc3RKb2JzSAASNwoRc3RvcF9zZXNzaW9uX2pvYnMYDiABKAsyGi5jaXJjdXMudjEuU3RvcFNlc3Npb25Kb2JzSAASLgoMZGV2aWNlX3F1ZXJ5GA8gASgLMhYuY2lyY3VzLnYxLkRldmljZVF1ZXJ5SABCCQoHcGF5bG9hZCJqCgxEaXNwYXRjaENhbGwSIwoEY2FsbBgBIAEoCzIVLmNpcmN1cy52MS5EZXZpY2VDYWxsEhYKDnRhcmdldF9ib290X2lkGAIgASgJEh0KFWRpc3BhdGNoZWRfYXRfdW5peF9tcxgDIAEoAyJ5CgdDYWxsQWNrEg8KB2NhbGxfaWQYASABKAkSJwoGc3RhdHVzGAIgASgLMhUuY2lyY3VzLnYxLkNhbGxTdGF0dXNIABIpCglyZWplY3Rpb24YAyABKAsyFC5jaXJjdXMudjEuUmVqZWN0aW9uSABCCQoHb3V0Y29tZSLQAQoJUmVqZWN0aW9uEicKBGNvZGUYASABKA4yGS5jaXJjdXMudjEuUmVqZWN0aW9uLkNvZGUSDwoHbWVzc2FnZRgCIAEoCSKIAQoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASFgoSQ09ERV9CT09UX01JU01BVENIEAESEAoMQ09ERV9JTlZBTElEEAISFgoSQ09ERV9DQUxMX01JU01BVENIEAMSEAoMQ09ERV9FWFBJUkVEEAQSFgoSQ09ERV9TSFVUVElOR19ET1dOEAUiHgoITGlzdEpvYnMSEgoKc2Vzc2lvbl9pZBgBIAEoCSJQCgtKb2JTbmFwc2hvdBILCgNzZXEYASABKAQSIQoEam9icxgCIAMoCzITLmNpcmN1cy52MS5Kb2JFdmVudBIRCgl0cnVuY2F0ZWQYAyABKAgiJQoPU3RvcFNlc3Npb25Kb2JzEhIKCnNlc3Npb25faWQYASABKAkiYwoLRGV2aWNlUXVlcnkSEgoKcmVxdWVzdF9pZBgBIAEoCRI3Cg5saXN0X2RpcmVjdG9yeRgKIAEoCzIdLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UXVlcnlIAEIHCgVxdWVyeSKaAQoRRGV2aWNlUXVlcnlSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIsCgVlcnJvchgCIAEoCzIbLmNpcmN1cy52MS5EZXZpY2VRdWVyeUVycm9ySAASOAoObGlzdF9kaXJlY3RvcnkYCiABKAsyHi5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3VsdEgAQgkKB291dGNvbWUiwAEKEERldmljZVF1ZXJ5RXJyb3ISLgoEY29kZRgBIAEoDjIgLmNpcmN1cy52MS5EZXZpY2VRdWVyeUVycm9yLkNvZGUSDwoHbWVzc2FnZRgCIAEoCSJrCgRDb2RlEhQKEENPREVfVU5TUEVDSUZJRUQQABIQCgxDT0RFX0lOVkFMSUQQARIUChBDT0RFX1VOU1VQUE9SVEVEEAISDQoJQ09ERV9CVVNZEAMSFgoSQ09ERV9TSFVUVElOR19ET1dOEAQiOgoSTGlzdERpcmVjdG9yeVF1ZXJ5EgwKBHBhdGgYASABKAkSFgoOaW5jbHVkZV9oaWRkZW4YAiABKAgiqgEKE0xpc3REaXJlY3RvcnlSZXN1bHQSDAoEcGF0aBgBIAEoCRIOCgZwYXJlbnQYAiABKAkSDAoEaG9tZRgDIAEoCRIqCgdlbnRyaWVzGAQgAygLMhkuY2lyY3VzLnYxLkRpcmVjdG9yeUVudHJ5EhEKCXRydW5jYXRlZBgFIAEoCBIoCgVlcnJvchgGIAEoDjIZLmNpcmN1cy52MS5EaXJlY3RvcnlFcnJvciJHCg5EaXJlY3RvcnlFbnRyeRIMCgRuYW1lGAEgASgJEhYKDmdpdF9yZXBvc2l0b3J5GAIgASgIEg8KB3N5bWxpbmsYAyABKAgq8QEKDkRpcmVjdG9yeUVycm9yEh8KG0RJUkVDVE9SWV9FUlJPUl9VTlNQRUNJRklFRBAAEiAKHERJUkVDVE9SWV9FUlJPUl9JTlZBTElEX1BBVEgQARIdChlESVJFQ1RPUllfRVJST1JfTk9UX0ZPVU5EEAISIQodRElSRUNUT1JZX0VSUk9SX05PVF9ESVJFQ1RPUlkQAxIlCiFESVJFQ1RPUllfRVJST1JfUEVSTUlTU0lPTl9ERU5JRUQQBBIbChdESVJFQ1RPUllfRVJST1JfVElNRU9VVBAFEhYKEkRJUkVDVE9SWV9FUlJPUl9JTxAGQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_link]);
+  fileDesc("ChtjaXJjdXMvdjEvZGFlbW9uX2xpbmsucHJvdG8SCWNpcmN1cy52MSKoAwoMRGFlbW9uVXBsaW5rEiEKBWhlbGxvGAEgASgLMhAuY2lyY3VzLnYxLkhlbGxvSAASKQoJaGVhcnRiZWF0GAIgASgLMhQuY2lyY3VzLnYxLkhlYXJ0YmVhdEgAEicKCGZyYWdtZW50GAMgASgLMhMuY2lyY3VzLnYxLkZyYWdtZW50SAASJgoIY2FsbF9hY2sYCiABKAsyEi5jaXJjdXMudjEuQ2FsbEFja0gAEikKBnJlc3VsdBgLIAEoCzIXLmNpcmN1cy52MS5EZXZpY2VSZXN1bHRIABIsCgtjYWxsX3N0YXR1cxgMIAEoCzIVLmNpcmN1cy52MS5DYWxsU3RhdHVzSAASKAoJam9iX2V2ZW50GA0gASgLMhMuY2lyY3VzLnYxLkpvYkV2ZW50SAASLgoMam9iX3NuYXBzaG90GA4gASgLMhYuY2lyY3VzLnYxLkpvYlNuYXBzaG90SAASOwoTZGV2aWNlX3F1ZXJ5X3Jlc3VsdBgPIAEoCzIcLmNpcmN1cy52MS5EZXZpY2VRdWVyeVJlc3VsdEgAQgkKB3BheWxvYWQigAQKDkRhZW1vbkRvd25saW5rEiUKB3dlbGNvbWUYASABKAsyEi5jaXJjdXMudjEuV2VsY29tZUgAEiMKBnJlamVjdBgCIAEoCzIRLmNpcmN1cy52MS5SZWplY3RIABIpCgloZWFydGJlYXQYAyABKAsyFC5jaXJjdXMudjEuSGVhcnRiZWF0SAASJwoIZnJhZ21lbnQYBCABKAsyEy5jaXJjdXMudjEuRnJhZ21lbnRIABIkCgdnb19hd2F5GAUgASgLMhEuY2lyY3VzLnYxLkdvQXdheUgAEjAKDWRpc3BhdGNoX2NhbGwYCiABKAsyFy5jaXJjdXMudjEuRGlzcGF0Y2hDYWxsSAASLAoLY2FuY2VsX2NhbGwYCyABKAsyFS5jaXJjdXMudjEuQ2FuY2VsQ2FsbEgAEioKCmNhbGxfcXVlcnkYDCABKAsyFC5jaXJjdXMudjEuQ2FsbFF1ZXJ5SAASKAoJbGlzdF9qb2JzGA0gASgLMhMuY2lyY3VzLnYxLkxpc3RKb2JzSAASNwoRc3RvcF9zZXNzaW9uX2pvYnMYDiABKAsyGi5jaXJjdXMudjEuU3RvcFNlc3Npb25Kb2JzSAASLgoMZGV2aWNlX3F1ZXJ5GA8gASgLMhYuY2lyY3VzLnYxLkRldmljZVF1ZXJ5SABCCQoHcGF5bG9hZCJqCgxEaXNwYXRjaENhbGwSIwoEY2FsbBgBIAEoCzIVLmNpcmN1cy52MS5EZXZpY2VDYWxsEhYKDnRhcmdldF9ib290X2lkGAIgASgJEh0KFWRpc3BhdGNoZWRfYXRfdW5peF9tcxgDIAEoAyJ5CgdDYWxsQWNrEg8KB2NhbGxfaWQYASABKAkSJwoGc3RhdHVzGAIgASgLMhUuY2lyY3VzLnYxLkNhbGxTdGF0dXNIABIpCglyZWplY3Rpb24YAyABKAsyFC5jaXJjdXMudjEuUmVqZWN0aW9uSABCCQoHb3V0Y29tZSLQAQoJUmVqZWN0aW9uEicKBGNvZGUYASABKA4yGS5jaXJjdXMudjEuUmVqZWN0aW9uLkNvZGUSDwoHbWVzc2FnZRgCIAEoCSKIAQoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASFgoSQ09ERV9CT09UX01JU01BVENIEAESEAoMQ09ERV9JTlZBTElEEAISFgoSQ09ERV9DQUxMX01JU01BVENIEAMSEAoMQ09ERV9FWFBJUkVEEAQSFgoSQ09ERV9TSFVUVElOR19ET1dOEAUiHgoITGlzdEpvYnMSEgoKc2Vzc2lvbl9pZBgBIAEoCSJQCgtKb2JTbmFwc2hvdBILCgNzZXEYASABKAQSIQoEam9icxgCIAMoCzITLmNpcmN1cy52MS5Kb2JFdmVudBIRCgl0cnVuY2F0ZWQYAyABKAgiJQoPU3RvcFNlc3Npb25Kb2JzEhIKCnNlc3Npb25faWQYASABKAkilAEKC0RldmljZVF1ZXJ5EhIKCnJlcXVlc3RfaWQYASABKAkSNwoObGlzdF9kaXJlY3RvcnkYCiABKAsyHS5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVF1ZXJ5SAASLwoKZ2l0X3JlbW90ZRgLIAEoCzIZLmNpcmN1cy52MS5HaXRSZW1vdGVRdWVyeUgAQgcKBXF1ZXJ5IswBChFEZXZpY2VRdWVyeVJlc3VsdBISCgpyZXF1ZXN0X2lkGAEgASgJEiwKBWVycm9yGAIgASgLMhsuY2lyY3VzLnYxLkRldmljZVF1ZXJ5RXJyb3JIABI4Cg5saXN0X2RpcmVjdG9yeRgKIAEoCzIeLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzdWx0SAASMAoKZ2l0X3JlbW90ZRgLIAEoCzIaLmNpcmN1cy52MS5HaXRSZW1vdGVSZXN1bHRIAEIJCgdvdXRjb21lIsABChBEZXZpY2VRdWVyeUVycm9yEi4KBGNvZGUYASABKA4yIC5jaXJjdXMudjEuRGV2aWNlUXVlcnlFcnJvci5Db2RlEg8KB21lc3NhZ2UYAiABKAkiawoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASEAoMQ09ERV9JTlZBTElEEAESFAoQQ09ERV9VTlNVUFBPUlRFRBACEg0KCUNPREVfQlVTWRADEhYKEkNPREVfU0hVVFRJTkdfRE9XThAEIjoKEkxpc3REaXJlY3RvcnlRdWVyeRIMCgRwYXRoGAEgASgJEhYKDmluY2x1ZGVfaGlkZGVuGAIgASgIIqoBChNMaXN0RGlyZWN0b3J5UmVzdWx0EgwKBHBhdGgYASABKAkSDgoGcGFyZW50GAIgASgJEgwKBGhvbWUYAyABKAkSKgoHZW50cmllcxgEIAMoCzIZLmNpcmN1cy52MS5EaXJlY3RvcnlFbnRyeRIRCgl0cnVuY2F0ZWQYBSABKAgSKAoFZXJyb3IYBiABKA4yGS5jaXJjdXMudjEuRGlyZWN0b3J5RXJyb3IiRwoORGlyZWN0b3J5RW50cnkSDAoEbmFtZRgBIAEoCRIWCg5naXRfcmVwb3NpdG9yeRgCIAEoCBIPCgdzeW1saW5rGAMgASgIIh4KDkdpdFJlbW90ZVF1ZXJ5EgwKBHBhdGgYASABKAkiSAoPR2l0UmVtb3RlUmVzdWx0EgsKA3VybBgBIAEoCRIoCgVlcnJvchgCIAEoDjIZLmNpcmN1cy52MS5HaXRSZW1vdGVFcnJvcirxAQoORGlyZWN0b3J5RXJyb3ISHwobRElSRUNUT1JZX0VSUk9SX1VOU1BFQ0lGSUVEEAASIAocRElSRUNUT1JZX0VSUk9SX0lOVkFMSURfUEFUSBABEh0KGURJUkVDVE9SWV9FUlJPUl9OT1RfRk9VTkQQAhIhCh1ESVJFQ1RPUllfRVJST1JfTk9UX0RJUkVDVE9SWRADEiUKIURJUkVDVE9SWV9FUlJPUl9QRVJNSVNTSU9OX0RFTklFRBAEEhsKF0RJUkVDVE9SWV9FUlJPUl9USU1FT1VUEAUSFgoSRElSRUNUT1JZX0VSUk9SX0lPEAYqmwIKDkdpdFJlbW90ZUVycm9yEiAKHEdJVF9SRU1PVEVfRVJST1JfVU5TUEVDSUZJRUQQABIhCh1HSVRfUkVNT1RFX0VSUk9SX0lOVkFMSURfUEFUSBABEh4KGkdJVF9SRU1PVEVfRVJST1JfTk9UX0ZPVU5EEAISIwofR0lUX1JFTU9URV9FUlJPUl9OT1RfUkVQT1NJVE9SWRADEh4KGkdJVF9SRU1PVEVfRVJST1JfTk9fT1JJR0lOEAQSJAogR0lUX1JFTU9URV9FUlJPUl9HSVRfVU5BVkFJTEFCTEUQBRIcChhHSVRfUkVNT1RFX0VSUk9SX1RJTUVPVVQQBhIbChdHSVRfUkVNT1RFX0VSUk9SX0ZBSUxFRBAHQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_link]);
 
 /**
  * DaemonUplink is one daemon-to-control-plane WSS binary message.
@@ -442,6 +442,12 @@ export type DeviceQuery = Message<"circus.v1.DeviceQuery"> & {
      */
     value: ListDirectoryQuery;
     case: "listDirectory";
+  } | {
+    /**
+     * @generated from field: circus.v1.GitRemoteQuery git_remote = 11;
+     */
+    value: GitRemoteQuery;
+    case: "gitRemote";
   } | { case: undefined; value?: undefined };
 };
 
@@ -480,6 +486,12 @@ export type DeviceQueryResult = Message<"circus.v1.DeviceQueryResult"> & {
      */
     value: ListDirectoryResult;
     case: "listDirectory";
+  } | {
+    /**
+     * @generated from field: circus.v1.GitRemoteResult git_remote = 11;
+     */
+    value: GitRemoteResult;
+    case: "gitRemote";
   } | { case: undefined; value?: undefined };
 };
 
@@ -687,6 +699,64 @@ export const DirectoryEntrySchema: GenMessage<DirectoryEntry> = /*@__PURE__*/
   messageDesc(file_circus_v1_daemon_link, 13);
 
 /**
+ * GitRemoteQuery reads the fetch URL of the "origin" remote of the git
+ * repository containing a directory on the device, as
+ * `git -C <path> remote get-url origin` prints it (after url.insteadOf
+ * rewriting). The daemon runs git without a terminal prompt and with a
+ * five-second limit. Daemon feature: "device_query.git_remote".
+ *
+ * @generated from message circus.v1.GitRemoteQuery
+ */
+export type GitRemoteQuery = Message<"circus.v1.GitRemoteQuery"> & {
+  /**
+   * As ListDirectoryQuery.path: empty or "~" is the daemon user's home
+   * directory, "~/x" is under it, anything else must be absolute. At most
+   * 4096 bytes, UTF-8.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+};
+
+/**
+ * Describes the message circus.v1.GitRemoteQuery.
+ * Use `create(GitRemoteQuerySchema)` to create a new message.
+ */
+export const GitRemoteQuerySchema: GenMessage<GitRemoteQuery> = /*@__PURE__*/
+  messageDesc(file_circus_v1_daemon_link, 14);
+
+/**
+ * GitRemoteResult is the outcome of one GitRemoteQuery.
+ *
+ * @generated from message circus.v1.GitRemoteResult
+ */
+export type GitRemoteResult = Message<"circus.v1.GitRemoteResult"> & {
+  /**
+   * The origin URL with surrounding whitespace removed; set only when error
+   * is UNSPECIFIED. At most 2048 bytes of UTF-8. For scheme:// URLs, passwords
+   * are removed, and HTTP(S) and FTP(S) URLs have all userinfo removed.
+   * SCP-style URLs keep their user.
+   *
+   * @generated from field: string url = 1;
+   */
+  url: string;
+
+  /**
+   * UNSPECIFIED when url was read; otherwise why not.
+   *
+   * @generated from field: circus.v1.GitRemoteError error = 2;
+   */
+  error: GitRemoteError;
+};
+
+/**
+ * Describes the message circus.v1.GitRemoteResult.
+ * Use `create(GitRemoteResultSchema)` to create a new message.
+ */
+export const GitRemoteResultSchema: GenMessage<GitRemoteResult> = /*@__PURE__*/
+  messageDesc(file_circus_v1_daemon_link, 15);
+
+/**
  * @generated from enum circus.v1.DirectoryError
  */
 export enum DirectoryError {
@@ -737,4 +807,71 @@ export enum DirectoryError {
  */
 export const DirectoryErrorSchema: GenEnum<DirectoryError> = /*@__PURE__*/
   enumDesc(file_circus_v1_daemon_link, 0);
+
+/**
+ * @generated from enum circus.v1.GitRemoteError
+ */
+export enum GitRemoteError {
+  /**
+   * @generated from enum value: GIT_REMOTE_ERROR_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The path is relative, too long, contains NUL, or the home directory is
+   * unknown for a "~" path.
+   *
+   * @generated from enum value: GIT_REMOTE_ERROR_INVALID_PATH = 1;
+   */
+  INVALID_PATH = 1,
+
+  /**
+   * The path does not exist or is not a directory.
+   *
+   * @generated from enum value: GIT_REMOTE_ERROR_NOT_FOUND = 2;
+   */
+  NOT_FOUND = 2,
+
+  /**
+   * The directory is not inside a git work tree.
+   *
+   * @generated from enum value: GIT_REMOTE_ERROR_NOT_REPOSITORY = 3;
+   */
+  NOT_REPOSITORY = 3,
+
+  /**
+   * The repository has no "origin" remote, or its URL is empty.
+   *
+   * @generated from enum value: GIT_REMOTE_ERROR_NO_ORIGIN = 4;
+   */
+  NO_ORIGIN = 4,
+
+  /**
+   * git is not installed or not on the daemon's PATH.
+   *
+   * @generated from enum value: GIT_REMOTE_ERROR_GIT_UNAVAILABLE = 5;
+   */
+  GIT_UNAVAILABLE = 5,
+
+  /**
+   * git did not finish within the daemon's limit.
+   *
+   * @generated from enum value: GIT_REMOTE_ERROR_TIMEOUT = 6;
+   */
+  TIMEOUT = 6,
+
+  /**
+   * Anything else, including a URL that is not valid UTF-8 or too long; see
+   * the daemon logs.
+   *
+   * @generated from enum value: GIT_REMOTE_ERROR_FAILED = 7;
+   */
+  FAILED = 7,
+}
+
+/**
+ * Describes the enum circus.v1.GitRemoteError.
+ */
+export const GitRemoteErrorSchema: GenEnum<GitRemoteError> = /*@__PURE__*/
+  enumDesc(file_circus_v1_daemon_link, 1);
 

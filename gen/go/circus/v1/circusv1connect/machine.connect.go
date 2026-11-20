@@ -42,6 +42,9 @@ const (
 	// MachineServiceListDirectoryProcedure is the fully-qualified name of the MachineService's
 	// ListDirectory RPC.
 	MachineServiceListDirectoryProcedure = "/circus.v1.MachineService/ListDirectory"
+	// MachineServiceGetGitRemoteProcedure is the fully-qualified name of the MachineService's
+	// GetGitRemote RPC.
+	MachineServiceGetGitRemoteProcedure = "/circus.v1.MachineService/GetGitRemote"
 )
 
 // MachineServiceClient is a client for the circus.v1.MachineService service.
@@ -61,6 +64,13 @@ type MachineServiceClient interface {
 	// flight or the daemon is busy. Problems with the path itself are not RPC
 	// errors: they come back in ListDirectoryResponse.result.error.
 	ListDirectory(context.Context, *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error)
+	// Reads the origin remote URL of the git repository at a directory on one
+	// of the caller's devices, asking its daemon live. RPC errors are the same
+	// as ListDirectory's (the 8-request per-user cap is shared with it), with
+	// UNAVAILABLE also when the daemon does not list
+	// "device_query.git_remote". Problems with the path or repository come
+	// back in GetGitRemoteResponse.result.error.
+	GetGitRemote(context.Context, *connect.Request[v1.GetGitRemoteRequest]) (*connect.Response[v1.GetGitRemoteResponse], error)
 }
 
 // NewMachineServiceClient constructs a client for the circus.v1.MachineService service. By default,
@@ -92,6 +102,12 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(machineServiceMethods.ByName("ListDirectory")),
 			connect.WithClientOptions(opts...),
 		),
+		getGitRemote: connect.NewClient[v1.GetGitRemoteRequest, v1.GetGitRemoteResponse](
+			httpClient,
+			baseURL+MachineServiceGetGitRemoteProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("GetGitRemote")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -100,6 +116,7 @@ type machineServiceClient struct {
 	listDevices      *connect.Client[v1.ListDevicesRequest, v1.ListDevicesResponse]
 	createEnrollLink *connect.Client[v1.CreateEnrollLinkRequest, v1.CreateEnrollLinkResponse]
 	listDirectory    *connect.Client[v1.ListDirectoryRequest, v1.ListDirectoryResponse]
+	getGitRemote     *connect.Client[v1.GetGitRemoteRequest, v1.GetGitRemoteResponse]
 }
 
 // ListDevices calls circus.v1.MachineService.ListDevices.
@@ -115,6 +132,11 @@ func (c *machineServiceClient) CreateEnrollLink(ctx context.Context, req *connec
 // ListDirectory calls circus.v1.MachineService.ListDirectory.
 func (c *machineServiceClient) ListDirectory(ctx context.Context, req *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error) {
 	return c.listDirectory.CallUnary(ctx, req)
+}
+
+// GetGitRemote calls circus.v1.MachineService.GetGitRemote.
+func (c *machineServiceClient) GetGitRemote(ctx context.Context, req *connect.Request[v1.GetGitRemoteRequest]) (*connect.Response[v1.GetGitRemoteResponse], error) {
+	return c.getGitRemote.CallUnary(ctx, req)
 }
 
 // MachineServiceHandler is an implementation of the circus.v1.MachineService service.
@@ -134,6 +156,13 @@ type MachineServiceHandler interface {
 	// flight or the daemon is busy. Problems with the path itself are not RPC
 	// errors: they come back in ListDirectoryResponse.result.error.
 	ListDirectory(context.Context, *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error)
+	// Reads the origin remote URL of the git repository at a directory on one
+	// of the caller's devices, asking its daemon live. RPC errors are the same
+	// as ListDirectory's (the 8-request per-user cap is shared with it), with
+	// UNAVAILABLE also when the daemon does not list
+	// "device_query.git_remote". Problems with the path or repository come
+	// back in GetGitRemoteResponse.result.error.
+	GetGitRemote(context.Context, *connect.Request[v1.GetGitRemoteRequest]) (*connect.Response[v1.GetGitRemoteResponse], error)
 }
 
 // NewMachineServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -161,6 +190,12 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithSchema(machineServiceMethods.ByName("ListDirectory")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceGetGitRemoteHandler := connect.NewUnaryHandler(
+		MachineServiceGetGitRemoteProcedure,
+		svc.GetGitRemote,
+		connect.WithSchema(machineServiceMethods.ByName("GetGitRemote")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/circus.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineServiceListDevicesProcedure:
@@ -169,6 +204,8 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 			machineServiceCreateEnrollLinkHandler.ServeHTTP(w, r)
 		case MachineServiceListDirectoryProcedure:
 			machineServiceListDirectoryHandler.ServeHTTP(w, r)
+		case MachineServiceGetGitRemoteProcedure:
+			machineServiceGetGitRemoteHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -188,4 +225,8 @@ func (UnimplementedMachineServiceHandler) CreateEnrollLink(context.Context, *con
 
 func (UnimplementedMachineServiceHandler) ListDirectory(context.Context, *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.ListDirectory is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) GetGitRemote(context.Context, *connect.Request[v1.GetGitRemoteRequest]) (*connect.Response[v1.GetGitRemoteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.GetGitRemote is not implemented"))
 }

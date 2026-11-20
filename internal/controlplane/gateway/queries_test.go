@@ -164,6 +164,42 @@ func TestDeviceQueryAvailability(t *testing.T) {
 	query(gateway.ErrQueryUnsupported)
 }
 
+func TestGitRemoteQueryFeature(t *testing.T) {
+	h := newQueryHarness(t)
+	ctx := wait.Ctx(t)
+	q := &circusv1.DeviceQuery{Query: &circusv1.DeviceQuery_GitRemote{
+		GitRemote: &circusv1.GitRemoteQuery{Path: "~/project"},
+	}}
+	h.connect(t, "directory-only", []string{wire.FeatureListDirectory})
+	if _, err := h.handler.Query(ctx, "d", q); !errors.Is(err, gateway.ErrQueryUnsupported) {
+		t.Fatalf("query without git remote feature = %v", err)
+	}
+	l := h.connect(t, "git-remote", []string{wire.FeatureGitRemote})
+	if _, err := h.handler.Query(ctx, "d", newDeviceQuery("~")); !errors.Is(err, gateway.ErrQueryUnsupported) {
+		t.Fatalf("query without directory feature = %v", err)
+	}
+	done := make(chan finishedQuery, 1)
+	go func() {
+		result, err := h.handler.Query(ctx, "d", q)
+		done <- finishedQuery{result, err}
+	}()
+	msg, err := l.Receive(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := msg.(*circusv1.DaemonDownlink).GetDeviceQuery()
+	if sent.GetRequestId() == "" || !proto.Equal(sent.GetGitRemote(), q.GetGitRemote()) {
+		t.Fatalf("forwarded query = %v", sent)
+	}
+	want := &circusv1.DeviceQueryResult{RequestId: sent.GetRequestId(), Outcome: &circusv1.DeviceQueryResult_GitRemote{
+		GitRemote: &circusv1.GitRemoteResult{Url: "https://example.test/repo.git"},
+	}}
+	sendQueryResult(t, l, want)
+	if got := wait.Recv(t, done); got.err != nil || !proto.Equal(got.result, want) {
+		t.Fatalf("query result = %v, %v", got.result, got.err)
+	}
+}
+
 func TestDeviceQueryLinkCloses(t *testing.T) {
 	h := newQueryHarness(t)
 	l := h.connect(t, "boot", []string{wire.FeatureListDirectory})
@@ -261,6 +297,14 @@ func TestDeviceQueryDeadlineAndUnmatchedResults(t *testing.T) {
 	sendQueryResult(t, l, &circusv1.DeviceQueryResult{RequestId: id})
 	if got := wait.Recv(t, malformed); got.result != nil || got.err == nil || !strings.Contains(got.err.Error(), "no outcome") {
 		t.Fatalf("malformed response = %v", got)
+	}
+	mismatched := h.start(wait.Ctx(t), "/mismatched")
+	id = receiveDeviceQuery(t, l, "/mismatched")
+	sendQueryResult(t, l, &circusv1.DeviceQueryResult{RequestId: id, Outcome: &circusv1.DeviceQueryResult_GitRemote{
+		GitRemote: &circusv1.GitRemoteResult{Url: "https://example.test/repo.git"},
+	}})
+	if got := wait.Recv(t, mismatched); got.result != nil || got.err == nil || got.err.Error() != "device query result has the wrong query kind" {
+		t.Fatalf("mismatched response = %v", got)
 	}
 	current := h.start(wait.Ctx(t), "/current")
 	want := directoryResult(receiveDeviceQuery(t, l, "/current"))

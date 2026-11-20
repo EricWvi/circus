@@ -12,6 +12,21 @@ import (
 // FeatureListDirectory is the daemon Hello capability for directory queries.
 const FeatureListDirectory = "device_query.list_directory"
 
+// FeatureGitRemote is the daemon Hello capability for git remote queries.
+const FeatureGitRemote = "device_query.git_remote"
+
+// DeviceQueryFeature returns the capability required by a recognized query.
+func DeviceQueryFeature(q *circusv1.DeviceQuery) string {
+	switch {
+	case q.GetListDirectory() != nil:
+		return FeatureListDirectory
+	case q.GetGitRemote() != nil:
+		return FeatureGitRemote
+	default:
+		return ""
+	}
+}
+
 // classify is the one scheduling table: Send's class and ordering key for
 // every envelope payload. Raw handshake and transport-owned Fragment are
 // classified too, but must still be sent on the raw Conn or by wire itself.

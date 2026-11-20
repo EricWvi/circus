@@ -4,15 +4,20 @@
 // repositories, hidden and unreadable folders, symbolic links, an empty
 // folder, a folder with more subfolders than a listing keeps, and under
 // /mnt folders that misbehave (slow, timing out, failing the request).
+// The git repositories have origin URLs for the mock's getGitRemote: one
+// has none and one answers slowly.
 
 import { ApiError } from "@/api/errors"
-import type { DirectoryEntry, DirectoryListing } from "@/api/types"
+import type { DirectoryEntry, DirectoryListing, GitRemote } from "@/api/types"
 
 /** Most entries a listing keeps, like the daemon. */
 export const MAX_DIRECTORY_ENTRIES = 1000
 
 /** How long the misbehaving folders under /mnt take, in milliseconds. */
 export const SLOW_LISTING_MS = 2_000
+
+/** How long the slow repository takes to read its origin, in milliseconds. */
+export const SLOW_GIT_REMOTE_MS = 1_500
 
 const MAX_PATH_BYTES = 4096
 
@@ -23,7 +28,8 @@ type Node =
   | {
       kind: "dir"
       children: Map<string, Node>
-      git?: boolean
+      /** A git repository; `origin` is its origin URL ("" for none). */
+      git?: { origin: string; slow?: boolean }
       unreadable?: boolean
       /** Answered after SLOW_LISTING_MS, with this outcome. */
       trouble?: "slow" | "timeout" | "busy" | "unavailable" | "deadline"
@@ -44,7 +50,8 @@ function dir(spec: Spec = {}, extra: Omit<Dir, "kind" | "children"> = {}): Dir {
 
 const file: Node = { kind: "file" }
 const link = (target: string): Node => ({ kind: "link", target })
-const repo = (spec: Spec = {}) => dir({ ".git": dir(), ...spec }, { git: true })
+const repo = (origin: string, spec: Spec = {}, slow = false) =>
+  dir({ ".git": dir(), ...spec }, { git: { origin, ...(slow ? { slow } : {}) } })
 
 function homeTree(home: string): Dir {
   const many: Spec = {}
@@ -62,12 +69,16 @@ function homeTree(home: string): Dir {
     "README.md": file,
     src: {
       "an-extraordinarily-long-folder-name-that-does-not-fit-on-one-line-of-the-picker": {},
-      circus: repo({ cmd: {}, internal: {}, web: {} }),
-      dotfiles: repo(),
-      palace: repo(),
+      circus: repo("https://github.com/eric/circus.git", {
+        cmd: {},
+        internal: { controlplane: { webapi: {} }, daemon: {} },
+        web: {},
+      }),
+      dotfiles: repo("git@github.com:eric/dotfiles.git"),
+      palace: repo(""),
       playground: { "scratch-1": {}, "scratch-2": {} },
       shared: link("/srv"),
-      toolbox: repo(),
+      toolbox: repo("git@gitlab.com:eric/toolbox.git", {}, true),
     },
   })
 }
@@ -86,7 +97,7 @@ function rootTree(os: string): { home: string; root: Dir } {
       "stale-nfs": dir({}, { trouble: "timeout" }),
       unreachable: dir({}, { trouble: "unavailable" }),
     },
-    srv: { palace: repo() },
+    srv: { palace: repo("https://git.example.com/infra/palace.git") },
     tmp: {},
     usr: { bin: {}, lib: {}, local: { bin: {} }, share: {} },
     var: { log: {}, tmp: {} },
@@ -137,6 +148,18 @@ function walk(root: Dir, path: string, depth = 0): Walk {
   return { node }
 }
 
+/**
+ * A request path made absolute and clean, or null when it is invalid:
+ * empty or "~" is the home directory, "~/x" is under it.
+ */
+function resolve(raw: string, home: string): string | null {
+  if (new TextEncoder().encode(raw).length > MAX_PATH_BYTES || raw.includes("\0")) return null
+  if (raw === "" || raw === "~") return home
+  if (raw.startsWith("~/")) return clean(home + raw.slice(1))
+  if (raw.startsWith("/")) return clean(raw)
+  return null
+}
+
 export interface MockListing {
   /** How long the device takes to answer, beyond the network delay. */
   delayMs: number
@@ -151,16 +174,8 @@ export function listMockDirectory(os: string, req: { path: string; includeHidden
     delayMs: 0,
     outcome: { entries: [], truncated: false, home, ...listing },
   })
-  const raw = req.path
-  let absolute: string
-  if (raw === "" || raw === "~") absolute = home
-  else if (raw.startsWith("~/")) absolute = home + raw.slice(1)
-  else if (raw.startsWith("/")) absolute = raw
-  else return answer({ path: "", parent: "", error: "invalid_path" })
-  if (new TextEncoder().encode(raw).length > MAX_PATH_BYTES || raw.includes("\0")) {
-    return answer({ path: "", parent: "", error: "invalid_path" })
-  }
-  const path = clean(absolute)
+  const path = resolve(req.path, home)
+  if (path === null) return answer({ path: "", parent: "", error: "invalid_path" })
   const parent = parentOf(path)
   const found = walk(root, path)
   if (!("node" in found)) return answer({ path, parent, error: found.error })
@@ -173,7 +188,7 @@ export function listMockDirectory(os: string, req: { path: string; includeHidden
     if (!req.includeHidden && name.startsWith(".")) continue
     const target = child.kind === "link" ? walk(root, child.target) : { node: child }
     if (!("node" in target) || target.node.kind !== "dir") continue
-    entries.push({ name, gitRepository: target.node.git === true, symlink: child.kind === "link" })
+    entries.push({ name, gitRepository: target.node.git !== undefined, symlink: child.kind === "link" })
   }
   // Byte order, like the daemon.
   entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
@@ -198,4 +213,32 @@ export function listMockDirectory(os: string, req: { path: string; includeHidden
     case "deadline":
       return { delayMs: SLOW_LISTING_MS, outcome: new ApiError("deadline_exceeded", "The device didn't answer.") }
   }
+}
+
+export interface MockGitRemote {
+  /** How long the device takes to answer, beyond the network delay. */
+  delayMs: number
+  remote: GitRemote
+}
+
+/**
+ * Reads the origin URL of the repository containing a directory of the
+ * fake tree: the directory itself or its nearest ancestor that is one.
+ */
+export function readMockGitRemote(os: string, req: { path: string }): MockGitRemote {
+  const { home, root } = treeFor(os)
+  const fail = (error: NonNullable<GitRemote["error"]>) => ({ delayMs: 0, remote: { url: "", error } })
+  const path = resolve(req.path, home)
+  if (path === null) return fail("invalid_path")
+  const found = walk(root, path)
+  if (!("node" in found)) return fail(found.error === "permission_denied" ? "failed" : "not_found")
+  if (found.node.kind !== "dir") return fail("not_found")
+  for (let at = path; at !== ""; at = parentOf(at)) {
+    const ancestor = walk(root, at)
+    const git = "node" in ancestor && ancestor.node.kind === "dir" ? ancestor.node.git : undefined
+    if (!git) continue
+    const delayMs = git.slow ? SLOW_GIT_REMOTE_MS : 0
+    return { delayMs, remote: git.origin === "" ? { url: "", error: "no_origin" } : { url: git.origin } }
+  }
+  return fail("not_repository")
 }

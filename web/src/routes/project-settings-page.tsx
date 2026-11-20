@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/page-header"
 import { busyClass } from "@/components/projects/busy"
 import { LocationEditor } from "@/components/projects/location-editor"
 import { RepoUrlField } from "@/components/projects/repo-url-field"
+import { useFolderRemote } from "@/components/projects/use-folder-remote"
 import { useProjectForm } from "@/components/projects/use-project-form"
 import { Button } from "@/components/ui/button"
 import {
@@ -145,22 +146,36 @@ export function ProjectForm({
     }
   }, [reloaded])
 
+  const busy = update.isPending || reloading
+  // The saved URL counts as typed: never overwritten, only hinted at.
+  const remote = useFolderRemote({
+    rows: form.rows,
+    devices: devices.data,
+    repoUrl: form.repoUrl,
+    setRepoUrl: form.setRepoUrl,
+    busy,
+    repoUrlId: "project-repo-url",
+  })
+
   // When the project changes elsewhere, an untouched form follows, and so
   // does one that already holds the new values; edits in progress stay on
   // the version they started from.
   if (project.updatedAtUnixMs !== base.updatedAtUnixMs) {
     const untouched = !formChanged(base, form.values, devices.data)
     if (untouched || !formChanged(project, form.values, devices.data)) {
-      if (untouched) form.reset(valuesOf(project))
+      if (untouched) {
+        form.reset(valuesOf(project))
+        remote.reset()
+      }
       setBase(project)
       setStale(false)
     }
   }
   const dirty = formChanged(base, form.values, devices.data)
-  const busy = update.isPending || reloading
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    remote.submitStarted()
     // Save stays focusable while it can't be used, so Enter can land here.
     if (!dirty || busy || stale) return
     const req = form.submit()
@@ -178,6 +193,7 @@ export function ProjectForm({
         onSuccess: (next) => {
           setBase(next)
           form.reset(valuesOf(next))
+          remote.reset()
           setSavedAt(Date.now())
         },
         onError: (error) => {
@@ -199,6 +215,7 @@ export function ProjectForm({
       if (fresh) {
         setBase(fresh)
         form.reset(valuesOf(fresh))
+        remote.reset()
       }
       setStale(false)
     } catch (error) {
@@ -217,7 +234,12 @@ export function ProjectForm({
   const directory = defaultDirectory(project)
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-10">
+    <form
+      onSubmit={submit}
+      onPointerDownCapture={remote.formPointerDown}
+      noValidate
+      className="flex flex-col gap-10"
+    >
       <section className="flex flex-col gap-4">
         <h2 className="text-sm font-medium">{t("projects.general")}</h2>
         <Field className="max-w-sm">
@@ -241,8 +263,10 @@ export function ProjectForm({
           value={form.repoUrl}
           error={form.errors.repoUrl}
           busy={busy}
-          onChange={form.setRepoUrl}
+          suggestion={remote.suggestion}
+          onChange={remote.editRepoUrl}
           onBlur={() => form.touch("repoUrl")}
+          onUseSuggestion={remote.applySuggested}
         />
       </section>
 
@@ -257,6 +281,7 @@ export function ProjectForm({
           defaultPathHint={t("projects.defaultPathHint", { path: directory })}
           onChange={form.setRows}
           onTouch={(key, field) => form.touch(`${key}.${field}`)}
+          onPathCommit={remote.pathCommitted}
         />
       </section>
 

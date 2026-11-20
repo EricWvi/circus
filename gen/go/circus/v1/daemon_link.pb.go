@@ -85,6 +85,79 @@ func (DirectoryError) EnumDescriptor() ([]byte, []int) {
 	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{0}
 }
 
+type GitRemoteError int32
+
+const (
+	GitRemoteError_GIT_REMOTE_ERROR_UNSPECIFIED GitRemoteError = 0
+	// The path is relative, too long, contains NUL, or the home directory is
+	// unknown for a "~" path.
+	GitRemoteError_GIT_REMOTE_ERROR_INVALID_PATH GitRemoteError = 1
+	// The path does not exist or is not a directory.
+	GitRemoteError_GIT_REMOTE_ERROR_NOT_FOUND GitRemoteError = 2
+	// The directory is not inside a git work tree.
+	GitRemoteError_GIT_REMOTE_ERROR_NOT_REPOSITORY GitRemoteError = 3
+	// The repository has no "origin" remote, or its URL is empty.
+	GitRemoteError_GIT_REMOTE_ERROR_NO_ORIGIN GitRemoteError = 4
+	// git is not installed or not on the daemon's PATH.
+	GitRemoteError_GIT_REMOTE_ERROR_GIT_UNAVAILABLE GitRemoteError = 5
+	// git did not finish within the daemon's limit.
+	GitRemoteError_GIT_REMOTE_ERROR_TIMEOUT GitRemoteError = 6
+	// Anything else, including a URL that is not valid UTF-8 or too long; see
+	// the daemon logs.
+	GitRemoteError_GIT_REMOTE_ERROR_FAILED GitRemoteError = 7
+)
+
+// Enum value maps for GitRemoteError.
+var (
+	GitRemoteError_name = map[int32]string{
+		0: "GIT_REMOTE_ERROR_UNSPECIFIED",
+		1: "GIT_REMOTE_ERROR_INVALID_PATH",
+		2: "GIT_REMOTE_ERROR_NOT_FOUND",
+		3: "GIT_REMOTE_ERROR_NOT_REPOSITORY",
+		4: "GIT_REMOTE_ERROR_NO_ORIGIN",
+		5: "GIT_REMOTE_ERROR_GIT_UNAVAILABLE",
+		6: "GIT_REMOTE_ERROR_TIMEOUT",
+		7: "GIT_REMOTE_ERROR_FAILED",
+	}
+	GitRemoteError_value = map[string]int32{
+		"GIT_REMOTE_ERROR_UNSPECIFIED":     0,
+		"GIT_REMOTE_ERROR_INVALID_PATH":    1,
+		"GIT_REMOTE_ERROR_NOT_FOUND":       2,
+		"GIT_REMOTE_ERROR_NOT_REPOSITORY":  3,
+		"GIT_REMOTE_ERROR_NO_ORIGIN":       4,
+		"GIT_REMOTE_ERROR_GIT_UNAVAILABLE": 5,
+		"GIT_REMOTE_ERROR_TIMEOUT":         6,
+		"GIT_REMOTE_ERROR_FAILED":          7,
+	}
+)
+
+func (x GitRemoteError) Enum() *GitRemoteError {
+	p := new(GitRemoteError)
+	*p = x
+	return p
+}
+
+func (x GitRemoteError) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GitRemoteError) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_daemon_link_proto_enumTypes[1].Descriptor()
+}
+
+func (GitRemoteError) Type() protoreflect.EnumType {
+	return &file_circus_v1_daemon_link_proto_enumTypes[1]
+}
+
+func (x GitRemoteError) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GitRemoteError.Descriptor instead.
+func (GitRemoteError) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{1}
+}
+
 type Rejection_Code int32
 
 const (
@@ -127,11 +200,11 @@ func (x Rejection_Code) String() string {
 }
 
 func (Rejection_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_daemon_link_proto_enumTypes[1].Descriptor()
+	return file_circus_v1_daemon_link_proto_enumTypes[2].Descriptor()
 }
 
 func (Rejection_Code) Type() protoreflect.EnumType {
-	return &file_circus_v1_daemon_link_proto_enumTypes[1]
+	return &file_circus_v1_daemon_link_proto_enumTypes[2]
 }
 
 func (x Rejection_Code) Number() protoreflect.EnumNumber {
@@ -186,11 +259,11 @@ func (x DeviceQueryError_Code) String() string {
 }
 
 func (DeviceQueryError_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_daemon_link_proto_enumTypes[2].Descriptor()
+	return file_circus_v1_daemon_link_proto_enumTypes[3].Descriptor()
 }
 
 func (DeviceQueryError_Code) Type() protoreflect.EnumType {
-	return &file_circus_v1_daemon_link_proto_enumTypes[2]
+	return &file_circus_v1_daemon_link_proto_enumTypes[3]
 }
 
 func (x DeviceQueryError_Code) Number() protoreflect.EnumNumber {
@@ -1031,6 +1104,7 @@ type DeviceQuery struct {
 	// Types that are valid to be assigned to Query:
 	//
 	//	*DeviceQuery_ListDirectory
+	//	*DeviceQuery_GitRemote
 	Query         isDeviceQuery_Query `protobuf_oneof:"query"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1089,6 +1163,15 @@ func (x *DeviceQuery) GetListDirectory() *ListDirectoryQuery {
 	return nil
 }
 
+func (x *DeviceQuery) GetGitRemote() *GitRemoteQuery {
+	if x != nil {
+		if x, ok := x.Query.(*DeviceQuery_GitRemote); ok {
+			return x.GitRemote
+		}
+	}
+	return nil
+}
+
 type isDeviceQuery_Query interface {
 	isDeviceQuery_Query()
 }
@@ -1097,7 +1180,13 @@ type DeviceQuery_ListDirectory struct {
 	ListDirectory *ListDirectoryQuery `protobuf:"bytes,10,opt,name=list_directory,json=listDirectory,proto3,oneof"`
 }
 
+type DeviceQuery_GitRemote struct {
+	GitRemote *GitRemoteQuery `protobuf:"bytes,11,opt,name=git_remote,json=gitRemote,proto3,oneof"`
+}
+
 func (*DeviceQuery_ListDirectory) isDeviceQuery_Query() {}
+
+func (*DeviceQuery_GitRemote) isDeviceQuery_Query() {}
 
 // DeviceQueryResult answers one DeviceQuery.
 type DeviceQueryResult struct {
@@ -1109,6 +1198,7 @@ type DeviceQueryResult struct {
 	//
 	//	*DeviceQueryResult_Error
 	//	*DeviceQueryResult_ListDirectory
+	//	*DeviceQueryResult_GitRemote
 	Outcome       isDeviceQueryResult_Outcome `protobuf_oneof:"outcome"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1176,6 +1266,15 @@ func (x *DeviceQueryResult) GetListDirectory() *ListDirectoryResult {
 	return nil
 }
 
+func (x *DeviceQueryResult) GetGitRemote() *GitRemoteResult {
+	if x != nil {
+		if x, ok := x.Outcome.(*DeviceQueryResult_GitRemote); ok {
+			return x.GitRemote
+		}
+	}
+	return nil
+}
+
 type isDeviceQueryResult_Outcome interface {
 	isDeviceQueryResult_Outcome()
 }
@@ -1188,9 +1287,15 @@ type DeviceQueryResult_ListDirectory struct {
 	ListDirectory *ListDirectoryResult `protobuf:"bytes,10,opt,name=list_directory,json=listDirectory,proto3,oneof"`
 }
 
+type DeviceQueryResult_GitRemote struct {
+	GitRemote *GitRemoteResult `protobuf:"bytes,11,opt,name=git_remote,json=gitRemote,proto3,oneof"`
+}
+
 func (*DeviceQueryResult_Error) isDeviceQueryResult_Outcome() {}
 
 func (*DeviceQueryResult_ListDirectory) isDeviceQueryResult_Outcome() {}
+
+func (*DeviceQueryResult_GitRemote) isDeviceQueryResult_Outcome() {}
 
 // DeviceQueryError reports that the daemon did not run a query.
 type DeviceQueryError struct {
@@ -1465,6 +1570,116 @@ func (x *DirectoryEntry) GetSymlink() bool {
 	return false
 }
 
+// GitRemoteQuery reads the fetch URL of the "origin" remote of the git
+// repository containing a directory on the device, as
+// `git -C <path> remote get-url origin` prints it (after url.insteadOf
+// rewriting). The daemon runs git without a terminal prompt and with a
+// five-second limit. Daemon feature: "device_query.git_remote".
+type GitRemoteQuery struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// As ListDirectoryQuery.path: empty or "~" is the daemon user's home
+	// directory, "~/x" is under it, anything else must be absolute. At most
+	// 4096 bytes, UTF-8.
+	Path          string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitRemoteQuery) Reset() {
+	*x = GitRemoteQuery{}
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitRemoteQuery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitRemoteQuery) ProtoMessage() {}
+
+func (x *GitRemoteQuery) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitRemoteQuery.ProtoReflect.Descriptor instead.
+func (*GitRemoteQuery) Descriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GitRemoteQuery) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+// GitRemoteResult is the outcome of one GitRemoteQuery.
+type GitRemoteResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The origin URL with surrounding whitespace removed; set only when error
+	// is UNSPECIFIED. At most 2048 bytes of UTF-8. For scheme:// URLs, passwords
+	// are removed, and HTTP(S) and FTP(S) URLs have all userinfo removed.
+	// SCP-style URLs keep their user.
+	Url string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	// UNSPECIFIED when url was read; otherwise why not.
+	Error         GitRemoteError `protobuf:"varint,2,opt,name=error,proto3,enum=circus.v1.GitRemoteError" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GitRemoteResult) Reset() {
+	*x = GitRemoteResult{}
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GitRemoteResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GitRemoteResult) ProtoMessage() {}
+
+func (x *GitRemoteResult) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_daemon_link_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GitRemoteResult.ProtoReflect.Descriptor instead.
+func (*GitRemoteResult) Descriptor() ([]byte, []int) {
+	return file_circus_v1_daemon_link_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GitRemoteResult) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *GitRemoteResult) GetError() GitRemoteError {
+	if x != nil {
+		return x.Error
+	}
+	return GitRemoteError_GIT_REMOTE_ERROR_UNSPECIFIED
+}
+
 var File_circus_v1_daemon_link_proto protoreflect.FileDescriptor
 
 const file_circus_v1_daemon_link_proto_rawDesc = "" +
@@ -1527,19 +1742,23 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"\ttruncated\x18\x03 \x01(\bR\ttruncated\"0\n" +
 	"\x0fStopSessionJobs\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"}\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\xb9\x01\n" +
 	"\vDeviceQuery\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12F\n" +
 	"\x0elist_directory\x18\n" +
-	" \x01(\v2\x1d.circus.v1.ListDirectoryQueryH\x00R\rlistDirectoryB\a\n" +
-	"\x05query\"\xbb\x01\n" +
+	" \x01(\v2\x1d.circus.v1.ListDirectoryQueryH\x00R\rlistDirectory\x12:\n" +
+	"\n" +
+	"git_remote\x18\v \x01(\v2\x19.circus.v1.GitRemoteQueryH\x00R\tgitRemoteB\a\n" +
+	"\x05query\"\xf8\x01\n" +
 	"\x11DeviceQueryResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x123\n" +
 	"\x05error\x18\x02 \x01(\v2\x1b.circus.v1.DeviceQueryErrorH\x00R\x05error\x12G\n" +
 	"\x0elist_directory\x18\n" +
-	" \x01(\v2\x1e.circus.v1.ListDirectoryResultH\x00R\rlistDirectoryB\t\n" +
+	" \x01(\v2\x1e.circus.v1.ListDirectoryResultH\x00R\rlistDirectory\x12;\n" +
+	"\n" +
+	"git_remote\x18\v \x01(\v2\x1a.circus.v1.GitRemoteResultH\x00R\tgitRemoteB\t\n" +
 	"\aoutcome\"\xcf\x01\n" +
 	"\x10DeviceQueryError\x124\n" +
 	"\x04code\x18\x01 \x01(\x0e2 .circus.v1.DeviceQueryError.CodeR\x04code\x12\x18\n" +
@@ -1563,7 +1782,12 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"\x0eDirectoryEntry\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
 	"\x0egit_repository\x18\x02 \x01(\bR\rgitRepository\x12\x18\n" +
-	"\asymlink\x18\x03 \x01(\bR\asymlink*\xf1\x01\n" +
+	"\asymlink\x18\x03 \x01(\bR\asymlink\"$\n" +
+	"\x0eGitRemoteQuery\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"T\n" +
+	"\x0fGitRemoteResult\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\x12/\n" +
+	"\x05error\x18\x02 \x01(\x0e2\x19.circus.v1.GitRemoteErrorR\x05error*\xf1\x01\n" +
 	"\x0eDirectoryError\x12\x1f\n" +
 	"\x1bDIRECTORY_ERROR_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cDIRECTORY_ERROR_INVALID_PATH\x10\x01\x12\x1d\n" +
@@ -1571,7 +1795,16 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"\x1dDIRECTORY_ERROR_NOT_DIRECTORY\x10\x03\x12%\n" +
 	"!DIRECTORY_ERROR_PERMISSION_DENIED\x10\x04\x12\x1b\n" +
 	"\x17DIRECTORY_ERROR_TIMEOUT\x10\x05\x12\x16\n" +
-	"\x12DIRECTORY_ERROR_IO\x10\x06B5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
+	"\x12DIRECTORY_ERROR_IO\x10\x06*\x9b\x02\n" +
+	"\x0eGitRemoteError\x12 \n" +
+	"\x1cGIT_REMOTE_ERROR_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dGIT_REMOTE_ERROR_INVALID_PATH\x10\x01\x12\x1e\n" +
+	"\x1aGIT_REMOTE_ERROR_NOT_FOUND\x10\x02\x12#\n" +
+	"\x1fGIT_REMOTE_ERROR_NOT_REPOSITORY\x10\x03\x12\x1e\n" +
+	"\x1aGIT_REMOTE_ERROR_NO_ORIGIN\x10\x04\x12$\n" +
+	" GIT_REMOTE_ERROR_GIT_UNAVAILABLE\x10\x05\x12\x1c\n" +
+	"\x18GIT_REMOTE_ERROR_TIMEOUT\x10\x06\x12\x1b\n" +
+	"\x17GIT_REMOTE_ERROR_FAILED\x10\aB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 
 var (
 	file_circus_v1_daemon_link_proto_rawDescOnce sync.Once
@@ -1585,76 +1818,82 @@ func file_circus_v1_daemon_link_proto_rawDescGZIP() []byte {
 	return file_circus_v1_daemon_link_proto_rawDescData
 }
 
-var file_circus_v1_daemon_link_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_circus_v1_daemon_link_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_circus_v1_daemon_link_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_circus_v1_daemon_link_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_circus_v1_daemon_link_proto_goTypes = []any{
 	(DirectoryError)(0),         // 0: circus.v1.DirectoryError
-	(Rejection_Code)(0),         // 1: circus.v1.Rejection.Code
-	(DeviceQueryError_Code)(0),  // 2: circus.v1.DeviceQueryError.Code
-	(*DaemonUplink)(nil),        // 3: circus.v1.DaemonUplink
-	(*DaemonDownlink)(nil),      // 4: circus.v1.DaemonDownlink
-	(*DispatchCall)(nil),        // 5: circus.v1.DispatchCall
-	(*CallAck)(nil),             // 6: circus.v1.CallAck
-	(*Rejection)(nil),           // 7: circus.v1.Rejection
-	(*ListJobs)(nil),            // 8: circus.v1.ListJobs
-	(*JobSnapshot)(nil),         // 9: circus.v1.JobSnapshot
-	(*StopSessionJobs)(nil),     // 10: circus.v1.StopSessionJobs
-	(*DeviceQuery)(nil),         // 11: circus.v1.DeviceQuery
-	(*DeviceQueryResult)(nil),   // 12: circus.v1.DeviceQueryResult
-	(*DeviceQueryError)(nil),    // 13: circus.v1.DeviceQueryError
-	(*ListDirectoryQuery)(nil),  // 14: circus.v1.ListDirectoryQuery
-	(*ListDirectoryResult)(nil), // 15: circus.v1.ListDirectoryResult
-	(*DirectoryEntry)(nil),      // 16: circus.v1.DirectoryEntry
-	(*Hello)(nil),               // 17: circus.v1.Hello
-	(*Heartbeat)(nil),           // 18: circus.v1.Heartbeat
-	(*Fragment)(nil),            // 19: circus.v1.Fragment
-	(*DeviceResult)(nil),        // 20: circus.v1.DeviceResult
-	(*CallStatus)(nil),          // 21: circus.v1.CallStatus
-	(*JobEvent)(nil),            // 22: circus.v1.JobEvent
-	(*Welcome)(nil),             // 23: circus.v1.Welcome
-	(*Reject)(nil),              // 24: circus.v1.Reject
-	(*GoAway)(nil),              // 25: circus.v1.GoAway
-	(*CancelCall)(nil),          // 26: circus.v1.CancelCall
-	(*CallQuery)(nil),           // 27: circus.v1.CallQuery
-	(*DeviceCall)(nil),          // 28: circus.v1.DeviceCall
+	(GitRemoteError)(0),         // 1: circus.v1.GitRemoteError
+	(Rejection_Code)(0),         // 2: circus.v1.Rejection.Code
+	(DeviceQueryError_Code)(0),  // 3: circus.v1.DeviceQueryError.Code
+	(*DaemonUplink)(nil),        // 4: circus.v1.DaemonUplink
+	(*DaemonDownlink)(nil),      // 5: circus.v1.DaemonDownlink
+	(*DispatchCall)(nil),        // 6: circus.v1.DispatchCall
+	(*CallAck)(nil),             // 7: circus.v1.CallAck
+	(*Rejection)(nil),           // 8: circus.v1.Rejection
+	(*ListJobs)(nil),            // 9: circus.v1.ListJobs
+	(*JobSnapshot)(nil),         // 10: circus.v1.JobSnapshot
+	(*StopSessionJobs)(nil),     // 11: circus.v1.StopSessionJobs
+	(*DeviceQuery)(nil),         // 12: circus.v1.DeviceQuery
+	(*DeviceQueryResult)(nil),   // 13: circus.v1.DeviceQueryResult
+	(*DeviceQueryError)(nil),    // 14: circus.v1.DeviceQueryError
+	(*ListDirectoryQuery)(nil),  // 15: circus.v1.ListDirectoryQuery
+	(*ListDirectoryResult)(nil), // 16: circus.v1.ListDirectoryResult
+	(*DirectoryEntry)(nil),      // 17: circus.v1.DirectoryEntry
+	(*GitRemoteQuery)(nil),      // 18: circus.v1.GitRemoteQuery
+	(*GitRemoteResult)(nil),     // 19: circus.v1.GitRemoteResult
+	(*Hello)(nil),               // 20: circus.v1.Hello
+	(*Heartbeat)(nil),           // 21: circus.v1.Heartbeat
+	(*Fragment)(nil),            // 22: circus.v1.Fragment
+	(*DeviceResult)(nil),        // 23: circus.v1.DeviceResult
+	(*CallStatus)(nil),          // 24: circus.v1.CallStatus
+	(*JobEvent)(nil),            // 25: circus.v1.JobEvent
+	(*Welcome)(nil),             // 26: circus.v1.Welcome
+	(*Reject)(nil),              // 27: circus.v1.Reject
+	(*GoAway)(nil),              // 28: circus.v1.GoAway
+	(*CancelCall)(nil),          // 29: circus.v1.CancelCall
+	(*CallQuery)(nil),           // 30: circus.v1.CallQuery
+	(*DeviceCall)(nil),          // 31: circus.v1.DeviceCall
 }
 var file_circus_v1_daemon_link_proto_depIdxs = []int32{
-	17, // 0: circus.v1.DaemonUplink.hello:type_name -> circus.v1.Hello
-	18, // 1: circus.v1.DaemonUplink.heartbeat:type_name -> circus.v1.Heartbeat
-	19, // 2: circus.v1.DaemonUplink.fragment:type_name -> circus.v1.Fragment
-	6,  // 3: circus.v1.DaemonUplink.call_ack:type_name -> circus.v1.CallAck
-	20, // 4: circus.v1.DaemonUplink.result:type_name -> circus.v1.DeviceResult
-	21, // 5: circus.v1.DaemonUplink.call_status:type_name -> circus.v1.CallStatus
-	22, // 6: circus.v1.DaemonUplink.job_event:type_name -> circus.v1.JobEvent
-	9,  // 7: circus.v1.DaemonUplink.job_snapshot:type_name -> circus.v1.JobSnapshot
-	12, // 8: circus.v1.DaemonUplink.device_query_result:type_name -> circus.v1.DeviceQueryResult
-	23, // 9: circus.v1.DaemonDownlink.welcome:type_name -> circus.v1.Welcome
-	24, // 10: circus.v1.DaemonDownlink.reject:type_name -> circus.v1.Reject
-	18, // 11: circus.v1.DaemonDownlink.heartbeat:type_name -> circus.v1.Heartbeat
-	19, // 12: circus.v1.DaemonDownlink.fragment:type_name -> circus.v1.Fragment
-	25, // 13: circus.v1.DaemonDownlink.go_away:type_name -> circus.v1.GoAway
-	5,  // 14: circus.v1.DaemonDownlink.dispatch_call:type_name -> circus.v1.DispatchCall
-	26, // 15: circus.v1.DaemonDownlink.cancel_call:type_name -> circus.v1.CancelCall
-	27, // 16: circus.v1.DaemonDownlink.call_query:type_name -> circus.v1.CallQuery
-	8,  // 17: circus.v1.DaemonDownlink.list_jobs:type_name -> circus.v1.ListJobs
-	10, // 18: circus.v1.DaemonDownlink.stop_session_jobs:type_name -> circus.v1.StopSessionJobs
-	11, // 19: circus.v1.DaemonDownlink.device_query:type_name -> circus.v1.DeviceQuery
-	28, // 20: circus.v1.DispatchCall.call:type_name -> circus.v1.DeviceCall
-	21, // 21: circus.v1.CallAck.status:type_name -> circus.v1.CallStatus
-	7,  // 22: circus.v1.CallAck.rejection:type_name -> circus.v1.Rejection
-	1,  // 23: circus.v1.Rejection.code:type_name -> circus.v1.Rejection.Code
-	22, // 24: circus.v1.JobSnapshot.jobs:type_name -> circus.v1.JobEvent
-	14, // 25: circus.v1.DeviceQuery.list_directory:type_name -> circus.v1.ListDirectoryQuery
-	13, // 26: circus.v1.DeviceQueryResult.error:type_name -> circus.v1.DeviceQueryError
-	15, // 27: circus.v1.DeviceQueryResult.list_directory:type_name -> circus.v1.ListDirectoryResult
-	2,  // 28: circus.v1.DeviceQueryError.code:type_name -> circus.v1.DeviceQueryError.Code
-	16, // 29: circus.v1.ListDirectoryResult.entries:type_name -> circus.v1.DirectoryEntry
-	0,  // 30: circus.v1.ListDirectoryResult.error:type_name -> circus.v1.DirectoryError
-	31, // [31:31] is the sub-list for method output_type
-	31, // [31:31] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	20, // 0: circus.v1.DaemonUplink.hello:type_name -> circus.v1.Hello
+	21, // 1: circus.v1.DaemonUplink.heartbeat:type_name -> circus.v1.Heartbeat
+	22, // 2: circus.v1.DaemonUplink.fragment:type_name -> circus.v1.Fragment
+	7,  // 3: circus.v1.DaemonUplink.call_ack:type_name -> circus.v1.CallAck
+	23, // 4: circus.v1.DaemonUplink.result:type_name -> circus.v1.DeviceResult
+	24, // 5: circus.v1.DaemonUplink.call_status:type_name -> circus.v1.CallStatus
+	25, // 6: circus.v1.DaemonUplink.job_event:type_name -> circus.v1.JobEvent
+	10, // 7: circus.v1.DaemonUplink.job_snapshot:type_name -> circus.v1.JobSnapshot
+	13, // 8: circus.v1.DaemonUplink.device_query_result:type_name -> circus.v1.DeviceQueryResult
+	26, // 9: circus.v1.DaemonDownlink.welcome:type_name -> circus.v1.Welcome
+	27, // 10: circus.v1.DaemonDownlink.reject:type_name -> circus.v1.Reject
+	21, // 11: circus.v1.DaemonDownlink.heartbeat:type_name -> circus.v1.Heartbeat
+	22, // 12: circus.v1.DaemonDownlink.fragment:type_name -> circus.v1.Fragment
+	28, // 13: circus.v1.DaemonDownlink.go_away:type_name -> circus.v1.GoAway
+	6,  // 14: circus.v1.DaemonDownlink.dispatch_call:type_name -> circus.v1.DispatchCall
+	29, // 15: circus.v1.DaemonDownlink.cancel_call:type_name -> circus.v1.CancelCall
+	30, // 16: circus.v1.DaemonDownlink.call_query:type_name -> circus.v1.CallQuery
+	9,  // 17: circus.v1.DaemonDownlink.list_jobs:type_name -> circus.v1.ListJobs
+	11, // 18: circus.v1.DaemonDownlink.stop_session_jobs:type_name -> circus.v1.StopSessionJobs
+	12, // 19: circus.v1.DaemonDownlink.device_query:type_name -> circus.v1.DeviceQuery
+	31, // 20: circus.v1.DispatchCall.call:type_name -> circus.v1.DeviceCall
+	24, // 21: circus.v1.CallAck.status:type_name -> circus.v1.CallStatus
+	8,  // 22: circus.v1.CallAck.rejection:type_name -> circus.v1.Rejection
+	2,  // 23: circus.v1.Rejection.code:type_name -> circus.v1.Rejection.Code
+	25, // 24: circus.v1.JobSnapshot.jobs:type_name -> circus.v1.JobEvent
+	15, // 25: circus.v1.DeviceQuery.list_directory:type_name -> circus.v1.ListDirectoryQuery
+	18, // 26: circus.v1.DeviceQuery.git_remote:type_name -> circus.v1.GitRemoteQuery
+	14, // 27: circus.v1.DeviceQueryResult.error:type_name -> circus.v1.DeviceQueryError
+	16, // 28: circus.v1.DeviceQueryResult.list_directory:type_name -> circus.v1.ListDirectoryResult
+	19, // 29: circus.v1.DeviceQueryResult.git_remote:type_name -> circus.v1.GitRemoteResult
+	3,  // 30: circus.v1.DeviceQueryError.code:type_name -> circus.v1.DeviceQueryError.Code
+	17, // 31: circus.v1.ListDirectoryResult.entries:type_name -> circus.v1.DirectoryEntry
+	0,  // 32: circus.v1.ListDirectoryResult.error:type_name -> circus.v1.DirectoryError
+	1,  // 33: circus.v1.GitRemoteResult.error:type_name -> circus.v1.GitRemoteError
+	34, // [34:34] is the sub-list for method output_type
+	34, // [34:34] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_daemon_link_proto_init() }
@@ -1694,18 +1933,20 @@ func file_circus_v1_daemon_link_proto_init() {
 	}
 	file_circus_v1_daemon_link_proto_msgTypes[8].OneofWrappers = []any{
 		(*DeviceQuery_ListDirectory)(nil),
+		(*DeviceQuery_GitRemote)(nil),
 	}
 	file_circus_v1_daemon_link_proto_msgTypes[9].OneofWrappers = []any{
 		(*DeviceQueryResult_Error)(nil),
 		(*DeviceQueryResult_ListDirectory)(nil),
+		(*DeviceQueryResult_GitRemote)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_daemon_link_proto_rawDesc), len(file_circus_v1_daemon_link_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   14,
+			NumEnums:      4,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

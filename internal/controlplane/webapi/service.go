@@ -103,23 +103,23 @@ type Config struct {
 
 // Service implements ProjectService, MachineService and SessionService.
 type Service struct {
-	st               store.Store
-	publicURL        string
-	version          string
-	interceptor      connect.Interceptor
-	online           OnlineFunc
-	now              func() time.Time
-	logger           *slog.Logger
-	bus              *sessions.Bus
-	waker            sessions.Waker
-	jobs             JobStopper
-	keepalive        time.Duration
-	recheck          time.Duration
-	maxLifetime      time.Duration
-	writeTimeout     time.Duration
-	query            QueryFunc
-	directoryMu      sync.Mutex
-	directoryQueries map[string]int
+	st            store.Store
+	publicURL     string
+	version       string
+	interceptor   connect.Interceptor
+	online        OnlineFunc
+	now           func() time.Time
+	logger        *slog.Logger
+	bus           *sessions.Bus
+	waker         sessions.Waker
+	jobs          JobStopper
+	keepalive     time.Duration
+	recheck       time.Duration
+	maxLifetime   time.Duration
+	writeTimeout  time.Duration
+	query         QueryFunc
+	deviceQueryMu sync.Mutex
+	deviceQueries map[string]int
 }
 
 var (
@@ -138,7 +138,7 @@ func New(cfg Config) (*Service, error) {
 		publicURL: strings.TrimRight(cfg.PublicURL, "/"), version: cfg.Version,
 		bus: cfg.Bus, waker: cfg.Waker, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
 		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout,
-		query: cfg.Query, directoryQueries: make(map[string]int)}
+		query: cfg.Query, deviceQueries: make(map[string]int)}
 	if s.query == nil {
 		s.query = func(context.Context, string, *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {
 			return nil, gateway.ErrDeviceOffline

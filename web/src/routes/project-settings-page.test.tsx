@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -55,6 +55,7 @@ beforeEach(() => {
 afterEach(async () => {
   cleanup()
   vi.useRealTimers()
+  vi.restoreAllMocks()
   await i18n.changeLanguage("en")
 })
 
@@ -318,5 +319,117 @@ describe("discarding and reloading from the keyboard", () => {
     await advance(0)
     expect(dialog.isConnected).toBe(false)
     expect(document.activeElement).toBe(nameInput())
+  })
+})
+
+describe("the repository URL of a location's folder", () => {
+  const CIRCUS = "https://github.com/eric/circus.git"
+  const PALACE = "https://git.example.com/infra/palace.git"
+  const withUrl = (url: string) => {
+    const state = seedState()
+    state.projects.find((p) => p.projectId === "circus")!.repoUrl = url
+    return state
+  }
+  const repoUrl = () => document.getElementById("project-repo-url") as HTMLInputElement
+  // The page's "Saved" note is a status too.
+  const note = () => document.getElementById("project-repo-url-remote")!
+  const spoken = () => note().querySelector(".sr-only")?.textContent ?? ""
+  const path = (n: number) => screen.getByRole<HTMLInputElement>("textbox", { name: `Path for location ${n}` })
+  /** Leaves a path field (after typing `value`, if given) for `next`, as focus really moves. */
+  async function leavePath(n: number, value?: string, next: () => HTMLElement = nameInput) {
+    act(() => path(n).focus())
+    if (value !== undefined) fireEvent.change(path(n), { target: { value } })
+    act(() => next().focus())
+    await advance(50)
+  }
+
+  it("is read only when a path is left, and hinted at without overwriting the saved URL", async () => {
+    const { backend } = await renderSettings("circus", withUrl("https://example.com/mine.git"))
+    const read = vi.spyOn(backend.client.machines, "getGitRemote")
+    await advance(1_000)
+    expect(read).not.toHaveBeenCalled()
+    expect(note().textContent).toBe("")
+
+    await leavePath(2)
+    expect(read).toHaveBeenCalledWith({ device: "devbox", path: "/home/eric/src/circus" })
+    expect(repoUrl().value).toBe("https://example.com/mine.git")
+    expect(note().getAttribute("role")).toBe("status")
+    expect(spoken()).toBe(`devbox:/home/eric/src/circus uses ${CIRCUS}`)
+    expect(save().getAttribute("aria-disabled")).toBe("true")
+
+    await i18n.changeLanguage("zh-CN")
+    expect(spoken()).toBe(`devbox:/home/eric/src/circus 使用 ${CIRCUS}`)
+    const use = screen.getByRole("button", { name: "改用此地址" })
+    fireEvent.pointerDown(use)
+    fireEvent.click(use)
+    expect(repoUrl().value).toBe(CIRCUS)
+    expect(spoken()).toBe("读取自 devbox:/home/eric/src/circus")
+    // Focus stays in the form rather than falling back to the page.
+    expect(document.activeElement).toBe(repoUrl())
+    expect(screen.getByRole("button", { name: "保存" }).getAttribute("aria-disabled")).toBeNull()
+  })
+
+  it("says nothing when the saved URL is the folder's", async () => {
+    const { backend } = await renderSettings("circus", withUrl(CIRCUS))
+    const read = vi.spyOn(backend.client.machines, "getGitRemote")
+    await leavePath(2)
+    expect(read).toHaveBeenCalledWith({ device: "devbox", path: "/home/eric/src/circus" })
+    expect(note().textContent).toBe("")
+  })
+
+  it("forgets the note once saved", async () => {
+    await renderSettings("circus", withUrl("https://example.com/mine.git"))
+    await leavePath(2)
+    fireEvent.click(screen.getByRole("button", { name: "Use this URL" }))
+    expect(spoken()).toBe("Read from devbox:/home/eric/src/circus")
+    fireEvent.click(save())
+    await advance(50)
+    expect(repoUrl().value).toBe(CIRCUS)
+    expect(note().textContent).toBe("")
+  })
+
+  it("forgets the hint when the form is discarded and reloaded", async () => {
+    const { backend } = await renderSettings("circus", withUrl("https://example.com/mine.git"))
+    vi.setSystemTime(Date.parse("2026-11-17T12:01:00Z"))
+    await settle(backend.client.projects.updateProject({ projectId: "circus", name: "circus-ng" }))
+    await leavePath(2, "/srv/palace")
+    expect(spoken()).toBe(`devbox:/srv/palace uses ${PALACE}`)
+    fireEvent.click(save())
+    await advance(50)
+    fireEvent.click(within(screen.getByRole("alert")).getByRole("button", { name: "Reload" }))
+    await advance(0)
+    fireEvent.click(screen.getByRole("button", { name: "Discard and reload" }))
+    await advance(50)
+    expect(path(2).value).toBe("/home/eric/src/circus")
+    expect(note().textContent).toBe("")
+    expect(screen.queryByRole("button", { name: "Use this URL" })).toBeNull()
+  })
+
+  it("never saves a URL read by pressing Save right after changing a path", async () => {
+    const { state } = await renderSettings("circus")
+    // A press on Save takes focus from the path field before the click.
+    await leavePath(2, "/srv/palace", save)
+    fireEvent.click(save())
+    await advance(500)
+    const saved = state.projects.find((p) => p.projectId === "circus")!
+    expect(saved.locations[1].path).toBe("/srv/palace")
+    expect(saved.repoUrl).toBe("")
+    expect(repoUrl().value).toBe("")
+  })
+
+  it("never saves a URL read by pressing Save where a click doesn't move focus", async () => {
+    const { state } = await renderSettings("circus")
+    act(() => path(2).focus())
+    fireEvent.change(path(2), { target: { value: "/srv/palace" } })
+    // Safari: the press blurs the field without focusing the button.
+    fireEvent.pointerDown(save())
+    act(() => path(2).blur())
+    await advance(20)
+    fireEvent.pointerUp(save())
+    fireEvent.click(save())
+    await advance(500)
+    const saved = state.projects.find((p) => p.projectId === "circus")!
+    expect(saved.locations[1].path).toBe("/srv/palace")
+    expect(saved.repoUrl).toBe("")
   })
 })

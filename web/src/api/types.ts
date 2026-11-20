@@ -182,6 +182,31 @@ export interface DirectoryListing {
   error?: DirectoryError
 }
 
+/** Why a folder's git origin URL was not read; the folder is the problem, not the device. */
+export type GitRemoteError =
+  /** Relative, too long, or contains NUL. */
+  | "invalid_path"
+  /** The path doesn't exist or is not a directory. */
+  | "not_found"
+  /** The folder is not inside a git work tree. */
+  | "not_repository"
+  /** The repository has no "origin" remote, or its URL is empty. */
+  | "no_origin"
+  /** git is not installed on the device. */
+  | "git_unavailable"
+  /** git took longer than the device allows. */
+  | "timeout"
+  /** Anything else. */
+  | "failed"
+
+/** The origin remote of the git repository containing a folder, as `getGitRemote` read it. */
+export interface GitRemote {
+  /** The origin's fetch URL, trimmed; empty when `error` is set. */
+  url: string
+  /** Set when the URL was not read. */
+  error?: GitRemoteError
+}
+
 export interface MachineService {
   listDevices(): Promise<Device[]>
   /**
@@ -195,6 +220,14 @@ export interface MachineService {
    * with the path come back in the listing's `error`.
    */
   listDirectory(req: { device: string; path: string; includeHidden: boolean }): Promise<DirectoryListing>
+  /**
+   * Reads the origin remote URL of the git repository containing a
+   * directory on one of the caller's devices, asking the device live. The
+   * path is as for `listDirectory`, and so are the failures (`unavailable`
+   * also when the device's circus is too old to read remotes). Problems
+   * with the path or the repository come back in the result's `error`.
+   */
+  getGitRemote(req: { device: string; path: string }): Promise<GitRemote>
   /**
    * Issues a one-time link that enrolls machines for the caller. Fails with
    * `resource_exhausted` while the caller has too many unused links, and

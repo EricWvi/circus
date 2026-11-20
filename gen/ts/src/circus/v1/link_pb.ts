@@ -68,7 +68,8 @@ export type Hello = Message<"circus.v1.Hello"> & {
    * [a-z0-9_.], at most 32 entries; unknown names are ignored. A peer sends a
    * message that depends on a feature only if the other side listed it,
    * because receivers close the link on unexpected messages. Daemon features:
-   * "device_query.list_directory" (accepts DeviceQuery.list_directory).
+   * "device_query.list_directory" (accepts DeviceQuery.list_directory),
+   * "device_query.git_remote" (accepts DeviceQuery.git_remote).
    *
    * @generated from field: repeated string features = 8;
    */

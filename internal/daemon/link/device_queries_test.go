@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -60,6 +62,10 @@ func directoryQuery(id, path string) *circusv1.DeviceQuery {
 	return &circusv1.DeviceQuery{RequestId: id, Query: &circusv1.DeviceQuery_ListDirectory{ListDirectory: &circusv1.ListDirectoryQuery{Path: path}}}
 }
 
+func gitRemoteQuery(id, path string) *circusv1.DeviceQuery {
+	return &circusv1.DeviceQuery{RequestId: id, Query: &circusv1.DeviceQuery_GitRemote{GitRemote: &circusv1.GitRemoteQuery{Path: path}}}
+}
+
 func wantDeviceQueryError(t *testing.T, l *wire.Link, id string, code circusv1.DeviceQueryError_Code) {
 	t.Helper()
 	reply := receive(t, l).GetDeviceQueryResult()
@@ -71,7 +77,7 @@ func wantDeviceQueryError(t *testing.T, l *wire.Link, id string, code circusv1.D
 func TestDeviceQueryReplies(t *testing.T) {
 	h := start(t, nil, nil)
 	l, _, hello := h.handshake(t)
-	if !slices.Contains(hello.Features, wire.FeatureListDirectory) {
+	if !slices.Contains(hello.Features, wire.FeatureListDirectory) || !slices.Contains(hello.Features, wire.FeatureGitRemote) {
 		t.Fatalf("Hello features = %v", hello.Features)
 	}
 	for _, id := range []string{"", "bad/id", strings.Repeat("a", wire.MaxOrderingKeyBytes+1)} {
@@ -115,7 +121,7 @@ func TestDeviceQueryTimeoutHoldsSlots(t *testing.T) {
 		recv(t, started)
 	}
 
-	sendDeviceQuery(t, l, directoryQuery("busy", dir))
+	sendDeviceQuery(t, l, gitRemoteQuery("busy", dir))
 	wantDeviceQueryError(t, l, "busy", circusv1.DeviceQueryError_CODE_BUSY)
 	// A regular downlink still gets through while every filesystem worker is stuck.
 	send(t, l, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_CallQuery{CallQuery: &circusv1.CallQuery{CallId: "call"}}})
@@ -135,6 +141,91 @@ func TestDeviceQueryTimeoutHoldsSlots(t *testing.T) {
 	}
 	sendDeviceQuery(t, l, directoryQuery("still-busy", dir))
 	wantDeviceQueryError(t, l, "still-busy", circusv1.DeviceQueryError_CODE_BUSY)
+}
+
+var gitProcessModes = []string{"timeout", "disconnect", "shutdown", "pipe"}
+
+func TestGitRemoteProcessGroup(t *testing.T) {
+	for _, mode := range gitProcessModes {
+		t.Run(mode, func(t *testing.T) {
+			testGitRemoteProcessGroup(t, t.TempDir(), mode)
+		})
+	}
+}
+
+func gitProcessIDs(dir string) (leader, child int) {
+	data, err := os.ReadFile(filepath.Join(dir, "ready"))
+	if err == nil {
+		_, _ = fmt.Sscan(string(data), &leader, &child)
+	}
+	return leader, child
+}
+
+func testGitRemoteProcessGroup(t *testing.T, dir, mode string) {
+	t.Helper()
+	sleep, err := exec.LookPath("sleep")
+	requireDirectoryFixture(t, err)
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	t.Setenv("FAKE_GIT_SLEEP", sleep)
+	const script = `#!/bin/sh
+if [ "$3" = rev-parse ]; then
+    printf '.git\n'
+    exit
+fi
+trap 'exit 0' USR1
+"$FAKE_GIT_SLEEP" 3600 &
+printf '%s %s\n' "$$" "$!" > "$2/ready"
+wait
+`
+	requireDirectoryFixture(t, os.WriteFile(filepath.Join(bin, "fake-git"), []byte(script), 0700))
+	h := start(t, func(o *daemonlink.Options) { o.GitExecutable = "fake-git" }, nil)
+	l, _, _ := h.handshake(t)
+	reaped := false
+	t.Cleanup(func() {
+		h.cancel()
+		if group, _ := gitProcessIDs(dir); group > 0 && !reaped {
+			_ = syscall.Kill(-group, syscall.SIGKILL)
+		}
+	})
+	sendDeviceQuery(t, l, gitRemoteQuery("git-remote", dir))
+	var group, child int
+	eventually(t, func() bool {
+		group, child = gitProcessIDs(dir)
+		return group > 0 && child > 0
+	})
+	if pgid, err := syscall.Getpgid(child); err != nil || pgid != group {
+		t.Fatalf("child group = %d, %v, want %d", pgid, err, group)
+	}
+	if got := h.client.DeviceQuerySlotsInUseForTest(); got != 1 {
+		t.Fatalf("slots in use = %d, want 1", got)
+	}
+	wantReply := func(code circusv1.GitRemoteError) {
+		t.Helper()
+		reply := receive(t, l).GetDeviceQueryResult()
+		if reply.GetRequestId() != "git-remote" || reply.GetGitRemote().GetError() != code {
+			t.Fatalf("git remote reply = %v, want %v", reply, code)
+		}
+	}
+	switch mode {
+	case "timeout":
+		h.clk.Advance(5 * time.Second)
+		wantReply(circusv1.GitRemoteError_GIT_REMOTE_ERROR_TIMEOUT)
+	case "disconnect":
+		requireDirectoryFixture(t, l.Close())
+	case "shutdown":
+		h.cancel()
+	case "pipe":
+		// Let git exit, leaving stdout open in its child. WaitDelay must
+		// unblock Wait and let the daemon reach group cleanup.
+		requireDirectoryFixture(t, syscall.Kill(group, syscall.SIGUSR1))
+		wantReply(circusv1.GitRemoteError_GIT_REMOTE_ERROR_FAILED)
+	}
+	eventually(t, func() bool { return h.client.DeviceQuerySlotsInUseForTest() == 0 })
+	if err := syscall.Kill(-group, 0); err != syscall.ESRCH {
+		t.Fatalf("group %d still exists after releasing the slot: %v", group, err)
+	}
+	reaped = true
 }
 
 func TestDeviceQueryShutdown(t *testing.T) {

@@ -106,6 +106,8 @@ type Options struct {
 	Jitter func() float64
 	// DirectoryFS supplies the filesystem for directory queries. Nil uses the host.
 	DirectoryFS dirlist.FileSystem
+	// GitExecutable is the command used by git remote queries. Empty uses git on PATH.
+	GitExecutable string
 }
 
 // Stats reports connection lifecycle diagnostics; it retains no payloads.
@@ -166,7 +168,7 @@ type Client struct {
 	endpoint    string
 	machineID   string
 	hostname    string
-	mu          sync.Mutex // guards stats; never held while calling other components
+	mu          sync.Mutex // guards stats and gitQueries; never held while calling other components
 	stats       Stats
 	running     atomic.Bool
 	stopping    atomic.Bool
@@ -175,6 +177,7 @@ type Client struct {
 	queryCtx    context.Context
 	stopQueries context.CancelFunc
 	directories *dirlist.Lister
+	gitQueries  map[chan struct{}]struct{}
 }
 
 // New validates credentials/TLS policy and creates a fresh UUIDv7 boot.
@@ -256,7 +259,8 @@ func New(o Options) (*Client, error) {
 		}
 	}
 	c := &Client{opts: o, bootID: id.String(), endpoint: endpoint, http: httpClient, machineID: machine, hostname: hostname,
-		querySlots: make(chan struct{}, maxDeviceQueries), directories: dirlist.New(o.DirectoryFS, o.Logger)}
+		querySlots: make(chan struct{}, maxDeviceQueries), directories: dirlist.New(o.DirectoryFS, o.Logger),
+		gitQueries: make(map[chan struct{}]struct{})}
 	c.jobs = jobs.NewManager(jobs.Options{Clock: o.Clock, OnEvent: func(e *circusv1.JobEvent) {
 		c.send(c.live.Load(), &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_JobEvent{JobEvent: e}})
 	}, OnOverflow: c.overflow})
@@ -426,7 +430,7 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 		}
 	}()
 	hello := &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, BootId: c.bootID, ClientVersion: c.opts.ClientVersion, Os: runtime.GOOS, Arch: runtime.GOARCH, Hostname: c.hostname, MachineId: c.machineID,
-		Features: []string{wire.FeatureListDirectory}}
+		Features: []string{wire.FeatureListDirectory, wire.FeatureGitRemote}}
 	welcome, options, err := wire.DialHello(handshake, raw, wire.DaemonUplink, hello, c.opts.Credentials.PrincipalID, c.opts.Wire)
 	var rejected *wire.RejectError
 	switch {
@@ -591,6 +595,7 @@ func (c *Client) stop(a *connection) error {
 	go func() { jobsDone <- c.jobs.Shutdown(cleanup) }()
 	err := c.dispatcher.Shutdown(cleanup)
 	err = errors.Join(err, <-jobsDone) // bounded: Shutdown returns when cleanup ends
+	err = errors.Join(err, c.waitGitQueries(cleanup))
 	cancelCleanup()
 	if a == nil {
 		return err

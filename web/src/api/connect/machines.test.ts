@@ -1,6 +1,10 @@
 import { Code, ConnectError, createRouterTransport, type ServiceImpl } from "@connectrpc/connect"
-import { DirectoryError } from "@circus/proto/circus/v1/daemon_link_pb"
-import { MachineService, type ListDirectoryRequest } from "@circus/proto/circus/v1/machine_pb"
+import { DirectoryError, GitRemoteError } from "@circus/proto/circus/v1/daemon_link_pb"
+import {
+  MachineService,
+  type GetGitRemoteRequest,
+  type ListDirectoryRequest,
+} from "@circus/proto/circus/v1/machine_pb"
 import { describe, expect, it } from "vitest"
 
 import { ApiError } from "@/api/errors"
@@ -108,5 +112,56 @@ describe("listDirectory over Connect", () => {
     expect((await rejection(client.listDirectory({ device: "box", path: "", includeHidden: false }))).code).toBe(
       "internal",
     )
+  })
+})
+
+describe("getGitRemote over Connect", () => {
+  it("sends the request and maps a URL", async () => {
+    let received: GetGitRemoteRequest | undefined
+    const client = machines({
+      getGitRemote: (req) => {
+        received = req
+        return { result: { url: "git@github.com:owner/repo.git" } }
+      },
+    })
+    const remote = await client.getGitRemote({ device: "box", path: "/home/eric/src/repo" })
+    expect([received?.device, received?.path]).toEqual(["box", "/home/eric/src/repo"])
+    expect(remote).toEqual({ url: "git@github.com:owner/repo.git" })
+  })
+
+  it.each([
+    [GitRemoteError.INVALID_PATH, "invalid_path"],
+    [GitRemoteError.NOT_FOUND, "not_found"],
+    [GitRemoteError.NOT_REPOSITORY, "not_repository"],
+    [GitRemoteError.NO_ORIGIN, "no_origin"],
+    [GitRemoteError.GIT_UNAVAILABLE, "git_unavailable"],
+    [GitRemoteError.TIMEOUT, "timeout"],
+    [GitRemoteError.FAILED, "failed"],
+    [99 as GitRemoteError, "failed"],
+  ] as const)("maps error %s, without a URL", async (protoError, error) => {
+    const client = machines({
+      getGitRemote: () => ({ result: { url: "https://stray.example/x.git", error: protoError } }),
+    })
+    expect(await client.getGitRemote({ device: "box", path: "/x" })).toEqual({ url: "", error })
+  })
+
+  it.each([
+    [Code.NotFound, "not_found"],
+    [Code.FailedPrecondition, "failed_precondition"],
+    [Code.Unavailable, "unavailable"],
+    [Code.DeadlineExceeded, "deadline_exceeded"],
+    [Code.ResourceExhausted, "resource_exhausted"],
+  ] as const)("keeps the code of an RPC error (%s)", async (code, apiCode) => {
+    const client = machines({
+      getGitRemote: () => {
+        throw new ConnectError("no", code)
+      },
+    })
+    expect((await rejection(client.getGitRemote({ device: "box", path: "/x" }))).code).toBe(apiCode)
+  })
+
+  it("treats a response without a result as malformed", async () => {
+    const client = machines({ getGitRemote: () => ({}) })
+    expect((await rejection(client.getGitRemote({ device: "box", path: "/x" }))).code).toBe("internal")
   })
 })

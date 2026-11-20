@@ -134,6 +134,7 @@ message DeviceQuery {
   string request_id = 1;
   oneof query {
     ListDirectoryQuery list_directory = 10;
+    GitRemoteQuery git_remote = 11;
   }
 }
 
@@ -144,6 +145,7 @@ message DeviceQueryResult {
   oneof outcome {
     DeviceQueryError error = 2;
     ListDirectoryResult list_directory = 10;
+    GitRemoteResult git_remote = 11;
   }
 }
 
@@ -219,4 +221,47 @@ enum DirectoryError {
   DIRECTORY_ERROR_TIMEOUT = 5;
   // Any other I/O error; ListDirectoryResult has no message, see daemon logs.
   DIRECTORY_ERROR_IO = 6;
+}
+
+// GitRemoteQuery reads the fetch URL of the "origin" remote of the git
+// repository containing a directory on the device, as
+// `git -C <path> remote get-url origin` prints it (after url.insteadOf
+// rewriting). The daemon runs git without a terminal prompt and with a
+// five-second limit. Daemon feature: "device_query.git_remote".
+message GitRemoteQuery {
+  // As ListDirectoryQuery.path: empty or "~" is the daemon user's home
+  // directory, "~/x" is under it, anything else must be absolute. At most
+  // 4096 bytes, UTF-8.
+  string path = 1;
+}
+
+// GitRemoteResult is the outcome of one GitRemoteQuery.
+message GitRemoteResult {
+  // The origin URL with surrounding whitespace removed; set only when error
+  // is UNSPECIFIED. At most 2048 bytes of UTF-8. For scheme:// URLs, passwords
+  // are removed, and HTTP(S) and FTP(S) URLs have all userinfo removed.
+  // SCP-style URLs keep their user.
+  string url = 1;
+  // UNSPECIFIED when url was read; otherwise why not.
+  GitRemoteError error = 2;
+}
+
+enum GitRemoteError {
+  GIT_REMOTE_ERROR_UNSPECIFIED = 0;
+  // The path is relative, too long, contains NUL, or the home directory is
+  // unknown for a "~" path.
+  GIT_REMOTE_ERROR_INVALID_PATH = 1;
+  // The path does not exist or is not a directory.
+  GIT_REMOTE_ERROR_NOT_FOUND = 2;
+  // The directory is not inside a git work tree.
+  GIT_REMOTE_ERROR_NOT_REPOSITORY = 3;
+  // The repository has no "origin" remote, or its URL is empty.
+  GIT_REMOTE_ERROR_NO_ORIGIN = 4;
+  // git is not installed or not on the daemon's PATH.
+  GIT_REMOTE_ERROR_GIT_UNAVAILABLE = 5;
+  // git did not finish within the daemon's limit.
+  GIT_REMOTE_ERROR_TIMEOUT = 6;
+  // Anything else, including a URL that is not valid UTF-8 or too long; see
+  // the daemon logs.
+  GIT_REMOTE_ERROR_FAILED = 7;
 }

@@ -248,6 +248,9 @@ export const zhCN = {
     optional: "可选",
     repoUrlPlaceholder: "https://github.com/owner/repo.git",
     repoUrlForms: "支持的格式",
+    repoUrlReadFrom: "读取自 <src>{{device}}:{{path}}</src>",
+    repoUrlFolderUses: "<src>{{device}}:{{path}}</src> 使用 <url>{{url}}</url>",
+    useRepoUrl: "改用此地址",
     defaultPathMark: "默认",
     defaultPathHint:
       "路径留空时使用默认文件夹 {{path}}。第一次在这里开始会话时会在设备上创建它；如果项目有仓库地址，还会把仓库克隆进去。",

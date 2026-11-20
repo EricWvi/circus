@@ -14,10 +14,11 @@ import (
 
 var (
 	ErrDeviceOffline    = errors.New("device is offline")
-	ErrQueryUnsupported = errors.New("the device's circus is too old to list directories, please update it")
+	ErrQueryUnsupported = errors.New("the device's circus is too old to answer this query, please update it")
 	ErrQueryLinkClosed  = errors.New("device link closed before answering")
 	ErrQueryBusy        = errors.New("too many queries in flight for the device")
 	errQueryResult      = errors.New("device query result has no outcome")
+	errQueryResultKind  = errors.New("device query result has the wrong query kind")
 )
 
 const (
@@ -28,6 +29,7 @@ const (
 type pendingQuery struct {
 	ctx      context.Context
 	deadline time.Time
+	feature  string
 	done     chan queryReply
 }
 
@@ -61,7 +63,8 @@ func (p *peer) closeQueries() {
 }
 
 func (h *handler) Query(ctx context.Context, deviceID string, q *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {
-	if q.GetListDirectory() == nil {
+	feature := wire.DeviceQueryFeature(q)
+	if feature == "" {
 		return nil, ErrQueryUnsupported
 	}
 	id, err := uuid.NewRandom()
@@ -80,7 +83,7 @@ func (h *handler) Query(ctx context.Context, deviceID string, q *circusv1.Device
 		h.mu.Unlock()
 		return nil, ErrDeviceOffline
 	}
-	if _, supported := p.features[wire.FeatureListDirectory]; !supported {
+	if _, supported := p.features[feature]; !supported {
 		h.mu.Unlock()
 		return nil, ErrQueryUnsupported
 	}
@@ -90,7 +93,7 @@ func (h *handler) Query(ctx context.Context, deviceID string, q *circusv1.Device
 	}
 	deadline := h.config.Clock.Now().Add(queryTimeout)
 	queryCtx, cancel := clock.WithTimeout(ctx, h.config.Clock, queryTimeout)
-	pending := pendingQuery{ctx: queryCtx, deadline: deadline, done: make(chan queryReply, 1)}
+	pending := pendingQuery{ctx: queryCtx, deadline: deadline, feature: feature, done: make(chan queryReply, 1)}
 	p.queries[requestID] = pending
 	h.mu.Unlock()
 	defer cancel()
@@ -145,8 +148,13 @@ func (h *handler) resolveQuery(p *peer, result *circusv1.DeviceQueryResult) {
 	}
 	if ok && pending.ctx.Err() == nil && h.config.Clock.Now().Before(pending.deadline) && p.link.Err() == nil {
 		reply := queryReply{result: result}
-		if result.GetListDirectory() == nil && result.GetError() == nil {
+		switch {
+		case result.GetError() != nil:
+		case result.GetListDirectory() == nil && result.GetGitRemote() == nil:
 			reply = queryReply{err: errQueryResult}
+		case pending.feature == wire.FeatureListDirectory && result.GetGitRemote() != nil,
+			pending.feature == wire.FeatureGitRemote && result.GetListDirectory() != nil:
+			reply = queryReply{err: errQueryResultKind}
 		}
 		pending.done <- reply
 		h.mu.Unlock()

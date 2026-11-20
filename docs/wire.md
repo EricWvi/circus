@@ -117,8 +117,9 @@ default 10 s, on the daemon).
 The control plane considers the first 32 feature names and drops entries
 outside 1–64 bytes of `[a-z0-9_.]`. Unknown names have no effect. The
 daemon advertises `device_query.list_directory` when it accepts directory
-queries. The control plane sends a feature-dependent message only when the
-daemon advertised the feature in its current Hello.
+queries and `device_query.git_remote` when it accepts git remote queries.
+The control plane sends a feature-dependent message only when the daemon
+advertised the feature in its current Hello.
 
 The control plane records each worker connection's nonempty `boot_id` as
 the worker's current boot, and every connection of a boot that is still
@@ -514,18 +515,20 @@ and fails pending requests as soon as the link closes or is superseded.
 Queries have no persistent state, boot ID, resend or deduplication.
 
 `DaemonUplink.device_query_result` echoes the ID and carries either a
-query error or the listing. An ID outside 1–128 bytes of
-`[A-Za-z0-9_-]` gets `CODE_INVALID` with an empty ID. A missing or
-unknown query type gets `CODE_UNSUPPORTED`. The daemon runs up to four
-filesystem queries concurrently and answers additional queries with
-`CODE_BUSY`. During shutdown it uses `CODE_SHUTTING_DOWN` while the
-link can still send. An empty outcome fails the matching request.
+query error or the result for the requested query kind. An ID outside
+1–128 bytes of `[A-Za-z0-9_-]` gets `CODE_INVALID` with an empty ID. A
+missing or unknown query type gets `CODE_UNSUPPORTED`. The daemon runs
+up to four device queries concurrently across both kinds and answers
+additional queries with `CODE_BUSY`. During shutdown it uses `CODE_SHUTTING_DOWN`
+while the link can still send. An empty or mismatched outcome fails the
+pending request. The Web API limits `MachineService.ListDirectory` and
+`MachineService.GetGitRemote` to eight combined in-flight requests per user.
 
 Directory listings resolve empty paths, `~`, and `~/...` using the
-daemon user's home. Other paths must be absolute. Paths may contain up
-to 4096 bytes and no NUL. Results carry the lexically cleaned path
-and parent, preserving symlinks in the path. At the root, the parent is
-empty. The home is also lexically cleaned. An unknown, relative or
+daemon user's home. Other paths must be absolute. Paths must be valid
+UTF-8, with up to 4096 bytes and no NUL. Results carry the lexically
+cleaned path and parent, preserving symlinks in the path. At the root,
+the parent is empty. The home is also lexically cleaned. An unknown, relative or
 non-UTF-8 home is empty, and paths that need it return
 `DIRECTORY_ERROR_INVALID_PATH`.
 
@@ -558,6 +561,31 @@ mount below the listed directory can still make the listing time out.
 
 If a listing exceeds the link's size limits, the daemon reports
 `DIRECTORY_ERROR_IO`. Listings larger than a frame use regular fragmentation.
+
+Git remote queries use the same path resolution as directory listings,
+with `GIT_REMOTE_ERROR_INVALID_PATH` for an invalid path. The daemon
+stats the path and reports `GIT_REMOTE_ERROR_NOT_FOUND` if the path is
+missing or points to a non-directory. It runs
+`git -C <path> rev-parse --git-dir` to locate a repository, including a
+bare repository, then `git -C <path> remote get-url origin` to obtain the
+fetch URL with Git's `url.*.insteadOf` rules applied. A missing repository
+or origin reports `GIT_REMOTE_ERROR_NOT_REPOSITORY` or
+`GIT_REMOTE_ERROR_NO_ORIGIN`, respectively. A missing executable reports
+`GIT_REMOTE_ERROR_GIT_UNAVAILABLE`.
+
+Both commands run without a shell or prompts. They share a five-second
+budget with path resolution and stat, with independent 64 KiB caps on
+stdout and stderr. The daemon reports `GIT_REMOTE_ERROR_TIMEOUT` if the
+budget expires and kills the subprocess group on timeout or cancellation.
+The query holds its slot until stat returns and the daemon reaps its
+subprocesses. The daemon waits up to one more second for an external
+adopter to reap any remaining killed group members. The result carries
+the trimmed URL, up to 2048 UTF-8 bytes. Scheme URLs have passwords
+removed, and HTTP(S) and FTP(S) URLs have all userinfo removed.
+SCP-style URLs keep their user. An empty trimmed URL or the literal `origin` is
+`GIT_REMOTE_ERROR_NO_ORIGIN`. A dubious-ownership refusal, invalid URL
+output or another unexpected failure is `GIT_REMOTE_ERROR_FAILED`, with
+details in the daemon log.
 
 Go sender detail, for reference only (`Link.next`): each scheduling round
 writes at most one eligible control frame, then one small business frame,

@@ -4,7 +4,13 @@ import { ApiError, type ErrorCode } from "@/api/errors"
 import type { CircusClient, DirectoryListing } from "@/api/types"
 
 import { createMockBackend } from "./backend"
-import { listMockDirectory, MAX_DIRECTORY_ENTRIES, SLOW_LISTING_MS } from "./directories"
+import {
+  listMockDirectory,
+  MAX_DIRECTORY_ENTRIES,
+  readMockGitRemote,
+  SLOW_GIT_REMOTE_MS,
+  SLOW_LISTING_MS,
+} from "./directories"
 import { seedState } from "./state"
 
 const list = (path: string, includeHidden = false, os = "linux") => {
@@ -83,6 +89,36 @@ describe("mock directory tree", () => {
   })
 })
 
+describe("mock git remotes", () => {
+  it.each([
+    ["/home/eric/src/circus", "https://github.com/eric/circus.git"],
+    ["~/src/circus/web", "https://github.com/eric/circus.git"],
+    ["~/src/dotfiles", "git@github.com:eric/dotfiles.git"],
+    ["/srv/palace", "https://git.example.com/infra/palace.git"],
+    ["~/src/shared/palace", "https://git.example.com/infra/palace.git"],
+  ])("reads the origin of the repository containing %s", (path, url) => {
+    expect(readMockGitRemote("linux", { path })).toEqual({ delayMs: 0, remote: { url } })
+  })
+
+  it("answers slowly for one repository", () => {
+    expect(readMockGitRemote("darwin", { path: "/Users/eric/src/toolbox" })).toEqual({
+      delayMs: SLOW_GIT_REMOTE_MS,
+      remote: { url: "git@gitlab.com:eric/toolbox.git" },
+    })
+  })
+
+  it.each([
+    ["~/src/palace", "no_origin"],
+    ["~/src", "not_repository"],
+    ["", "not_repository"],
+    ["/nope", "not_found"],
+    ["~/README.md", "not_found"],
+    ["relative", "invalid_path"],
+  ])("reports %s as %s", (path, error) => {
+    expect(readMockGitRemote("linux", { path }).remote).toEqual({ url: "", error })
+  })
+})
+
 describe("listDirectory in the mock backend", () => {
   let client: CircusClient
   let simulation: ReturnType<typeof createMockBackend>["simulation"]
@@ -137,5 +173,45 @@ describe("listDirectory in the mock backend", () => {
     expect(done).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
     expect((await pending as ApiError).code).toBe("deadline_exceeded")
+  })
+})
+
+describe("getGitRemote in the mock backend", () => {
+  let client: CircusClient
+  let simulation: ReturnType<typeof createMockBackend>["simulation"]
+  beforeEach(async () => {
+    vi.useFakeTimers()
+    const backend = createMockBackend({ state: seedState(), latency: () => 0 })
+    client = backend.client
+    simulation = backend.simulation
+    const login = client.auth.login({ email: "eric@example.com", password: "circus" })
+    await vi.runAllTimersAsync()
+    await login
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("reads an origin on an online device, after the repository's delay", async () => {
+    let remote: unknown
+    void client.machines.getGitRemote({ device: "devbox", path: "/home/eric/src/toolbox" }).then((r) => (remote = r))
+    await vi.advanceTimersByTimeAsync(SLOW_GIT_REMOTE_MS - 1)
+    expect(remote).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(remote).toEqual({ url: "git@gitlab.com:eric/toolbox.git" })
+  })
+
+  it("fails for unknown and offline devices like listing", async () => {
+    const codeOf = async (device: string) => {
+      const caught = client.machines.getGitRemote({ device, path: "~/src/circus" }).catch((e: unknown) => e)
+      await vi.runAllTimersAsync()
+      const result = await caught
+      return result instanceof ApiError ? result.code : undefined
+    }
+    expect(await codeOf("nope")).toBe("not_found")
+    expect(await codeOf("eric-win")).toBe("failed_precondition")
+    expect(await codeOf("devbox")).toBeUndefined()
+    simulation.setDeviceOffline("devbox", true)
+    expect(await codeOf("devbox")).toBe("failed_precondition")
   })
 })

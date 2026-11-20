@@ -48,6 +48,9 @@ one and `many-folders` (more than a listing keeps). Folders under `/mnt`
 misbehave: `slow` answers after two seconds, `stale-nfs` times out,
 `busy`, `unreachable` and `hung` fail the request as a busy, unreachable
 (or too old) and silent device. Offline devices fail as offline.
+Its git repositories have origin URLs for reading a project's repository
+URL from a location's folder: `~/src/palace` has no origin and
+`~/src/toolbox` answers after 1.5 seconds.
 
 In server mode only `?mock=reset` does something (it resets the simulated
 sessions); auth, projects and devices come from the server.

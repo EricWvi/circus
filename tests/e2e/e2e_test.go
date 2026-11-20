@@ -27,6 +27,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/credfile"
+	"github.com/EricWvi/circus/internal/gitenv"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
 	testwait "github.com/EricWvi/circus/internal/testutil/wait"
@@ -157,6 +158,7 @@ func runE2E(m *testing.M) (code int) {
 	}
 	cmd := exec.Command("go", args...)
 	cmd.Dir = root
+	cmd.Env = gitenv.WithoutRepository(os.Environ())
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -478,9 +480,9 @@ func (h *harness) createWebUser() {
 	if token == "" {
 		h.t.Fatal("no setup link")
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{}
 	defer client.CloseIdleConnections()
-	res, err := circusv1connect.NewAuthServiceClient(client, h.base).Setup(h.t.Context(), connect.NewRequest(&circusv1.SetupRequest{
+	res, err := circusv1connect.NewAuthServiceClient(client, h.base).Setup(testwait.Ctx(h.t), connect.NewRequest(&circusv1.SetupRequest{
 		Token: token, Email: enrollmentEmail, Password: enrollmentPassword,
 	}))
 	must(h.t, err)

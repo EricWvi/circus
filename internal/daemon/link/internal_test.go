@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+func (c *Client) DeviceQuerySlotsInUseForTest() int { return len(c.querySlots) }
+
 func TestFinishedWorkerWinsExpiredBudget(t *testing.T) {
 	done := make(chan struct{})
 	close(done)

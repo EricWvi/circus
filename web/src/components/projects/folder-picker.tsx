@@ -22,6 +22,9 @@ import { framedAnchor, PickerFrameContext } from "./picker-frame"
  * a `PickerFrameContext` the popover is centered on that frame instead of
  * lining up with the field. `children` is the field; the button sits inside
  * its right end.
+ *
+ * `onDismiss` reports the picker closing without a selection, and `onLeave`
+ * focus leaving the button for anything but the picker it opens.
  */
 export function FolderPickerField({
   device,
@@ -29,6 +32,8 @@ export function FolderPickerField({
   path,
   busy,
   onSelect,
+  onDismiss,
+  onLeave,
   children,
 }: {
   /** The row's device, when it is listed. */
@@ -39,6 +44,9 @@ export function FolderPickerField({
   /** Read-only: doesn't open, but keeps focus. */
   busy: boolean
   onSelect: (path: string) => void
+  onDismiss?: () => void
+  /** `to` is where focus went. */
+  onLeave?: (to: EventTarget | null) => void
   children: ReactNode
 }) {
   const { t } = useTranslation()
@@ -59,8 +67,16 @@ export function FolderPickerField({
       ? t("folders.deviceOffline", { device: device.name })
       : null
 
+  // Read by handlers between renders: whether the picker is open, and
+  // whether it is closing because a folder was selected.
+  const openNow = useRef(false)
+  const selecting = useRef(false)
+
   const change = (next: boolean) => {
     if (next && (busy || reason !== null)) return
+    if (!next && openNow.current && !selecting.current) onDismiss?.()
+    openNow.current = next
+    selecting.current = false
     onOpenChange(next)
     setOpen(next)
   }
@@ -79,8 +95,13 @@ export function FolderPickerField({
       size="icon-xs"
       aria-label={t("folders.browse", { device: deviceName })}
       aria-disabled={busy || undefined}
+      data-folder-picker-trigger=""
       disabled={reason !== null}
       className={busyClass}
+      onBlur={(e) => {
+        // Opening the picker moves focus into it; that isn't leaving.
+        if (!openNow.current) onLeave?.(e.relatedTarget)
+      }}
     >
       <FolderOpenIcon />
     </Button>
@@ -99,6 +120,7 @@ export function FolderPickerField({
       layout={mobile ? "sheet" : "popover"}
       inputRef={inputRef}
       onSelect={(selected) => {
+        selecting.current = true
         onSelect(selected)
         change(false)
       }}

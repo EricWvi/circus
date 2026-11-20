@@ -25,6 +25,13 @@ service MachineService {
   // flight or the daemon is busy. Problems with the path itself are not RPC
   // errors: they come back in ListDirectoryResponse.result.error.
   rpc ListDirectory(ListDirectoryRequest) returns (ListDirectoryResponse);
+  // Reads the origin remote URL of the git repository at a directory on one
+  // of the caller's devices, asking its daemon live. RPC errors are the same
+  // as ListDirectory's (the 8-request per-user cap is shared with it), with
+  // UNAVAILABLE also when the daemon does not list
+  // "device_query.git_remote". Problems with the path or repository come
+  // back in GetGitRemoteResponse.result.error.
+  rpc GetGitRemote(GetGitRemoteRequest) returns (GetGitRemoteResponse);
 }
 
 message Device {
@@ -77,4 +84,15 @@ message ListDirectoryRequest {
 message ListDirectoryResponse {
   // The daemon's ListDirectoryResult, passed through.
   ListDirectoryResult result = 1;
+}
+
+message GetGitRemoteRequest {
+  // Name of one of the caller's devices.
+  string device = 1;
+  // As ListDirectoryRequest.path.
+  string path = 2;
+}
+message GetGitRemoteResponse {
+  // The daemon's GitRemoteResult, passed through.
+  GitRemoteResult result = 1;
 }

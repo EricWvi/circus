@@ -19,6 +19,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { lastInputWasKeyboard } from "@/lib/input-modality"
+import { isPrimaryPress, watchPress } from "@/lib/pointer-press"
 import {
   addedRow,
   hasEarlierDefault,
@@ -34,6 +35,7 @@ import {
 
 import { busyClass } from "./busy"
 import { FolderPickerField } from "./folder-picker"
+import type { PathCommit } from "./use-folder-remote"
 
 /**
  * Edits a project's locations: one row per device and optional path. An
@@ -52,6 +54,7 @@ export function LocationEditor({
   defaultPathHint,
   onChange,
   onTouch,
+  onPathCommit,
 }: {
   rows: readonly LocationRow[]
   /** Undefined while loading. */
@@ -65,6 +68,19 @@ export function LocationEditor({
   defaultPathHint: string
   onChange: (rows: LocationRow[]) => void
   onTouch: (key: string, field: LocationField) => void
+  /**
+   * A row's path was chosen in the folder picker, or its field lost focus.
+   * Focus going to the row's own Browse button postpones the latter: a
+   * selection in the picker reports the chosen folder instead, while
+   * closing the picker without one, or leaving the button for anything
+   * but the picker, reports the path as it is then. `leavingToSubmit`:
+   * focus went to a submit button.
+   */
+  onPathCommit?: (
+    row: Pick<LocationRow, "key" | "device" | "path">,
+    how: PathCommit,
+    leavingToSubmit?: boolean,
+  ) => void
 }) {
   const { t } = useTranslation()
   const mobile = useIsMobile()
@@ -82,6 +98,13 @@ export function LocationEditor({
   // A row added on a device that already has its default location needs a
   // path: its field takes focus as it mounts.
   const focusPath = useRef<string | null>(null)
+  // Rows whose path field was left for their Browse button, not yet reported.
+  const postponed = useRef(new Set<string>())
+  // The row whose Browse button is being pressed. Where a click doesn't
+  // focus the button, the path's blur names no related target; the press
+  // tells where focus is going instead.
+  const browsePressed = useRef<string | null>(null)
+  const isSubmit = (to: EventTarget | null) => to instanceof HTMLButtonElement && to.type === "submit"
 
   const add = () => {
     if (busy) return
@@ -128,15 +151,33 @@ export function LocationEditor({
                   )}
                   {rowErrors.device && <FieldError>{rowErrors.device}</FieldError>}
                 </div>
-                <div className="col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+                <div
+                  className="col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1 sm:col-start-2 sm:row-start-1"
+                  onPointerDownCapture={(e) => {
+                    if (!isPrimaryPress(e)) return
+                    if (!(e.target instanceof Element) || !e.target.closest("[data-folder-picker-trigger]")) return
+                    browsePressed.current = row.key
+                    watchPress(() => {
+                      if (browsePressed.current === row.key) browsePressed.current = null
+                    })
+                  }}
+                >
                   <FolderPickerField
                     device={device}
                     deviceName={row.device}
                     path={row.path}
                     busy={busy}
                     onSelect={(path) => {
+                      postponed.current.delete(row.key)
                       update(row.key, { path })
                       onTouch(row.key, "path")
+                      onPathCommit?.({ key: row.key, device: row.device, path }, "picked")
+                    }}
+                    onDismiss={() => {
+                      if (postponed.current.delete(row.key)) onPathCommit?.(row, "blurred")
+                    }}
+                    onLeave={(to) => {
+                      if (postponed.current.delete(row.key)) onPathCommit?.(row, "blurred", isSubmit(to))
                     }}
                   >
                     <Input
@@ -157,7 +198,24 @@ export function LocationEditor({
                       spellCheck={false}
                       className={isDefault ? "pr-[6.75rem]" : "pr-8"}
                       onChange={(e) => update(row.key, { path: e.target.value })}
-                      onBlur={() => onTouch(row.key, "path")}
+                      onBlur={(e) => {
+                        onTouch(row.key, "path")
+                        const to = e.relatedTarget
+                        const toBrowse =
+                          browsePressed.current === row.key ||
+                          (to instanceof Element &&
+                            to.closest("[data-folder-picker-trigger]") !== null &&
+                            e.currentTarget.parentElement?.contains(to) === true)
+                        if (toBrowse) {
+                          postponed.current.add(row.key)
+                          return
+                        }
+                        onPathCommit?.(
+                          { key: row.key, device: row.device, path: e.target.value },
+                          "blurred",
+                          isSubmit(to),
+                        )
+                      }}
                     />
                     {isDefault && <DefaultMark hint={defaultPathHint} />}
                   </FolderPickerField>

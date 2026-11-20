@@ -247,6 +247,9 @@ export const en = {
     optional: "optional",
     repoUrlPlaceholder: "https://github.com/owner/repo.git",
     repoUrlForms: "Accepted forms",
+    repoUrlReadFrom: "Read from <src>{{device}}:{{path}}</src>",
+    repoUrlFolderUses: "<src>{{device}}:{{path}}</src> uses <url>{{url}}</url>",
+    useRepoUrl: "Use this URL",
     defaultPathMark: "default",
     defaultPathHint:
       "Leave the path empty to use the default folder, {{path}}. It's created on the device the first time a session starts here, with the repository cloned into it if the project has one.",

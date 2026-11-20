@@ -25,6 +25,7 @@ import { LocationEditor } from "./location-editor"
 import { NewProjectContext } from "./new-project-context"
 import { PickerFrameContext } from "./picker-frame"
 import { RepoUrlField } from "./repo-url-field"
+import { useFolderRemote } from "./use-folder-remote"
 import { useProjectForm } from "./use-project-form"
 
 /** Provides the new-project dialog to everything below it. */
@@ -66,6 +67,14 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
     devices: devices.data,
     otherProjects: projects.data ?? [],
   })
+  const remote = useFolderRemote({
+    rows: form.rows,
+    devices: devices.data,
+    repoUrl: form.repoUrl,
+    setRepoUrl: form.setRepoUrl,
+    busy: create.isPending,
+    repoUrlId: "new-project-repo-url",
+  })
 
   // Rows created before the devices loaded get the default device now,
   // without touching anything already typed.
@@ -77,6 +86,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    remote.submitStarted()
     if (create.isPending) return
     const req = form.submit()
     if (!req) return
@@ -90,7 +100,12 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-5">
+    <form
+      onSubmit={submit}
+      onPointerDownCapture={remote.formPointerDown}
+      noValidate
+      className="flex flex-col gap-5"
+    >
       <DialogHeader>
         <DialogTitle>{t("projects.newProject")}</DialogTitle>
       </DialogHeader>
@@ -115,10 +130,12 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
         value={form.repoUrl}
         error={form.errors.repoUrl}
         busy={create.isPending}
-        onChange={form.setRepoUrl}
+        suggestion={remote.suggestion}
+        onChange={remote.editRepoUrl}
         onBlur={() => {
           if (form.repoUrl !== "") form.touch("repoUrl")
         }}
+        onUseSuggestion={remote.applySuggested}
       />
       <FieldSet className="gap-2">
         <FieldLegend variant="label" className="mb-2">
@@ -135,6 +152,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
           })}
           onChange={form.setRows}
           onTouch={(key, field) => form.touch(`${key}.${field}`)}
+          onPathCommit={remote.pathCommitted}
         />
       </FieldSet>
       {form.errors.form && (

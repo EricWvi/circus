@@ -21,6 +21,10 @@ func listDirectory(ctx context.Context, api circusv1connect.MachineServiceClient
 	}))
 }
 
+func getGitRemote(ctx context.Context, api circusv1connect.MachineServiceClient, device, path string) (*connect.Response[circusv1.GetGitRemoteResponse], error) {
+	return api.GetGitRemote(ctx, connect.NewRequest(&circusv1.GetGitRemoteRequest{Device: device, Path: path}))
+}
+
 func addDirectoryDevice(t *testing.T, h *harness, userID, id, name string) {
 	t.Helper()
 	if err := h.st.CreateIdentity(t.Context(), store.Identity{
@@ -128,12 +132,55 @@ func TestListDirectoryQueryErrors(t *testing.T) {
 	}
 }
 
-func TestListDirectoryUserCap(t *testing.T) {
+func TestGitRemoteOwnershipAndPath(t *testing.T) {
+	want := &circusv1.GitRemoteResult{Error: circusv1.GitRemoteError_GIT_REMOTE_ERROR_NO_ORIGIN}
+	type forwarded struct{ device, path string }
+	sent := make(chan forwarded, 4)
+	h, super := newHarness(t, func(cfg *webapi.Config) {
+		cfg.Query = func(_ context.Context, deviceID string, q *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {
+			sent <- forwarded{deviceID, q.GetGitRemote().GetPath()}
+			return &circusv1.DeviceQueryResult{Outcome: &circusv1.DeviceQueryResult_GitRemote{GitRemote: want}}, nil
+		}
+	})
+	member := h.signIn(t, "member", "member@example.com")
+	addDirectoryDevice(t, h, h.owner.ID, "super-desk", "desk")
+	addDirectoryDevice(t, h, "member", "member-desk", "desk")
+	addDirectoryDevice(t, h, "member", "private-device", "private")
+	ctx := wait.Ctx(t)
+	_, err := getGitRemote(ctx, h.browser(t).machines, "desk", "")
+	wantCode(t, err, connect.CodeUnauthenticated)
+	_, err = getGitRemote(ctx, super.machines, "private", "")
+	wantCode(t, err, connect.CodeNotFound)
+	for _, path := range []string{"/a\x00b", strings.Repeat("a", 4097)} {
+		_, err = getGitRemote(ctx, super.machines, "desk", path)
+		wantCode(t, err, connect.CodeInvalidArgument)
+		if fieldOf(err) != "path" {
+			t.Fatalf("path validation = %v", err)
+		}
+	}
+	for _, tc := range []struct {
+		api    circusv1connect.MachineServiceClient
+		device string
+	}{
+		{super.machines, "super-desk"},
+		{member.machines, "member-desk"},
+	} {
+		res, err := getGitRemote(ctx, tc.api, "desk", "~/repo")
+		if err != nil || !proto.Equal(res.Msg.GetResult(), want) {
+			t.Fatalf("git remote response = %v, %v", res, err)
+		}
+		if got := wait.Recv(t, sent); got != (forwarded{tc.device, "~/repo"}) {
+			t.Fatalf("forwarded query = %+v", got)
+		}
+	}
+}
+
+func TestDeviceQuerySharedUserCap(t *testing.T) {
 	entered := make(chan struct{}, 8)
 	release := make(chan struct{})
 	h, super := newHarness(t, func(cfg *webapi.Config) {
 		cfg.Query = func(ctx context.Context, deviceID string, q *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {
-			if deviceID == "desk-id" && q.GetListDirectory().GetPath() == "~" {
+			if deviceID == "desk-id" && (q.GetListDirectory().GetPath() == "~" || q.GetGitRemote().GetPath() == "~") {
 				select {
 				case entered <- struct{}{}:
 				case <-ctx.Done():
@@ -144,6 +191,11 @@ func TestListDirectoryUserCap(t *testing.T) {
 				case <-ctx.Done():
 					return nil, ctx.Err()
 				}
+			}
+			if q.GetGitRemote() != nil {
+				return &circusv1.DeviceQueryResult{Outcome: &circusv1.DeviceQueryResult_GitRemote{
+					GitRemote: &circusv1.GitRemoteResult{Url: "https://example.test/repo.git"},
+				}}, nil
 			}
 			return &circusv1.DeviceQueryResult{Outcome: &circusv1.DeviceQueryResult_ListDirectory{
 				ListDirectory: &circusv1.ListDirectoryResult{Path: "/"},
@@ -157,9 +209,14 @@ func TestListDirectoryUserCap(t *testing.T) {
 
 	ctx := wait.Ctx(t)
 	done := make(chan error, 8)
-	for range 8 {
+	for i := range 8 {
 		go func() {
-			_, err := listDirectory(ctx, super.machines, "desk", "~")
+			var err error
+			if i%2 == 0 {
+				_, err = listDirectory(ctx, super.machines, "desk", "~")
+			} else {
+				_, err = getGitRemote(ctx, super.machines, "desk", "~")
+			}
 			done <- err
 		}()
 	}
@@ -168,7 +225,9 @@ func TestListDirectoryUserCap(t *testing.T) {
 	}
 	_, err := listDirectory(ctx, super.machines, "other", "/")
 	wantCode(t, err, connect.CodeResourceExhausted)
-	if _, err := listDirectory(ctx, member.machines, "desk", "/"); err != nil {
+	_, err = getGitRemote(ctx, super.machines, "other", "/")
+	wantCode(t, err, connect.CodeResourceExhausted)
+	if _, err := getGitRemote(ctx, member.machines, "desk", "/"); err != nil {
 		t.Fatalf("other user's query = %v", err)
 	}
 	close(release)
@@ -177,7 +236,7 @@ func TestListDirectoryUserCap(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := listDirectory(ctx, super.machines, "other", "/"); err != nil {
+	if _, err := getGitRemote(ctx, super.machines, "other", "/"); err != nil {
 		t.Fatalf("query after slot is freed = %v", err)
 	}
 }

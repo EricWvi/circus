@@ -126,6 +126,17 @@ export function shortDefaultPath(path: string, keep: { head: number; tail: numbe
   return `${DEFAULT_PATH_PREFIX}${id.slice(0, keep.head)}…${id.slice(-keep.tail)}`
 }
 
+/**
+ * A path short enough for a one-line note: the middle of a long path
+ * becomes "…", keeping its start and its last folders
+ * ("/home/eric/…/projects/circus/web").
+ */
+export function shortPath(path: string, keep: { head: number; tail: number } = { head: 12, tail: 28 }) {
+  const chars = Array.from(path)
+  if (chars.length <= keep.head + keep.tail + 1) return path
+  return `${chars.slice(0, keep.head).join("")}…${chars.slice(-keep.tail).join("")}`
+}
+
 /** The form's rows for a project's saved locations. */
 export const rowsOf = (project: { locations: readonly ProjectLocation[] }): LocationRow[] =>
   project.locations.map((l) => ({
