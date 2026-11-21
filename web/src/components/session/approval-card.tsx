@@ -28,9 +28,8 @@ export function ApprovalCard({
 }) {
   const { t } = useTranslation()
   const command =
-    typeof event.input.command === "string"
-      ? event.input.command
-      : JSON.stringify(event.input, null, 2)
+    event.approval?.display ||
+    (typeof event.input.command === "string" ? event.input.command : JSON.stringify(event.input, null, 2))
 
   return (
     <Confirmation
@@ -51,7 +50,7 @@ export function ApprovalCard({
             </span>
           </span>
           <CodeBlock code={command} language="bash" />
-          {event.approval && (
+          {event.approval?.reason && (
             <span className="text-pretty text-muted-foreground">{event.approval.reason}</span>
           )}
         </ConfirmationTitle>

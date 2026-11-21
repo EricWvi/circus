@@ -5,27 +5,19 @@
 import { QueryClientProvider } from "@tanstack/react-query"
 import { act, render } from "@testing-library/react"
 import type { ReactNode } from "react"
-import { vi } from "vitest"
+import { onTestFinished, vi } from "vitest"
 
 import { ClientContext } from "@/api/context"
 import { createMockBackend } from "@/api/mock/backend"
+import type { MockSessionTiming } from "@/api/mock/sessions"
 import { SEED_OWNER_ID, seedState, type MockState } from "@/api/mock/state"
-import { createQueryClient } from "@/api/query-client"
+import { createQueryClient, followUnauthenticated } from "@/api/query-client"
 import type { CircusClient } from "@/api/types"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { ConversationStoreContext } from "@/state/conversations-context"
-import { ConversationsProvider } from "@/state/conversations-provider"
-import { DeviceSimulationContext } from "@/state/device-simulation-context"
-import type { SimulationTiming } from "@/state/simulated-link"
+import { OutboxProvider } from "@/state/outbox-provider"
 
-/** Fast pacing: replies stream for 1 s, outages last 3 s, attempts take 100 ms. */
-export const testTiming: SimulationTiming = {
-  outageMs: 3_000,
-  streamMs: 1_000,
-  streamTickMs: 100,
-  firstTokenDelayMs: 100,
-  attemptLatencyMs: 100,
-}
+/** Fast pacing for the mock's scripted replies. */
+export const testSessionTiming: MockSessionTiming = { stepMs: 100, chunkMs: 50 }
 
 /** Runs timers (and the promises they resolve) for `ms`, inside act. */
 export async function advance(ms: number) {
@@ -43,34 +35,30 @@ export async function renderWithBackend(
   ui: ReactNode,
   {
     state = seedState(),
-    timing = {},
     wrapClient = (client) => client,
   }: {
     state?: MockState
-    timing?: Partial<SimulationTiming>
     wrapClient?: (client: CircusClient) => CircusClient
   } = {},
 ) {
   // Signed in as the demo data's owner (the mock's cookie), without a call
   // that would wait on the fake timers.
   state.cookie = SEED_OWNER_ID
-  const backend = createMockBackend({ state, latency: () => 0 })
+  const backend = createMockBackend({ state, latency: () => 0, sessionTiming: testSessionTiming })
   const queryClient = createQueryClient()
+  // As ApiProvider does; the test's cleanup unmounts the tree, not this.
+  onTestFinished(followUnauthenticated(queryClient))
   const client = wrapClient(backend.client)
   const wrap = (children: ReactNode) => (
     <ClientContext.Provider value={client}>
       <QueryClientProvider client={queryClient}>
-        <ConversationStoreContext.Provider value={backend.conversations}>
-          <DeviceSimulationContext.Provider value={backend.simulation}>
-            <TooltipProvider>
-              <ConversationsProvider timing={{ ...testTiming, ...timing }}>{children}</ConversationsProvider>
-            </TooltipProvider>
-          </DeviceSimulationContext.Provider>
-        </ConversationStoreContext.Provider>
+        <TooltipProvider>
+          <OutboxProvider>{children}</OutboxProvider>
+        </TooltipProvider>
       </QueryClientProvider>
     </ClientContext.Provider>
   )
   const result = render(wrap(ui))
   await advance(0)
-  return { ...result, backend, state, queryClient, rerender: (next: ReactNode) => result.rerender(wrap(next)) }
+  return { ...result, backend, state, queryClient, client, rerender: (next: ReactNode) => result.rerender(wrap(next)) }
 }

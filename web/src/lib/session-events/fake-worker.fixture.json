@@ -1,0 +1,4862 @@
+{
+ "approval_expired": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake approve echo late"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake approve echo late",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000004",
+        "input": {
+         "command": "echo late"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000005",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_PERMISSION_DENIED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "decision_reason": "Scripted Bash approval required",
+     "decision_reason_type": "classifier",
+     "message": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "subtype": "permission_denied",
+     "tool_name": "Bash",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004",
+     "type": "system",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
+        "is_error": true,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_APPROVAL_PENDING",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000009",
+     "device": "box",
+     "display": "echo late",
+     "reason": "Scripted Bash approval required",
+     "tool": "bash",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000010",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "I need app",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "roval to r",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "un this Ba",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "sh command.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "I need approval to run this Bash command.",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000010",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000020"
+    }
+   },
+   {
+    "seq": 9,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 2,
+     "permission_denials": [
+      {
+       "tool_input": {
+        "command": "echo late"
+       },
+       "tool_name": "Bash",
+       "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+      }
+     ],
+     "result": "I need approval to run this Bash command.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000021"
+    }
+   },
+   {
+    "seq": 10,
+    "kind": "KIND_APPROVAL_RESOLVED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000009",
+     "state": "expired"
+    }
+   }
+  ]
+ },
+ "approve": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake approve echo approved"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake approve echo approved",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000004",
+        "input": {
+         "command": "echo approved"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000005",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_PERMISSION_DENIED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "decision_reason": "Scripted Bash approval required",
+     "decision_reason_type": "classifier",
+     "message": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "subtype": "permission_denied",
+     "tool_name": "Bash",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004",
+     "type": "system",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
+        "is_error": true,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_APPROVAL_PENDING",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000009",
+     "device": "box",
+     "display": "echo approved",
+     "reason": "Scripted Bash approval required",
+     "tool": "bash",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000010",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "I need app",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "roval to r",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "un this Ba",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "sh command.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "I need approval to run this Bash command.",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000010",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000020"
+    }
+   },
+   {
+    "seq": 9,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 2,
+     "permission_denials": [
+      {
+       "tool_input": {
+        "command": "echo approved"
+       },
+       "tool_name": "Bash",
+       "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+      }
+     ],
+     "result": "I need approval to run this Bash command.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000021"
+    }
+   },
+   {
+    "seq": 10,
+    "kind": "KIND_APPROVAL_RESOLVED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000009",
+     "state": "approved"
+    }
+   },
+   {
+    "seq": 11,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "2"
+    }
+   },
+   {
+    "seq": 12,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "isSynthetic": true,
+     "message": {
+      "content": "The user approved this bash call on device \"box\" once: echo approved\nRetry it now.",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000022"
+    }
+   },
+   {
+    "seq": 13,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000023",
+        "input": {
+         "command": "echo approved"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000024",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000025"
+    }
+   },
+   {
+    "seq": 14,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": [
+         {
+          "text": "approved",
+          "type": "text"
+         }
+        ],
+        "is_error": false,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000023",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000026"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000027",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000028"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000029"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "Bas",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000030"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "h fi",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000031"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "nis",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000032"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "hed.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000033"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000034"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000035"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000036"
+    }
+   },
+   {
+    "seq": 15,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "Bash finished.",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000027",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000037"
+    }
+   },
+   {
+    "seq": 16,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 2,
+     "permission_denials": [],
+     "result": "Bash finished.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000038"
+    }
+   }
+  ]
+ },
+ "broken": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "hello"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "hello",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000004",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000005"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "You ",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "said:",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "\n\n> ",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "hello",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "You said:\n\n> hello",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000004",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 1,
+     "permission_denials": [],
+     "result": "You said:\n\n> hello",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000017",
+     "input_id": "00000000-0000-4000-8000-000000000016",
+     "priority": "normal",
+     "text": "/fake break"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "2"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake break",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 9,
+    "kind": "KIND_ERROR",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": "scripted transcript mirror failure"
+    }
+   },
+   {
+    "seq": 10,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "errors": [
+      "scripted transcript mirror failure"
+     ],
+     "is_error": true,
+     "num_turns": 1,
+     "permission_denials": [],
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": null,
+     "subtype": "error_during_execution",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 11,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000020",
+     "input_id": "00000000-0000-4000-8000-000000000019",
+     "priority": "normal",
+     "text": "queued while broken"
+    }
+   },
+   {
+    "seq": 12,
+    "kind": "KIND_TRANSCRIPT_GAP_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": null
+   },
+   {
+    "seq": 13,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "3"
+    }
+   },
+   {
+    "seq": 14,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "isSynthetic": true,
+     "message": {
+      "content": "Part of the conversation history is missing.",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000021"
+    }
+   },
+   {
+    "seq": 15,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "queued while broken",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000022",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000023"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000024"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "You said",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000025"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": ":\n\n> que",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000026"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "ued whil",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000027"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "e broken",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000028"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000029"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000030"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000031"
+    }
+   },
+   {
+    "seq": 16,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "You said:\n\n> queued while broken",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000022",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000032"
+    }
+   },
+   {
+    "seq": 17,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 1,
+     "permission_denials": [],
+     "result": "You said:\n\n> queued while broken",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000033"
+    }
+   }
+  ]
+ },
+ "crash": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_INTERRUPTED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake crash"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake crash",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_TURN_INTERRUPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "outcome": "interrupted",
+     "turn_no": "1"
+    }
+   }
+  ]
+ },
+ "deny": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake approve echo denied"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake approve echo denied",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000004",
+        "input": {
+         "command": "echo denied"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000005",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_PERMISSION_DENIED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "decision_reason": "Scripted Bash approval required",
+     "decision_reason_type": "classifier",
+     "message": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "subtype": "permission_denied",
+     "tool_name": "Bash",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004",
+     "type": "system",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
+        "is_error": true,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_APPROVAL_PENDING",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000009",
+     "device": "box",
+     "display": "echo denied",
+     "reason": "Scripted Bash approval required",
+     "tool": "bash",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000010",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "I need app",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "roval to r",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "un this Ba",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "sh command.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "I need approval to run this Bash command.",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000010",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000020"
+    }
+   },
+   {
+    "seq": 9,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 2,
+     "permission_denials": [
+      {
+       "tool_input": {
+        "command": "echo denied"
+       },
+       "tool_name": "Bash",
+       "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+      }
+     ],
+     "result": "I need approval to run this Bash command.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000021"
+    }
+   },
+   {
+    "seq": 10,
+    "kind": "KIND_APPROVAL_RESOLVED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000009",
+     "state": "denied"
+    }
+   }
+  ]
+ },
+ "error": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_ERROR",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake error"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake error",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ERROR",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": "scripted worker error"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "errors": [
+      "scripted worker error"
+     ],
+     "is_error": true,
+     "num_turns": 1,
+     "permission_denials": [],
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": null,
+     "subtype": "error_during_execution",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000004"
+    }
+   }
+  ]
+ },
+ "interrupt": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_STOPPED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake slow 20"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake slow 20",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000004",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000005"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "You sa",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "abandoned_blocks": {
+      "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+      "from_block_index": 1
+     },
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "aborted": true,
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "You sa",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000004",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "isSynthetic": true,
+     "message": {
+      "content": [
+       {
+        "text": "[Request interrupted by user]",
+        "type": "text"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "errors": [
+      "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"
+     ],
+     "is_error": true,
+     "num_turns": 1,
+     "permission_denials": [],
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": null,
+     "subtype": "error_during_execution",
+     "terminal_reason": "aborted_streaming",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_TURN_STOPPED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "outcome": "stopped",
+     "turn_no": "1"
+    }
+   }
+  ]
+ },
+ "interrupt_tool": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_STOPPED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake bash sleep 20"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake bash sleep 20",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000004",
+        "input": {
+         "command": "sleep 20"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000005",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": "The tool call was interrupted before a result was received. It may or may not have completed on the server — verify before assuming it succeeded, and retry if needed.",
+        "is_error": true,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "isSynthetic": true,
+     "message": {
+      "content": [
+       {
+        "text": "[Request interrupted by user]",
+        "type": "text"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "errors": [
+      "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"
+     ],
+     "is_error": true,
+     "num_turns": 1,
+     "permission_denials": [],
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": null,
+     "subtype": "error_during_execution",
+     "terminal_reason": "aborted_tools",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_TURN_STOPPED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "outcome": "stopped",
+     "turn_no": "1"
+    }
+   }
+  ]
+ },
+ "now": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake slow 20"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake slow 20",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000004",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000005"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "You sa",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000009",
+     "input_id": "00000000-0000-4000-8000-000000000008",
+     "priority": "now",
+     "text": "right now"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "abandoned_blocks": {
+      "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+      "from_block_index": 1
+     },
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "aborted": true,
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "You sa",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000004",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 1,
+     "permission_denials": [],
+     "result": "You sa",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": null,
+     "subtype": "success",
+     "terminal_reason": "aborted_streaming",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_TURN_STOPPED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "outcome": "stopped",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "2"
+    }
+   },
+   {
+    "seq": 9,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "right now",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000015",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "You s",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "aid:\n\n",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "> rig",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000020"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "ht now",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000021"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000022"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000023"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000024"
+    }
+   },
+   {
+    "seq": 10,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "You said:\n\n> right now",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000015",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000025"
+    }
+   },
+   {
+    "seq": 11,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 1,
+     "permission_denials": [],
+     "result": "You said:\n\n> right now",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000026"
+    }
+   }
+  ]
+ },
+ "parallel_tools": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake parallel echo hi"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake parallel echo hi",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000004",
+        "input": {
+         "command": "echo hi"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000005",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000007",
+        "input": {
+         "command": "echo hi"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000005",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": [
+         {
+          "text": "hi",
+          "type": "text"
+         }
+        ],
+        "is_error": false,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": [
+         {
+          "text": "hi",
+          "type": "text"
+         }
+        ],
+        "is_error": false,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000007",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000011",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "Both B",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "ash ca",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "lls fi",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "nished.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000020"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "Both Bash calls finished.",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000011",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000021"
+    }
+   },
+   {
+    "seq": 9,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 2,
+     "permission_denials": [],
+     "result": "Both Bash calls finished.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000022"
+    }
+   }
+  ]
+ },
+ "stop": {
+  "final": {
+   "state": "STATE_STOPPED",
+   "lastTurnOutcome": "TURN_OUTCOME_INTERRUPTED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake slow 20"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake slow 20",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000004",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000005"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "You sa",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_SESSION_STATE",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "reason": "user",
+     "state": "stopped"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_TURN_INTERRUPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "outcome": "interrupted",
+     "turn_no": "1"
+    }
+   }
+  ]
+ },
+ "text": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "hello"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "hello",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000004",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000005"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "You ",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "said:",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "\n\n> ",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "hello",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "You said:\n\n> hello",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000004",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 1,
+     "permission_denials": [],
+     "result": "You said:\n\n> hello",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   }
+  ]
+ },
+ "think": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake think"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake think",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000004",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000005"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "signature": "",
+       "thinking": "",
+       "type": "thinking"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "thinking": "Planning a scripted response.",
+       "type": "thinking_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "signature": "fake-signature",
+       "type": "signature_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "signature": "fake-signature",
+        "thinking": "Planning a scripted response.",
+        "type": "thinking"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000004",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 1,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "You sa",
+       "type": "text_delta"
+      },
+      "index": 1,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "id:\n\n>",
+       "type": "text_delta"
+      },
+      "index": 1,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": " /fake",
+       "type": "text_delta"
+      },
+      "index": 1,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": " think",
+       "type": "text_delta"
+      },
+      "index": 1,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 1,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "You said:\n\n> /fake think",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000004",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 1,
+     "permission_denials": [],
+     "result": "You said:\n\n> /fake think",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000020"
+    }
+   }
+  ]
+ },
+ "tool": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake bash echo hi"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake bash echo hi",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000004",
+        "input": {
+         "command": "echo hi"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000005",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": [
+         {
+          "text": "hi",
+          "type": "text"
+         }
+        ],
+        "is_error": false,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000008",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "Bas",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "h fi",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "nis",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "hed.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "Bash finished.",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000008",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 2,
+     "permission_denials": [],
+     "result": "Bash finished.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   }
+  ]
+ },
+ "truncated_tool_result": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake large 300000"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake large 300000",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000004",
+        "input": {
+         "command": "yes | head -c 300000"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000005",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": true,
+    "payload": null
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000007",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "Bas",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "h fi",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "nis",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "hed.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "Bash finished.",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000007",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 2,
+     "permission_denials": [],
+     "result": "Bash finished.",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   }
+  ]
+ }
+}

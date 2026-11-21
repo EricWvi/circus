@@ -2,7 +2,7 @@ import { QueryClientProvider, type QueryClient } from "@tanstack/react-query"
 import { useEffect, type ReactNode } from "react"
 
 import { ClientContext } from "./context"
-import { followAuthChanges } from "./query-client"
+import { followAuthChanges, followUnauthenticated } from "./query-client"
 import type { CircusClient } from "./types"
 
 export function ApiProvider({
@@ -15,6 +15,7 @@ export function ApiProvider({
   children: ReactNode
 }) {
   useEffect(() => followAuthChanges(queryClient), [queryClient])
+  useEffect(() => followUnauthenticated(queryClient), [queryClient])
 
   return (
     <ClientContext.Provider value={client}>

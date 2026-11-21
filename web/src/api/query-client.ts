@@ -2,6 +2,7 @@ import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query"
 
 import { isApiError } from "./errors"
 import type { AuthState, LoginMethods } from "./types"
+import { onUnauthenticated, reportIfUnauthenticated } from "./unauthenticated"
 
 /**
  * The cached auth state. `afterSignOut` marks an explicit sign-out, so the
@@ -19,6 +20,7 @@ export const queryKeys = {
   devices: ["devices"] as const,
   sessions: (projectId?: string) => ["sessions", projectId ?? "all"] as const,
   allSessions: ["sessions"] as const,
+  session: (sessionId: string) => ["session", sessionId] as const,
   directory: (device: string, path: string, includeHidden: boolean) =>
     ["directory", device, path, includeHidden] as const,
 }
@@ -43,14 +45,22 @@ export function resetAuth(queryClient: QueryClient, auth: CachedAuth) {
 const identity = (auth: CachedAuth | undefined) =>
   auth?.kind === "signed_in" ? `user:${auth.user.userId}` : (auth?.kind ?? "")
 
-export function createQueryClient(): QueryClient {
-  // A request rejected as unauthenticated means the cookie expired or was
-  // revoked: forget the user so the guard sends them to /login.
-  const onError = (error: unknown) => {
-    if (!isApiError(error, "unauthenticated")) return
+/**
+ * Forgets the user whenever a request is rejected as unauthenticated, from
+ * a query, a mutation or any Connect call (`unauthenticated.ts`): the
+ * cookie expired or was revoked, so the guard sends them to /login, back to
+ * the page they were on. Returns the unsubscribe.
+ */
+export function followUnauthenticated(queryClient: QueryClient): () => void {
+  return onUnauthenticated(() => {
     if (queryClient.getQueryData<CachedAuth>(queryKeys.auth)?.kind !== "signed_in") return
     resetAuth(queryClient, { kind: "signed_out" })
-  }
+  })
+}
+
+/** Creates the app's query client; queries and mutations report unauthenticated rejections. */
+export function createQueryClient(): QueryClient {
+  const onError = (error: unknown) => void reportIfUnauthenticated(error)
 
   const queryClient: QueryClient = new QueryClient({
     queryCache: new QueryCache({ onError }),
@@ -80,6 +90,7 @@ export function createQueryClient(): QueryClient {
     if (auth?.kind === "signed_in") void queryClient.resetQueries(others)
     else queryClient.removeQueries(others)
   })
+
 
   return queryClient
 }

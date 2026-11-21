@@ -2,11 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   createConnectionController,
-  lossNoticed,
   retryDelayMs,
   type ConnectionController,
 } from "./connection"
-import { createSimulatedLink } from "./simulated-link"
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -257,32 +255,5 @@ describe("connection core", () => {
     const a = manualAttempts()
     c = createConnectionController({ attempt: a.attempt, online: false })
     expect(c.get()).toEqual({ kind: "offline", lostAt: Date.now() })
-  })
-})
-
-describe("lossNoticed", () => {
-  it("shows a loss only once it has lasted 2 seconds", () => {
-    const lostAt = Date.now()
-    const lost = { kind: "reconnecting", lostAt, attempt: 1, nextRetryAt: null } as const
-    expect(lossNoticed(lost, lostAt + 1_999)).toBe(false)
-    expect(lossNoticed(lost, lostAt + 2_000)).toBe(true)
-    expect(lossNoticed({ kind: "offline", lostAt }, lostAt + 5_000)).toBe(true)
-    expect(lossNoticed({ kind: "connected" }, lostAt + 5_000)).toBe(false)
-  })
-})
-
-describe("simulated link", () => {
-  it("fails attempts until the outage is over", async () => {
-    const link = createSimulatedLink({ latencyMs: 300 })
-    c = createConnectionController({ attempt: link.attempt })
-    link.dropFor(10_000)
-    c.lost()
-    for (const delay of [1_000, 2_000, 4_000]) {
-      await vi.advanceTimersByTimeAsync(delay + 300)
-      expect(c.get().kind).toBe("reconnecting")
-    }
-    // Attempt 4 runs at 15.9 s, after the 10 s outage.
-    await vi.advanceTimersByTimeAsync(8_000 + 300)
-    expect(c.get()).toEqual({ kind: "connected" })
   })
 })

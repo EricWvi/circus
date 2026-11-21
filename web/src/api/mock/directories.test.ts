@@ -11,7 +11,7 @@ import {
   SLOW_GIT_REMOTE_MS,
   SLOW_LISTING_MS,
 } from "./directories"
-import { seedState } from "./state"
+import { seedState, type MockState } from "./state"
 
 const list = (path: string, includeHidden = false, os = "linux") => {
   const { outcome } = listMockDirectory(os, { path, includeHidden })
@@ -121,12 +121,13 @@ describe("mock git remotes", () => {
 
 describe("listDirectory in the mock backend", () => {
   let client: CircusClient
-  let simulation: ReturnType<typeof createMockBackend>["simulation"]
+  let state: MockState
+  const takeOffline = (name: string) => (state.devices.find((d) => d.name === name)!.online = false)
   beforeEach(async () => {
     vi.useFakeTimers()
-    const backend = createMockBackend({ state: seedState(), latency: () => 0 })
+    state = seedState()
+    const backend = createMockBackend({ state, latency: () => 0 })
     client = backend.client
-    simulation = backend.simulation
     const login = client.auth.login({ email: "eric@example.com", password: "circus" })
     await vi.runAllTimersAsync()
     await login
@@ -157,7 +158,7 @@ describe("listDirectory in the mock backend", () => {
     expect(await codeOf(client.machines.listDirectory({ device: "eric-win", path: "", includeHidden: false }))).toBe(
       "failed_precondition",
     )
-    simulation.setDeviceOffline("devbox", true)
+    takeOffline("devbox")
     expect(await codeOf(client.machines.listDirectory({ device: "devbox", path: "", includeHidden: false }))).toBe(
       "failed_precondition",
     )
@@ -178,12 +179,13 @@ describe("listDirectory in the mock backend", () => {
 
 describe("getGitRemote in the mock backend", () => {
   let client: CircusClient
-  let simulation: ReturnType<typeof createMockBackend>["simulation"]
+  let state: MockState
+  const takeOffline = (name: string) => (state.devices.find((d) => d.name === name)!.online = false)
   beforeEach(async () => {
     vi.useFakeTimers()
-    const backend = createMockBackend({ state: seedState(), latency: () => 0 })
+    state = seedState()
+    const backend = createMockBackend({ state, latency: () => 0 })
     client = backend.client
-    simulation = backend.simulation
     const login = client.auth.login({ email: "eric@example.com", password: "circus" })
     await vi.runAllTimersAsync()
     await login
@@ -211,7 +213,7 @@ describe("getGitRemote in the mock backend", () => {
     expect(await codeOf("nope")).toBe("not_found")
     expect(await codeOf("eric-win")).toBe("failed_precondition")
     expect(await codeOf("devbox")).toBeUndefined()
-    simulation.setDeviceOffline("devbox", true)
+    takeOffline("devbox")
     expect(await codeOf("devbox")).toBe("failed_precondition")
   })
 })

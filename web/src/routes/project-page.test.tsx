@@ -3,14 +3,21 @@ import { cleanup, fireEvent, screen } from "@testing-library/react"
 import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { ApiError } from "@/api/errors"
 import { seedState, type MockState } from "@/api/mock/state"
+import type { CircusClient } from "@/api/types"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
 import { advance, renderWithBackend } from "@/test/render"
 
 import { ProjectPage } from "./project-page"
+import { SessionPage } from "./session-page"
 
-async function renderProject(projectId: string, state: MockState) {
+async function renderProject(
+  projectId: string,
+  state: MockState,
+  wrapClient?: (client: CircusClient) => CircusClient,
+) {
   const router = createMemoryRouter(
     [
       {
@@ -22,11 +29,19 @@ async function renderProject(projectId: string, state: MockState) {
         ),
       },
       { path: "/p/:projectId/settings", element: <h1>Settings page</h1> },
+      {
+        path: "/p/:projectId/s/:sessionId",
+        element: (
+          <SidebarProvider>
+            <SessionPage />
+          </SidebarProvider>
+        ),
+      },
       { path: "*", element: null },
     ],
     { initialEntries: [`/p/${projectId}`] },
   )
-  const result = await renderWithBackend(<RouterProvider router={router} />, { state })
+  const result = await renderWithBackend(<RouterProvider router={router} />, { state, wrapClient })
   await advance(50)
   return { ...result, router }
 }
@@ -111,6 +126,41 @@ describe("locations", () => {
     const created = state.sessions.filter((s) => !before.has(s.sessionId))
     expect(created).toMatchObject([{ projectId: "circus", device: "devbox", cwd: "~/circus/projects/circus" }])
     expect(state.projects.find((p) => p.projectId === "circus")!.lastUsedLocation).toBe(1)
+  })
+})
+
+describe("the first message", () => {
+  it("opens the new session, and a message that failed to send waits there with a retry", async () => {
+    const state = seedState()
+    const before = new Set(state.sessions.map((s) => s.sessionId))
+    const sends: unknown[] = []
+    let fail = true
+    const { router } = await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: {
+        ...client.sessions,
+        sendMessage: (req) => {
+          sends.push(req)
+          return fail ? Promise.reject(new ApiError("unavailable", "down")) : client.sessions.sendMessage(req)
+        },
+      },
+    }))
+    fireEvent.change(composer(), { target: { value: "Fix the flaky test" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(100)
+    const created = state.sessions.filter((s) => !before.has(s.sessionId))
+    expect(created).toHaveLength(1)
+    expect(router.state.location.pathname).toBe(`/p/circus/s/${created[0].sessionId}`)
+    expect(screen.getByText("Fix the flaky test")).toBeTruthy()
+    expect(screen.getByText("Not sent: can't reach the server.")).toBeTruthy()
+
+    fail = false
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    await advance(100)
+    expect(sends).toHaveLength(2)
+    expect(sends[1]).toEqual(sends[0])
+    expect(state.sessions.filter((s) => !before.has(s.sessionId))).toHaveLength(1)
+    expect(screen.queryByText(/Not sent/)).toBeNull()
   })
 })
 

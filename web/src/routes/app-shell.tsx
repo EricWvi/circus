@@ -5,7 +5,7 @@ import { useCurrentUser } from "@/api/hooks"
 import { AppSidebar } from "@/components/app-sidebar"
 import { NewProjectDialogProvider } from "@/components/projects/new-project-dialog"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
-import { ConversationsProvider } from "@/state/conversations-provider"
+import { OutboxProvider } from "@/state/outbox-provider"
 
 /** Sidebar layout around every signed-in page. */
 export function AppShell() {
@@ -15,9 +15,9 @@ export function AppShell() {
   const devicesPage = useMatch("/devices") !== null
   const { user } = useCurrentUser()
 
-  // Keyed by user, so nothing of the previous user's conversations survives.
+  // Keyed by user, so nothing of the previous user's messages survives.
   return (
-    <ConversationsProvider key={user?.userId ?? ""}>
+    <OutboxProvider key={user?.userId ?? ""}>
       <SidebarProvider className="h-svh" style={{ "--sidebar-width": "18rem" } as CSSProperties}>
         <NewProjectDialogProvider>
           <AppSidebar
@@ -30,6 +30,6 @@ export function AppShell() {
           </SidebarInset>
         </NewProjectDialogProvider>
       </SidebarProvider>
-    </ConversationsProvider>
+    </OutboxProvider>
   )
 }

@@ -8,8 +8,6 @@ import type {
   Location,
   LoginMethods,
   Project,
-  ProjectService,
-  SessionSummary,
   User,
 } from "@/api/types"
 import {
@@ -24,14 +22,20 @@ import {
   validateEmail,
   validatePassword,
 } from "@/api/validation"
-import type { ConversationStore, SessionEvent } from "@/lib/types"
 
 import { listMockDirectory, readMockGitRemote } from "./directories"
+import {
+  createMockSessionRuntime,
+  defaultSessionTiming,
+  detailsOf,
+  summaryOf,
+  type MockSession,
+  type MockSessionTiming,
+} from "./sessions"
 import {
   MOCK_LOGIN_METHODS,
   OIDC_SETUP_EMAIL,
   SEED_SUPER_EMAIL,
-  settleSession,
   type MockDevice,
   type MockLocation,
   type MockProject,
@@ -41,45 +45,13 @@ import {
 
 export interface MockBackend {
   client: CircusClient
-  /**
-   * Transcripts and session progress of the conversations the UI simulates
-   * for now; the server would observe both from the agent itself.
-   */
-  conversations: ConversationStore
-  /** Replaces the state with one another tab wrote, notifying subscribers. */
+  /** Replaces the state with one another tab wrote (keeping this tab's sessions), notifying subscribers. */
   adopt(next: MockState): void
   /**
-   * Called when another tab changed projects, sessions or devices, the way
-   * a server would push updates; the app refetches.
+   * Called when another tab changed projects or devices, the way a server
+   * would push updates; the app refetches.
    */
   onExternalChange(listener: () => void): () => void
-  /** Switches for simulating device trouble; in memory, reset on reload. */
-  simulation: DeviceSimulation
-}
-
-export interface DeviceSimulation {
-  /** Devices listed as offline whatever their own state. */
-  offlineDevices(): ReadonlySet<string>
-  setDeviceOffline(name: string, offline: boolean): void
-  subscribe(listener: () => void): () => void
-}
-
-/** Pasted images larger than this are not persisted (localStorage is small). */
-export const MAX_KEPT_ATTACHMENT_URL = 8 * 1024
-
-/** Large data URLs don't fit the store and blob URLs die with the page. */
-const keepsUrl = (url: string) => url.length <= MAX_KEPT_ATTACHMENT_URL && !url.startsWith("blob:")
-
-/** Drops attachment data that isn't kept; the UI shows a placeholder for an empty url. */
-function withoutAttachmentData(events: SessionEvent[]): SessionEvent[] {
-  return events.map((event) =>
-    event.kind === "user_message" && event.attachments?.some((a) => !keepsUrl(a.url))
-      ? {
-          ...event,
-          attachments: event.attachments.map((a) => (keepsUrl(a.url) ? a : { ...a, url: "" })),
-        }
-      : event,
-  )
 }
 
 export interface MockBackendOptions {
@@ -90,25 +62,12 @@ export interface MockBackendOptions {
   /** Delay in milliseconds before each call settles. */
   latency?: () => number
   now?: () => number
-  /** Identifies the tab writing transcripts and session progress. */
-  tabId?: string
+  /** How the scripted session replies pace themselves. */
+  sessionTiming?: MockSessionTiming
   /** Receives notes about what the mock does in place of the real server. */
   note?: (message: string) => void
   /** Whether an OIDC provider is configured (default true). */
   oidc?: boolean
-  /**
-   * When set, auth is served elsewhere (a real control plane): every
-   * project, device and session call is made as this user id, without
-   * checking the mock's own sign-in. The app's auth guard still keeps
-   * signed-out people away from the pages that make them.
-   */
-  actAs?: string
-  /**
-   * The projects the mock's sessions belong to (by default the mock's own).
-   * Sessions look projects up and record the last used location only
-   * through this service, so they also work with a real server's projects.
-   */
-  projects?: ProjectService
 }
 
 /** Failed sign-ins per email within the window before further tries are refused. */
@@ -126,11 +85,9 @@ export function createMockBackend({
   onChange,
   latency = () => 100 + Math.random() * 200,
   now = Date.now,
-  tabId = "",
+  sessionTiming = defaultSessionTiming,
   note = () => {},
   oidc = true,
-  actAs,
-  projects: sessionProjects,
 }: MockBackendOptions): MockBackend {
   const methods = (): LoginMethods =>
     oidc ? structuredClone(MOCK_LOGIN_METHODS) : { password: MOCK_LOGIN_METHODS.password }
@@ -138,16 +95,7 @@ export function createMockBackend({
     if (!oidc) throw new ApiError("failed_precondition", "OIDC is not configured.")
   }
   const changed = () => onChange?.(state)
-  const stamp = (sessionId: string) => {
-    state.writtenAtMs[sessionId] = now()
-    state.writtenBy[sessionId] = tabId
-  }
-  const listeners = new Set<(sessionIds: string[]) => void>()
   const externalListeners = new Set<() => void>()
-  // Simulated device outages: device name → when it went offline.
-  const forcedOffline = new Map<string, number>()
-  let offlineNames: ReadonlySet<string> = new Set()
-  const simulationListeners = new Set<() => void>()
 
   // Runs a handler after the simulated network delay. Requests and responses
   // are copied so callers never share objects with the store.
@@ -178,7 +126,6 @@ export function createMockBackend({
 
   /** The signed-in user's id. */
   function currentUser(): string {
-    if (actAs !== undefined) return actAs
     const user = state.users.find((u) => u.userId === state.cookie)
     if (!user) throw new ApiError("unauthenticated", "Sign in to continue.")
     return user.userId
@@ -189,7 +136,7 @@ export function createMockBackend({
     const owner = currentUser()
     const device = state.devices.find((d) => d.owner === owner && d.name === name)
     if (!device) throw new ApiError("not_found", "No such device.")
-    if (!device.online || forcedOffline.has(device.name)) {
+    if (!device.online) {
       throw new ApiError("failed_precondition", "The device is offline.")
     }
     return device
@@ -455,11 +402,6 @@ export function createMockBackend({
         }
         state.projects = state.projects.filter((p) => p !== project)
         state.sessions = state.sessions.filter((s) => s.projectId !== project.projectId)
-        for (const s of sessions) {
-          delete state.conversations[s.sessionId]
-          delete state.writtenAtMs[s.sessionId]
-          delete state.writtenBy[s.sessionId]
-        }
         changed()
       }),
     },
@@ -470,11 +412,7 @@ export function createMockBackend({
         return state.devices
           .filter((d) => d.owner === owner)
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map(({ owner: _, deviceId: __, ...device }) => {
-            const since = forcedOffline.get(device.name)
-            if (since === undefined || !device.online) return device
-            return { ...device, online: false, lastSeenUnixMs: since }
-          })
+          .map(({ owner: _, deviceId: __, ...device }) => device)
       }),
       // A link that enrolls nothing: the mock has no enrollment endpoint.
       createEnrollLink: call(({ role }: { role: EnrollRole }) => {
@@ -505,110 +443,81 @@ export function createMockBackend({
     },
 
     sessions: {
-      listSessions: callAsync(async (req: { projectId?: string }) => {
-        currentUser()
-        const projects = sessionProjects ?? client.projects
-        // Unknown projects are not_found; without a project, sessions of
-        // projects that are gone are left out.
-        const owned =
-          req.projectId !== undefined
-            ? new Set([(await projects.getProject({ projectId: req.projectId })).projectId])
-            : new Set((await projects.listProjects()).map((p) => p.projectId))
+      listSessions: call((req: { projectId?: string }) => {
+        const owner = currentUser()
+        // Unknown projects are not_found.
+        if (req.projectId !== undefined) ownedProject(owner, req.projectId)
+        const owned = new Set(state.projects.filter((p) => p.owner === owner).map((p) => p.projectId))
         return state.sessions
-          .filter((s) => owned.has(s.projectId))
+          .filter((s) => owned.has(s.projectId) && (req.projectId === undefined || s.projectId === req.projectId))
+          .map(summaryOf)
           .sort((a, b) => b.lastActivityAtUnixMs - a.lastActivityAtUnixMs)
       }),
 
       createSession: callAsync(async (req: { projectId: string; locationIndex: number }) => {
         currentUser()
-        const projects = sessionProjects ?? client.projects
         const usable = (p: Project) => {
           const location = Number.isInteger(req.locationIndex) ? p.locations[req.locationIndex] : undefined
           return location && !location.deviceRevoked ? location : undefined
         }
-        const chosen = usable(await projects.getProject({ projectId: req.projectId }))
-        if (!chosen) throw invalid("Choose one of the project's locations.", "locationIndex")
+        const chosen = usable(await client.projects.getProject({ projectId: req.projectId }))
+        if (!chosen) throw invalid("Choose one of the project's locations.", "location_index")
         // Exempt from the version check, like starting a session on the server.
-        const project = await projects.updateProject({
+        const project = await client.projects.updateProject({
           projectId: req.projectId,
           lastUsedLocation: req.locationIndex,
         })
         const location = usable(project)
         if (!location || !sameLocation(location, chosen)) {
-          throw invalid("Choose one of the project's locations.", "locationIndex")
+          throw invalid("Choose one of the project's locations.", "location_index")
         }
         const at = now()
-        const session: SessionSummary = {
+        const session: MockSession = {
           sessionId: nanoid(12),
           projectId: project.projectId,
-          title: "New session",
-          state: "idle",
-          lastActivityAtUnixMs: at,
-          pendingApprovalCount: 0,
+          title: "",
           device: location.device,
           cwd: location.path || location.effectivePath,
           createdAtUnixMs: at,
+          lastActivityAtUnixMs: at,
+          state: "idle",
+          lastTurnOutcome: "unspecified",
+          events: [],
+          approvals: [],
+          queue: [],
+          turns: 0,
         }
         state.sessions.push(session)
-        changed()
-        return session
+        return detailsOf(session)
+      }),
+
+      ...createMockSessionRuntime({
+        sessions: () => state.sessions,
+        own(sessionId) {
+          const owner = currentUser()
+          const session = state.sessions.find((s) => s.sessionId === sessionId)
+          const owned = session && state.projects.some((p) => p.projectId === session.projectId && p.owner === owner)
+          if (!session || !owned) throw new ApiError("not_found", "Session not found.")
+          return session
+        },
+        delay: () => sleep(latency()),
+        now,
+        timing: sessionTiming,
       }),
     },
   }
 
   return {
     client,
-    conversations: {
-      load: () => structuredClone(state.conversations),
-      save(sessionId, events) {
-        state.conversations[sessionId] = withoutAttachmentData(structuredClone(events))
-        stamp(sessionId)
-        changed()
-      },
-      reportActivity(sessionId, activity) {
-        const session = state.sessions.find((s) => s.sessionId === sessionId)
-        if (!session) return
-        Object.assign(session, activity, { lastActivityAtUnixMs: now() })
-        stamp(sessionId)
-        changed()
-      },
-      settle(sessionId) {
-        settleSession(state, sessionId)
-        stamp(sessionId)
-        changed()
-      },
-      subscribe(listener) {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
-    },
     adopt(next) {
-      const changedIds = Object.keys({ ...state.conversations, ...next.conversations }).filter(
-        (id) => JSON.stringify(state.conversations[id]) !== JSON.stringify(next.conversations[id]),
-      )
-      const data = (m: MockState) => JSON.stringify([m.projects, m.sessions, m.devices])
+      const data = (m: MockState) => JSON.stringify([m.projects, m.devices])
       const dataChanged = data(state) !== data(next)
-      Object.assign(state, next)
-      if (changedIds.length > 0) for (const listener of listeners) listener(changedIds)
+      Object.assign(state, { ...next, sessions: state.sessions })
       if (dataChanged) for (const listener of externalListeners) listener()
     },
     onExternalChange(listener) {
       externalListeners.add(listener)
       return () => externalListeners.delete(listener)
-    },
-    simulation: {
-      offlineDevices: () => offlineNames,
-      setDeviceOffline(name, offline) {
-        if (offline === forcedOffline.has(name)) return
-        if (offline) forcedOffline.set(name, now())
-        else forcedOffline.delete(name)
-        offlineNames = new Set(forcedOffline.keys())
-        for (const listener of simulationListeners) listener()
-      },
-      subscribe(listener) {
-        simulationListeners.add(listener)
-        return () => simulationListeners.delete(listener)
-      },
     },
   }
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,17 @@ func (s *session) script(t *turn, in *input) error {
 				return fmt.Errorf("/fake %s requires an argument", command)
 			}
 			return s.tool(t, command, arg)
+		case "parallel":
+			if strings.TrimSpace(arg) == "" {
+				return errors.New("/fake parallel requires an argument")
+			}
+			return s.parallel(t, arg)
+		case "large":
+			n, err := strconv.Atoi(strings.TrimSpace(arg))
+			if err != nil || n < 2 || n > 1<<20 {
+				return errors.New("/fake large requires a size of 2 to 1048576 bytes")
+			}
+			return s.largeResult(t, n)
 		case "slow":
 			duration, err := time.ParseDuration(strings.TrimSpace(arg) + "s")
 			if err != nil || duration < 0 {

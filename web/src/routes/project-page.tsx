@@ -24,10 +24,10 @@ import {
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { locationDirectory, pickLocation, projectErrorMessage } from "@/lib/location-form"
 import { formatRelative } from "@/lib/time"
+import { sessionTitle } from "@/lib/title"
 import { projectSettingsPath, sessionPath } from "@/lib/tree"
-import type { ImageAttachment } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import { useConversations } from "@/state/conversations-context"
+import { useOutbox } from "@/state/outbox-context"
 
 import { BarePage, LoadError } from "./page-states"
 
@@ -50,7 +50,7 @@ function ProjectHome({ project }: { project: Project }) {
   const devices = useDevices()
   const sessions = useSessionList(project.projectId)
   const createSession = useCreateSession()
-  const { send } = useConversations()
+  const outbox = useOutbox()
   // The chosen location, remembered by value: the project can change under
   // us (another tab removes or reorders locations), so the index is derived.
   // -1 when no location can be used.
@@ -65,12 +65,10 @@ function ProjectHome({ project }: { project: Project }) {
   // Kept as the error itself; its message is chosen at render time.
   const [error, setError] = useState<unknown>(null)
 
-  // Set synchronously when a submit starts, so a second Enter (images take
-  // a moment to read) can't start another session. Released on failure.
+  // Set synchronously when a submit starts, so a second Enter can't start
+  // another session. Released on failure.
   const inFlight = useRef(false)
-  // A session created for this input whose first message hasn't gone out
-  // yet; a retry sends into it instead of creating another one.
-  const created = useRef<SessionSummary | null>(null)
+  const [starting, setStarting] = useState(false)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -79,29 +77,25 @@ function ProjectHome({ project }: { project: Project }) {
     }
   }, [])
 
-  const start = async (text: string, attachments: ImageAttachment[]) => {
+  const start = async (text: string) => {
     if (inFlight.current) throw new Error("already starting a session")
     const location = project.locations.at(locationIndex)
     if (locationIndex < 0 || !location) throw new Error("no location to start a session in")
     inFlight.current = true
+    setStarting(true)
     setError(null)
     try {
-      const reusable =
-        created.current?.device === location.device &&
-        created.current.cwd === locationDirectory(location)
-      const session = reusable && created.current
-        ? created.current
-        : await createSession.mutateAsync({ projectId: project.projectId, locationIndex })
-      created.current = session
-      // The mock's send is synchronous and cannot fail. Once it is an RPC,
-      // await it here so a failure keeps `created` for the retry.
-      send(session.sessionId, text, attachments)
-      created.current = null
+      const session = await createSession.mutateAsync({ projectId: project.projectId, locationIndex })
+      // Once the session exists, the message belongs to it: its page shows
+      // it sending and, if sending fails, failed with a retry; no other
+      // session is created for it.
+      outbox.send(session.sessionId, text).catch(() => {})
       // Don't pull the user back if they moved on while this was running.
       if (mounted.current) void navigate(sessionPath(session))
       else inFlight.current = false
     } catch (e) {
       inFlight.current = false
+      setStarting(false)
       setError(e)
       // The location is gone on the server: refresh the project's locations.
       if (locationGone(e)) {
@@ -131,7 +125,7 @@ function ProjectHome({ project }: { project: Project }) {
           <section className="flex flex-col gap-2" aria-label={t("projects.newSession")}>
             <SessionPrompt
               placeholder={t("projects.startPlaceholder")}
-              pending={createSession.isPending}
+              pending={starting}
               disabledReason={noLocation && t("projects.noUsableLocation")}
               onSend={start}
             />
@@ -154,7 +148,7 @@ function ProjectHome({ project }: { project: Project }) {
                 project={project}
                 devices={devices.data}
                 value={locationIndex}
-                disabled={createSession.isPending}
+                disabled={starting}
                 onChange={(i) => setChosen(project.locations[i])}
               />
             )}
@@ -177,7 +171,7 @@ function ProjectHome({ project }: { project: Project }) {
 
 /** The server no longer has the chosen location (or the project changed under it). */
 const locationGone = (error: unknown) =>
-  isApiError(error) && (error.field === "locationIndex" || error.field === "last_used_location")
+  isApiError(error) && (error.field === "location_index" || error.field === "last_used_location")
 
 /** The repository URL, subtle and truncated; the full value on hover or focus. */
 function RepoUrl({ url }: { url: string }) {
@@ -293,8 +287,7 @@ function SessionList({ sessions, failed }: { sessions: SessionSummary[] | undefi
               <span className="flex w-3 justify-center" title={t(`status.${s.state}`)}>
                 <StatusDot state={s.state} />
               </span>
-              <span className="min-w-0 flex-1 truncate">{s.title}</span>
-              <span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">{s.device}</span>
+              <span className="min-w-0 flex-1 truncate">{sessionTitle(s.title)}</span>
               <time
                 dateTime={new Date(s.lastActivityAtUnixMs).toISOString()}
                 className="w-14 shrink-0 text-right text-xs whitespace-nowrap text-muted-foreground tabular-nums"

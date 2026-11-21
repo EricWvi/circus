@@ -1,3 +1,5 @@
+import { i18n } from "@/i18n/i18n"
+
 export const TITLE_MAX = 60
 
 /**
@@ -16,4 +18,9 @@ export function titleFromMessage(text: string): string | null {
   const cut = chars.slice(0, TITLE_MAX - 1).join("")
   const space = cut.lastIndexOf(" ")
   return `${(space >= TITLE_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`
+}
+
+/** A session's title as shown: the server leaves it empty until the first message. */
+export function sessionTitle(title: string): string {
+  return title === "" ? i18n.t("session.untitled") : title
 }

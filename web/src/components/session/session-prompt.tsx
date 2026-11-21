@@ -1,60 +1,17 @@
-import { ImageIcon } from "lucide-react"
-import { nanoid } from "nanoid"
-import { useTranslation } from "react-i18next"
-
-import {
-  Attachment,
-  AttachmentPreview,
-  AttachmentRemove,
-  Attachments,
-} from "@/components/ai-elements/attachments"
 import {
   PromptInput,
   PromptInputBody,
-  PromptInputButton,
   PromptInputFooter,
-  PromptInputHeader,
   PromptInputProvider,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
-  usePromptInputAttachments,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
 import { DisabledReason } from "@/components/disabled-reason"
-import type { ImageAttachment } from "@/lib/types"
 
-function PendingAttachments() {
-  const { files, remove } = usePromptInputAttachments()
-  if (files.length === 0) return null
-  return (
-    <PromptInputHeader className="pt-2">
-      <Attachments variant="grid" className="ml-0">
-        {files.map((file) => (
-          <Attachment key={file.id} data={file} onRemove={() => remove(file.id)} className="size-16 border">
-            <AttachmentPreview />
-            <AttachmentRemove />
-          </Attachment>
-        ))}
-      </Attachments>
-    </PromptInputHeader>
-  )
-}
-
-function AddImageButton({ disabled }: { disabled: boolean }) {
-  const { t } = useTranslation()
-  const { openFileDialog } = usePromptInputAttachments()
-  return (
-    <PromptInputButton
-      disabled={disabled}
-      onClick={openFileDialog}
-      aria-label={t("session.attachImage")}
-      tooltip={t("session.attachImage")}
-    >
-      <ImageIcon />
-    </PromptInputButton>
-  )
-}
+/** Pasting keeps only text: messages are text only for now. */
+const textOnlyPaste = () => {}
 
 export function SessionPrompt({
   busy = false,
@@ -72,50 +29,39 @@ export function SessionPrompt({
   placeholder?: string
   /**
    * Why nothing can be sent or stopped right now (e.g. disconnected); typing
-   * and adding images still work. Null when sending works.
+   * still works. Null when sending works.
    */
   sendDisabledReason?: string | null
   /** Why the whole composer is disabled, typing included. Null when it isn't. */
   disabledReason?: string | null
-  /** A rejected promise keeps the text and images for another try. */
-  onSend: (text: string, attachments: ImageAttachment[]) => void | Promise<void>
+  /** A rejected promise keeps the text for another try. */
+  onSend: (text: string) => void | Promise<void>
   onStop?: () => void
 }) {
   const status = pending ? "submitted" : busy ? "streaming" : "ready"
   const blocked = disabledReason ?? sendDisabledReason
-  const handleSubmit = ({ text, files }: PromptInputMessage) => {
+  // Dropped files never show (there is no attachment list) and are ignored.
+  const handleSubmit = ({ text }: PromptInputMessage) => {
     const trimmed = text.trim()
-    if (pending || blocked || (!trimmed && files.length === 0)) {
-      return Promise.reject(new Error("nothing to send"))
-    }
-    return onSend(
-      trimmed,
-      files.map((f) => ({
-        id: nanoid(),
-        filename: f.filename ?? "pasted-image",
-        mediaType: f.mediaType,
-        url: f.url,
-      })),
-    )
+    if (pending || blocked || !trimmed) return Promise.reject(new Error("nothing to send"))
+    return onSend(trimmed)
   }
 
-  // The provider keeps text and images when sending fails. The tree stays
-  // the same whatever is disabled, so a draft survives a reconnect.
+  // The provider keeps the text when sending fails. The tree stays the same
+  // whatever is disabled, so a draft survives a reconnect.
   return (
     <PromptInputProvider>
-      <PromptInput accept="image/*" multiple onSubmit={handleSubmit}>
-        <PendingAttachments />
+      <PromptInput onSubmit={handleSubmit}>
         <PromptInputBody>
           <PromptInputTextarea
             placeholder={disabledReason ?? placeholder}
             title={disabledReason ?? undefined}
             disabled={disabledReason !== null}
+            onPaste={textOnlyPaste}
           />
         </PromptInputBody>
         <PromptInputFooter>
-          <PromptInputTools>
-            <AddImageButton disabled={disabledReason !== null} />
-          </PromptInputTools>
+          <PromptInputTools />
           <DisabledReason reason={blocked}>
             <PromptInputSubmit status={status} onStop={onStop} disabled={pending || blocked !== null} />
           </DisabledReason>

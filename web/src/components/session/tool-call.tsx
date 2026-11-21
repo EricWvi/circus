@@ -10,7 +10,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool"
-import { INTERRUPTED_TOOL_ERROR } from "@/lib/settle"
+import { INTERRUPTED_TOOL_ERROR, NO_RESULT_TOOL_ERROR } from "@/lib/settle"
 import type { ToolCallEvent } from "@/lib/types"
 
 import { toToolPartState } from "./tool-state"
@@ -124,6 +124,12 @@ function Body({ event }: { event: ToolCallEvent }) {
   }
 }
 
+const decisionKeys = {
+  approved: "session.tool.approvedByYou",
+  denied: "session.tool.deniedByYou",
+  expired: "session.tool.approvalExpired",
+} as const
+
 export function ToolCall({ event }: { event: ToolCallEvent }) {
   const { t } = useTranslation()
   const target = summary(event)
@@ -139,18 +145,16 @@ export function ToolCall({ event }: { event: ToolCallEvent }) {
         className="whitespace-pre"
       />
       <ToolContent className="space-y-3 border-t p-3">
-        {decision && (
-          <p className="text-xs text-muted-foreground">
-            {t(decision === "approved" ? "session.tool.approvedByYou" : "session.tool.deniedByYou")}
-          </p>
-        )}
+        {decision && <p className="text-xs text-muted-foreground">{t(decisionKeys[decision])}</p>}
         <Body
           event={
             // The client's own note for a tool call it gave up on; any other
             // error text comes from the agent and is shown as it is.
             event.error === INTERRUPTED_TOOL_ERROR
               ? { ...event, error: t("session.tool.interrupted") }
-              : event
+              : event.error === NO_RESULT_TOOL_ERROR
+                ? { ...event, error: t("session.tool.noResult") }
+                : event
           }
         />
       </ToolContent>

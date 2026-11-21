@@ -23,6 +23,12 @@ export function StoppedNotice() {
   return <p className="py-3 text-center text-sm text-muted-foreground">{t("session.stopped")}</p>
 }
 
+/** Takes the composer's place once the session was deleted. */
+export function GoneNotice() {
+  const { t } = useTranslation()
+  return <p className="py-3 text-center text-sm text-muted-foreground">{t("session.gone")}</p>
+}
+
 /**
  * A broken session: part of its history couldn't be saved. The user can
  * wait for the worker to repair it, continue without the missing part

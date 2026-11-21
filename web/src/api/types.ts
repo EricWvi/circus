@@ -7,6 +7,7 @@
 // string. A Connect-backed client converts from the generated messages; the
 // in-memory mock implements the same interface.
 
+import type { ServerSessionState } from "@/lib/session-state"
 import type { SessionState } from "@/lib/types"
 
 export type Role = "user" | "super"
@@ -236,24 +237,119 @@ export interface MachineService {
   createEnrollLink(req: { role: EnrollRole }): Promise<EnrollLink>
 }
 
+/** A session as lists show it. */
 export interface SessionSummary {
   sessionId: string
   projectId: string
+  /** Set from the first message unless renamed; empty until then. */
   title: string
+  /** What the UI shows, worked out from the server's state (see `viewState`). */
   state: SessionState
+  /** The control plane's own state, behind `state`. */
+  serverState: ServerSessionState
+  /** Turns started so far; the latest turn's number. */
+  turnCount: number
+  /** The view filled (64 MiB): only turn boundaries are kept from then on. */
+  viewTruncated: boolean
   lastActivityAtUnixMs: number
+  /** Pending, unexpired approvals. */
   pendingApprovalCount: number
+  createdAtUnixMs: number
+}
+
+/** A session with where it runs, as GetSession returns it. */
+export interface SessionDetails extends SessionSummary {
   /** Default device the session's tools execute on. */
   device: string
+  /** The main thread's working directory on that device. */
   cwd: string
-  createdAtUnixMs: number
+}
+
+/** The control plane's kinds of session events, by their proto names without `KIND_`. */
+export type SessionEventKind =
+  | "unspecified"
+  | "turn_started"
+  | "assistant"
+  | "user"
+  | "tool_progress"
+  | "result"
+  | "permission_denied"
+  | "approval_pending"
+  | "approval_resolved"
+  | "turn_interrupted"
+  | "session_state"
+  | "bgtask_started"
+  | "bgtask_ended"
+  | "notification_delivered"
+  | "error"
+  | "transcript_gap_accepted"
+  | "transcript_gap_detected"
+  | "turn_stopped"
+  | "input_accepted"
+
+/**
+ * A session event as the control plane streams it. Durable events have
+ * increasing `seq`; ephemeral ones (`seq` 0) are live only. A keepalive is
+ * an ephemeral `unspecified` event without payload.
+ */
+export interface RawSessionEvent {
+  seq: number
+  tsUnixMs: number
+  kind: SessionEventKind
+  /** Opaque JSON; mostly Claude Agent SDK messages. */
+  payloadJson: string
+  ephemeral: boolean
+  /** The payload was too large for the view and was dropped. */
+  truncated: boolean
+}
+
+export type InputPriority = "normal" | "now"
+
+/** A pending, unexpired approval. */
+export interface SessionApproval {
+  approvalId: string
+  sessionId: string
+  toolUseId: string
+  tool: string
+  device: string
+  display: string
+  reason: string
+  expiresAtUnixMs: number
 }
 
 export interface SessionService {
   /** Newest activity first; includes stopped sessions. */
   listSessions(req: { projectId?: string }): Promise<SessionSummary[]>
   /** Also makes `locationIndex` the project's `lastUsedLocation`. */
-  createSession(req: { projectId: string; locationIndex: number }): Promise<SessionSummary>
+  createSession(req: { projectId: string; locationIndex: number }): Promise<SessionDetails>
+  getSession(req: { sessionId: string }): Promise<SessionDetails>
+  /**
+   * Sends a message. Repeating `clientMsgId` with the same text returns the
+   * first answer without sending again; with other text it fails with
+   * `already_exists`. `resource_exhausted` while too many messages wait for
+   * delivery, `failed_precondition` once the session is stopped.
+   */
+  sendMessage(req: {
+    sessionId: string
+    clientMsgId: string
+    text: string
+    priority?: InputPriority
+  }): Promise<{ inputId: string; eventSeq: number }>
+  /**
+   * The session's durable events after `afterSeq`, then live events. Ends
+   * (or throws an `ApiError`) like the server's stream: `unavailable` when
+   * it should be reopened, `not_found` once the session is gone.
+   */
+  watchSession(req: { sessionId: string; afterSeq: number; signal: AbortSignal }): AsyncIterable<RawSessionEvent>
+  /** Stops the running turn; the session goes on. */
+  interrupt(req: { sessionId: string }): Promise<void>
+  /** Ends the session for good. */
+  stopSession(req: { sessionId: string }): Promise<void>
+  listApprovals(req: { sessionId: string }): Promise<SessionApproval[]>
+  resolveApproval(req: { approvalId: string; approve: boolean }): Promise<void>
+  /** Lets a broken session go on without the part of its history that was lost. */
+  recoverSession(req: { sessionId: string }): Promise<void>
+  updateSession(req: { sessionId: string; title: string }): Promise<SessionDetails>
 }
 
 export interface CircusClient {

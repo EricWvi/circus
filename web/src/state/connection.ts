@@ -40,10 +40,13 @@ export function retryDelayMs(attempt: number): number {
 export const lostSince = (connection: Connection): number | null =>
   connection.kind === "connected" ? null : connection.lostAt
 
-/** Whether the loss has lasted long enough to show (a blip never does). */
-export function lossNoticed(connection: Connection, now: number): boolean {
-  const lostAt = lostSince(connection)
-  return lostAt !== null && now - lostAt >= LOST_NOTICE_MS
+/**
+ * Which attempt comes first after a loss, and how soon: by default attempt
+ * 1 after `retryDelayMs(1)`.
+ */
+export interface NextAttempt {
+  attempt: number
+  delayMs: number
 }
 
 export interface ConnectionController {
@@ -52,8 +55,9 @@ export interface ConnectionController {
   /**
    * The stream broke. Starts reconnecting unless already lost; also starts
    * the controller if it was disposed, so a lost link always has a timer.
+   * `next` sets the first attempt and its delay (see `NextAttempt`).
    */
-  lost(): void
+  lost(next?: NextAttempt): void
   /** The stream is back by itself. */
   resumed(): void
   /**
@@ -194,13 +198,14 @@ export function createConnectionController({
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    lost() {
+    lost(next) {
       if (closed) return
       // Reporting a loss is using the controller: it starts if it was disposed.
       running = true
       if (link.phase === "connected") {
         const now = Date.now()
-        wait(now, 1, now + retryDelayMs(1))
+        const attempt = Math.max(1, next?.attempt ?? 1)
+        wait(now, attempt, now + Math.max(0, next?.delayMs ?? retryDelayMs(attempt)))
       } else if (link.phase === "waiting" && timer === null) {
         arm()
       }

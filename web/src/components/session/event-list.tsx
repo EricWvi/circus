@@ -1,13 +1,20 @@
-import { CircleSlashIcon, ImageOffIcon, SquareIcon, TriangleAlertIcon } from "lucide-react"
+import {
+  CheckIcon,
+  CircleAlertIcon,
+  CircleSlashIcon,
+  FileWarningIcon,
+  SquareIcon,
+  TriangleAlertIcon,
+} from "lucide-react"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { Attachment, AttachmentPreview, Attachments } from "@/components/ai-elements/attachments"
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message"
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning"
 import { DisabledReason } from "@/components/disabled-reason"
 import { Button } from "@/components/ui/button"
-import type { SessionEvent } from "@/lib/types"
+import { Spinner } from "@/components/ui/spinner"
+import type { ApprovalRequest, SendFailure, SessionEvent, UserMessageEvent } from "@/lib/types"
 
 import { ApprovalCard } from "./approval-card"
 import { ToolCall } from "./tool-call"
@@ -19,6 +26,11 @@ export interface InterruptedTurnActions {
   /** Why the buttons can't be used right now; null when they can. */
   disabledReason: string | null
 }
+
+// The message box shrinks to its text, so clipping it would cut off what
+// glyphs draw past their advance (the last letter of italic text). Code
+// blocks and tables scroll in their own boxes; long words wrap instead.
+const ASSISTANT_CONTENT = "overflow-visible break-words"
 
 /**
  * "Turn interrupted", with Retry and Continue while the turn can be redone.
@@ -57,62 +69,90 @@ function InterruptedTurnRow({ actions }: { actions?: InterruptedTurnActions }) {
   )
 }
 
+const failureKeys = {
+  too_many: "session.delivery.tooMany",
+  stopped: "session.delivery.stopped",
+  unreachable: "session.delivery.unreachable",
+  other: "session.delivery.other",
+} as const satisfies Record<SendFailure, string>
+
+/**
+ * How far a sent message has come, quietly under its bubble: sending, sent
+ * (the server has it; the agent hasn't received it yet) or failed with a
+ * retry. Nothing once the agent received it.
+ */
+function Delivery({ event, onRetry }: { event: UserMessageEvent; onRetry: () => void }) {
+  const { t } = useTranslation()
+  const line = "flex items-center justify-end gap-1.5 text-xs text-muted-foreground"
+  switch (event.delivery) {
+    case "delivered":
+      return null
+    case "sending":
+      return (
+        <p className={line}>
+          <Spinner className="size-3" aria-hidden />
+          {t("session.delivery.sending")}
+        </p>
+      )
+    case "accepted":
+      return (
+        <p className={line}>
+          <CheckIcon className="size-3" aria-hidden />
+          {t("session.delivery.accepted")}
+        </p>
+      )
+    case "not_kept":
+      return (
+        <p className={`${line} text-right text-pretty`}>
+          <CheckIcon className="size-3 shrink-0" aria-hidden />
+          {t("session.delivery.notKept")}
+        </p>
+      )
+    case "failed":
+      return (
+        <div role="alert" className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs text-destructive">
+          <CircleAlertIcon className="size-3 shrink-0" aria-hidden />
+          <span>{t(failureKeys[event.failure ?? "other"])}</span>
+          <Button variant="outline" size="xs" onClick={onRetry}>
+            {t("session.retry")}
+          </Button>
+        </div>
+      )
+  }
+}
+
 export function EventItem({
   event,
   deviceName,
   actionsDisabledReason = null,
+  approvalDisabledReason = () => actionsDisabledReason,
   interruptedActions,
+  onRetrySend,
   onDecide,
 }: {
   event: SessionEvent
   /** Device the session's tools execute on. */
   deviceName: string
-  /** Why approvals can't be decided right now; null when they can. */
+  /** Why actions can't be used right now; null when they can. */
   actionsDisabledReason?: string | null
+  /** Why this approval can't be decided (any more); null when it can. */
+  approvalDisabledReason?: (approval: ApprovalRequest) => string | null
   /** Only for the latest interrupted turn, while the session is interrupted. */
   interruptedActions?: InterruptedTurnActions
-  onDecide: (eventId: string, decision: "approved" | "denied") => void
+  /** Sends a failed message again. */
+  onRetrySend: (clientMsgId: string) => void
+  onDecide: (approvalId: string, approve: boolean) => void
 }) {
   const { t } = useTranslation()
   switch (event.kind) {
     case "user_message":
       return (
-        <Message from="user">
-          {event.attachments && event.attachments.length > 0 && (
-            <Attachments variant="grid">
-              {event.attachments.map((a) =>
-                // An empty url means the image data was not kept after reload.
-                a.url === "" ? (
-                  <div
-                    key={a.id}
-                    title={t("session.imageNotKeptTitle", { filename: a.filename })}
-                    className="flex h-24 w-40 flex-col items-center justify-center gap-1 border bg-muted px-2 text-xs text-muted-foreground"
-                  >
-                    <ImageOffIcon className="size-4" aria-hidden />
-                    <span className="text-center leading-tight">{t("session.imageNotKept")}</span>
-                  </div>
-                ) : (
-                  <Attachment
-                    key={a.id}
-                    data={{
-                      type: "file",
-                      id: a.id,
-                      url: a.url,
-                      mediaType: a.mediaType,
-                      filename: a.filename,
-                    }}
-                    className="size-auto h-24 w-40 border"
-                  >
-                    <AttachmentPreview />
-                  </Attachment>
-                ),
-              )}
-            </Attachments>
-          )}
-          {event.text && (
-            <MessageContent className="whitespace-pre-wrap">{event.text}</MessageContent>
-          )}
-        </Message>
+        <div className="flex flex-col gap-1.5">
+          <Message from="user">
+            <MessageContent className="whitespace-pre-wrap break-words">{event.text}</MessageContent>
+          </Message>
+          <Delivery event={event} onRetry={() => onRetrySend(event.clientMsgId)} />
+        </div>
       )
     case "assistant_text":
       if (!event.text) return null
@@ -120,7 +160,7 @@ export function EventItem({
         return (
           <div className="flex flex-col gap-2">
             <Message from="assistant" className="opacity-55">
-              <MessageContent>
+              <MessageContent className={ASSISTANT_CONTENT}>
                 <MessageResponse>{event.text}</MessageResponse>
               </MessageContent>
             </Message>
@@ -133,7 +173,7 @@ export function EventItem({
       }
       return (
         <Message from="assistant">
-          <MessageContent>
+          <MessageContent className={ASSISTANT_CONTENT}>
             <MessageResponse isAnimating={event.streaming}>{event.text}</MessageResponse>
           </MessageContent>
         </Message>
@@ -157,22 +197,43 @@ export function EventItem({
       )
     case "reasoning":
       return (
-        <Reasoning defaultOpen={false} duration={event.durationSeconds} className="mb-0">
+        <Reasoning
+          defaultOpen={false}
+          isStreaming={event.streaming}
+          duration={event.durationSeconds}
+          className="mb-0"
+        >
           <ReasoningTrigger />
           <ReasoningContent>{event.text}</ReasoningContent>
         </Reasoning>
       )
-    case "tool_call":
-      if (event.status === "awaiting_approval") {
+    case "turn_error":
+      return (
+        <p className="flex items-start gap-1.5 text-xs text-destructive">
+          <CircleAlertIcon className="mt-px size-3 shrink-0" aria-hidden />
+          <span className="min-w-0 break-words">{t("session.turnError", { message: event.message })}</span>
+        </p>
+      )
+    case "truncated":
+      return (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <FileWarningIcon className="size-3 shrink-0" aria-hidden />
+          {t("session.truncated")}
+        </p>
+      )
+    case "tool_call": {
+      const approval = event.approval
+      if (event.status === "awaiting_approval" && approval) {
         return (
           <ApprovalCard
             event={event}
             deviceName={deviceName}
-            disabledReason={actionsDisabledReason}
-            onDecide={(d) => onDecide(event.id, d)}
+            disabledReason={approvalDisabledReason(approval)}
+            onDecide={(d) => onDecide(approval.approvalId, d === "approved")}
           />
         )
       }
       return <ToolCall event={event} />
+    }
   }
 }

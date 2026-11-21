@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/sidebar"
 import { rollupState } from "@/lib/status"
 import { formatRelative } from "@/lib/time"
+import { sessionTitle } from "@/lib/title"
 import { buildTree, projectPath, sessionPath, type ProjectNode } from "@/lib/tree"
 
 import { UserMenu } from "./user-menu"
@@ -218,7 +219,7 @@ function ProjectGroup({
                     aria-current={session.sessionId === activeSessionId ? "page" : undefined}
                   >
                     <StatusDot state={session.state} />
-                    <span className="min-w-0 flex-1 truncate">{session.title}</span>
+                    <span className="min-w-0 flex-1 truncate">{sessionTitle(session.title)}</span>
                     <time
                       dateTime={new Date(session.lastActivityAtUnixMs).toISOString()}
                       className="shrink-0 text-xs text-muted-foreground tabular-nums"

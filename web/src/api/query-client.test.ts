@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished } from "vitest"
 
 import { ApiError } from "./errors"
+import { reportIfUnauthenticated } from "./unauthenticated"
 import {
   announceAuthChange,
   createQueryClient,
   followAuthChanges,
+  followUnauthenticated,
   queryKeys,
   resetAuth,
   type CachedAuth,
@@ -18,6 +20,7 @@ const signedIn = (userId: string): CachedAuth => ({
 describe("createQueryClient", () => {
   it("signs out when a request is rejected as unauthenticated", async () => {
     const qc = createQueryClient()
+    onTestFinished(followUnauthenticated(qc))
     resetAuth(qc, signedIn("a"))
     await qc
       .fetchQuery({
@@ -26,6 +29,24 @@ describe("createQueryClient", () => {
       })
       .catch(() => {})
     expect(qc.getQueryData(queryKeys.auth)).toEqual({ kind: "signed_out" })
+  })
+
+  it("signs out when any call outside React Query is rejected as unauthenticated, while followed", () => {
+    const qc = createQueryClient()
+    const stop = followUnauthenticated(qc)
+    resetAuth(qc, signedIn("a"))
+    qc.setQueryData(queryKeys.session("s1"), { title: "x" })
+    // What the Connect client does for every call and stream (connect/call.ts).
+    reportIfUnauthenticated(new ApiError("unavailable", "down"))
+    expect(qc.getQueryData(queryKeys.auth)).toEqual(signedIn("a"))
+    reportIfUnauthenticated(new ApiError("unauthenticated", "signed out elsewhere"))
+    expect(qc.getQueryData(queryKeys.auth)).toEqual({ kind: "signed_out" })
+    expect(qc.getQueryData(queryKeys.session("s1"))).toBeUndefined()
+
+    stop()
+    resetAuth(qc, signedIn("a"))
+    reportIfUnauthenticated(new ApiError("unauthenticated", "after unsubscribing"))
+    expect(qc.getQueryData(queryKeys.auth)).toEqual(signedIn("a"))
   })
 
   it("drops other data without refetching when a refetch finds the user signed out", () => {

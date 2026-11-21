@@ -23,15 +23,15 @@ return 404. Other missing paths serve `index.html` for client-side routing.
 `VITE_CIRCUS_BACKEND` chooses what the UI talks to. The choice is made in
 `src/api/backend.ts`; pages only see the client interface.
 
-| Value | Auth, projects, devices | Sessions |
-| --- | --- | --- |
-| `mock` (default) | In-browser mock | In-browser mock |
-| `server` | The control plane, over Connect | In-browser mock, as the owner of the demo data |
+| Value | Serves |
+| --- | --- |
+| `mock` (default) | Everything from an in-browser mock |
+| `server` | Everything from the control plane, over Connect |
 
-The control plane doesn't serve sessions yet, so in server mode the mock
-still simulates them and trusts the real sign-in. Its sessions belong to the
-server's projects: it looks projects up, and records the last used location,
-through the same projects client as the pages.
+Both implement the same client interface (`src/api/types.ts`), and the
+mock's sessions emit the same raw session events as the server, so the
+transcript reducer (`src/lib/session-events/`) and the pages run one code
+path either way.
 
 ### Mock switches
 
@@ -52,21 +52,20 @@ Its git repositories have origin URLs for reading a project's repository
 URL from a location's folder: `~/src/palace` has no origin and
 `~/src/toolbox` answers after 1.5 seconds.
 
-In server mode only `?mock=reset` does something (it resets the simulated
-sessions); auth, projects and devices come from the server.
+### Mock sessions
 
-### Simulated session states
-
-Development builds show a **Simulate** menu in the session header while
-sessions are simulated: drop the connection for 10 seconds (reconnects with
-1, 2, 4… s backoff; "Retry now" tries at once without moving that schedule),
-kill the worker mid-turn, break the transcript, and take the session's device
-offline. While the connection is down, the conversation and the session lists
-stay as they were when it dropped (see `state/conversations-provider.tsx`). The connection outage and the device switch
-live in memory and reset on reload; the browser's own offline mode shows the
-offline banner. The seeded `Rewrite the dotfiles installer in Go` session is
-interrupted (on an offline device) and `Migrate thumbnailer to libvips` is
-broken.
+Projects, devices and accounts persist in `localStorage`; sessions live in
+the tab's memory only (`src/api/mock/sessions.ts`), and each page load
+starts with the demo sessions of the demo projects that still exist. One of
+them waits for an approval (`Fix flaky auth token refresh tests`), one was
+interrupted (`Rewrite the dotfiles installer in Go`), one is broken
+(`Migrate thumbnailer to libvips`) and one is stopped. Every message gets a
+short scripted reply: streamed text, a Bash call and more text. A message
+containing "approve" asks for approval to run its Bash call instead, and
+runs it once approved. Stopping the turn, stopping the session and
+continuing a broken session work as on the server. For anything more
+(reconnects, a lost worker, broken transcripts on demand), run against the
+control plane with the scripted worker below.
 
 ## Running against the control plane
 
@@ -128,9 +127,10 @@ points at `public_url`, the Vite origin, so the machine reaches the server
 through the Vite proxy.
 
 Create a project with a location on `web-dev-device` and enter an existing
-absolute directory on that device. Create a session in the project and send
-a message. The worker streams a Markdown reply quoting your input. The
-following inputs exercise specific session behaviors.
+absolute directory on that device. Send a message from the project page:
+it creates a session and opens it. The worker streams a Markdown reply
+quoting your input. The following inputs exercise specific session
+behaviors.
 
 | Input | Behavior |
 | --- | --- |
@@ -143,6 +143,8 @@ following inputs exercise specific session behaviors.
 | `/fake blip` | Disconnect for two seconds, resume the same lease and finish the turn. |
 | `/fake break` | Report failed transcript mirroring. Use RecoverSession to accept the gap. |
 | `/fake job <command>` | Start a Bash job on the device and deliver its completion notice. |
+| `/fake large <bytes>` | Answer a Bash use with that much output without running it (over 256 KiB, the view stores the result truncated). |
+| `/fake parallel <command>` | Run Bash twice, as two tool uses of one model response. |
 | `/fake error` | End the turn with an error. |
 
 Bash and Read use the real daemon and its filesystem. Stop the worker,
@@ -167,6 +169,44 @@ How the pieces fit:
 
 To point Vite at another control plane, set `VITE_CIRCUS_SERVER`, and make
 sure that server's `public_url` is the Vite origin.
+
+## Following a session
+
+- The open session, and only it, is watched with `WatchSession` from the
+  last durable event applied (`src/state/session-watch.ts`). A stream that
+  ends or fails (including the server's hourly end of every stream) is
+  reopened: at once when it had served for a while, otherwise on the
+  backoff schedule of `src/state/connection.ts`. The reconnect banner, and
+  disabled sending and approvals, wait until a loss lasts two seconds. Text that was
+  streaming when the stream broke is dropped; the durable events replace
+  it. A deleted session stops the watch, and a request rejected as
+  unauthenticated, from any call, signs the user out (`src/api/unauthenticated.ts`).
+- `src/lib/session-events/transcript.ts` turns the raw events into the view
+  model of `src/lib/types.ts`. Its tests, and some of the session view's,
+  replay what the scripted worker's scenarios stream from a real control
+  plane (`fake-worker.fixture.json`, read through
+  `src/test/fake-worker-events.ts`). `TestWebEventFixture`
+  (`internal/testutil/fakeworker/webfixture_test.go`) records it in process,
+  with a real daemon running the tools, and fails when the fake worker or
+  the control plane no longer stream what the fixture holds. Regenerate it,
+  then run the Web tests against it:
+
+  ```sh
+  go test ./internal/testutil/fakeworker -run TestWebEventFixture -update
+  npm -w @circus/web run test
+  ```
+
+  New scenarios go into `webScenarios` in that file.
+- Sent messages live in an outbox above the pages (`src/state/outbox.ts`)
+  until the stream shows them: sending, then sent once the server accepted
+  them, and no mark once the worker handed them to the agent. A failed
+  message stays with its reason and a retry, which reuses its client
+  message id and text, so the server never takes it twice.
+- Session lists refetch every five seconds while the tab is visible; the
+  open session's state is read again at turn and approval boundaries. The
+  stream decides whether a turn runs, except that a stopped or broken
+  session runs nothing and a turn the server already counts as over is over
+  even when its RESULT never came (`turnRunning` in `src/lib/session-state.ts`).
 
 ## Validation rules
 

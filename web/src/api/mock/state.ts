@@ -1,8 +1,7 @@
-import type { Device, Location, LoginMethods, Role, SessionSummary } from "@/api/types"
-import { settleEvents } from "@/lib/settle"
-import { interruptTurn } from "@/lib/turns"
-import type { Conversations } from "@/lib/types"
-import { projects as seedProjects, sessions as seedSessions } from "@/mock/data"
+import type { Device, Location, LoginMethods, Role } from "@/api/types"
+import { projects as seedProjects, sessions as seedSessionList } from "@/mock/data"
+
+import { seedSession, type MockSession } from "./sessions"
 
 /** The setup token of a fresh mock server, as printed in its "terminal". */
 export const DEV_SETUP_TOKEN = "dev-setup-token"
@@ -55,7 +54,10 @@ export type MockLocation = Location & { deviceId: string }
 /** An enrolled device. `deviceId` is unique; a name can be enrolled again. */
 export type MockDevice = Device & { owner: string; deviceId: string }
 
-/** Everything the mock server knows. Plain JSON so it can be persisted. */
+/**
+ * Everything the mock server knows. Plain JSON so it can be persisted;
+ * sessions are not (they live in this tab's memory, see `persist.ts`).
+ */
 export interface MockState {
   /** Accepted until a super user exists; null on the seeded server. */
   setupToken: string | null
@@ -63,17 +65,8 @@ export interface MockState {
   /** The signed-in user id; stands in for the session cookie. */
   cookie: string | null
   projects: MockProject[]
-  sessions: SessionSummary[]
+  sessions: MockSession[]
   devices: MockDevice[]
-  /** Transcripts of the simulated conversations, by session id. */
-  conversations: Conversations
-  /**
-   * When a live tab last wrote a session's transcript or state, by session
-   * id. Lets a reloading tab tell abandoned work from work still streaming.
-   */
-  writtenAtMs: Record<string, number>
-  /** Which tab made that write, by session id (see `settleInFlight`). */
-  writtenBy: Record<string, string>
 }
 
 /** An uninitialized server: no users, no data. */
@@ -85,9 +78,6 @@ export function freshState(): MockState {
     projects: [],
     sessions: [],
     devices: [],
-    conversations: {},
-    writtenAtMs: {},
-    writtenBy: {},
   }
 }
 
@@ -108,28 +98,10 @@ export function seedState(now: number = Date.now()): MockState {
     { name: "palace-builder", online: true, lastSeenUnixMs: now, os: "linux", arch: "arm64" },
   ].map((d) => ({ ...d, owner, version: "0.1.0", deviceId: `device-${d.name}` }))
 
-  const sessions: SessionSummary[] = seedSessions.map((s) => {
-    const project = seedProjects.find((p) => p.id === s.projectId)
-    const location = project?.locations.find((l) => l.device === s.deviceName)
-    if (!location) throw new Error(`seed session ${s.id} has no location on ${s.deviceName}`)
-    const lastActivityAtUnixMs = Date.parse(s.lastActivityAt)
-    return {
-      sessionId: s.id,
-      projectId: s.projectId,
-      title: s.title,
-      state: s.state,
-      lastActivityAtUnixMs,
-      pendingApprovalCount: s.pendingApprovalCount,
-      device: location.device,
-      cwd: location.path,
-      createdAtUnixMs: lastActivityAtUnixMs - 45 * MINUTE,
-    }
-  })
-
   const projects: MockState["projects"] = seedProjects.map((p, i) => {
-    const latest = sessions
+    const latest = seedSessionList
       .filter((s) => s.projectId === p.id)
-      .sort((a, b) => b.lastActivityAtUnixMs - a.lastActivityAtUnixMs)[0]
+      .sort((a, b) => a.minutesAgo - b.minutesAgo)[0]
     const lastUsed = latest ? p.locations.findIndex((l) => l.device === latest.device) : 0
     return {
       owner,
@@ -143,7 +115,7 @@ export function seedState(now: number = Date.now()): MockState {
     }
   })
 
-  return {
+  const state: MockState = {
     setupToken: null,
     users: [
       { userId: owner, email: SEED_SUPER_EMAIL, password: "circus", role: "super" },
@@ -151,48 +123,24 @@ export function seedState(now: number = Date.now()): MockState {
     ],
     cookie: null,
     projects,
-    sessions,
+    sessions: [],
     devices,
-    conversations: Object.fromEntries(seedSessions.map((s) => [s.id, s.events])),
-    writtenAtMs: {},
-    writtenBy: {},
   }
+  state.sessions = seedSessions(state, now)
+  return state
 }
 
 /**
- * Longer than any gap between writes of a live simulation (the slowest step,
- * a tool run after approval, takes 1.5 s; streaming saves every 0.5 s).
+ * The demo sessions, for the seeded projects the demo data's owner still
+ * has at a location on the session's device.
  */
-export const STALE_AFTER_MS = 5_000
-
-/**
- * Ends what a session had in flight: nothing will finish it any more. A
- * running turn counts as interrupted, the way a lost worker would leave it.
- */
-export function settleSession(state: MockState, sessionId: string, now: number = Date.now()): void {
-  const session = state.sessions.find((s) => s.sessionId === sessionId)
-  const events = state.conversations[sessionId]
-  if (session?.state === "running") {
-    session.state = "interrupted"
-    const marker = { id: `interrupted-${sessionId}-${now}`, at: new Date(now).toISOString() }
-    state.conversations[sessionId] = interruptTurn(events ?? [], marker).events
-  } else if (events) {
-    state.conversations[sessionId] = settleEvents(events)
-  }
-}
-
-/**
- * Run on load: a session lost its stream if this tab wrote it last (the
- * reload ended the page that ran it) or if nobody has written it for a
- * while. Sessions another open tab is still streaming have recent writes
- * by that tab and are left alone.
- */
-export function settleInFlight(state: MockState, tabId: string, now: number = Date.now()): void {
-  const ids = new Set([...state.sessions.map((s) => s.sessionId), ...Object.keys(state.conversations)])
-  for (const id of ids) {
-    const ours = state.writtenBy[id] === tabId
-    if (ours || now - (state.writtenAtMs[id] ?? 0) >= STALE_AFTER_MS) settleSession(state, id, now)
-  }
+export function seedSessions(state: Pick<MockState, "projects">, now: number = Date.now()): MockSession[] {
+  return seedSessionList.flatMap((seed) => {
+    const project = state.projects.find((p) => p.projectId === seed.projectId && p.owner === SEED_OWNER_ID)
+    const location = project?.locations.find((l) => l.device === seed.device)
+    if (!location) return []
+    return [seedSession(seed, location.path, now)]
+  })
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -207,11 +155,6 @@ export function isMockState(v: unknown): v is MockState {
     isNullableString(v.cookie) &&
     Array.isArray(v.users) &&
     Array.isArray(v.projects) &&
-    Array.isArray(v.sessions) &&
-    Array.isArray(v.devices) &&
-    isRecord(v.conversations) &&
-    Object.values(v.conversations).every(Array.isArray) &&
-    isRecord(v.writtenAtMs) &&
-    isRecord(v.writtenBy)
+    Array.isArray(v.devices)
   )
 }

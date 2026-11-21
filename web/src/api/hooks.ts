@@ -6,18 +6,28 @@ import { localDeadline } from "@/lib/enroll"
 import { useClient } from "./context"
 import { isApiError } from "./errors"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
-import { useSessionHold } from "./session-hold"
-import type { Device, DirectoryListing, EnrollLink, EnrollRole, Project, ProjectService, SessionSummary, User } from "./types"
+import type {
+  Device,
+  DirectoryListing,
+  EnrollLink,
+  EnrollRole,
+  Project,
+  ProjectService,
+  SessionDetails,
+  SessionSummary,
+  User,
+} from "./types"
 
 export function useAuth() {
   const client = useClient()
   return useQuery<CachedAuth>({
     queryKey: queryKeys.auth,
     queryFn: () => client.auth.whoAmI(),
-    // Sign-in changes come from this tab's mutations, other tabs' broadcasts
-    // and, for anything else (an expired cookie), a check on focus.
-    staleTime: Infinity,
-    refetchOnWindowFocus: "always",
+    // Sign-in changes come from this tab's mutations, other tabs'
+    // broadcasts and requests rejected as unauthenticated; for anything
+    // else, a check on focus, at most once a minute.
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
   })
 }
 
@@ -36,14 +46,71 @@ export function useProjects() {
   })
 }
 
+/** How often session lists and the open session refetch while the tab is visible. */
+export const SESSIONS_LIVE_INTERVAL_MS = 5_000
+
 export function useSessionList(projectId?: string) {
   const client = useClient()
-  const hold = useSessionHold()
   return useQuery({
     queryKey: queryKeys.sessions(projectId),
     queryFn: () => client.sessions.listSessions({ projectId }),
-    select: hold ?? undefined,
+    refetchInterval: SESSIONS_LIVE_INTERVAL_MS,
   })
+}
+
+/**
+ * One session with where it runs. Its stream refreshes it at turn and
+ * approval boundaries (see `useSessionWatch`); a slow poll covers the rest.
+ */
+export function useSession(sessionId: string) {
+  const client = useClient()
+  return useQuery({
+    queryKey: queryKeys.session(sessionId),
+    queryFn: () => client.sessions.getSession({ sessionId }),
+    refetchInterval: SESSIONS_LIVE_INTERVAL_MS,
+  })
+}
+
+/** Refetches what a change to a session may have moved: it and the lists. */
+export function invalidateSession(queryClient: QueryClient, sessionId: string) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.session(sessionId) })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.allSessions })
+}
+
+/** A session action: the call, then a refresh of the session and the lists. */
+function useSessionAction<Req>(run: (req: Req) => Promise<void>, sessionIdOf: (req: Req) => string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: run,
+    onSettled: (_data, _error, req) => invalidateSession(queryClient, sessionIdOf(req)),
+  })
+}
+
+/** Stops the running turn. */
+export function useInterrupt() {
+  const client = useClient()
+  return useSessionAction((req: { sessionId: string }) => client.sessions.interrupt(req), (r) => r.sessionId)
+}
+
+/** Ends the session for good. */
+export function useStopSession() {
+  const client = useClient()
+  return useSessionAction((req: { sessionId: string }) => client.sessions.stopSession(req), (r) => r.sessionId)
+}
+
+/** Lets a broken session go on without the history it lost. */
+export function useRecoverSession() {
+  const client = useClient()
+  return useSessionAction((req: { sessionId: string }) => client.sessions.recoverSession(req), (r) => r.sessionId)
+}
+
+export function useResolveApproval() {
+  const client = useClient()
+  return useSessionAction(
+    (req: { sessionId: string; approvalId: string; approve: boolean }) =>
+      client.sessions.resolveApproval({ approvalId: req.approvalId, approve: req.approve }),
+    (r) => r.sessionId,
+  )
 }
 
 /** How often a page that shows device status refetches it while visible. */
@@ -297,11 +364,13 @@ export function useCreateSession() {
   return useMutation({
     mutationFn: (req: { projectId: string; locationIndex: number }) =>
       client.sessions.createSession(req),
-    onSuccess: (session, req) => {
-      // Put the session into the cached lists right away, so its page finds
-      // it before the refetch lands.
+    onSuccess: (session: SessionDetails, req) => {
+      // Put the session into the cache right away, so its page and the
+      // lists show it before the refetch lands.
+      queryClient.setQueryData(queryKeys.session(session.sessionId), session)
+      const { device: _, cwd: __, ...summary } = session
       for (const key of [queryKeys.sessions(), queryKeys.sessions(session.projectId)]) {
-        queryClient.setQueryData<SessionSummary[]>(key, (list) => list && [session, ...list])
+        queryClient.setQueryData<SessionSummary[]>(key, (list) => list && [summary, ...list])
       }
       queryClient.setQueryData<Project[]>(queryKeys.projects, (list) =>
         list?.map((p) =>

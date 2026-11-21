@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import { ApiError, type ErrorCode } from "@/api/errors"
-import type { CircusClient, ProjectService } from "@/api/types"
+import type { CircusClient } from "@/api/types"
 
-import {
-  createMockBackend,
-  LOGIN_FAILURE_WINDOW_MS,
-  MAX_KEPT_ATTACHMENT_URL,
-  MAX_LOGIN_FAILURES,
-} from "./backend"
+import { createMockBackend, LOGIN_FAILURE_WINDOW_MS, MAX_LOGIN_FAILURES } from "./backend"
 import { parsePersisted, serialize, VERSION } from "./persist"
 import {
   DEV_SETUP_TOKEN,
@@ -17,10 +12,14 @@ import {
   OIDC_SETUP_EMAIL,
   SEED_OWNER_ID,
   seedState,
-  settleInFlight,
-  STALE_AFTER_MS,
   type MockState,
 } from "./state"
+
+/** The state, signed in as the demo data's owner. */
+function asOwner(state: MockState): MockState {
+  state.cookie = SEED_OWNER_ID
+  return state
+}
 
 function backend(state: MockState = seedState(), now?: () => number) {
   return createMockBackend({ state, latency: () => 0, now })
@@ -181,22 +180,6 @@ describe("auth", () => {
   })
 })
 
-describe("with auth served elsewhere", () => {
-  it("serves data as the given user without a mock sign-in", async () => {
-    const { client } = createMockBackend({ state: seedState(), latency: () => 0, actAs: SEED_OWNER_ID })
-    expect(await client.auth.whoAmI()).toEqual({ kind: "signed_out", methods })
-    expect((await client.projects.listProjects()).length).toBeGreaterThan(0)
-    expect((await client.machines.listDevices()).length).toBeGreaterThan(0)
-    expect((await client.sessions.listSessions({})).length).toBeGreaterThan(0)
-  })
-
-  it("keeps other users' data out of view", async () => {
-    const { client } = createMockBackend({ state: seedState(), latency: () => 0, actAs: "user-dev" })
-    expect(await client.projects.listProjects()).toEqual([])
-    await expectCode(client.projects.getProject({ projectId: "circus" }), "not_found")
-  })
-})
-
 describe("projects", () => {
   it("lists projects by name", async () => {
     const client = await signedIn()
@@ -346,7 +329,7 @@ describe("the project model", () => {
 
   it("marks locations whose device is gone", async () => {
     const state = seedState()
-    const { client } = createMockBackend({ state, latency: () => 0, actAs: SEED_OWNER_ID })
+    const { client } = createMockBackend({ state: asOwner(state), latency: () => 0 })
     const p = await create(client, [mbp("/a"), { device: "devbox", path: "/b" }])
     state.devices = state.devices.filter((d) => d.name !== "devbox")
     const again = await client.projects.getProject({ projectId: p.projectId })
@@ -361,9 +344,8 @@ describe("the project model", () => {
   it("refuses a change made on an older version, but not a new last used location", async () => {
     let clock = 1_000
     const { client } = createMockBackend({
-      state: seedState(),
+      state: asOwner(seedState()),
       latency: () => 0,
-      actAs: SEED_OWNER_ID,
       now: () => clock,
     })
     const p = await create(client, [mbp("/a"), mbp("/b")])
@@ -405,7 +387,7 @@ describe("the project model", () => {
 describe("a device enrolled again under a removed device's name", () => {
   it("leaves the location revoked until it is saved again, which binds the new device", async () => {
     const state = seedState()
-    const { client } = createMockBackend({ state, latency: () => 0, actAs: SEED_OWNER_ID })
+    const { client } = createMockBackend({ state: asOwner(state), latency: () => 0 })
     const p = await client.projects.createProject({ name: "rebind", repoUrl: "", locations: [{ device: "devbox", path: "/b" }] })
     // devbox is revoked, and a new device joins with the same name.
     state.devices.find((d) => d.name === "devbox")!.deviceId = "device-devbox-2"
@@ -422,39 +404,6 @@ describe("a device enrolled again under a removed device's name", () => {
       device: "devbox",
       cwd: "/b",
     })
-  })
-})
-
-describe("sessions on another project service", () => {
-  it("find their projects and record the last used location through it", async () => {
-    const remoteState = seedState()
-    remoteState.projects = []
-    const remote = createMockBackend({ state: remoteState, latency: () => 0, actAs: SEED_OWNER_ID })
-    const project = await remote.client.projects.createProject({
-      name: "remote",
-      repoUrl: "",
-      locations: [mbp("/a"), { device: "devbox", path: "" }],
-    })
-    const calls: unknown[] = []
-    const projects: ProjectService = {
-      ...remote.client.projects,
-      updateProject: (req) => {
-        calls.push(req)
-        return remote.client.projects.updateProject(req)
-      },
-    }
-    // The sessions' own state has none of the remote project ids.
-    const { client } = createMockBackend({ state: seedState(), latency: () => 0, actAs: SEED_OWNER_ID, projects })
-    const session = await client.sessions.createSession({ projectId: project.projectId, locationIndex: 1 })
-    expect(session).toMatchObject({ device: "devbox", cwd: `~/circus/projects/${project.projectId}` })
-    expect(calls).toEqual([{ projectId: project.projectId, lastUsedLocation: 1 }])
-    expect((await remote.client.projects.getProject({ projectId: project.projectId })).lastUsedLocation).toBe(1)
-    expect((await client.sessions.listSessions({ projectId: project.projectId })).map((s) => s.sessionId)).toEqual([
-      session.sessionId,
-    ])
-    // Sessions of the seed projects aren't the remote service's, so they don't list.
-    expect((await client.sessions.listSessions({})).map((s) => s.projectId)).toEqual([project.projectId])
-    await expectCode(client.sessions.listSessions({ projectId: "circus" }), "not_found")
   })
 })
 
@@ -489,120 +438,6 @@ describe("sessions", () => {
     await expectCode(client.sessions.createSession({ projectId: "circus", locationIndex: -1 }), "invalid_argument")
   })
 
-  it("records simulated activity", async () => {
-    const mock = backend()
-    await mock.client.auth.login(eric)
-    mock.conversations.reportActivity("web-vite", { state: "running" })
-    const [latest] = await mock.client.sessions.listSessions({})
-    expect(latest).toMatchObject({ sessionId: "web-vite", state: "running" })
-  })
-})
-
-describe("conversations", () => {
-  it("keeps transcripts with the store", () => {
-    const state = seedState()
-    const mock = backend(state)
-    const events = mock.conversations.load()["web-vite"]
-    const added = [...events, { kind: "assistant_text" as const, id: "x", at: "", text: "hi" }]
-    mock.conversations.save("web-vite", added)
-    expect(backend(structuredClone(state)).conversations.load()["web-vite"]).toEqual(added)
-  })
-
-  const inFlight = (mock: ReturnType<typeof backend>) => {
-    mock.conversations.reportActivity("web-vite", { state: "running" })
-    mock.conversations.save("web-vite", [
-      { kind: "assistant_text", id: "a", at: "", text: "par", streaming: true },
-      { kind: "tool_call", id: "t", at: "", tool: "Bash", input: {}, status: "running" },
-    ])
-  }
-
-  it("settles abandoned in-flight work on load", () => {
-    const state = seedState()
-    inFlight(backend(state))
-    settleInFlight(state, "other-tab", Date.now() + STALE_AFTER_MS)
-    expect(state.sessions.find((s) => s.sessionId === "web-vite")?.state).toBe("interrupted")
-    expect(state.sessions.some((s) => s.state === "running")).toBe(false)
-    const [text, tool, marker] = state.conversations["web-vite"]
-    expect(text).toMatchObject({ streaming: false, text: "par", unsaved: true })
-    expect(tool).toMatchObject({ status: "error" })
-    expect(marker).toMatchObject({ kind: "turn_interrupted" })
-  })
-
-  it("leaves work another tab is still streaming alone", () => {
-    const state = seedState()
-    inFlight(backend(state))
-    settleInFlight(state, "other-tab", Date.now() + 1000)
-    expect(state.sessions.find((s) => s.sessionId === "web-vite")?.state).toBe("running")
-    expect(state.conversations["web-vite"][0]).toMatchObject({ streaming: true })
-    // The seed's running session has never been written by a live tab.
-    expect(state.sessions.find((s) => s.sessionId === "store-fencing")?.state).toBe("interrupted")
-  })
-
-  it("settles this tab's own in-flight work on reload, however recent", () => {
-    const state = seedState()
-    inFlight(createMockBackend({ state, latency: () => 0, tabId: "this-tab" }))
-    settleInFlight(state, "this-tab", Date.now() + 1000)
-    expect(state.sessions.find((s) => s.sessionId === "web-vite")?.state).toBe("interrupted")
-    expect(state.conversations["web-vite"][0]).toMatchObject({ streaming: false })
-  })
-
-  it("settles one session on request", () => {
-    const state = seedState()
-    const mock = backend(state)
-    inFlight(mock)
-    mock.conversations.settle("web-vite")
-    expect(state.sessions.find((s) => s.sessionId === "web-vite")?.state).toBe("interrupted")
-    expect(mock.conversations.load()["web-vite"][1]).toMatchObject({ status: "error" })
-  })
-
-  it("does not keep large attachment data", () => {
-    const state = seedState()
-    const mock = backend(state)
-    const big = `data:image/png;base64,${"A".repeat(MAX_KEPT_ATTACHMENT_URL + 1)}`
-    const small = "data:image/svg+xml,<svg/>"
-    const attachment = (id: string, url: string) => ({ id, filename: `${id}.png`, mediaType: "image/png", url })
-    mock.conversations.save("web-vite", [
-      { kind: "user_message", id: "u", at: "", text: "look", attachments: [attachment("big", big), attachment("small", small)] },
-    ])
-    const [message] = mock.conversations.load()["web-vite"]
-    expect(message.kind === "user_message" && message.attachments?.map((a) => a.url)).toEqual(["", small])
-  })
-
-  it("tells the app when another tab changed its data, not for transcripts alone", () => {
-    const state = seedState()
-    const mock = backend(state)
-    let calls = 0
-    mock.onExternalChange(() => calls++)
-    const transcriptOnly = structuredClone(state)
-    transcriptOnly.conversations["web-vite"] = []
-    mock.adopt(transcriptOnly)
-    expect(calls).toBe(0)
-    const fewerLocations = structuredClone(state)
-    fewerLocations.projects[0].locations.pop()
-    mock.adopt(fewerLocations)
-    expect(calls).toBe(1)
-  })
-
-  it("tells subscribers which transcripts another tab changed", () => {
-    const state = seedState()
-    const mock = backend(state)
-    const seen: string[][] = []
-    mock.conversations.subscribe((ids) => seen.push(ids))
-    const next = structuredClone(state)
-    next.conversations["web-vite"] = []
-    mock.adopt(next)
-    expect(seen).toEqual([["web-vite"]])
-    expect(mock.conversations.load()["web-vite"]).toEqual([])
-  })
-
-  it("drops a deleted project's transcripts", async () => {
-    const state = seedState()
-    for (const s of state.sessions) if (s.projectId === "toolbox") s.state = "stopped"
-    const { client } = backend(state)
-    await client.auth.login(eric)
-    await client.projects.deleteProject({ projectId: "toolbox" })
-    expect(state.conversations["dotfiles-go"]).toBeUndefined()
-  })
 })
 
 it("does not share objects with the store", async () => {
@@ -616,16 +451,27 @@ it("does not share objects with the store", async () => {
 })
 
 describe("persistence", () => {
-  it("round-trips the state", () => {
+  it("round-trips the state without sessions, which start again from the demo seed", () => {
     const state = seedState()
-    expect(parsePersisted(serialize(state))).toEqual(JSON.parse(JSON.stringify(state)))
+    expect(JSON.parse(serialize(state)).state.sessions).toBeUndefined()
+    const loaded = parsePersisted(serialize(state))!
+    const { sessions: loadedSessions, ...rest } = loaded
+    const { sessions, ...expected } = state
+    expect(rest).toEqual(JSON.parse(JSON.stringify(expected)))
+    expect(loadedSessions.map((s) => s.sessionId)).toEqual(sessions.map((s) => s.sessionId))
+  })
+
+  it("starts no demo sessions for demo projects that are gone", () => {
+    const state = seedState()
+    state.projects = state.projects.filter((p) => p.projectId !== "toolbox")
+    const loaded = parsePersisted(serialize(state))!
+    expect(loaded.sessions.some((s) => s.projectId === "toolbox")).toBe(false)
+    expect(loaded.sessions.length).toBeGreaterThan(0)
   })
 
   it("drops a blob from the previous version instead of crashing", () => {
     const v1 = structuredClone(seedState()) as Partial<MockState>
-    delete v1.conversations
-    delete v1.writtenAtMs
-    delete v1.writtenBy
+    delete v1.devices
     expect(parsePersisted(JSON.stringify({ version: 1, state: v1 }))).toBeNull()
     // Same shape problem even if a blob claims the current version.
     expect(parsePersisted(JSON.stringify({ version: VERSION, state: v1 }))).toBeNull()
@@ -635,27 +481,5 @@ describe("persistence", () => {
     for (const raw of [null, "", "{", "null", "42", "[]", '{"version":2}', '{"version":2,"state":{"users":"x"}}']) {
       expect(parsePersisted(raw)).toBeNull()
     }
-  })
-})
-
-describe("device simulation", () => {
-  it("lists a device as offline while forced, in memory only", async () => {
-    const state = seedState()
-    let clock = Date.parse("2026-11-17T12:00:00Z")
-    const mock = backend(state, () => clock)
-    await mock.client.auth.login(eric)
-    let notified = 0
-    mock.simulation.subscribe(() => notified++)
-
-    mock.simulation.setDeviceOffline("eric-mbp", true)
-    clock += 60_000
-    const laptop = (await mock.client.machines.listDevices()).find((d) => d.name === "eric-mbp")
-    expect(laptop).toMatchObject({ online: false, lastSeenUnixMs: clock - 60_000 })
-    expect(state.devices.find((d) => d.name === "eric-mbp")?.online).toBe(true)
-    expect([...mock.simulation.offlineDevices()]).toEqual(["eric-mbp"])
-
-    mock.simulation.setDeviceOffline("eric-mbp", false)
-    expect((await mock.client.machines.listDevices()).find((d) => d.name === "eric-mbp")?.online).toBe(true)
-    expect(notified).toBe(2)
   })
 })

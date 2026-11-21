@@ -14,7 +14,15 @@ import (
 	"github.com/google/uuid"
 )
 
-func (s *session) tool(t *turn, command, arg string) error {
+// toolCall is one device tool use the script makes.
+type toolCall struct {
+	call  *pb.DeviceCall
+	id    string
+	name  string
+	input object
+}
+
+func (s *session) newToolCall(command, arg string) toolCall {
 	call := &pb.DeviceCall{CallId: uuid.NewString(), SessionId: s.id}
 	name := "Bash"
 	input := object{"command": arg}
@@ -32,19 +40,68 @@ func (s *session) tool(t *turn, command, arg string) error {
 			RunInBackground: background, Description: clipUTF8(arg, 1024),
 		}}
 	}
+	return toolCall{call: call, id: "toolu_" + uuid.NewString(), name: name, input: input}
+}
 
-	toolID := "toolu_" + uuid.NewString()
+// announce records the tool uses as blocks of one API message.
+func (s *session) announce(t *turn, uses ...toolCall) error {
+	messageID := "msg_" + uuid.NewString()
 	inputTokens := 24 + t.inputTokens
-	outputTokens := tokens(jsonString(input))
 	t.requests++
 	t.usedInput += inputTokens
-	t.outputTokens += outputTokens
-	if err := s.assistant("msg_"+uuid.NewString(), toolUse(toolID, name, input), inputTokens, outputTokens, false); err != nil {
+	for _, u := range uses {
+		outputTokens := tokens(jsonString(u.input))
+		t.outputTokens += outputTokens
+		if err := s.assistant(messageID, toolUse(u.id, u.name, u.input), inputTokens, outputTokens, false); err != nil {
+			return err
+		}
+	}
+	return s.flush()
+}
+
+func (s *session) tool(t *turn, command, arg string) error {
+	u := s.newToolCall(command, arg)
+	if err := s.announce(t, u); err != nil {
+		return err
+	}
+	return s.runTool(t, command, arg, u, true)
+}
+
+// parallel makes two Bash calls in one API message, then runs them in turn.
+func (s *session) parallel(t *turn, arg string) error {
+	uses := []toolCall{s.newToolCall("bash", arg), s.newToolCall("bash", arg)}
+	if err := s.announce(t, uses...); err != nil {
+		return err
+	}
+	for _, u := range uses {
+		if err := s.runTool(t, "bash", arg, u, false); err != nil {
+			return err
+		}
+	}
+	return s.stream(t, "Both Bash calls finished.", s.w.opts.StreamDelay, false)
+}
+
+// largeResult answers a Bash use with n bytes of output without running it,
+// for a view that stores oversized payloads truncated.
+func (s *session) largeResult(t *turn, n int) error {
+	u := s.newToolCall("bash", fmt.Sprintf("yes | head -c %d", n))
+	if err := s.announce(t, u); err != nil {
+		return err
+	}
+	output := strings.Repeat("y\n", n/2)
+	if err := s.recordToolResult(u.id, []object{{"type": "text", "text": output}}, false); err != nil {
 		return err
 	}
 	if err := s.flush(); err != nil {
 		return err
 	}
+	return s.stream(t, "Bash finished.", s.w.opts.StreamDelay, false)
+}
+
+// runTool runs an announced tool use and records its result; closing streams
+// the closing text.
+func (s *session) runTool(t *turn, command, arg string, u toolCall, closing bool) error {
+	call, toolID, name, input := u.call, u.id, u.name, u.input
 	if command == "approve" {
 		return s.denyApproval(t, toolID, arg, input)
 	}
@@ -116,13 +173,16 @@ func (s *session) tool(t *turn, command, arg string) error {
 		return err
 	}
 	t.marks.CallIds = append(t.marks.CallIds, call.GetCallId())
-	reply := name + " finished."
-	if failed {
-		reply = name + " returned an error."
-	} else if result.GetBash().GetJobId() != "" {
-		reply = "Bash started a background job."
+	if !closing {
+		return nil
 	}
-	return s.stream(t, reply, s.w.opts.StreamDelay, false)
+	text := name + " finished."
+	if failed {
+		text = name + " returned an error."
+	} else if result.GetBash().GetJobId() != "" {
+		text = "Bash started a background job."
+	}
+	return s.stream(t, text, s.w.opts.StreamDelay, false)
 }
 
 // This text was observed in the next API request after NOW interrupted a tool.

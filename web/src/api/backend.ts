@@ -3,18 +3,17 @@
 //
 // VITE_CIRCUS_BACKEND selects it:
 //   mock   (default) everything is served by the in-browser mock.
-//   server auth, projects and devices go to the real control plane over
-//          Connect (same origin; in development the Vite server proxies it);
-//          sessions stay on the mock, which the control plane doesn't serve
-//          yet. The mock's sessions use the server's projects through the
-//          projects client.
+//   server everything goes to the real control plane over Connect (same
+//          origin; in development the Vite server proxies it).
 
 import { createConnectAuth } from "./connect/auth"
 import { createConnectMachines } from "./connect/machines"
 import { createConnectProjects } from "./connect/projects"
+import { createConnectSessions } from "./connect/sessions"
 import { createServerTransport } from "./connect/transport"
-import { startMockBackend, type MockBackend } from "./mock"
+import { startMockBackend } from "./mock"
 import { browserOidcFlow } from "./oidc"
+import type { CircusClient } from "./types"
 
 export type BackendKind = "mock" | "server"
 
@@ -24,21 +23,29 @@ export function backendKind(value: string | undefined): BackendKind {
   throw new Error(`VITE_CIRCUS_BACKEND must be "mock" or "server", not "${value}".`)
 }
 
+export interface Backend {
+  client: CircusClient
+  /**
+   * Called when something outside this tab changed the data, the way a
+   * server would push updates; the app refetches. Only the mock, whose
+   * projects and devices live in localStorage, calls it.
+   */
+  onExternalChange(listener: () => void): () => void
+}
+
 /** Starts the backend selected by VITE_CIRCUS_BACKEND. */
-export function startBackend(): MockBackend {
+export function startBackend(): Backend {
   if (backendKind(import.meta.env.VITE_CIRCUS_BACKEND) === "mock") return startMockBackend()
 
   const transport = createServerTransport(window.location.origin)
-  const projects = createConnectProjects(transport)
-  const mock = startMockBackend({ externalAuth: true, projects })
   return {
-    ...mock,
     client: {
       auth: createConnectAuth(transport),
       oidc: browserOidcFlow,
-      projects,
+      projects: createConnectProjects(transport),
       machines: createConnectMachines(transport),
-      sessions: mock.client.sessions,
+      sessions: createConnectSessions(transport),
     },
+    onExternalChange: () => () => {},
   }
 }

@@ -10,14 +10,10 @@ import { startI18n } from "./i18n/preference"
 import { installOverlayScrollbars } from "./lib/overlay-scrollbars"
 import { createAppRouter } from "./router"
 import { startCodeFont } from "./settings/code-font"
-import { ConversationStoreContext } from "./state/conversations-context"
-import { DeviceSimulationContext } from "./state/device-simulation-context"
 import "./index.css"
 
-// The control plane doesn't serve sessions yet; the mock simulates them (see
-// api/backend.ts). The router is created after the mock has handled its
-// URL switches.
-// The language and the code font are settled before anything renders.
+// The router is created after the mock has handled its URL switches (see
+// api/backend.ts). The language and the code font are settled before anything renders.
 startI18n()
 startCodeFont()
 // Thin overlay thumbs where scrollbars take width, as on Windows.
@@ -32,11 +28,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
       <ApiProvider client={backend.client} queryClient={queryClient}>
-        <ConversationStoreContext.Provider value={backend.conversations}>
-          <DeviceSimulationContext.Provider value={import.meta.env.DEV ? backend.simulation : null}>
-            <App router={router} />
-          </DeviceSimulationContext.Provider>
-        </ConversationStoreContext.Provider>
+        <App router={router} />
       </ApiProvider>
     </ThemeProvider>
   </StrictMode>,
