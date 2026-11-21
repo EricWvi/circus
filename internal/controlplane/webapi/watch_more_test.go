@@ -138,8 +138,9 @@ func TestWatchIdleMultiPageReplay(t *testing.T) {
 }
 
 // nextDurable receives until a durable event, failing after a few seconds.
-func nextDurable(t *testing.T, stream *connect.ServerStreamForClient[circusv1.SessionEvent], cancel context.CancelFunc) *circusv1.SessionEvent {
+func nextDurable(t *testing.T, stream *watchStream, cancel context.CancelFunc) *circusv1.SessionEvent {
 	t.Helper()
+	stream.progress()
 	timer := time.AfterFunc(3*time.Second, cancel)
 	defer timer.Stop()
 	for stream.Receive() {
@@ -381,8 +382,8 @@ func TestWatchSlowLink(t *testing.T) {
 	if _, err := auth.Login(t.Context(), connect.NewRequest(&circusv1.LoginRequest{Email: "admin@example.com", Password: password})); err != nil {
 		t.Fatal(err)
 	}
-	c := &client{http: slow, auth: auth, projects: circusv1connect.NewProjectServiceClient(slow, base),
-		sessions: circusv1connect.NewSessionServiceClient(slow, base)}
+	sessions := circusv1connect.NewSessionServiceClient(slow, base)
+	c := &client{http: slow, auth: auth, projects: circusv1connect.NewProjectServiceClient(slow, base), sessions: sessions, streams: sessions}
 	p := c.mustCreate(t, "Project", loc("box", "/work"))
 	sess := c.mustSession(t, p.ProjectId)
 	big := `"` + strings.Repeat("x", 200<<10) + `"`

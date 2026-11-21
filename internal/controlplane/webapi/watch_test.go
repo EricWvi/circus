@@ -2,6 +2,7 @@ package webapi_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -25,17 +26,37 @@ func withBus(opts sessions.BusOptions, out **sessions.Bus) func(*webapi.Config) 
 	}
 }
 
+// errNoProgress ends a stream that made no progress within wait.Timeout.
+var errNoProgress = errors.New("no progress on the stream within the wait timeout")
+
+// watchStream is a WatchSession stream with a watchdog: it is canceled with
+// errNoProgress once wait.Timeout passes after it was opened, after a test
+// started waiting on it for durable events, or after the last durable event
+// it delivered. A stream lives as long as its test keeps committing events,
+// so the bound is on progress, not on the stream's life; keepalives do not
+// count, or a lost event would go unnoticed.
+type watchStream struct {
+	*connect.ServerStreamForClient[circusv1.SessionEvent]
+	watchdog *time.Timer
+}
+
+// progress restarts the watchdog.
+func (s *watchStream) progress() { s.watchdog.Reset(wait.Timeout) }
+
 // watch opens a WatchSession stream that ends with the test.
-func (c *client) watch(t *testing.T, sessionID string, afterSeq uint64) (*connect.ServerStreamForClient[circusv1.SessionEvent], context.CancelFunc) {
+func (c *client) watch(t *testing.T, sessionID string, afterSeq uint64) (*watchStream, context.CancelFunc) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(t.Context())
-	stream, err := c.sessions.WatchSession(ctx, connect.NewRequest(&circusv1.WatchSessionRequest{SessionId: sessionID, AfterSeq: afterSeq}))
+	ctx, cancelCause := context.WithCancelCause(t.Context())
+	cancel := func() { cancelCause(context.Canceled) }
+	watchdog := time.AfterFunc(wait.Timeout, func() { cancelCause(errNoProgress) })
+	stream, err := c.streams.WatchSession(ctx, connect.NewRequest(&circusv1.WatchSessionRequest{SessionId: sessionID, AfterSeq: afterSeq}))
 	if err != nil {
+		watchdog.Stop()
 		cancel()
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { cancel(); stream.Close() })
-	return stream, cancel
+	t.Cleanup(func() { watchdog.Stop(); cancel(); stream.Close() })
+	return &watchStream{ServerStreamForClient: stream, watchdog: watchdog}, cancel
 }
 
 // watchError opens a stream and returns how it ends.
@@ -75,7 +96,7 @@ func (p publisher) ephemeral(text string) {
 // collect reads a stream until it has seen durable seq last, and returns
 // the durable seqs in order and the number of ephemeral events other than
 // keepalives.
-func collect(t *testing.T, stream *connect.ServerStreamForClient[circusv1.SessionEvent], last int64) ([]int64, int) {
+func collect(t *testing.T, stream *watchStream, last int64) ([]int64, int) {
 	t.Helper()
 	seqs, ephemeral, err := receiveUntil(stream, last)
 	if err != nil {
@@ -84,9 +105,12 @@ func collect(t *testing.T, stream *connect.ServerStreamForClient[circusv1.Sessio
 	return seqs, ephemeral
 }
 
-func receiveUntil(stream *connect.ServerStreamForClient[circusv1.SessionEvent], last int64) ([]int64, int, error) {
+// receiveUntil is collect without the test: each durable event must arrive
+// within wait.Timeout of the previous one (or of the call).
+func receiveUntil(stream *watchStream, last int64) ([]int64, int, error) {
 	var seqs []int64
 	ephemeral := 0
+	stream.progress()
 	for len(seqs) == 0 || seqs[len(seqs)-1] < last {
 		if !stream.Receive() {
 			return nil, 0, fmt.Errorf("stream ended after %d events: %w", len(seqs), stream.Err())
@@ -102,6 +126,7 @@ func receiveUntil(stream *connect.ServerStreamForClient[circusv1.SessionEvent], 
 			}
 		default:
 			seqs = append(seqs, int64(ev.GetSeq()))
+			stream.progress()
 		}
 	}
 	return seqs, ephemeral, nil
@@ -274,7 +299,7 @@ func TestWatchEnds(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ended := func(stream *connect.ServerStreamForClient[circusv1.SessionEvent]) error {
+	ended := func(stream *watchStream) error {
 		t.Helper()
 		done := make(chan error, 1)
 		go func() {

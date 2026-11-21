@@ -59,6 +59,11 @@ type client struct {
 	projects circusv1connect.ProjectServiceClient
 	machines circusv1connect.MachineServiceClient
 	sessions circusv1connect.SessionServiceClient
+	// streams opens WatchSession streams (watch). Its HTTP client has no
+	// Timeout: net/http counts reading the body in it, so it would bound a
+	// stream's whole life, however long the test keeps it busy. watch bounds
+	// the waits for progress instead.
+	streams circusv1connect.SessionServiceClient
 }
 
 func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *client) {
@@ -145,12 +150,14 @@ func (h *harness) browser(t *testing.T) *client {
 	jar, _ := cookiejar.New(nil)
 	c := &http.Client{Jar: jar, Timeout: 10 * time.Second, Transport: http.DefaultTransport.(*http.Transport).Clone()}
 	t.Cleanup(c.CloseIdleConnections)
+	streams := &http.Client{Jar: jar, Transport: c.Transport}
 	return &client{
 		http:     c,
 		auth:     circusv1connect.NewAuthServiceClient(c, h.server.URL),
 		projects: circusv1connect.NewProjectServiceClient(c, h.server.URL),
 		machines: circusv1connect.NewMachineServiceClient(c, h.server.URL),
 		sessions: circusv1connect.NewSessionServiceClient(c, h.server.URL),
+		streams:  circusv1connect.NewSessionServiceClient(streams, h.server.URL),
 	}
 }
 
