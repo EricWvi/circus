@@ -1262,3 +1262,48 @@ func TestSessionPayloadsCloseLinkAsUnexpectedPayload(t *testing.T) {
 		})
 	}
 }
+
+type metadataStoreFunc func(context.Context, store.PrincipalKind, string, store.HelloMetadata) (bool, error)
+
+func (f metadataStoreFunc) UpdateHelloMetadata(ctx context.Context, kind store.PrincipalKind, id string, metadata store.HelloMetadata) (bool, error) {
+	return f(ctx, kind, id, metadata)
+}
+
+// A running Hello metadata update does not delay its connection's teardown
+// (the peer slot is released), but Shutdown waits for it.
+func TestShutdownWaitsForHelloMetadataUpdate(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	var finished atomic.Bool
+	f := setup(t, func(c *workerlink.Config) {
+		c.MetadataStore = metadataStoreFunc(func(context.Context, store.PrincipalKind, string, store.HelloMetadata) (bool, error) {
+			close(started)
+			<-release
+			finished.Store(true)
+			return true, nil
+		})
+	})
+	conn := raw(t, f)
+	write(t, conn, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_Hello{Hello: &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, ClientVersion: "0.2.0"}}})
+	wait.Recv(t, started)
+	_ = conn.Close()
+	wait.For(t, func() bool { return workerlink.Peers(f.h) == 0 })
+	shutdown := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
+		defer cancel()
+		shutdown <- f.h.Shutdown(ctx)
+	}()
+	select {
+	case err := <-shutdown:
+		close(release)
+		t.Fatalf("Shutdown returned while the metadata update was running (err %v)", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := wait.Recv(t, shutdown); err != nil {
+		t.Fatal(err)
+	}
+	if !finished.Load() {
+		t.Fatal("metadata update still running after Shutdown returned")
+	}
+}

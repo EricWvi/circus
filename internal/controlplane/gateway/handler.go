@@ -31,6 +31,9 @@ type handler struct {
 	shutdownContext context.Context
 	changed         chan struct{}
 	registrations   uint64 // orders registry generations of local peers
+	// metadataUpdates holds Hello metadata updates; peers start them while
+	// registered, so none starts once Shutdown has joined every peer.
+	metadataUpdates sync.WaitGroup
 }
 type peer struct {
 	id        string
@@ -228,7 +231,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.mu.Unlock()
-	auth.RefreshHelloMetadata(ctx, h.config.MetadataStore, h.config.Logger, principal, hello)
+	auth.RefreshHelloMetadata(ctx, &h.metadataUpdates, h.config.MetadataStore, h.config.Logger, principal, hello)
 	if previous != nil {
 		h.config.Logger.WarnContext(ctx, "daemon connection superseded", "device_id", principal.ID, "boot_changed", previous.Target.BootID != hello.BootId)
 		if predecessor != nil {
@@ -405,6 +408,9 @@ func (h *handler) Shutdown(ctx context.Context) error {
 	}
 	if failure != nil {
 		return failure
+	}
+	if err := auth.WaitUpdates(ctx, &h.metadataUpdates); err != nil {
+		return err
 	}
 	return ctx.Err()
 }

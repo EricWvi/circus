@@ -82,7 +82,14 @@ func openStore(t *testing.T) *sqlite.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() {
+		// Close waits for every connection, so nothing writes the files
+		// while TempDir's cleanup removes them; it fails if a store user
+		// still holds a connection after the server has shut down.
+		if err := st.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	return st
 }
 

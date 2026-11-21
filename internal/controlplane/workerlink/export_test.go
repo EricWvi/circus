@@ -70,3 +70,10 @@ func PushPermitsInUse(h *Handler) int { return len(h.push) }
 // SetClock replaces the handler's clock (handshake, rechecks, send retries
 // and their deadlines); call it before connections are served.
 func SetClock(h *Handler, clk clock.Clock) { h.cfg.Clock = clk }
+
+// Peers reports how many connections h holds.
+func Peers(h *Handler) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.peers)
+}

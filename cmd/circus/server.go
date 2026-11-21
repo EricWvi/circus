@@ -89,7 +89,13 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() {
+		// Close waits for connections still in use; an error means a store
+		// user outlived the server's shutdown.
+		if err := st.Close(); err != nil {
+			slog.New(slog.NewJSONHandler(errOut, &slog.HandlerOptions{Level: level})).Error("store close failed", "error", err)
+		}
+	}()
 	serverCfg := cfg.Server()
 	serverCfg.UI = webui.FS()
 	serverCfg.Version = version

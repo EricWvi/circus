@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -14,9 +15,13 @@ type HelloMetadataStore interface {
 	UpdateHelloMetadata(context.Context, store.PrincipalKind, string, store.HelloMetadata) (bool, error)
 }
 
-// RefreshHelloMetadata schedules a best-effort update for an accepted Hello.
-// Each field uses the same byte limit as enrollment.
-func RefreshHelloMetadata(ctx context.Context, st HelloMetadataStore, logger *slog.Logger, principal Principal, hello *circusv1.Hello) {
+// RefreshHelloMetadata starts a best-effort update for an accepted Hello in
+// updates. Each field uses the same byte limit as enrollment. The update
+// outlives ctx by up to five seconds so a short connection still records it;
+// the link handler waits for updates in Shutdown, after its connections have
+// ended, so an update never outlives the server's shutdown and never delays
+// a connection's teardown.
+func RefreshHelloMetadata(ctx context.Context, updates *sync.WaitGroup, st HelloMetadataStore, logger *slog.Logger, principal Principal, hello *circusv1.Hello) {
 	if st == nil {
 		return
 	}
@@ -35,11 +40,23 @@ func RefreshHelloMetadata(ctx context.Context, st HelloMetadataStore, logger *sl
 	if metadata == (store.HelloMetadata{}) {
 		return
 	}
-	go func() {
+	updates.Go(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		if _, err := st.UpdateHelloMetadata(ctx, principal.Kind, principal.ID, metadata); err != nil {
 			logger.WarnContext(ctx, "hello metadata update failed", "kind", principal.Kind, "identity_id", principal.ID, "error", err)
 		}
-	}()
+	})
+}
+
+// WaitUpdates waits for the updates started in updates until ctx ends.
+func WaitUpdates(ctx context.Context, updates *sync.WaitGroup) error {
+	done := make(chan struct{})
+	go func() { updates.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

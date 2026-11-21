@@ -47,6 +47,9 @@ type Options struct {
 type DB struct {
 	ops
 	sqldb *sql.DB
+	conns *connTracker
+	// closeWait bounds how long Close waits for connections still in use.
+	closeWait time.Duration
 	// afterDeleteChunk, set only by this package's tests on their own
 	// handle, runs between DeleteSession's transactions; an error stops the
 	// delete there, as a crash would.
@@ -69,29 +72,36 @@ func Open(ctx context.Context, path string, opts Options) (*DB, error) {
 	}
 	dsn := path + "?_pragma=busy_timeout(" + strconv.FormatInt(busy.Milliseconds(), 10) + ")" +
 		"&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_txlock=immediate"
-	sqldb, err := sql.Open("sqlite", dsn)
+	connector, err := msqlite.NewConnector(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: open %s: %w", path, err)
 	}
+	conns := newConnTracker(connector)
+	sqldb := sql.OpenDB(conns)
 	sqldb.SetMaxOpenConns(1)
 	sqldb.SetMaxIdleConns(1)
 	sqldb.SetConnMaxLifetime(0)
 	sqldb.SetConnMaxIdleTime(0)
-	d := &DB{sqldb: sqldb}
+	d := &DB{sqldb: sqldb, conns: conns, closeWait: busy + closeGrace}
 	d.ops = ops{q: poolQuerier{d}, db: d}
 	if err := d.checkSettings(ctx, busy); err != nil {
-		sqldb.Close()
-		return nil, err
+		return nil, errors.Join(err, d.Close())
 	}
 	if err := d.migrate(ctx); err != nil {
-		sqldb.Close()
-		return nil, err
+		return nil, errors.Join(err, d.Close())
 	}
 	return d, nil
 }
 
-// Close closes the database.
-func (d *DB) Close() error { return d.sqldb.Close() }
+// closeGrace is how much longer than the busy timeout Close waits for a
+// statement still running when it is called.
+const closeGrace = 5 * time.Second
+
+// Close closes the database and returns once the driver has closed every
+// connection, so nothing touches the database files afterwards; see
+// connTracker. A connection still in use by a caller delays Close until
+// the caller releases it, for at most closeWait; Close then reports it.
+func (d *DB) Close() error { return d.conns.closeDB(d.sqldb, d.closeWait) }
 
 // Tx implements store.Store. It is serializable: BEGIN IMMEDIATE takes the
 // database's single write lock before fn runs, so the transactions of every

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -408,4 +409,37 @@ func TestWorkspaceRevokedMidAttempt(t *testing.T) {
 		return w.State == store.WorkspaceFailed && w.ErrorCode == pb.WorkspaceError_WORKSPACE_ERROR_DEVICE_REVOKED
 	})
 	wait.Recv(t, call.ctx.Done())
+}
+
+// BeforeDelete joins its cancellation and removals before returning, also
+// when its context ends while they run, so no store or call-plane work
+// outlives the request (or the server's shutdown, which waits for requests).
+func TestBeforeDeleteJoinsWorkCutShort(t *testing.T) {
+	f := newManagerFixture(t)
+	w := f.setup("linux")
+	entered, returned := make(chan struct{}), make(chan struct{})
+	var finished atomic.Bool
+	m, _ := f.start(func(c *Config) {
+		c.Cancel = func(ctx context.Context, _, _ string) error {
+			close(entered)
+			<-ctx.Done()
+			select {
+			case <-returned:
+				t.Error("BeforeDelete returned while cancellation was running")
+			case <-time.After(50 * time.Millisecond):
+			}
+			finished.Store(true)
+			return ctx.Err()
+		}
+		c.StopJobs = func(context.Context, string, string) error { return nil }
+	})
+	f.next()
+	f.row(w, func(x store.Workspace) bool { return x.State == store.WorkspacePreparing })
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() { <-entered; cancel() }()
+	m.BeforeDelete(ctx, w.UserID, w.ProjectID, []string{w.DeviceID})
+	close(returned)
+	if !finished.Load() {
+		t.Fatal("cancellation still running after BeforeDelete returned")
+	}
 }

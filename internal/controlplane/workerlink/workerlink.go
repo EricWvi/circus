@@ -197,6 +197,9 @@ type Handler struct {
 	closed  bool
 	peers   map[*peer]struct{}
 	changed chan struct{}
+	// metadataUpdates holds Hello metadata updates; peers start them while
+	// registered, so none starts once Shutdown has joined every peer.
+	metadataUpdates sync.WaitGroup
 	// push is shared by every connection; see pushPermits.
 	push semaphore
 	// submit and query are Router.Submit and Router.QueryOnce; tests replace
@@ -474,7 +477,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		defer sc.Close()
 	}
-	auth.RefreshHelloMetadata(ctx, h.cfg.MetadataStore, h.cfg.Logger, principal, hello)
+	auth.RefreshHelloMetadata(ctx, &h.metadataUpdates, h.cfg.MetadataStore, h.cfg.Logger, principal, hello)
 	ops := newOperations(maxOperations)
 	// protocolError closes the link for a client that broke the request-ID
 	// or operation-cap rules; the client cannot be answered in band.
@@ -1034,8 +1037,9 @@ func (h *Handler) recheck(ctx context.Context, cancel context.CancelFunc, id str
 	})
 }
 
-// Shutdown refuses new upgrades and aborts links. It joins peers until ctx
-// expires, then returns the context error instead of waiting indefinitely.
+// Shutdown refuses new upgrades and aborts links. It joins peers and then
+// their Hello metadata updates until ctx expires, then returns the context
+// error instead of waiting indefinitely.
 func (h *Handler) Shutdown(ctx context.Context) error {
 	h.mu.Lock()
 	h.closed = true
@@ -1048,7 +1052,7 @@ func (h *Handler) Shutdown(ctx context.Context) error {
 		n, changed := len(h.peers), h.changed
 		h.mu.Unlock()
 		if n == 0 {
-			return nil
+			return auth.WaitUpdates(ctx, &h.metadataUpdates)
 		}
 		select {
 		case <-changed:

@@ -471,3 +471,52 @@ func TestShutdownCancelsInProgressAuthentication(t *testing.T) {
 		t.Fatal("authentication did not see cancellation")
 	}
 }
+
+// A running Hello metadata update does not delay its connection's teardown
+// (the registry entry is released), but Shutdown waits for it.
+func TestShutdownWaitsForHelloMetadataUpdate(t *testing.T) {
+	c := clock.New()
+	r, _ := gateway.NewRegistry(2)
+	started, release := make(chan struct{}), make(chan struct{})
+	var finished atomic.Bool
+	metadataStore := metadataStoreFunc(func(context.Context, store.PrincipalKind, string, store.HelloMetadata) (bool, error) {
+		close(started)
+		<-release
+		finished.Store(true)
+		return true, nil
+	})
+	h, err := gateway.New(gateway.Config{
+		InstanceID: "i", Clock: c, Auth: authStub{}, Registry: r, Hooks: hooks{},
+		MetadataStore: metadataStore, Logger: slog.New(slog.DiscardHandler),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(h)
+	defer s.Close()
+	link := daemonLinkWithHello(t, wait.Ctx(t), s.URL, &circusv1.Hello{
+		ProtocolVersion: wire.ProtocolVersion, BootId: "boot", ClientVersion: "0.2.0",
+	}, c)
+	wait.Recv(t, started)
+	_ = link.Close()
+	wait.For(t, func() bool { return r.Stats().Connections == 0 && h.Stats().Connections == 0 })
+	shutdown := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
+		defer cancel()
+		shutdown <- h.Shutdown(ctx)
+	}()
+	select {
+	case err := <-shutdown:
+		close(release)
+		t.Fatalf("Shutdown returned while the metadata update was running (err %v)", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := wait.Recv(t, shutdown); err != nil {
+		t.Fatal(err)
+	}
+	if !finished.Load() {
+		t.Fatal("metadata update still running after Shutdown returned")
+	}
+}

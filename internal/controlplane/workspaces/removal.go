@@ -2,6 +2,7 @@ package workspaces
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -43,27 +44,30 @@ type removalResult struct {
 
 // BeforeDelete runs best-effort cancellation and one removal per requested
 // device in parallel. The same deadline covers lookup, submission and replies.
+// It cancels what is still running at the deadline and joins it before
+// returning, so no store or call-plane work outlives the request.
 func (m *Manager) BeforeDelete(ctx context.Context, userID, projectID string, names []string) []*circusv1.WorkspaceRemoval {
 	ctx, cancel := clock.WithTimeout(ctx, m.cfg.Clock, removeTimeout)
-	defer cancel()
-	results := make(chan removalResult, 2*len(names))
+	var wg sync.WaitGroup
+	defer func() { cancel(); wg.Wait() }()
+	results := make(chan removalResult, 2*len(names)) // buffered: sends never block
 	cancelled := make(chan struct{})
-	go func() {
+	wg.Go(func() {
 		defer close(cancelled)
 		m.cancelAttempts(ctx, userID, projectID)
-	}()
+	})
 	byName := make(map[string]*circusv1.WorkspaceRemoval, len(names))
 	for _, name := range names {
 		if byName[name] != nil {
 			continue
 		}
 		byName[name] = kept(name, "")
-		go func() {
+		wg.Go(func() {
 			out := m.remove(ctx, userID, projectID, name, func(path string) {
 				results <- removalResult{name: name, out: kept(name, path)}
 			})
 			results <- removalResult{name: name, final: true, out: out}
-		}()
+		})
 	}
 	for pending := len(byName); pending > 0; {
 		select {
