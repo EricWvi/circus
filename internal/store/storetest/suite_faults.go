@@ -345,36 +345,40 @@ func testCrashAtEveryWritePoint(t *testing.T, b Backend) {
 		total += st.points
 	}
 
+	// Close each restarted store and release its page cache before the next
+	// crash point.
 	for n := 1; n <= total; n++ {
-		p := StartProcess(t, b, t.TempDir())
-		p.CrashAfterWrite(n)
-		crashedIn, end := -1, 0
-		for i, st := range script {
-			end += st.points
-			err := st.within(t, p.Store())
-			if errors.Is(err, ErrCrashed) {
-				crashedIn = i
-				break
+		t.Run(label("write-", n), func(t *testing.T) {
+			p := StartProcess(t, b, t.TempDir())
+			p.CrashAfterWrite(n)
+			crashedIn, end := -1, 0
+			for i, st := range script {
+				end += st.points
+				err := st.within(t, p.Store())
+				if errors.Is(err, ErrCrashed) {
+					crashedIn = i
+					break
+				}
+				if err != nil {
+					t.Fatalf("step %s: %v", st.name, err)
+				}
 			}
-			if err != nil {
-				t.Fatalf("n=%d step %s: %v", n, st.name, err)
+			if crashedIn < 0 || end-script[crashedIn].points >= n || n > end {
+				t.Fatalf("crash in step %d, want the step holding write point %d", crashedIn, n)
 			}
-		}
-		if crashedIn < 0 || end-script[crashedIn].points >= n || n > end {
-			t.Fatalf("n=%d: crash in step %d, want the step holding write point %d", n, crashedIn, n)
-		}
-		durable := crashedIn
-		if n == end {
-			durable++ // crashed right after the step's last write or commit
-		}
-		p.Restart()
-		mustEqual(t, label("n=", n, " after restart (", durable, " steps durable)"), takeSnapshot(t, p.Store()), prefix[durable])
-		for _, st := range script[durable:] {
-			if err := st.within(t, p.Store()); err != nil {
-				t.Fatalf("n=%d resume step %s: %v", n, st.name, err)
+			durable := crashedIn
+			if n == end {
+				durable++ // crashed right after the step's last write or commit
 			}
-		}
-		mustEqual(t, label("n=", n, " final"), takeSnapshot(t, p.Store()), prefix[len(script)])
+			p.Restart()
+			mustEqual(t, label("after restart (", durable, " steps durable)"), takeSnapshot(t, p.Store()), prefix[durable])
+			for _, st := range script[durable:] {
+				if err := st.within(t, p.Store()); err != nil {
+					t.Fatalf("resume step %s: %v", st.name, err)
+				}
+			}
+			mustEqual(t, "final", takeSnapshot(t, p.Store()), prefix[len(script)])
+		})
 	}
 }
 

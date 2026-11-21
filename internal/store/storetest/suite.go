@@ -30,9 +30,13 @@ import (
 	"github.com/EricWvi/circus/internal/testutil/wait"
 )
 
-// Run runs the contract suite against b. Subtests run in parallel, each on
-// its own database under t.TempDir.
+// Run runs the contract suite against b. Each subtest uses its own database
+// under t.TempDir. The large-transcript case runs before the parallel cases.
 func Run(t *testing.T, b Backend) {
+	// Keep the large BLOB copies from overlapping the parallel stores' caches.
+	t.Run("TranscriptLargeEntries", func(t *testing.T) {
+		testTranscriptLargeEntries(t, b)
+	})
 	for _, tc := range []struct {
 		name string
 		fn   func(*testing.T, Backend)

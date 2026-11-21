@@ -1,6 +1,7 @@
 package storetest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -160,8 +161,7 @@ func testTranscriptCaps(t *testing.T, b Backend) {
 	mustEqual(t, "user charge after delete", u.TranscriptBytes, int64(5*unit))
 	must(t, add(f2, tens(5)...))
 
-	// Lengths: the uuid and the subpath, at the bound and one over; the
-	// entry bound itself fits in a page.
+	// Lengths: the uuid and the subpath, at the bound and one over.
 	createSession(t, s, f, "s3")
 	f3 := acquire(t, s, "s3", "w1", "b1", t0)
 	batch := func(seq int64, subpath, uuid string) error {
@@ -176,22 +176,6 @@ func testTranscriptCaps(t *testing.T, b Backend) {
 	big := quota
 	big.MaxEntryBytes = store.MaxTranscriptEntryBytes + 1
 	_, err = s.AppendTranscript(ctx, f3, store.TranscriptBatch{BatchSeq: 2, Entries: []store.TranscriptEntry{{JSON: []byte("{}")}}}, big)
-	mustIs(t, err, store.ErrInvalid)
-
-	// One entry may be larger than a page, up to the link's message limit;
-	// a batch of several is bounded by bytes.
-	big.MaxEntryBytes, big.MaxSessionBytes = store.MaxTranscriptEntryBytes, store.DefaultMaxTranscriptBytes
-	huge := []byte(strings.Repeat("h", 10<<20))
-	r, err := s.AppendTranscript(ctx, f3, store.TranscriptBatch{BatchSeq: 2, Entries: []store.TranscriptEntry{{JSON: huge}}}, big)
-	must(t, err)
-	mustEqual(t, "10 MiB entry", []any{r.Inserted, r.Full}, []any{1, false})
-	page, err = s.LoadTranscript(ctx, f3, store.TranscriptPageRequest{AfterSeq: 1, Limit: 10, MaxBytes: 1})
-	must(t, err)
-	mustEqual(t, "read alone", len(page.Entries[0].JSON), len(huge))
-	half := store.TranscriptEntry{JSON: []byte(strings.Repeat("y", store.MaxTranscriptBatchBytes/2))}
-	_, err = s.AppendTranscript(ctx, f3, store.TranscriptBatch{BatchSeq: 3, Entries: []store.TranscriptEntry{half, half}}, big)
-	must(t, err) // exactly the batch bound
-	_, err = s.AppendTranscript(ctx, f3, store.TranscriptBatch{BatchSeq: 4, Entries: []store.TranscriptEntry{half, half, {JSON: []byte("z")}}}, big)
 	mustIs(t, err, store.ErrInvalid)
 
 	// Subpaths per session: exactly the cap, then one more is refused.
@@ -211,6 +195,36 @@ func testTranscriptCaps(t *testing.T, b Backend) {
 	subs, err := s.ListTranscriptSubpaths(ctx, f4)
 	must(t, err)
 	mustEqual(t, "subpaths", len(subs), store.MaxTranscriptSubpaths)
+}
+
+// One entry can exceed both the page and batch byte budgets. Batches with
+// several entries must fit the batch budget.
+func testTranscriptLargeEntries(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createSession(t, s, f, "s1")
+	fence := acquire(t, s, "s1", "w1", "b1", t0)
+	q := quota
+	q.MaxEntryBytes = store.MaxTranscriptEntryBytes
+	q.MaxSessionBytes = store.DefaultMaxTranscriptBytes
+
+	size := max(store.MaxTranscriptPageBytes, store.MaxTranscriptBatchBytes) + 1
+	body := bytes.Repeat([]byte("x"), size)
+	r, err := s.AppendTranscript(ctx, fence, store.TranscriptBatch{BatchSeq: 1, Entries: []store.TranscriptEntry{{JSON: body}}}, q)
+	must(t, err)
+	mustEqual(t, "oversized entry append", []any{r.Inserted, r.Full}, []any{1, false})
+	page, err := s.LoadTranscript(ctx, fence, store.TranscriptPageRequest{Limit: 10, MaxBytes: store.MaxTranscriptPageBytes})
+	must(t, err)
+	mustEqual(t, "entries in oversized page", len(page.Entries), 1)
+	mustEqual(t, "oversized entry length", len(page.Entries[0].JSON), size)
+
+	half := store.TranscriptEntry{JSON: body[:store.MaxTranscriptBatchBytes/2]}
+	r, err = s.AppendTranscript(ctx, fence, store.TranscriptBatch{BatchSeq: 2, Entries: []store.TranscriptEntry{half, half}}, q)
+	must(t, err)
+	mustEqual(t, "batch at byte limit", []any{r.Inserted, r.Full}, []any{2, false})
+	_, err = s.AppendTranscript(ctx, fence, store.TranscriptBatch{BatchSeq: 3, Entries: []store.TranscriptEntry{half, half, {JSON: []byte("z")}}}, q)
+	mustIs(t, err, store.ErrInvalid)
 }
 
 // testSessionInputs: idempotent submission, the open-input cap, text
