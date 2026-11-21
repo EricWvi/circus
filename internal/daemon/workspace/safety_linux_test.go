@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,7 +75,9 @@ func TestDeathSignalChild(t *testing.T) {
 	if pidFile == "" {
 		t.Skip("only runs as the child of TestGitDiesWithDaemon")
 	}
-	if _, err := startGit("/bin/sh", nil, "/", false, "-c", `echo $$ > "$0.tmp" && mv "$0.tmp" "$0" && exec sleep 1000`, pidFile); err != nil {
+	// The background sleep is a helper of git's group that ends on its own
+	// after git dies, like a remote helper noticing its closed pipe.
+	if _, err := startGit("/bin/sh", nil, "/", false, "-c", `sleep 0.2 & echo $$ > "$0.tmp" && mv "$0.tmp" "$0" && exec sleep 1000`, pidFile); err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -104,25 +107,47 @@ func TestGitDiesWithDaemon(t *testing.T) {
 	for _, c := range strings.TrimSpace(string(data)) {
 		pid = pid*10 + int(c-'0')
 	}
-	// The orphan is reparented to this test process (a subreaper under
-	// leakcheck) or to init; either way it must be dead, not sleeping.
+	// The child was reaped, so every member of the stand-in's group it left,
+	// the stand-in and whatever it started (the helper, or an mv the shell
+	// had no time to wait for), is now a child of this test process, a
+	// subreaper under leakcheck. Like init, it reaps all of them.
 	deadline := time.Now().Add(10 * time.Second)
+	var leader syscall.WaitStatus
+	adopted := false
 	for {
-		stat, err := os.ReadFile("/proc/" + strings.TrimSpace(string(data)) + "/stat")
-		if err != nil {
-			break // reaped
+		var status syscall.WaitStatus
+		reaped, err := syscall.Wait4(-pid, &status, syscall.WNOHANG, nil)
+		if errors.Is(err, syscall.EINTR) {
+			continue
 		}
-		if fields := strings.Fields(string(stat[strings.LastIndexByte(string(stat), ')')+1:])); len(fields) > 0 && fields[0] == "Z" {
-			var status syscall.WaitStatus
-			_, _ = syscall.Wait4(pid, &status, syscall.WNOHANG, nil)
-			if !status.Signaled() && status != 0 {
-				t.Fatalf("orphan ended %v", status)
-			}
-			break
+		if errors.Is(err, syscall.ECHILD) {
+			break // no member left
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reaped == pid {
+			leader, adopted = status, true
+		}
+		if reaped != 0 {
+			continue
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("git stand-in %d outlived its daemon", pid)
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+			t.Fatalf("git stand-in group %d outlived its daemon", pid)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+	if !adopted {
+		// The dying child reaped it itself: the thread that started git
+		// exited first, and the child's cmd.Wait, blocked on another thread,
+		// collected the killed leader before that thread died too.
+		if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+			t.Fatalf("git stand-in %d outlived its daemon: %v", pid, err)
+		}
+		return
+	}
+	if !leader.Signaled() || leader.Signal() != syscall.SIGKILL {
+		t.Fatalf("git stand-in ended %v, want killed by its death signal", leader)
 	}
 }
