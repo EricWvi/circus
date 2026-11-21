@@ -8,6 +8,8 @@ import { seedState, type MockState } from "@/api/mock/state"
 import type { CircusClient } from "@/api/types"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
+import { queryKeys } from "@/api/query-client"
+import { forgetAllStartKeys } from "@/state/start-keys"
 import { advance, renderWithBackend } from "@/test/render"
 
 import { ProjectPage } from "./project-page"
@@ -64,6 +66,7 @@ beforeEach(() => {
 })
 afterEach(async () => {
   cleanup()
+  forgetAllStartKeys()
   vi.useRealTimers()
   await i18n.changeLanguage("en")
 })
@@ -161,6 +164,149 @@ describe("the first message", () => {
     expect(sends[1]).toEqual(sends[0])
     expect(state.sessions.filter((s) => !before.has(s.sessionId))).toHaveLength(1)
     expect(screen.queryByText(/Not sent/)).toBeNull()
+  })
+})
+
+describe("starting a session again", () => {
+  type CreateReq = Parameters<CircusClient["sessions"]["createSession"]>[0]
+
+  it("reuses the request's key when a failed start is sent again, and creates one session", async () => {
+    const state = seedState()
+    const before = new Set(state.sessions.map((s) => s.sessionId))
+    const creates: CreateReq[] = []
+    let loseResponse = true
+    const { router } = await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: {
+        ...client.sessions,
+        createSession: async (req) => {
+          creates.push(req)
+          const session = await client.sessions.createSession(req)
+          // The server created the session, but its answer never arrived.
+          if (loseResponse) throw new ApiError("unavailable", "connection reset")
+          return session
+        },
+      },
+    }))
+    fireEvent.change(composer(), { target: { value: "Fix the flaky test" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(1000)
+    expect(screen.getByRole("alert").textContent).toBe("Can't reach the server. Try again.")
+    expect(router.state.location.pathname).toBe("/p/circus")
+
+    // The key outlives the page: leaving it and coming back still retries.
+    await router.navigate("/p/circus/settings")
+    await advance(0)
+    await router.navigate("/p/circus")
+    await advance(100)
+    loseResponse = false
+    fireEvent.change(composer(), { target: { value: "Fix the flaky test" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(1000)
+    expect(creates).toHaveLength(2)
+    expect(creates[1].clientRequestId).toBe(creates[0].clientRequestId)
+    expect(creates[0].clientRequestId).toMatch(/^[0-9a-f-]{36}$/)
+    const created = state.sessions.filter((s) => !before.has(s.sessionId))
+    expect(created).toHaveLength(1)
+    expect(router.state.location.pathname).toBe(`/p/circus/s/${created[0].sessionId}`)
+
+    // Back on the project page once the session exists, the next first message is a new start.
+    await router.navigate("/p/circus")
+    await advance(100)
+    fireEvent.change(composer(), { target: { value: "Something else" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(1000)
+    expect(creates).toHaveLength(3)
+    expect(creates[2].clientRequestId).not.toBe(creates[0].clientRequestId)
+    expect(state.sessions.filter((s) => !before.has(s.sessionId))).toHaveLength(2)
+  })
+
+  it("takes a new key when another location now has the chosen index", async () => {
+    const state = withCircus((p) => {
+      p.locations = [at("devbox", "/srv/a"), at("devbox", "/srv/b")]
+      p.lastUsedLocation = 1
+    })
+    const creates: CreateReq[] = []
+    const { queryClient } = await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: {
+        ...client.sessions,
+        createSession: (req) => {
+          creates.push(req)
+          return Promise.reject(new ApiError("unavailable", "down"))
+        },
+      },
+    }))
+    const send = async () => {
+      fireEvent.change(composer(), { target: { value: "Hello" } })
+      fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+      await advance(100)
+    }
+    await send()
+    // Another tab replaces /srv/b with /srv/c, at the same index.
+    state.projects.find((p) => p.projectId === "circus")!.locations[1] = at("devbox", "/srv/c")
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
+    await advance(100)
+    expect(screen.getByText("devbox:/srv/c")).toBeTruthy()
+    await send()
+    expect(creates.map((c) => c.locationIndex)).toEqual([1, 1])
+    expect(creates[1].clientRequestId).not.toBe(creates[0].clientRequestId)
+  })
+
+  it("keeps the key when a failed start is sent again with other text, and takes a new one in another location", async () => {
+    const state = seedState()
+    const creates: CreateReq[] = []
+    await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: {
+        ...client.sessions,
+        createSession: (req) => {
+          creates.push(req)
+          return Promise.reject(new ApiError("unavailable", "down"))
+        },
+      },
+    }))
+    const send = async (text: string) => {
+      fireEvent.change(composer(), { target: { value: text } })
+      fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+      await advance(100)
+    }
+    await send("Hello")
+    await send("Hello, with more detail")
+    fireEvent.click(screen.getByRole("combobox", { name: "Location" }))
+    await advance(0)
+    fireEvent.click(screen.getAllByRole("option")[1])
+    await advance(0)
+    await send("Hello")
+    expect(creates.map((c) => c.locationIndex)).toEqual([0, 0, 1])
+    expect(creates[1].clientRequestId).toBe(creates[0].clientRequestId)
+    expect(creates[2].clientRequestId).not.toBe(creates[0].clientRequestId)
+  })
+
+  it("explains a key the server says was used for another request, and starts afresh next time", async () => {
+    const creates: CreateReq[] = []
+    let conflict = true
+    const { router } = await renderProject("circus", seedState(), (client) => ({
+      ...client,
+      sessions: {
+        ...client.sessions,
+        createSession: (req) => {
+          creates.push(req)
+          return conflict ? Promise.reject(new ApiError("already_exists", "taken")) : client.sessions.createSession(req)
+        },
+      },
+    }))
+    fireEvent.change(composer(), { target: { value: "Hello" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(100)
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Couldn't start the session: the request clashed with an earlier one. Send again to start it.",
+    )
+    conflict = false
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(1000)
+    expect(creates[1].clientRequestId).not.toBe(creates[0].clientRequestId)
+    expect(router.state.location.pathname).toMatch(/^\/p\/circus\/s\//)
   })
 })
 

@@ -289,7 +289,7 @@ func TestWebMachineOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 		api := circusv1connect.NewSessionServiceClient(browser, h.base)
-		res, err := api.CreateSession(ctx, connect.NewRequest(&circusv1.CreateSessionRequest{ProjectId: p.Msg.GetProject().GetProjectId()}))
+		res, err := api.CreateSession(ctx, connect.NewRequest(&circusv1.CreateSessionRequest{ClientRequestId: "create-session", ProjectId: p.Msg.GetProject().GetProjectId()}))
 		if err != nil {
 			t.Fatal(err)
 		}

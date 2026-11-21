@@ -28,7 +28,9 @@ func TestDeleteStopsBetweenChunks(t *testing.T) {
 	_, errProject := d.CreateProject(ctx, store.Project{ID: "p1", UserID: "u1", Name: "Project", CreatedAt: now, UpdatedAt: now})
 	must(errProject)
 	for _, id := range []string{"s1", "keep"} {
-		must(d.CreateSession(ctx, store.Session{ID: id, UserID: "u1", ProjectID: "p1", ClaudeSessionID: "c-" + id, DefaultDeviceID: "d1", CreatedAt: now}, nil, 10))
+		if _, err := d.CreateSession(ctx, store.Session{ID: id, ClientRequestID: id, UserID: "u1", ProjectID: "p1", ClaudeSessionID: "c-" + id, DefaultDeviceID: "d1", CreatedAt: now}, nil, 10); err != nil {
+			t.Fatal(err)
+		}
 	}
 	q := store.TranscriptQuota{MaxEntryBytes: 1 << 20, MaxSessionBytes: 1 << 30, MaxUserBytes: 1 << 30}
 	fill := func(id string, n int) {

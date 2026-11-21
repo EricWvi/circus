@@ -257,12 +257,14 @@ func (f *fixture) attach(c *workerclient.Client, max uint32) workerclient.Events
 // index or -1.
 func (f *fixture) session(id string, pinned int) {
 	f.t.Helper()
-	s := store.Session{ID: id, UserID: f.user.ID, ProjectID: "p1", ClaudeSessionID: "claude-" + id, DefaultDeviceID: f.device.ID,
+	s := store.Session{ID: id, ClientRequestID: id, UserID: f.user.ID, ProjectID: "p1", ClaudeSessionID: "claude-" + id, DefaultDeviceID: f.device.ID,
 		Model: "m", PermissionMode: "auto", CreatedAt: ms(f)}
 	if pinned >= 0 {
 		s.PinnedWorkerID = f.workers[pinned].Identity.ID
 	}
-	must(f.t, f.st.CreateSession(f.t.Context(), s, []store.SessionCwd{{DeviceID: f.device.ID, Cwd: "/work"}}, store.DefaultMaxSessionsPerUser))
+	if _, err := f.st.CreateSession(f.t.Context(), s, []store.SessionCwd{{DeviceID: f.device.ID, Cwd: "/work"}}, store.DefaultMaxSessionsPerUser); err != nil {
+		f.t.Fatal(err)
+	}
 }
 
 // input submits a user message and wakes the scheduler, as SendMessage does.

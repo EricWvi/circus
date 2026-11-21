@@ -66,7 +66,7 @@ func TestSessionFlowThroughServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	api := circusv1connect.NewSessionServiceClient(client, h.base)
-	created, err := api.CreateSession(ctx, connect.NewRequest(&circusv1.CreateSessionRequest{ProjectId: project.Msg.Project.ProjectId}))
+	created, err := api.CreateSession(ctx, connect.NewRequest(&circusv1.CreateSessionRequest{ClientRequestId: "create-session", ProjectId: project.Msg.Project.ProjectId}))
 	if err != nil {
 		t.Fatal(err)
 	}

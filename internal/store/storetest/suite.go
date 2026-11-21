@@ -82,6 +82,8 @@ func Run(t *testing.T, b Backend) {
 		{"SetConnectedConcurrent", testSetConnectedConcurrent},
 		{"TxTimerAtomicity", testTxTimerAtomicity},
 		{"SessionCreate", testSessionCreate},
+		{"SessionCreateIdempotent", testSessionCreateIdempotent},
+		{"SessionCreateConcurrent", testSessionCreateConcurrent},
 		{"SessionLists", testSessionLists},
 		{"SessionCallsAndJobsByOwner", testSessionCallsAndJobsByOwner},
 		{"SessionActivity", testSessionActivity},

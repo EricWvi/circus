@@ -26,13 +26,17 @@ func TestJobEndedHook(t *testing.T) {
 	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p", UserID: "u", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
 	for _, id := range []string{"s-a", "s-b", "s-c"} {
-		must(t, f.db.CreateSession(f.ctx, store.Session{ID: id, UserID: "u", ProjectID: "p", ClaudeSessionID: "c-" + id, DefaultDeviceID: "d", CreatedAt: 1}, nil, 10))
+		if _, err := f.db.CreateSession(f.ctx, store.Session{ID: id, ClientRequestID: id, UserID: "u", ProjectID: "p", ClaudeSessionID: "c-" + id, DefaultDeviceID: "d", CreatedAt: 1}, nil, 10); err != nil {
+			t.Fatal(err)
+		}
 	}
 	must(t, f.db.CreateUser(f.ctx, store.User{ID: "u2", Name: "other", CreatedAt: 1}))
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindDevice, ID: "d2", UserID: "u2", Name: "desk2", MachineID: "m2", CreatedAt: 1}))
 	_, err = f.db.CreateProject(f.ctx, store.Project{ID: "p2", UserID: "u2", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
-	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "theirs", UserID: "u2", ProjectID: "p2", ClaudeSessionID: "c2", DefaultDeviceID: "d2", CreatedAt: 1}, nil, 10))
+	if _, err := f.db.CreateSession(f.ctx, store.Session{ID: "theirs", ClientRequestID: "theirs", UserID: "u2", ProjectID: "p2", ClaudeSessionID: "c2", DefaultDeviceID: "d2", CreatedAt: 1}, nil, 10); err != nil {
+		t.Fatal(err)
+	}
 	l := f.connect("boot")
 	job := func(id, session string, seq uint64, st circusv1.JobEvent_State) *circusv1.JobEvent {
 		return &circusv1.JobEvent{JobId: id, SessionId: session, CallId: "call", Seq: seq, State: st}
@@ -91,7 +95,9 @@ func TestSessionAdmission(t *testing.T) {
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindWorker, ID: "w", UserID: "u", Name: "w", MachineID: "m", CreatedAt: 1}))
 	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p", UserID: "u", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
-	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "s", UserID: "u", ProjectID: "p", ClaudeSessionID: "c", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10))
+	if _, err := f.db.CreateSession(f.ctx, store.Session{ID: "s", ClientRequestID: "s", UserID: "u", ProjectID: "p", ClaudeSessionID: "c", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10); err != nil {
+		t.Fatal(err)
+	}
 	now := f.clock.Now().UnixMilli()
 	r, err := f.db.AcquireLease(f.ctx, store.LeaseRequest{SessionID: "s", WorkerID: "w", BootID: "b", ConnID: "conn", Now: now, ExpiresAt: now + 60_000})
 	must(t, err)
@@ -144,7 +150,9 @@ func TestNonSessionCallOtherUsersSession(t *testing.T) {
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindDevice, ID: "d2", UserID: "u2", Name: "desk2", MachineID: "m2", CreatedAt: 1}))
 	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p2", UserID: "u2", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
-	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "theirs", UserID: "u2", ProjectID: "p2", ClaudeSessionID: "c2", DefaultDeviceID: "d2", CreatedAt: 1}, nil, 10))
+	if _, err := f.db.CreateSession(f.ctx, store.Session{ID: "theirs", ClientRequestID: "theirs", UserID: "u2", ProjectID: "p2", ClaudeSessionID: "c2", DefaultDeviceID: "d2", CreatedAt: 1}, nil, 10); err != nil {
+		t.Fatal(err)
+	}
 	s, err := f.router.Submit(f.ctx, "u", "desk", &circusv1.DeviceCall{CallId: "mine", SessionId: "theirs", Tool: &circusv1.DeviceCall_Bash{Bash: &circusv1.BashRequest{Command: "true", Cwd: "/tmp"}}})
 	must(t, err)
 	defer s.Close()

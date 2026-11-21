@@ -190,7 +190,7 @@ func (s *session) runTool(t *turn, command, arg string, u toolCall, closing bool
 const interruptedTool = "The tool call was interrupted before a result was received. It may or may not have completed on the server — verify before assuming it succeeded, and retry if needed."
 
 func (s *session) recordToolResult(toolID string, content any, isError bool) error {
-	return s.record(sdkUser(s.sdkID, uuid.NewString(), []object{toolResult(toolID, content, isError)}, false))
+	return s.record(sdkUser(s.sdkID, uuid.NewString(), []object{toolResult(toolID, content, isError)}, ""))
 }
 
 func callOutput(u *pb.CallUpdate) ([]object, bool) {

@@ -19,12 +19,12 @@ func TestSDKMessages(t *testing.T) {
 		model     = "claude-sonnet-4-6"
 	)
 	messages := []sdkMessage{
-		sdkUser(sessionID, inputID, "hello", false),
+		sdkUser(sessionID, inputID, "hello", ""),
 		sdkPartial(sessionID, eventID, textDelta(0, "You said:")),
 		sdkAssistant(sessionID, eventID, "msg_fake", model, textBlock("You said:\n\n> hello")),
 		sdkAssistant(sessionID, eventID, "msg_fake", model, thinkingBlock()),
 		sdkAssistant(sessionID, eventID, "msg_fake", model, toolUse(toolID, "Bash", object{"command": "echo hi"})),
-		sdkUser(sessionID, eventID, []object{toolResult(toolID, []object{{"type": "text", "text": "hi\n"}}, false)}, false),
+		sdkUser(sessionID, eventID, []object{toolResult(toolID, []object{{"type": "text", "text": "hi\n"}}, false)}, ""),
 		sdkResult(sessionID, eventID, "Bash finished.", "", 20),
 		sdkResult(sessionID, eventID, "", "scripted worker error", 20),
 	}
@@ -39,9 +39,9 @@ func TestSDKMessages(t *testing.T) {
 	applyAbortResult(now, "", "You said:")
 	resultUsage(now, model, &turn{usedInput: 25, outputTokens: 3, requests: 1}, &usageTotals{}, 20)
 	messages = append(messages, partial,
-		sdkUser(sessionID, eventID, []object{{"type": "text", "text": "[Request interrupted by user]"}}, true),
+		sdkUser(sessionID, eventID, []object{{"type": "text", "text": "[Request interrupted by user]"}}, noteUserInterrupt),
 		interrupt, now, sdkPermissionDenied(sessionID, eventID, toolID),
-		sdkUser(sessionID, eventID, []object{toolResult(toolID, denialText, true)}, false),
+		sdkUser(sessionID, eventID, []object{toolResult(toolID, denialText, true)}, ""),
 	)
 	type goldenEvent struct {
 		KindName  string          `json:"kind"`

@@ -171,9 +171,13 @@ describe("turns that end early", () => {
       "turn_error",
       "user_message",
       "history_gap",
+      "note",
       "assistant_text",
     ])
     expect(ofKind(t, "user_message").every((m) => m.delivery === "delivered")).toBe(true)
+    expect(ofKind(t, "note")).toEqual([
+      expect.objectContaining({ noteKind: "history_missing", text: "Part of the conversation history is missing." }),
+    ])
   })
 })
 
@@ -413,5 +417,124 @@ describe("odd input, continued", () => {
     const t = run(raw("text"))
     const again = run([{ ...base, seq: 0, kind: "unspecified", payloadJson: "", ephemeral: true }], t)
     expect(again.events).toBe(t.events)
+  })
+})
+
+describe("notes to Claude", () => {
+  const base = { tsUnixMs: Date.parse("2026-11-21T10:00:00Z"), ephemeral: false, truncated: false }
+  const user = (seq: number, payload: object): RawSessionEvent => ({
+    ...base,
+    seq,
+    kind: "user",
+    payloadJson: JSON.stringify({ type: "user", parent_tool_use_id: null, ...payload }),
+  })
+  const note = (seq: number, circusNote: string | undefined, content: unknown, extra: object = {}) =>
+    user(seq, {
+      uuid: `u${seq}`,
+      isSynthetic: true,
+      ...(circusNote === undefined ? {} : { circus_note: circusNote }),
+      message: { role: "user", content },
+      ...extra,
+    })
+  const notes = (t: Transcript) => ofKind(t, "note").map((n) => [n.noteKind, n.text])
+
+  it("shows none for an approval's retry: the approval card says it", () => {
+    const events = raw("approve")
+    expect(events.some((e) => e.payloadJson.includes('"circus_note":"approval_retry"'))).toBe(true)
+    expect(ofKind(run(events), "note")).toEqual([])
+  })
+
+  it.each(["interrupt", "interrupt_tool"] as const)("shows none for the user's interrupt (%s)", (scenario) => {
+    const events = raw(scenario)
+    expect(events.some((e) => e.payloadJson.includes('"circus_note":"user_interrupt"'))).toBe(true)
+    expect(ofKind(run(events), "note")).toEqual([])
+  })
+
+  it("tells that the previous turn was interrupted, after a crash", () => {
+    const t = run(raw("crash_recover"))
+    expect(kinds(t)).toEqual(["user_message", "turn_interrupted", "user_message", "note", "assistant_text"])
+    expect(notes(t)).toEqual([["previous_turn_interrupted", "The previous turn was interrupted."]])
+    const id = ofKind(t, "note")[0].id
+    expect(id).toMatch(/^note:00000000-/)
+    // The same id on replay.
+    expect(ofKind(run(raw("crash_recover")), "note")[0].id).toBe(id)
+  })
+
+  it("names each known kind and joins the text blocks Claude was sent", () => {
+    const t = run([
+      note(1, "recovered_call", [
+        { type: "text", text: "Bash call c1 on box returned." },
+        { type: "image", source: {} },
+        { type: "text", text: "hi\n" },
+      ]),
+      note(2, "call_notice", [{ type: "text", text: "Bash call c2 on box finished." }]),
+      note(3, "job_notice", "Background job j1 on box exited (exit 0)."),
+      note(4, "lost_bgtask", "Background task t1 was lost (tool use toolu_1)."),
+      note(5, "previous_turn_interrupted", "The previous turn was interrupted."),
+      note(6, "history_missing", "Part of the conversation history is missing."),
+    ])
+    expect(notes(t)).toEqual([
+      ["recovered_call", "Bash call c1 on box returned.\nhi\n"],
+      ["call_notice", "Bash call c2 on box finished."],
+      ["job_notice", "Background job j1 on box exited (exit 0)."],
+      ["lost_bgtask", "Background task t1 was lost (tool use toolu_1)."],
+      ["previous_turn_interrupted", "The previous turn was interrupted."],
+      ["history_missing", "Part of the conversation history is missing."],
+    ])
+    expect(t.events.map((e) => e.id)).toEqual(["note:u1", "note:u2", "note:u3", "note:u4", "note:u5", "note:u6"])
+  })
+
+  it("shows an unknown kind, or a synthetic message without one, as a generic note", () => {
+    const t = run([note(1, "something_new", "A new kind of note."), note(2, undefined, "Unmarked but synthetic.")])
+    expect(notes(t)).toEqual([
+      ["other", "A new kind of note."],
+      ["other", "Unmarked but synthetic."],
+    ])
+  })
+
+  it("marks by circus_note even without isSynthetic", () => {
+    const t = run([user(1, { uuid: "u1", circus_note: "job_notice", message: { role: "user", content: "done" } })])
+    expect(notes(t)).toEqual([["job_notice", "done"]])
+  })
+
+  it("doesn't throw on malformed content, and keeps the rest of the batch", () => {
+    const t = run([
+      note(1, "call_notice", 42),
+      note(2, "call_notice", [null, 1, "text", { type: "text" }, { type: "text", text: 7 }]),
+      user(3, { uuid: "u3", circus_note: "job_notice", message: "not an object" }),
+      user(4, { uuid: "u4", circus_note: ["job_notice"], isSynthetic: true }),
+      note(5, "job_notice", "still here"),
+    ])
+    expect(notes(t)).toEqual([
+      ["call_notice", ""],
+      ["call_notice", ""],
+      ["job_notice", ""],
+      ["other", ""],
+      ["job_notice", "still here"],
+    ])
+  })
+
+  it("keeps out the user's own input, tool results and subagents' notes", () => {
+    const t = run([
+      {
+        ...base,
+        seq: 1,
+        kind: "input_accepted",
+        payloadJson: JSON.stringify({ input_id: "in-1", client_msg_id: "c1", text: "hello" }),
+      },
+      // The user's own input, even if it came marked.
+      note(2, "job_notice", "hello", { uuid: "in-1" }),
+      // A tool result the worker marked.
+      note(3, "recovered_call", [{ type: "tool_result", tool_use_id: "toolu_x", content: "out" }]),
+      // A subagent's.
+      note(4, "job_notice", "inside the Task", { parent_tool_use_id: "toolu_task" }),
+    ])
+    expect(kinds(t)).toEqual(["user_message"])
+    expect(t.events[0]).toMatchObject({ delivery: "delivered" })
+  })
+
+  it("names a note without a uuid by its seq", () => {
+    const t = run([user(9, { isSynthetic: true, message: { role: "user", content: "no uuid" } })])
+    expect(t.events.map((e) => e.id)).toEqual(["note:9"])
   })
 })

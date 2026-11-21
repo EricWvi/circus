@@ -277,6 +277,7 @@ export const zhCN = {
     newSession: "新会话",
     startPlaceholder: "开始会话…（Shift+Enter 换行）",
     location: "位置",
+    startConflict: "无法开始会话：请求与之前的一次请求冲突。再次发送即可开始。",
     locationGone: "请选择项目中的一个位置。",
     sessions: "会话",
     sessionsLoadFailed: "无法加载会话",
@@ -362,6 +363,15 @@ export const zhCN = {
     continue: "继续",
     continuePrompt: "继续",
     historyGap: "历史缺口——Claude 不记得上方对话的一部分",
+    note: {
+      previousTurnInterrupted: "已告知 Claude：上一轮被中断",
+      recoveredCall: "已告知 Claude：被中断的工具调用的情况",
+      callNotice: "已告知 Claude：一个工具调用已完成",
+      jobNotice: "已告知 Claude：一个后台作业已结束",
+      lostBgtask: "已告知 Claude：一个后台任务已丢失",
+      historyMissing: "已告知 Claude：部分历史记录缺失",
+      other: "已向 Claude 发送说明",
+    },
     connection: {
       reconnecting: "正在重新连接…{{seconds}} 秒后重试",
       reconnectingNow: "正在重新连接…",

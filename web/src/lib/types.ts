@@ -128,6 +128,27 @@ export interface TruncatedEvent extends EventBase {
   kind: "truncated"
 }
 
+/**
+ * What a note the worker wrote for Claude is about. `other`: a kind this
+ * client doesn't know, or a note that names none.
+ */
+export type NoteKind =
+  | "previous_turn_interrupted"
+  | "recovered_call"
+  | "call_notice"
+  | "job_notice"
+  | "lost_bgtask"
+  | "history_missing"
+  | "other"
+
+/** A message the worker wrote for Claude, neither the user's input nor a tool result. */
+export interface NoteEvent extends EventBase {
+  kind: "note"
+  noteKind: NoteKind
+  /** Exactly what Claude was sent (its text blocks); not translated. */
+  text: string
+}
+
 export type SessionEvent =
   | UserMessageEvent
   | AssistantTextEvent
@@ -138,3 +159,4 @@ export type SessionEvent =
   | TurnErrorEvent
   | HistoryGapEvent
   | TruncatedEvent
+  | NoteEvent

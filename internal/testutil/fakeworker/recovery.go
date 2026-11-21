@@ -18,7 +18,7 @@ func (s *session) recoverCalls(t *turn) error {
 	}
 	r := s.recovery
 	if r.GetPreviousTurnInterrupted() {
-		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), "The previous turn was interrupted.", true)); err != nil {
+		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), "The previous turn was interrupted.", notePreviousTurnInterrupted)); err != nil {
 			return err
 		}
 	}
@@ -29,7 +29,7 @@ func (s *session) recoverCalls(t *turn) error {
 	}
 	for _, task := range r.GetLostBgtasks() {
 		text := fmt.Sprintf("Background task %s was lost (tool use %s).", task.GetTaskId(), task.GetToolUseId())
-		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), text, true)); err != nil {
+		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), text, noteLostBgtask)); err != nil {
 			return err
 		}
 		// Simulate the CLI's own task_notification for an orphaned SDK task.
@@ -87,7 +87,7 @@ func (s *session) recoverCall(t *turn, call *pb.SessionState_Call) error {
 		s.owed[id] = call
 		blocks = append(blocks, object{"type": "text", "text": "A completion notice will follow."})
 	}
-	if err := s.record(sdkUser(s.sdkID, uuid.NewString(), blocks, true)); err != nil {
+	if err := s.record(sdkUser(s.sdkID, uuid.NewString(), blocks, noteRecoveredCall)); err != nil {
 		return err
 	}
 	t.marks.CallIds = append(t.marks.CallIds, id)
@@ -112,7 +112,7 @@ func (s *session) deliverNotices(t *turn) error {
 		call := s.owed[u.GetCallId()]
 		output, _ := callOutput(u)
 		blocks := append([]object{{"type": "text", "text": fmt.Sprintf("%s call %s on %s finished.", call.GetTool(), call.GetCallId(), call.GetDevice())}}, output...)
-		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), blocks, true)); err != nil {
+		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), blocks, noteCallNotice)); err != nil {
 			return err
 		}
 		t.marks.LateCallIds = append(t.marks.LateCallIds, u.GetCallId())
@@ -127,7 +127,7 @@ func (s *session) deliverNotices(t *turn) error {
 		if job.GetOutputPath() != "" {
 			text += " Output: " + job.GetOutputPath()
 		}
-		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), text, true)); err != nil {
+		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), text, noteJobNotice)); err != nil {
 			return err
 		}
 		s.queue(pb.SessionEvent_KIND_NOTIFICATION_DELIVERED, object{

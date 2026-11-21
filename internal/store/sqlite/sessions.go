@@ -47,7 +47,7 @@ const sessionCols = `session_id, user_id, claude_session_id, state, default_devi
 	pinned_worker_id, turn_count, last_turn_outcome, interrupt_turn_no, previous_turn_interrupted, transcript_gap_turn_no, input_tokens, output_tokens,
 	cache_read_tokens, cache_create_tokens, cost_micro_usd, duration_ms, transcript_bytes, view_bytes,
 	view_truncated, last_event_seq, dropped_event_batches, reason, created_at, updated_at, stopped_at,
-	project_id, title, last_activity_at,
+	project_id, client_request_id, location_index, title, last_activity_at,
 	(SELECT COUNT(*) FROM session_approvals a WHERE a.session_id = sessions.session_id
 		AND a.state = 'pending' AND a.expires_at > ?1)`
 
@@ -61,7 +61,7 @@ func scanSession(s scanner) (store.Session, error) {
 		&x.Usage.CacheCreationInputTokens, &x.Usage.CostMicroUSD, &x.Usage.DurationMs,
 		&x.TranscriptBytes, &x.ViewBytes, &truncated, &x.LastEventSeq, &x.DroppedEventBatches, nullStr{&x.Reason},
 		&x.CreatedAt, &x.UpdatedAt, nullInt{&x.StoppedAt},
-		&x.ProjectID, &x.Title, &x.LastActivityAt, &x.PendingApprovalCount)
+		&x.ProjectID, nullStr{&x.ClientRequestID}, &x.LocationIndex, &x.Title, &x.LastActivityAt, &x.PendingApprovalCount)
 	x.State = store.SessionState(state)
 	x.LastTurnOutcome = store.TurnOutcome(outcome)
 	x.ViewTruncated = truncated != 0
@@ -77,42 +77,71 @@ func (o *ops) setState(ctx context.Context, id string, state store.SessionState,
 	return err
 }
 
-func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.SessionCwd, maxSessions int) error {
+const sessionByClientRequestIDQuery = `SELECT ` + sessionCols + ` FROM sessions
+	WHERE project_id = ? AND client_request_id = ?`
+
+func (o *ops) GetSessionByClientRequestID(ctx context.Context, projectID, clientRequestID string, now int64) (store.Session, error) {
+	if err := store.CheckID("project id", projectID); err != nil {
+		return store.Session{}, err
+	}
+	if err := store.CheckID("client request id", clientRequestID); err != nil {
+		return store.Session{}, err
+	}
+	if now == 0 {
+		return store.Session{}, invalid("GetSessionByClientRequestID needs a time")
+	}
+	return scanSession(o.q.QueryRow(ctx, sessionByClientRequestIDQuery, now, projectID, clientRequestID))
+}
+
+func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.SessionCwd, maxSessions int) (store.SessionCreated, error) {
+	var out store.SessionCreated
 	for _, c := range []struct{ what, v string }{
 		{"session id", s.ID}, {"user id", s.UserID}, {"project id", s.ProjectID}, {"claude session id", s.ClaudeSessionID}, {"default device id", s.DefaultDeviceID},
+		{"client request id", s.ClientRequestID},
 	} {
 		if err := store.CheckID(c.what, c.v); err != nil {
-			return err
+			return out, err
 		}
 	}
 	for _, c := range []struct{ what, v string }{
 		{"model", s.Model}, {"permission mode", s.PermissionMode}, {"pinned worker id", s.PinnedWorkerID},
 	} {
 		if err := store.CheckOptionalID(c.what, c.v); err != nil {
-			return err
+			return out, err
 		}
 	}
 	if s.CreatedAt == 0 {
-		return invalid("session needs a creation time")
+		return out, invalid("session needs a creation time")
 	}
 	if s.State != "" && s.State != store.SessionIdle {
-		return invalid("a new session starts idle, not %q", s.State)
+		return out, invalid("a new session starts idle, not %q", s.State)
 	}
 	if maxSessions < 1 {
-		return invalid("maxSessions must be positive")
+		return out, invalid("maxSessions must be positive")
 	}
 	if len(cwds) > store.MaxSessionCwds {
-		return invalid("at most %d working directories", store.MaxSessionCwds)
+		return out, invalid("at most %d working directories", store.MaxSessionCwds)
 	}
 	for _, c := range cwds {
 		if err := checkCwd(c); err != nil {
-			return err
+			return out, err
 		}
 	}
-	return o.unit(ctx, func(tx *ops) error {
+	err := o.unit(ctx, func(tx *ops) error {
 		var exists int
 		if err := tx.q.QueryRow(ctx, `SELECT 1 FROM projects WHERE id = ? AND user_id = ?`, s.ProjectID, s.UserID).Scan(&exists); err != nil {
 			return mapErr(err)
+		}
+		old, err := tx.GetSessionByClientRequestID(ctx, s.ProjectID, s.ClientRequestID, s.CreatedAt)
+		switch {
+		case err == nil:
+			if !old.MatchesCreate(&s.LocationIndex, s.PinnedWorkerID, s.Model, s.PermissionMode) {
+				return fmt.Errorf("%w: client request %q was used for a different session", store.ErrExists, s.ClientRequestID)
+			}
+			out.Session = old
+			return nil
+		case !isNotFound(err):
+			return err
 		}
 		var n int
 		if err := tx.q.QueryRow(ctx, `SELECT COUNT(*) FROM sessions WHERE user_id = ?`, s.UserID).Scan(&n); err != nil {
@@ -122,9 +151,10 @@ func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.S
 			return fmt.Errorf("%w: user %q has %d sessions", store.ErrLimit, s.UserID, n)
 		}
 		if _, err := tx.exec(ctx, `INSERT INTO sessions (session_id, user_id, claude_session_id, state, default_device_id,
-			model, permission_mode, pinned_worker_id, created_at, updated_at, project_id, last_activity_at) VALUES (?,?,?,'idle',?,?,?,?,?,?,?,?)`,
+			model, permission_mode, pinned_worker_id, created_at, updated_at, project_id, last_activity_at,
+			client_request_id, location_index) VALUES (?,?,?,'idle',?,?,?,?,?,?,?,?,?,?)`,
 			s.ID, s.UserID, s.ClaudeSessionID, s.DefaultDeviceID, nstr(s.Model), nstr(s.PermissionMode),
-			nstr(s.PinnedWorkerID), s.CreatedAt, s.CreatedAt, s.ProjectID, s.CreatedAt); err != nil {
+			nstr(s.PinnedWorkerID), s.CreatedAt, s.CreatedAt, s.ProjectID, s.CreatedAt, s.ClientRequestID, s.LocationIndex); err != nil {
 			return err
 		}
 		if _, err := tx.exec(ctx, `INSERT INTO session_leases (session_id) VALUES (?)`, s.ID); err != nil {
@@ -137,8 +167,14 @@ func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.S
 				return err
 			}
 		}
-		return nil
+		out.Session, err = tx.getSession(ctx, s.ID, s.CreatedAt)
+		out.Created = err == nil
+		return err
 	})
+	if err != nil {
+		return store.SessionCreated{}, err
+	}
+	return out, nil
 }
 
 func checkCwd(c store.SessionCwd) error {

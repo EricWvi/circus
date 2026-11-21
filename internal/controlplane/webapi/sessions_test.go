@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/google/uuid"
 )
 
 // recordingWaker records Wake calls as "session:REASON,REASON".
@@ -87,7 +88,7 @@ func (c *client) createSession(t *testing.T, req *circusv1.CreateSessionRequest)
 
 func (c *client) mustSession(t *testing.T, projectID string) *circusv1.Session {
 	t.Helper()
-	s, err := c.createSession(t, &circusv1.CreateSessionRequest{ProjectId: projectID})
+	s, err := c.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: uuid.NewString(), ProjectId: projectID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +173,7 @@ func (h *harness) foreignSession(t *testing.T, webUser, projectID, sessionID str
 	if err := h.st.CreateIdentity(t.Context(), store.Identity{Kind: store.KindDevice, ID: deviceID, UserID: webUser, Name: "desk", MachineID: deviceID, CreatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.st.CreateSession(t.Context(), store.Session{ID: sessionID, UserID: webUser, ProjectID: projectID, ClaudeSessionID: "claude-" + sessionID, DefaultDeviceID: deviceID, CreatedAt: now, UpdatedAt: now, LastActivityAt: now}, nil, 100); err != nil {
+	if _, err := h.st.CreateSession(t.Context(), store.Session{ID: sessionID, ClientRequestID: sessionID, UserID: webUser, ProjectID: projectID, ClaudeSessionID: "claude-" + sessionID, DefaultDeviceID: deviceID, CreatedAt: now, UpdatedAt: now, LastActivityAt: now}, nil, 100); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -205,7 +206,7 @@ func TestSessionAuthorization(t *testing.T) {
 			t.Fatalf("%s: %v, want NOT_FOUND", what, err)
 		}
 	}
-	_, err := bob.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId})
+	_, err := bob.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "foreign-project", ProjectId: p.ProjectId})
 	notFound("CreateSession", err)
 	_, err = bob.send(t, id, "m2", "from bob")
 	notFound("SendMessage", err)
@@ -293,9 +294,9 @@ func TestSessionIDArguments(t *testing.T) {
 	wantField(t, err, connect.CodeInvalidArgument, "approval_id")
 	_, err = super.sessions.ResolveApproval(ctx, connect.NewRequest(&circusv1.ResolveApprovalRequest{ApprovalId: "missing"}))
 	wantCode(t, err, connect.CodeNotFound)
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "no-project"})
 	wantCode(t, err, connect.CodeNotFound)
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: "missing"})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "missing-project", ProjectId: "missing"})
 	wantCode(t, err, connect.CodeNotFound)
 }
 
@@ -306,7 +307,7 @@ func TestCreateSessionLocations(t *testing.T) {
 	h.device(t, "d2", "spare", "linux")
 	p := super.mustCreate(t, "Project", loc("box", "/work"), loc("box", ""), loc("spare", "/srv"))
 
-	first, err := super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{Model: "opus", PermissionMode: "acceptEdits"}})
+	first, err := super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "first", ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{Model: "opus", PermissionMode: "acceptEdits"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +318,7 @@ func TestCreateSessionLocations(t *testing.T) {
 	}
 	// A location without a path starts in the project's default directory,
 	// and becomes the project's last used location without changing it.
-	second, err := super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, LocationIndex: new(uint32(1))})
+	second, err := super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "second", ProjectId: p.ProjectId, LocationIndex: new(uint32(1))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,24 +339,24 @@ func TestCreateSessionLocations(t *testing.T) {
 	}
 
 	// Arguments.
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, LocationIndex: new(uint32(3))})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "bad-index", ProjectId: p.ProjectId, LocationIndex: new(uint32(3))})
 	wantField(t, err, connect.CodeInvalidArgument, "location_index")
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{DefaultDevice: "box"}})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "default-device", ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{DefaultDevice: "box"}})
 	wantField(t, err, connect.CodeInvalidArgument, "config.default_device")
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{Cwds: []*circusv1.SessionConfig_Cwd{{Device: "box", Cwd: "/"}}}})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "cwds", ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{Cwds: []*circusv1.SessionConfig_Cwd{{Device: "box", Cwd: "/"}}}})
 	wantField(t, err, connect.CodeInvalidArgument, "config.cwds")
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{Model: strings.Repeat("m", 129)}})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "model", ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{Model: strings.Repeat("m", 129)}})
 	wantField(t, err, connect.CodeInvalidArgument, "config.model")
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{PermissionMode: strings.Repeat("m", 129)}})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "permission-mode", ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{PermissionMode: strings.Repeat("m", 129)}})
 	wantField(t, err, connect.CodeInvalidArgument, "config.permission_mode")
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, PinnedWorkerId: new("nobody")})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "unknown-worker", ProjectId: p.ProjectId, PinnedWorkerId: new("nobody")})
 	wantField(t, err, connect.CodeInvalidArgument, "pinned_worker_id")
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, PinnedWorkerId: new(strings.Repeat("w", 129))})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "long-worker", ProjectId: p.ProjectId, PinnedWorkerId: new(strings.Repeat("w", 129))})
 	wantField(t, err, connect.CodeInvalidArgument, "pinned_worker_id")
 	if err := h.st.CreateIdentity(ctx, store.Identity{ID: "w1", Kind: store.KindWorker, UserID: h.owner.ID, Name: "worker", MachineID: "m", CreatedAt: h.clock.Load()}); err != nil {
 		t.Fatal(err)
 	}
-	pinned, err := super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, PinnedWorkerId: new("w1")})
+	pinned, err := super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "pinned", ProjectId: p.ProjectId, PinnedWorkerId: new("w1")})
 	if err != nil || pinned.PinnedWorkerId != "w1" {
 		t.Fatalf("pinned = %v, %v", pinned, err)
 	}
@@ -364,22 +365,22 @@ func TestCreateSessionLocations(t *testing.T) {
 	if _, err := h.st.DeleteIdentity(ctx, store.KindDevice, "d2", h.clock.Load()); err != nil {
 		t.Fatal(err)
 	}
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, LocationIndex: new(uint32(2))})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "revoked", ProjectId: p.ProjectId, LocationIndex: new(uint32(2))})
 	wantField(t, err, connect.CodeFailedPrecondition, "location_index")
 	// A device taking the revoked one's name is another machine.
 	h.device(t, "d3", "spare", "linux")
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, LocationIndex: new(uint32(2))})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "revoked", ProjectId: p.ProjectId, LocationIndex: new(uint32(2))})
 	wantField(t, err, connect.CodeFailedPrecondition, "location_index")
 
 	// A project without locations.
 	empty := super.mustCreate(t, "Empty")
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: empty.ProjectId})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "empty-project", ProjectId: empty.ProjectId})
 	wantField(t, err, connect.CodeFailedPrecondition, "location_index")
 
 	// A Web user without devices.
 	bob := h.signIn(t, "bob", "bob@example.com")
 	own := bob.mustCreate(t, "Bob's")
-	_, err = bob.createSession(t, &circusv1.CreateSessionRequest{ProjectId: own.ProjectId})
+	_, err = bob.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "empty-project", ProjectId: own.ProjectId})
 	wantField(t, err, connect.CodeFailedPrecondition, "location_index")
 
 	// Every created session is owned by the Web user.

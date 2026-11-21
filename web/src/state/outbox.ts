@@ -8,6 +8,7 @@
 import { isApiError } from "@/api/errors"
 import type { InputPriority, SessionService } from "@/api/types"
 import type { SendFailure } from "@/lib/types"
+import { randomUuid } from "@/lib/uuid"
 
 export interface OutboxMessage {
   sessionId: string
@@ -44,15 +45,8 @@ export function sendFailure(error: unknown): SendFailure {
   return "other"
 }
 
-/** A random (version 4) UUID, also where `crypto.randomUUID` is missing (plain HTTP). */
-export function newClientMsgId(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID()
-  const b = crypto.getRandomValues(new Uint8Array(16))
-  b[6] = (b[6] & 0x0f) | 0x40
-  b[8] = (b[8] & 0x3f) | 0x80
-  const hex = [...b].map((x) => x.toString(16).padStart(2, "0")).join("")
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
+/** A new message id: a random UUID. */
+export const newClientMsgId = randomUuid
 
 const none: readonly OutboxMessage[] = []
 

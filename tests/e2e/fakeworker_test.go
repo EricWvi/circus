@@ -51,7 +51,7 @@ func TestFakeWorkerSessions(t *testing.T) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
 		t.Cleanup(cancel)
-		res, err := api.CreateSession(ctx, connect.NewRequest(&pb.CreateSessionRequest{ProjectId: project}))
+		res, err := api.CreateSession(ctx, connect.NewRequest(&pb.CreateSessionRequest{ClientRequestId: uuid.NewString(), ProjectId: project}))
 		must(t, err)
 		s := &sessionBrowser{t: t, ctx: ctx, api: api, id: res.Msg.GetSession().GetSessionId()}
 		t.Cleanup(func() {

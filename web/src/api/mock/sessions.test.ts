@@ -54,7 +54,7 @@ describe("mock sessions", () => {
 
   it("answers a message with streamed text and a tool call, as the server streams them", async () => {
     const { client } = mock()
-    const session = await client.sessions.createSession({ projectId: "circus", locationIndex: 0 })
+    const session = await client.sessions.createSession({ projectId: "circus", locationIndex: 0, clientRequestId: crypto.randomUUID() })
     expect(session.title).toBe("")
     const sent = await client.sessions.sendMessage({ sessionId: session.sessionId, clientMsgId: "c1", text: "hello" })
     const events = await watchUntil(client, session.sessionId, has("result"))

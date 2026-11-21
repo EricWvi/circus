@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"slices"
@@ -695,7 +696,7 @@ const (
 	// default session to 4 Mi entries.
 	TranscriptEntryOverhead = 64
 
-	// MaxIDBytes bounds every id: session, input, client message, call,
+	// MaxIDBytes bounds every id: session, input, client message, client request, call,
 	// tool use, approval, agent, device, worker, boot, connection, job,
 	// task and transcript uuid, and short labels (model, permission mode,
 	// event format, background task kind).
@@ -903,9 +904,11 @@ const (
 type Session struct {
 	ID string // UUIDv7, chosen by the control plane; never reused
 	// UserID owns the project, session, and the devices and workers that serve it.
-	UserID    string
-	ProjectID string
-	Title     string
+	UserID          string
+	ProjectID       string
+	ClientRequestID string // unique within the project, empty on legacy sessions
+	LocationIndex   uint32 // resolved project location at creation
+	Title           string
 	// LastActivityAt is the maximum of creation, stored durable event times
 	// and accepted user input times. It never decreases.
 	LastActivityAt int64
@@ -951,6 +954,20 @@ type Session struct {
 	CreatedAt int64
 	UpdatedAt int64
 	StoppedAt int64
+}
+
+// MatchesCreate reports whether the creation settings match. A nil index
+// accepts the location resolved for the original request. An empty permission
+// mode selects auto.
+func (s Session) MatchesCreate(index *uint32, pinnedWorkerID, model, permissionMode string) bool {
+	return (index == nil || *index == s.LocationIndex) && pinnedWorkerID == s.PinnedWorkerID &&
+		model == s.Model && cmp.Or(permissionMode, "auto") == cmp.Or(s.PermissionMode, "auto")
+}
+
+// SessionCreated is the current session and whether the call created it.
+type SessionCreated struct {
+	Session Session
+	Created bool
 }
 
 // SessionCursor is the exclusive (LastActivityAt, ID) key of the last session

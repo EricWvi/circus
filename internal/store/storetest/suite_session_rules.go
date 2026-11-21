@@ -518,12 +518,12 @@ func testStringCaps(t *testing.T, b Backend) {
 		{"session id", id, func(v string) error {
 			sess := newSession(v, f)
 			sess.ClaudeSessionID = "cl-" + fmt.Sprint(len(v))
-			return s.CreateSession(ctx, sess, nil, 100)
+			return errOf(s.CreateSession(ctx, sess, nil, 100))
 		}},
 		{"model", id, func(v string) error {
 			sess := newSession(fmt.Sprint("m", len(v)), f)
 			sess.ClaudeSessionID, sess.Model = sess.ID, v
-			return s.CreateSession(ctx, sess, nil, 100)
+			return errOf(s.CreateSession(ctx, sess, nil, 100))
 		}},
 		{"cwd", path, func(v string) error {
 			return s.PatchSessionRecords(ctx, fence, store.RecordsPatch{Cwds: []store.SessionCwd{{DeviceID: "d1", Cwd: v}}})

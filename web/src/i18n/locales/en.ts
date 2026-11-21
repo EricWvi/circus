@@ -278,6 +278,7 @@ export const en = {
     newSession: "New session",
     startPlaceholder: "Start a session… (Shift+Enter for a new line)",
     location: "Location",
+    startConflict: "Couldn't start the session: the request clashed with an earlier one. Send again to start it.",
     locationGone: "Choose one of the project's locations.",
     sessions: "Sessions",
     sessionsLoadFailed: "Couldn't load sessions",
@@ -364,6 +365,15 @@ export const en = {
     continue: "Continue",
     continuePrompt: "Continue",
     historyGap: "History gap — Claude doesn't remember part of the conversation above",
+    note: {
+      previousTurnInterrupted: "Told Claude: the previous turn was interrupted",
+      recoveredCall: "Told Claude: what happened to an interrupted tool call",
+      callNotice: "Told Claude: a tool call finished",
+      jobNotice: "Told Claude: a background job finished",
+      lostBgtask: "Told Claude: a background task was lost",
+      historyMissing: "Told Claude: part of the history is missing",
+      other: "Sent Claude a note",
+    },
     connection: {
       reconnecting: "Reconnecting… retrying in {{seconds}}s",
       reconnectingNow: "Reconnecting…",

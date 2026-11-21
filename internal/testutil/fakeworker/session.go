@@ -306,7 +306,7 @@ func (s *session) runTurn() error {
 
 func (s *session) workTurn(t *turn, in *input) error {
 	if s.gap != 0 {
-		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), "Part of the conversation history is missing.", true)); err != nil {
+		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), "Part of the conversation history is missing.", noteHistoryMissing)); err != nil {
 			return err
 		}
 		t.marks.GapNoticeTurnNo = s.gap
@@ -347,8 +347,11 @@ func (s *session) workTurn(t *turn, in *input) error {
 }
 
 func (s *session) deliverInput(t *turn, in *input) error {
-	synthetic := in.GetKind() == pb.SessionReply_Inputs_Input_KIND_APPROVAL
-	if err := s.record(sdkUser(s.sdkID, in.GetInputId(), in.GetText(), synthetic)); err != nil {
+	note := ""
+	if in.GetKind() == pb.SessionReply_Inputs_Input_KIND_APPROVAL {
+		note = noteApprovalRetry
+	}
+	if err := s.record(sdkUser(s.sdkID, in.GetInputId(), in.GetText(), note)); err != nil {
 		return err
 	}
 	t.inputTokens += tokens(in.GetText())
@@ -380,7 +383,7 @@ func (s *session) finishTurn(t *turn, workErr error) error {
 				// the transcript. Its use for a tool Interrupt and publication
 				// as an SDK USER frame with isSynthetic are inferred.
 				annotation := []object{{"type": "text", "text": "[Request interrupted by user]"}}
-				if err := s.record(sdkUser(s.sdkID, uuid.NewString(), annotation, true)); err != nil {
+				if err := s.record(sdkUser(s.sdkID, uuid.NewString(), annotation, noteUserInterrupt)); err != nil {
 					if !errors.Is(err, errMirror) {
 						return err
 					}

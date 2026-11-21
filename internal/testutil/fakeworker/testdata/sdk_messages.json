@@ -347,6 +347,7 @@
     "kind": "KIND_USER",
     "ephemeral": false,
     "payload": {
+      "circus_note": "user_interrupt",
       "isSynthetic": true,
       "message": {
         "content": [

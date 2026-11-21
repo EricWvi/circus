@@ -223,21 +223,24 @@ type SessionOps interface {
 	// CreateSession inserts s in state idle with turn count, usage and byte
 	// counters zero, creates its lease row (epoch 0, no holder) and its
 	// initial working directories cwds (AgentID "" is the main thread), in
-	// one transaction. Checked in the same transaction: the user has fewer
-	// than maxSessions sessions (ErrLimit otherwise), the default device and
-	// any pinned worker and the project belong to the user (ErrNotFound
-	// otherwise). The service authorizes through the project.
-	// Title starts empty and LastActivityAt
-	// starts at CreatedAt. ErrExists
-	// if the session id or ClaudeSessionID is taken. len(cwds) ≤
-	// MaxSessionCwds. Not idempotent: a retried create with the same id
-	// returns ErrExists, and the caller compares the stored row.
+	// one transaction. The project must belong to the user (ErrNotFound
+	// otherwise). A session with the same (ProjectID, ClientRequestID)
+	// returns its current row with Created false when the resolved
+	// LocationIndex, PinnedWorkerID, Model and PermissionMode match.
+	// ErrExists reports different creation settings or a unique-key conflict.
+	// Only a fresh session checks the cap (ErrLimit) and ownership of the
+	// default device and any pinned worker (ErrNotFound). Title starts empty
+	// and LastActivityAt starts at CreatedAt. len(cwds) ≤ MaxSessionCwds.
 	//
 	// The epoch starts over for a new session, so session ids must never
 	// be reused: a deleted session's id given to a new one would let a
 	// message still in flight for the old one pass the new one's fence at
 	// epoch 1. The control plane mints UUIDv7 ids and never reuses them.
-	CreateSession(ctx context.Context, s Session, cwds []SessionCwd, maxSessions int) error
+	CreateSession(ctx context.Context, s Session, cwds []SessionCwd, maxSessions int) (SessionCreated, error)
+	// GetSessionByClientRequestID finds the session for the given project and
+	// nonempty client request key, or returns ErrNotFound. Callers authorize
+	// through the project. now has the same semantics as in GetSession.
+	GetSessionByClientRequestID(ctx context.Context, projectID, clientRequestID string, now int64) (Session, error)
 	// GetSession returns the session, or ErrNotFound. now is required, in
 	// Unix milliseconds; pending approvals count only when ExpiresAt > now,
 	// even before the expiry sweep runs, as with other expiry reads.

@@ -123,10 +123,10 @@ func testUserProjectSessions(t *testing.T, b Backend) {
 	must(t, err)
 	sess := newSession("human-session", f.fixture)
 	sess.ProjectID = "human-project"
-	mustIs(t, s.CreateSession(ctx, sess, nil, 100), store.ErrNotFound)
+	mustIs(t, errOf(s.CreateSession(ctx, sess, nil, 100)), store.ErrNotFound)
 	sess.UserID = f.alice.ID
 	sess.DefaultDeviceID = "alice-laptop"
-	must(t, s.CreateSession(ctx, sess, nil, 100))
+	must(t, errOf(s.CreateSession(ctx, sess, nil, 100)))
 	for i := 0; i < 2; i++ {
 		mustIs(t, s.DeleteUser(ctx, "alice"), store.ErrHasSessions)
 		must(t, errOf(s.GetUser(ctx, "alice")))

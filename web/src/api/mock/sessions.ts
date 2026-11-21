@@ -44,6 +44,8 @@ export interface MockSession {
   /** Inputs not yet taken by a turn. */
   queue: { inputId: string; text: string; approval: boolean }[]
   turns: number
+  /** The request that created the session, for retries of it; forgotten with the session. */
+  created?: { clientRequestId: string; locationIndex: number }
 }
 
 /** How the scripted replies pace themselves; tests shorten it. */
@@ -63,10 +65,11 @@ const INTERRUPTED_TOOL =
 // --- SDK message shapes -------------------------------------------------
 
 const envelope = (type: string, uuid: string) => ({ type, uuid, session_id: "mock", parent_tool_use_id: null })
-const userMessage = (uuid: string, content: unknown, synthetic = false) => ({
+/** A user message; `note` names the kind of one the worker wrote for the model (docs/wire.md). */
+const userMessage = (uuid: string, content: unknown, note?: "approval_retry" | "user_interrupt") => ({
   ...envelope("user", uuid),
   message: { role: "user", content },
-  ...(synthetic ? { isSynthetic: true } : {}),
+  ...(note ? { isSynthetic: true, circus_note: note } : {}),
 })
 const assistantMessage = (messageId: string, block: object, aborted = false) => ({
   ...envelope("assistant", nanoid()),
@@ -352,7 +355,7 @@ export function createMockSessionRuntime(host: MockSessionHost): Omit<SessionSer
     }
     const start = () => {
       r.turnStarted()
-      r.durable("user", userMessage(input.inputId, input.text, input.approval))
+      r.durable("user", userMessage(input.inputId, input.text, input.approval ? "approval_retry" : undefined))
     }
     let steps: (() => number | void)[]
     if (input.approval) {
@@ -407,7 +410,7 @@ export function createMockSessionRuntime(host: MockSessionHost): Omit<SessionSer
     if (outcome === "stopped") {
       if (turn.streaming && turn.streaming.text !== "") r.text(turn.streaming.text, turn.streaming.messageId, true)
       if (turn.tool) r.durable("user", userMessage(nanoid(), toolResult(turn.tool, INTERRUPTED_TOOL, true)))
-      r.durable("user", userMessage(nanoid(), [textBlock("[Request interrupted by user]")], true))
+      r.durable("user", userMessage(nanoid(), [textBlock("[Request interrupted by user]")], "user_interrupt"))
       r.durable("result", result("", "aborted"))
       r.durable("turn_stopped", { turn_no: String(s.turns), outcome: "stopped" })
     } else {

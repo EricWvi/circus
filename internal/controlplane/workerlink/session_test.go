@@ -64,7 +64,9 @@ func newSessionLink(t *testing.T, clk clock.Clock, hook func(*circusv1.WorkerDow
 	at := clk.Now().UnixMilli()
 	_, err = st.CreateProject(ctx, store.Project{ID: "p", UserID: u.ID, Name: "p", CreatedAt: at, UpdatedAt: at})
 	must(t, err)
-	must(t, st.CreateSession(ctx, store.Session{ID: "s1", UserID: u.ID, ProjectID: "p", ClaudeSessionID: "c", DefaultDeviceID: device.Identity.ID, CreatedAt: at}, nil, 10))
+	if _, err := st.CreateSession(ctx, store.Session{ID: "s1", ClientRequestID: "s1", UserID: u.ID, ProjectID: "p", ClaudeSessionID: "c", DefaultDeviceID: device.Identity.ID, CreatedAt: at}, nil, 10); err != nil {
+		t.Fatal(err)
+	}
 	_, err = st.SubmitInput(ctx, store.Input{InputID: "i1", SessionID: "s1", ClientMsgID: "m", Kind: store.InputUser, Text: "hi", Priority: store.InputNormal, CreatedAt: at})
 	must(t, err)
 

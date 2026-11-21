@@ -11,8 +11,17 @@ import (
 // other method is a write point. DeleteSession is one write point however
 // many transactions it runs.
 
-func (o *faultyOps) CreateSession(ctx context.Context, s store.Session, cwds []store.SessionCwd, maxSessions int) error {
-	return o.write(ctx, func(x store.Ops) error { return x.CreateSession(ctx, s, cwds, maxSessions) })
+func (o *faultyOps) CreateSession(ctx context.Context, s store.Session, cwds []store.SessionCwd, maxSessions int) (v store.SessionCreated, err error) {
+	err = o.write(ctx, func(x store.Ops) error { v, err = x.CreateSession(ctx, s, cwds, maxSessions); return err })
+	return v, err
+}
+
+func (o *faultyOps) GetSessionByClientRequestID(ctx context.Context, projectID, clientRequestID string, now int64) (v store.Session, err error) {
+	err = o.read(ctx, func(x store.Ops) error {
+		v, err = x.GetSessionByClientRequestID(ctx, projectID, clientRequestID, now)
+		return err
+	})
+	return v, err
 }
 
 func (o *faultyOps) GetSession(ctx context.Context, sessionID string, now int64) (v store.Session, err error) {

@@ -262,7 +262,7 @@ describe("projects", () => {
       name: "multi",
       locations: [mbp("/a"), mbp("/b"), mbp("/c")],
     })
-    await client.sessions.createSession({ projectId: p.projectId, locationIndex: 2 })
+    await client.sessions.createSession({ projectId: p.projectId, locationIndex: 2, clientRequestId: crypto.randomUUID() })
     const shrunk = await client.projects.updateProject({
       projectId: p.projectId,
       locations: [mbp("/x"), mbp("/y")],
@@ -335,7 +335,7 @@ describe("the project model", () => {
     const again = await client.projects.getProject({ projectId: p.projectId })
     expect(again.locations.map((l) => l.deviceRevoked)).toEqual([false, true])
     // Starting a session there is refused; saving it again needs another device.
-    await expectCode(client.sessions.createSession({ projectId: p.projectId, locationIndex: 1 }), "invalid_argument")
+    await expectCode(client.sessions.createSession({ projectId: p.projectId, locationIndex: 1, clientRequestId: crypto.randomUUID() }), "invalid_argument")
     expect(
       await fieldOf(client.projects.updateProject({ projectId: p.projectId, locations: again.locations })),
     ).toBe("locations[1].device")
@@ -393,14 +393,14 @@ describe("a device enrolled again under a removed device's name", () => {
     state.devices.find((d) => d.name === "devbox")!.deviceId = "device-devbox-2"
     const revoked = await client.projects.getProject({ projectId: p.projectId })
     expect(revoked.locations[0].deviceRevoked).toBe(true)
-    await expectCode(client.sessions.createSession({ projectId: p.projectId, locationIndex: 0 }), "invalid_argument")
+    await expectCode(client.sessions.createSession({ projectId: p.projectId, locationIndex: 0, clientRequestId: crypto.randomUUID() }), "invalid_argument")
     const rebound = await client.projects.updateProject({
       projectId: p.projectId,
       locations: revoked.locations,
       expectedUpdatedAt: revoked.updatedAtUnixMs,
     })
     expect(rebound.locations[0].deviceRevoked).toBe(false)
-    expect(await client.sessions.createSession({ projectId: p.projectId, locationIndex: 0 })).toMatchObject({
+    expect(await client.sessions.createSession({ projectId: p.projectId, locationIndex: 0, clientRequestId: crypto.randomUUID() })).toMatchObject({
       device: "devbox",
       cwd: "/b",
     })
@@ -420,7 +420,7 @@ describe("sessions", () => {
     const client = await signedIn()
     const before = await client.projects.getProject({ projectId: "circus" })
     expect(before.lastUsedLocation).toBe(0)
-    const session = await client.sessions.createSession({ projectId: "circus", locationIndex: 1 })
+    const session = await client.sessions.createSession({ projectId: "circus", locationIndex: 1, clientRequestId: crypto.randomUUID() })
     expect(session).toMatchObject({
       projectId: "circus",
       state: "idle",
@@ -434,8 +434,24 @@ describe("sessions", () => {
 
   it("rejects a location index out of range", async () => {
     const client = await signedIn()
-    await expectCode(client.sessions.createSession({ projectId: "circus", locationIndex: 5 }), "invalid_argument")
-    await expectCode(client.sessions.createSession({ projectId: "circus", locationIndex: -1 }), "invalid_argument")
+    await expectCode(client.sessions.createSession({ projectId: "circus", locationIndex: 5, clientRequestId: crypto.randomUUID() }), "invalid_argument")
+    await expectCode(client.sessions.createSession({ projectId: "circus", locationIndex: -1, clientRequestId: crypto.randomUUID() }), "invalid_argument")
+  })
+
+  it("returns the first session to a retry with the same key, and refuses the key for another request", async () => {
+    const client = await signedIn()
+    const req = { projectId: "circus", locationIndex: 1, clientRequestId: crypto.randomUUID() }
+    const [first, concurrent] = await Promise.all([client.sessions.createSession(req), client.sessions.createSession(req)])
+    expect(concurrent.sessionId).toBe(first.sessionId)
+    expect((await client.sessions.createSession(req)).sessionId).toBe(first.sessionId)
+    const sessions = await client.sessions.listSessions({ projectId: "circus" })
+    expect(sessions.filter((s) => s.sessionId === first.sessionId)).toHaveLength(1)
+
+    await expectCode(client.sessions.createSession({ ...req, locationIndex: 0 }), "already_exists")
+    // The key belongs to its project; another one starts a session of its own.
+    const other = await client.sessions.createSession({ ...req, clientRequestId: crypto.randomUUID() })
+    expect(other.sessionId).not.toBe(first.sessionId)
+    await expectCode(client.sessions.createSession({ ...req, clientRequestId: "" }), "invalid_argument")
   })
 
 })

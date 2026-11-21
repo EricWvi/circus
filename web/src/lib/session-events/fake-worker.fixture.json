@@ -757,6 +757,7 @@
     "ephemeral": false,
     "truncated": false,
     "payload": {
+     "circus_note": "approval_retry",
      "isSynthetic": true,
      "message": {
       "content": "The user approved this bash call on device \"box\" once: echo approved\nRetry it now.",
@@ -1419,6 +1420,7 @@
     "ephemeral": false,
     "truncated": false,
     "payload": {
+     "circus_note": "history_missing",
      "isSynthetic": true,
      "message": {
       "content": "Part of the conversation history is missing.",
@@ -1723,6 +1725,341 @@
     "payload": {
      "outcome": "interrupted",
      "turn_no": "1"
+    }
+   }
+  ]
+ },
+ "crash_recover": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake crash"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake crash",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_TURN_INTERRUPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "outcome": "interrupted",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000005",
+     "input_id": "00000000-0000-4000-8000-000000000004",
+     "priority": "normal",
+     "text": "after the crash"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "2"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "circus_note": "previous_turn_interrupted",
+     "isSynthetic": true,
+     "message": {
+      "content": "The previous turn was interrupted.",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "after the crash",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000004"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000007",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_details": null,
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message"
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "content_block": {
+       "citations": null,
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "You sai",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "d:\n\n> a",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "fter th",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "text": "e crash",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000014"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "delta": {
+       "stop_details": null,
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000016"
+    }
+   },
+   {
+    "seq": 9,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "citations": null,
+        "text": "You said:\n\n> after the crash",
+        "type": "text"
+       }
+      ],
+      "id": "msg_00000000-0000-4000-8000-000000000007",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 10,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "is_error": false,
+     "num_turns": 1,
+     "permission_denials": [],
+     "result": "You said:\n\n> after the crash",
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subtype": "success",
+     "type": "result",
+     "uuid": "00000000-0000-4000-8000-000000000018"
     }
    }
   ]
@@ -2375,6 +2712,7 @@
     "ephemeral": false,
     "truncated": false,
     "payload": {
+     "circus_note": "user_interrupt",
      "isSynthetic": true,
      "message": {
       "content": [
@@ -2528,6 +2866,7 @@
     "ephemeral": false,
     "truncated": false,
     "payload": {
+     "circus_note": "user_interrupt",
      "isSynthetic": true,
      "message": {
       "content": [

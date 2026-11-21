@@ -35,7 +35,9 @@ func newJobFixture(t *testing.T, configure ...func(*calls.Config, *gateway.Confi
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindWorker, ID: "w", UserID: "u", Name: "w", MachineID: "mw", CreatedAt: 1}))
 	_, err := f.db.CreateProject(f.ctx, store.Project{ID: "p", UserID: "u", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
-	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "s", UserID: "u", ProjectID: "p", ClaudeSessionID: "c", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10))
+	if _, err := f.db.CreateSession(f.ctx, store.Session{ID: "s", ClientRequestID: "s", UserID: "u", ProjectID: "p", ClaudeSessionID: "c", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10); err != nil {
+		t.Fatal(err)
+	}
 	now := f.clock.Now().UnixMilli()
 	r, err := f.db.AcquireLease(f.ctx, store.LeaseRequest{SessionID: "s", WorkerID: "w", BootID: "b", ConnID: "conn", Now: now, ExpiresAt: now + 3_600_000})
 	must(t, err)
@@ -230,7 +232,9 @@ func TestCrossUserJobRegistration(t *testing.T) {
 	must(t, f.db.CreateIdentity(f.ctx, store.Identity{Kind: store.KindWorker, ID: "w2", UserID: "u2", Name: "w2", MachineID: "m3", CreatedAt: 1}))
 	_, err = f.db.CreateProject(f.ctx, store.Project{ID: "p2", UserID: "u2", Name: "p", CreatedAt: 1, UpdatedAt: 1})
 	must(t, err)
-	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "theirs", UserID: "u2", ProjectID: "p2", ClaudeSessionID: "c2", DefaultDeviceID: "d2", CreatedAt: 1}, nil, 10))
+	if _, err := f.db.CreateSession(f.ctx, store.Session{ID: "theirs", ClientRequestID: "theirs", UserID: "u2", ProjectID: "p2", ClaudeSessionID: "c2", DefaultDeviceID: "d2", CreatedAt: 1}, nil, 10); err != nil {
+		t.Fatal(err)
+	}
 	now := f.clock.Now().UnixMilli()
 	r, err := f.db.AcquireLease(f.ctx, store.LeaseRequest{SessionID: "theirs", WorkerID: "w2", BootID: "b2", ConnID: "conn2", Now: now, ExpiresAt: now + 3_600_000})
 	must(t, err)
@@ -269,7 +273,9 @@ func TestNonAdmittedCallRegistersNoJob(t *testing.T) {
 	must(t, err)
 	defer s2.Close()
 	j.dispatched("loose2")
-	must(t, f.db.CreateSession(f.ctx, store.Session{ID: "later", UserID: "u", ProjectID: "p", ClaudeSessionID: "c-later", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10))
+	if _, err := f.db.CreateSession(f.ctx, store.Session{ID: "later", ClientRequestID: "later", UserID: "u", ProjectID: "p", ClaudeSessionID: "c-later", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10); err != nil {
+		t.Fatal(err)
+	}
 	now := f.clock.Now().UnixMilli()
 	r, err := f.db.AcquireLease(f.ctx, store.LeaseRequest{SessionID: "later", WorkerID: "w", BootID: "b", ConnID: "conn", Now: now, ExpiresAt: now + 3_600_000})
 	must(t, err)

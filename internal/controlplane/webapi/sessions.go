@@ -254,6 +254,10 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 	}
 	cfg := m.GetConfig()
 	switch {
+	case m.GetClientRequestId() == "":
+		return nil, invalidField("client_request_id", "client request id is required")
+	case len(m.GetClientRequestId()) > store.MaxIDBytes:
+		return nil, invalidField("client_request_id", "client request id is too long")
 	case cfg.GetDefaultDevice() != "":
 		return nil, invalidField("config.default_device", "the device comes from the project location")
 	case len(cfg.GetCwds()) > 0:
@@ -265,18 +269,26 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 	case len(m.GetPinnedWorkerId()) > store.MaxIDBytes:
 		return nil, invalidField("pinned_worker_id", "worker id is too long")
 	}
-	id, err := newID()
-	if err != nil {
-		return nil, s.internal(ctx, "session id", err)
-	}
 	now := s.now().UnixMilli()
 	var out *circusv1.Session
-	err = s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+	const requestConflict = "this client request id was used for a different session"
+	attempt := func(ctx context.Context, tx store.Ops) error {
 		p, err := tx.GetProject(ctx, u.ID, m.GetProjectId())
 		if errors.Is(err, store.ErrNotFound) {
 			return connect.NewError(connect.CodeNotFound, errProjectNotFound)
 		}
 		if err != nil {
+			return err
+		}
+		old, err := tx.GetSessionByClientRequestID(ctx, p.ID, m.GetClientRequestId(), now)
+		switch {
+		case err == nil:
+			if !old.MatchesCreate(m.LocationIndex, m.GetPinnedWorkerId(), cfg.GetModel(), cfg.GetPermissionMode()) {
+				return fieldError(connect.CodeAlreadyExists, "client_request_id", requestConflict)
+			}
+			out, err = fullSession(ctx, tx, old)
+			return err
+		case !errors.Is(err, store.ErrNotFound):
 			return err
 		}
 		if len(p.Locations) == 0 {
@@ -317,28 +329,43 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		if cwd == "" {
 			cwd = defaultDir(p.ID)
 		}
+		id, err := newID()
+		if err != nil {
+			return err
+		}
 		sess := store.Session{
 			ID: id, UserID: u.ID, ProjectID: p.ID, ClaudeSessionID: uuid.NewString(), State: store.SessionIdle,
+			ClientRequestID: m.GetClientRequestId(), LocationIndex: uint32(index),
 			DefaultDeviceID: l.DeviceID, Model: cfg.GetModel(), PermissionMode: cfg.GetPermissionMode(),
 			PinnedWorkerID: m.GetPinnedWorkerId(), CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		}
 		cwds := []store.SessionCwd{{DeviceID: l.DeviceID, Cwd: cwd, UpdatedAt: now}}
-		if err := tx.CreateSession(ctx, sess, cwds, store.DefaultMaxSessionsPerUser); err != nil {
-			return err
-		}
-		if _, err := tx.UpdateProject(ctx, u.ID, p.ID, store.ProjectPatch{LastUsedLocation: &index, UpdatedAt: now}); err != nil {
-			return err
-		}
-		stored, err := tx.GetSession(ctx, id, now)
+		res, err := tx.CreateSession(ctx, sess, cwds, store.DefaultMaxSessionsPerUser)
 		if err != nil {
 			return err
 		}
-		out, err = fullSession(ctx, tx, stored)
+		if res.Created {
+			if _, err := tx.UpdateProject(ctx, u.ID, p.ID, store.ProjectPatch{LastUsedLocation: &index, UpdatedAt: now}); err != nil {
+				return err
+			}
+		}
+		out, err = fullSession(ctx, tx, res.Session)
 		return err
-	})
+	}
+	err = s.st.Tx(ctx, attempt)
+	if errors.Is(err, store.ErrExists) && ctx.Err() == nil {
+		// A concurrent insert can win the unique key. Read the winner in a
+		// new transaction so the lookup sees the committed session.
+		err = s.st.Tx(ctx, attempt)
+	}
 	if err != nil {
-		if errors.Is(err, store.ErrLimit) && ctx.Err() == nil {
-			return nil, connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("at most %d sessions", store.DefaultMaxSessionsPerUser))
+		if ctx.Err() == nil {
+			switch {
+			case errors.Is(err, store.ErrExists):
+				return nil, fieldError(connect.CodeAlreadyExists, "client_request_id", requestConflict)
+			case errors.Is(err, store.ErrLimit):
+				return nil, connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("at most %d sessions", store.DefaultMaxSessionsPerUser))
+			}
 		}
 		return nil, s.sessionError(ctx, "create session", err)
 	}

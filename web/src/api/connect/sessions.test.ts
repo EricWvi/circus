@@ -79,6 +79,26 @@ describe("the Connect session client", () => {
     ])
   })
 
+  it("creates a session with its client request id, and reports a reused id as already_exists", async () => {
+    const seen: unknown[] = []
+    const client = sessions({
+      createSession: (req) => {
+        seen.push({ projectId: req.projectId, locationIndex: req.locationIndex, clientRequestId: req.clientRequestId })
+        if (req.locationIndex === 1) throw new ConnectError("key reused", Code.AlreadyExists)
+        return { session: { ...protoSession, config: { defaultDevice: "box", cwds: [{ device: "box", cwd: "/src" }] } } }
+      },
+    })
+    const created = await client.createSession({ projectId: "p1", locationIndex: 0, clientRequestId: "key-1" })
+    expect(created).toMatchObject({ sessionId: "s1", device: "box", cwd: "/src" })
+    await expect(client.createSession({ projectId: "p1", locationIndex: 1, clientRequestId: "key-1" })).rejects.toMatchObject({
+      code: "already_exists",
+    })
+    expect(seen).toEqual([
+      { projectId: "p1", locationIndex: 0, clientRequestId: "key-1" },
+      { projectId: "p1", locationIndex: 1, clientRequestId: "key-1" },
+    ])
+  })
+
   it("sends a message with its id, text and priority", async () => {
     const seen: unknown[] = []
     const client = sessions({

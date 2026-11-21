@@ -5,6 +5,7 @@ import type {
   AuthState,
   CircusClient,
   EnrollRole,
+  CreateSessionRequest,
   Location,
   LoginMethods,
   Project,
@@ -454,8 +455,28 @@ export function createMockBackend({
           .sort((a, b) => b.lastActivityAtUnixMs - a.lastActivityAtUnixMs)
       }),
 
-      createSession: callAsync(async (req: { projectId: string; locationIndex: number }) => {
-        currentUser()
+      createSession: callAsync(async (req: CreateSessionRequest) => {
+        const owner = currentUser()
+        const key = req.clientRequestId
+        if (typeof key !== "string" || key === "" || new TextEncoder().encode(key).length > 128) {
+          throw invalid("client_request_id must be 1 to 128 bytes.", "client_request_id")
+        }
+        // A retry returns the session the first request created, without
+        // checking the location again; the same key for another request is
+        // refused.
+        ownedProject(owner, req.projectId)
+        const retried = () => {
+          const earlier = state.sessions.find((s) => s.projectId === req.projectId && s.created?.clientRequestId === key)
+          if (earlier && earlier.created!.locationIndex !== req.locationIndex) {
+            throw new ApiError("already_exists", "client_request_id was used for another request.", "client_request_id")
+          }
+          return earlier && detailsOf(earlier)
+        }
+        const first = retried()
+        if (first) {
+          await sleep(latency())
+          return first
+        }
         const usable = (p: Project) => {
           const location = Number.isInteger(req.locationIndex) ? p.locations[req.locationIndex] : undefined
           return location && !location.deviceRevoked ? location : undefined
@@ -471,6 +492,9 @@ export function createMockBackend({
         if (!location || !sameLocation(location, chosen)) {
           throw invalid("Choose one of the project's locations.", "location_index")
         }
+        // A retry that overtook this request while it waited.
+        const overtaken = retried()
+        if (overtaken) return overtaken
         const at = now()
         const session: MockSession = {
           sessionId: nanoid(12),
@@ -486,6 +510,7 @@ export function createMockBackend({
           approvals: [],
           queue: [],
           turns: 0,
+          created: { clientRequestId: key, locationIndex: req.locationIndex },
         }
         state.sessions.push(session)
         return detailsOf(session)

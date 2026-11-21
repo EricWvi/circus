@@ -22,12 +22,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
+import { i18n } from "@/i18n/i18n"
 import { locationDirectory, pickLocation, projectErrorMessage } from "@/lib/location-form"
 import { formatRelative } from "@/lib/time"
 import { sessionTitle } from "@/lib/title"
 import { projectSettingsPath, sessionPath } from "@/lib/tree"
 import { cn } from "@/lib/utils"
 import { useOutbox } from "@/state/outbox-context"
+import { forgetStartKey, startKey } from "@/state/start-keys"
 
 import { BarePage, LoadError } from "./page-states"
 
@@ -85,7 +87,12 @@ function ProjectHome({ project }: { project: Project }) {
     setStarting(true)
     setError(null)
     try {
-      const session = await createSession.mutateAsync({ projectId: project.projectId, locationIndex })
+      const session = await createSession.mutateAsync({
+        projectId: project.projectId,
+        locationIndex,
+        clientRequestId: startKey(project.projectId, locationIndex, location),
+      })
+      forgetStartKey(project.projectId)
       // Once the session exists, the message belongs to it: its page shows
       // it sending and, if sending fails, failed with a retry; no other
       // session is created for it.
@@ -97,6 +104,9 @@ function ProjectHome({ project }: { project: Project }) {
       inFlight.current = false
       setStarting(false)
       setError(e)
+      // The key was taken by another request (which this page never sends):
+      // the next try starts afresh.
+      if (isApiError(e, "already_exists")) forgetStartKey(project.projectId)
       // The location is gone on the server: refresh the project's locations.
       if (locationGone(e)) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
@@ -154,7 +164,7 @@ function ProjectHome({ project }: { project: Project }) {
             )}
             {error !== null && (
               <p role="alert" className="text-sm text-destructive">
-                {locationGone(error) ? t("projects.locationGone") : projectErrorMessage(error)}
+                {startErrorMessage(error)}
               </p>
             )}
           </section>
@@ -172,6 +182,14 @@ function ProjectHome({ project }: { project: Project }) {
 /** The server no longer has the chosen location (or the project changed under it). */
 const locationGone = (error: unknown) =>
   isApiError(error) && (error.field === "location_index" || error.field === "last_used_location")
+
+/** Why starting a session failed, as one line. */
+function startErrorMessage(error: unknown): string {
+  if (locationGone(error)) return i18n.t("projects.locationGone")
+  // The key was used for another request; the page never does that.
+  if (isApiError(error, "already_exists")) return i18n.t("projects.startConflict")
+  return projectErrorMessage(error)
+}
 
 /** The repository URL, subtle and truncated; the full value on hover or focus. */
 function RepoUrl({ url }: { url: string }) {

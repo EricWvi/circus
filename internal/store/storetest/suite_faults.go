@@ -206,7 +206,7 @@ func crashScript(f fixture) []crashStep {
 			return err
 		}},
 		{"session", 1, func(ctx context.Context, s store.Store) error {
-			return s.CreateSession(ctx, newSession("s1", f), []store.SessionCwd{{DeviceID: "d1", Cwd: "/w"}}, 10)
+			return errOf(s.CreateSession(ctx, newSession("s1", f), []store.SessionCwd{{DeviceID: "d1", Cwd: "/w"}}, 10))
 		}},
 		{"lease", 1, func(ctx context.Context, s store.Store) error {
 			_, err := s.AcquireLease(ctx, store.LeaseRequest{SessionID: "s1", WorkerID: "w1", BootID: "wb1", ConnID: "wc1", Now: t0 + 10, ExpiresAt: t0 + 10 + ttl})

@@ -27,6 +27,7 @@ func (m sdkMessage) event() *pb.PublishEvents_Event {
 func (m sdkMessage) transcript(parent string) *pb.TranscriptEntry {
 	payload := maps.Clone(m.payload)
 	delete(payload, "aborted")
+	delete(payload, "circus_note")
 	payload["parentUuid"] = nil
 	if parent != "" {
 		payload["parentUuid"] = parent
@@ -38,11 +39,28 @@ func sdkEnvelope(kind, sessionID, id string) object {
 	return object{"type": kind, "session_id": sessionID, "uuid": id, "parent_tool_use_id": nil}
 }
 
-func sdkUser(sessionID, id string, content any, synthetic bool) sdkMessage {
+// circus_note kinds of worker-written user messages (docs/wire.md).
+const (
+	noteApprovalRetry           = "approval_retry"
+	noteUserInterrupt           = "user_interrupt"
+	notePreviousTurnInterrupted = "previous_turn_interrupted"
+	noteRecoveredCall           = "recovered_call"
+	noteCallNotice              = "call_notice"
+	noteJobNotice               = "job_notice"
+	noteLostBgtask              = "lost_bgtask"
+	noteHistoryMissing          = "history_missing"
+)
+
+// sdkUser builds an SDK user message. A non-empty note marks a message the
+// worker wrote for the model rather than the user's own input or a tool
+// result: it is synthetic, and the published view event names its kind in
+// circus_note (see docs/wire.md); the transcript entry omits circus_note.
+func sdkUser(sessionID, id string, content any, note string) sdkMessage {
 	m := sdkEnvelope("user", sessionID, id)
 	m["message"] = object{"role": "user", "content": content}
-	if synthetic {
+	if note != "" {
 		m["isSynthetic"] = true
+		m["circus_note"] = note
 	}
 	return sdkMessage{pb.SessionEvent_KIND_USER, m}
 }

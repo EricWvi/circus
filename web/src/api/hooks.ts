@@ -7,6 +7,7 @@ import { useClient } from "./context"
 import { isApiError } from "./errors"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
 import type {
+  CreateSessionRequest,
   Device,
   DirectoryListing,
   EnrollLink,
@@ -362,8 +363,7 @@ export function useCreateSession() {
   const client = useClient()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (req: { projectId: string; locationIndex: number }) =>
-      client.sessions.createSession(req),
+    mutationFn: (req: CreateSessionRequest) => client.sessions.createSession(req),
     onSuccess: (session: SessionDetails, req) => {
       // Put the session into the cache right away, so its page and the
       // lists show it before the refetch lands.

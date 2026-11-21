@@ -701,8 +701,15 @@ type CreateSessionRequest struct {
 	// Index into the project's locations; unset uses the project's
 	// last_used_location. The location's device must not be revoked.
 	LocationIndex *uint32 `protobuf:"varint,4,opt,name=location_index,json=locationIndex,proto3,oneof" json:"location_index,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Required, 1 to 128 bytes: a client-chosen key (a UUID, say) that
+	// makes retries safe. Repeating (project_id, client_request_id) returns
+	// the session the first request created, without checking the device or
+	// the session cap again, as long as the request also repeats
+	// location_index, pinned_worker_id and config (ALREADY_EXISTS otherwise).
+	// The key is forgotten when its session is deleted.
+	ClientRequestId string `protobuf:"bytes,5,opt,name=client_request_id,json=clientRequestId,proto3" json:"client_request_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateSessionRequest) Reset() {
@@ -761,6 +768,13 @@ func (x *CreateSessionRequest) GetLocationIndex() uint32 {
 		return *x.LocationIndex
 	}
 	return 0
+}
+
+func (x *CreateSessionRequest) GetClientRequestId() string {
+	if x != nil {
+		return x.ClientRequestId
+	}
+	return ""
 }
 
 type CreateSessionResponse struct {
@@ -1988,13 +2002,14 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x1cKIND_TRANSCRIPT_GAP_ACCEPTED\x10\x0f\x12 \n" +
 	"\x1cKIND_TRANSCRIPT_GAP_DETECTED\x10\x10\x12\x15\n" +
 	"\x11KIND_TURN_STOPPED\x10\x11\x12\x17\n" +
-	"\x13KIND_INPUT_ACCEPTED\x10\x12\"\xea\x01\n" +
+	"\x13KIND_INPUT_ACCEPTED\x10\x12\"\x96\x02\n" +
 	"\x14CreateSessionRequest\x120\n" +
 	"\x06config\x18\x01 \x01(\v2\x18.circus.v1.SessionConfigR\x06config\x12-\n" +
 	"\x10pinned_worker_id\x18\x02 \x01(\tH\x00R\x0epinnedWorkerId\x88\x01\x01\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x03 \x01(\tR\tprojectId\x12*\n" +
-	"\x0elocation_index\x18\x04 \x01(\rH\x01R\rlocationIndex\x88\x01\x01B\x13\n" +
+	"\x0elocation_index\x18\x04 \x01(\rH\x01R\rlocationIndex\x88\x01\x01\x12*\n" +
+	"\x11client_request_id\x18\x05 \x01(\tR\x0fclientRequestIdB\x13\n" +
 	"\x11_pinned_worker_idB\x11\n" +
 	"\x0f_location_index\"E\n" +
 	"\x15CreateSessionResponse\x12,\n" +

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"reflect"
@@ -10,6 +11,62 @@ import (
 
 	"github.com/EricWvi/circus/internal/store"
 )
+
+func TestSessionClientRequestIDMigration(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), dbName)
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	ms, err := migrations()
+	must(err)
+	_, err = raw.ExecContext(ctx, `CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT`)
+	must(err)
+	for _, m := range ms[:9] {
+		_, err = raw.ExecContext(ctx, m.sql)
+		must(err)
+		_, err = raw.ExecContext(ctx, `INSERT INTO schema_migrations VALUES (?, 1)`, m.version)
+		must(err)
+	}
+	_, err = raw.ExecContext(ctx, `
+		INSERT INTO users(id,name,created_at) VALUES('u','user',1);
+		INSERT INTO projects(id,user_id,name,name_key,created_at,updated_at) VALUES('p','u','Project','project',1,1);
+		INSERT INTO devices(id,user_id,name,machine_id,created_at) VALUES('d','u','device','machine',1);
+		INSERT INTO sessions(session_id,user_id,claude_session_id,state,default_device_id,created_at,updated_at,project_id,last_activity_at)
+			VALUES('old1','u','claude1','idle','d',1,1,'p',1),('old2','u','claude2','idle','d',1,1,'p',1);`)
+	must(err)
+	must(raw.Close())
+
+	d, err := Open(ctx, path, Options{})
+	must(err)
+	defer d.Close()
+	for _, id := range []string{"old1", "old2"} {
+		old, err := d.GetSession(ctx, id, 1)
+		must(err)
+		if old.ClientRequestID != "" {
+			t.Fatalf("legacy session %s has a client request key: %q", id, old.ClientRequestID)
+		}
+		if _, err := d.GetSessionByClientRequestID(ctx, "p", id, 1); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("lookup by legacy session id %s: %v", id, err)
+		}
+	}
+	res, err := d.CreateSession(ctx, store.Session{
+		ID: "new", ClientRequestID: "old1", UserID: "u", ProjectID: "p",
+		ClaudeSessionID: "claude3", DefaultDeviceID: "d", CreatedAt: 2,
+	}, nil, 10)
+	must(err)
+	if !res.Created || res.Session.ID != "new" {
+		t.Fatalf("create with legacy session id as key = %+v", res)
+	}
+}
 
 // TestSessionProjectMigration upgrades a populated pre-project-session schema
 // through Open, including the real migrator's transaction and foreign keys.
@@ -117,7 +174,7 @@ func TestSessionProjectMigration(t *testing.T) {
 			indexes = append(indexes, entry.Name)
 		}
 	}
-	if want := []string{"sessions_keyset", "sessions_project_keyset", "sessions_queued", "sessions_user_keyset"}; !reflect.DeepEqual(indexes, want) {
+	if want := []string{"sessions_keyset", "sessions_project_client_request_id", "sessions_project_keyset", "sessions_queued", "sessions_user_keyset"}; !reflect.DeepEqual(indexes, want) {
 		t.Fatalf("session indexes = %v, want %v", indexes, want)
 	}
 	for _, table := range dependents {
@@ -157,7 +214,9 @@ func TestSessionProjectMigration(t *testing.T) {
 	must(err)
 	for i, outcome := range []store.TurnOutcome{store.TurnCompleted, store.TurnInterrupted, store.TurnError, store.TurnStopped} {
 		id := fmt.Sprintf("new%d", i)
-		must(d.CreateSession(ctx, store.Session{ID: id, UserID: "owner", ProjectID: "new-project", ClaudeSessionID: id, DefaultDeviceID: "device", CreatedAt: 10}, nil, 100))
+		if _, err := d.CreateSession(ctx, store.Session{ID: id, ClientRequestID: id, UserID: "owner", ProjectID: "new-project", ClaudeSessionID: id, DefaultDeviceID: "device", CreatedAt: 10}, nil, 100); err != nil {
+			t.Fatal(err)
+		}
 		lease, err := d.AcquireLease(ctx, store.LeaseRequest{SessionID: id, WorkerID: "worker", BootID: "boot", ConnID: "conn", Now: 10, ExpiresAt: 100})
 		must(err)
 		f := store.Fence{SessionID: id, Epoch: lease.Lease.Epoch, WorkerID: "worker", BootID: "boot", ConnID: "conn", Now: 11}

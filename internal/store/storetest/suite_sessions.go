@@ -24,14 +24,14 @@ var errRollback = errors.New("storetest: rollback")
 
 func newSession(id string, f fixture) store.Session {
 	return store.Session{
-		ID: id, UserID: f.user.ID, ProjectID: "session-project", ClaudeSessionID: "claude-" + id, DefaultDeviceID: f.device.ID,
+		ID: id, ClientRequestID: id, UserID: f.user.ID, ProjectID: "session-project", ClaudeSessionID: "claude-" + id, DefaultDeviceID: f.device.ID,
 		Model: "model", PermissionMode: "auto", CreatedAt: t0,
 	}
 }
 
 func createSession(t testing.TB, ops store.Ops, f fixture, id string) {
 	t.Helper()
-	must(t, ops.CreateSession(context.Background(), newSession(id, f), nil, store.DefaultMaxSessionsPerUser))
+	must(t, errOf(ops.CreateSession(context.Background(), newSession(id, f), nil, store.DefaultMaxSessionsPerUser)))
 }
 
 // addWorker adds a worker identity of the user.
@@ -436,28 +436,30 @@ func testSessionCreate(t *testing.T, b Backend) {
 
 	s1 := newSession("s1", f)
 	s1.PinnedWorkerID = "w2"
-	must(t, s.CreateSession(ctx, s1, []store.SessionCwd{{DeviceID: "d1", Cwd: "/home/u"}}, 2))
+	must(t, errOf(s.CreateSession(ctx, s1, []store.SessionCwd{{DeviceID: "d1", Cwd: "/home/u"}}, 2)))
 	want := s1
 	want.State, want.UpdatedAt, want.LastActivityAt = store.SessionIdle, t0, t0
 	mustEqual(t, "GetSession", getSession(t, s, "s1"), want)
 	l, err := s.GetLease(ctx, "s1")
 	must(t, err)
 	mustEqual(t, "new lease", l, store.Lease{SessionID: "s1"})
-	mustIs(t, s.CreateSession(ctx, s1, nil, 2), store.ErrExists)
+	sameID := newSession(s1.ID, f)
+	sameID.ClientRequestID = "other-key"
+	mustIs(t, errOf(s.CreateSession(ctx, sameID, nil, 2)), store.ErrExists)
 	dup := newSession("s-dup", f)
 	dup.ClaudeSessionID = s1.ClaudeSessionID
-	mustIs(t, s.CreateSession(ctx, dup, nil, 2), store.ErrExists)
+	mustIs(t, errOf(s.CreateSession(ctx, dup, nil, 2)), store.ErrExists)
 
 	// The default device and the pinned worker belong to the user.
 	foreign := newSession("s-foreign", f)
 	foreign.PinnedWorkerID = "w-other"
-	mustIs(t, s.CreateSession(ctx, foreign, nil, 2), store.ErrNotFound)
+	mustIs(t, errOf(s.CreateSession(ctx, foreign, nil, 2)), store.ErrNotFound)
 	foreign = newSession("s-foreign", f)
 	foreign.DefaultDeviceID = "nope"
-	mustIs(t, s.CreateSession(ctx, foreign, nil, 2), store.ErrNotFound)
+	mustIs(t, errOf(s.CreateSession(ctx, foreign, nil, 2)), store.ErrNotFound)
 
 	// Sessions per user: exactly the cap is accepted, one more is not.
-	createSessionMax := func(id string) error { return s.CreateSession(ctx, newSession(id, f), nil, 2) }
+	createSessionMax := func(id string) error { return errOf(s.CreateSession(ctx, newSession(id, f), nil, 2)) }
 	must(t, createSessionMax("s2"))
 	mustIs(t, createSessionMax("s3"), store.ErrLimit)
 
@@ -494,6 +496,110 @@ func testSessionCreate(t *testing.T, b Backend) {
 	mustIs(t, err, store.ErrStopped)
 	_, _, _, err = s.StopSession(ctx, "ghost", t0, "")
 	mustIs(t, err, store.ErrNotFound)
+}
+
+func testSessionCreateIdempotent(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	first := newSession("first", f)
+	first.ClientRequestID = strings.Repeat("x", store.MaxIDBytes)
+	first.LocationIndex = 1
+	for _, key := range []string{"", first.ClientRequestID + "x"} {
+		bad := first
+		bad.ClientRequestID = key
+		mustIs(t, errOf(s.CreateSession(ctx, bad, nil, 1)), store.ErrInvalid)
+		mustIs(t, errOf(s.GetSessionByClientRequestID(ctx, first.ProjectID, key, t0)), store.ErrInvalid)
+	}
+
+	created, err := s.CreateSession(ctx, first, nil, 1)
+	must(t, err)
+	stored := getSession(t, s, first.ID)
+	mustEqual(t, "fresh create", created, store.SessionCreated{Session: stored, Created: true})
+	mustEqual(t, "stored creation settings", stored.ClientRequestID, first.ClientRequestID)
+	mustEqual(t, "stored location index", stored.LocationIndex, first.LocationIndex)
+	byKey, err := s.GetSessionByClientRequestID(ctx, first.ProjectID, first.ClientRequestID, t0)
+	must(t, err)
+	mustEqual(t, "key lookup", byKey, stored)
+
+	// A retry returns the current row even at the cap.
+	stopped, _, _, err := s.StopSession(ctx, first.ID, t0+1, "user")
+	must(t, err)
+	retry := first
+	retry.ID, retry.ClaudeSessionID, retry.CreatedAt = "retry", "claude-retry", t0+2
+	repeated, err := s.CreateSession(ctx, retry, nil, 1)
+	must(t, err)
+	mustEqual(t, "repeat", repeated, store.SessionCreated{Session: stopped})
+	defaultMode := retry
+	defaultMode.PermissionMode = ""
+	repeated, err = s.CreateSession(ctx, defaultMode, nil, 1)
+	must(t, err)
+	mustEqual(t, "repeat with default permission mode", repeated, store.SessionCreated{Session: stopped})
+	for _, tc := range []struct {
+		name   string
+		change func(*store.Session)
+	}{
+		{"location", func(s *store.Session) { s.LocationIndex++ }},
+		{"model", func(s *store.Session) { s.Model = "other" }},
+		{"permission mode", func(s *store.Session) { s.PermissionMode = "other" }},
+		{"worker", func(s *store.Session) { s.PinnedWorkerID = "w1" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			different := retry
+			tc.change(&different)
+			mustIs(t, errOf(s.CreateSession(ctx, different, nil, 1)), store.ErrExists)
+		})
+	}
+
+	_, err = s.CreateProject(ctx, newProject("other-project", first.UserID, "Other"))
+	must(t, err)
+	other := retry
+	other.ID, other.ClaudeSessionID, other.ProjectID = "other", "claude-other", "other-project"
+	created, err = s.CreateSession(ctx, other, nil, 2)
+	must(t, err)
+	mustEqual(t, "other project", created.Created, true)
+	mustEqual(t, "other session", created.Session.ID, other.ID)
+
+	must(t, s.DeleteSession(ctx, first.ID, t0+2))
+	mustIs(t, errOf(s.GetSessionByClientRequestID(ctx, first.ProjectID, first.ClientRequestID, t0+2)), store.ErrNotFound)
+	created, err = s.CreateSession(ctx, retry, nil, 2)
+	must(t, err)
+	mustEqual(t, "reused key created", created.Created, true)
+	mustEqual(t, "reused key session", created.Session.ID, retry.ID)
+}
+
+func testSessionCreateConcurrent(t *testing.T, b Backend) {
+	s, dir := open(t, b)
+	f := seed(t, s)
+	handles := []store.Store{s, reopen(t, b, dir)}
+	ctx := deadline(t)
+	const n = 16
+	var wg sync.WaitGroup
+	var results [n]store.SessionCreated
+	var errs [n]error
+	start := make(chan struct{})
+	for i := range n {
+		wg.Go(func() {
+			sess := newSession(fmt.Sprintf("session-%d", i), f)
+			sess.ClientRequestID = "shared"
+			<-start
+			results[i], errs[i] = handles[i%len(handles)].CreateSession(ctx, sess, nil, 1)
+		})
+	}
+	close(start)
+	wg.Wait()
+	rows, err := s.ListSessions(ctx, store.SessionFilter{UserID: f.user.ID, Now: t0, Limit: n})
+	must(t, err)
+	mustEqual(t, "session count", len(rows), 1)
+	var winners int
+	for i, res := range results {
+		must(t, errs[i])
+		mustEqual(t, "returned session", res.Session, rows[0])
+		if res.Created {
+			winners++
+		}
+	}
+	mustEqual(t, "creations", winners, 1)
 }
 
 // testLeaseAcquire covers who may take a lease and how its epoch moves.

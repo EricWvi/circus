@@ -199,6 +199,12 @@ var webScenarios = []scenario{
 		s.send("/fake crash")
 		s.await(count(pb.SessionEvent_KIND_TURN_INTERRUPTED, 1))
 	}},
+	{"crash_recover", func(s *liveSession) {
+		s.send("/fake crash")
+		s.await(count(pb.SessionEvent_KIND_TURN_INTERRUPTED, 1))
+		s.send("after the crash")
+		s.await(count(kindResult, 1))
+	}},
 	{"broken", func(s *liveSession) {
 		s.send("hello")
 		s.await(count(kindResult, 1))
@@ -414,7 +420,7 @@ type liveSession struct {
 func (env *stack) record(t *testing.T, sc scenario) recording {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	created, err := env.api.CreateSession(ctx, connect.NewRequest(&pb.CreateSessionRequest{ProjectId: env.project}))
+	created, err := env.api.CreateSession(ctx, connect.NewRequest(&pb.CreateSessionRequest{ProjectId: env.project, ClientRequestId: uuid.NewString()}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,8 +27,8 @@ func wantDeleteError(t *testing.T, err error, code connect.Code, message string)
 
 func projectSession(t *testing.T, h *harness, projectID, id string) store.Session {
 	t.Helper()
-	sess := store.Session{ID: id, UserID: h.owner.ID, ProjectID: projectID, ClaudeSessionID: "claude-" + id, DefaultDeviceID: "d1", CreatedAt: h.clock.Load()}
-	if err := h.st.CreateSession(t.Context(), sess, nil, 100); err != nil {
+	sess := store.Session{ID: id, ClientRequestID: id, UserID: h.owner.ID, ProjectID: projectID, ClaudeSessionID: "claude-" + id, DefaultDeviceID: "d1", CreatedAt: h.clock.Load()}
+	if _, err := h.st.CreateSession(t.Context(), sess, nil, 100); err != nil {
 		t.Fatal(err)
 	}
 	return sess
@@ -205,7 +205,7 @@ func TestDeleteProjectSessionAppearsDuringCascade(t *testing.T) {
 	projectSession(t, h, p.ProjectId, "old")
 	stopProjectSession(t, h, "old")
 	wrapped.beforeProjectDelete = func(ctx context.Context, _ string, projectID string, now int64) error {
-		if err := h.st.CreateSession(ctx, store.Session{ID: "new", UserID: h.owner.ID, ProjectID: projectID, ClaudeSessionID: "claude-new", DefaultDeviceID: "d1", CreatedAt: now}, nil, 100); err != nil {
+		if _, err := h.st.CreateSession(ctx, store.Session{ID: "new", ClientRequestID: "new", UserID: h.owner.ID, ProjectID: projectID, ClaudeSessionID: "claude-new", DefaultDeviceID: "d1", CreatedAt: now}, nil, 100); err != nil {
 			return err
 		}
 		_, _, _, err := h.st.StopSession(ctx, "new", now, "")

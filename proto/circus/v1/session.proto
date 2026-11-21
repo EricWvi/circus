@@ -193,6 +193,13 @@ message CreateSessionRequest {
   // Index into the project's locations; unset uses the project's
   // last_used_location. The location's device must not be revoked.
   optional uint32 location_index = 4;
+  // Required, 1 to 128 bytes: a client-chosen key (a UUID, say) that
+  // makes retries safe. Repeating (project_id, client_request_id) returns
+  // the session the first request created, without checking the device or
+  // the session cap again, as long as the request also repeats
+  // location_index, pinned_worker_id and config (ALREADY_EXISTS otherwise).
+  // The key is forgotten when its session is deleted.
+  string client_request_id = 5;
 }
 message CreateSessionResponse {
   Session session = 1;

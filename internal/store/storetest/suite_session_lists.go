@@ -41,11 +41,11 @@ func testSessionLists(t *testing.T, b Backend) {
 	must(t, err)
 	sess := newSession("s1", f.fixture)
 	sess.ProjectID = "missing"
-	mustIs(t, s.CreateSession(ctx, sess, nil, 100), store.ErrNotFound)
+	mustIs(t, errOf(s.CreateSession(ctx, sess, nil, 100)), store.ErrNotFound)
 	sess.ProjectID = ""
-	mustIs(t, s.CreateSession(ctx, sess, nil, 100), store.ErrInvalid)
+	mustIs(t, errOf(s.CreateSession(ctx, sess, nil, 100)), store.ErrInvalid)
 	sess.ProjectID = "web-project"
-	must(t, s.CreateSession(ctx, sess, nil, 100))
+	must(t, errOf(s.CreateSession(ctx, sess, nil, 100)))
 	got := getSession(t, s, "s1")
 	mustEqual(t, "list fields", []any{got.ProjectID, got.UserID, got.Title, got.LastActivityAt, got.PendingApprovalCount}, []any{"web-project", "u1", "", t0, uint32(0)})
 	createSession(t, s, f.fixture, "s2")
@@ -205,7 +205,7 @@ func testProjectSessions(t *testing.T, b Backend) {
 	must(t, err)
 	keep := newSession("keep", f.fixture)
 	keep.ProjectID = "keep-project"
-	must(t, s.CreateSession(ctx, keep, nil, 100))
+	must(t, errOf(s.CreateSession(ctx, keep, nil, 100)))
 	keepFence := acquire(t, s, "keep", "w1", "b1", t0)
 	appendEntries(t, s, keepFence, "", 1, entry("keep", `{}`))
 	// Even fully deletable sessions block the store's project deletion.
@@ -249,7 +249,7 @@ func testProjectSessions(t *testing.T, b Backend) {
 	must(t, err)
 	expired := newSession("expired", f.fixture)
 	expired.ProjectID = "expired-project"
-	must(t, s.CreateSession(ctx, expired, nil, 100))
+	must(t, errOf(s.CreateSession(ctx, expired, nil, 100)))
 	acquire(t, s, "expired", "w1", "b1", t0)
 	_, _, _, err = s.StopSession(ctx, "expired", t0+1, "")
 	must(t, err)
@@ -282,7 +282,7 @@ func testSessionWebReads(t *testing.T, b Backend) {
 		case 'b':
 			sess.UserID, sess.DefaultDeviceID = f.bob.ID, "d9"
 		}
-		must(t, s.CreateSession(ctx, sess, nil, 100))
+		must(t, errOf(s.CreateSession(ctx, sess, nil, 100)))
 	}
 	ids := func(filter store.SessionFilter) []string {
 		t.Helper()
@@ -309,7 +309,7 @@ func testSessionWebReads(t *testing.T, b Backend) {
 	sess := newSession("cw", f.fixture)
 	sess.UserID, sess.ProjectID, sess.DefaultDeviceID = f.alice.ID, "alice-1", "alice-laptop"
 	must(t, s.CreateIdentity(ctx, store.Identity{Kind: store.KindWorker, ID: "alice-worker", UserID: f.alice.ID, Name: "worker", MachineID: "m1", CreatedAt: t0}))
-	must(t, s.CreateSession(ctx, sess, []store.SessionCwd{{DeviceID: "d2", Cwd: `C:\work`, UpdatedAt: t0}, {DeviceID: "alice-laptop", Cwd: "/work", UpdatedAt: t0}}, 100))
+	must(t, errOf(s.CreateSession(ctx, sess, []store.SessionCwd{{DeviceID: "d2", Cwd: `C:\work`, UpdatedAt: t0}, {DeviceID: "alice-laptop", Cwd: "/work", UpdatedAt: t0}}, 100)))
 	fence := acquire(t, s, "cw", "alice-worker", "b1", t0)
 	must(t, s.PatchSessionRecords(ctx, fence, store.RecordsPatch{Cwds: []store.SessionCwd{{AgentID: "agent", DeviceID: "alice-laptop", Cwd: "/agent", UpdatedAt: t0 + 1}, {DeviceID: "alice-laptop", Cwd: "/moved", UpdatedAt: t0 + 1}}}))
 	cwds, err := s.ListSessionCwds(ctx, "cw")

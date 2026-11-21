@@ -317,11 +317,25 @@ export interface SessionApproval {
   expiresAtUnixMs: number
 }
 
+export interface CreateSessionRequest {
+  projectId: string
+  locationIndex: number
+  /** A UUID, 1 to 128 bytes; see `SessionService.createSession`. */
+  clientRequestId: string
+}
+
 export interface SessionService {
   /** Newest activity first; includes stopped sessions. */
   listSessions(req: { projectId?: string }): Promise<SessionSummary[]>
-  /** Also makes `locationIndex` the project's `lastUsedLocation`. */
-  createSession(req: { projectId: string; locationIndex: number }): Promise<SessionDetails>
+  /**
+   * Also makes `locationIndex` the project's `lastUsedLocation`.
+   * `clientRequestId` makes retries safe: repeating it in the same project
+   * with the same `locationIndex` returns the session the first request
+   * created; with another `locationIndex` it fails with `already_exists`.
+   * Generate it once per intent to start a session and reuse it for every
+   * retry of that intent.
+   */
+  createSession(req: CreateSessionRequest): Promise<SessionDetails>
   getSession(req: { sessionId: string }): Promise<SessionDetails>
   /**
    * Sends a message. Repeating `clientMsgId` with the same text returns the

@@ -94,7 +94,9 @@ func TestLostCallJobRefusedForOthers(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			j := newLostFixture(t)
-			must(t, j.db.CreateSession(j.ctx, store.Session{ID: "s2", UserID: "u", ProjectID: "p", ClaudeSessionID: "c2", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10))
+			if _, err := j.db.CreateSession(j.ctx, store.Session{ID: "s2", ClientRequestID: "s2", UserID: "u", ProjectID: "p", ClaudeSessionID: "c2", DefaultDeviceID: "d", CreatedAt: 1}, nil, 10); err != nil {
+				t.Fatal(err)
+			}
 			j.submitAdmitted("lost1")
 			j.lose("lost1")
 			l := j.link

@@ -117,7 +117,14 @@ export function createConnectSessions(transport: Transport): SessionService {
         return out
       }),
     createSession: (req) =>
-      call(async () => toDetails((await client.createSession(req)).session, "CreateSession")),
+      call(async () => {
+        const res = await client.createSession({
+          projectId: req.projectId,
+          locationIndex: req.locationIndex,
+          clientRequestId: req.clientRequestId,
+        })
+        return toDetails(res.session, "CreateSession")
+      }),
     getSession: (req) => call(async () => toDetails(await client.getSession(req), "GetSession")),
     sendMessage: (req) =>
       call(async () => {

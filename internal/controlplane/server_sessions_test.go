@@ -55,7 +55,7 @@ func TestSessionServiceMounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessions := circusv1connect.NewSessionServiceClient(client, h.base)
-	created, err := sessions.CreateSession(ctx, connect.NewRequest(&circusv1.CreateSessionRequest{ProjectId: project.Msg.Project.ProjectId}))
+	created, err := sessions.CreateSession(ctx, connect.NewRequest(&circusv1.CreateSessionRequest{ClientRequestId: "create-session", ProjectId: project.Msg.Project.ProjectId}))
 	if err != nil {
 		t.Fatal(err)
 	}

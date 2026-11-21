@@ -204,7 +204,8 @@ func TestListSessionsAcrossStorePages(t *testing.T) {
 	h.foreignSession(t, bob, "bob-project", "bob-session")
 	for i := range store.MaxPageSize + 10 {
 		now := h.clock.Load() + int64(i)
-		if err := h.st.CreateSession(t.Context(), store.Session{ID: fmt.Sprintf("s%03d", i), UserID: h.owner.ID, ProjectID: p.ProjectId, ClaudeSessionID: fmt.Sprint("c", i), DefaultDeviceID: "d1", CreatedAt: now, UpdatedAt: now, LastActivityAt: now}, nil, 1000); err != nil {
+		id := fmt.Sprintf("s%03d", i)
+		if _, err := h.st.CreateSession(t.Context(), store.Session{ID: id, ClientRequestID: id, UserID: h.owner.ID, ProjectID: p.ProjectId, ClaudeSessionID: fmt.Sprint("c", i), DefaultDeviceID: "d1", CreatedAt: now, UpdatedAt: now, LastActivityAt: now}, nil, 1000); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -612,16 +613,16 @@ func TestCreateSessionOwnership(t *testing.T) {
 	if _, err := h.st.DeleteIdentity(ctx, store.KindWorker, "w1", now); err != nil {
 		t.Fatal(err)
 	}
-	_, err := super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, PinnedWorkerId: new("w9")})
+	_, err := super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "foreign-worker", ProjectId: p.ProjectId, PinnedWorkerId: new("w9")})
 	wantField(t, err, connect.CodeInvalidArgument, "pinned_worker_id")
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId, PinnedWorkerId: new("w1")})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "revoked-worker", ProjectId: p.ProjectId, PinnedWorkerId: new("w1")})
 	wantField(t, err, connect.CodeInvalidArgument, "pinned_worker_id")
 	_, err = super.update(t, &circusv1.UpdateProjectRequest{ProjectId: p.ProjectId, Locations: locations(loc("elsewhere", "/x"))})
 	wantField(t, err, connect.CodeInvalidArgument, "locations[0].device")
 	if _, err := h.st.DeleteIdentity(ctx, store.KindDevice, "d1", now); err != nil {
 		t.Fatal(err)
 	}
-	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: p.ProjectId})
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "revoked-device", ProjectId: p.ProjectId})
 	wantField(t, err, connect.CodeFailedPrecondition, "location_index")
 	list, err := super.sessions.ListSessions(ctx, connect.NewRequest(&circusv1.ListSessionsRequest{}))
 	if err != nil || len(list.Msg.Sessions) != 0 {
@@ -688,6 +689,6 @@ func TestCreateSessionRejectsForeignDeviceAtLocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	project := super.mustCreate(t, "Project", loc("desk", "/work"))
-	_, err := super.createSession(t, &circusv1.CreateSessionRequest{ProjectId: project.ProjectId})
+	_, err := super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "foreign-device", ProjectId: project.ProjectId})
 	wantField(t, err, connect.CodeFailedPrecondition, "location_index")
 }

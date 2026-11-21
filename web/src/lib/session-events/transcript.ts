@@ -10,6 +10,7 @@ import type { RawSessionEvent } from "@/api/types"
 import { NO_RESULT_TOOL_ERROR, settleEvents } from "../settle"
 import type {
   AssistantTextEvent,
+  NoteKind,
   ReasoningEvent,
   SessionEvent,
   ToolCallEvent,
@@ -105,6 +106,33 @@ function contentText(content: unknown): string {
     .filter((text) => text !== "")
     .join("\n")
 }
+
+/** The text blocks of a note's content, or its string content as it is. */
+function noteText(content: unknown): string {
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return ""
+  return content
+    .filter((block): block is Json => isObject(block) && block.type === "text")
+    .map((block) => str(block.text))
+    .filter((text) => text !== "")
+    .join("\n")
+}
+
+/** Notes the view shows, by their `circus_note` kind (docs/wire.md). */
+const shownNotes = new Set<string>([
+  "previous_turn_interrupted",
+  "recovered_call",
+  "call_notice",
+  "job_notice",
+  "lost_bgtask",
+  "history_missing",
+] satisfies NoteKind[])
+
+/**
+ * Notes the view already says in its own way: the approval card shows the
+ * retry an approval starts, and "You stopped this turn" the interrupt.
+ */
+const hiddenNotes = new Set(["approval_retry", "user_interrupt"])
 
 /**
  * Applies a batch of raw events in order. Durable events at or below
@@ -270,7 +298,7 @@ class Builder {
         return
       }
       case "user":
-        return this.user(p)
+        return this.user(p, raw.seq, at)
       case "assistant":
         if (raw.ephemeral) return this.partial(p, at, raw.tsUnixMs)
         return this.assistant(p, at, raw.tsUnixMs)
@@ -348,7 +376,7 @@ class Builder {
     this.add({ kind: "user_message", id, at, text: str(p.text), clientMsgId, delivery: "accepted" })
   }
 
-  private user(p: Json) {
+  private user(p: Json, seq: number, at: string) {
     const message = isObject(p.message) ? p.message : {}
     const content = message.content
     const input = this.internal.inputs.get(str(p.uuid))
@@ -362,14 +390,26 @@ class Builder {
     }
     // A subagent's prompt and tool results stay inside its Task call.
     if (isSubagent(p)) return
-    if (Array.isArray(content)) {
-      for (const block of content) {
-        if (isObject(block) && block.type === "tool_result") this.toolResult(block)
-      }
-    }
-    // Anything else is what the worker tells the agent (approvals,
-    // interruptions, notices, gaps), whether or not it is marked synthetic:
-    // the user's own messages enter the view as INPUT_ACCEPTED.
+    const results = Array.isArray(content)
+      ? content.filter((block): block is Json => isObject(block) && block.type === "tool_result")
+      : []
+    for (const block of results) this.toolResult(block)
+    if (results.length > 0) return
+    // What the worker tells the agent (recovery, notices, gaps) is a note.
+    // An unmarked message is neither: the user's own messages enter the
+    // view as INPUT_ACCEPTED.
+    const note = str(p.circus_note)
+    if (!note && p.isSynthetic !== true) return
+    if (hiddenNotes.has(note)) return
+    const uuid = str(p.uuid)
+    if (!uuid && seq <= 0) return
+    this.add({
+      kind: "note",
+      id: uuid ? `note:${uuid}` : `note:${seq}`,
+      at,
+      noteKind: shownNotes.has(note) ? (note as NoteKind) : "other",
+      text: noteText(content),
+    })
   }
 
   private toolResult(block: Json) {

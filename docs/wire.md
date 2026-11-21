@@ -1093,6 +1093,18 @@ An ephemeral `ASSISTANT` carries an SDK `stream_event`. A completed block
 is published as a durable SDK assistant message. Blocks from the same
 response share the API `message.id`.
 
+A `USER` event for a message the worker wrote for the model, rather than
+the user's input or a tool result, adds a top-level `circus_note` string
+naming its kind. The field is part of the view event only and is not
+written to the transcript. Kinds: `approval_retry` (the input an approval
+creates), `user_interrupt` (the annotation of a user's Interrupt),
+`previous_turn_interrupted`, `recovered_call` (a call result returned on
+recovery), `call_notice` (a late call's completion), `job_notice` (a device
+background job's completion), `lost_bgtask` (an SDK background task lost
+with its worker) and `history_missing` (the missing-history reminder).
+Clients treat an unknown kind, or a synthetic user message without one, as
+a generic note to the model.
+
 For a text-stream abort, the measured SDK emits the partial assistant block
 with `aborted: true` before RESULT. Interrupt produces
 `error_during_execution`. NOW produces `success` with the partial text as
@@ -1353,7 +1365,7 @@ The user-side Connect API authenticates a browser session cookie, with the
 same Origin rule as ProjectService. A Bearer credential for the CLI comes
 later. CreateSession requires a project of the caller and optionally a
 location_index (otherwise the project's last_used_location) and pinned
-worker. The selected location's device must not be revoked.
+worker.
 config.default_device and config.cwds must be empty; the control plane fills
 them from the project location. model and permission_mode may be supplied.
 
@@ -1367,12 +1379,13 @@ it, the store lists the sessions of every project the caller owns. Store
 errors map to fixed messages: NOT_FOUND, FAILED_PRECONDITION for a
 stopped session (and DeleteSession's and RecoverSession's preconditions),
 RESOURCE_EXHAUSTED for the session, input and stream caps,
-ALREADY_EXISTS for a client_msg_id reused with other content, UNAVAILABLE
-when the store is busy, CANCELED or DEADLINE_EXCEEDED when the request
-ended, INTERNAL otherwise. Argument errors are INVALID_ARGUMENT with a
+ALREADY_EXISTS for a client_msg_id or client_request_id reused with
+different data, UNAVAILABLE when the store is busy, CANCELED or
+DEADLINE_EXCEEDED when the request ended, INTERNAL otherwise. Argument
+errors are INVALID_ARGUMENT with a
 google.rpc.BadRequest field violation naming the request field.
 
-CreateSession requires a project location on a live device of the caller.
+A new session requires a project location on a non-revoked device of the caller.
 A missing location or unavailable device returns FAILED_PRECONDITION with
 a `location_index` field violation.
 An out-of-range location_index is INVALID_ARGUMENT. The server fills
@@ -1382,6 +1395,19 @@ path, or `~/circus/projects/<project_id>` for a location without a path
 of the caller. The location becomes the project's
 last_used_location in the same transaction, without moving the project's
 updated_at.
+
+CreateSession requires a client_request_id of 1 to 128 bytes, unique within
+the project. A retry with the same key returns the current session without
+checking the device or session cap again or changing last_used_location.
+An explicit location_index must match the index resolved for the first
+request. After the project's locations are reordered, an explicit retry
+must send the original index. An omitted index reuses that result even
+if last_used_location has changed. The pinned_worker_id (omitted and empty
+are equivalent), config.model, and config.permission_mode (empty selects
+auto) must also match. Different settings return ALREADY_EXISTS with a
+client_request_id field violation.
+Concurrent requests with the same key create at most one session.
+Deleting the session releases the key for a new create.
 
 The control plane records these durable view events itself, in the
 transaction of the change, with JSON payloads:

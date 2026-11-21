@@ -429,6 +429,95 @@ describe("recorded fake worker sessions", () => {
   })
 })
 
+describe("notes to Claude", () => {
+  const label = "Told Claude: the previous turn was interrupted"
+  const sent = "The previous turn was interrupted."
+
+  it("shows a collapsed row that opens to the exact text Claude was sent", async () => {
+    await renderRecorded("crash_recover")
+    const row = screen.getByRole("button", { name: label })
+    expect(row.getAttribute("aria-expanded")).toBe("false")
+    expect(screen.queryByText(sent)).toBeNull()
+
+    fireEvent.click(row)
+    await advance(0)
+    expect(row.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByText(sent)).toBeTruthy()
+
+    fireEvent.click(row)
+    await advance(500)
+    expect(row.getAttribute("aria-expanded")).toBe("false")
+    expect(screen.queryByText(sent)).toBeNull()
+  })
+
+  it("shows nothing for an approval's retry or an interrupt", async () => {
+    await renderRecorded("approve")
+    expect(screen.queryByText(/^Told Claude/)).toBeNull()
+    cleanup()
+    await renderRecorded("interrupt")
+    expect(screen.getByText("You stopped this turn")).toBeTruthy()
+    expect(screen.queryByText(/^Told Claude/)).toBeNull()
+  })
+
+  /** The session page fed the notes `contents` after a user message. */
+  async function renderNotes(contents: unknown[]) {
+    const at = Date.now()
+    const events: RawSessionEvent[] = contents.map((content, i) => ({
+      seq: i + 1,
+      tsUnixMs: at,
+      kind: "user",
+      payloadJson: JSON.stringify({
+        type: "user",
+        uuid: `u${i}`,
+        isSynthetic: true,
+        circus_note: "job_notice",
+        message: { role: "user", content },
+      }),
+      ephemeral: false,
+      truncated: false,
+    }))
+    return renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions(() => ({ watchSession: ({ signal }) => replayStream(events, signal) })),
+    })
+  }
+  const jobLabel = "Told Claude: a background job finished"
+
+  it("shows a note without text as its label alone, with nothing to open", async () => {
+    await renderNotes([[{ type: "image", source: {} }]])
+    expect(screen.getByText(jobLabel)).toBeTruthy()
+    expect(screen.queryByRole("button", { name: jobLabel })).toBeNull()
+  })
+
+  it("lets the keyboard reach the text of a note where it scrolls", async () => {
+    const long = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n")
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.textContent === long ? 4000 : 0
+    })
+    const clientHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(256)
+    try {
+      await renderNotes([long, "short"])
+      const [first, second] = screen.getAllByRole("button", { name: jobLabel })
+      fireEvent.click(first)
+      fireEvent.click(second)
+      await advance(0)
+      const region = screen.getByRole("region", { name: jobLabel })
+      expect(region.textContent).toBe(long)
+      expect(region.tabIndex).toBe(0)
+      // The short one doesn't scroll and takes no focus.
+      expect(screen.getByText("short").hasAttribute("tabindex")).toBe(false)
+    } finally {
+      scrollHeight.mockRestore()
+      clientHeight.mockRestore()
+    }
+  })
+
+  it("labels it in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    await renderRecorded("broken")
+    expect(screen.getByRole("button", { name: "已告知 Claude：部分历史记录缺失" })).toBeTruthy()
+  })
+})
+
 describe("notices above the composer", () => {
   const broken = "Part of this session's history couldn't be saved"
   const offlineNotice = /is offline \(last seen/
