@@ -16,7 +16,7 @@ tasks:
       - buf generate
 
   lint:
-    desc: Lint the protocol, vet Go code and check gofmt
+    desc: Lint the protocol, vet and format-check Go code, and typecheck the worker
     cmds:
       - buf lint
       - go vet ./...
@@ -24,11 +24,23 @@ tasks:
       - |
         files="$(gofmt -l $(go list -f '{{"{{.Dir}}"}}' ./...))"
         if [ -n "$files" ]; then printf '%s\n' "$files"; exit 1; fi
+      - npm -w @circus/worker run typecheck
 
   test:
-    desc: Run Go tests
+    desc: Run Go and worker tests
     cmds:
       - go test ./...
+      - task: worker:test
+
+  worker:build:
+    desc: Build the TypeScript worker into worker/dist
+    cmds:
+      - npm -w @circus/worker run build
+
+  worker:test:
+    desc: Run the TypeScript worker tests
+    cmds:
+      - npm -w @circus/worker run test
 
   mutate:
     desc: Run sandboxed syntax mutations against one Go package

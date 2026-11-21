@@ -234,8 +234,20 @@ func (f *fixture) tryDial(i int, label string) (*workerclient.Client, error) {
 // and leave while this Attach is processed.
 func (f *fixture) attach(c *workerclient.Client, max uint32) workerclient.Events {
 	f.t.Helper()
+	return f.attachWith(c, &circusv1.Attach{MaxSessions: max, SdkVersion: "sdk", ClaudeVersion: "cli"})
+}
+
+// attachLocal is attach of a local-only connection (Attach.local_only).
+func (f *fixture) attachLocal(c *workerclient.Client, max uint32) workerclient.Events {
+	f.t.Helper()
+	return f.attachWith(c, &circusv1.Attach{MaxSessions: max, SdkVersion: "sdk", ClaudeVersion: "cli", LocalOnly: true})
+}
+
+// attachWith is attach with the given Attach.
+func (f *fixture) attachWith(c *workerclient.Client, a *circusv1.Attach) workerclient.Events {
+	f.t.Helper()
 	before := sessions.AttachedConns(f.svc)
-	ev, err := c.Attach(wait.Ctx(f.t), &circusv1.Attach{MaxSessions: max, SdkVersion: "sdk", ClaudeVersion: "cli"})
+	ev, err := c.Attach(wait.Ctx(f.t), a)
 	must(f.t, err)
 	wait.For(f.t, func() bool {
 		select {
@@ -262,6 +274,17 @@ func (f *fixture) session(id string, pinned int) {
 	if pinned >= 0 {
 		s.PinnedWorkerID = f.workers[pinned].Identity.ID
 	}
+	if _, err := f.st.CreateSession(f.t.Context(), s, []store.SessionCwd{{DeviceID: f.device.ID, Cwd: "/work"}}, store.DefaultMaxSessionsPerUser); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// localSession creates a local-mode session of the fixture's user pinned
+// to worker index worker.
+func (f *fixture) localSession(id string, worker int) {
+	f.t.Helper()
+	s := store.Session{ID: id, ClientRequestID: id, UserID: f.user.ID, ProjectID: "p1", ClaudeSessionID: "claude-" + id, DefaultDeviceID: f.device.ID,
+		Model: "m", PermissionMode: "auto", CreatedAt: ms(f), PinnedWorkerID: f.workers[worker].Identity.ID, Local: true}
 	if _, err := f.st.CreateSession(f.t.Context(), s, []store.SessionCwd{{DeviceID: f.device.ID, Cwd: "/work"}}, store.DefaultMaxSessionsPerUser); err != nil {
 		f.t.Fatal(err)
 	}

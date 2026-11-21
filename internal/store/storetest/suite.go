@@ -92,6 +92,8 @@ func Run(t *testing.T, b Backend) {
 		{"SessionCreate", testSessionCreate},
 		{"SessionCreateIdempotent", testSessionCreateIdempotent},
 		{"SessionCreateConcurrent", testSessionCreateConcurrent},
+		{"SessionLocal", testSessionLocal},
+		{"MachineWorker", testMachineWorker},
 		{"SessionLists", testSessionLists},
 		{"SessionCallsAndJobsByOwner", testSessionCallsAndJobsByOwner},
 		{"SessionActivity", testSessionActivity},

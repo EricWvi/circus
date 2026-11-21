@@ -424,6 +424,10 @@ Further size rules:
 - AppendTranscript batches contain ≤ 8 MiB of encoded `entries` fields
   (`MaxTranscriptBatchBytes`), or exactly one larger entry fitting M together
   with its envelope.
+- The TypeScript worker applies a local send budget of `min(M, 32 MiB)` to
+  a single uplink request, including 16 bytes reserved for a possible
+  Unwatch. Requests exceeding this budget, including oversized individual
+  records, fail locally.
 - Unfragmented frames ≤ F; reassembled envelopes ≤ M (section 3.3).
 
 **Structure limits** (per envelope, counted over the whole tree):
@@ -887,7 +891,7 @@ the ID lives only on the worker envelope.
 | `SubmitCall{device, call, session_epoch, tool_use_id}` | Submit a `DeviceCall` to the user's device named `device` (1-128 bytes). `call.call_id` and `call.session_id`: 1-128 bytes of `[A-Za-z0-9_-]`; `agent_id`: empty or the same grammar; exactly one tool. | A stream of `CallUpdate`s: zero or more nonterminal updates, then one terminal update (unless the link closes or the operation is unwatched first). | At its terminal update, or at Unwatch. |
 | `CallQuery{call_id}` | Read the call's current state. | Exactly one `CallUpdate` (may be nonterminal, e.g. `unknown`, or `rejected NOT_FOUND`). | At that reply (or Unwatch). |
 | `CancelCall{call_id}` | Cancel before dispatch; after dispatch record the intent (the daemon's result wins). The intent is recorded in receive order, so it cannot overtake an earlier Submit of the same call. | Exactly one `CallUpdate`: the call's state read after the intent was recorded (the call may have finished in between). `cancelled`: cancelled before dispatch. `dispatched` or `unknown`: intent recorded, the daemon's result decides. A terminal outcome (`result`, `lost`, ...): the call had already finished; `unknown` with reason `DEVICE_OFFLINE` when it finished but its result cannot be read now. `rejected NOT_FOUND`: no such call for this user; `rejected INVALID`: invalid id. | At that reply (or Unwatch). The intent stays recorded either way. |
-| `Attach` | Advertise 1..64 session capacity and SDK/CLI/account/check metadata; at most once per connection, even after Unwatch. | WorkerEvent stream: Offer, Nudge, LeaseRevoked, starting with every Offer still pending for this worker. Hints are level-triggered, may repeat or coalesce, and carry no authoritative state. Account is recorded only. | Unwatch or disconnect. |
+| `Attach` | Advertise 1..64 session capacity, SDK/CLI/account/check metadata and `local_only`; at most once per connection, even after Unwatch. `local_only`: this connection runs only local-mode sessions pinned to its worker (Scheduling below). | WorkerEvent stream: Offer, Nudge, LeaseRevoked, starting with every Offer still pending for this worker. Hints are level-triggered, may repeat or coalesce, and carry no authoritative state. Account is recorded only. | Unwatch or disconnect. |
 | `SessionRequest{session_id, epoch, op}` | One of the session operations below; Data with key `session/<session_id>`. | Exactly one SessionReply, success, Fenced or Rejected. | At that reply (or Unwatch). |
 | `ResumeLeases{leases}` | Reattach up to 64 (session_id, epoch) leases on the same worker boot before expiry, rebinding each to this connection. | One SessionReply.resumed, one outcome per requested lease, with retained epoch (and `stopped`) on success or current epoch when fenced. | At that reply (or Unwatch). |
 | `ListDevices{}` | List the user's devices. | One SessionReply.devices, at most 256 devices with name, online, os, arch, hostname, last_seen_unix_ms. | At that reply (or Unwatch). |
@@ -993,6 +997,21 @@ AcquireLease's Lease reply) run off the loop, at most two at once across all
 connections.
 The user-facing Connect SessionService (the user-side API below) is served
 by `internal/controlplane/webapi`.
+
+#### Local mode
+
+A session is local (`SessionConfig.local`) when it is pinned to a worker
+on the same machine as its default device: the worker runs Claude Code's
+built-in tools there, directly, in the `cwds` entry of `default_device`,
+instead of submitting device calls. CreateSession decides it (user-side API
+below); local mode and the pin are stored with the session and never
+change, and `Lease.config` carries `local`. The control plane expects no
+SubmitCall from a local session but does not refuse one: it passes the
+same fence and admission as any session call. Everything else in this
+contract (leases, fencing, transcript, events, inputs, turns, approvals,
+stop) is the same for local sessions. The daemon still prepares the
+working directory (the session is leased only once it is ready) and
+serves the path picker.
 
 #### Fencing and leases
 
@@ -1132,7 +1151,27 @@ plane re-sends:
 to its pinned worker, or else to the user's attached connection (of the
 worker's newest boot) that is not full (leases plus Offers below
 `max_sessions`) and has the fewest leases and Offers; with none it stays
-queued until a connection attaches or frees capacity. An Offer stays
+queued until a connection attaches or frees capacity. A pinned session,
+local or not, waits while its worker has no such connection; it is never
+offered to another worker. A connection attached with `local_only` is
+offered only local sessions pinned to its worker (`SessionConfig.local`,
+below); every other session goes to the worker's other connections or
+waits. The same rules hold for every way to a lease: AcquireLease (with an
+Offer, or for a lease this boot already holds, fresh or reattaching) and
+ResumeLeases on a `local_only` connection refuse a session that is not
+local (`NOT_OFFERED`, or a resume outcome not ok with the current epoch;
+the lease stays bound where it was), and an Offer moved at Attach from
+another connection of the same boot moves only to a connection that may
+run the session. The store refuses a lease of a pinned session to any
+other worker. `local_only` takes effect at Attach: session operations a
+connection sends before its Attach, ResumeLeases and AcquireLease
+included, are not filtered by it (such a connection can still resume or
+reattach a lease its boot holds of a session that is not local). A
+local-only worker therefore sends Attach first on every connection, as
+the reconnect order above requires. It treats every resume outcome that
+is not ok as a lost lease, whatever the epoch it carries: a refused
+non-local session reports the worker's own epoch while the lease stays
+bound to the connection that held it. An Offer stays
 reserved for its connection for 30 seconds; then the fallback scan (every 30
 seconds) offers it again, possibly elsewhere. An AcquireLease refused for any
 reason withdraws an Offer the session no longer needs.
@@ -1623,7 +1662,20 @@ later. CreateSession requires a project of the caller and optionally a
 location_index (otherwise the project's last_used_location) and pinned
 worker.
 config.default_device and config.cwds must be empty; the control plane fills
-them from the project location. model and permission_mode may be supplied.
+them from the project location. config.local must be false
+(INVALID_ARGUMENT with a `config.local` field violation): the control
+plane decides it. model and permission_mode may be supplied.
+
+Local mode is decided once the location's device is resolved. With a
+pinned_worker_id, the session is local exactly when that worker's machine
+is the device's machine. Without one, if the caller has a live worker
+(not deleted, with an unrevoked credential) on the device's machine, the
+session is local and pinned to it; with several, the one connected most
+recently (a worker never connected counts as oldest; ties go to the
+smallest id). Otherwise the session is neither local nor pinned. Local
+mode and the pin are stored with the session and never change; responses
+with config (GetSession, CreateSession and the writes) return
+config.local, and pinned_worker_id is the pin, derived or requested.
 
 Authorization: a session belongs to the Web user who owns its project.
 Every call resolves the session (for ResolveApproval, the approval's
@@ -1663,9 +1715,11 @@ checking the device or session cap again or changing last_used_location.
 An explicit location_index must match the index resolved for the first
 request. After the project's locations are reordered, an explicit retry
 must send the original index. An omitted index reuses that result even
-if last_used_location has changed. The pinned_worker_id (omitted and empty
-are equivalent), config.model, and config.permission_mode (empty selects
-auto) must also match. Different settings return ALREADY_EXISTS with a
+if last_used_location has changed. The pinned_worker_id the client sent
+(omitted and empty are equivalent; a pin the control plane derived is not
+compared), config.model, and config.permission_mode (empty selects
+auto) must also match. A retry returns the first session, local or not,
+even if the caller's workers changed since. Different settings return ALREADY_EXISTS with a
 client_request_id field violation.
 Concurrent requests with the same key create at most one session.
 Deleting the session releases the key for a new create.

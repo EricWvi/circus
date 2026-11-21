@@ -1,7 +1,11 @@
 {
   "name": "circus",
   "private": true,
-  "workspaces": ["gen/ts", "web"],
+  "workspaces": [
+    "gen/ts",
+    "web",
+    "worker"
+  ],
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "2.17.0",
     "typescript": "7.0.2"

@@ -201,6 +201,9 @@ message Attach {
   string claude_version = 3;
   Account account = 4;
   AutoModeCheck auto_mode_check = 5;
+  // The worker runs only local-mode sessions (SessionConfig.local) pinned to
+  // it; the control plane never offers it any other session.
+  bool local_only = 6;
   message Account {
     string email = 1;
     string organization = 2;

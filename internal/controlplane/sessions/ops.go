@@ -132,7 +132,7 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 		s.entries[id] = e
 	}
 	e.reserved++
-	offered := e.offered == c
+	offered, localOnly := e.offered == c, c.localOnly
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -144,8 +144,21 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	}()
 	now := s.nowMs()
 	var res store.LeaseAcquired
-	notOffered := false
+	notOffered, notLocal := false, false
 	err := c.tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		// The store enforces the pin; a local-only connection also takes
+		// only local sessions, whatever the path (an Offer, or a lease its
+		// boot already holds).
+		if localOnly {
+			sess, err := tx.GetSession(ctx, id, now)
+			if err != nil {
+				return err
+			}
+			if !sess.Local {
+				notLocal = true
+				return nil
+			}
+		}
 		if !offered {
 			l, err := tx.GetLease(ctx, id)
 			if err != nil {
@@ -164,7 +177,7 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	if err == nil && res.Loss != nil {
 		s.lost(*res.Loss, c, false)
 	}
-	if err != nil || notOffered || res.Released {
+	if err != nil || notOffered || notLocal || res.Released {
 		// Re-derive the session: an Offer to a session that is no longer
 		// queued is withdrawn, one that still is stays.
 		s.mu.Lock()
@@ -177,6 +190,8 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	switch {
 	case notOffered:
 		return rejected(circusv1.SessionReply_Rejected_CODE_NOT_OFFERED, "no current offer to this connection"), nil
+	case notLocal:
+		return rejected(circusv1.SessionReply_Rejected_CODE_NOT_OFFERED, "not a local session; this connection runs only local sessions"), nil
 	case errors.Is(err, store.ErrStopped):
 		return rejected(circusv1.SessionReply_Rejected_CODE_STOPPED, "session stopped"), nil
 	case errors.Is(err, store.ErrBroken), errors.Is(err, store.ErrLeaseHeld):
@@ -339,7 +354,7 @@ func (c *Conn) leaseReply(ctx context.Context, id string, epoch int64, reattache
 		if err != nil {
 			return err
 		}
-		lease.Config = &circusv1.SessionConfig{DefaultDevice: def, Model: sess.Model, PermissionMode: sess.PermissionMode}
+		lease.Config = &circusv1.SessionConfig{DefaultDevice: def, Model: sess.Model, PermissionMode: sess.PermissionMode, Local: sess.Local}
 		for _, cw := range lease.State.Cwds {
 			if cw.AgentId == "" {
 				lease.Config.Cwds = append(lease.Config.Cwds, &circusv1.SessionConfig_Cwd{Device: cw.Device, Cwd: cw.Cwd})
@@ -848,16 +863,54 @@ func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.S
 		}
 		s.mu.Unlock()
 	}()
+	s.mu.Lock()
+	localOnly := c.localOnly
+	s.mu.Unlock()
 	now := s.nowMs()
-	var res []store.LeaseResumed
+	res := make([]store.LeaseResumed, len(keys))
 	sessions := make([]store.Session, len(keys))
 	if len(keys) > 0 {
 		err := c.tx(ctx, func(ctx context.Context, tx store.Ops) error {
-			var err error
-			if res, err = tx.ResumeLeases(ctx, c.workerID, c.bootID, c.id, keys, now, now+LeaseLifetime.Milliseconds()); err != nil {
+			// A local-only connection resumes only local sessions: any
+			// other is refused (not ok, with the current epoch) and stays
+			// bound where it was, so it expires unless resumed elsewhere.
+			resume, idx := keys, make([]int, 0, len(keys))
+			if localOnly {
+				resume = nil
+				for j, k := range keys {
+					sess, err := tx.GetSession(ctx, k.SessionID, now)
+					if errors.Is(err, store.ErrNotFound) {
+						res[j] = store.LeaseResumed{SessionID: k.SessionID, Err: err}
+						continue
+					}
+					if err != nil {
+						return err
+					}
+					if !sess.Local {
+						l, err := tx.GetLease(ctx, k.SessionID)
+						if err != nil {
+							return err
+						}
+						res[j] = store.LeaseResumed{SessionID: k.SessionID, Err: &store.FencedError{Epoch: l.Epoch}}
+						continue
+					}
+					resume, idx = append(resume, k), append(idx, j)
+				}
+			} else {
+				for j := range keys {
+					idx = append(idx, j)
+				}
+			}
+			if len(resume) == 0 {
+				return nil
+			}
+			got, err := tx.ResumeLeases(ctx, c.workerID, c.bootID, c.id, resume, now, now+LeaseLifetime.Milliseconds())
+			if err != nil {
 				return err
 			}
-			for j, lr := range res {
+			for i, lr := range got {
+				j := idx[i]
+				res[j] = lr
 				if lr.Err == nil {
 					if sessions[j], err = tx.GetSession(ctx, lr.SessionID, now); err != nil {
 						return err

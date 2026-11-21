@@ -180,7 +180,7 @@ func fullSession(ctx context.Context, ops store.Ops, sess store.Session) (*circu
 	if err != nil {
 		return nil, err
 	}
-	out.Config = &circusv1.SessionConfig{DefaultDevice: device, Model: sess.Model, PermissionMode: sess.PermissionMode}
+	out.Config = &circusv1.SessionConfig{DefaultDevice: device, Model: sess.Model, PermissionMode: sess.PermissionMode, Local: sess.Local}
 	for _, c := range cwds {
 		name, err := names.name(ctx, c.DeviceID)
 		if err != nil {
@@ -271,6 +271,8 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		return nil, invalidField("config.model", "model is longer than 128 bytes")
 	case len(cfg.GetPermissionMode()) > store.MaxIDBytes:
 		return nil, invalidField("config.permission_mode", "permission mode is longer than 128 bytes")
+	case cfg.GetLocal():
+		return nil, invalidField("config.local", "local mode is decided by the server")
 	case len(m.GetPinnedWorkerId()) > store.MaxIDBytes:
 		return nil, invalidField("pinned_worker_id", "worker id is too long")
 	}
@@ -323,14 +325,9 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		if err != nil || device.DeletedAt != 0 || device.UserID != u.ID {
 			return fieldError(connect.CodeFailedPrecondition, "location_index", "the location's device is not one of your devices")
 		}
-		if w := m.GetPinnedWorkerId(); w != "" {
-			worker, err := tx.GetIdentity(ctx, store.KindWorker, w)
-			if err != nil && !errors.Is(err, store.ErrNotFound) {
-				return err
-			}
-			if err != nil || worker.DeletedAt != 0 || worker.UserID != u.ID {
-				return invalidField("pinned_worker_id", "unknown worker")
-			}
+		pin, local, derived, err := placeSession(ctx, tx, u.ID, m.GetPinnedWorkerId(), device)
+		if err != nil {
+			return err
 		}
 		id, err := newID()
 		if err != nil {
@@ -359,7 +356,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 			ID: id, UserID: u.ID, ProjectID: p.ID, ClaudeSessionID: uuid.NewString(), State: store.SessionIdle,
 			ClientRequestID: m.GetClientRequestId(), LocationIndex: uint32(index), Workspace: l.Path == "",
 			DefaultDeviceID: l.DeviceID, Model: cfg.GetModel(), PermissionMode: cfg.GetPermissionMode(),
-			PinnedWorkerID: m.GetPinnedWorkerId(), CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+			PinnedWorkerID: pin, PinDerived: derived, Local: local, CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		}
 		cwds := []store.SessionCwd{{DeviceID: l.DeviceID, Cwd: cwd, UpdatedAt: now}}
 		res, err := tx.CreateSession(ctx, sess, cwds, store.DefaultMaxSessionsPerUser)
@@ -408,6 +405,37 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 	}
 	s.workspaceCommitted(workspaceChange)
 	return connect.NewResponse(&circusv1.CreateSessionResponse{Session: out}), nil
+}
+
+// placeSession decides where a new session of user runs on device: the
+// worker it is pinned to and whether it is local (that worker shares the
+// device's machine). A requested worker must be a live worker of the user;
+// the session is local exactly when it is on the device's machine.
+// Without one, the user's live worker on that machine with an unrevoked
+// credential (MachineWorker) makes the session local and pinned to it
+// (derived); with none the session is neither.
+func placeSession(ctx context.Context, tx store.Ops, userID, requested string, device store.Identity) (pin string, local, derived bool, err error) {
+	if requested != "" {
+		worker, err := tx.GetIdentity(ctx, store.KindWorker, requested)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return "", false, false, err
+		}
+		if err != nil || worker.DeletedAt != 0 || worker.UserID != userID {
+			return "", false, false, invalidField("pinned_worker_id", "unknown worker")
+		}
+		return requested, device.MachineID != "" && worker.MachineID == device.MachineID, false, nil
+	}
+	if device.MachineID == "" {
+		return "", false, false, nil
+	}
+	worker, err := tx.MachineWorker(ctx, userID, device.MachineID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return "", false, false, nil
+	case err != nil:
+		return "", false, false, err
+	}
+	return worker.ID, true, true, nil
 }
 
 func storePriority(p circusv1.InputPriority) (store.InputPriority, bool) {

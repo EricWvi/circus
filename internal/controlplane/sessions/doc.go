@@ -84,9 +84,16 @@
 // transaction only for sessions that need and can get an Offer. An Offer
 // stays reserved for ScheduleInterval; the session_schedule fallback then
 // withdraws it and rescans every attached user. On Attach, Offers held by
-// another connection of the same worker and boot move to the attaching one.
-// AcquireLease needs a current Offer to the connection unless this worker
-// and boot hold the lease.
+// another connection of the same worker and boot move to the attaching one,
+// if it may run the session. AcquireLease needs a current Offer to the
+// connection unless this worker and boot hold the lease.
+//
+// A local session (Session.Local) is always pinned. A connection attached
+// with local_only runs only local sessions pinned to its worker: Offers
+// (offer, Attach's move) skip it for any other session, and its
+// AcquireLease and ResumeLeases refuse one in the transaction that would
+// bind the lease. The store refuses a pinned session's lease to another
+// worker.
 //
 // For a held session, Wake adds Nudge reasons to the session's pending set
 // and the scheduler nudges the holder's connection (with the stored

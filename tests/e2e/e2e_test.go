@@ -284,11 +284,16 @@ func newHarnessWithDaemon(t *testing.T, startDaemon bool, grace ...string) *harn
 }
 func (h *harness) start(extra []string, input string, args ...string) *child {
 	h.t.Helper()
-	p := &child{done: make(chan struct{})}
-	p.cmd = exec.Command(binary, args...)
+	cmd := exec.Command(binary, args...)
+	cmd.Dir = h.dir
+	cmd.Stdin = strings.NewReader(input)
+	return h.startCommand(cmd, extra)
+}
+
+func (h *harness) startCommand(cmd *exec.Cmd, extra []string) *child {
+	h.t.Helper()
+	p := &child{cmd: cmd, done: make(chan struct{})}
 	p.cmd.Env = append(append([]string{}, h.env...), extra...)
-	p.cmd.Dir = h.dir
-	p.cmd.Stdin = strings.NewReader(input)
 	p.cmd.Stderr = &p.stderr
 	p.cmd.Stdout = &p.stdout
 	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
@@ -309,7 +314,7 @@ func (h *harness) start(extra []string, input string, args ...string) *child {
 			h.t.Errorf("child PID %d remains alive", p.cmd.Process.Pid)
 		}
 		if h.t.Failed() {
-			h.t.Logf("PID %d %v\nstderr:\n%s\nstdout:\n%s", p.cmd.Process.Pid, args, p.stderr.String(), p.stdout.String())
+			h.t.Logf("PID %d %v\nstderr:\n%s\nstdout:\n%s", p.cmd.Process.Pid, cmd.Args, p.stderr.String(), p.stdout.String())
 		}
 	})
 	return p

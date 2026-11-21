@@ -1,6 +1,7 @@
 # Process end-to-end tests
 
-Run on Linux with Go, Bash and the usual coreutils installed:
+Run on Linux with Go, Bash, the usual coreutils and Node.js 24 or later installed.
+Run `npm ci` from the repository root before running the suite.
 
 ```sh
 go test -tags e2e ./tests/e2e/ -count=1
@@ -60,6 +61,12 @@ metadata, marker files or bounded polling; no sleep establishes test ordering.
   input, reports the turn, runs a device call admitted by its lease through
   the real daemon (a call at another epoch is `SESSION_FENCED`) and
   releases.
+- TestTypeScriptWorkerLink: the worker workspace builds and connects using a
+  credential from `circus join`. It takes input for a session the server
+  assigns to the worker on the daemon's machine. It loses an in-flight reply
+  during a control-plane restart, resumes the same lease, receives a replayed
+  Nudge and retries successfully. It round-trips a fragmented transcript entry,
+  publishes a result, ends the turn and releases the lease.
 - TestWorkerRestartWhileHalfOpen: a worker connection goes half-open (a
   local proxy stops moving bytes without closing), a CLI call is running on
   the same credential, and a restarted worker still connects and gets a

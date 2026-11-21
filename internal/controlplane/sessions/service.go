@@ -496,6 +496,10 @@ type Conn struct {
 	kick                      chan struct{}
 	send                      func(context.Context, *circusv1.WorkerEvent) error
 	closed, attached, wasOnce bool
+	// localOnly: the worker said at Attach that this connection runs only
+	// local sessions pinned to it (Attach.local_only). Until Attach it is
+	// false; nothing is offered before Attach anyway.
+	localOnly bool
 	// acquires remembers this connection's last AcquireLeases, for a late
 	// Unwatch (Unwatched); nextAcquire is the slot to overwrite next.
 	acquires       [maxRecentAcquires]recentAcquire
@@ -603,7 +607,7 @@ func (c *Conn) Attach(ctx context.Context, a *circusv1.Attach, send func(context
 		stop()
 		return fmt.Errorf("%w: at most one Attach per connection", ErrAttach)
 	}
-	c.wasOnce, c.attached, c.max, c.send = true, true, int(a.GetMaxSessions()), send
+	c.wasOnce, c.attached, c.max, c.send, c.localOnly = true, true, int(a.GetMaxSessions()), send, a.GetLocalOnly()
 	c.sending, c.senderDone = stop, make(chan struct{})
 	// Nudges for leases bound here before Attach are already in the
 	// outbox (queue defers them; the sender starts now), so nothing is
@@ -611,7 +615,7 @@ func (c *Conn) Attach(ctx context.Context, a *circusv1.Attach, send func(context
 	// and boot (the one the worker reconnected from) move here: the worker
 	// ignores its abandoned connection.
 	for id, e := range s.entries {
-		if o := e.offered; o != nil && o != c && o.workerID == c.workerID && o.bootID == c.bootID && c.leases+c.offers < c.max {
+		if o := e.offered; o != nil && o != c && o.workerID == c.workerID && o.bootID == c.bootID && c.leases+c.offers < c.max && c.runs(e.local, e.pin) {
 			s.setOffer(e, c)
 			c.queue(id, func(h *hint) { h.offer = true })
 		}
@@ -619,11 +623,20 @@ func (c *Conn) Attach(ctx context.Context, a *circusv1.Attach, send func(context
 	s.rescan[c.userID] = struct{}{}
 	s.signal()
 	s.mu.Unlock()
-	s.log.InfoContext(ctx, "worker attached", "worker_id", c.workerID, "max_sessions", c.max,
+	s.log.InfoContext(ctx, "worker attached", "worker_id", c.workerID, "max_sessions", c.max, "local_only", c.localOnly,
 		"sdk_version", a.GetSdkVersion(), "claude_version", a.GetClaudeVersion(),
 		"account_email", a.GetAccount().GetEmail(), "auto_mode_check", a.GetAutoModeCheck().String())
 	go c.run(sctx)
 	return nil
+}
+
+// runs reports whether connection c may run a session that is local or
+// not and pinned to worker pin ("" for none): a pinned session runs only on
+// its worker, and a local-only connection runs only local sessions; s.mu
+// held. Local and the pin never change, so the answer for a session never
+// does either.
+func (c *Conn) runs(local bool, pin string) bool {
+	return (pin == "" || pin == c.workerID) && (!c.localOnly || local)
 }
 
 // queue adds a hint for session id; s.mu held. Before Attach the hint

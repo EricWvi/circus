@@ -45,6 +45,13 @@ message SessionConfig {
   string model = 3;
   // SDK permission mode, at most 128 bytes; empty selects auto.
   string permission_mode = 4;
+  // Local mode: the session is pinned to a worker on the same machine as
+  // default_device, and the worker runs Claude Code's built-in tools there
+  // directly, in cwds' entry for default_device, instead of calling the
+  // device. Set by the control plane when it creates the session (a worker
+  // of the session's user shares the device's machine) and never changed;
+  // CreateSession refuses it set by the client.
+  bool local = 5;
   message Cwd {
     // At most 128 bytes.
     string device = 1;

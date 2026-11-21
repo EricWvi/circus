@@ -398,8 +398,15 @@ type SessionConfig struct {
 	Model string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	// SDK permission mode, at most 128 bytes; empty selects auto.
 	PermissionMode string `protobuf:"bytes,4,opt,name=permission_mode,json=permissionMode,proto3" json:"permission_mode,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Local mode: the session is pinned to a worker on the same machine as
+	// default_device, and the worker runs Claude Code's built-in tools there
+	// directly, in cwds' entry for default_device, instead of calling the
+	// device. Set by the control plane when it creates the session (a worker
+	// of the session's user shares the device's machine) and never changed;
+	// CreateSession refuses it set by the client.
+	Local         bool `protobuf:"varint,5,opt,name=local,proto3" json:"local,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SessionConfig) Reset() {
@@ -458,6 +465,13 @@ func (x *SessionConfig) GetPermissionMode() string {
 		return x.PermissionMode
 	}
 	return ""
+}
+
+func (x *SessionConfig) GetLocal() bool {
+	if x != nil {
+		return x.Local
+	}
+	return false
 }
 
 // Session state and lease ownership are independent: an idle session can have
@@ -2054,12 +2068,13 @@ var File_circus_v1_session_proto protoreflect.FileDescriptor
 
 const file_circus_v1_session_proto_rawDesc = "" +
 	"\n" +
-	"\x17circus/v1/session.proto\x12\tcircus.v1\x1a\x19circus/v1/workspace.proto\"\xd8\x01\n" +
+	"\x17circus/v1/session.proto\x12\tcircus.v1\x1a\x19circus/v1/workspace.proto\"\xee\x01\n" +
 	"\rSessionConfig\x12%\n" +
 	"\x0edefault_device\x18\x01 \x01(\tR\rdefaultDevice\x120\n" +
 	"\x04cwds\x18\x02 \x03(\v2\x1c.circus.v1.SessionConfig.CwdR\x04cwds\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12'\n" +
-	"\x0fpermission_mode\x18\x04 \x01(\tR\x0epermissionMode\x1a/\n" +
+	"\x0fpermission_mode\x18\x04 \x01(\tR\x0epermissionMode\x12\x14\n" +
+	"\x05local\x18\x05 \x01(\bR\x05local\x1a/\n" +
 	"\x03Cwd\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x10\n" +
 	"\x03cwd\x18\x02 \x01(\tR\x03cwd\"\xef\x05\n" +

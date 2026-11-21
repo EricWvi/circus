@@ -924,7 +924,16 @@ type Session struct {
 	Model           string // at most MaxIDBytes
 	PermissionMode  string // at most MaxIDBytes
 	// PinnedWorkerID, when set, is the only worker that may hold the lease.
-	PinnedWorkerID  string
+	PinnedWorkerID string
+	// PinDerived: the control plane chose PinnedWorkerID (a local session
+	// whose client asked for no worker), so the client's request named
+	// none. It requires Local.
+	PinDerived bool
+	// Local: the session runs in local mode on its pinned worker, which
+	// shares the default device's machine. It requires PinnedWorkerID.
+	// Local, PinnedWorkerID and PinDerived are set at creation and never
+	// change.
+	Local           bool
 	TurnCount       int64
 	LastTurnOutcome TurnOutcome // empty before the first turn ends
 	// InterruptTurnNo is the highest turn number the user asked to
@@ -958,11 +967,21 @@ type Session struct {
 	StoppedAt int64
 }
 
+// RequestedWorkerID is the worker the creating request pinned the session
+// to: PinnedWorkerID unless the control plane derived it (PinDerived).
+func (s Session) RequestedWorkerID() string {
+	if s.PinDerived {
+		return ""
+	}
+	return s.PinnedWorkerID
+}
+
 // MatchesCreate reports whether the creation settings match. A nil index
-// accepts the location resolved for the original request. An empty permission
-// mode selects auto.
+// accepts the location resolved for the original request. pinnedWorkerID
+// is the worker the request named (RequestedWorkerID), not a derived pin.
+// An empty permission mode selects auto.
 func (s Session) MatchesCreate(index *uint32, pinnedWorkerID, model, permissionMode string) bool {
-	return (index == nil || *index == s.LocationIndex) && pinnedWorkerID == s.PinnedWorkerID &&
+	return (index == nil || *index == s.LocationIndex) && pinnedWorkerID == s.RequestedWorkerID() &&
 		model == s.Model && cmp.Or(permissionMode, "auto") == cmp.Or(s.PermissionMode, "auto")
 }
 

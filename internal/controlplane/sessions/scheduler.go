@@ -55,7 +55,12 @@ type holder struct {
 // reasons (level-triggered: each stays pending until the holder has acted
 // on it, and every pending reason is re-sent after Attach and ResumeLeases).
 type entry struct {
-	user    string
+	user string
+	// local and pin are the session's local mode and pinned worker, which
+	// never change; set when the session is offered (Attach checks them
+	// before it moves an Offer).
+	local   bool
+	pin     string
 	holder  holder // zero when no live lease is known
 	bound   *Conn  // the live connection named by holder.conn, if any
 	offered *Conn
@@ -469,7 +474,8 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 }
 
 // offer offers a queued session without a live lease to its pinned worker,
-// else to the user's attached, non-full connection with the fewest leases;
+// else to the user's attached, non-full connection with the fewest leases
+// (a local-only connection takes only local sessions pinned to its worker);
 // with none it stays queued until a connection attaches or frees capacity.
 // An Offer stays with its connection for ScheduleInterval. s.mu held.
 func (s *Service) offer(id string, sess store.Session) {
@@ -500,6 +506,7 @@ func (s *Service) offer(id string, sess store.Session) {
 			return
 		}
 	}
+	e.local, e.pin = sess.Local, sess.PinnedWorkerID
 	s.setOffer(e, best)
 	e.offeredAt = now
 	best.queue(id, func(h *hint) { h.offer = true })
@@ -508,7 +515,7 @@ func (s *Service) offer(id string, sess store.Session) {
 // candidate reports whether connection c may get an Offer of sess (whose
 // entry, if tracked, is e); s.mu held.
 func (s *Service) candidate(c *Conn, sess store.Session, e *entry) bool {
-	if c.closed || s.stale(c) || !c.attached || c.userID != sess.UserID || (sess.PinnedWorkerID != "" && c.workerID != sess.PinnedWorkerID) {
+	if c.closed || s.stale(c) || !c.attached || c.userID != sess.UserID || !c.runs(sess.Local, sess.PinnedWorkerID) {
 		return false
 	}
 	load := c.leases + c.offers

@@ -77,6 +77,11 @@ type Ops interface {
 	GetIdentityByName(ctx context.Context, kind PrincipalKind, userID, name string) (Identity, error)
 	// ListIdentities returns the user's live identities of this kind, by name.
 	ListIdentities(ctx context.Context, kind PrincipalKind, userID string) ([]Identity, error)
+	// MachineWorker returns the user's live worker on machine machineID
+	// that holds an unrevoked credential, the most recently connected one
+	// when there are several (a worker never connected counts as oldest;
+	// ties go to the smallest id), or ErrNotFound.
+	MachineWorker(ctx context.Context, userID, machineID string) (Identity, error)
 	// CountLiveIdentities counts the user's non-deleted identities of this kind.
 	CountLiveIdentities(ctx context.Context, kind PrincipalKind, userID string) (int, error)
 	// ListIdentitySummaries returns live identities of this kind and their

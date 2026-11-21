@@ -268,6 +268,11 @@ func (o *faultyOps) ListIdentities(ctx context.Context, kind store.PrincipalKind
 	return v, err
 }
 
+func (o *faultyOps) MachineWorker(ctx context.Context, userID, machineID string) (v store.Identity, err error) {
+	err = o.read(ctx, func(s store.Ops) error { v, err = s.MachineWorker(ctx, userID, machineID); return err })
+	return v, err
+}
+
 func (o *faultyOps) CountLiveIdentities(ctx context.Context, kind store.PrincipalKind, userID string) (n int, err error) {
 	err = o.read(ctx, func(s store.Ops) error { n, err = s.CountLiveIdentities(ctx, kind, userID); return err })
 	return n, err

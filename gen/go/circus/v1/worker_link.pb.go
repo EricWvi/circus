@@ -1334,6 +1334,9 @@ type Attach struct {
 	ClaudeVersion string               `protobuf:"bytes,3,opt,name=claude_version,json=claudeVersion,proto3" json:"claude_version,omitempty"`
 	Account       *Attach_Account      `protobuf:"bytes,4,opt,name=account,proto3" json:"account,omitempty"`
 	AutoModeCheck Attach_AutoModeCheck `protobuf:"varint,5,opt,name=auto_mode_check,json=autoModeCheck,proto3,enum=circus.v1.Attach_AutoModeCheck" json:"auto_mode_check,omitempty"`
+	// The worker runs only local-mode sessions (SessionConfig.local) pinned to
+	// it; the control plane never offers it any other session.
+	LocalOnly     bool `protobuf:"varint,6,opt,name=local_only,json=localOnly,proto3" json:"local_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1401,6 +1404,13 @@ func (x *Attach) GetAutoModeCheck() Attach_AutoModeCheck {
 		return x.AutoModeCheck
 	}
 	return Attach_AUTO_MODE_CHECK_UNSPECIFIED
+}
+
+func (x *Attach) GetLocalOnly() bool {
+	if x != nil {
+		return x.LocalOnly
+	}
+	return false
 }
 
 // WorkerEvent contains level-triggered hints, not authoritative session data.
@@ -5550,14 +5560,16 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\x13CODE_SESSION_FENCED\x10\b\x12\x18\n" +
 	"\x14CODE_SESSION_STOPPED\x10\t\x1a\v\n" +
 	"\tCancelledB\b\n" +
-	"\x06update\"\xd5\x03\n" +
+	"\x06update\"\xf4\x03\n" +
 	"\x06Attach\x12!\n" +
 	"\fmax_sessions\x18\x01 \x01(\rR\vmaxSessions\x12\x1f\n" +
 	"\vsdk_version\x18\x02 \x01(\tR\n" +
 	"sdkVersion\x12%\n" +
 	"\x0eclaude_version\x18\x03 \x01(\tR\rclaudeVersion\x123\n" +
 	"\aaccount\x18\x04 \x01(\v2\x19.circus.v1.Attach.AccountR\aaccount\x12G\n" +
-	"\x0fauto_mode_check\x18\x05 \x01(\x0e2\x1f.circus.v1.Attach.AutoModeCheckR\rautoModeCheck\x1ap\n" +
+	"\x0fauto_mode_check\x18\x05 \x01(\x0e2\x1f.circus.v1.Attach.AutoModeCheckR\rautoModeCheck\x12\x1d\n" +
+	"\n" +
+	"local_only\x18\x06 \x01(\bR\tlocalOnly\x1ap\n" +
 	"\aAccount\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\"\n" +
 	"\forganization\x18\x02 \x01(\tR\forganization\x12+\n" +

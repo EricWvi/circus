@@ -1,0 +1,38 @@
+[
+  {
+    "name": "transcript page with interleaved heartbeat",
+    "frames": [
+      "2227080320b4012a20a001838080808080801062a7015aa4010a96010a05656e747279128c01e4bda0",
+      "1a040801102a",
+      "2226080310012a20e5a5bd21e4bda0e5a5bd21e4bda0e5a5bd21e4bda0e5a5bd21e4bda0e5a5bd21",
+      "2226080310022a20e4bda0e5a5bd21e4bda0e5a5bd21e4bda0e5a5bd21e4bda0e5a5bd21e4bda0e5",
+      "2226080310032a20a5bd21e4bda0e5a5bd21e4bda0e5a5bd21e4bda0e5a5bd21e4bda0e5a5bd21e4",
+      "2226080310042a20bda0e5a5bd21e4bda0e5a5bd21e4bda0e5a5bd21e4bda0e5a5bd21e4bda0e5a5",
+      "221c0803100518012a14bd21e4bda0e5a5bd211087808080808080101801"
+    ]
+  },
+  {
+    "name": "duplicate payload",
+    "frames": [
+      "1a001a00"
+    ]
+  },
+  {
+    "name": "packed nudge reasons",
+    "frames": [
+      "6a0712050a01731200"
+    ]
+  },
+  {
+    "name": "invalid UTF-8",
+    "frames": [
+      "6a050a030a01ff"
+    ]
+  },
+  {
+    "name": "unknown group",
+    "frames": [
+      "1a002b2c"
+    ]
+  }
+]

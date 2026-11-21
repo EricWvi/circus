@@ -294,3 +294,52 @@ func TestWorkspaceMigrationBackfillsDefaultCwds(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionLocalMigration: sessions stored before local mode existed are
+// remote, without a derived pin, and keep an explicit pin.
+func TestSessionLocalMigration(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), dbName)
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	ms, err := migrations()
+	must(err)
+	_, err = raw.ExecContext(ctx, `CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT`)
+	must(err)
+	for _, m := range ms {
+		if m.version >= 14 {
+			break
+		}
+		_, err = raw.ExecContext(ctx, m.sql)
+		must(err)
+		_, err = raw.ExecContext(ctx, `INSERT INTO schema_migrations VALUES (?, 1)`, m.version)
+		must(err)
+	}
+	_, err = raw.ExecContext(ctx, `
+		INSERT INTO users(id,name,created_at) VALUES('u','user',1);
+		INSERT INTO projects(id,user_id,name,name_key,created_at,updated_at) VALUES('p','u','Project','project',1,1);
+		INSERT INTO devices(id,user_id,name,machine_id,created_at) VALUES('d','u','device','machine',1);
+		INSERT INTO workers(id,user_id,name,machine_id,created_at) VALUES('w','u','worker','machine',1);
+		INSERT INTO sessions(session_id,user_id,claude_session_id,state,default_device_id,pinned_worker_id,created_at,updated_at,project_id,last_activity_at,client_request_id)
+			VALUES('old','u','claude1','idle','d','w',1,1,'p',1,'key');`)
+	must(err)
+	must(raw.Close())
+
+	d, err := Open(ctx, path, Options{})
+	must(err)
+	defer d.Close()
+	old, err := d.GetSession(ctx, "old", 1)
+	must(err)
+	if old.Local || old.PinDerived || old.PinnedWorkerID != "w" || old.RequestedWorkerID() != "w" {
+		t.Fatalf("legacy session = local %v, derived %v, pin %q", old.Local, old.PinDerived, old.PinnedWorkerID)
+	}
+}

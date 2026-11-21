@@ -312,7 +312,12 @@ sessions. `CreateSession` starts in a project location (`location_index`,
 or the project's last used one, which it then records) on a device of the
 caller that is not revoked (`FAILED_PRECONDITION` otherwise); the server
 fills `default_device` and the working directory (the location's path, or
-its default directory, not created yet). `SendMessage` records the
+its default directory, not created yet). The server also decides local
+mode (`config.local`, which clients may not set): a session whose worker
+shares the device's machine (the `pinned_worker_id` given, or else the
+caller's live worker on that machine) is local and pinned to that worker,
+which then runs Claude Code's built-in tools on the machine directly.
+`SendMessage` records the
 message as a durable `KIND_INPUT_ACCEPTED` view event and returns its seq; a repeated
 `client_msg_id` returns the same input and seq. `WatchSession` replays the
 durable events after `after_seq`, then follows live events, ephemeral ones

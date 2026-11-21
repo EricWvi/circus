@@ -226,7 +226,9 @@ type SessionOps interface {
 	// one transaction. The project must belong to the user (ErrNotFound
 	// otherwise). A session with the same (ProjectID, ClientRequestID)
 	// returns its current row with Created false when the resolved
-	// LocationIndex, PinnedWorkerID, Model and PermissionMode match.
+	// LocationIndex, the requested worker (RequestedWorkerID), Model and
+	// PermissionMode match. Local requires PinnedWorkerID, and PinDerived
+	// requires Local (ErrInvalid).
 	// ErrExists reports different creation settings or a unique-key conflict.
 	// Only a fresh session checks the cap (ErrLimit) and ownership of the
 	// default device and any pinned worker (ErrNotFound). Title starts empty

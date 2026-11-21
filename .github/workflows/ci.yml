@@ -36,9 +36,9 @@ jobs:
       - run: npm -w @circus/web run lint
       - run: npm -w @circus/web run test
       - run: npm -w @circus/web run build
+      - run: npm -w @circus/worker run build
       - run: go build -tags webui -o /dev/null ./cmd/circus
-      # The e2e harness builds bin/circus itself; Go, Bash and coreutils are
-      # enough for it.
+      # The e2e harness builds bin/circus and the TypeScript worker.
       - run: task e2e
 
   # The race job runs in parallel with check: go test ./... needs neither the

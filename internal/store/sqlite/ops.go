@@ -287,6 +287,17 @@ func (o *ops) ListIdentities(ctx context.Context, kind store.PrincipalKind, user
 	return collect(rows, func(s scanner) (store.Identity, error) { return scanIdentity(s, kind) })
 }
 
+func (o *ops) MachineWorker(ctx context.Context, userID, machineID string) (store.Identity, error) {
+	if userID == "" || machineID == "" {
+		return store.Identity{}, invalid("MachineWorker needs a user id and a machine id")
+	}
+	return scanIdentity(o.q.QueryRow(ctx, `SELECT `+identityCols+` FROM workers w
+		WHERE user_id = ? AND machine_id = ? AND deleted_at IS NULL
+			AND EXISTS (SELECT 1 FROM credentials c WHERE c.principal_kind = 'worker'
+				AND c.principal_id = w.id AND c.revoked_at IS NULL)
+		ORDER BY COALESCE(last_connected_at, 0) DESC, id LIMIT 1`, userID, machineID), store.KindWorker)
+}
+
 func (o *ops) CountLiveIdentities(ctx context.Context, kind store.PrincipalKind, userID string) (int, error) {
 	table, err := identityTable(kind)
 	if err != nil {
