@@ -17,6 +17,8 @@ export function useSessionWatch(sessionId: string): SessionWatchState & {
   /** The current loss has lasted long enough to show (see `LOST_NOTICE_MS`). */
   lossNoticed: boolean
   retryNow: () => void
+  /** The server's clock now, as far as the stream shows it. */
+  serverNow: () => number
 } {
   const client = useClient()
   const queryClient = useQueryClient()
@@ -68,5 +70,6 @@ export function useSessionWatch(sessionId: string): SessionWatchState & {
     ...state,
     lossNoticed: lostAt !== null && noticedLoss === lostAt,
     retryNow: watch.retryNow,
+    serverNow: () => Date.now() - watch.serverOffsetMs(),
   }
 }

@@ -2,7 +2,7 @@ import { InfoIcon, PlusIcon, XIcon } from "lucide-react"
 import { useId, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import type { Device } from "@/api/types"
+import type { Device, WorkspaceStatus } from "@/api/types"
 import { MAX_LOCATIONS } from "@/api/validation"
 import { DisabledReason } from "@/components/disabled-reason"
 import { InfoTip } from "@/components/info-tip"
@@ -35,6 +35,7 @@ import {
 
 import { busyClass } from "./busy"
 import { FolderPickerField } from "./folder-picker"
+import { WorkspaceLocationStatus } from "./workspace-status"
 import type { PathCommit } from "./use-folder-remote"
 
 /**
@@ -56,6 +57,7 @@ export function LocationEditor({
   onTouch,
   onPathCommit,
   defaultPathNote,
+  workspaces,
   firstPathFocus,
 }: {
   rows: readonly LocationRow[]
@@ -85,6 +87,11 @@ export function LocationEditor({
   ) => void
   /** What happens in the default directory, on a line under each row that uses it. */
   defaultPathNote?: string
+  /**
+   * The default directory's state by device name, on a line under a row
+   * that uses it there (in place of `defaultPathNote`).
+   */
+  workspaces?: ReadonlyMap<string, WorkspaceStatus>
   /** Initial focus for the first row's path field (see `useQuietAutoFocus`). */
   firstPathFocus?: { autoFocus: boolean; "data-quiet-focus"?: string; onBlur: () => void }
 }) {
@@ -135,7 +142,12 @@ export function LocationEditor({
             const explicit = hasEarlierDefault(rows, i)
             const isDefault = row.path === "" && !explicit
             const replaced = isReplaced(row, sorted)
-            const note = isDefault && defaultPathNote && !rowErrors.path ? defaultPathNote : null
+            const workspace = isDefault && !rowErrors.path ? workspaces?.get(row.device) : undefined
+            const note = workspace ? (
+              <WorkspaceLocationStatus workspace={workspace} />
+            ) : isDefault && defaultPathNote && !rowErrors.path ? (
+              defaultPathNote
+            ) : null
             const noteId = noteIdPrefix + row.key
             const focusProps = i === 0 ? firstPathFocus : undefined
             return (
@@ -237,9 +249,9 @@ export function LocationEditor({
                   </FolderPickerField>
                   {rowErrors.path && <FieldError>{rowErrors.path}</FieldError>}
                   {note && (
-                    <p id={noteId} className="text-xs text-muted-foreground">
+                    <div id={noteId} className="text-xs text-muted-foreground">
                       {note}
-                    </p>
+                    </div>
                   )}
                 </div>
                 <div className="col-start-2 row-start-1 sm:col-start-3">

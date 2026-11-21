@@ -538,3 +538,135 @@ describe("notes to Claude", () => {
     expect(t.events.map((e) => e.id)).toEqual(["note:9"])
   })
 })
+
+describe("workspace events", () => {
+  const ws = (seq: number, ts: number, payload: Record<string, unknown>): RawSessionEvent => ({
+    seq,
+    tsUnixMs: ts,
+    kind: "workspace",
+    payloadJson: JSON.stringify({ device: "devbox", path: "~/circus/projects/p1", repo_url: "https://h/r.git", ...payload }),
+    ephemeral: seq === 0,
+    truncated: false,
+  })
+  const input = (seq: number): RawSessionEvent => ({
+    seq,
+    tsUnixMs: 1_000 + seq,
+    kind: "input_accepted",
+    payloadJson: JSON.stringify({ input_id: `i${seq}`, client_msg_id: `c${seq}`, text: "hi" }),
+    ephemeral: false,
+    truncated: false,
+  })
+
+  it("keeps the latest state, durable or live, and only outcomes in the conversation", () => {
+    const pending = run([ws(1, 100, { state: "pending", waiting: "retry" })])
+    expect(pending.workspace).toEqual({
+      tsUnixMs: 100,
+      attemptStartedAtUnixMs: 0,
+      status: expect.objectContaining({ state: "pending", waiting: "retry", device: "devbox", repoUrl: "https://h/r.git" }),
+    })
+    // Under way: the banner says it, the conversation doesn't.
+    expect(ofKind(pending, "workspace")).toEqual([])
+
+    // A live change updates the state only.
+    const offline = run([ws(0, 200, { state: "pending", waiting: "device_offline" })], pending)
+    expect(offline.workspace?.status.waiting).toBe("device_offline")
+    expect(offline.events).toBe(pending.events)
+    expect(offline.lastSeq).toBe(1)
+
+    const preparing = run([ws(2, 300, { state: "preparing" })], offline)
+    expect(ofKind(preparing, "workspace")).toEqual([])
+    expect(preparing.workspace?.attemptStartedAtUnixMs).toBe(300)
+    // Moving to the background is the same attempt.
+    const background = run([ws(0, 350, { state: "preparing", background: true })], preparing)
+    expect(background.workspace).toMatchObject({ tsUnixMs: 350, attemptStartedAtUnixMs: 300 })
+
+    const ready = run([input(3), ws(4, 400, { state: "ready", action: "cloned", path: "/home/u/circus/projects/p1" })], background)
+    expect(kinds(ready)).toEqual(["user_message", "workspace"])
+    expect(ofKind(ready, "workspace")[0]).toMatchObject({
+      id: "workspace:4",
+      status: { state: "ready", action: "cloned", path: "/home/u/circus/projects/p1" },
+    })
+    expect(ready.workspace?.status.state).toBe("ready")
+
+    // A replay of the recorded events builds the same view.
+    const all = [
+      ws(1, 100, { state: "pending", waiting: "retry" }),
+      ws(2, 300, { state: "preparing" }),
+      input(3),
+      ws(4, 400, { state: "ready", action: "cloned", path: "/home/u/circus/projects/p1" }),
+    ]
+    expect(run(all).events).toEqual(ready.events)
+    expect(run(all, ready).events).toBe(ready.events)
+  })
+
+  it("shows a failure only once a retry supersedes it", () => {
+    const failed = run([ws(1, 100, { state: "preparing" }), ws(2, 200, { state: "failed", error: "clone_failed" })])
+    expect(failed.workspace?.status.state).toBe("failed")
+    expect(ofKind(failed, "workspace")).toEqual([])
+
+    const retried = run([input(3), ws(4, 400, { state: "pending", waiting: "retry" })], failed)
+    // At its own place: before the message sent after it.
+    expect(kinds(retried)).toEqual(["workspace", "user_message"])
+    expect(ofKind(retried, "workspace")[0]).toMatchObject({ id: "workspace:2", status: { state: "failed", error: "clone_failed" } })
+
+    const ready = run([ws(5, 500, { state: "preparing" }), ws(6, 600, { state: "ready", action: "cloned" })], retried)
+    expect(ofKind(ready, "workspace").map((e) => [e.id, e.status.state])).toEqual([
+      ["workspace:2", "failed"],
+      ["workspace:6", "ready"],
+    ])
+    // The same on a replay.
+    const all = [
+      ws(1, 100, { state: "preparing" }),
+      ws(2, 200, { state: "failed", error: "clone_failed" }),
+      input(3),
+      ws(4, 400, { state: "pending", waiting: "retry" }),
+      ws(5, 500, { state: "preparing" }),
+      ws(6, 600, { state: "ready", action: "cloned" }),
+    ]
+    expect(run(all).events).toEqual(ready.events)
+  })
+
+  it("puts a superseded failure where it happened, after what came before it", () => {
+    const t = run([
+      input(1),
+      ws(2, 200, { state: "failed", error: "not_empty" }),
+      input(3),
+      input(4),
+      ws(5, 500, { state: "pending", waiting: "retry" }),
+      ws(6, 600, { state: "preparing" }),
+      ws(7, 700, { state: "ready", action: "cloned" }),
+    ])
+    expect(t.events.map((e) => e.id)).toEqual(["msg:c1", "workspace:2", "msg:c3", "msg:c4", "workspace:7"])
+  })
+
+  it("keeps the attempt's start when a change while preparing is recorded too", () => {
+    const t = run([ws(1, 1_000, { state: "preparing" }), ws(2, 9_000, { state: "preparing", background: true })])
+    expect(t.workspace).toMatchObject({ tsUnixMs: 9_000, attemptStartedAtUnixMs: 1_000, status: { background: true } })
+    // Live, as the control plane sends it: the same.
+    const live = run([ws(1, 1_000, { state: "preparing" }), ws(0, 9_000, { state: "preparing", background: true })])
+    expect(live.workspace).toMatchObject({ tsUnixMs: 9_000, attemptStartedAtUnixMs: 1_000 })
+    // A new attempt waits first, and starts anew.
+    const next = run([ws(3, 10_000, { state: "failed" }), ws(4, 11_000, { state: "pending" }), ws(5, 12_000, { state: "preparing" })], t)
+    expect(next.workspace?.attemptStartedAtUnixMs).toBe(12_000)
+  })
+
+  it("takes the later of two events of the same time", () => {
+    const t = run([ws(1, 100, { state: "pending", waiting: "retry" }), ws(0, 100, { state: "pending", waiting: "device_offline" })])
+    expect(t.workspace?.status.waiting).toBe("device_offline")
+  })
+
+  it("ignores a live event older than the state it has, and a state it doesn't know", () => {
+    const failed = run([ws(5, 500, { state: "failed", error: "not_empty" })])
+    expect(failed.workspace?.status).toMatchObject({ state: "failed", error: "not_empty" })
+    expect(run([ws(0, 400, { state: "pending", waiting: "device_offline" })], failed).workspace?.status.state).toBe("failed")
+    const unknown = run([ws(6, 600, { state: "archived" })], failed)
+    expect(unknown.workspace?.status.state).toBe("failed")
+    expect(unknown.events).toBe(failed.events)
+    expect(unknown.lastSeq).toBe(6)
+  })
+
+  it("reads unknown values as unspecified", () => {
+    const t = run([ws(1, 100, { state: "failed", error: "melted", waiting: "x", action: "y", background: "yes" })])
+    expect(t.workspace?.status).toMatchObject({ error: "unspecified", waiting: "unspecified", action: "unspecified", background: false })
+  })
+})

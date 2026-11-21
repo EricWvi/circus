@@ -17,10 +17,6 @@ import (
 // return in a fixture the Web's parity test runs against its port, and
 // fails until the fixture is regenerated when a rule changes.
 
-// defaultPathPrefix is where a location without a path resolves on its
-// device: defaultPathPrefix + project id.
-const defaultPathPrefix = "~/circus/projects/"
-
 // Bounds on request strings beyond the store's.
 const (
 	// maxDeviceNameBytes bounds a location's device name.

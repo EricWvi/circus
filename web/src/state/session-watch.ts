@@ -44,6 +44,12 @@ export interface SessionWatch {
   retryNow(): void
   /** The browser's own network state. */
   setOnline(online: boolean): void
+  /**
+   * How far the browser's clock is ahead of the server's, as the latest
+   * live event (a keepalive at least) showed it, network delay included; 0
+   * before any.
+   */
+  serverOffsetMs(): number
 }
 
 /** Events after which the session's state (GetSession) may have changed. */
@@ -58,7 +64,11 @@ export const boundaryKinds: ReadonlySet<SessionEventKind> = new Set<SessionEvent
   "session_state",
   "transcript_gap_accepted",
   "error",
+  "workspace",
 ])
+
+/** A durable event that arrives this long after the one before it was sent as it was recorded, not replayed. */
+export const LIVE_GAP_MS = 500
 
 /** A stream that served at least this long ended normally rather than failing to stay open. */
 export const HEALTHY_STREAM_MS = 10_000
@@ -95,6 +105,9 @@ export function createSessionWatch({
   /** Streams in a row that broke soon after they opened. */
   let shortLived = 0
   let pending: RawSessionEvent[] = []
+  let serverOffset = 0
+  /** When the last event arrived, by this browser's clock; 0 before any. */
+  let lastReceivedAt = 0
   let flushTimer: ReturnType<typeof setTimeout> | null = null
   const listeners = new Set<() => void>()
 
@@ -108,7 +121,8 @@ export function createSessionWatch({
       transcript.events === state.transcript.events &&
       transcript.lastSeq === state.transcript.lastSeq &&
       transcript.turnOpen === state.transcript.turnOpen &&
-      transcript.turnNo === state.transcript.turnNo
+      transcript.turnNo === state.transcript.turnNo &&
+      transcript.workspace === state.transcript.workspace
     if (sameView && connection === state.connection && gone === state.gone) return
     state = { transcript, connection, gone }
     for (const listener of listeners) listener()
@@ -138,6 +152,13 @@ export function createSessionWatch({
   }
 
   const receive = (event: RawSessionEvent) => {
+    // Events sent as they happen tell the server's clock: live ones, and
+    // durable ones after the replay. A replay comes as one burst; a durable
+    // event after a pause is sent as it is recorded.
+    const now = Date.now()
+    const sentNow = event.seq === 0 || (lastReceivedAt > 0 && now - lastReceivedAt >= LIVE_GAP_MS)
+    if (sentNow && event.tsUnixMs > 0) serverOffset = now - event.tsUnixMs
+    lastReceivedAt = now
     pending.push(event)
     flushTimer ??= setTimeout(flush, 0)
   }
@@ -171,6 +192,8 @@ export function createSessionWatch({
     const abort = new AbortController()
     stream = abort
     const afterSeq = transcript.lastSeq
+    // A new stream starts with its replay.
+    lastReceivedAt = 0
     return new Promise((resolve) => {
       let opened = false
       let openedAt = 0
@@ -253,6 +276,7 @@ export function createSessionWatch({
       controller.dispose()
     },
     retryNow: () => controller.retryNow(),
+    serverOffsetMs: () => serverOffset,
     setOnline(next) {
       if (!next) closeStream()
       controller.setOnline(next)

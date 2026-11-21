@@ -13,8 +13,9 @@ import (
 // (one row with NULL location columns for a project without locations), in
 // one statement (one snapshot).
 const projectQuery = `SELECT p.id, p.user_id, p.name, p.repo_url, p.last_used_location, p.created_at, p.updated_at,
-	l.device_id, d.name, l.path, d.deleted_at IS NOT NULL
+	l.device_id, d.name, l.path, d.deleted_at IS NOT NULL, ` + workspaceCols + `
 	FROM projects p LEFT JOIN project_locations l ON l.project_id = p.id LEFT JOIN devices d ON d.id = l.device_id
+	LEFT JOIN workspaces w ON l.path = '' AND w.project_id = p.id AND w.device_id = l.device_id
 	WHERE p.user_id = ?`
 
 func (o *ops) queryProjects(ctx context.Context, where string, args ...any) ([]store.Project, error) {
@@ -28,8 +29,10 @@ func (o *ops) queryProjects(ctx context.Context, where string, args ...any) ([]s
 		var p store.Project
 		var l store.ProjectLocation
 		var hasLocation sql.NullString
-		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, nullStr{&p.RepoURL}, &p.LastUsedLocation, &p.CreatedAt, &p.UpdatedAt,
-			&hasLocation, nullStr{&l.DeviceName}, nullStr{&l.Path}, &l.DeviceRevoked); err != nil {
+		var workspace workspaceScan
+		dest := []any{&p.ID, &p.UserID, &p.Name, nullStr{&p.RepoURL}, &p.LastUsedLocation, &p.CreatedAt, &p.UpdatedAt,
+			&hasLocation, nullStr{&l.DeviceName}, nullStr{&l.Path}, &l.DeviceRevoked}
+		if err := rows.Scan(append(dest, workspace.dest()...)...); err != nil {
 			return nil, mapErr(err)
 		}
 		if n := len(out); n == 0 || out[n-1].ID != p.ID {
@@ -37,6 +40,9 @@ func (o *ops) queryProjects(ctx context.Context, where string, args ...any) ([]s
 		}
 		if hasLocation.Valid {
 			l.DeviceID = hasLocation.String
+			if workspace.ID != "" {
+				l.Workspace = new(workspace.result())
+			}
 			last := &out[len(out)-1]
 			last.Locations = append(last.Locations, l)
 		}

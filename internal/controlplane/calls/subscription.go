@@ -43,6 +43,10 @@ func toolName(c *circusv1.DeviceCall) string {
 		return "write"
 	case *circusv1.DeviceCall_Edit:
 		return "edit"
+	case *circusv1.DeviceCall_PrepareWorkspace:
+		return "prepare_workspace"
+	case *circusv1.DeviceCall_RemoveWorkspace:
+		return "remove_workspace"
 	case *circusv1.DeviceCall_TaskStop:
 		return "task_stop"
 	}

@@ -154,7 +154,8 @@ export const isReplaced = (row: LocationRow, devices: readonly Device[]) =>
   row.revoked === true && devices.some((d) => d.name === row.device)
 
 /** The directory a location's sessions run in. */
-export const locationDirectory = (l: ProjectLocation) => l.path || l.effectivePath
+export const locationDirectory = (l: ProjectLocation) =>
+  l.path || (l.workspace?.state === "ready" ? l.workspace.path : l.effectivePath)
 
 /**
  * Checks every row; a later duplicate of an earlier row gets the error. A

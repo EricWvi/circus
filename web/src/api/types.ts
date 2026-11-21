@@ -75,6 +75,84 @@ export interface ProjectLocation extends Location {
    * start here, and saving the locations again needs another device.
    */
   deviceRevoked: boolean
+  /**
+   * The default directory on the device, for a default location (empty
+   * `path`) once a session was created there; its path is absolute once
+   * ready. Output only.
+   */
+  workspace?: WorkspaceStatus
+}
+
+/** Preparation state of a project's default directory on one device. */
+export type WorkspaceState = "unspecified" | "pending" | "preparing" | "ready" | "failed"
+
+/** Why a pending workspace hasn't started. */
+export type WorkspaceWaiting = "unspecified" | "device_offline" | "daemon_outdated" | "retry"
+
+/** What a ready workspace's preparation did. */
+export type WorkspaceAction = "unspecified" | "created" | "used_empty" | "cloned" | "used_repository"
+
+/** Why preparing or removing a workspace failed, by the proto names without `WORKSPACE_ERROR_`. */
+export type WorkspaceError =
+  | "unspecified"
+  | "invalid_request"
+  | "home_unknown"
+  | "unsupported_os"
+  | "path_conflict"
+  | "not_empty"
+  | "remote_mismatch"
+  | "git_unavailable"
+  | "clone_failed"
+  | "no_space"
+  | "permission_denied"
+  | "timeout"
+  | "busy"
+  | "cancelled"
+  | "io"
+  | "refused"
+  | "device_revoked"
+  | "interrupted"
+  | "daemon_fault"
+
+/**
+ * A project's default directory on one device, which the control plane
+ * prepares (creates, or clones the repository into) before a session there
+ * runs its first turn. Strings carry no credentials.
+ */
+export interface WorkspaceStatus {
+  state: WorkspaceState
+  /** Pending only. */
+  waiting: WorkspaceWaiting
+  /** The device's name. */
+  device: string
+  /** Absolute once ready; `~/circus/projects/<project id>` before. */
+  path: string
+  /** The repository cloned (or to clone); empty for an empty folder. */
+  repoUrl: string
+  /** Preparing only: the clone goes on as a background job on the device. */
+  background: boolean
+  /** Ready only. */
+  action: WorkspaceAction
+  /** Failed only. */
+  error: WorkspaceError
+  /** Failed only: at most 1024 bytes of what the device reported. */
+  errorDetail: string
+  /** When the current or last attempt started; 0 before any. */
+  attemptStartedAtUnixMs: number
+  updatedAtUnixMs: number
+}
+
+/** What deleting a project did to one device's default directory. */
+export interface WorkspaceRemoval {
+  device: string
+  /** `kept`: the device was offline, too old, had no ready folder or didn't answer in time. */
+  outcome: "unspecified" | "removed" | "kept" | "failed"
+  /** The directory, absolute when known. */
+  path: string
+  /** Failed only. */
+  error: WorkspaceError
+  /** Failed only. */
+  errorDetail: string
 }
 
 /**
@@ -119,8 +197,16 @@ export interface ProjectService {
     lastUsedLocation?: number
     expectedUpdatedAt?: ProjectVersion
   }): Promise<Project>
-  /** Fails with `failed_precondition` while any session in it is not stopped. */
-  deleteProject(req: { projectId: string }): Promise<void>
+  /**
+   * Fails with `failed_precondition` while any session in it is not stopped.
+   * `removeWorkspacesOn` names devices whose ready default directory of the
+   * project is deleted too (at most 32); each is asked once, before the
+   * project goes, and the outcome comes back per device in request order.
+   */
+  deleteProject(req: {
+    projectId: string
+    removeWorkspacesOn?: string[]
+  }): Promise<{ workspaceRemovals: WorkspaceRemoval[] }>
 }
 
 export interface Device {
@@ -255,6 +341,11 @@ export interface SessionSummary {
   /** Pending, unexpired approvals. */
   pendingApprovalCount: number
   createdAtUnixMs: number
+  /**
+   * Only for a session created in a project's default location: its
+   * folder on the device. Until it is ready no turn runs; messages wait.
+   */
+  workspace?: WorkspaceStatus
 }
 
 /** A session with where it runs, as GetSession returns it. */
@@ -286,6 +377,7 @@ export type SessionEventKind =
   | "transcript_gap_detected"
   | "turn_stopped"
   | "input_accepted"
+  | "workspace"
 
 /**
  * A session event as the control plane streams it. Durable events have
@@ -364,6 +456,12 @@ export interface SessionService {
   /** Lets a broken session go on without the part of its history that was lost. */
   recoverSession(req: { sessionId: string }): Promise<void>
   updateSession(req: { sessionId: string; title: string }): Promise<SessionDetails>
+  /**
+   * Starts a failed workspace of the session over (it becomes pending);
+   * any other state comes back unchanged. `failed_precondition` for a
+   * session without a workspace.
+   */
+  retryWorkspace(req: { sessionId: string }): Promise<WorkspaceStatus>
 }
 
 export interface CircusClient {

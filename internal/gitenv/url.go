@@ -1,4 +1,4 @@
-package link
+package gitenv
 
 import (
 	"net/netip"
@@ -7,9 +7,12 @@ import (
 	"unicode"
 )
 
-// sanitizeGitRemoteURL only rewrites the authority of scheme URLs. It
-// preserves the spelling of the remote and rejects ambiguous authorities.
-func sanitizeGitRemoteURL(raw string) (string, bool) {
+// SanitizeURL removes credentials from a Git remote URL. It only rewrites
+// the authority of scheme URLs: passwords are dropped, and HTTP(S) and
+// FTP(S) URLs lose all userinfo. SCP-style remotes and local paths are
+// returned unchanged. It preserves the spelling of the remote and reports
+// false for ambiguous authorities, whose credentials it cannot locate.
+func SanitizeURL(raw string) (string, bool) {
 	scheme, rest, ok := strings.Cut(raw, "://")
 	if !ok {
 		return raw, true

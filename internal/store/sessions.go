@@ -213,7 +213,7 @@ import "context"
 //
 // Event kinds are the SessionEvent.Kind names without the KIND_ prefix,
 // such as "TURN_STARTED" and EventKindTranscriptGapAccepted.
-// Every stored durable event moves LastActivityAt to max(current, its
+// Every stored durable event except WORKSPACE moves LastActivityAt to max(current, its
 // timestamp), including a retained boundary with a truncated payload. New
 // user inputs also move it; dropped events and live-only fragments do not. Internal turn boundaries use DefaultMaxViewBytes
 // and respect a view already truncated by a caller's smaller cap.

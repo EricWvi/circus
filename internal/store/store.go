@@ -49,6 +49,7 @@ type Store interface {
 // writing anything.
 type Ops interface {
 	WebAuthOps
+	WorkspaceOps
 	// ProjectOps holds the project operations (projects.go).
 	ProjectOps
 	// SessionOps holds the session operations (sessions.go). They are part

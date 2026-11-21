@@ -149,7 +149,9 @@ func (o *ops) storeEvents(ctx context.Context, sessionID string, events []store.
 		viewBytes += int64(len(payload))
 		count++
 		seqs[i] = lastSeq
-		lastActivity = max(lastActivity, e.At)
+		if e.Kind != store.EventKindWorkspace {
+			lastActivity = max(lastActivity, e.At)
+		}
 	}
 	if count > store.MaxSessionEvents {
 		var evicted int64

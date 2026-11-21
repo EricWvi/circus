@@ -79,7 +79,9 @@ type Project struct {
 // device by id, so a location keeps naming the machine it was bound to: a
 // revoked device's name may later be taken by another machine.
 type ProjectLocation struct {
-	DeviceID string
+	// Workspace is populated by reads of default locations when a row exists.
+	Workspace *Workspace
+	DeviceID  string
 	// DeviceName is the device's name, filled by reads (also for a device
 	// deleted since); writes ignore it.
 	DeviceName string

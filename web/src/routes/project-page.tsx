@@ -11,7 +11,7 @@ import type { Device, Location, Project, ProjectLocation, SessionSummary } from 
 import { InfoTip } from "@/components/info-tip"
 import { PageHeader } from "@/components/page-header"
 import { SessionPrompt } from "@/components/session/session-prompt"
-import { StatusDot } from "@/components/status-dot"
+import { StatusDot, WorkspaceMark } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
@@ -306,6 +306,7 @@ function SessionList({ sessions, failed }: { sessions: SessionSummary[] | undefi
                 <StatusDot state={s.state} />
               </span>
               <span className="min-w-0 flex-1 truncate">{sessionTitle(s.title)}</span>
+              <WorkspaceMark workspace={s.workspace} state={s.state} />
               <time
                 dateTime={new Date(s.lastActivityAtUnixMs).toISOString()}
                 className="w-14 shrink-0 text-right text-xs whitespace-nowrap text-muted-foreground tabular-nums"

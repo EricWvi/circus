@@ -3,6 +3,7 @@ import { Outlet, useMatch } from "react-router"
 
 import { useCurrentUser } from "@/api/hooks"
 import { AppSidebar } from "@/components/app-sidebar"
+import { NoticeProvider, NoticeStrip } from "@/components/notices"
 import { NewProjectDialogProvider } from "@/components/projects/new-project-dialog"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { OutboxProvider } from "@/state/outbox-provider"
@@ -18,18 +19,23 @@ export function AppShell() {
   // Keyed by user, so nothing of the previous user's messages survives.
   return (
     <OutboxProvider key={user?.userId ?? ""}>
-      <SidebarProvider className="h-svh" style={{ "--sidebar-width": "18rem" } as CSSProperties}>
-        <NewProjectDialogProvider>
-          <AppSidebar
-            activeSessionId={sessionId}
-            activeProjectId={projectHome ?? projectSettings}
-            devicesActive={devicesPage}
-          />
-          <SidebarInset className="min-h-0 overflow-hidden">
-            <Outlet />
-          </SidebarInset>
-        </NewProjectDialogProvider>
-      </SidebarProvider>
+      <NoticeProvider>
+        <SidebarProvider className="h-svh" style={{ "--sidebar-width": "18rem" } as CSSProperties}>
+          <NewProjectDialogProvider>
+            <AppSidebar
+              activeSessionId={sessionId}
+              activeProjectId={projectHome ?? projectSettings}
+              devicesActive={devicesPage}
+            />
+            <SidebarInset className="min-h-0 overflow-hidden outline-none">
+              <NoticeStrip />
+              <div className="min-h-0 flex-1">
+                <Outlet />
+              </div>
+            </SidebarInset>
+          </NewProjectDialogProvider>
+        </SidebarProvider>
+      </NoticeProvider>
     </OutboxProvider>
   )
 }

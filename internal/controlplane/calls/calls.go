@@ -261,6 +261,9 @@ type Config struct {
 	// return at once and never call the router (sessions.Waker.Wake does
 	// neither).
 	JobEnded func(sessionID string)
+	// WorkspaceJobEnded hints workspace recovery after a committed job end.
+	// Like JobEnded, it must return immediately and never call the router.
+	WorkspaceJobEnded func(userID, sessionID, jobID string)
 	// lockObserver, when set (by tests, through export_test.go), receives how
 	// long each locked segment of an operation held the router-wide
 	// admission lock. It is nil in production: the cost is one nil check per

@@ -1,3 +1,5 @@
+import type { WorkspaceStatus } from "@/api/types"
+
 // View-model types for the Web UI: what the session view renders. The
 // reducer in `session-events/` builds them from the control plane's raw
 // session events; the components never see the wire format.
@@ -149,6 +151,15 @@ export interface NoteEvent extends EventBase {
   text: string
 }
 
+/**
+ * An outcome of the session's folder (KIND_WORKSPACE, as recorded): one
+ * quiet line once it became ready, or for a failure a retry superseded.
+ */
+export interface WorkspaceEvent extends EventBase {
+  kind: "workspace"
+  status: WorkspaceStatus
+}
+
 export type SessionEvent =
   | UserMessageEvent
   | AssistantTextEvent
@@ -160,3 +171,4 @@ export type SessionEvent =
   | HistoryGapEvent
   | TruncatedEvent
   | NoteEvent
+  | WorkspaceEvent

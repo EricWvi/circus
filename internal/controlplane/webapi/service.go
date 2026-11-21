@@ -15,6 +15,7 @@ import (
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
+	"github.com/EricWvi/circus/internal/controlplane/workspaces"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -43,7 +44,11 @@ const (
 // worst case: about 7 MiB in binary and 11.4 MiB in JSON, so 16 MiB leaves
 // room. ListDevices answers about 300 bytes per device.
 const (
-	maxProjectResponseBytes = 16 << 20
+	// A READY status can carry a 4096-byte path and a 2048-byte URL.
+	// A failed status has a shorter placeholder and at most 1024 bytes of
+	// detail. Budget worst-case JSON escaping plus fields and enum names.
+	maxWorkspaceJSONBytes   = 6*(store.MaxPathBytes+store.MaxRepoURLBytes) + 1024
+	maxProjectResponseBytes = (16 << 20) + store.MaxProjectsPerUser*store.MaxProjectLocations*maxWorkspaceJSONBytes
 	maxMachineResponseBytes = 4 << 20
 	// maxSessionResponseBytes bounds one SessionService message. The
 	// largest are a full ListSessions (1000 sessions with titles of at most
@@ -52,7 +57,7 @@ const (
 	// about 6 MiB) and a WatchSession event (a stored payload is at most
 	// 256 KiB, an ephemeral one at most the bus's queue budget, 256 KiB; up
 	// to six times that in JSON).
-	maxSessionResponseBytes = 16 << 20
+	maxSessionResponseBytes = (16 << 20) + maxSessionPage*maxWorkspaceJSONBytes
 )
 
 // OnlineFunc returns the ids of the devices of userID that have a daemon
@@ -86,7 +91,8 @@ type Config struct {
 	// Waker hints the scheduler after commits a worker must act on.
 	Waker sessions.Waker
 	// Jobs stops the background device jobs of a stopped session.
-	Jobs JobStopper
+	Jobs       JobStopper
+	Workspaces *workspaces.Manager
 	// WatchKeepalive is how long a WatchSession stream may stay silent
 	// before a keepalive; zero means DefaultWatchKeepalive.
 	WatchKeepalive time.Duration
@@ -113,6 +119,9 @@ type Service struct {
 	bus           *sessions.Bus
 	waker         sessions.Waker
 	jobs          JobStopper
+	workspaces    *workspaces.Manager
+	removalMu     sync.Mutex
+	removals      map[[2]string]chan struct{}
 	keepalive     time.Duration
 	recheck       time.Duration
 	maxLifetime   time.Duration
@@ -138,7 +147,7 @@ func New(cfg Config) (*Service, error) {
 		publicURL: strings.TrimRight(cfg.PublicURL, "/"), version: cfg.Version,
 		bus: cfg.Bus, waker: cfg.Waker, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
 		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout,
-		query: cfg.Query, deviceQueries: make(map[string]int)}
+		query: cfg.Query, workspaces: cfg.Workspaces, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
 	if s.query == nil {
 		s.query = func(context.Context, string, *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {
 			return nil, gateway.ErrDeviceOffline

@@ -20,6 +20,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/dirlist"
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	daemonlink "github.com/EricWvi/circus/internal/daemon/link"
+	"github.com/EricWvi/circus/internal/daemon/workspace"
 	"github.com/EricWvi/circus/internal/wire"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
@@ -77,8 +78,9 @@ func wantDeviceQueryError(t *testing.T, l *wire.Link, id string, code circusv1.D
 func TestDeviceQueryReplies(t *testing.T) {
 	h := start(t, nil, nil)
 	l, _, hello := h.handshake(t)
-	if !slices.Contains(hello.Features, wire.FeatureListDirectory) || !slices.Contains(hello.Features, wire.FeatureGitRemote) {
-		t.Fatalf("Hello features = %v", hello.Features)
+	if !slices.Contains(hello.Features, wire.FeatureListDirectory) || !slices.Contains(hello.Features, wire.FeatureGitRemote) ||
+		slices.Contains(hello.Features, wire.FeaturePrepareWorkspace) || slices.Contains(hello.Features, wire.FeatureRemoveWorkspace) {
+		t.Fatalf("Hello features without workspace tools = %v", hello.Features)
 	}
 	for _, id := range []string{"", "bad/id", strings.Repeat("a", wire.MaxOrderingKeyBytes+1)} {
 		sendDeviceQuery(t, l, directoryQuery(id, ""))
@@ -371,4 +373,19 @@ func TestDeviceQueryProbePoolExhaustion(t *testing.T) {
 	}
 	// All 16 probe slots are held, yet directory queries still reply immediately.
 	checkHealthy(false)
+}
+
+func TestHelloDeclaresWorkspaceTools(t *testing.T) {
+	h := start(t, func(o *daemonlink.Options) {
+		o.Tools = func(m *jobs.Manager) []daemon.Tool {
+			opts := workspace.Options{Jobs: m}
+			return []daemon.Tool{workspace.NewPrepare(opts), workspace.NewRemove(opts)}
+		}
+	}, nil)
+	_, _, hello := h.handshake(t)
+	for _, feature := range []string{wire.FeatureListDirectory, wire.FeatureGitRemote, wire.FeaturePrepareWorkspace, wire.FeatureRemoveWorkspace} {
+		if !slices.Contains(hello.Features, feature) {
+			t.Fatalf("Hello features = %v, want %s", hello.Features, feature)
+		}
+	}
 }

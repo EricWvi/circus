@@ -4,6 +4,10 @@ import {
   CircleAlertIcon,
   CircleSlashIcon,
   FileWarningIcon,
+  FolderCheckIcon,
+  FolderClockIcon,
+  FolderSyncIcon,
+  FolderXIcon,
   MessageSquareShareIcon,
   SquareIcon,
   TriangleAlertIcon,
@@ -11,6 +15,7 @@ import {
 import { useLayoutEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
+import type { WorkspaceStatus } from "@/api/types"
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message"
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning"
 import { DisabledReason } from "@/components/disabled-reason"
@@ -18,6 +23,8 @@ import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Spinner } from "@/components/ui/spinner"
 import type { ApprovalRequest, NoteEvent, NoteKind, SendFailure, SessionEvent, UserMessageEvent } from "@/lib/types"
+import { cn } from "@/lib/utils"
+import { workspaceEventText } from "@/lib/workspace"
 
 import { ApprovalCard } from "./approval-card"
 import { ToolCall } from "./tool-call"
@@ -86,7 +93,7 @@ const noteKeys = {
  * The text of an opened note. Where it is too long for its box and
  * scrolls, the box takes focus, so the keyboard can scroll it too.
  */
-function NoteText({ text, label }: { text: string; label: string }) {
+export function NoteText({ text, label, className }: { text: string; label: string; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [scrolls, setScrolls] = useState(false)
   useLayoutEffect(() => {
@@ -105,7 +112,10 @@ function NoteText({ text, label }: { text: string; label: string }) {
       tabIndex={scrolls ? 0 : undefined}
       role={scrolls ? "region" : undefined}
       aria-label={scrolls ? label : undefined}
-      className="mt-2 max-h-64 overflow-y-auto rounded-md bg-muted/50 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground outline-none [overflow-wrap:anywhere] focus-visible:ring-2 focus-visible:ring-ring/50"
+      className={cn(
+        "mt-2 max-h-64 overflow-y-auto rounded-md bg-muted/50 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground outline-none [overflow-wrap:anywhere] focus-visible:ring-2 focus-visible:ring-ring/50",
+        className,
+      )}
     >
       {text}
     </div>
@@ -145,6 +155,20 @@ function NoteRow({ event }: { event: NoteEvent }) {
         <NoteText text={event.text} label={label} />
       </CollapsibleContent>
     </Collapsible>
+  )
+}
+
+/** A recorded change of the session's folder: one quiet line in the conversation. */
+export function WorkspaceRow({ workspace }: { workspace: WorkspaceStatus }) {
+  let icon = <FolderClockIcon className="mt-px size-3 shrink-0" aria-hidden />
+  if (workspace.state === "ready") icon = <FolderCheckIcon className="mt-px size-3 shrink-0" aria-hidden />
+  else if (workspace.state === "preparing") icon = <FolderSyncIcon className="mt-px size-3 shrink-0" aria-hidden />
+  else if (workspace.state === "failed") icon = <FolderXIcon className="mt-px size-3 shrink-0 text-destructive" aria-hidden />
+  return (
+    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+      {icon}
+      <span className="min-w-0 [overflow-wrap:anywhere]">{workspaceEventText(workspace)}</span>
+    </p>
   )
 }
 
@@ -295,6 +319,8 @@ export function EventItem({
       )
     case "note":
       return <NoteRow event={event} />
+    case "workspace":
+      return <WorkspaceRow workspace={event.status} />
     case "truncated":
       return (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

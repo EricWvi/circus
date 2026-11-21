@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package circus.v1;
+
+import "circus/v1/device.proto";
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// WorkspaceStatus is the user-facing state of a project's default directory
+// on one device (docs/wire.md "Workspace preparation"). The control plane
+// keeps one per (project, device), prepares it in the background when the
+// first session in that default location is created, and holds every such
+// session's turns until it is READY. Strings are sanitized: no credentials.
+message WorkspaceStatus {
+  // Preparation state.
+  enum State {
+    // Not set.
+    STATE_UNSPECIFIED = 0;
+    // Waiting to start an attempt; see waiting.
+    STATE_PENDING = 1;
+    // An attempt runs on the device.
+    STATE_PREPARING = 2;
+    // The directory is ready at path. Final.
+    STATE_READY = 3;
+    // The last attempt failed; see error. RetryWorkspace, or creating
+    // another session in this location, starts over.
+    STATE_FAILED = 4;
+  }
+  // Why a PENDING workspace has not started.
+  enum Waiting {
+    // Not set (not PENDING).
+    WAITING_UNSPECIFIED = 0;
+    // The device is offline.
+    WAITING_DEVICE_OFFLINE = 1;
+    // The device's circus is too old to prepare workspaces.
+    WAITING_DAEMON_OUTDATED = 2;
+    // It starts shortly: after a retryable failure, or when a slot frees.
+    WAITING_RETRY = 3;
+  }
+  // Preparation state.
+  State state = 1;
+  // PENDING only.
+  Waiting waiting = 2;
+  // Name of the device.
+  string device = 3;
+  // Absolute once READY; "~/circus/projects/<project_id>" before.
+  string path = 4;
+  // The repository the current or last attempt clones, credentials
+  // removed; empty when an empty directory is (or was) the workspace.
+  string repo_url = 5;
+  // PREPARING only: the clone continues as a background job on the device.
+  bool background = 6;
+  // READY only.
+  PrepareWorkspaceResult.Action action = 7;
+  // FAILED only.
+  WorkspaceError error = 8;
+  // FAILED only: at most 1024 bytes, as PrepareWorkspaceResult.error_detail.
+  string error_detail = 9;
+  // When the current (PREPARING) or last attempt started; zero before any.
+  int64 attempt_started_at_unix_ms = 10;
+  // Changes on every change of this status, including a change of only
+  // waiting or background, and strictly increases across changes of one
+  // workspace. Every KIND_WORKSPACE event carries it as ts_unix_ms, so a
+  // client keeps whichever of a fetched status and an event is newer.
+  int64 updated_at_unix_ms = 11;
+}

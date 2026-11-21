@@ -131,6 +131,8 @@ type Handler interface {
 	// preserves wire.Link.Send errors such as wire.ErrBusy. Success means
 	// queued, not written, acknowledged or executed. It never blocks on I/O.
 	Deliver(ctx context.Context, t Target, m *circusv1.DaemonDownlink) error
+	// Supports reads the current live connection and its Hello features.
+	Supports(deviceID, feature string) (online, supported bool)
 	// Query sends an ephemeral device query on the current connection.
 	Query(ctx context.Context, deviceID string, q *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error)
 	// Shutdown stops admission, sends GoAway, calls Link.Shutdown(ctx), drains

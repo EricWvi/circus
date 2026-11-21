@@ -30,6 +30,11 @@ func Resolve(path string) *circusv1.ListDirectoryResult {
 	return resolve(path, os.UserHomeDir)
 }
 
+// ResolveWith is Resolve with the home taken from lookupHome.
+func ResolveWith(path string, lookupHome func() (string, error)) *circusv1.ListDirectoryResult {
+	return resolve(path, lookupHome)
+}
+
 func resolve(path string, lookupHome func() (string, error)) *circusv1.ListDirectoryResult {
 	home, err := lookupHome()
 	if err != nil || !filepath.IsAbs(home) || !utf8.ValidString(home) || strings.ContainsRune(home, 0) {

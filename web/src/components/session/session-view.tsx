@@ -11,9 +11,10 @@ import {
   useInterrupt,
   useRecoverSession,
   useResolveApproval,
+  useRetryWorkspace,
   useStopSession,
 } from "@/api/hooks"
-import type { Project, SessionDetails } from "@/api/types"
+import type { Project, SessionDetails, WorkspaceStatus } from "@/api/types"
 import type { ApprovalRequest } from "@/lib/types"
 import {
   Conversation,
@@ -23,7 +24,7 @@ import {
 } from "@/components/ai-elements/conversation"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { PageHeader } from "@/components/page-header"
-import { StatusBadge } from "@/components/status-dot"
+import { StatusBadge, WorkspaceBadge } from "@/components/status-dot"
 import { lastInputWasKeyboard, lastInputWasTouch } from "@/lib/input-modality"
 import { withOutbox } from "@/lib/session-events/outbox"
 import { approvalLapsed, turnRunning } from "@/lib/session-state"
@@ -31,6 +32,7 @@ import { sessionTitle } from "@/lib/title"
 import { projectPath } from "@/lib/tree"
 import { interruptedTurnInput, latestInterruptId } from "@/lib/turns"
 import { useOutbox, useOutboxMessages } from "@/state/outbox-context"
+import { currentWorkspace, workspaceBlocks, workspaceEventText } from "@/lib/workspace"
 import { useSessionWatch } from "@/state/use-session-watch"
 
 import { ConnectionBanner } from "./connection-banner"
@@ -38,6 +40,7 @@ import { EventItem } from "./event-list"
 import { SessionMenu } from "./session-menu"
 import { BrokenCard, DeviceOfflineNotice, GoneNotice, StoppedNotice } from "./session-notices"
 import { SessionPrompt } from "./session-prompt"
+import { WorkspaceBanner, WorkspaceComposerNote } from "./workspace-banner"
 
 export function SessionView({ project, session }: { project: Project; session: SessionDetails }) {
   const { t } = useTranslation()
@@ -61,6 +64,7 @@ export function SessionView({ project, session }: { project: Project; session: S
   const stopSession = useStopSession()
   const recover = useRecoverSession()
   const resolveApproval = useResolveApproval()
+  const retryWorkspace = useRetryWorkspace()
   // The last action that failed, shown until the next one.
   const [actionError, setActionError] = useState<unknown>(null)
   const act = <Req,>(mutation: { mutate: (req: Req, options: { onError: (e: unknown) => void }) => void }, req: Req) => {
@@ -93,7 +97,12 @@ export function SessionView({ project, session }: { project: Project; session: S
   const streamingText = last?.kind === "assistant_text" && last.streaming && last.text !== ""
   const lastIsTool = last?.kind === "tool_call" && (last.status === "running" || last.status === "awaiting_approval")
   const showWorking = busy && !streamingText && !lastIsTool
-  const waiting = !busy && session.state === "queued"
+  // The folder isn't ready: no turn runs, messages wait. The latest of
+  // GetSession and the stream says how far it is.
+  const workspace = currentWorkspace(session.workspace, transcript.workspace)
+  const waitsForFolder = workspaceBlocks(workspace) && session.state !== "stopped" && !watch.gone
+  const waiting = !busy && session.state === "queued" && !waitsForFolder
+  const announcement = useWorkspaceAnnouncement(workspace, waitsForFolder)
 
   const device = devices.data?.find((d) => d.name === session.device)
   const deviceOffline = device?.online === false
@@ -126,7 +135,8 @@ export function SessionView({ project, session }: { project: Project; session: S
         onContinued={focusComposer}
       />
     )
-  } else if (!stopped && device && deviceOffline) {
+  } else if (!stopped && device && deviceOffline && !waitsForFolder) {
+    // While the folder waits, its banner already says the device is offline.
     notice = <DeviceOfflineNotice device={device} />
   }
 
@@ -139,7 +149,8 @@ export function SessionView({ project, session }: { project: Project; session: S
               {t("session.onDevice", { device: session.device })}
               {deviceOffline && <OfflineMark device={session.device} />}
             </span>
-            {deviceOffline && (
+            {/* On narrow screens, the folder's badge and banner already say it. */}
+            {deviceOffline && !waitsForFolder && (
               <span className="flex shrink-0 md:hidden">
                 <OfflineMark device={session.device} />
               </span>
@@ -164,10 +175,29 @@ export function SessionView({ project, session }: { project: Project; session: S
           /
         </span>
         <h1 className="min-w-0 truncate font-medium">{sessionTitle(session.title)}</h1>
-        <StatusBadge state={state} />
+        {waitsForFolder && session.state !== "broken" ? (
+          <WorkspaceBadge workspace={workspace} />
+        ) : (
+          <StatusBadge state={state} />
+        )}
       </PageHeader>
 
       <ConnectionBanner connection={connection} noticed={watch.lossNoticed} onRetryNow={watch.retryNow} />
+      <span aria-live="polite" className="sr-only" data-workspace-announcement>
+        {announcement}
+      </span>
+      {waitsForFolder && (
+        <WorkspaceBanner
+          workspace={workspace}
+          serverNow={watch.serverNow}
+          retryDisabledReason={disconnected}
+          retrying={retryWorkspace.isPending}
+          onRetry={() => {
+            setActionError(null)
+            retryWorkspace.mutate({ sessionId }, { onError: setActionError, onSuccess: focusComposer })
+          }}
+        />
+      )}
 
       <Conversation className="min-h-0">
         <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-6">
@@ -246,9 +276,29 @@ export function SessionView({ project, session }: { project: Project; session: S
             onStop={() => act(interrupt, { sessionId })}
           />
         )}
+        {waitsForFolder && <WorkspaceComposerNote />}
       </div>
     </div>
   )
+}
+
+/**
+ * What a live region says about the folder: each state while the session
+ * waits for it (without the ticking time), and that it is ready once it
+ * became ready while the page was open. Empty on the first render, so the
+ * state the page opens with is announced too.
+ */
+function useWorkspaceAnnouncement(workspace: WorkspaceStatus | undefined, waits: boolean): string {
+  const [mounted, setMounted] = useState(false)
+  const [waited, setWaited] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setMounted(true), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+  if (waits && !waited) setWaited(true)
+  if (!mounted || !workspace) return ""
+  if (waits || (waited && workspace.state === "ready")) return workspaceEventText(workspace)
+  return ""
 }
 
 /** The time, read again every `intervalMs` while that is set. */

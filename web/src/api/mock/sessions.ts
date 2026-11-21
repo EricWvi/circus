@@ -20,6 +20,8 @@ import { viewState, type ServerSessionState, type TurnOutcome } from "@/lib/sess
 import { titleFromMessage } from "@/lib/title"
 import type { SeedSession } from "@/mock/data"
 
+import { workspaceStatus, type MockWorkspace } from "./workspaces"
+
 export interface MockApproval {
   approvalId: string
   toolUseId: string
@@ -46,6 +48,8 @@ export interface MockSession {
   turns: number
   /** The request that created the session, for retries of it; forgotten with the session. */
   created?: { clientRequestId: string; locationIndex: number }
+  /** Created in a default location: its folder, which holds turns until ready. */
+  workspace?: MockWorkspace
 }
 
 /** How the scripted replies pace themselves; tests shorten it. */
@@ -97,11 +101,12 @@ export class Recorder {
     private readonly emit: (event: RawSessionEvent) => void = () => {},
   ) {}
 
-  durable(kind: SessionEventKind, payload: object | null) {
+  /** `tsUnixMs`: the event's time when the change has one of its own (a workspace's `updatedAt`). */
+  durable(kind: SessionEventKind, payload: object | null, tsUnixMs = this.now()) {
     const s = this.session
     const event: RawSessionEvent = {
       seq: (s.events.at(-1)?.seq ?? 0) + 1,
-      tsUnixMs: this.now(),
+      tsUnixMs,
       kind,
       payloadJson: payload === null ? "" : JSON.stringify(payload),
       ephemeral: false,
@@ -112,8 +117,8 @@ export class Recorder {
     this.emit(event)
   }
 
-  ephemeral(kind: SessionEventKind, payload: object) {
-    this.emit({ seq: 0, tsUnixMs: this.now(), kind, payloadJson: JSON.stringify(payload), ephemeral: true, truncated: false })
+  ephemeral(kind: SessionEventKind, payload: object, tsUnixMs = this.now()) {
+    this.emit({ seq: 0, tsUnixMs, kind, payloadJson: JSON.stringify(payload), ephemeral: true, truncated: false })
   }
 
   /** A new input; returns its id. */
@@ -233,6 +238,7 @@ export function summaryOf(s: MockSession): SessionSummary {
     lastActivityAtUnixMs: s.lastActivityAtUnixMs,
     pendingApprovalCount,
     createdAtUnixMs: s.createdAtUnixMs,
+    ...(s.workspace ? { workspace: workspaceStatus(s.workspace) } : {}),
   }
 }
 
@@ -251,8 +257,17 @@ export interface MockSessionHost {
 
 type Live = (event: RawSessionEvent) => void
 
-/** The session RPCs besides listing and creating, which need the projects. */
-export function createMockSessionRuntime(host: MockSessionHost): Omit<SessionService, "listSessions" | "createSession"> {
+/** What the rest of the mock backend can do to sessions. */
+export interface MockSessionRuntime {
+  /** The session RPCs besides listing, creating and retrying a workspace, which need the projects. */
+  service: Omit<SessionService, "listSessions" | "createSession" | "retryWorkspace">
+  /** Records an event as the control plane does: durable, or live only, at `tsUnixMs`. */
+  record(s: MockSession, kind: SessionEventKind, payload: object, durable: boolean, tsUnixMs: number): void
+  /** Starts the next turn if one waits and the session can run it. */
+  wake(s: MockSession): void
+}
+
+export function createMockSessionRuntime(host: MockSessionHost): MockSessionRuntime {
   const watchers = new Map<string, Set<Live>>()
   /** Pending steps of each session's running turn. */
   const turns = new Map<string, Turn>()
@@ -337,9 +352,10 @@ export function createMockSessionRuntime(host: MockSessionHost): Omit<SessionSer
     ]
   }
 
-  /** Starts a turn for the next queued input, if the session can run one. */
+  /** Starts a turn for the next queued input, if the session can run one (and its folder is ready). */
   function startNext(s: MockSession) {
     if (turns.has(s.sessionId) || s.state === "stopped" || s.state === "broken") return
+    if (s.workspace && s.workspace.state !== "ready") return
     const input = s.queue.shift()
     if (!input) {
       if (s.state === "running" || s.state === "queued") s.state = "idle"
@@ -453,7 +469,7 @@ export function createMockSessionRuntime(host: MockSessionHost): Omit<SessionSer
     }
   }
 
-  return {
+  const service: MockSessionRuntime["service"] = {
     getSession: async ({ sessionId }) => {
       await host.delay()
       return detailsOf(host.own(sessionId))
@@ -555,5 +571,15 @@ export function createMockSessionRuntime(host: MockSessionHost): Omit<SessionSer
       s.title = trimmed
       return detailsOf(s)
     },
+  }
+
+  return {
+    service,
+    record(s, kind, payload, durable, tsUnixMs) {
+      const r = recorder(s)
+      if (durable) r.durable(kind, payload, tsUnixMs)
+      else r.ephemeral(kind, payload, tsUnixMs)
+    },
+    wake: startNext,
   }
 }

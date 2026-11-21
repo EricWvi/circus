@@ -1,5 +1,7 @@
+import { CircleArrowUpIcon, FolderSyncIcon, FolderXIcon, MonitorOffIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
+import type { WorkspaceStatus } from "@/api/types"
 import type { SessionState } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -76,6 +78,86 @@ export function StatusBadge({ state }: { state: SessionState }) {
     >
       <StatusDot state={state} label={false} />
       {t(`status.${state}`)}
+    </span>
+  )
+}
+
+/**
+ * Next to a session in a list while its folder isn't ready: a folder being
+ * prepared (pending or preparing), or one that failed (the theme's
+ * destructive color, like a broken session). Nothing otherwise, and
+ * nothing for a stopped session, which waits for nothing.
+ */
+export function WorkspaceMark({
+  workspace,
+  state,
+  className,
+}: {
+  workspace: WorkspaceStatus | undefined
+  state: SessionState
+  className?: string
+}) {
+  const { t } = useTranslation()
+  if (!workspace || state === "stopped") return null
+  const failed = workspace.state === "failed"
+  if (!failed && workspace.state !== "pending" && workspace.state !== "preparing") return null
+  const label = t(failed ? "workspace.mark.failed" : "workspace.mark.preparing")
+  const Icon = failed ? FolderXIcon : FolderSyncIcon
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      data-workspace={workspace.state}
+      className={cn(
+        "inline-flex shrink-0 items-center",
+        failed ? "text-destructive" : "text-muted-foreground",
+        className,
+      )}
+    >
+      <Icon className="size-3.5" aria-hidden />
+    </span>
+  )
+}
+
+const workspaceBadges = {
+  waitingDevice: { Icon: MonitorOffIcon, key: "workspace.badge.waitingDevice" },
+  waitingUpdate: { Icon: CircleArrowUpIcon, key: "workspace.badge.waitingUpdate" },
+  preparing: { Icon: FolderSyncIcon, key: "workspace.badge.preparing" },
+  failed: { Icon: FolderXIcon, key: "workspace.badge.failed" },
+} as const
+
+/** Which badge a folder that isn't ready gets: as its banner says it. */
+function workspaceBadgeKind(ws: Pick<WorkspaceStatus, "state" | "waiting">): keyof typeof workspaceBadges {
+  if (ws.state === "failed") return "failed"
+  if (ws.state === "pending" && ws.waiting === "device_offline") return "waitingDevice"
+  if (ws.state === "pending" && ws.waiting === "daemon_outdated") return "waitingUpdate"
+  return "preparing"
+}
+
+/**
+ * In a session's header in place of its state while it waits for its
+ * folder, in the banner's terms: waiting for the device or an update,
+ * being prepared (or about to be), or failed (like a broken session's
+ * badge). On narrow screens only its icon shows; its words stay for
+ * assistive technology and on hover.
+ */
+export function WorkspaceBadge({ workspace }: { workspace: Pick<WorkspaceStatus, "state" | "waiting"> }) {
+  const { t } = useTranslation()
+  const kind = workspaceBadgeKind(workspace)
+  const { Icon, key } = workspaceBadges[kind]
+  const label = t(key)
+  return (
+    <span
+      data-workspace-badge={kind}
+      title={label}
+      className={cn(
+        "inline-flex h-6 shrink-0 items-center gap-1.5 border px-1.5 text-xs whitespace-nowrap sm:px-2",
+        kind === "failed" ? "border-destructive/40 text-destructive" : "text-muted-foreground",
+      )}
+    >
+      <Icon className="size-3 shrink-0" aria-hidden />
+      <span className="max-sm:sr-only">{label}</span>
     </span>
   )
 }

@@ -13,6 +13,7 @@ import type { MockSessionTiming } from "@/api/mock/sessions"
 import { SEED_OWNER_ID, seedState, type MockState } from "@/api/mock/state"
 import { createQueryClient, followUnauthenticated } from "@/api/query-client"
 import type { CircusClient } from "@/api/types"
+import { NoticeProvider, NoticeStrip } from "@/components/notices"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { OutboxProvider } from "@/state/outbox-provider"
 
@@ -53,7 +54,12 @@ export async function renderWithBackend(
     <ClientContext.Provider value={client}>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <OutboxProvider>{children}</OutboxProvider>
+          <OutboxProvider>
+            <NoticeProvider>
+              <NoticeStrip />
+              {children}
+            </NoticeProvider>
+          </OutboxProvider>
         </TooltipProvider>
       </QueryClientProvider>
     </ClientContext.Provider>

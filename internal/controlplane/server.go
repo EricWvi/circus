@@ -24,6 +24,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
+	"github.com/EricWvi/circus/internal/controlplane/workspaces"
 	"github.com/EricWvi/circus/internal/loopback"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
@@ -181,23 +182,26 @@ type Server struct {
 	// sessions is the worker-link session service, which also schedules
 	// sessions (sessions.Waker); bus carries committed session events to
 	// watchers. Both are shared with the user-facing session API.
-	sessions *sessions.Service
-	bus      *sessions.Bus
+	sessions   *sessions.Service
+	bus        *sessions.Bus
+	workspaces *workspaces.Manager
 
-	mu         sync.Mutex
-	started    bool
-	stopping   bool
-	checks     []readyCheck
-	hooks      []shutdownHook
-	httpSrv    *http.Server
-	ln         net.Listener
-	serveErr   chan error
-	closeCalls func(context.Context) error
-	router     calls.Router
-	runner     timers.Runner
-	timersDone chan struct{}
-	stopBg     context.CancelFunc
-	bg         sync.WaitGroup
+	mu             sync.Mutex
+	started        bool
+	stopping       bool
+	checks         []readyCheck
+	hooks          []shutdownHook
+	httpSrv        *http.Server
+	ln             net.Listener
+	serveErr       chan error
+	closeCalls     func(context.Context) error
+	router         calls.Router
+	runner         timers.Runner
+	timersDone     chan struct{}
+	stopBg         context.CancelFunc
+	stopWorkspaces context.CancelFunc
+	workspacesDone chan struct{}
+	bg             sync.WaitGroup
 
 	shutdownOnce sync.Once
 	shutdownErr  error
@@ -290,7 +294,7 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	// finish; the session service closes with the call plane.
 	s.hooks = append(s.hooks, shutdownHook{"session watchers", func(context.Context) error { s.bus.Close(); return nil }})
 	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger,
-		Bus: s.bus, Waker: s.sessions, Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query})
+		Bus: s.bus, Waker: s.sessions, Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query, Workspaces: s.workspaces})
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
@@ -352,7 +356,15 @@ func (s *Server) Start() error {
 	bgCtx, s.stopBg = context.WithCancel(context.Background())
 	s.started = true
 	s.timersDone = make(chan struct{})
-	s.bg.Add(2)
+	s.bg.Add(3)
+	workspaceCtx, stop := context.WithCancel(bgCtx)
+	s.stopWorkspaces = stop
+	s.workspacesDone = make(chan struct{})
+	go func() {
+		defer s.bg.Done()
+		defer close(s.workspacesDone)
+		s.workspaces.Run(workspaceCtx)
+	}()
 	go func() {
 		defer s.bg.Done()
 		err := s.httpSrv.Serve(ln)

@@ -7,6 +7,7 @@ import {
 import type { Location, Project, ProjectService, ProjectVersion } from "@/api/types"
 
 import { call, malformed } from "./call"
+import { toWorkspace, toWorkspaceRemoval } from "./workspaces"
 
 /**
  * The project as the UI keeps it. `updatedAtUnixMs` stays the exact int64
@@ -24,6 +25,7 @@ export function toProject(project: ProtoProject | undefined, rpc: string): Proje
       path: l.path,
       effectivePath: l.effectivePath,
       deviceRevoked: l.deviceRevoked,
+      ...(l.workspace ? { workspace: toWorkspace(l.workspace) } : {}),
     })),
     lastUsedLocation: project.lastUsedLocation,
     createdAtUnixMs: Number(project.createdAtUnixMs),
@@ -71,6 +73,13 @@ export function createConnectProjects(transport: Transport): ProjectService {
         })
         return toProject(res.project, "UpdateProject")
       }),
-    deleteProject: (req) => call(async () => void (await client.deleteProject(req))),
+    deleteProject: (req) =>
+      call(async () => {
+        const res = await client.deleteProject({
+          projectId: req.projectId,
+          removeWorkspacesOn: req.removeWorkspacesOn ?? [],
+        })
+        return { workspaceRemovals: res.workspaceRemovals.map(toWorkspaceRemoval) }
+      }),
   }
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/workerlink"
+	"github.com/EricWvi/circus/internal/controlplane/workspaces"
 	"github.com/EricWvi/circus/internal/wire"
 )
 
@@ -46,7 +47,11 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 			svc.Wake(sessionID, circusv1.WorkerEvent_Nudge_REASON_JOB)
 		}
 	}
-	r, err := calls.New(calls.Config{Store: s.st, Registry: registry, Sender: sender, Clock: clk, MaxMessageBytes: c.MaxMessageBytes, GracePeriod: c.GracePeriod, JobEnded: jobEnded})
+	r, err := calls.New(calls.Config{Store: s.st, Registry: registry, Sender: sender, Clock: clk, MaxMessageBytes: c.MaxMessageBytes, GracePeriod: c.GracePeriod, JobEnded: jobEnded,
+		WorkspaceJobEnded: func(userID, sessionID, jobID string) {
+			s.workspaces.WorkspaceJobEnded(userID, sessionID, jobID)
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -61,7 +66,7 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		return err
 	}
 	opts := wire.Options{Clock: clk, MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}
-	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, MetadataStore: s.st, Registry: registry, Hooks: r, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
+	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, MetadataStore: s.st, Registry: registry, Hooks: workspaceHooks{Hooks: r, online: func(userID, deviceID string) { s.workspaces.DeviceOnline(userID, deviceID) }}, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
 	if err != nil {
 		_ = svc.Close(ctx)
 		_ = r.Close(ctx)
@@ -74,6 +79,10 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		_ = r.Close(ctx)
 		return err
 	}
+	s.workspaces = workspaces.New(workspaces.Config{
+		Store: s.st, Clock: clk, Submit: workspaces.SubmitThrough(r), Supports: g.Supports,
+		Cancel: r.Cancel, StopJobs: r.StopSessionJobs, Bus: bus, Waker: svc, Logger: s.logger,
+	})
 	s.router = r
 	s.sessions, s.bus = svc, bus
 	s.registry = registry
@@ -90,9 +99,31 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		return nil
 	}})
 	s.closeCalls = func(ctx context.Context) error {
-		return closeCallPlane(ctx, workerSide{w, svc}, g, r, s.stopBg, s.timersDone)
+		var workspaceErr error
+		if s.stopWorkspaces != nil {
+			s.stopWorkspaces()
+			select {
+			case <-s.workspacesDone:
+			case <-ctx.Done():
+				workspaceErr = ctx.Err()
+			}
+		}
+		return errors.Join(workspaceErr, closeCallPlane(ctx, workerSide{w, svc}, g, r, s.stopBg, s.timersDone))
 	}
 	s.hooks = append(s.hooks, shutdownHook{"call plane", s.closeCalls})
+	return nil
+}
+
+type workspaceHooks struct {
+	gateway.Hooks
+	online func(userID, deviceID string)
+}
+
+func (h workspaceHooks) OnConnected(ctx context.Context, conn gateway.Connection) error {
+	if err := h.Hooks.OnConnected(ctx, conn); err != nil {
+		return err
+	}
+	h.online(conn.UserID, conn.Target.DeviceID)
 	return nil
 }
 

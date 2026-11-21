@@ -25,6 +25,129 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// WorkspaceError classifies workspace failures. Daemons send values up to
+// 99; the control plane also sets one of them when it reaches the same
+// conclusion itself (e.g. TIMEOUT when a background clone outlived its
+// lifetime without the daemon reporting). Values from 100 are set by the
+// control plane only.
+type WorkspaceError int32
+
+const (
+	// Not set.
+	WorkspaceError_WORKSPACE_ERROR_UNSPECIFIED WorkspaceError = 0
+	// Bad path or URL.
+	WorkspaceError_WORKSPACE_ERROR_INVALID_REQUEST WorkspaceError = 1
+	// The daemon user's home is unset, relative or not valid UTF-8.
+	WorkspaceError_WORKSPACE_ERROR_HOME_UNKNOWN WorkspaceError = 2
+	// The device's OS is not supported (Windows).
+	WorkspaceError_WORKSPACE_ERROR_UNSUPPORTED_OS WorkspaceError = 3
+	// The path or one of its ancestors is not a directory.
+	WorkspaceError_WORKSPACE_ERROR_PATH_CONFLICT WorkspaceError = 4
+	// The directory is not empty and is not a usable repository.
+	WorkspaceError_WORKSPACE_ERROR_NOT_EMPTY WorkspaceError = 5
+	// The directory is a repository root whose origin is another remote.
+	WorkspaceError_WORKSPACE_ERROR_REMOTE_MISMATCH WorkspaceError = 6
+	// git is not installed or not on PATH.
+	WorkspaceError_WORKSPACE_ERROR_GIT_UNAVAILABLE WorkspaceError = 7
+	// git clone failed.
+	WorkspaceError_WORKSPACE_ERROR_CLONE_FAILED WorkspaceError = 8
+	// The device ran out of disk space or quota.
+	WorkspaceError_WORKSPACE_ERROR_NO_SPACE WorkspaceError = 9
+	// Permission denied.
+	WorkspaceError_WORKSPACE_ERROR_PERMISSION_DENIED WorkspaceError = 10
+	// The clone exceeded its two-hour background lifetime.
+	WorkspaceError_WORKSPACE_ERROR_TIMEOUT WorkspaceError = 11
+	// Retryable: another preparation holds the lock, or the daemon's
+	// workspace slots are full.
+	WorkspaceError_WORKSPACE_ERROR_BUSY WorkspaceError = 12
+	// Cancelled by CancelCall or by stopping the background job.
+	WorkspaceError_WORKSPACE_ERROR_CANCELLED WorkspaceError = 13
+	// Any other failure; details are in the daemon log.
+	WorkspaceError_WORKSPACE_ERROR_IO WorkspaceError = 14
+	// RemoveWorkspaceRequest only: the path is not a removable workspace.
+	WorkspaceError_WORKSPACE_ERROR_REFUSED WorkspaceError = 15
+	// Control plane only: the device was revoked.
+	WorkspaceError_WORKSPACE_ERROR_DEVICE_REVOKED WorkspaceError = 100
+	// Control plane only: attempts were lost three times in a row (daemon
+	// restarts).
+	WorkspaceError_WORKSPACE_ERROR_INTERRUPTED WorkspaceError = 101
+	// Control plane only: a daemon fault other than TOOL_UNAVAILABLE.
+	WorkspaceError_WORKSPACE_ERROR_DAEMON_FAULT WorkspaceError = 102
+)
+
+// Enum value maps for WorkspaceError.
+var (
+	WorkspaceError_name = map[int32]string{
+		0:   "WORKSPACE_ERROR_UNSPECIFIED",
+		1:   "WORKSPACE_ERROR_INVALID_REQUEST",
+		2:   "WORKSPACE_ERROR_HOME_UNKNOWN",
+		3:   "WORKSPACE_ERROR_UNSUPPORTED_OS",
+		4:   "WORKSPACE_ERROR_PATH_CONFLICT",
+		5:   "WORKSPACE_ERROR_NOT_EMPTY",
+		6:   "WORKSPACE_ERROR_REMOTE_MISMATCH",
+		7:   "WORKSPACE_ERROR_GIT_UNAVAILABLE",
+		8:   "WORKSPACE_ERROR_CLONE_FAILED",
+		9:   "WORKSPACE_ERROR_NO_SPACE",
+		10:  "WORKSPACE_ERROR_PERMISSION_DENIED",
+		11:  "WORKSPACE_ERROR_TIMEOUT",
+		12:  "WORKSPACE_ERROR_BUSY",
+		13:  "WORKSPACE_ERROR_CANCELLED",
+		14:  "WORKSPACE_ERROR_IO",
+		15:  "WORKSPACE_ERROR_REFUSED",
+		100: "WORKSPACE_ERROR_DEVICE_REVOKED",
+		101: "WORKSPACE_ERROR_INTERRUPTED",
+		102: "WORKSPACE_ERROR_DAEMON_FAULT",
+	}
+	WorkspaceError_value = map[string]int32{
+		"WORKSPACE_ERROR_UNSPECIFIED":       0,
+		"WORKSPACE_ERROR_INVALID_REQUEST":   1,
+		"WORKSPACE_ERROR_HOME_UNKNOWN":      2,
+		"WORKSPACE_ERROR_UNSUPPORTED_OS":    3,
+		"WORKSPACE_ERROR_PATH_CONFLICT":     4,
+		"WORKSPACE_ERROR_NOT_EMPTY":         5,
+		"WORKSPACE_ERROR_REMOTE_MISMATCH":   6,
+		"WORKSPACE_ERROR_GIT_UNAVAILABLE":   7,
+		"WORKSPACE_ERROR_CLONE_FAILED":      8,
+		"WORKSPACE_ERROR_NO_SPACE":          9,
+		"WORKSPACE_ERROR_PERMISSION_DENIED": 10,
+		"WORKSPACE_ERROR_TIMEOUT":           11,
+		"WORKSPACE_ERROR_BUSY":              12,
+		"WORKSPACE_ERROR_CANCELLED":         13,
+		"WORKSPACE_ERROR_IO":                14,
+		"WORKSPACE_ERROR_REFUSED":           15,
+		"WORKSPACE_ERROR_DEVICE_REVOKED":    100,
+		"WORKSPACE_ERROR_INTERRUPTED":       101,
+		"WORKSPACE_ERROR_DAEMON_FAULT":      102,
+	}
+)
+
+func (x WorkspaceError) Enum() *WorkspaceError {
+	p := new(WorkspaceError)
+	*p = x
+	return p
+}
+
+func (x WorkspaceError) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (WorkspaceError) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_device_proto_enumTypes[0].Descriptor()
+}
+
+func (WorkspaceError) Type() protoreflect.EnumType {
+	return &file_circus_v1_device_proto_enumTypes[0]
+}
+
+func (x WorkspaceError) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use WorkspaceError.Descriptor instead.
+func (WorkspaceError) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{0}
+}
+
 // Code identifies the daemon failure.
 type DaemonFault_Code int32
 
@@ -78,11 +201,11 @@ func (x DaemonFault_Code) String() string {
 }
 
 func (DaemonFault_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_device_proto_enumTypes[0].Descriptor()
+	return file_circus_v1_device_proto_enumTypes[1].Descriptor()
 }
 
 func (DaemonFault_Code) Type() protoreflect.EnumType {
-	return &file_circus_v1_device_proto_enumTypes[0]
+	return &file_circus_v1_device_proto_enumTypes[1]
 }
 
 func (x DaemonFault_Code) Number() protoreflect.EnumNumber {
@@ -135,11 +258,11 @@ func (x CallStatus_State) String() string {
 }
 
 func (CallStatus_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_device_proto_enumTypes[1].Descriptor()
+	return file_circus_v1_device_proto_enumTypes[2].Descriptor()
 }
 
 func (CallStatus_State) Type() protoreflect.EnumType {
-	return &file_circus_v1_device_proto_enumTypes[1]
+	return &file_circus_v1_device_proto_enumTypes[2]
 }
 
 func (x CallStatus_State) Number() protoreflect.EnumNumber {
@@ -196,11 +319,11 @@ func (x JobEvent_State) String() string {
 }
 
 func (JobEvent_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_device_proto_enumTypes[2].Descriptor()
+	return file_circus_v1_device_proto_enumTypes[3].Descriptor()
 }
 
 func (JobEvent_State) Type() protoreflect.EnumType {
-	return &file_circus_v1_device_proto_enumTypes[2]
+	return &file_circus_v1_device_proto_enumTypes[3]
 }
 
 func (x JobEvent_State) Number() protoreflect.EnumNumber {
@@ -210,6 +333,183 @@ func (x JobEvent_State) Number() protoreflect.EnumNumber {
 // Deprecated: Use JobEvent_State.Descriptor instead.
 func (JobEvent_State) EnumDescriptor() ([]byte, []int) {
 	return file_circus_v1_device_proto_rawDescGZIP(), []int{19, 0}
+}
+
+// Outcome of the call.
+type PrepareWorkspaceResult_Outcome int32
+
+const (
+	// Not set.
+	PrepareWorkspaceResult_OUTCOME_UNSPECIFIED PrepareWorkspaceResult_Outcome = 0
+	// The workspace exists at path.
+	PrepareWorkspaceResult_OUTCOME_READY PrepareWorkspaceResult_Outcome = 1
+	// The clone outlived the call's deadline and continues as background
+	// job job_id of the call's session; ask again with resume_job_id once
+	// the job has ended.
+	PrepareWorkspaceResult_OUTCOME_IN_BACKGROUND PrepareWorkspaceResult_Outcome = 2
+	// Preparation failed; see error.
+	PrepareWorkspaceResult_OUTCOME_FAILED PrepareWorkspaceResult_Outcome = 3
+)
+
+// Enum value maps for PrepareWorkspaceResult_Outcome.
+var (
+	PrepareWorkspaceResult_Outcome_name = map[int32]string{
+		0: "OUTCOME_UNSPECIFIED",
+		1: "OUTCOME_READY",
+		2: "OUTCOME_IN_BACKGROUND",
+		3: "OUTCOME_FAILED",
+	}
+	PrepareWorkspaceResult_Outcome_value = map[string]int32{
+		"OUTCOME_UNSPECIFIED":   0,
+		"OUTCOME_READY":         1,
+		"OUTCOME_IN_BACKGROUND": 2,
+		"OUTCOME_FAILED":        3,
+	}
+)
+
+func (x PrepareWorkspaceResult_Outcome) Enum() *PrepareWorkspaceResult_Outcome {
+	p := new(PrepareWorkspaceResult_Outcome)
+	*p = x
+	return p
+}
+
+func (x PrepareWorkspaceResult_Outcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PrepareWorkspaceResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_device_proto_enumTypes[4].Descriptor()
+}
+
+func (PrepareWorkspaceResult_Outcome) Type() protoreflect.EnumType {
+	return &file_circus_v1_device_proto_enumTypes[4]
+}
+
+func (x PrepareWorkspaceResult_Outcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PrepareWorkspaceResult_Outcome.Descriptor instead.
+func (PrepareWorkspaceResult_Outcome) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{21, 0}
+}
+
+// What a READY preparation did.
+type PrepareWorkspaceResult_Action int32
+
+const (
+	// Not set.
+	PrepareWorkspaceResult_ACTION_UNSPECIFIED PrepareWorkspaceResult_Action = 0
+	// Created an empty directory.
+	PrepareWorkspaceResult_ACTION_CREATED PrepareWorkspaceResult_Action = 1
+	// The directory existed and was empty.
+	PrepareWorkspaceResult_ACTION_USED_EMPTY PrepareWorkspaceResult_Action = 2
+	// Cloned repo_url.
+	PrepareWorkspaceResult_ACTION_CLONED PrepareWorkspaceResult_Action = 3
+	// The directory was already a repository of the same remote.
+	PrepareWorkspaceResult_ACTION_USED_REPOSITORY PrepareWorkspaceResult_Action = 4
+)
+
+// Enum value maps for PrepareWorkspaceResult_Action.
+var (
+	PrepareWorkspaceResult_Action_name = map[int32]string{
+		0: "ACTION_UNSPECIFIED",
+		1: "ACTION_CREATED",
+		2: "ACTION_USED_EMPTY",
+		3: "ACTION_CLONED",
+		4: "ACTION_USED_REPOSITORY",
+	}
+	PrepareWorkspaceResult_Action_value = map[string]int32{
+		"ACTION_UNSPECIFIED":     0,
+		"ACTION_CREATED":         1,
+		"ACTION_USED_EMPTY":      2,
+		"ACTION_CLONED":          3,
+		"ACTION_USED_REPOSITORY": 4,
+	}
+)
+
+func (x PrepareWorkspaceResult_Action) Enum() *PrepareWorkspaceResult_Action {
+	p := new(PrepareWorkspaceResult_Action)
+	*p = x
+	return p
+}
+
+func (x PrepareWorkspaceResult_Action) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PrepareWorkspaceResult_Action) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_device_proto_enumTypes[5].Descriptor()
+}
+
+func (PrepareWorkspaceResult_Action) Type() protoreflect.EnumType {
+	return &file_circus_v1_device_proto_enumTypes[5]
+}
+
+func (x PrepareWorkspaceResult_Action) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PrepareWorkspaceResult_Action.Descriptor instead.
+func (PrepareWorkspaceResult_Action) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{21, 1}
+}
+
+// Outcome of the call.
+type RemoveWorkspaceResult_Outcome int32
+
+const (
+	// Not set.
+	RemoveWorkspaceResult_OUTCOME_UNSPECIFIED RemoveWorkspaceResult_Outcome = 0
+	// The directory was removed.
+	RemoveWorkspaceResult_OUTCOME_REMOVED RemoveWorkspaceResult_Outcome = 1
+	// There was nothing at path.
+	RemoveWorkspaceResult_OUTCOME_ABSENT RemoveWorkspaceResult_Outcome = 2
+	// Nothing or only part was removed; see error.
+	RemoveWorkspaceResult_OUTCOME_FAILED RemoveWorkspaceResult_Outcome = 3
+)
+
+// Enum value maps for RemoveWorkspaceResult_Outcome.
+var (
+	RemoveWorkspaceResult_Outcome_name = map[int32]string{
+		0: "OUTCOME_UNSPECIFIED",
+		1: "OUTCOME_REMOVED",
+		2: "OUTCOME_ABSENT",
+		3: "OUTCOME_FAILED",
+	}
+	RemoveWorkspaceResult_Outcome_value = map[string]int32{
+		"OUTCOME_UNSPECIFIED": 0,
+		"OUTCOME_REMOVED":     1,
+		"OUTCOME_ABSENT":      2,
+		"OUTCOME_FAILED":      3,
+	}
+)
+
+func (x RemoveWorkspaceResult_Outcome) Enum() *RemoveWorkspaceResult_Outcome {
+	p := new(RemoveWorkspaceResult_Outcome)
+	*p = x
+	return p
+}
+
+func (x RemoveWorkspaceResult_Outcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RemoveWorkspaceResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_device_proto_enumTypes[6].Descriptor()
+}
+
+func (RemoveWorkspaceResult_Outcome) Type() protoreflect.EnumType {
+	return &file_circus_v1_device_proto_enumTypes[6]
+}
+
+func (x RemoveWorkspaceResult_Outcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RemoveWorkspaceResult_Outcome.Descriptor instead.
+func (RemoveWorkspaceResult_Outcome) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{23, 0}
 }
 
 // DeviceCall is one tool invocation from the worker to a device daemon.
@@ -242,6 +542,8 @@ type DeviceCall struct {
 	//	*DeviceCall_Write
 	//	*DeviceCall_Edit
 	//	*DeviceCall_TaskStop
+	//	*DeviceCall_PrepareWorkspace
+	//	*DeviceCall_RemoveWorkspace
 	Tool          isDeviceCall_Tool `protobuf_oneof:"tool"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -357,6 +659,24 @@ func (x *DeviceCall) GetTaskStop() *TaskStopRequest {
 	return nil
 }
 
+func (x *DeviceCall) GetPrepareWorkspace() *PrepareWorkspaceRequest {
+	if x != nil {
+		if x, ok := x.Tool.(*DeviceCall_PrepareWorkspace); ok {
+			return x.PrepareWorkspace
+		}
+	}
+	return nil
+}
+
+func (x *DeviceCall) GetRemoveWorkspace() *RemoveWorkspaceRequest {
+	if x != nil {
+		if x, ok := x.Tool.(*DeviceCall_RemoveWorkspace); ok {
+			return x.RemoveWorkspace
+		}
+	}
+	return nil
+}
+
 type isDeviceCall_Tool interface {
 	isDeviceCall_Tool()
 }
@@ -386,6 +706,16 @@ type DeviceCall_TaskStop struct {
 	TaskStop *TaskStopRequest `protobuf:"bytes,14,opt,name=task_stop,json=taskStop,proto3,oneof"`
 }
 
+type DeviceCall_PrepareWorkspace struct {
+	// Project default directory preparation (control plane only).
+	PrepareWorkspace *PrepareWorkspaceRequest `protobuf:"bytes,15,opt,name=prepare_workspace,json=prepareWorkspace,proto3,oneof"`
+}
+
+type DeviceCall_RemoveWorkspace struct {
+	// Project default directory removal (control plane only).
+	RemoveWorkspace *RemoveWorkspaceRequest `protobuf:"bytes,16,opt,name=remove_workspace,json=removeWorkspace,proto3,oneof"`
+}
+
 func (*DeviceCall_Bash) isDeviceCall_Tool() {}
 
 func (*DeviceCall_Read) isDeviceCall_Tool() {}
@@ -395,6 +725,10 @@ func (*DeviceCall_Write) isDeviceCall_Tool() {}
 func (*DeviceCall_Edit) isDeviceCall_Tool() {}
 
 func (*DeviceCall_TaskStop) isDeviceCall_Tool() {}
+
+func (*DeviceCall_PrepareWorkspace) isDeviceCall_Tool() {}
+
+func (*DeviceCall_RemoveWorkspace) isDeviceCall_Tool() {}
 
 // DeviceResult is the final result of a DeviceCall.
 type DeviceResult struct {
@@ -415,6 +749,8 @@ type DeviceResult struct {
 	//	*DeviceResult_Write
 	//	*DeviceResult_Edit
 	//	*DeviceResult_TaskStop
+	//	*DeviceResult_PrepareWorkspace
+	//	*DeviceResult_RemoveWorkspace
 	Detail        isDeviceResult_Detail `protobuf_oneof:"detail"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -523,6 +859,24 @@ func (x *DeviceResult) GetTaskStop() *TaskStopResult {
 	return nil
 }
 
+func (x *DeviceResult) GetPrepareWorkspace() *PrepareWorkspaceResult {
+	if x != nil {
+		if x, ok := x.Detail.(*DeviceResult_PrepareWorkspace); ok {
+			return x.PrepareWorkspace
+		}
+	}
+	return nil
+}
+
+func (x *DeviceResult) GetRemoveWorkspace() *RemoveWorkspaceResult {
+	if x != nil {
+		if x, ok := x.Detail.(*DeviceResult_RemoveWorkspace); ok {
+			return x.RemoveWorkspace
+		}
+	}
+	return nil
+}
+
 type isDeviceResult_Detail interface {
 	isDeviceResult_Detail()
 }
@@ -552,6 +906,16 @@ type DeviceResult_TaskStop struct {
 	TaskStop *TaskStopResult `protobuf:"bytes,14,opt,name=task_stop,json=taskStop,proto3,oneof"`
 }
 
+type DeviceResult_PrepareWorkspace struct {
+	// Workspace preparation outcome.
+	PrepareWorkspace *PrepareWorkspaceResult `protobuf:"bytes,15,opt,name=prepare_workspace,json=prepareWorkspace,proto3,oneof"`
+}
+
+type DeviceResult_RemoveWorkspace struct {
+	// Workspace removal outcome.
+	RemoveWorkspace *RemoveWorkspaceResult `protobuf:"bytes,16,opt,name=remove_workspace,json=removeWorkspace,proto3,oneof"`
+}
+
 func (*DeviceResult_Bash) isDeviceResult_Detail() {}
 
 func (*DeviceResult_Read) isDeviceResult_Detail() {}
@@ -561,6 +925,10 @@ func (*DeviceResult_Write) isDeviceResult_Detail() {}
 func (*DeviceResult_Edit) isDeviceResult_Detail() {}
 
 func (*DeviceResult_TaskStop) isDeviceResult_Detail() {}
+
+func (*DeviceResult_PrepareWorkspace) isDeviceResult_Detail() {}
+
+func (*DeviceResult_RemoveWorkspace) isDeviceResult_Detail() {}
 
 // DaemonFault distinguishes daemon failures from ordinary tool errors.
 type DaemonFault struct {
@@ -1780,11 +2148,333 @@ func (x *JobEvent) GetCallId() string {
 	return ""
 }
 
+// PrepareWorkspaceRequest makes sure a project's default directory exists on
+// the device: it creates an empty directory, clones repo_url into it, or
+// accepts what is there (docs/wire.md "Workspace preparation"). The control
+// plane sends it, never a worker, with a session_id of the form
+// "workspace-<workspace_id>" that no session has. Idempotent: repeating it
+// after success reports READY without changing anything. Daemons declare
+// the Hello feature "device_call.prepare_workspace"; the control plane only
+// sends it to connections that did.
+//
+// The daemon resolves the path, creates its parent, takes a lock beside the
+// target, and then acts on what the target is:
+//   - absent: creates it (repo_url empty) or clones into a hidden sibling
+//     and renames that onto the target once the clone is complete;
+//   - an empty directory: uses it (repo_url empty) or clones as above,
+//     replacing the empty directory;
+//   - a repository whose own top level is the target and whose origin is
+//     the same remote as repo_url: uses it;
+//   - anything else non-empty: NOT_EMPTY, or REMOTE_MISMATCH for a
+//     repository root with a different (or no) origin; a non-directory in
+//     the way is PATH_CONFLICT. The daemon never modifies the target's
+//     existing contents.
+//
+// git runs without a shell, with the environment the Bash tool builds from
+// the login shell (so the user's credential helpers and ssh-agent apply),
+// GIT_TERMINAL_PROMPT=0 and no repository-locating variables. Clones are
+// full clones.
+type PrepareWorkspaceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// "~/" followed by a relative path, or an absolute path, resolved like
+	// ListDirectoryQuery.path; "" and "~" alone are INVALID_REQUEST. The
+	// control plane sends "~/circus/projects/<project_id>". Valid UTF-8, at
+	// most 4096 bytes, no NUL.
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Empty: an empty directory is the workspace. Otherwise the repository
+	// to clone, passed to git as given (it may carry credentials, which the
+	// daemon never echoes); at most 2048 bytes.
+	RepoUrl string `protobuf:"bytes,2,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
+	// A background job of an earlier attempt of this preparation (same
+	// session_id). If the daemon still knows it, it waits for it until this
+	// call's deadline, or returns its retained outcome, instead of starting
+	// anything; otherwise it prepares as if this were empty.
+	ResumeJobId   string `protobuf:"bytes,3,opt,name=resume_job_id,json=resumeJobId,proto3" json:"resume_job_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareWorkspaceRequest) Reset() {
+	*x = PrepareWorkspaceRequest{}
+	mi := &file_circus_v1_device_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareWorkspaceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareWorkspaceRequest) ProtoMessage() {}
+
+func (x *PrepareWorkspaceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareWorkspaceRequest.ProtoReflect.Descriptor instead.
+func (*PrepareWorkspaceRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *PrepareWorkspaceRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *PrepareWorkspaceRequest) GetRepoUrl() string {
+	if x != nil {
+		return x.RepoUrl
+	}
+	return ""
+}
+
+func (x *PrepareWorkspaceRequest) GetResumeJobId() string {
+	if x != nil {
+		return x.ResumeJobId
+	}
+	return ""
+}
+
+// PrepareWorkspaceResult is the structured outcome of PrepareWorkspaceRequest.
+// DeviceResult.output carries one human-readable line; is_error matches
+// OUTCOME_FAILED.
+type PrepareWorkspaceResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Outcome of the call.
+	Outcome PrepareWorkspaceResult_Outcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=circus.v1.PrepareWorkspaceResult_Outcome" json:"outcome,omitempty"`
+	// Absolute, lexically clean, valid UTF-8 path (symlinks not resolved).
+	// Set for READY, and for FAILED once the path could be resolved.
+	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	// READY only.
+	Action PrepareWorkspaceResult_Action `protobuf:"varint,3,opt,name=action,proto3,enum=circus.v1.PrepareWorkspaceResult_Action" json:"action,omitempty"`
+	// IN_BACKGROUND only.
+	JobId string `protobuf:"bytes,4,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	// FAILED only.
+	Error WorkspaceError `protobuf:"varint,5,opt,name=error,proto3,enum=circus.v1.WorkspaceError" json:"error,omitempty"`
+	// FAILED only: at most 1024 bytes of valid UTF-8 with credentials
+	// removed: the tail of git's stderr for CLONE_FAILED and NO_SPACE, the
+	// existing origin for REMOTE_MISMATCH, empty otherwise.
+	ErrorDetail   string `protobuf:"bytes,6,opt,name=error_detail,json=errorDetail,proto3" json:"error_detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareWorkspaceResult) Reset() {
+	*x = PrepareWorkspaceResult{}
+	mi := &file_circus_v1_device_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareWorkspaceResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareWorkspaceResult) ProtoMessage() {}
+
+func (x *PrepareWorkspaceResult) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareWorkspaceResult.ProtoReflect.Descriptor instead.
+func (*PrepareWorkspaceResult) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *PrepareWorkspaceResult) GetOutcome() PrepareWorkspaceResult_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return PrepareWorkspaceResult_OUTCOME_UNSPECIFIED
+}
+
+func (x *PrepareWorkspaceResult) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *PrepareWorkspaceResult) GetAction() PrepareWorkspaceResult_Action {
+	if x != nil {
+		return x.Action
+	}
+	return PrepareWorkspaceResult_ACTION_UNSPECIFIED
+}
+
+func (x *PrepareWorkspaceResult) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *PrepareWorkspaceResult) GetError() WorkspaceError {
+	if x != nil {
+		return x.Error
+	}
+	return WorkspaceError_WORKSPACE_ERROR_UNSPECIFIED
+}
+
+func (x *PrepareWorkspaceResult) GetErrorDetail() string {
+	if x != nil {
+		return x.ErrorDetail
+	}
+	return ""
+}
+
+// RemoveWorkspaceRequest deletes a project's default directory when the
+// user deletes the project and asks for it. The control plane sends it,
+// never a worker, once, with a session_id "workspace-<workspace_id>".
+// Daemons declare the Hello feature "device_call.remove_workspace".
+//
+// The daemon resolves the path and refuses (REFUSED) anything but a real
+// directory (not a symlink) whose resolved path is exactly
+// "<home>/circus/projects/<name>" for a single path element <name>. It
+// removes the directory recursively without following symlinks inside it.
+type RemoveWorkspaceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// "~/circus/projects/<project_id>"; same rules as
+	// PrepareWorkspaceRequest.path.
+	Path          string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveWorkspaceRequest) Reset() {
+	*x = RemoveWorkspaceRequest{}
+	mi := &file_circus_v1_device_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveWorkspaceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveWorkspaceRequest) ProtoMessage() {}
+
+func (x *RemoveWorkspaceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveWorkspaceRequest.ProtoReflect.Descriptor instead.
+func (*RemoveWorkspaceRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *RemoveWorkspaceRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+// RemoveWorkspaceResult is the structured outcome of RemoveWorkspaceRequest.
+type RemoveWorkspaceResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Outcome of the call.
+	Outcome RemoveWorkspaceResult_Outcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=circus.v1.RemoveWorkspaceResult_Outcome" json:"outcome,omitempty"`
+	// Absolute path, as in PrepareWorkspaceResult.path.
+	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	// FAILED only: REFUSED, PERMISSION_DENIED, HOME_UNKNOWN, INVALID_REQUEST,
+	// UNSUPPORTED_OS, BUSY (a preparation holds the lock) or IO.
+	Error WorkspaceError `protobuf:"varint,3,opt,name=error,proto3,enum=circus.v1.WorkspaceError" json:"error,omitempty"`
+	// FAILED only: at most 1024 bytes of valid UTF-8 explaining the failure.
+	ErrorDetail   string `protobuf:"bytes,4,opt,name=error_detail,json=errorDetail,proto3" json:"error_detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveWorkspaceResult) Reset() {
+	*x = RemoveWorkspaceResult{}
+	mi := &file_circus_v1_device_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveWorkspaceResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveWorkspaceResult) ProtoMessage() {}
+
+func (x *RemoveWorkspaceResult) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveWorkspaceResult.ProtoReflect.Descriptor instead.
+func (*RemoveWorkspaceResult) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *RemoveWorkspaceResult) GetOutcome() RemoveWorkspaceResult_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return RemoveWorkspaceResult_OUTCOME_UNSPECIFIED
+}
+
+func (x *RemoveWorkspaceResult) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *RemoveWorkspaceResult) GetError() WorkspaceError {
+	if x != nil {
+		return x.Error
+	}
+	return WorkspaceError_WORKSPACE_ERROR_UNSPECIFIED
+}
+
+func (x *RemoveWorkspaceResult) GetErrorDetail() string {
+	if x != nil {
+		return x.ErrorDetail
+	}
+	return ""
+}
+
 var File_circus_v1_device_proto protoreflect.FileDescriptor
 
 const file_circus_v1_device_proto_rawDesc = "" +
 	"\n" +
-	"\x16circus/v1/device.proto\x12\tcircus.v1\"\xfc\x02\n" +
+	"\x16circus/v1/device.proto\x12\tcircus.v1\"\x9f\x04\n" +
 	"\n" +
 	"DeviceCall\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x1d\n" +
@@ -1798,8 +2488,10 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"\x04read\x18\v \x01(\v2\x16.circus.v1.ReadRequestH\x00R\x04read\x12/\n" +
 	"\x05write\x18\f \x01(\v2\x17.circus.v1.WriteRequestH\x00R\x05write\x12,\n" +
 	"\x04edit\x18\r \x01(\v2\x16.circus.v1.EditRequestH\x00R\x04edit\x129\n" +
-	"\ttask_stop\x18\x0e \x01(\v2\x1a.circus.v1.TaskStopRequestH\x00R\btaskStopB\x06\n" +
-	"\x04tool\"\xff\x02\n" +
+	"\ttask_stop\x18\x0e \x01(\v2\x1a.circus.v1.TaskStopRequestH\x00R\btaskStop\x12Q\n" +
+	"\x11prepare_workspace\x18\x0f \x01(\v2\".circus.v1.PrepareWorkspaceRequestH\x00R\x10prepareWorkspace\x12N\n" +
+	"\x10remove_workspace\x18\x10 \x01(\v2!.circus.v1.RemoveWorkspaceRequestH\x00R\x0fremoveWorkspaceB\x06\n" +
+	"\x04tool\"\xa0\x04\n" +
 	"\fDeviceResult\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12-\n" +
 	"\x06output\x18\x02 \x01(\v2\x15.circus.v1.ToolOutputR\x06output\x12,\n" +
@@ -1809,7 +2501,9 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"\x04read\x18\v \x01(\v2\x15.circus.v1.ReadResultH\x00R\x04read\x12.\n" +
 	"\x05write\x18\f \x01(\v2\x16.circus.v1.WriteResultH\x00R\x05write\x12+\n" +
 	"\x04edit\x18\r \x01(\v2\x15.circus.v1.EditResultH\x00R\x04edit\x128\n" +
-	"\ttask_stop\x18\x0e \x01(\v2\x19.circus.v1.TaskStopResultH\x00R\btaskStopB\b\n" +
+	"\ttask_stop\x18\x0e \x01(\v2\x19.circus.v1.TaskStopResultH\x00R\btaskStop\x12P\n" +
+	"\x11prepare_workspace\x18\x0f \x01(\v2!.circus.v1.PrepareWorkspaceResultH\x00R\x10prepareWorkspace\x12M\n" +
+	"\x10remove_workspace\x18\x10 \x01(\v2 .circus.v1.RemoveWorkspaceResultH\x00R\x0fremoveWorkspaceB\b\n" +
 	"\x06detail\"\x98\x02\n" +
 	"\vDaemonFault\x12/\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x1b.circus.v1.DaemonFault.CodeR\x04code\x12\x18\n" +
@@ -1924,7 +2618,62 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"\fSTATE_EXITED\x10\x02\x12\x10\n" +
 	"\fSTATE_KILLED\x10\x03\x12\x0e\n" +
 	"\n" +
-	"STATE_LOST\x10\x04B5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
+	"STATE_LOST\x10\x04\"l\n" +
+	"\x17PrepareWorkspaceRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
+	"\brepo_url\x18\x02 \x01(\tR\arepoUrl\x12\"\n" +
+	"\rresume_job_id\x18\x03 \x01(\tR\vresumeJobId\"\x80\x04\n" +
+	"\x16PrepareWorkspaceResult\x12C\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2).circus.v1.PrepareWorkspaceResult.OutcomeR\aoutcome\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12@\n" +
+	"\x06action\x18\x03 \x01(\x0e2(.circus.v1.PrepareWorkspaceResult.ActionR\x06action\x12\x15\n" +
+	"\x06job_id\x18\x04 \x01(\tR\x05jobId\x12/\n" +
+	"\x05error\x18\x05 \x01(\x0e2\x19.circus.v1.WorkspaceErrorR\x05error\x12!\n" +
+	"\ferror_detail\x18\x06 \x01(\tR\verrorDetail\"d\n" +
+	"\aOutcome\x12\x17\n" +
+	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x11\n" +
+	"\rOUTCOME_READY\x10\x01\x12\x19\n" +
+	"\x15OUTCOME_IN_BACKGROUND\x10\x02\x12\x12\n" +
+	"\x0eOUTCOME_FAILED\x10\x03\"z\n" +
+	"\x06Action\x12\x16\n" +
+	"\x12ACTION_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eACTION_CREATED\x10\x01\x12\x15\n" +
+	"\x11ACTION_USED_EMPTY\x10\x02\x12\x11\n" +
+	"\rACTION_CLONED\x10\x03\x12\x1a\n" +
+	"\x16ACTION_USED_REPOSITORY\x10\x04\",\n" +
+	"\x16RemoveWorkspaceRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"\xa4\x02\n" +
+	"\x15RemoveWorkspaceResult\x12B\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2(.circus.v1.RemoveWorkspaceResult.OutcomeR\aoutcome\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12/\n" +
+	"\x05error\x18\x03 \x01(\x0e2\x19.circus.v1.WorkspaceErrorR\x05error\x12!\n" +
+	"\ferror_detail\x18\x04 \x01(\tR\verrorDetail\"_\n" +
+	"\aOutcome\x12\x17\n" +
+	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fOUTCOME_REMOVED\x10\x01\x12\x12\n" +
+	"\x0eOUTCOME_ABSENT\x10\x02\x12\x12\n" +
+	"\x0eOUTCOME_FAILED\x10\x03*\x81\x05\n" +
+	"\x0eWorkspaceError\x12\x1f\n" +
+	"\x1bWORKSPACE_ERROR_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fWORKSPACE_ERROR_INVALID_REQUEST\x10\x01\x12 \n" +
+	"\x1cWORKSPACE_ERROR_HOME_UNKNOWN\x10\x02\x12\"\n" +
+	"\x1eWORKSPACE_ERROR_UNSUPPORTED_OS\x10\x03\x12!\n" +
+	"\x1dWORKSPACE_ERROR_PATH_CONFLICT\x10\x04\x12\x1d\n" +
+	"\x19WORKSPACE_ERROR_NOT_EMPTY\x10\x05\x12#\n" +
+	"\x1fWORKSPACE_ERROR_REMOTE_MISMATCH\x10\x06\x12#\n" +
+	"\x1fWORKSPACE_ERROR_GIT_UNAVAILABLE\x10\a\x12 \n" +
+	"\x1cWORKSPACE_ERROR_CLONE_FAILED\x10\b\x12\x1c\n" +
+	"\x18WORKSPACE_ERROR_NO_SPACE\x10\t\x12%\n" +
+	"!WORKSPACE_ERROR_PERMISSION_DENIED\x10\n" +
+	"\x12\x1b\n" +
+	"\x17WORKSPACE_ERROR_TIMEOUT\x10\v\x12\x18\n" +
+	"\x14WORKSPACE_ERROR_BUSY\x10\f\x12\x1d\n" +
+	"\x19WORKSPACE_ERROR_CANCELLED\x10\r\x12\x16\n" +
+	"\x12WORKSPACE_ERROR_IO\x10\x0e\x12\x1b\n" +
+	"\x17WORKSPACE_ERROR_REFUSED\x10\x0f\x12\"\n" +
+	"\x1eWORKSPACE_ERROR_DEVICE_REVOKED\x10d\x12\x1f\n" +
+	"\x1bWORKSPACE_ERROR_INTERRUPTED\x10e\x12 \n" +
+	"\x1cWORKSPACE_ERROR_DAEMON_FAULT\x10fB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 
 var (
 	file_circus_v1_device_proto_rawDescOnce sync.Once
@@ -1938,57 +2687,74 @@ func file_circus_v1_device_proto_rawDescGZIP() []byte {
 	return file_circus_v1_device_proto_rawDescData
 }
 
-var file_circus_v1_device_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_circus_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_circus_v1_device_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_circus_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_circus_v1_device_proto_goTypes = []any{
-	(DaemonFault_Code)(0),   // 0: circus.v1.DaemonFault.Code
-	(CallStatus_State)(0),   // 1: circus.v1.CallStatus.State
-	(JobEvent_State)(0),     // 2: circus.v1.JobEvent.State
-	(*DeviceCall)(nil),      // 3: circus.v1.DeviceCall
-	(*DeviceResult)(nil),    // 4: circus.v1.DeviceResult
-	(*DaemonFault)(nil),     // 5: circus.v1.DaemonFault
-	(*ToolOutput)(nil),      // 6: circus.v1.ToolOutput
-	(*ContentBlock)(nil),    // 7: circus.v1.ContentBlock
-	(*ImageBlock)(nil),      // 8: circus.v1.ImageBlock
-	(*BashRequest)(nil),     // 9: circus.v1.BashRequest
-	(*BashResult)(nil),      // 10: circus.v1.BashResult
-	(*ReadRequest)(nil),     // 11: circus.v1.ReadRequest
-	(*ReadResult)(nil),      // 12: circus.v1.ReadResult
-	(*WriteRequest)(nil),    // 13: circus.v1.WriteRequest
-	(*WriteResult)(nil),     // 14: circus.v1.WriteResult
-	(*EditRequest)(nil),     // 15: circus.v1.EditRequest
-	(*EditResult)(nil),      // 16: circus.v1.EditResult
-	(*TaskStopRequest)(nil), // 17: circus.v1.TaskStopRequest
-	(*TaskStopResult)(nil),  // 18: circus.v1.TaskStopResult
-	(*CallQuery)(nil),       // 19: circus.v1.CallQuery
-	(*CallStatus)(nil),      // 20: circus.v1.CallStatus
-	(*CancelCall)(nil),      // 21: circus.v1.CancelCall
-	(*JobEvent)(nil),        // 22: circus.v1.JobEvent
+	(WorkspaceError)(0),                 // 0: circus.v1.WorkspaceError
+	(DaemonFault_Code)(0),               // 1: circus.v1.DaemonFault.Code
+	(CallStatus_State)(0),               // 2: circus.v1.CallStatus.State
+	(JobEvent_State)(0),                 // 3: circus.v1.JobEvent.State
+	(PrepareWorkspaceResult_Outcome)(0), // 4: circus.v1.PrepareWorkspaceResult.Outcome
+	(PrepareWorkspaceResult_Action)(0),  // 5: circus.v1.PrepareWorkspaceResult.Action
+	(RemoveWorkspaceResult_Outcome)(0),  // 6: circus.v1.RemoveWorkspaceResult.Outcome
+	(*DeviceCall)(nil),                  // 7: circus.v1.DeviceCall
+	(*DeviceResult)(nil),                // 8: circus.v1.DeviceResult
+	(*DaemonFault)(nil),                 // 9: circus.v1.DaemonFault
+	(*ToolOutput)(nil),                  // 10: circus.v1.ToolOutput
+	(*ContentBlock)(nil),                // 11: circus.v1.ContentBlock
+	(*ImageBlock)(nil),                  // 12: circus.v1.ImageBlock
+	(*BashRequest)(nil),                 // 13: circus.v1.BashRequest
+	(*BashResult)(nil),                  // 14: circus.v1.BashResult
+	(*ReadRequest)(nil),                 // 15: circus.v1.ReadRequest
+	(*ReadResult)(nil),                  // 16: circus.v1.ReadResult
+	(*WriteRequest)(nil),                // 17: circus.v1.WriteRequest
+	(*WriteResult)(nil),                 // 18: circus.v1.WriteResult
+	(*EditRequest)(nil),                 // 19: circus.v1.EditRequest
+	(*EditResult)(nil),                  // 20: circus.v1.EditResult
+	(*TaskStopRequest)(nil),             // 21: circus.v1.TaskStopRequest
+	(*TaskStopResult)(nil),              // 22: circus.v1.TaskStopResult
+	(*CallQuery)(nil),                   // 23: circus.v1.CallQuery
+	(*CallStatus)(nil),                  // 24: circus.v1.CallStatus
+	(*CancelCall)(nil),                  // 25: circus.v1.CancelCall
+	(*JobEvent)(nil),                    // 26: circus.v1.JobEvent
+	(*PrepareWorkspaceRequest)(nil),     // 27: circus.v1.PrepareWorkspaceRequest
+	(*PrepareWorkspaceResult)(nil),      // 28: circus.v1.PrepareWorkspaceResult
+	(*RemoveWorkspaceRequest)(nil),      // 29: circus.v1.RemoveWorkspaceRequest
+	(*RemoveWorkspaceResult)(nil),       // 30: circus.v1.RemoveWorkspaceResult
 }
 var file_circus_v1_device_proto_depIdxs = []int32{
-	9,  // 0: circus.v1.DeviceCall.bash:type_name -> circus.v1.BashRequest
-	11, // 1: circus.v1.DeviceCall.read:type_name -> circus.v1.ReadRequest
-	13, // 2: circus.v1.DeviceCall.write:type_name -> circus.v1.WriteRequest
-	15, // 3: circus.v1.DeviceCall.edit:type_name -> circus.v1.EditRequest
-	17, // 4: circus.v1.DeviceCall.task_stop:type_name -> circus.v1.TaskStopRequest
-	6,  // 5: circus.v1.DeviceResult.output:type_name -> circus.v1.ToolOutput
-	5,  // 6: circus.v1.DeviceResult.fault:type_name -> circus.v1.DaemonFault
-	10, // 7: circus.v1.DeviceResult.bash:type_name -> circus.v1.BashResult
-	12, // 8: circus.v1.DeviceResult.read:type_name -> circus.v1.ReadResult
-	14, // 9: circus.v1.DeviceResult.write:type_name -> circus.v1.WriteResult
-	16, // 10: circus.v1.DeviceResult.edit:type_name -> circus.v1.EditResult
-	18, // 11: circus.v1.DeviceResult.task_stop:type_name -> circus.v1.TaskStopResult
-	0,  // 12: circus.v1.DaemonFault.code:type_name -> circus.v1.DaemonFault.Code
-	7,  // 13: circus.v1.ToolOutput.content:type_name -> circus.v1.ContentBlock
-	8,  // 14: circus.v1.ContentBlock.image:type_name -> circus.v1.ImageBlock
-	1,  // 15: circus.v1.CallStatus.state:type_name -> circus.v1.CallStatus.State
-	4,  // 16: circus.v1.CallStatus.result:type_name -> circus.v1.DeviceResult
-	2,  // 17: circus.v1.JobEvent.state:type_name -> circus.v1.JobEvent.State
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	13, // 0: circus.v1.DeviceCall.bash:type_name -> circus.v1.BashRequest
+	15, // 1: circus.v1.DeviceCall.read:type_name -> circus.v1.ReadRequest
+	17, // 2: circus.v1.DeviceCall.write:type_name -> circus.v1.WriteRequest
+	19, // 3: circus.v1.DeviceCall.edit:type_name -> circus.v1.EditRequest
+	21, // 4: circus.v1.DeviceCall.task_stop:type_name -> circus.v1.TaskStopRequest
+	27, // 5: circus.v1.DeviceCall.prepare_workspace:type_name -> circus.v1.PrepareWorkspaceRequest
+	29, // 6: circus.v1.DeviceCall.remove_workspace:type_name -> circus.v1.RemoveWorkspaceRequest
+	10, // 7: circus.v1.DeviceResult.output:type_name -> circus.v1.ToolOutput
+	9,  // 8: circus.v1.DeviceResult.fault:type_name -> circus.v1.DaemonFault
+	14, // 9: circus.v1.DeviceResult.bash:type_name -> circus.v1.BashResult
+	16, // 10: circus.v1.DeviceResult.read:type_name -> circus.v1.ReadResult
+	18, // 11: circus.v1.DeviceResult.write:type_name -> circus.v1.WriteResult
+	20, // 12: circus.v1.DeviceResult.edit:type_name -> circus.v1.EditResult
+	22, // 13: circus.v1.DeviceResult.task_stop:type_name -> circus.v1.TaskStopResult
+	28, // 14: circus.v1.DeviceResult.prepare_workspace:type_name -> circus.v1.PrepareWorkspaceResult
+	30, // 15: circus.v1.DeviceResult.remove_workspace:type_name -> circus.v1.RemoveWorkspaceResult
+	1,  // 16: circus.v1.DaemonFault.code:type_name -> circus.v1.DaemonFault.Code
+	11, // 17: circus.v1.ToolOutput.content:type_name -> circus.v1.ContentBlock
+	12, // 18: circus.v1.ContentBlock.image:type_name -> circus.v1.ImageBlock
+	2,  // 19: circus.v1.CallStatus.state:type_name -> circus.v1.CallStatus.State
+	8,  // 20: circus.v1.CallStatus.result:type_name -> circus.v1.DeviceResult
+	3,  // 21: circus.v1.JobEvent.state:type_name -> circus.v1.JobEvent.State
+	4,  // 22: circus.v1.PrepareWorkspaceResult.outcome:type_name -> circus.v1.PrepareWorkspaceResult.Outcome
+	5,  // 23: circus.v1.PrepareWorkspaceResult.action:type_name -> circus.v1.PrepareWorkspaceResult.Action
+	0,  // 24: circus.v1.PrepareWorkspaceResult.error:type_name -> circus.v1.WorkspaceError
+	6,  // 25: circus.v1.RemoveWorkspaceResult.outcome:type_name -> circus.v1.RemoveWorkspaceResult.Outcome
+	0,  // 26: circus.v1.RemoveWorkspaceResult.error:type_name -> circus.v1.WorkspaceError
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_device_proto_init() }
@@ -2002,6 +2768,8 @@ func file_circus_v1_device_proto_init() {
 		(*DeviceCall_Write)(nil),
 		(*DeviceCall_Edit)(nil),
 		(*DeviceCall_TaskStop)(nil),
+		(*DeviceCall_PrepareWorkspace)(nil),
+		(*DeviceCall_RemoveWorkspace)(nil),
 	}
 	file_circus_v1_device_proto_msgTypes[1].OneofWrappers = []any{
 		(*DeviceResult_Bash)(nil),
@@ -2009,6 +2777,8 @@ func file_circus_v1_device_proto_init() {
 		(*DeviceResult_Write)(nil),
 		(*DeviceResult_Edit)(nil),
 		(*DeviceResult_TaskStop)(nil),
+		(*DeviceResult_PrepareWorkspace)(nil),
+		(*DeviceResult_RemoveWorkspace)(nil),
 	}
 	file_circus_v1_device_proto_msgTypes[4].OneofWrappers = []any{
 		(*ContentBlock_Text)(nil),
@@ -2022,8 +2792,8 @@ func file_circus_v1_device_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_device_proto_rawDesc), len(file_circus_v1_device_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   20,
+			NumEnums:      7,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

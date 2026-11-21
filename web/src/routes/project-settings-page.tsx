@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
+import { MonitorOffIcon } from "lucide-react"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, Navigate, useNavigate, useParams } from "react-router"
@@ -12,9 +13,10 @@ import {
   useUpdateProject,
 } from "@/api/hooks"
 import { queryKeys } from "@/api/query-client"
-import type { Project } from "@/api/types"
+import type { Project, WorkspaceRemoval } from "@/api/types"
 import { defaultPath } from "@/api/validation"
 import { DisabledReason } from "@/components/disabled-reason"
+import { useShowNotice, type NoticeLine } from "@/components/notice-context"
 import { PageHeader } from "@/components/page-header"
 import { busyClass } from "@/components/projects/busy"
 import { LocationEditor } from "@/components/projects/location-editor"
@@ -22,6 +24,7 @@ import { RepoUrlField } from "@/components/projects/repo-url-field"
 import { useFolderRemote } from "@/components/projects/use-folder-remote"
 import { useProjectForm } from "@/components/projects/use-project-form"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogClose,
@@ -35,6 +38,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
+import { i18n } from "@/i18n/i18n"
 import { lastInputWasKeyboard } from "@/lib/input-modality"
 import {
   formChanged,
@@ -45,6 +49,7 @@ import {
 } from "@/lib/location-form"
 import { deleteBlockedReason } from "@/lib/project-delete"
 import { projectPath } from "@/lib/tree"
+import { showsDetail, workspaceReason } from "@/lib/workspace"
 
 import { BarePage, LoadError } from "./page-states"
 
@@ -53,6 +58,10 @@ const valuesOf = (project: Project): FormValues => ({
   repoUrl: project.repoUrl,
   rows: rowsOf(project),
 })
+
+/** The default folders the project has on its devices, by device name. */
+const workspacesOf = (project: Project) =>
+  new Map(project.locations.flatMap((l) => (l.path === "" && l.workspace ? [[l.device, l.workspace] as const] : [])))
 
 /** The directory default locations resolve to, as the server says when it has. */
 const defaultDirectory = (project: Project) =>
@@ -282,6 +291,7 @@ export function ProjectForm({
           onChange={form.setRows}
           onTouch={(key, field) => form.touch(`${key}.${field}`)}
           onPathCommit={remote.pathCommitted}
+          workspaces={workspacesOf(project)}
         />
       </section>
 
@@ -404,27 +414,107 @@ function SavedNote({ at }: { at: number }) {
   )
 }
 
+/** What happened to a folder the deletion was asked to remove, when it wasn't removed. */
+function removalLine(projectId: string, r: WorkspaceRemoval): NoticeLine | null {
+  const path = r.path || defaultPath(projectId)
+  if (r.outcome === "kept") return { text: i18n.t("projects.folderKept", { path, device: r.device }) }
+  if (r.outcome !== "failed") return null
+  const reason = workspaceReason(r.error, { device: r.device, detail: r.errorDetail })
+  return {
+    text: i18n.t("projects.folderNotDeleted", { path, device: r.device, reason }),
+    ...(showsDetail(r) ? { detail: r.errorDetail } : {}),
+  }
+}
+
 function DeleteSection({ project }: { project: Project }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const sessions = useSessionList(project.projectId)
   const remove = useDeleteProject()
+  const showNotice = useShowNotice()
   const [open, setOpen] = useState(false)
+  // Devices whose folder is to be deleted too; none until ticked.
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set())
+  const devices = useDevices({ live: open })
   const focus = useOverlayFocus()
   const blocked = sessions.data ? deleteBlockedReason(sessions.data) : t("projects.deleteBlockedLoading")
 
+  // Ready default folders: deletable with the project while their device
+  // is online; otherwise they stay on it, which the dialog says. A folder
+  // that isn't ready was perhaps never created, so nothing is said of it.
+  const online = (device: string) => devices.data?.find((d) => d.name === device)?.online
+  const folders = project.locations.flatMap((l) =>
+    l.path === "" && l.workspace?.state === "ready" && !l.deviceRevoked
+      ? [{ device: l.device, workspace: l.workspace }]
+      : [],
+  )
+  const removable = folders.filter((f) => online(f.device) === true)
+  const staying = folders.filter((f) => online(f.device) === false)
+
+  // A device that goes offline while the dialog is open leaves its tick
+  // behind (it isn't sent, and isn't ticked again should it come back);
+  // its line says the folder stays instead.
+  const removableKey = removable.map((f) => f.device).join("\n")
+  const [shownKey, setShownKey] = useState(removableKey)
+  if (shownKey !== removableKey) {
+    setShownKey(removableKey)
+    const still = new Set(removable.map((f) => f.device))
+    if ([...ticked].some((d) => !still.has(d))) setTicked(new Set([...ticked].filter((d) => still.has(d))))
+  }
+  // If its checkbox had focus, focus goes to the next one, or Delete
+  // (checked after every render: it is about elements that just went).
+  const checkboxes = useRef(new Map<string, HTMLButtonElement>())
+  const deleteButton = useRef<HTMLButtonElement>(null)
+  const focused = useRef<string | null>(null)
+  useEffect(() => {
+    const lost = focused.current
+    if (lost === null || checkboxes.current.has(lost)) return
+    focused.current = null
+    const active = document.activeElement
+    if (active && active !== document.body && !active.matches('[role="dialog"]')) return
+    const next = [...checkboxes.current.values()][0] ?? deleteButton.current
+    next?.focus({ focusVisible: lastInputWasKeyboard() } as FocusOptions)
+  })
+
   const change = (next: boolean) => {
     focus.onOpenChange(next)
-    if (next) remove.reset()
+    if (next) {
+      remove.reset()
+      setTicked(new Set())
+    }
     setOpen(next)
   }
 
+  const tick = (device: string, on: boolean) =>
+    setTicked((set) => {
+      const next = new Set(set)
+      if (on) next.add(device)
+      else next.delete(device)
+      return next
+    })
+
   const confirm = () =>
     remove.mutate(
-      { projectId: project.projectId },
       {
-        onSuccess: () => void navigate("/", { replace: true }),
+        projectId: project.projectId,
+        removeWorkspacesOn: removable.map((f) => f.device).filter((d) => ticked.has(d)),
+      },
+      {
+        onSuccess: ({ workspaceRemovals }) => {
+          if (workspaceRemovals.some((r) => removalLine(project.projectId, r) !== null)) {
+            const name = project.name
+            showNotice({
+              // Made when shown, in the language of the moment.
+              content: () => ({
+                title: i18n.t("projects.deleted", { name }),
+                lines: workspaceRemovals.flatMap((r) => removalLine(project.projectId, r) ?? []),
+              }),
+              failure: true,
+            })
+          }
+          void navigate("/", { replace: true })
+        },
         // Raced with a new session: refresh the list so the button and its
         // reason catch up.
         onError: (e) => {
@@ -460,6 +550,49 @@ function DeleteSection({ project }: { project: Project }) {
             <DialogTitle>{t("projects.deleteTitle", { name: project.name })}</DialogTitle>
             <DialogDescription>{t("projects.deleteDescription")}</DialogDescription>
           </DialogHeader>
+          {folders.length > 0 && devices.data === undefined && (
+            // Which folders can go depends on which devices are online.
+            <p role="status" className="flex items-center gap-2.5 text-muted-foreground">
+              {devices.isError ? (
+                t("projects.devicesUnknown")
+              ) : (
+                <>
+                  <Spinner aria-hidden />
+                  {t("projects.checkingDevices")}
+                </>
+              )}
+            </p>
+          )}
+          {(removable.length > 0 || staying.length > 0) && (
+            <div className="flex flex-col gap-2.5">
+              {removable.map((f) => (
+                <label key={f.device} className="flex cursor-default items-start gap-2.5">
+                  <Checkbox
+                    ref={(el) => {
+                      if (el) checkboxes.current.set(f.device, el)
+                      else checkboxes.current.delete(f.device)
+                    }}
+                    onFocus={() => (focused.current = f.device)}
+                    className="mt-0.5"
+                    checked={ticked.has(f.device)}
+                    disabled={remove.isPending}
+                    onCheckedChange={(checked) => tick(f.device, checked === true)}
+                  />
+                  <span className="min-w-0 [overflow-wrap:anywhere]">
+                    {t("projects.alsoDeleteFolder", { path: f.workspace.path, device: f.device })}
+                  </span>
+                </label>
+              ))}
+              {staying.map((f) => (
+                <p key={f.device} className="flex items-start gap-2.5 text-muted-foreground">
+                  <MonitorOffIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span className="min-w-0 [overflow-wrap:anywhere]">
+                    {t("projects.folderStaysOffline", { path: f.workspace.path, device: f.device })}
+                  </span>
+                </p>
+              ))}
+            </div>
+          )}
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}
@@ -469,7 +602,7 @@ function DeleteSection({ project }: { project: Project }) {
             <DialogClose asChild>
               <Button variant="outline">{t("common.cancel")}</Button>
             </DialogClose>
-            <Button variant="destructive" disabled={remove.isPending} onClick={confirm}>
+            <Button ref={deleteButton} variant="destructive" disabled={remove.isPending} onClick={confirm}>
               {remove.isPending && <Spinner aria-label={t("projects.deleting")} />}
               {t("common.delete")}
             </Button>

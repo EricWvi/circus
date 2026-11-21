@@ -105,7 +105,7 @@ func (r *router) synchronize(op *operation, conn gateway.Connection, d *deviceSt
 		r.adoptDeferred(c.CallID, device, conn.Target.ConnectionID)
 		p, retained := r.pending[c.CallID]
 		elapsed := r.config.Clock.Now().UnixMilli() - c.DispatchedAt
-		if retained && c.AckedAt == 0 && elapsed >= 0 && elapsed < r.config.ResendHorizon.Milliseconds() {
+		if retained && c.Tool != "remove_workspace" && c.AckedAt == 0 && elapsed >= 0 && elapsed < r.config.ResendHorizon.Milliseconds() {
 			return r.syncSend(op, conn, d, c.CallID, func() error {
 				if r.pending[c.CallID] != p {
 					delete(d.outstanding, c.CallID) // settled while waiting
@@ -116,7 +116,9 @@ func (r *router) synchronize(op *operation, conn gateway.Connection, d *deviceSt
 				// recovers by query instead of sending another DispatchCall.
 				elapsed = r.config.Clock.Now().UnixMilli() - c.DispatchedAt
 				if elapsed >= 0 && elapsed < r.config.ResendHorizon.Milliseconds() {
-					return r.writeDispatch(op.ctx, c, conn, true)
+					if err := r.writeDispatch(op.ctx, c, conn, true); !errors.Is(err, gateway.ErrFeatureUnsupported) {
+						return err
+					}
 				}
 				r.release(c.CallID)
 				return r.sendQuery(op.ctx, conn, c.CallID)
@@ -180,6 +182,7 @@ func (r *router) connectAndLose(op *operation, conn gateway.Connection, d *devic
 		}
 		now := r.config.Clock.Now().UnixMilli()
 		var losses []store.LostCall
+		var workspaceJobs []store.Job
 		var wakes []string // sessions of lost calls whose ended jobs were registered
 		err := r.config.Store.Tx(op.ctx, func(ctx context.Context, tx store.Ops) error {
 			wakes = wakes[:0]
@@ -189,6 +192,13 @@ func (r *router) connectAndLose(op *operation, conn gateway.Connection, d *devic
 				}
 				if err := tx.CancelTimer(ctx, timers.DeviceGrace, conn.Target.DeviceID); err != nil {
 					return err
+				}
+				if r.config.WorkspaceJobEnded != nil {
+					var err error
+					workspaceJobs, err = tx.ListRunningWorkspaceJobs(ctx, conn.Target.DeviceID, conn.Target.BootID, pageSize)
+					if err != nil {
+						return err
+					}
 				}
 				if _, err := tx.LoseJobs(ctx, conn.Target.DeviceID, conn.Target.BootID, now); err != nil {
 					return err
@@ -222,6 +232,9 @@ func (r *router) connectAndLose(op *operation, conn gateway.Connection, d *devic
 			return err
 		}
 		r.markHealthy()
+		for _, j := range workspaceJobs {
+			r.notifyEndedJob(j)
+		}
 		for _, id := range wakes {
 			r.jobEnded(id)
 		}

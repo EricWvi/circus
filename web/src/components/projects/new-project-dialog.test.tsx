@@ -371,7 +371,7 @@ describe("new project layout", () => {
     try {
       expect(note()).toBe("首次开会话时克隆到这里")
       fireEvent.change(repoUrl(), { target: { value: " " } })
-      expect(note()).toBe("将在这里新建空文件夹")
+      expect(note()).toBe("将在这里新建空的工作目录")
     } finally {
       await i18n.changeLanguage("en")
     }

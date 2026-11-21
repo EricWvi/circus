@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package circus.v1;
 
+import "circus/v1/device.proto";
+import "circus/v1/workspace.proto";
+
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
 // ProjectService manages the signed-in browser user's projects.
@@ -45,6 +48,10 @@ message Project {
     // device name again binds the device that now has that name. Whoever
     // starts a session here must check the device again.
     bool device_revoked = 4;
+    // Output only, ignored on input. Set only for a default location whose
+    // workspace exists (a session was created there); its path is absolute
+    // once READY.
+    WorkspaceStatus workspace = 5;
   }
   string project_id = 1;
   // Trimmed, 1 to 64 Unicode code points, no control characters; unique per
@@ -121,5 +128,37 @@ message UpdateProjectResponse {
 }
 message DeleteProjectRequest {
   string project_id = 1;
+  // Names of devices whose default directory of this project should be
+  // deleted too (the user ticked them). Each must have a READY workspace of
+  // this project and be online; otherwise the deletion of the project goes
+  // ahead and that device's result says why its directory was kept. Each
+  // device is asked once, in parallel, for at most 30 seconds, before the
+  // project is deleted; nothing is retried later. At most 32 names.
+  repeated string remove_workspaces_on = 2;
 }
-message DeleteProjectResponse {}
+message DeleteProjectResponse {
+  // One per name in remove_workspaces_on, in request order.
+  repeated WorkspaceRemoval workspace_removals = 1;
+}
+// WorkspaceRemoval reports what happened to one device's default directory
+// when its project was deleted.
+message WorkspaceRemoval {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // Deleted (or already absent).
+    OUTCOME_REMOVED = 1;
+    // Kept: the device was offline, too old, had no READY workspace of
+    // this project, or did not answer in time.
+    OUTCOME_KEPT = 2;
+    // The device tried and failed; see error and error_detail.
+    OUTCOME_FAILED = 3;
+  }
+  string device = 1;
+  Outcome outcome = 2;
+  // The directory, absolute when known.
+  string path = 3;
+  // FAILED only.
+  WorkspaceError error = 4;
+  // FAILED only: at most 1024 bytes.
+  string error_detail = 5;
+}

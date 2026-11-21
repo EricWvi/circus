@@ -43,11 +43,14 @@ const activeCallStates = `('accepted', 'dispatched', 'running', 'unknown')`
 
 // Sessions.
 
+const workspaceBlocked = `(sessions.workspace = 1 AND NOT EXISTS (SELECT 1 FROM workspaces w
+	WHERE w.project_id = sessions.project_id AND w.device_id = sessions.default_device_id AND w.state = 'ready'))`
+
 const sessionCols = `session_id, user_id, claude_session_id, state, default_device_id, model, permission_mode,
 	pinned_worker_id, turn_count, last_turn_outcome, interrupt_turn_no, previous_turn_interrupted, transcript_gap_turn_no, input_tokens, output_tokens,
 	cache_read_tokens, cache_create_tokens, cost_micro_usd, duration_ms, transcript_bytes, view_bytes,
 	view_truncated, last_event_seq, dropped_event_batches, reason, created_at, updated_at, stopped_at,
-	project_id, client_request_id, location_index, title, last_activity_at,
+	project_id, client_request_id, location_index, title, last_activity_at, workspace, ` + workspaceBlocked + `,
 	(SELECT COUNT(*) FROM session_approvals a WHERE a.session_id = sessions.session_id
 		AND a.state = 'pending' AND a.expires_at > ?1)`
 
@@ -61,7 +64,7 @@ func scanSession(s scanner) (store.Session, error) {
 		&x.Usage.CacheCreationInputTokens, &x.Usage.CostMicroUSD, &x.Usage.DurationMs,
 		&x.TranscriptBytes, &x.ViewBytes, &truncated, &x.LastEventSeq, &x.DroppedEventBatches, nullStr{&x.Reason},
 		&x.CreatedAt, &x.UpdatedAt, nullInt{&x.StoppedAt},
-		&x.ProjectID, nullStr{&x.ClientRequestID}, &x.LocationIndex, &x.Title, &x.LastActivityAt, &x.PendingApprovalCount)
+		&x.ProjectID, nullStr{&x.ClientRequestID}, &x.LocationIndex, &x.Title, &x.LastActivityAt, &x.Workspace, &x.WorkspaceBlocked, &x.PendingApprovalCount)
 	x.State = store.SessionState(state)
 	x.LastTurnOutcome = store.TurnOutcome(outcome)
 	x.ViewTruncated = truncated != 0
@@ -152,9 +155,9 @@ func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.S
 		}
 		if _, err := tx.exec(ctx, `INSERT INTO sessions (session_id, user_id, claude_session_id, state, default_device_id,
 			model, permission_mode, pinned_worker_id, created_at, updated_at, project_id, last_activity_at,
-			client_request_id, location_index) VALUES (?,?,?,'idle',?,?,?,?,?,?,?,?,?,?)`,
+			client_request_id, location_index, workspace) VALUES (?,?,?,'idle',?,?,?,?,?,?,?,?,?,?,?)`,
 			s.ID, s.UserID, s.ClaudeSessionID, s.DefaultDeviceID, nstr(s.Model), nstr(s.PermissionMode),
-			nstr(s.PinnedWorkerID), s.CreatedAt, s.CreatedAt, s.ProjectID, s.CreatedAt, s.ClientRequestID, s.LocationIndex); err != nil {
+			nstr(s.PinnedWorkerID), s.CreatedAt, s.CreatedAt, s.ProjectID, s.CreatedAt, s.ClientRequestID, s.LocationIndex, b2i(s.Workspace)); err != nil {
 			return err
 		}
 		if _, err := tx.exec(ctx, `INSERT INTO session_leases (session_id) VALUES (?)`, s.ID); err != nil {
@@ -234,6 +237,9 @@ func (o *ops) ListSessions(ctx context.Context, f store.SessionFilter) ([]store.
 	}
 	if f.WebUserID != "" {
 		where, args = append(where, "project_id IN (SELECT id FROM projects WHERE user_id = ?)"), append(args, f.WebUserID)
+	}
+	if f.Runnable {
+		where = append(where, "NOT "+workspaceBlocked)
 	}
 	if f.After != nil {
 		where, args = append(where, "(last_activity_at, session_id) < (?, ?)"), append(args, f.After.LastActivityAt, f.After.ID)
@@ -683,6 +689,9 @@ func (o *ops) AcquireLease(ctx context.Context, r store.LeaseRequest) (store.Lea
 				return fmt.Errorf("%w: worker %q of the session's user", store.ErrNotFound, r.WorkerID)
 			}
 			return mapErr(err)
+		}
+		if s.WorkspaceBlocked {
+			return fmt.Errorf("%w: workspace is not ready", store.ErrLeaseHeld)
 		}
 		l, err := tx.getLease(ctx, r.SessionID)
 		if err != nil {

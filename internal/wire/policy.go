@@ -15,6 +15,14 @@ const FeatureListDirectory = "device_query.list_directory"
 // FeatureGitRemote is the daemon Hello capability for git remote queries.
 const FeatureGitRemote = "device_query.git_remote"
 
+// FeaturePrepareWorkspace is the daemon Hello capability for the
+// PrepareWorkspaceRequest device call.
+const FeaturePrepareWorkspace = "device_call.prepare_workspace"
+
+// FeatureRemoveWorkspace is the daemon Hello capability for the
+// RemoveWorkspaceRequest device call.
+const FeatureRemoveWorkspace = "device_call.remove_workspace"
+
 // DeviceQueryFeature returns the capability required by a recognized query.
 func DeviceQueryFeature(q *circusv1.DeviceQuery) string {
 	switch {

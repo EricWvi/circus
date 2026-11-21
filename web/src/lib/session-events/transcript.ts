@@ -5,7 +5,8 @@
 // ids, or the seq of a marker), so a replay after a reconnect produces the
 // same ids and React keeps its elements.
 
-import type { RawSessionEvent } from "@/api/types"
+import type { RawSessionEvent, WorkspaceStatus } from "@/api/types"
+import { workspaceFromPayload, type LiveWorkspace } from "@/lib/workspace"
 
 import { NO_RESULT_TOOL_ERROR, settleEvents } from "../settle"
 import type {
@@ -25,6 +26,8 @@ export interface Transcript {
   readonly turnOpen: boolean
   /** The number of the latest turn that started, 0 before any. */
   readonly turnNo: number
+  /** The latest workspace state the stream brought (durable or live); null before any. */
+  readonly workspace: LiveWorkspace | null
   /** Bookkeeping; opaque to callers. */
   readonly internal: Internal
 }
@@ -50,6 +53,14 @@ interface Internal {
   started: Map<string, number>
   /** The API message being streamed, from its message_start. */
   streaming: string | null
+  /** The workspace's latest recorded failure, shown once a later change supersedes it. */
+  failure: {
+    seq: number
+    at: string
+    status: WorkspaceStatus
+    /** The view event it came after, where its line goes; null at the start. */
+    after: string | null
+  } | null
 }
 
 export const emptyTranscript: Transcript = {
@@ -57,6 +68,7 @@ export const emptyTranscript: Transcript = {
   events: [],
   turnOpen: false,
   turnNo: 0,
+  workspace: null,
   internal: {
     order: [],
     byId: new Map(),
@@ -67,6 +79,7 @@ export const emptyTranscript: Transcript = {
     denied: new Set(),
     started: new Map(),
     streaming: null,
+    failure: null,
   },
 }
 
@@ -179,6 +192,7 @@ class Builder {
   lastSeq: number
   turnOpen: boolean
   turnNo: number
+  workspace: LiveWorkspace | null
   private changed = false
 
   constructor(private readonly base: Transcript) {
@@ -193,10 +207,12 @@ class Builder {
       denied: new Set(i.denied),
       started: new Map(i.started),
       streaming: i.streaming,
+      failure: i.failure,
     }
     this.lastSeq = base.lastSeq
     this.turnOpen = base.turnOpen
     this.turnNo = base.turnNo
+    this.workspace = base.workspace
   }
 
   build(): Transcript {
@@ -205,6 +221,7 @@ class Builder {
       lastSeq: this.lastSeq,
       turnOpen: this.turnOpen,
       turnNo: this.turnNo,
+      workspace: this.workspace,
       events: this.changed ? order.map((id) => byId.get(id)!) : this.base.events,
       internal: this.internal,
     }
@@ -230,6 +247,21 @@ class Builder {
     if (existing) order.splice(order.indexOf(event.id), 1)
     const tail = order.findIndex((id) => isStreaming(byId.get(id)!))
     order.splice(tail < 0 ? order.length : tail, 0, event.id)
+    byId.set(event.id, event)
+    this.changed = true
+  }
+
+  /**
+   * Adds a durable event where an earlier one would have gone: right after
+   * `after` (at the start when null), or at the end of what is recorded
+   * when `after` is no longer in the view.
+   */
+  private insertAfter(after: string | null, event: SessionEvent) {
+    const { order, byId } = this.internal
+    if (byId.has(event.id)) return
+    const i = after === null ? 0 : order.indexOf(after) + 1
+    if (after !== null && i === 0) return this.add(event)
+    order.splice(i, 0, event.id)
     byId.set(event.id, event)
     this.changed = true
   }
@@ -336,10 +368,55 @@ class Builder {
       case "error":
         if (raw.seq > 0) this.add({ kind: "turn_error", id: `error:${raw.seq}`, at, message: str(p.message) })
         return
+      case "workspace":
+        return this.workspaceChanged(p, raw, at)
       default:
         // Progress, background tasks, notices and kinds this view doesn't know.
         return
     }
+  }
+
+  /**
+   * The session's folder changed. The latest state, live or recorded, is
+   * kept for the banner, which says what is under way. The conversation
+   * keeps outcomes only: a line once the folder is ready, and a failure's
+   * line once a later recorded change (a retry) supersedes it; until then
+   * the banner says it. Events of the same time are the same change, so the
+   * later one in the stream wins.
+   */
+  private workspaceChanged(p: Json, raw: RawSessionEvent, at: string) {
+    const status = workspaceFromPayload(p, raw.tsUnixMs)
+    if (!status) return
+    const durable = raw.seq > 0
+    const previous = this.workspace
+    if (!previous || raw.tsUnixMs >= previous.tsUnixMs) {
+      // An attempt starts when the workspace moves to preparing (from
+      // pending: a new attempt always waits first). Anything said while it
+      // prepares, such as moving to the background, belongs to the same
+      // attempt, whether sent live or recorded.
+      let attemptStartedAtUnixMs = 0
+      if (status.state === "preparing") {
+        const same = previous?.status.state === "preparing" && previous.attemptStartedAtUnixMs > 0
+        if (same) attemptStartedAtUnixMs = previous.attemptStartedAtUnixMs
+        else if (durable) attemptStartedAtUnixMs = raw.tsUnixMs
+      }
+      this.workspace = { status, tsUnixMs: raw.tsUnixMs, attemptStartedAtUnixMs }
+    }
+    if (!durable) return
+    const failure = this.internal.failure
+    if (failure && status.state !== "failed") {
+      this.insertAfter(failure.after, {
+        kind: "workspace",
+        id: `workspace:${failure.seq}`,
+        at: failure.at,
+        status: failure.status,
+      })
+    }
+    this.internal.failure =
+      status.state === "failed"
+        ? { seq: raw.seq, at, status, after: this.internal.order.findLast((id) => !isStreaming(this.get(id)!)) ?? null }
+        : null
+    if (status.state === "ready") this.add({ kind: "workspace", id: `workspace:${raw.seq}`, at, status })
   }
 
   /**

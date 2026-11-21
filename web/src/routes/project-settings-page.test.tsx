@@ -4,9 +4,14 @@ import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { seedState, type MockState } from "@/api/mock/state"
+import { queryKeys } from "@/api/query-client"
+import type { CircusClient } from "@/api/types"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
+import { PROJECTS_WAITING_INTERVAL_MS } from "@/api/hooks"
+import { NOTICE_FOLD_MS, NOTICE_VISIBLE_MS } from "@/components/notices"
 import { advance, renderWithBackend } from "@/test/render"
+import { withDefaultProject } from "@/test/workspace-state"
 
 import { ProjectSettingsPage } from "./project-settings-page"
 
@@ -453,3 +458,345 @@ describe("layout", () => {
   })
 })
 
+
+describe("default folders", () => {
+  /**
+   * The settings of "fresh", whose locations are default folders on these
+   * devices, after starting a session in each and then running `edit` on
+   * the mock's state.
+   */
+  async function renderFresh(repoUrl: string, devices: string[], edit: (state: MockState) => void = () => {}) {
+    const state = withDefaultProject(repoUrl, devices)
+    const result = await renderSettings("fresh", state)
+    for (const [locationIndex] of devices.entries()) {
+      const created = result.backend.client.sessions.createSession({
+        projectId: "fresh",
+        locationIndex,
+        clientRequestId: crypto.randomUUID(),
+      })
+      await advance(10)
+      await created
+    }
+    edit(state)
+    act(() => void result.queryClient.invalidateQueries({ queryKey: queryKeys.projects }))
+    await advance(10)
+    return result
+  }
+
+  /** The line under the default location on `device`. */
+  const statusOf = (device: string) => {
+    const select = screen
+      .getAllByRole("combobox", { name: /^Device for location/ })
+      .find((c) => c.textContent?.startsWith(device))!
+    return select.closest("li")!.querySelector<HTMLElement>("[data-workspace]")
+  }
+
+  it("shows each folder's state, and its absolute path once ready", async () => {
+    const { state } = await renderFresh("https://example.com/fresh.git", ["devbox", "eric-mbp", "eric-win"])
+    // Sessions just started: pending everywhere.
+    expect(statusOf("devbox")?.textContent).toBe("Preparing starts shortly")
+    // While folders only wait, the projects are read again once a minute.
+    await advance(PROJECTS_WAITING_INTERVAL_MS)
+    expect(statusOf("eric-win")?.textContent).toBe("Waiting for eric-win to come online")
+    const devbox = statusOf("devbox")!
+    expect(devbox.textContent).toBe("Ready at /home/eric/circus/projects/fresh")
+    expect(statusOf("eric-mbp")?.textContent).toBe("Ready at /Users/eric/circus/projects/fresh")
+    // The path field describes it.
+    const path = screen.getByRole("textbox", { name: "Path for location 1" })
+    expect(document.getElementById(path.getAttribute("aria-describedby")!)?.textContent).toBe(devbox.textContent)
+    expect(state.sessions.length).toBeGreaterThan(0)
+  })
+
+  it("says what a folder is waiting for or why it failed", async () => {
+    const { queryClient } = await renderFresh("https://example.com/slow.git", ["devbox", "eric-mbp", "palace-builder"], (state) => {
+      const ws = (device: string) => state.sessions.find((s) => s.projectId === "fresh" && s.device === device)!.workspace!
+      Object.assign(ws("eric-mbp"), { state: "failed", error: "git_unavailable" })
+      Object.assign(ws("palace-builder"), { waiting: "daemon_outdated" })
+    })
+    expect(statusOf("eric-mbp")?.textContent).toBe("Couldn't prepare the folder: git is not installed on eric-mbp")
+    expect(statusOf("palace-builder")?.textContent).toBe("Update circus on palace-builder to prepare the folder")
+    await advance(1_000)
+    act(() => void queryClient.invalidateQueries({ queryKey: queryKeys.projects }))
+    await advance(10)
+    expect(statusOf("devbox")?.textContent).toBe("Cloning the repository…")
+  })
+
+  it("leaves a location without a folder as it was", async () => {
+    await renderSettings("circus")
+    expect(document.querySelector("[data-workspace]")).toBeNull()
+  })
+})
+
+describe("deleting a project with default folders", () => {
+  /**
+   * "fresh" with ready folders on devbox and eric-mbp, a pending one on the
+   * offline eric-win, none on palace-builder, every session stopped, and
+   * then `edit` run on the mock's state.
+   */
+  async function renderDeletable(
+    repoUrl: string,
+    wrapClient?: (client: CircusClient) => CircusClient,
+    devices = ["devbox", "eric-mbp", "eric-win", "palace-builder"],
+    edit: (state: MockState) => void = () => {},
+  ) {
+    const state = withDefaultProject(repoUrl, devices)
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/p/:projectId/settings",
+          element: (
+            <SidebarProvider>
+              <ProjectSettingsPage />
+            </SidebarProvider>
+          ),
+        },
+        { path: "*", element: <h1>Home</h1> },
+      ],
+      { initialEntries: ["/p/fresh/settings"] },
+    )
+    const result = await renderWithBackend(<RouterProvider router={router} />, { state, wrapClient })
+    const { client } = result.backend
+    for (const [locationIndex, device] of devices.entries()) {
+      if (device === "palace-builder") continue
+      const created = client.sessions.createSession({ projectId: "fresh", locationIndex, clientRequestId: crypto.randomUUID() })
+      await advance(10)
+      await created
+    }
+    await advance(4_000)
+    for (const s of state.sessions) if (s.projectId === "fresh") s.state = "stopped"
+    edit(state)
+    act(() => void result.queryClient.invalidateQueries())
+    await advance(10)
+    return { ...result, router }
+  }
+
+  const openDialog = async (name = "Delete project") => {
+    fireEvent.click(screen.getByRole("button", { name }))
+    await advance(10)
+    return screen.getByRole("dialog")
+  }
+
+  it("offers to delete ready folders on online devices, unticked, and says the others stay", async () => {
+    const requests: { projectId: string; removeWorkspacesOn?: string[] }[] = []
+    const { router } = await renderDeletable(
+      "",
+      (client) => ({
+        ...client,
+        projects: {
+          ...client.projects,
+          deleteProject: (req) => {
+            requests.push(req)
+            return client.projects.deleteProject(req)
+          },
+        },
+      }),
+    )
+    const dialog = within(await openDialog())
+    const devbox = dialog.getByRole("checkbox", { name: "Also delete /home/eric/circus/projects/fresh on devbox" })
+    const mbp = dialog.getByRole("checkbox", { name: "Also delete /Users/eric/circus/projects/fresh on eric-mbp" })
+    expect(dialog.getAllByRole("checkbox")).toHaveLength(2)
+    expect(devbox.getAttribute("aria-checked")).toBe("false")
+    expect(mbp.getAttribute("aria-checked")).toBe("false")
+    // eric-win's folder was never prepared (it is offline): it can't stay.
+    // No folder on palace-builder either: nothing about them.
+    expect(dialog.queryByText(/eric-win|palace-builder/)).toBeNull()
+
+    // A label click ticks too.
+    fireEvent.click(dialog.getByText("Also delete /Users/eric/circus/projects/fresh on eric-mbp"))
+    await advance(0)
+    expect(mbp.getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(dialog.getByRole("button", { name: "Delete" }))
+    await advance(50)
+    expect(requests).toEqual([{ projectId: "fresh", removeWorkspacesOn: ["eric-mbp"] }])
+    expect(router.state.location.pathname).toBe("/")
+    // Everything was removed: nothing to report.
+    expect(screen.queryByRole("region", { name: "fresh was deleted" })).toBeNull()
+  })
+
+  it("says a ready folder on a device that is offline now stays there", async () => {
+    await renderDeletable("", undefined, undefined, (state) => {
+      state.devices.find((d) => d.name === "eric-mbp")!.online = false
+    })
+    const dialog = within(await openDialog())
+    expect(dialog.getAllByRole("checkbox")).toHaveLength(1)
+    expect(dialog.getByText("eric-mbp is offline, so /Users/eric/circus/projects/fresh stays on it.")).toBeTruthy()
+  })
+
+  it("drops the tick of a device that goes offline while the dialog is open, and keeps focus in it", async () => {
+    const requests: { removeWorkspacesOn?: string[] }[] = []
+    const { state } = await renderDeletable("", (client) => ({
+      ...client,
+      projects: { ...client.projects, deleteProject: (req) => (requests.push(req), client.projects.deleteProject(req)) },
+    }))
+    const dialog = within(await openDialog())
+    const mbp = dialog.getByRole("checkbox", { name: "Also delete /Users/eric/circus/projects/fresh on eric-mbp" })
+    fireEvent.click(mbp)
+    mbp.focus()
+    await advance(0)
+    expect(mbp.getAttribute("aria-checked")).toBe("true")
+
+    // The dialog reads the devices live.
+    state.devices.find((d) => d.name === "eric-mbp")!.online = false
+    await advance(10_000)
+    expect(dialog.queryByRole("checkbox", { name: /eric-mbp/ })).toBeNull()
+    expect(dialog.getByText("eric-mbp is offline, so /Users/eric/circus/projects/fresh stays on it.")).toBeTruthy()
+    expect(document.activeElement).toBe(dialog.getByRole("checkbox", { name: /devbox/ }))
+
+    // Back online: unticked.
+    state.devices.find((d) => d.name === "eric-mbp")!.online = true
+    await advance(10_000)
+    expect(dialog.getByRole("checkbox", { name: /eric-mbp/ }).getAttribute("aria-checked")).toBe("false")
+    fireEvent.click(dialog.getByRole("button", { name: "Delete" }))
+    await advance(50)
+    expect(requests).toEqual([{ projectId: "fresh", removeWorkspacesOn: [] }])
+  })
+
+  it("says it is checking the devices until it knows which are online", async () => {
+    let release = () => {}
+    let hold = false
+    const { queryClient } = await renderDeletable("", (client) => ({
+      ...client,
+      machines: {
+        ...client.machines,
+        listDevices: async () => {
+          if (hold) await new Promise<void>((resolve) => (release = resolve))
+          return client.machines.listDevices()
+        },
+      },
+    }))
+    hold = true
+    act(() => queryClient.removeQueries({ queryKey: queryKeys.devices }))
+    const dialog = within(await openDialog())
+    expect(dialog.getByRole("status").textContent).toBe("Checking which devices are online…")
+    expect(dialog.queryAllByRole("checkbox")).toEqual([])
+    act(() => release())
+    await advance(50)
+    expect(dialog.queryByRole("status")).toBeNull()
+    expect(dialog.getAllByRole("checkbox")).toHaveLength(2)
+  })
+
+  it("offers nothing for a folder that isn't ready", async () => {
+    await renderDeletable("https://example.com/slow.git", undefined, ["devbox", "eric-mbp"])
+    const dialog = await openDialog()
+    expect(within(dialog).queryAllByRole("checkbox")).toEqual([])
+    expect(within(dialog).queryByText(/eric-mbp|devbox/)).toBeNull()
+  })
+
+  it("sends no device when nothing is ticked", async () => {
+    const requests: { removeWorkspacesOn?: string[] }[] = []
+    await renderDeletable("", (client) => ({
+      ...client,
+      projects: { ...client.projects, deleteProject: (req) => (requests.push(req), client.projects.deleteProject(req)) },
+    }))
+    const dialog = within(await openDialog())
+    fireEvent.click(dialog.getByRole("button", { name: "Delete" }))
+    await advance(50)
+    expect(requests).toEqual([{ projectId: "fresh", removeWorkspacesOn: [] }])
+  })
+
+  it("reports folders that couldn't be deleted or were kept", async () => {
+    await renderDeletable("https://example.com/remove-fails.git", (client) => ({
+      ...client,
+      projects: {
+        ...client.projects,
+        deleteProject: async (req) => {
+          const res = await client.projects.deleteProject(req)
+          // eric-mbp went offline meanwhile.
+          return {
+            workspaceRemovals: res.workspaceRemovals.map((r) =>
+              r.device === "eric-mbp" ? { ...r, outcome: "kept" as const, error: "unspecified" as const } : r,
+            ),
+          }
+        },
+      },
+    }))
+    const dialog = within(await openDialog())
+    for (const box of dialog.getAllByRole("checkbox")) fireEvent.click(box)
+    await advance(0)
+    fireEvent.click(dialog.getByRole("button", { name: "Delete" }))
+    await advance(50)
+    expect(screen.getByRole("heading", { name: "Home" })).toBeTruthy()
+    const notice = within(screen.getByRole("region", { name: "fresh was deleted" }))
+    expect(
+      notice.getByText("Couldn't delete /home/eric/circus/projects/fresh on devbox: permission denied"),
+    ).toBeTruthy()
+    expect(
+      notice.getByText(
+        "Kept /Users/eric/circus/projects/fresh on eric-mbp: the device was offline, out of date, had no ready folder or didn't answer in time.",
+      ),
+    ).toBeTruthy()
+    // The device's own words, in the code font.
+    expect(notice.getByText(/Permission denied$/).className).toContain("font-mono")
+    fireEvent.click(notice.getByRole("button", { name: "Close" }))
+    await advance(NOTICE_FOLD_MS)
+    expect(screen.queryByRole("region", { name: "fresh was deleted" })).toBeNull()
+  })
+
+  it("keeps a failure until the user has done something, then lets it go by itself", async () => {
+    await renderDeletable("https://example.com/remove-fails.git")
+    const dialog = within(await openDialog())
+    fireEvent.click(dialog.getAllByRole("checkbox")[0])
+    await advance(0)
+    fireEvent.click(dialog.getByRole("button", { name: "Delete" }))
+    await advance(50)
+    const region = () => screen.queryByRole("region", { name: "fresh was deleted" })
+    // The click on Delete came before it: not seen yet.
+    await advance(60_000)
+    expect(region()).not.toBeNull()
+    fireEvent.pointerDown(document.body)
+    await advance(NOTICE_VISIBLE_MS - 100)
+    expect(region()).not.toBeNull()
+    await advance(100)
+    // It folds away.
+    await advance(NOTICE_FOLD_MS)
+    expect(region()).toBeNull()
+  })
+
+  it("doesn't go by itself while the pointer is on it or focus in it", async () => {
+    await renderDeletable("https://example.com/remove-fails.git")
+    fireEvent.click(within(await openDialog()).getAllByRole("checkbox")[0])
+    await advance(0)
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }))
+    await advance(50)
+    const region = () => screen.queryByRole("region", { name: "fresh was deleted" })
+    const box = region()!.parentElement!
+    fireEvent.pointerDown(document.body)
+    fireEvent.pointerEnter(box)
+    await advance(NOTICE_VISIBLE_MS * 3)
+    expect(region()).not.toBeNull()
+    fireEvent.pointerLeave(box)
+    const close = within(region()!).getByRole("button", { name: "Close" })
+    act(() => close.focus())
+    await advance(NOTICE_VISIBLE_MS * 3)
+    expect(region()).not.toBeNull()
+    // Counted again once it lets go.
+    act(() => close.blur())
+    await advance(NOTICE_VISIBLE_MS)
+    await advance(NOTICE_FOLD_MS)
+    expect(region()).toBeNull()
+  })
+
+  it("puts the notice above the page, not over it", async () => {
+    await renderDeletable("https://example.com/remove-fails.git")
+    fireEvent.click(within(await openDialog()).getAllByRole("checkbox")[0])
+    await advance(0)
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }))
+    await advance(50)
+    const notice = screen.getByRole("region", { name: "fresh was deleted" })
+    // In the flow of the page, before it; nothing positions it on top.
+    expect(notice.compareDocumentPosition(screen.getByRole("heading", { name: "Home" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    for (let el: HTMLElement | null = notice; el; el = el.parentElement) {
+      expect(el.className).not.toMatch(/\b(fixed|absolute)\b/)
+    }
+  })
+
+  it("speaks Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    await renderDeletable("", undefined, undefined, (state) => {
+      state.devices.find((d) => d.name === "eric-mbp")!.online = false
+    })
+    const dialog = within(await openDialog("删除项目"))
+    expect(dialog.getByRole("checkbox", { name: "同时删除 devbox 上的工作目录 /home/eric/circus/projects/fresh" })).toBeTruthy()
+    expect(dialog.getByText("eric-mbp 离线，工作目录 /Users/eric/circus/projects/fresh 会保留在该设备上。")).toBeTruthy()
+  })
+})

@@ -115,3 +115,30 @@ func TestSubmitCallAdmission(t *testing.T) {
 		t.Fatalf("call on the resumed connection %v", u)
 	}
 }
+
+func TestWorkspaceToolsRejectedFromWorkerLink(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	w, _, err := f.st.EnsureWorkspace(ctx, store.Workspace{
+		ID: "workspace", UserID: f.user.ID, ProjectID: "p1", DeviceID: f.device.ID, CreatedAt: ms(f),
+	})
+	must(t, err)
+	change, err := f.st.TransitionWorkspace(ctx, w.ID, w.Expect(), store.WorkspacePatch{
+		State: store.WorkspacePreparing, Attempt: 1, CallID: "ws-on-record", TimeoutMs: 120000, UpdatedAt: ms(f),
+	})
+	must(t, err)
+	w = change.Workspace
+	worker := f.dial(0, "")
+	path := store.DefaultWorkspacePath(w.ProjectID)
+	wantCallRejected(t, submit(t, worker, &circusv1.SubmitCall{Device: f.device.Name, Call: &circusv1.DeviceCall{
+		CallId: w.CallID, SessionId: w.SessionID(), TimeoutMs: 120000,
+		Tool: &circusv1.DeviceCall_PrepareWorkspace{PrepareWorkspace: &circusv1.PrepareWorkspaceRequest{Path: path}},
+	}}), circusv1.CallUpdate_Rejected_CODE_INVALID)
+
+	_, err = f.st.MarkWorkspaceReady(ctx, w.ID, w.Expect(), "/home/u/circus/projects/p1", "created", ms(f))
+	must(t, err)
+	wantCallRejected(t, submit(t, worker, &circusv1.SubmitCall{Device: f.device.Name, Call: &circusv1.DeviceCall{
+		CallId: "ws-remove", SessionId: w.SessionID(), TimeoutMs: 30000,
+		Tool: &circusv1.DeviceCall_RemoveWorkspace{RemoveWorkspace: &circusv1.RemoveWorkspaceRequest{Path: path}},
+	}}), circusv1.CallUpdate_Rejected_CODE_INVALID)
+}

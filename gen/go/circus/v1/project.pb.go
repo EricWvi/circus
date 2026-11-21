@@ -21,6 +21,62 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type WorkspaceRemoval_Outcome int32
+
+const (
+	WorkspaceRemoval_OUTCOME_UNSPECIFIED WorkspaceRemoval_Outcome = 0
+	// Deleted (or already absent).
+	WorkspaceRemoval_OUTCOME_REMOVED WorkspaceRemoval_Outcome = 1
+	// Kept: the device was offline, too old, had no READY workspace of
+	// this project, or did not answer in time.
+	WorkspaceRemoval_OUTCOME_KEPT WorkspaceRemoval_Outcome = 2
+	// The device tried and failed; see error and error_detail.
+	WorkspaceRemoval_OUTCOME_FAILED WorkspaceRemoval_Outcome = 3
+)
+
+// Enum value maps for WorkspaceRemoval_Outcome.
+var (
+	WorkspaceRemoval_Outcome_name = map[int32]string{
+		0: "OUTCOME_UNSPECIFIED",
+		1: "OUTCOME_REMOVED",
+		2: "OUTCOME_KEPT",
+		3: "OUTCOME_FAILED",
+	}
+	WorkspaceRemoval_Outcome_value = map[string]int32{
+		"OUTCOME_UNSPECIFIED": 0,
+		"OUTCOME_REMOVED":     1,
+		"OUTCOME_KEPT":        2,
+		"OUTCOME_FAILED":      3,
+	}
+)
+
+func (x WorkspaceRemoval_Outcome) Enum() *WorkspaceRemoval_Outcome {
+	p := new(WorkspaceRemoval_Outcome)
+	*p = x
+	return p
+}
+
+func (x WorkspaceRemoval_Outcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (WorkspaceRemoval_Outcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_project_proto_enumTypes[0].Descriptor()
+}
+
+func (WorkspaceRemoval_Outcome) Type() protoreflect.EnumType {
+	return &file_circus_v1_project_proto_enumTypes[0]
+}
+
+func (x WorkspaceRemoval_Outcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use WorkspaceRemoval_Outcome.Descriptor instead.
+func (WorkspaceRemoval_Outcome) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_project_proto_rawDescGZIP(), []int{11, 0}
+}
+
 type Project struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
@@ -546,10 +602,17 @@ func (x *UpdateProjectResponse) GetProject() *Project {
 }
 
 type DeleteProjectRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// Names of devices whose default directory of this project should be
+	// deleted too (the user ticked them). Each must have a READY workspace of
+	// this project and be online; otherwise the deletion of the project goes
+	// ahead and that device's result says why its directory was kept. Each
+	// device is asked once, in parallel, for at most 30 seconds, before the
+	// project is deleted; nothing is retried later. At most 32 names.
+	RemoveWorkspacesOn []string `protobuf:"bytes,2,rep,name=remove_workspaces_on,json=removeWorkspacesOn,proto3" json:"remove_workspaces_on,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *DeleteProjectRequest) Reset() {
@@ -589,10 +652,19 @@ func (x *DeleteProjectRequest) GetProjectId() string {
 	return ""
 }
 
+func (x *DeleteProjectRequest) GetRemoveWorkspacesOn() []string {
+	if x != nil {
+		return x.RemoveWorkspacesOn
+	}
+	return nil
+}
+
 type DeleteProjectResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// One per name in remove_workspaces_on, in request order.
+	WorkspaceRemovals []*WorkspaceRemoval `protobuf:"bytes,1,rep,name=workspace_removals,json=workspaceRemovals,proto3" json:"workspace_removals,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *DeleteProjectResponse) Reset() {
@@ -625,6 +697,94 @@ func (*DeleteProjectResponse) Descriptor() ([]byte, []int) {
 	return file_circus_v1_project_proto_rawDescGZIP(), []int{10}
 }
 
+func (x *DeleteProjectResponse) GetWorkspaceRemovals() []*WorkspaceRemoval {
+	if x != nil {
+		return x.WorkspaceRemovals
+	}
+	return nil
+}
+
+// WorkspaceRemoval reports what happened to one device's default directory
+// when its project was deleted.
+type WorkspaceRemoval struct {
+	state   protoimpl.MessageState   `protogen:"open.v1"`
+	Device  string                   `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	Outcome WorkspaceRemoval_Outcome `protobuf:"varint,2,opt,name=outcome,proto3,enum=circus.v1.WorkspaceRemoval_Outcome" json:"outcome,omitempty"`
+	// The directory, absolute when known.
+	Path string `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	// FAILED only.
+	Error WorkspaceError `protobuf:"varint,4,opt,name=error,proto3,enum=circus.v1.WorkspaceError" json:"error,omitempty"`
+	// FAILED only: at most 1024 bytes.
+	ErrorDetail   string `protobuf:"bytes,5,opt,name=error_detail,json=errorDetail,proto3" json:"error_detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkspaceRemoval) Reset() {
+	*x = WorkspaceRemoval{}
+	mi := &file_circus_v1_project_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkspaceRemoval) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkspaceRemoval) ProtoMessage() {}
+
+func (x *WorkspaceRemoval) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_project_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkspaceRemoval.ProtoReflect.Descriptor instead.
+func (*WorkspaceRemoval) Descriptor() ([]byte, []int) {
+	return file_circus_v1_project_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *WorkspaceRemoval) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *WorkspaceRemoval) GetOutcome() WorkspaceRemoval_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return WorkspaceRemoval_OUTCOME_UNSPECIFIED
+}
+
+func (x *WorkspaceRemoval) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *WorkspaceRemoval) GetError() WorkspaceError {
+	if x != nil {
+		return x.Error
+	}
+	return WorkspaceError_WORKSPACE_ERROR_UNSPECIFIED
+}
+
+func (x *WorkspaceRemoval) GetErrorDetail() string {
+	if x != nil {
+		return x.ErrorDetail
+	}
+	return ""
+}
+
 type Project_Location struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of one of the user's devices (at most 128 bytes).
@@ -645,13 +805,17 @@ type Project_Location struct {
 	// device name again binds the device that now has that name. Whoever
 	// starts a session here must check the device again.
 	DeviceRevoked bool `protobuf:"varint,4,opt,name=device_revoked,json=deviceRevoked,proto3" json:"device_revoked,omitempty"`
+	// Output only, ignored on input. Set only for a default location whose
+	// workspace exists (a session was created there); its path is absolute
+	// once READY.
+	Workspace     *WorkspaceStatus `protobuf:"bytes,5,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Project_Location) Reset() {
 	*x = Project_Location{}
-	mi := &file_circus_v1_project_proto_msgTypes[11]
+	mi := &file_circus_v1_project_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -663,7 +827,7 @@ func (x *Project_Location) String() string {
 func (*Project_Location) ProtoMessage() {}
 
 func (x *Project_Location) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_project_proto_msgTypes[11]
+	mi := &file_circus_v1_project_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -707,6 +871,13 @@ func (x *Project_Location) GetDeviceRevoked() bool {
 	return false
 }
 
+func (x *Project_Location) GetWorkspace() *WorkspaceStatus {
+	if x != nil {
+		return x.Workspace
+	}
+	return nil
+}
+
 type UpdateProjectRequest_LocationList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Locations     []*Project_Location    `protobuf:"bytes,1,rep,name=locations,proto3" json:"locations,omitempty"`
@@ -716,7 +887,7 @@ type UpdateProjectRequest_LocationList struct {
 
 func (x *UpdateProjectRequest_LocationList) Reset() {
 	*x = UpdateProjectRequest_LocationList{}
-	mi := &file_circus_v1_project_proto_msgTypes[12]
+	mi := &file_circus_v1_project_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -728,7 +899,7 @@ func (x *UpdateProjectRequest_LocationList) String() string {
 func (*UpdateProjectRequest_LocationList) ProtoMessage() {}
 
 func (x *UpdateProjectRequest_LocationList) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_project_proto_msgTypes[12]
+	mi := &file_circus_v1_project_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -755,7 +926,7 @@ var File_circus_v1_project_proto protoreflect.FileDescriptor
 
 const file_circus_v1_project_proto_rawDesc = "" +
 	"\n" +
-	"\x17circus/v1/project.proto\x12\tcircus.v1\"\xa1\x03\n" +
+	"\x17circus/v1/project.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x19circus/v1/workspace.proto\"\xdb\x03\n" +
 	"\aProject\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
@@ -764,12 +935,13 @@ const file_circus_v1_project_proto_rawDesc = "" +
 	"\x12last_used_location\x18\x04 \x01(\rR\x10lastUsedLocation\x12+\n" +
 	"\x12created_at_unix_ms\x18\x05 \x01(\x03R\x0fcreatedAtUnixMs\x12+\n" +
 	"\x12updated_at_unix_ms\x18\x06 \x01(\x03R\x0fupdatedAtUnixMs\x12\x19\n" +
-	"\brepo_url\x18\a \x01(\tR\arepoUrl\x1a\x84\x01\n" +
+	"\brepo_url\x18\a \x01(\tR\arepoUrl\x1a\xbe\x01\n" +
 	"\bLocation\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12%\n" +
 	"\x0eeffective_path\x18\x03 \x01(\tR\reffectivePath\x12%\n" +
-	"\x0edevice_revoked\x18\x04 \x01(\bR\rdeviceRevoked\"\x80\x01\n" +
+	"\x0edevice_revoked\x18\x04 \x01(\bR\rdeviceRevoked\x128\n" +
+	"\tworkspace\x18\x05 \x01(\v2\x1a.circus.v1.WorkspaceStatusR\tworkspace\"\x80\x01\n" +
 	"\x14CreateProjectRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x129\n" +
 	"\tlocations\x18\x02 \x03(\v2\x1b.circus.v1.Project.LocationR\tlocations\x12\x19\n" +
@@ -799,11 +971,24 @@ const file_circus_v1_project_proto_rawDesc = "" +
 	"\t_repo_urlB\x1e\n" +
 	"\x1c_expected_updated_at_unix_ms\"E\n" +
 	"\x15UpdateProjectResponse\x12,\n" +
-	"\aproject\x18\x01 \x01(\v2\x12.circus.v1.ProjectR\aproject\"5\n" +
+	"\aproject\x18\x01 \x01(\v2\x12.circus.v1.ProjectR\aproject\"g\n" +
 	"\x14DeleteProjectRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\"\x17\n" +
-	"\x15DeleteProjectResponse2\xa8\x03\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x120\n" +
+	"\x14remove_workspaces_on\x18\x02 \x03(\tR\x12removeWorkspacesOn\"c\n" +
+	"\x15DeleteProjectResponse\x12J\n" +
+	"\x12workspace_removals\x18\x01 \x03(\v2\x1b.circus.v1.WorkspaceRemovalR\x11workspaceRemovals\"\xb0\x02\n" +
+	"\x10WorkspaceRemoval\x12\x16\n" +
+	"\x06device\x18\x01 \x01(\tR\x06device\x12=\n" +
+	"\aoutcome\x18\x02 \x01(\x0e2#.circus.v1.WorkspaceRemoval.OutcomeR\aoutcome\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12/\n" +
+	"\x05error\x18\x04 \x01(\x0e2\x19.circus.v1.WorkspaceErrorR\x05error\x12!\n" +
+	"\ferror_detail\x18\x05 \x01(\tR\verrorDetail\"]\n" +
+	"\aOutcome\x12\x17\n" +
+	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fOUTCOME_REMOVED\x10\x01\x12\x10\n" +
+	"\fOUTCOME_KEPT\x10\x02\x12\x12\n" +
+	"\x0eOUTCOME_FAILED\x10\x032\xa8\x03\n" +
 	"\x0eProjectService\x12R\n" +
 	"\rCreateProject\x12\x1f.circus.v1.CreateProjectRequest\x1a .circus.v1.CreateProjectResponse\x12O\n" +
 	"\fListProjects\x12\x1e.circus.v1.ListProjectsRequest\x1a\x1f.circus.v1.ListProjectsResponse\x12I\n" +
@@ -824,46 +1009,55 @@ func file_circus_v1_project_proto_rawDescGZIP() []byte {
 	return file_circus_v1_project_proto_rawDescData
 }
 
-var file_circus_v1_project_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_circus_v1_project_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_circus_v1_project_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_circus_v1_project_proto_goTypes = []any{
-	(*Project)(nil),                           // 0: circus.v1.Project
-	(*CreateProjectRequest)(nil),              // 1: circus.v1.CreateProjectRequest
-	(*CreateProjectResponse)(nil),             // 2: circus.v1.CreateProjectResponse
-	(*ListProjectsRequest)(nil),               // 3: circus.v1.ListProjectsRequest
-	(*ListProjectsResponse)(nil),              // 4: circus.v1.ListProjectsResponse
-	(*GetProjectRequest)(nil),                 // 5: circus.v1.GetProjectRequest
-	(*GetProjectResponse)(nil),                // 6: circus.v1.GetProjectResponse
-	(*UpdateProjectRequest)(nil),              // 7: circus.v1.UpdateProjectRequest
-	(*UpdateProjectResponse)(nil),             // 8: circus.v1.UpdateProjectResponse
-	(*DeleteProjectRequest)(nil),              // 9: circus.v1.DeleteProjectRequest
-	(*DeleteProjectResponse)(nil),             // 10: circus.v1.DeleteProjectResponse
-	(*Project_Location)(nil),                  // 11: circus.v1.Project.Location
-	(*UpdateProjectRequest_LocationList)(nil), // 12: circus.v1.UpdateProjectRequest.LocationList
+	(WorkspaceRemoval_Outcome)(0),             // 0: circus.v1.WorkspaceRemoval.Outcome
+	(*Project)(nil),                           // 1: circus.v1.Project
+	(*CreateProjectRequest)(nil),              // 2: circus.v1.CreateProjectRequest
+	(*CreateProjectResponse)(nil),             // 3: circus.v1.CreateProjectResponse
+	(*ListProjectsRequest)(nil),               // 4: circus.v1.ListProjectsRequest
+	(*ListProjectsResponse)(nil),              // 5: circus.v1.ListProjectsResponse
+	(*GetProjectRequest)(nil),                 // 6: circus.v1.GetProjectRequest
+	(*GetProjectResponse)(nil),                // 7: circus.v1.GetProjectResponse
+	(*UpdateProjectRequest)(nil),              // 8: circus.v1.UpdateProjectRequest
+	(*UpdateProjectResponse)(nil),             // 9: circus.v1.UpdateProjectResponse
+	(*DeleteProjectRequest)(nil),              // 10: circus.v1.DeleteProjectRequest
+	(*DeleteProjectResponse)(nil),             // 11: circus.v1.DeleteProjectResponse
+	(*WorkspaceRemoval)(nil),                  // 12: circus.v1.WorkspaceRemoval
+	(*Project_Location)(nil),                  // 13: circus.v1.Project.Location
+	(*UpdateProjectRequest_LocationList)(nil), // 14: circus.v1.UpdateProjectRequest.LocationList
+	(WorkspaceError)(0),                       // 15: circus.v1.WorkspaceError
+	(*WorkspaceStatus)(nil),                   // 16: circus.v1.WorkspaceStatus
 }
 var file_circus_v1_project_proto_depIdxs = []int32{
-	11, // 0: circus.v1.Project.locations:type_name -> circus.v1.Project.Location
-	11, // 1: circus.v1.CreateProjectRequest.locations:type_name -> circus.v1.Project.Location
-	0,  // 2: circus.v1.CreateProjectResponse.project:type_name -> circus.v1.Project
-	0,  // 3: circus.v1.ListProjectsResponse.projects:type_name -> circus.v1.Project
-	0,  // 4: circus.v1.GetProjectResponse.project:type_name -> circus.v1.Project
-	12, // 5: circus.v1.UpdateProjectRequest.locations:type_name -> circus.v1.UpdateProjectRequest.LocationList
-	0,  // 6: circus.v1.UpdateProjectResponse.project:type_name -> circus.v1.Project
-	11, // 7: circus.v1.UpdateProjectRequest.LocationList.locations:type_name -> circus.v1.Project.Location
-	1,  // 8: circus.v1.ProjectService.CreateProject:input_type -> circus.v1.CreateProjectRequest
-	3,  // 9: circus.v1.ProjectService.ListProjects:input_type -> circus.v1.ListProjectsRequest
-	5,  // 10: circus.v1.ProjectService.GetProject:input_type -> circus.v1.GetProjectRequest
-	7,  // 11: circus.v1.ProjectService.UpdateProject:input_type -> circus.v1.UpdateProjectRequest
-	9,  // 12: circus.v1.ProjectService.DeleteProject:input_type -> circus.v1.DeleteProjectRequest
-	2,  // 13: circus.v1.ProjectService.CreateProject:output_type -> circus.v1.CreateProjectResponse
-	4,  // 14: circus.v1.ProjectService.ListProjects:output_type -> circus.v1.ListProjectsResponse
-	6,  // 15: circus.v1.ProjectService.GetProject:output_type -> circus.v1.GetProjectResponse
-	8,  // 16: circus.v1.ProjectService.UpdateProject:output_type -> circus.v1.UpdateProjectResponse
-	10, // 17: circus.v1.ProjectService.DeleteProject:output_type -> circus.v1.DeleteProjectResponse
-	13, // [13:18] is the sub-list for method output_type
-	8,  // [8:13] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	13, // 0: circus.v1.Project.locations:type_name -> circus.v1.Project.Location
+	13, // 1: circus.v1.CreateProjectRequest.locations:type_name -> circus.v1.Project.Location
+	1,  // 2: circus.v1.CreateProjectResponse.project:type_name -> circus.v1.Project
+	1,  // 3: circus.v1.ListProjectsResponse.projects:type_name -> circus.v1.Project
+	1,  // 4: circus.v1.GetProjectResponse.project:type_name -> circus.v1.Project
+	14, // 5: circus.v1.UpdateProjectRequest.locations:type_name -> circus.v1.UpdateProjectRequest.LocationList
+	1,  // 6: circus.v1.UpdateProjectResponse.project:type_name -> circus.v1.Project
+	12, // 7: circus.v1.DeleteProjectResponse.workspace_removals:type_name -> circus.v1.WorkspaceRemoval
+	0,  // 8: circus.v1.WorkspaceRemoval.outcome:type_name -> circus.v1.WorkspaceRemoval.Outcome
+	15, // 9: circus.v1.WorkspaceRemoval.error:type_name -> circus.v1.WorkspaceError
+	16, // 10: circus.v1.Project.Location.workspace:type_name -> circus.v1.WorkspaceStatus
+	13, // 11: circus.v1.UpdateProjectRequest.LocationList.locations:type_name -> circus.v1.Project.Location
+	2,  // 12: circus.v1.ProjectService.CreateProject:input_type -> circus.v1.CreateProjectRequest
+	4,  // 13: circus.v1.ProjectService.ListProjects:input_type -> circus.v1.ListProjectsRequest
+	6,  // 14: circus.v1.ProjectService.GetProject:input_type -> circus.v1.GetProjectRequest
+	8,  // 15: circus.v1.ProjectService.UpdateProject:input_type -> circus.v1.UpdateProjectRequest
+	10, // 16: circus.v1.ProjectService.DeleteProject:input_type -> circus.v1.DeleteProjectRequest
+	3,  // 17: circus.v1.ProjectService.CreateProject:output_type -> circus.v1.CreateProjectResponse
+	5,  // 18: circus.v1.ProjectService.ListProjects:output_type -> circus.v1.ListProjectsResponse
+	7,  // 19: circus.v1.ProjectService.GetProject:output_type -> circus.v1.GetProjectResponse
+	9,  // 20: circus.v1.ProjectService.UpdateProject:output_type -> circus.v1.UpdateProjectResponse
+	11, // 21: circus.v1.ProjectService.DeleteProject:output_type -> circus.v1.DeleteProjectResponse
+	17, // [17:22] is the sub-list for method output_type
+	12, // [12:17] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_project_proto_init() }
@@ -871,19 +1065,22 @@ func file_circus_v1_project_proto_init() {
 	if File_circus_v1_project_proto != nil {
 		return
 	}
+	file_circus_v1_device_proto_init()
+	file_circus_v1_workspace_proto_init()
 	file_circus_v1_project_proto_msgTypes[7].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_project_proto_rawDesc), len(file_circus_v1_project_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   13,
+			NumEnums:      1,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_circus_v1_project_proto_goTypes,
 		DependencyIndexes: file_circus_v1_project_proto_depIdxs,
+		EnumInfos:         file_circus_v1_project_proto_enumTypes,
 		MessageInfos:      file_circus_v1_project_proto_msgTypes,
 	}.Build()
 	File_circus_v1_project_proto = out.File

@@ -67,6 +67,20 @@ continuing a broken session work as on the server. For anything more
 (reconnects, a lost worker, broken transcripts on demand), run against the
 control plane with the scripted worker below.
 
+A session started in a project's default location (an empty path) waits
+for that folder on its device (`src/api/mock/workspaces.ts`, in this tab's
+memory like the sessions): it is pending, preparing a second later, and
+ready (cloned, or created without a repository URL) a couple of seconds
+after that; then the session's messages get their replies. The project's
+repository URL picks other outcomes: one containing `offline` first waits
+for the device for a few seconds, `outdated` waits for circus to be updated
+for good, `slow` clones for half a minute (in the background after a few
+seconds), and `not-empty`, `mismatch`, `clone-fails` and `no-space` fail
+the first attempt that way (Retry then succeeds). With `remove-fails`,
+deleting the folder along with the project fails. An offline device
+(`eric-win`) waits until it is online; a Windows device that is online
+fails as unsupported.
+
 ## Running against the control plane
 
 Run the control plane and the Web UI in separate terminals from the

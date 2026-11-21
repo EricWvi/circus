@@ -902,7 +902,9 @@ const (
 
 // Session is one remote Claude Code session.
 type Session struct {
-	ID string // UUIDv7, chosen by the control plane; never reused
+	Workspace        bool   // the session uses a project default directory
+	WorkspaceBlocked bool   // computed from the workspace row on reads
+	ID               string // UUIDv7, chosen by the control plane; never reused
 	// UserID owns the project, session, and the devices and workers that serve it.
 	UserID          string
 	ProjectID       string
@@ -910,7 +912,7 @@ type Session struct {
 	LocationIndex   uint32 // resolved project location at creation
 	Title           string
 	// LastActivityAt is the maximum of creation, stored durable event times
-	// and accepted user input times. It never decreases.
+	// (excluding workspace events), and accepted user input times. It never decreases.
 	LastActivityAt int64
 	// PendingApprovalCount excludes approvals expired at the read's supplied now.
 	PendingApprovalCount uint32
@@ -980,6 +982,7 @@ type SessionCursor struct {
 // SessionFilter selects sessions for ListSessions. Limit is required
 // (1..MaxPageSize); other empty fields do not filter.
 type SessionFilter struct {
+	Runnable  bool // skip sessions blocked on workspace preparation
 	UserID    string
 	ProjectID string
 	// WebUserID selects the sessions of the projects this Web user owns
@@ -1538,6 +1541,7 @@ const (
 	EventKindInputAccepted    = "INPUT_ACCEPTED"
 	EventKindApprovalResolved = "APPROVAL_RESOLVED"
 	EventKindSessionState     = "SESSION_STATE"
+	EventKindWorkspace        = "WORKSPACE"
 )
 
 // ControlPlaneOnlyKind reports whether only the control plane records events
@@ -1545,7 +1549,7 @@ const (
 func ControlPlaneOnlyKind(kind string) bool {
 	switch kind {
 	case EventKindTranscriptGapAccepted, EventKindTurnInterrupted, EventKindTurnStopped,
-		EventKindInputAccepted, EventKindApprovalResolved, EventKindSessionState:
+		EventKindInputAccepted, EventKindApprovalResolved, EventKindSessionState, EventKindWorkspace:
 		return true
 	}
 	return false

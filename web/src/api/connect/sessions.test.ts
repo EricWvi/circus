@@ -6,6 +6,8 @@ import {
   Session_State,
   TurnOutcome,
 } from "@circus/proto/circus/v1/session_pb"
+import { PrepareWorkspaceResult_Action, WorkspaceError } from "@circus/proto/circus/v1/device_pb"
+import { WorkspaceStatus_State, WorkspaceStatus_Waiting } from "@circus/proto/circus/v1/workspace_pb"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { ApiError } from "@/api/errors"
@@ -163,6 +165,84 @@ describe("the Connect session client", () => {
       cwd: "",
     })
     expect(title).toBe("Renamed")
+  })
+
+  it("maps a session's workspace, and retries it", async () => {
+    let retried = ""
+    const client = sessions({
+      listSessions: () => ({
+        sessions: [
+          {
+            ...protoSession,
+            workspace: {
+              state: WorkspaceStatus_State.FAILED,
+              device: "box",
+              path: "~/circus/projects/p1",
+              repoUrl: "https://h/r.git",
+              error: WorkspaceError.REMOTE_MISMATCH,
+              errorDetail: "git@h:other/r",
+              attemptStartedAtUnixMs: 10n,
+              updatedAtUnixMs: 20n,
+            },
+          },
+          protoSession,
+        ],
+        nextPageToken: "",
+      }),
+      retryWorkspace: (req) => {
+        retried = req.sessionId
+        return { workspace: { state: WorkspaceStatus_State.PENDING, waiting: WorkspaceStatus_Waiting.RETRY, device: "box" } }
+      },
+      getSession: () => ({
+        ...protoSession,
+        config: { defaultDevice: "box", cwds: [{ device: "box", cwd: "/home/u/circus/projects/p1" }] },
+        workspace: {
+          state: WorkspaceStatus_State.READY,
+          device: "box",
+          path: "/home/u/circus/projects/p1",
+          action: PrepareWorkspaceResult_Action.USED_REPOSITORY,
+          error: 77 as WorkspaceError,
+        },
+      }),
+    })
+    const [withWorkspace, without] = await client.listSessions({})
+    expect(withWorkspace.workspace).toEqual({
+      state: "failed",
+      waiting: "unspecified",
+      device: "box",
+      path: "~/circus/projects/p1",
+      repoUrl: "https://h/r.git",
+      background: false,
+      action: "unspecified",
+      error: "remote_mismatch",
+      errorDetail: "git@h:other/r",
+      attemptStartedAtUnixMs: 10,
+      updatedAtUnixMs: 20,
+    })
+    expect(without.workspace).toBeUndefined()
+    expect((await client.getSession({ sessionId: "s1" })).workspace).toMatchObject({
+      state: "ready",
+      action: "used_repository",
+      error: "unspecified",
+    })
+    expect(await client.retryWorkspace({ sessionId: "s1" })).toMatchObject({ state: "pending", waiting: "retry" })
+    expect(retried).toBe("s1")
+  })
+
+  it("treats a retry answer without a workspace as malformed", async () => {
+    const client = sessions({ retryWorkspace: () => ({}) })
+    await expect(client.retryWorkspace({ sessionId: "s1" })).rejects.toMatchObject({ code: "internal" })
+  })
+
+  it("names workspace events", async () => {
+    const client = sessions({
+      async *watchSession() {
+        yield { seq: 3n, tsUnixMs: 4n, kind: SessionEvent_Kind.WORKSPACE, payloadJson: '{"state":"ready"}' }
+      },
+    })
+    for await (const e of client.watchSession({ sessionId: "s1", afterSeq: 0, signal: new AbortController().signal })) {
+      expect(e.kind).toBe("workspace")
+    }
   })
 
   it("recovers by accepting the gap", async () => {

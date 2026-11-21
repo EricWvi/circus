@@ -458,7 +458,7 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 	if e != nil && e.holder != (holder{}) {
 		s.unbind(id, e, true)
 	}
-	if st.Session.State == store.SessionQueued {
+	if st.Session.State == store.SessionQueued && !st.Session.WorkspaceBlocked {
 		s.offer(id, st.Session)
 		return
 	}
@@ -554,7 +554,7 @@ func (s *Service) rescanUser(ctx context.Context, user string) {
 	var after *store.SessionCursor
 	for ctx.Err() == nil {
 		tctx, cancel := storeCtx(ctx)
-		page, err := s.cfg.Store.ListSessions(tctx, store.SessionFilter{UserID: user, States: []store.SessionState{store.SessionQueued},
+		page, err := s.cfg.Store.ListSessions(tctx, store.SessionFilter{UserID: user, Runnable: true, States: []store.SessionState{store.SessionQueued},
 			Now: s.nowMs(), Limit: store.MaxPageSize, After: after})
 		cancel()
 		if err != nil {

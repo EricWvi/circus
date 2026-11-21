@@ -1,10 +1,12 @@
 package sessions_test
 
 import (
+	"errors"
 	"testing"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
+	"github.com/EricWvi/circus/internal/controlplane/workspaces"
 	"github.com/EricWvi/circus/internal/store"
 	wc "github.com/EricWvi/circus/internal/testutil/workerclient"
 )
@@ -149,5 +151,48 @@ func TestTableBound(t *testing.T) {
 	f.settle()
 	if n := sessions.Tracked(f.svc); n != 0 {
 		t.Fatalf("%d tracked after release", n)
+	}
+}
+
+func TestWorkspaceSchedulingGate(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	w, _, err := f.st.EnsureWorkspace(ctx, store.Workspace{
+		ID: "workspace", UserID: f.user.ID, ProjectID: "p1", DeviceID: f.device.ID, CreatedAt: ms(f),
+	})
+	must(t, err)
+	_, err = f.st.CreateSession(ctx, store.Session{
+		ID: "blocked", ClientRequestID: "blocked", ClaudeSessionID: "workspace-claude",
+		UserID: f.user.ID, ProjectID: w.ProjectID, DefaultDeviceID: f.device.ID, CreatedAt: ms(f), Workspace: true,
+	}, []store.SessionCwd{{DeviceID: f.device.ID, Cwd: store.DefaultWorkspacePath(w.ProjectID)}}, 10)
+	must(t, err)
+	f.input("blocked", "message", store.InputNormal)
+	c := f.dial(0, "boot")
+	events := f.attach(c, 1)
+	f.settle()
+	noOffer(t, events)
+	// A wake after attachment exercises evaluate directly, without the
+	// Runnable filter on the attachment scan.
+	f.input("blocked", "after-attach", store.InputNow)
+	f.settle()
+	noOffer(t, events)
+	wantRejected(t, call(t, c, wc.Acquire("blocked", true)), circusv1.SessionReply_Rejected_CODE_NOT_OFFERED)
+	_, err = f.st.AcquireLease(ctx, store.LeaseRequest{SessionID: "blocked", WorkerID: f.workers[0].Identity.ID,
+		BootID: "boot", ConnID: "conn", Now: ms(f), ExpiresAt: ms(f) + 1000})
+	if !errors.Is(err, store.ErrLeaseHeld) {
+		t.Fatalf("blocked direct acquire = %v", err)
+	}
+
+	change, err := f.st.TransitionWorkspace(ctx, w.ID, w.Expect(), store.WorkspacePatch{
+		State: store.WorkspacePreparing, Attempt: 1, CallID: "ws-call", TimeoutMs: 120000, UpdatedAt: ms(f),
+	})
+	must(t, err)
+	change, err = f.st.MarkWorkspaceReady(ctx, w.ID, change.Workspace.Expect(), "/home/device/project", "created", ms(f))
+	must(t, err)
+	workspaces.Publish(nil, f.svc, change)
+	offerTo(t, events, "blocked")
+	reply := call(t, c, wc.Acquire("blocked", true))
+	if cwd := reply.GetLease().GetConfig().GetCwds()[0].GetCwd(); cwd != "/home/device/project" {
+		t.Fatalf("lease cwd = %q", cwd)
 	}
 }

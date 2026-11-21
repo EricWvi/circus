@@ -17,6 +17,7 @@ import type {
   SessionDetails,
   SessionSummary,
   User,
+  WorkspaceStatus,
 } from "./types"
 
 export function useAuth() {
@@ -39,11 +40,33 @@ export function useCurrentUser(): { user: User | null; isSuper: boolean } {
   return { user, isSuper: user?.role === "super" }
 }
 
+/** How often the projects refetch while every unready default folder waits for its device or an update. */
+export const PROJECTS_WAITING_INTERVAL_MS = 60_000
+
+/** Waits that can last for days: until a device is back, or its circus updated. */
+const longWait = (ws: WorkspaceStatus) =>
+  ws.state === "pending" && (ws.waiting === "device_offline" || ws.waiting === "daemon_outdated")
+
+/**
+ * How often the projects refetch for their default folders' state: like
+ * the session lists while one is being prepared or about to be, slowly
+ * while each of the others waits for a device or an update, not at all
+ * once none is pending or preparing.
+ */
+export function projectsRefetchInterval(projects: readonly Project[] | undefined): number | false {
+  const unready = (projects ?? []).flatMap((p) =>
+    p.locations.flatMap((l) => (l.workspace?.state === "pending" || l.workspace?.state === "preparing" ? [l.workspace] : [])),
+  )
+  if (unready.length === 0) return false
+  return unready.every(longWait) ? PROJECTS_WAITING_INTERVAL_MS : SESSIONS_LIVE_INTERVAL_MS
+}
+
 export function useProjects() {
   const client = useClient()
   return useQuery({
     queryKey: queryKeys.projects,
     queryFn: () => client.projects.listProjects(),
+    refetchInterval: (query) => projectsRefetchInterval(query.state.data),
   })
 }
 
@@ -103,6 +126,26 @@ export function useStopSession() {
 export function useRecoverSession() {
   const client = useClient()
   return useSessionAction((req: { sessionId: string }) => client.sessions.recoverSession(req), (r) => r.sessionId)
+}
+
+/**
+ * Starts the session's failed folder over. The answer is the folder's new
+ * state, which the session shows at once.
+ */
+export function useRetryWorkspace() {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (req: { sessionId: string }) => client.sessions.retryWorkspace(req),
+    onSuccess: (workspace, { sessionId }) => {
+      queryClient.setQueryData<SessionDetails>(queryKeys.session(sessionId), (s) => s && { ...s, workspace })
+    },
+    onSettled: (_data, _error, { sessionId }) => {
+      invalidateSession(queryClient, sessionId)
+      // The project's locations show the folder too.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
+    },
+  })
 }
 
 export function useResolveApproval() {
@@ -342,7 +385,7 @@ export function useDeleteProject() {
   const client = useClient()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (req: { projectId: string }) => client.projects.deleteProject(req),
+    mutationFn: (req: { projectId: string; removeWorkspacesOn?: string[] }) => client.projects.deleteProject(req),
     onSuccess: (_, { projectId }) => {
       // Drop the project from the cache now, so whatever renders next (the
       // landing page) never picks it, and its own session list isn't refetched.

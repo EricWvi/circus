@@ -2,15 +2,19 @@
 // @generated from file circus/v1/project.proto (package circus.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { WorkspaceError } from "./device_pb.js";
+import { file_circus_v1_device } from "./device_pb.js";
+import type { WorkspaceStatus } from "./workspace_pb.js";
+import { file_circus_v1_workspace } from "./workspace_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file circus/v1/project.proto.
  */
 export const file_circus_v1_project: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvcHJvamVjdC5wcm90bxIJY2lyY3VzLnYxIpsCCgdQcm9qZWN0EhIKCnByb2plY3RfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIuCglsb2NhdGlvbnMYAyADKAsyGy5jaXJjdXMudjEuUHJvamVjdC5Mb2NhdGlvbhIaChJsYXN0X3VzZWRfbG9jYXRpb24YBCABKA0SGgoSY3JlYXRlZF9hdF91bml4X21zGAUgASgDEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgGIAEoAxIQCghyZXBvX3VybBgHIAEoCRpYCghMb2NhdGlvbhIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCRIWCg5lZmZlY3RpdmVfcGF0aBgDIAEoCRIWCg5kZXZpY2VfcmV2b2tlZBgEIAEoCCJmChRDcmVhdGVQcm9qZWN0UmVxdWVzdBIMCgRuYW1lGAEgASgJEi4KCWxvY2F0aW9ucxgCIAMoCzIbLmNpcmN1cy52MS5Qcm9qZWN0LkxvY2F0aW9uEhAKCHJlcG9fdXJsGAMgASgJIjwKFUNyZWF0ZVByb2plY3RSZXNwb25zZRIjCgdwcm9qZWN0GAEgASgLMhIuY2lyY3VzLnYxLlByb2plY3QiFQoTTGlzdFByb2plY3RzUmVxdWVzdCI8ChRMaXN0UHJvamVjdHNSZXNwb25zZRIkCghwcm9qZWN0cxgBIAMoCzISLmNpcmN1cy52MS5Qcm9qZWN0IicKEUdldFByb2plY3RSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiOQoSR2V0UHJvamVjdFJlc3BvbnNlEiMKB3Byb2plY3QYASABKAsyEi5jaXJjdXMudjEuUHJvamVjdCLtAgoUVXBkYXRlUHJvamVjdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIRCgRuYW1lGAIgASgJSACIAQESPwoJbG9jYXRpb25zGAMgASgLMiwuY2lyY3VzLnYxLlVwZGF0ZVByb2plY3RSZXF1ZXN0LkxvY2F0aW9uTGlzdBIfChJsYXN0X3VzZWRfbG9jYXRpb24YBCABKA1IAYgBARIVCghyZXBvX3VybBgFIAEoCUgCiAEBEigKG2V4cGVjdGVkX3VwZGF0ZWRfYXRfdW5peF9tcxgGIAEoA0gDiAEBGj4KDExvY2F0aW9uTGlzdBIuCglsb2NhdGlvbnMYASADKAsyGy5jaXJjdXMudjEuUHJvamVjdC5Mb2NhdGlvbkIHCgVfbmFtZUIVChNfbGFzdF91c2VkX2xvY2F0aW9uQgsKCV9yZXBvX3VybEIeChxfZXhwZWN0ZWRfdXBkYXRlZF9hdF91bml4X21zIjwKFVVwZGF0ZVByb2plY3RSZXNwb25zZRIjCgdwcm9qZWN0GAEgASgLMhIuY2lyY3VzLnYxLlByb2plY3QiKgoURGVsZXRlUHJvamVjdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCSIXChVEZWxldGVQcm9qZWN0UmVzcG9uc2UyqAMKDlByb2plY3RTZXJ2aWNlElIKDUNyZWF0ZVByb2plY3QSHy5jaXJjdXMudjEuQ3JlYXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuQ3JlYXRlUHJvamVjdFJlc3BvbnNlEk8KDExpc3RQcm9qZWN0cxIeLmNpcmN1cy52MS5MaXN0UHJvamVjdHNSZXF1ZXN0Gh8uY2lyY3VzLnYxLkxpc3RQcm9qZWN0c1Jlc3BvbnNlEkkKCkdldFByb2plY3QSHC5jaXJjdXMudjEuR2V0UHJvamVjdFJlcXVlc3QaHS5jaXJjdXMudjEuR2V0UHJvamVjdFJlc3BvbnNlElIKDVVwZGF0ZVByb2plY3QSHy5jaXJjdXMudjEuVXBkYXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuVXBkYXRlUHJvamVjdFJlc3BvbnNlElIKDURlbGV0ZVByb2plY3QSHy5jaXJjdXMudjEuRGVsZXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuRGVsZXRlUHJvamVjdFJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z");
+  fileDesc("ChdjaXJjdXMvdjEvcHJvamVjdC5wcm90bxIJY2lyY3VzLnYxIssCCgdQcm9qZWN0EhIKCnByb2plY3RfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIuCglsb2NhdGlvbnMYAyADKAsyGy5jaXJjdXMudjEuUHJvamVjdC5Mb2NhdGlvbhIaChJsYXN0X3VzZWRfbG9jYXRpb24YBCABKA0SGgoSY3JlYXRlZF9hdF91bml4X21zGAUgASgDEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgGIAEoAxIQCghyZXBvX3VybBgHIAEoCRqHAQoITG9jYXRpb24SDgoGZGV2aWNlGAEgASgJEgwKBHBhdGgYAiABKAkSFgoOZWZmZWN0aXZlX3BhdGgYAyABKAkSFgoOZGV2aWNlX3Jldm9rZWQYBCABKAgSLQoJd29ya3NwYWNlGAUgASgLMhouY2lyY3VzLnYxLldvcmtzcGFjZVN0YXR1cyJmChRDcmVhdGVQcm9qZWN0UmVxdWVzdBIMCgRuYW1lGAEgASgJEi4KCWxvY2F0aW9ucxgCIAMoCzIbLmNpcmN1cy52MS5Qcm9qZWN0LkxvY2F0aW9uEhAKCHJlcG9fdXJsGAMgASgJIjwKFUNyZWF0ZVByb2plY3RSZXNwb25zZRIjCgdwcm9qZWN0GAEgASgLMhIuY2lyY3VzLnYxLlByb2plY3QiFQoTTGlzdFByb2plY3RzUmVxdWVzdCI8ChRMaXN0UHJvamVjdHNSZXNwb25zZRIkCghwcm9qZWN0cxgBIAMoCzISLmNpcmN1cy52MS5Qcm9qZWN0IicKEUdldFByb2plY3RSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiOQoSR2V0UHJvamVjdFJlc3BvbnNlEiMKB3Byb2plY3QYASABKAsyEi5jaXJjdXMudjEuUHJvamVjdCLtAgoUVXBkYXRlUHJvamVjdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIRCgRuYW1lGAIgASgJSACIAQESPwoJbG9jYXRpb25zGAMgASgLMiwuY2lyY3VzLnYxLlVwZGF0ZVByb2plY3RSZXF1ZXN0LkxvY2F0aW9uTGlzdBIfChJsYXN0X3VzZWRfbG9jYXRpb24YBCABKA1IAYgBARIVCghyZXBvX3VybBgFIAEoCUgCiAEBEigKG2V4cGVjdGVkX3VwZGF0ZWRfYXRfdW5peF9tcxgGIAEoA0gDiAEBGj4KDExvY2F0aW9uTGlzdBIuCglsb2NhdGlvbnMYASADKAsyGy5jaXJjdXMudjEuUHJvamVjdC5Mb2NhdGlvbkIHCgVfbmFtZUIVChNfbGFzdF91c2VkX2xvY2F0aW9uQgsKCV9yZXBvX3VybEIeChxfZXhwZWN0ZWRfdXBkYXRlZF9hdF91bml4X21zIjwKFVVwZGF0ZVByb2plY3RSZXNwb25zZRIjCgdwcm9qZWN0GAEgASgLMhIuY2lyY3VzLnYxLlByb2plY3QiSAoURGVsZXRlUHJvamVjdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIcChRyZW1vdmVfd29ya3NwYWNlc19vbhgCIAMoCSJQChVEZWxldGVQcm9qZWN0UmVzcG9uc2USNwoSd29ya3NwYWNlX3JlbW92YWxzGAEgAygLMhsuY2lyY3VzLnYxLldvcmtzcGFjZVJlbW92YWwihQIKEFdvcmtzcGFjZVJlbW92YWwSDgoGZGV2aWNlGAEgASgJEjQKB291dGNvbWUYAiABKA4yIy5jaXJjdXMudjEuV29ya3NwYWNlUmVtb3ZhbC5PdXRjb21lEgwKBHBhdGgYAyABKAkSKAoFZXJyb3IYBCABKA4yGS5jaXJjdXMudjEuV29ya3NwYWNlRXJyb3ISFAoMZXJyb3JfZGV0YWlsGAUgASgJIl0KB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhMKD09VVENPTUVfUkVNT1ZFRBABEhAKDE9VVENPTUVfS0VQVBACEhIKDk9VVENPTUVfRkFJTEVEEAMyqAMKDlByb2plY3RTZXJ2aWNlElIKDUNyZWF0ZVByb2plY3QSHy5jaXJjdXMudjEuQ3JlYXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuQ3JlYXRlUHJvamVjdFJlc3BvbnNlEk8KDExpc3RQcm9qZWN0cxIeLmNpcmN1cy52MS5MaXN0UHJvamVjdHNSZXF1ZXN0Gh8uY2lyY3VzLnYxLkxpc3RQcm9qZWN0c1Jlc3BvbnNlEkkKCkdldFByb2plY3QSHC5jaXJjdXMudjEuR2V0UHJvamVjdFJlcXVlc3QaHS5jaXJjdXMudjEuR2V0UHJvamVjdFJlc3BvbnNlElIKDVVwZGF0ZVByb2plY3QSHy5jaXJjdXMudjEuVXBkYXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuVXBkYXRlUHJvamVjdFJlc3BvbnNlElIKDURlbGV0ZVByb2plY3QSHy5jaXJjdXMudjEuRGVsZXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuRGVsZXRlUHJvamVjdFJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_workspace]);
 
 /**
  * @generated from message circus.v1.Project
@@ -118,6 +122,15 @@ export type Project_Location = Message<"circus.v1.Project.Location"> & {
    * @generated from field: bool device_revoked = 4;
    */
   deviceRevoked: boolean;
+
+  /**
+   * Output only, ignored on input. Set only for a default location whose
+   * workspace exists (a session was created there); its path is absolute
+   * once READY.
+   *
+   * @generated from field: circus.v1.WorkspaceStatus workspace = 5;
+   */
+  workspace?: WorkspaceStatus | undefined;
 };
 
 /**
@@ -343,6 +356,18 @@ export type DeleteProjectRequest = Message<"circus.v1.DeleteProjectRequest"> & {
    * @generated from field: string project_id = 1;
    */
   projectId: string;
+
+  /**
+   * Names of devices whose default directory of this project should be
+   * deleted too (the user ticked them). Each must have a READY workspace of
+   * this project and be online; otherwise the deletion of the project goes
+   * ahead and that device's result says why its directory was kept. Each
+   * device is asked once, in parallel, for at most 30 seconds, before the
+   * project is deleted; nothing is retried later. At most 32 names.
+   *
+   * @generated from field: repeated string remove_workspaces_on = 2;
+   */
+  removeWorkspacesOn: string[];
 };
 
 /**
@@ -356,6 +381,12 @@ export const DeleteProjectRequestSchema: GenMessage<DeleteProjectRequest> = /*@_
  * @generated from message circus.v1.DeleteProjectResponse
  */
 export type DeleteProjectResponse = Message<"circus.v1.DeleteProjectResponse"> & {
+  /**
+   * One per name in remove_workspaces_on, in request order.
+   *
+   * @generated from field: repeated circus.v1.WorkspaceRemoval workspace_removals = 1;
+   */
+  workspaceRemovals: WorkspaceRemoval[];
 };
 
 /**
@@ -364,6 +395,90 @@ export type DeleteProjectResponse = Message<"circus.v1.DeleteProjectResponse"> &
  */
 export const DeleteProjectResponseSchema: GenMessage<DeleteProjectResponse> = /*@__PURE__*/
   messageDesc(file_circus_v1_project, 10);
+
+/**
+ * WorkspaceRemoval reports what happened to one device's default directory
+ * when its project was deleted.
+ *
+ * @generated from message circus.v1.WorkspaceRemoval
+ */
+export type WorkspaceRemoval = Message<"circus.v1.WorkspaceRemoval"> & {
+  /**
+   * @generated from field: string device = 1;
+   */
+  device: string;
+
+  /**
+   * @generated from field: circus.v1.WorkspaceRemoval.Outcome outcome = 2;
+   */
+  outcome: WorkspaceRemoval_Outcome;
+
+  /**
+   * The directory, absolute when known.
+   *
+   * @generated from field: string path = 3;
+   */
+  path: string;
+
+  /**
+   * FAILED only.
+   *
+   * @generated from field: circus.v1.WorkspaceError error = 4;
+   */
+  error: WorkspaceError;
+
+  /**
+   * FAILED only: at most 1024 bytes.
+   *
+   * @generated from field: string error_detail = 5;
+   */
+  errorDetail: string;
+};
+
+/**
+ * Describes the message circus.v1.WorkspaceRemoval.
+ * Use `create(WorkspaceRemovalSchema)` to create a new message.
+ */
+export const WorkspaceRemovalSchema: GenMessage<WorkspaceRemoval> = /*@__PURE__*/
+  messageDesc(file_circus_v1_project, 11);
+
+/**
+ * @generated from enum circus.v1.WorkspaceRemoval.Outcome
+ */
+export enum WorkspaceRemoval_Outcome {
+  /**
+   * @generated from enum value: OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Deleted (or already absent).
+   *
+   * @generated from enum value: OUTCOME_REMOVED = 1;
+   */
+  REMOVED = 1,
+
+  /**
+   * Kept: the device was offline, too old, had no READY workspace of
+   * this project, or did not answer in time.
+   *
+   * @generated from enum value: OUTCOME_KEPT = 2;
+   */
+  KEPT = 2,
+
+  /**
+   * The device tried and failed; see error and error_detail.
+   *
+   * @generated from enum value: OUTCOME_FAILED = 3;
+   */
+  FAILED = 3,
+}
+
+/**
+ * Describes the enum circus.v1.WorkspaceRemoval.Outcome.
+ */
+export const WorkspaceRemoval_OutcomeSchema: GenEnum<WorkspaceRemoval_Outcome> = /*@__PURE__*/
+  enumDesc(file_circus_v1_project, 11, 0);
 
 /**
  * ProjectService manages the signed-in browser user's projects.

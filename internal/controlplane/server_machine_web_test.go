@@ -274,9 +274,15 @@ func TestWebMachineOwnership(t *testing.T) {
 		}
 	}
 
+	// Use explicit locations so this test exercises owner-based scheduling
+	// independently of default directory preparation on the device.
 	createProject := func(browser *http.Client, device string) (*connect.Response[circusv1.CreateProjectResponse], error) {
+		path := "/work"
+		if browser == bob {
+			path = `C:\work`
+		}
 		return circusv1connect.NewProjectServiceClient(browser, h.base).CreateProject(ctx, connect.NewRequest(&circusv1.CreateProjectRequest{
-			Name: "Project", Locations: []*circusv1.Project_Location{{Device: device}},
+			Name: "Project", Locations: []*circusv1.Project_Location{{Device: device, Path: path}},
 		}))
 	}
 	if _, err := createProject(bob, "admin-only"); connect.CodeOf(err) != connect.CodeInvalidArgument {

@@ -69,6 +69,9 @@ const (
 	// SessionServiceRecoverSessionProcedure is the fully-qualified name of the SessionService's
 	// RecoverSession RPC.
 	SessionServiceRecoverSessionProcedure = "/circus.v1.SessionService/RecoverSession"
+	// SessionServiceRetryWorkspaceProcedure is the fully-qualified name of the SessionService's
+	// RetryWorkspace RPC.
+	SessionServiceRetryWorkspaceProcedure = "/circus.v1.SessionService/RetryWorkspace"
 )
 
 // SessionServiceClient is a client for the circus.v1.SessionService service.
@@ -91,6 +94,7 @@ type SessionServiceClient interface {
 	StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	RecoverSession(context.Context, *connect.Request[v1.RecoverSessionRequest]) (*connect.Response[v1.RecoverSessionResponse], error)
+	RetryWorkspace(context.Context, *connect.Request[v1.RetryWorkspaceRequest]) (*connect.Response[v1.RetryWorkspaceResponse], error)
 }
 
 // NewSessionServiceClient constructs a client for the circus.v1.SessionService service. By default,
@@ -176,6 +180,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("RecoverSession")),
 			connect.WithClientOptions(opts...),
 		),
+		retryWorkspace: connect.NewClient[v1.RetryWorkspaceRequest, v1.RetryWorkspaceResponse](
+			httpClient,
+			baseURL+SessionServiceRetryWorkspaceProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("RetryWorkspace")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -193,6 +203,7 @@ type sessionServiceClient struct {
 	stopSession     *connect.Client[v1.StopSessionRequest, v1.StopSessionResponse]
 	deleteSession   *connect.Client[v1.DeleteSessionRequest, v1.DeleteSessionResponse]
 	recoverSession  *connect.Client[v1.RecoverSessionRequest, v1.RecoverSessionResponse]
+	retryWorkspace  *connect.Client[v1.RetryWorkspaceRequest, v1.RetryWorkspaceResponse]
 }
 
 // CreateSession calls circus.v1.SessionService.CreateSession.
@@ -255,6 +266,11 @@ func (c *sessionServiceClient) RecoverSession(ctx context.Context, req *connect.
 	return c.recoverSession.CallUnary(ctx, req)
 }
 
+// RetryWorkspace calls circus.v1.SessionService.RetryWorkspace.
+func (c *sessionServiceClient) RetryWorkspace(ctx context.Context, req *connect.Request[v1.RetryWorkspaceRequest]) (*connect.Response[v1.RetryWorkspaceResponse], error) {
+	return c.retryWorkspace.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the circus.v1.SessionService service.
 type SessionServiceHandler interface {
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
@@ -275,6 +291,7 @@ type SessionServiceHandler interface {
 	StopSession(context.Context, *connect.Request[v1.StopSessionRequest]) (*connect.Response[v1.StopSessionResponse], error)
 	DeleteSession(context.Context, *connect.Request[v1.DeleteSessionRequest]) (*connect.Response[v1.DeleteSessionResponse], error)
 	RecoverSession(context.Context, *connect.Request[v1.RecoverSessionRequest]) (*connect.Response[v1.RecoverSessionResponse], error)
+	RetryWorkspace(context.Context, *connect.Request[v1.RetryWorkspaceRequest]) (*connect.Response[v1.RetryWorkspaceResponse], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -356,6 +373,12 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("RecoverSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceRetryWorkspaceHandler := connect.NewUnaryHandler(
+		SessionServiceRetryWorkspaceProcedure,
+		svc.RetryWorkspace,
+		connect.WithSchema(sessionServiceMethods.ByName("RetryWorkspace")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/circus.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SessionServiceCreateSessionProcedure:
@@ -382,6 +405,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceDeleteSessionHandler.ServeHTTP(w, r)
 		case SessionServiceRecoverSessionProcedure:
 			sessionServiceRecoverSessionHandler.ServeHTTP(w, r)
+		case SessionServiceRetryWorkspaceProcedure:
+			sessionServiceRetryWorkspaceHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -437,4 +462,8 @@ func (UnimplementedSessionServiceHandler) DeleteSession(context.Context, *connec
 
 func (UnimplementedSessionServiceHandler) RecoverSession(context.Context, *connect.Request[v1.RecoverSessionRequest]) (*connect.Response[v1.RecoverSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.SessionService.RecoverSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) RetryWorkspace(context.Context, *connect.Request[v1.RetryWorkspaceRequest]) (*connect.Response[v1.RetryWorkspaceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.SessionService.RetryWorkspace is not implemented"))
 }

@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next"
 import { useCurrentUser, useDevices, useProjects, useSessionList } from "@/api/hooks"
 import { Brand } from "@/components/brand"
 import { useOpenNewProject } from "@/components/projects/new-project-context"
-import { StatusDot } from "@/components/status-dot"
+import { StatusDot, WorkspaceMark } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Kbd } from "@/components/ui/kbd"
@@ -220,6 +220,7 @@ function ProjectGroup({
                   >
                     <StatusDot state={session.state} />
                     <span className="min-w-0 flex-1 truncate">{sessionTitle(session.title)}</span>
+                    <WorkspaceMark workspace={session.workspace} state={session.state} />
                     <time
                       dateTime={new Date(session.lastActivityAtUnixMs).toISOString()}
                       className="shrink-0 text-xs text-muted-foreground tabular-nums"

@@ -16,6 +16,7 @@ require (
 	golang.org/x/crypto v0.51.0
 	golang.org/x/mod v0.42.0
 	golang.org/x/oauth2 v0.37.0
+	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.45.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261110000943-09e21b237f2c
 	google.golang.org/protobuf v1.36.12
@@ -30,7 +31,6 @@ require (
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	golang.org/x/sys v0.49.0 // indirect
 	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect

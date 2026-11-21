@@ -31,6 +31,10 @@ export const en = {
     hours: "{{n}}h",
     days: "{{n}}d",
     justNow: "just now",
+    // How long something has been running, ticking by the second.
+    elapsedSeconds: "{{s}}s",
+    elapsedMinutes: "{{m}}m {{s}}s",
+    elapsedHours: "{{h}}h {{m}}m",
   },
 
   errors: {
@@ -291,6 +295,14 @@ export const en = {
     deleteBlocked_other: "Stop its {{count}} active sessions first",
     deleteBlockedLoading: "Loading sessions…",
     deleteRaced: "It has active sessions again. Stop them first.",
+    alsoDeleteFolder: "Also delete {{path}} on {{device}}",
+    checkingDevices: "Checking which devices are online…",
+    devicesUnknown: "Couldn't check which devices are online, so the default folders stay on them.",
+    folderStaysOffline: "{{device}} is offline, so {{path}} stays on it.",
+    deleted: "{{name}} was deleted",
+    folderNotDeleted: "Couldn't delete {{path}} on {{device}}: {{reason}}",
+    folderKept:
+      "Kept {{path}} on {{device}}: the device was offline, out of date, had no ready folder or didn't answer in time.",
   },
 
   // The folder picker for a location's path.
@@ -447,6 +459,72 @@ export const en = {
         denied: "Denied",
         error: "Error",
       },
+    },
+  },
+
+  // A project's default folder on a device, which is prepared (created, or
+  // the repository cloned into it) before a session there starts working.
+  workspace: {
+    waiting: {
+      deviceOffline: "Waiting for {{device}} to come online to prepare the folder",
+      daemonOutdated: "Update circus on {{device}} to prepare the folder",
+      retry: "Preparing the folder will start shortly",
+    },
+    cloning: "Cloning {{repo}} into {{path}}… ({{elapsed}})",
+    creating: "Creating {{path}}… ({{elapsed}})",
+    failed: "Couldn't prepare {{path}}: {{reason}}",
+    details: "Details",
+    retry: "Retry",
+    composerNote: "Claude starts once the folder is ready. Your messages are kept until then.",
+    // One line in the conversation for each recorded change.
+    event: {
+      cloning: "Cloning {{repo}} into {{path}}",
+      creating: "Creating {{path}}",
+      cloned: "Cloned {{repo}} into {{path}}",
+      usedRepository: "Using the existing repository at {{path}}",
+      created: "Created {{path}}",
+      usedEmpty: "Using the empty folder {{path}}",
+      ready: "The folder {{path}} is ready",
+    },
+    reason: {
+      notEmpty: "the folder already contains files",
+      remoteMismatch: "the folder is a repository of a different remote ({{detail}})",
+      remoteMismatchUnknown: "the folder is a repository of a different remote",
+      pathConflict: "a file is in the way",
+      gitUnavailable: "git is not installed on {{device}}",
+      cloneFailed: "git clone failed",
+      noSpace: "the device is out of disk space",
+      permissionDenied: "permission denied",
+      homeUnknown: "the device's home folder is unknown or not UTF-8",
+      unsupportedOs: "Windows devices are not supported yet",
+      timeout: "cloning took longer than 2 hours",
+      interrupted: "the device restarted repeatedly while preparing",
+      deviceRevoked: "the device was removed",
+      refused: "it isn't a folder circus can delete",
+      busy: "the folder is being prepared",
+      other: "something went wrong on the device; see its log",
+    },
+    // Next to a session in lists.
+    mark: {
+      preparing: "Preparing its folder",
+      failed: "Couldn't prepare its folder",
+    },
+    // The session's state in its header while it waits for its folder.
+    badge: {
+      waitingDevice: "Waiting for device",
+      waitingUpdate: "Needs update",
+      preparing: "Preparing folder",
+      failed: "Folder failed",
+    },
+    // Under a default location in the project settings.
+    location: {
+      ready: "Ready at {{path}}",
+      creating: "Creating the folder…",
+      cloning: "Cloning the repository…",
+      deviceOffline: "Waiting for {{device}} to come online",
+      daemonOutdated: "Update circus on {{device}} to prepare the folder",
+      retry: "Preparing starts shortly",
+      failed: "Couldn't prepare the folder: {{reason}}",
     },
   },
 

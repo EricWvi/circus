@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"strings"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
@@ -60,7 +61,7 @@ func (r *router) OnJobEvent(ctx context.Context, conn gateway.Connection, event 
 		return err
 	}
 	if wake {
-		r.jobEnded(j.SessionID)
+		r.notifyEndedJob(j)
 	}
 	d.seq = event.Seq
 	return nil
@@ -71,7 +72,13 @@ func (r *router) OnJobEvent(ctx context.Context, conn gateway.Connection, event 
 // user (the daemon's connection's). The session id is the daemon's claim,
 // so another user's or a made-up session is never woken.
 func (r *router) endWake(ctx context.Context, ops store.Ops, j store.Job) (bool, error) {
-	if !j.State.Terminal() || j.SessionID == "" || r.config.JobEnded == nil {
+	if !j.State.Terminal() || j.SessionID == "" {
+		return false, nil
+	}
+	if strings.HasPrefix(j.SessionID, store.WorkspaceSessionPrefix) {
+		return r.config.WorkspaceJobEnded != nil, nil
+	}
+	if r.config.JobEnded == nil {
 		return false, nil
 	}
 	s, err := ops.GetSession(ctx, j.SessionID, r.config.Clock.Now().UnixMilli())
@@ -82,6 +89,16 @@ func (r *router) endWake(ctx context.Context, ops store.Ops, j store.Job) (bool,
 		return false, err
 	}
 	return s.UserID == j.UserID, nil
+}
+
+func (r *router) notifyEndedJob(j store.Job) {
+	if strings.HasPrefix(j.SessionID, store.WorkspaceSessionPrefix) {
+		if f := r.config.WorkspaceJobEnded; f != nil {
+			f(j.UserID, j.SessionID, j.JobID)
+		}
+		return
+	}
+	r.jobEnded(j.SessionID)
 }
 
 // jobEnded tells the session scheduler that a job of the session ended (or
@@ -273,7 +290,7 @@ func (r *router) OnJobSnapshot(ctx context.Context, conn gateway.Connection, s *
 		return err
 	}
 	for _, j := range ended {
-		r.jobEnded(j.SessionID)
+		r.notifyEndedJob(j)
 	}
 	// The router currently requests only unfiltered snapshots. A truncated one
 	// omitted jobs to fit its caps, so omissions prove nothing.
@@ -330,7 +347,7 @@ func (r *router) settleOmissions(ctx context.Context, conn gateway.Connection, s
 					return err
 				}
 				if wake {
-					r.jobEnded(gone.SessionID)
+					r.notifyEndedJob(gone)
 				}
 				slog.Info("job lost", "device_id", j.DeviceID, "boot_id", j.BootID, "job_id", j.JobID, "reason", "missing from daemon snapshot")
 			}

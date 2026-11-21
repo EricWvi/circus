@@ -81,7 +81,7 @@ func (c *Client) readGitRemote(ctx context.Context, path string) *circusv1.GitRe
 	case len(url) == 0 || bytes.Equal(url, []byte("origin")):
 		result.Error = circusv1.GitRemoteError_GIT_REMOTE_ERROR_NO_ORIGIN
 	default:
-		sanitized, ok := sanitizeGitRemoteURL(string(url))
+		sanitized, ok := gitenv.SanitizeURL(string(url))
 		if !ok {
 			c.opts.Logger.Warn("could not parse git origin URL", "path", resolved.Path)
 			result.Error = circusv1.GitRemoteError_GIT_REMOTE_ERROR_FAILED

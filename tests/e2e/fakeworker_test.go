@@ -566,24 +566,28 @@ func (c interruptClock) After(d time.Duration) <-chan time.Time {
 	return c.Real.After(d)
 }
 
-func browserSessionAPI(t *testing.T, h *harness) (circusv1connect.SessionServiceClient, string) {
+func browserClients(t *testing.T, h *harness) (circusv1connect.ProjectServiceClient, circusv1connect.SessionServiceClient) {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
 	must(t, err)
 	httpClient := &http.Client{Jar: jar, Transport: http.DefaultTransport.(*http.Transport).Clone()}
 	t.Cleanup(httpClient.CloseIdleConnections)
 	ctx := testwait.Ctx(t)
-	auth := circusv1connect.NewAuthServiceClient(httpClient, h.base)
-	_, err = auth.Login(ctx, connect.NewRequest(&pb.LoginRequest{
+	_, err = circusv1connect.NewAuthServiceClient(httpClient, h.base).Login(ctx, connect.NewRequest(&pb.LoginRequest{
 		Email: enrollmentEmail, Password: enrollmentPassword,
 	}))
 	must(t, err)
-	projects := circusv1connect.NewProjectServiceClient(httpClient, h.base)
-	project, err := projects.CreateProject(ctx, connect.NewRequest(&pb.CreateProjectRequest{
+	return circusv1connect.NewProjectServiceClient(httpClient, h.base), circusv1connect.NewSessionServiceClient(httpClient, h.base)
+}
+
+func browserSessionAPI(t *testing.T, h *harness) (circusv1connect.SessionServiceClient, string) {
+	t.Helper()
+	projects, sessions := browserClients(t, h)
+	project, err := projects.CreateProject(testwait.Ctx(t), connect.NewRequest(&pb.CreateProjectRequest{
 		Name: "Fake worker", Locations: []*pb.Project_Location{{Device: "desk", Path: h.dir}},
 	}))
 	must(t, err)
-	return circusv1connect.NewSessionServiceClient(httpClient, h.base), project.Msg.GetProject().GetProjectId()
+	return sessions, project.Msg.GetProject().GetProjectId()
 }
 
 type sessionBrowser struct {

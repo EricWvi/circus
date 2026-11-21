@@ -13,12 +13,13 @@ import (
 )
 
 var (
-	ErrDeviceOffline    = errors.New("device is offline")
-	ErrQueryUnsupported = errors.New("the device's circus is too old to answer this query, please update it")
-	ErrQueryLinkClosed  = errors.New("device link closed before answering")
-	ErrQueryBusy        = errors.New("too many queries in flight for the device")
-	errQueryResult      = errors.New("device query result has no outcome")
-	errQueryResultKind  = errors.New("device query result has the wrong query kind")
+	ErrDeviceOffline      = errors.New("device is offline")
+	ErrFeatureUnsupported = errors.New("daemon did not advertise the required feature")
+	ErrQueryUnsupported   = errors.New("the device's circus is too old to answer this query, please update it")
+	ErrQueryLinkClosed    = errors.New("device link closed before answering")
+	ErrQueryBusy          = errors.New("too many queries in flight for the device")
+	errQueryResult        = errors.New("device query result has no outcome")
+	errQueryResultKind    = errors.New("device query result has the wrong query kind")
 )
 
 const (
@@ -60,6 +61,21 @@ func (p *peer) closeQueries() {
 		query.done <- queryReply{err: ErrQueryLinkClosed}
 	}
 	clear(p.queries)
+}
+
+func (h *handler) Supports(deviceID, feature string) (online, supported bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	route, ok, err := h.config.Registry.Lookup(context.Background(), deviceID)
+	if err != nil || !ok || !route.Ready {
+		return false, false
+	}
+	p := h.peers[route.Target.ConnectionID]
+	if h.closed || p == nil || p.queriesClosed || p.link.Err() != nil {
+		return false, false
+	}
+	_, supported = p.features[feature]
+	return true, supported
 }
 
 func (h *handler) Query(ctx context.Context, deviceID string, q *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {

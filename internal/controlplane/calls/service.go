@@ -69,10 +69,14 @@ func admissionCode(err error) (circusv1.CallUpdate_Rejected_Code, bool) {
 }
 
 func (r *router) Submit(ctx context.Context, user, name string, call *circusv1.DeviceCall) (*Subscription, error) {
-	return r.SubmitSession(ctx, user, name, call, Admission{})
+	return r.submit(ctx, user, name, call, Admission{}, true)
 }
 
 func (r *router) SubmitSession(ctx context.Context, user, name string, call *circusv1.DeviceCall, a Admission) (*Subscription, error) {
+	return r.submit(ctx, user, name, call, a, false)
+}
+
+func (r *router) submit(ctx context.Context, user, name string, call *circusv1.DeviceCall, a Admission, internal bool) (*Subscription, error) {
 	op, err := r.enter(ctx, false, "submit")
 	if err != nil {
 		return nil, err
@@ -82,7 +86,13 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 	if !identifier.Valid(id, false) {
 		return r.once(ctx, user, rejected("", circusv1.CallUpdate_Rejected_CODE_INVALID))
 	}
-	if !identifier.Valid(call.GetSessionId(), false) || !identifier.Valid(call.GetAgentId(), true) || toolName(call) == "" || !boundedName(user) || !boundedName(name) {
+	tool := toolName(call)
+	if !identifier.Valid(call.GetSessionId(), false) || !identifier.Valid(call.GetAgentId(), true) || tool == "" || !boundedName(user) || !boundedName(name) {
+		return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
+	}
+	prepare, remove := tool == "prepare_workspace", tool == "remove_workspace"
+	workspaceID, synthetic := strings.CutPrefix(call.SessionId, store.WorkspaceSessionPrefix)
+	if (prepare || remove) && (!internal || !synthetic || workspaceID == "") {
 		return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
 	}
 	// admit runs the session admission in the caller's Tx (or on its own
@@ -113,6 +123,26 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 		case err != nil && !errors.Is(err, store.ErrNotFound):
 			r.storeFailed(err)
 			return nil, errors.Join(ErrStoreUnavailable, err)
+		}
+	}
+	if prepare || remove {
+		admit = func(ctx context.Context, tx store.Ops) error {
+			w, err := tx.GetWorkspaceByID(ctx, workspaceID)
+			if errors.Is(err, store.ErrNotFound) || (err == nil && w.UserID != user) {
+				return refusal{circusv1.CallUpdate_Rejected_CODE_INVALID}
+			}
+			if err != nil {
+				return err
+			}
+			if (prepare && (w.State != store.WorkspacePreparing || w.CallID != id)) ||
+				(remove && w.State != store.WorkspaceReady) {
+				return refusal{circusv1.CallUpdate_Rejected_CODE_INVALID}
+			}
+			d, err := tx.GetIdentityByName(ctx, store.KindDevice, user, name)
+			if errors.Is(err, store.ErrNotFound) || (err == nil && d.ID != w.DeviceID) {
+				return refusal{circusv1.CallUpdate_Rejected_CODE_UNKNOWN_DEVICE}
+			}
+			return err
 		}
 	}
 	envelope := &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_SubmitCall{SubmitCall: &circusv1.SubmitCall{Device: name, Call: call}}}
@@ -177,6 +207,9 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 	if err != nil {
 		return nil, err
 	}
+	if remove && (!online || !route.Ready) {
+		return r.once(ctx, user, r.offline(op.ctx, id, user))
+	}
 	now := r.config.Clock.Now().UnixMilli()
 	offlineAt := int64(0)
 	if !online && device.CurrentBootID != "" {
@@ -190,7 +223,7 @@ func (r *router) SubmitSession(ctx context.Context, user, name string, call *cir
 	if err != nil {
 		return nil, err
 	}
-	row := store.Call{CallID: id, UserID: user, DeviceID: device.ID, SessionID: call.SessionId, AgentID: call.AgentId, Tool: toolName(call), RequestHash: hash[:], RequestBytes: int64(len(data)), State: store.CallAccepted, SubmittedAt: now, ToolUseID: a.ToolUseID}
+	row := store.Call{CallID: id, UserID: user, DeviceID: device.ID, SessionID: call.SessionId, AgentID: call.AgentId, Tool: tool, RequestHash: hash[:], RequestBytes: int64(len(data)), State: store.CallAccepted, SubmittedAt: now, ToolUseID: a.ToolUseID}
 	if waiting {
 		r.retain(user, id, call, cost)
 	}
@@ -342,6 +375,11 @@ func (r *router) writeDispatch(ctx context.Context, c store.Call, route gateway.
 	}
 	now := r.config.Clock.Now().UnixMilli()
 	switch {
+	case errors.Is(err, gateway.ErrFeatureUnsupported):
+		return r.complete(ctx, c, &circusv1.DeviceResult{
+			CallId: c.CallID, Output: &circusv1.ToolOutput{IsError: true},
+			Fault: &circusv1.DaemonFault{Code: circusv1.DaemonFault_CODE_TOOL_UNAVAILABLE},
+		})
 	case errors.Is(err, wire.ErrBusy):
 		return r.settle(ctx, c, store.CallRejected, store.CallPatch{FinishedAt: now, OutcomeReason: "OVERLOADED"}, rejected(c.CallID, circusv1.CallUpdate_Rejected_CODE_OVERLOADED))
 	case errors.Is(err, wire.ErrTooLarge):

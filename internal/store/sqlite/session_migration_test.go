@@ -242,3 +242,55 @@ func TestSessionProjectMigration(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceMigrationBackfillsDefaultCwds(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), dbName)
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := raw.ExecContext(ctx, query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ms, err := migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT`)
+	for _, m := range ms[:10] {
+		exec(m.sql)
+		exec(`INSERT INTO schema_migrations VALUES (?,1)`, m.version)
+	}
+	exec(`
+		INSERT INTO users(id,name,created_at) VALUES('u','user',1);
+		INSERT INTO projects(id,user_id,name,name_key,created_at,updated_at) VALUES('p','u','Project','project',1,1);
+		INSERT INTO devices(id,user_id,name,machine_id,created_at) VALUES('d','u','device','machine',1);
+		INSERT INTO sessions(session_id,user_id,claude_session_id,state,default_device_id,created_at,updated_at,project_id,last_activity_at)
+			VALUES('one','u','claude1','idle','d',1,1,'p',1),('two','u','claude2','queued','d',1,1,'p',1),('explicit','u','claude3','idle','d',1,1,'p',1);
+		INSERT INTO session_cwds(session_id,agent_id,device_id,cwd,updated_at)
+			VALUES ('one','','d','~/circus/projects/p',1),('two','','d','~/circus/projects/p',1),('explicit','','d','/a/b',1);`)
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(ctx, path, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	rows, err := db.ListProjectWorkspaces(ctx, "p", "", 10)
+	if err != nil || len(rows) != 1 || rows[0].State != store.WorkspacePending || len(rows[0].ID) != 32 || rows[0].DeviceID != "d" {
+		t.Fatalf("backfilled workspaces: %+v, %v", rows, err)
+	}
+	for _, id := range []string{"one", "two", "explicit"} {
+		s, err := db.GetSession(ctx, id, 1)
+		want := id != "explicit"
+		if err != nil || s.Workspace != want || s.WorkspaceBlocked != want {
+			t.Fatalf("backfilled session %s: %+v, %v", id, s, err)
+		}
+	}
+}

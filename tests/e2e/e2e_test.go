@@ -255,6 +255,11 @@ type harness struct {
 
 func newHarness(t *testing.T, grace ...string) *harness {
 	t.Helper()
+	return newHarnessWithDaemon(t, true, grace...)
+}
+
+func newHarnessWithDaemon(t *testing.T, startDaemon bool, grace ...string) *harness {
+	t.Helper()
 	h := &harness{t: t, dir: t.TempDir(), grace: "5s"}
 	if len(grace) > 0 {
 		h.grace = grace[0]
@@ -271,8 +276,10 @@ func newHarness(t *testing.T, grace ...string) *harness {
 	h.st, err = sqlite.Open(t.Context(), h.db, sqlite.Options{})
 	must(t, err)
 	t.Cleanup(func() { _ = h.st.Close() })
-	h.startDaemon()
-	h.readyDaemon()
+	if startDaemon {
+		h.startDaemon()
+		h.readyDaemon()
+	}
 	return h
 }
 func (h *harness) start(extra []string, input string, args ...string) *child {

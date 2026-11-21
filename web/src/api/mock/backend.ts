@@ -34,6 +34,13 @@ import {
   type MockSessionTiming,
 } from "./sessions"
 import {
+  createMockWorkspaces,
+  defaultWorkspaceTiming,
+  workspacePayload,
+  workspaceStatus,
+  type MockWorkspaceTiming,
+} from "./workspaces"
+import {
   MOCK_LOGIN_METHODS,
   OIDC_SETUP_EMAIL,
   SEED_SUPER_EMAIL,
@@ -65,6 +72,8 @@ export interface MockBackendOptions {
   now?: () => number
   /** How the scripted session replies pace themselves. */
   sessionTiming?: MockSessionTiming
+  /** How the scripted preparation of default folders paces itself. */
+  workspaceTiming?: MockWorkspaceTiming
   /** Receives notes about what the mock does in place of the real server. */
   note?: (message: string) => void
   /** Whether an OIDC provider is configured (default true). */
@@ -87,6 +96,7 @@ export function createMockBackend({
   latency = () => 100 + Math.random() * 200,
   now = Date.now,
   sessionTiming = defaultSessionTiming,
+  workspaceTiming = defaultWorkspaceTiming,
   note = () => {},
   oidc = true,
 }: MockBackendOptions): MockBackend {
@@ -237,13 +247,53 @@ export function createMockBackend({
     return out
   }
 
+  /** A session of the signed-in user's; not_found otherwise. */
+  function ownSession(sessionId: string): MockSession {
+    const owner = currentUser()
+    const session = state.sessions.find((s) => s.sessionId === sessionId)
+    const owned = session && state.projects.some((p) => p.projectId === session.projectId && p.owner === owner)
+    if (!session || !owned) throw new ApiError("not_found", "Session not found.")
+    return session
+  }
+
+  const runtime = createMockSessionRuntime({
+    sessions: () => state.sessions,
+    own: ownSession,
+    delay: () => sleep(latency()),
+    now,
+    timing: sessionTiming,
+  })
+
+  const workspaces = createMockWorkspaces({
+    now,
+    timing: workspaceTiming,
+    device: (deviceId) => state.devices.find((d) => d.deviceId === deviceId),
+    repoUrl: (projectId) => state.projects.find((p) => p.projectId === projectId)?.repoUrl ?? "",
+    changed(ws, durable) {
+      for (const s of state.sessions) {
+        if (s.workspace === ws && s.state !== "stopped") runtime.record(s, "workspace", workspacePayload(ws), durable, ws.updatedAtUnixMs)
+      }
+    },
+    ready(ws) {
+      for (const s of state.sessions) {
+        if (s.workspace !== ws) continue
+        s.cwd = ws.path
+        runtime.wake(s)
+      }
+    },
+  })
+
   const publicProject = ({ owner, updatedAtUnixMs, ...project }: MockProject): Project => ({
     ...project,
-    locations: project.locations.map(({ deviceId, ...l }) => ({
-      ...l,
-      effectivePath: l.path === "" ? defaultPath(project.projectId) : "",
-      deviceRevoked: !state.devices.some((d) => d.owner === owner && d.deviceId === deviceId),
-    })),
+    locations: project.locations.map(({ deviceId, ...l }) => {
+      const workspace = l.path === "" ? workspaces.get(`${project.projectId}/${deviceId}`) : undefined
+      return {
+        ...l,
+        effectivePath: l.path === "" ? defaultPath(project.projectId) : "",
+        deviceRevoked: !state.devices.some((d) => d.owner === owner && d.deviceId === deviceId),
+        ...(workspace ? { workspace: workspaceStatus(workspace) } : {}),
+      }
+    }),
     updatedAtUnixMs: String(updatedAtUnixMs),
   })
 
@@ -392,8 +442,11 @@ export function createMockBackend({
         },
       ),
 
-      deleteProject: call((req: { projectId: string }) => {
-        const project = ownedProject(currentUser(), req.projectId)
+      deleteProject: call((req: { projectId: string; removeWorkspacesOn?: string[] }) => {
+        const owner = currentUser()
+        const project = ownedProject(owner, req.projectId)
+        const names = req.removeWorkspacesOn ?? []
+        if (names.length > 32) throw invalid("At most 32 devices.", "remove_workspaces_on")
         const sessions = state.sessions.filter((s) => s.projectId === project.projectId)
         if (sessions.some((s) => s.state !== "stopped")) {
           throw new ApiError(
@@ -401,9 +454,19 @@ export function createMockBackend({
             "Stop every session in this project before deleting it.",
           )
         }
+        // Each named device is asked once, before the project goes.
+        const workspaceRemovals = names.map((name) =>
+          workspaces.remove(
+            project.projectId,
+            state.devices.find((d) => d.owner === owner && d.name === name),
+            name,
+          ),
+        )
         state.projects = state.projects.filter((p) => p !== project)
         state.sessions = state.sessions.filter((s) => s.projectId !== project.projectId)
+        workspaces.forget(project.projectId)
         changed()
+        return { workspaceRemovals }
       }),
     },
 
@@ -495,13 +558,17 @@ export function createMockBackend({
         // A retry that overtook this request while it waited.
         const overtaken = retried()
         if (overtaken) return overtaken
+        // A default location's folder is prepared first; the session waits for it.
+        const stored = state.projects.find((p) => p.projectId === project.projectId)?.locations[req.locationIndex]
+        const device = state.devices.find((d) => d.deviceId === stored?.deviceId)
+        const workspace = location.path === "" && device ? workspaces.ensure(project.projectId, device) : undefined
         const at = now()
         const session: MockSession = {
           sessionId: nanoid(12),
           projectId: project.projectId,
           title: "",
           device: location.device,
-          cwd: location.path || location.effectivePath,
+          cwd: location.path || (workspace?.state === "ready" ? workspace.path : location.effectivePath),
           createdAtUnixMs: at,
           lastActivityAtUnixMs: at,
           state: "idle",
@@ -511,24 +578,21 @@ export function createMockBackend({
           queue: [],
           turns: 0,
           created: { clientRequestId: key, locationIndex: req.locationIndex },
+          ...(workspace ? { workspace } : {}),
         }
         state.sessions.push(session)
         return detailsOf(session)
       }),
 
-      ...createMockSessionRuntime({
-        sessions: () => state.sessions,
-        own(sessionId) {
-          const owner = currentUser()
-          const session = state.sessions.find((s) => s.sessionId === sessionId)
-          const owned = session && state.projects.some((p) => p.projectId === session.projectId && p.owner === owner)
-          if (!session || !owned) throw new ApiError("not_found", "Session not found.")
-          return session
-        },
-        delay: () => sleep(latency()),
-        now,
-        timing: sessionTiming,
+      retryWorkspace: callAsync(async ({ sessionId }: { sessionId: string }) => {
+        await sleep(latency())
+        const s = ownSession(sessionId)
+        if (!s.workspace) throw new ApiError("failed_precondition", "The session has no workspace.")
+        workspaces.retry(s.workspace)
+        return workspaceStatus(s.workspace)
       }),
+
+      ...runtime.service,
     },
   }
 

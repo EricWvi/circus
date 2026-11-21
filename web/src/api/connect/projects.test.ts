@@ -2,7 +2,14 @@ import { BinaryWriter, WireType } from "@bufbuild/protobuf/wire"
 import { Code, ConnectError, createRouterTransport, type ServiceImpl } from "@connectrpc/connect"
 import { createConnectTransport } from "@connectrpc/connect-web"
 import { EnrollRole, MachineService } from "@circus/proto/circus/v1/machine_pb"
-import { ProjectService, type UpdateProjectRequest } from "@circus/proto/circus/v1/project_pb"
+import { WorkspaceError } from "@circus/proto/circus/v1/device_pb"
+import {
+  ProjectService,
+  WorkspaceRemoval_Outcome,
+  type DeleteProjectRequest,
+  type UpdateProjectRequest,
+} from "@circus/proto/circus/v1/project_pb"
+import { WorkspaceStatus_State } from "@circus/proto/circus/v1/workspace_pb"
 import { describe, expect, it } from "vitest"
 
 import { ApiError } from "@/api/errors"
@@ -193,8 +200,60 @@ describe("projects over Connect", () => {
       ["p1", 2],
       ["p2", 0],
     ])
-    await client.deleteProject({ projectId: "p2" })
+    expect(await client.deleteProject({ projectId: "p2" })).toEqual({ workspaceRemovals: [] })
     expect(deleted).toBe("p2")
+  })
+
+  it("maps a default location's workspace", async () => {
+    const client = projects({
+      getProject: () => ({
+        project: {
+          ...protoProject,
+          locations: [
+            protoProject.locations[0],
+            {
+              device: "box",
+              path: "",
+              effectivePath: "~/circus/projects/p1",
+              deviceRevoked: false,
+              workspace: { state: WorkspaceStatus_State.READY, device: "box", path: "/home/u/circus/projects/p1" },
+            },
+          ],
+        },
+      }),
+    })
+    const [explicit, fallback] = (await client.getProject({ projectId: "p1" })).locations
+    expect(explicit.workspace).toBeUndefined()
+    expect(fallback.workspace).toMatchObject({ state: "ready", device: "box", path: "/home/u/circus/projects/p1" })
+  })
+
+  it("asks to delete folders and reports what happened to each", async () => {
+    let request: DeleteProjectRequest | undefined
+    const client = projects({
+      deleteProject: (req) => {
+        request = req
+        return {
+          workspaceRemovals: [
+            { device: "a", outcome: WorkspaceRemoval_Outcome.REMOVED, path: "/home/u/circus/projects/p1" },
+            {
+              device: "b",
+              outcome: WorkspaceRemoval_Outcome.FAILED,
+              path: "/home/u/circus/projects/p1",
+              error: WorkspaceError.REFUSED,
+              errorDetail: "symlink",
+            },
+            { device: "c", outcome: WorkspaceRemoval_Outcome.KEPT, path: "~/circus/projects/p1" },
+          ],
+        }
+      },
+    })
+    const res = await client.deleteProject({ projectId: "p1", removeWorkspacesOn: ["a", "b", "c"] })
+    expect(request?.removeWorkspacesOn).toEqual(["a", "b", "c"])
+    expect(res.workspaceRemovals).toEqual([
+      { device: "a", outcome: "removed", path: "/home/u/circus/projects/p1", error: "unspecified", errorDetail: "" },
+      { device: "b", outcome: "failed", path: "/home/u/circus/projects/p1", error: "refused", errorDetail: "symlink" },
+      { device: "c", outcome: "kept", path: "~/circus/projects/p1", error: "unspecified", errorDetail: "" },
+    ])
   })
 })
 

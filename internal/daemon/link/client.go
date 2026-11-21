@@ -178,6 +178,8 @@ type Client struct {
 	stopQueries context.CancelFunc
 	directories *dirlist.Lister
 	gitQueries  map[chan struct{}]struct{}
+	// features are the Hello capabilities, fixed at construction.
+	features []string
 }
 
 // New validates credentials/TLS policy and creates a fresh UUIDv7 boot.
@@ -271,6 +273,7 @@ func New(o Options) (*Client, error) {
 	} else if d.Tools == nil {
 		d.Tools = daemon.DefaultTools(c.jobs, bashtool.Options{})
 	}
+	c.features = helloFeatures(d.Tools)
 	d.OnResult = func(r *circusv1.DeviceResult) {
 		c.send(c.live.Load(), &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Result{Result: r}})
 	}
@@ -282,6 +285,24 @@ func New(o Options) (*Client, error) {
 	}
 	c.queryCtx, c.stopQueries = context.WithCancel(context.Background())
 	return c, nil
+}
+
+// helloFeatures lists the device queries this client always answers and
+// the device calls whose tools are registered.
+func helloFeatures(tools []daemon.Tool) []string {
+	features := []string{wire.FeatureListDirectory, wire.FeatureGitRemote}
+	for _, tool := range tools {
+		if tool == nil {
+			continue
+		}
+		switch tool.Name() {
+		case "prepare_workspace":
+			features = append(features, wire.FeaturePrepareWorkspace)
+		case "remove_workspace":
+			features = append(features, wire.FeatureRemoveWorkspace)
+		}
+	}
+	return features
 }
 
 // BootID is the in-memory process epoch used to fence every DispatchCall.
@@ -430,7 +451,7 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 		}
 	}()
 	hello := &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, BootId: c.bootID, ClientVersion: c.opts.ClientVersion, Os: runtime.GOOS, Arch: runtime.GOARCH, Hostname: c.hostname, MachineId: c.machineID,
-		Features: []string{wire.FeatureListDirectory, wire.FeatureGitRemote}}
+		Features: c.features}
 	welcome, options, err := wire.DialHello(handshake, raw, wire.DaemonUplink, hello, c.opts.Credentials.PrincipalID, c.opts.Wire)
 	var rejected *wire.RejectError
 	switch {

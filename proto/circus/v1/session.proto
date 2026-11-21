@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package circus.v1;
 
+import "circus/v1/workspace.proto";
+
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
 // SessionService is the user-facing session API. Every call authenticates a
@@ -27,6 +29,7 @@ service SessionService {
   rpc StopSession(StopSessionRequest) returns (StopSessionResponse);
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
   rpc RecoverSession(RecoverSessionRequest) returns (RecoverSessionResponse);
+  rpc RetryWorkspace(RetryWorkspaceRequest) returns (RetryWorkspaceResponse);
 }
 
 // SessionConfig is reused unchanged when creating a session and acquiring it.
@@ -123,6 +126,12 @@ message Session {
   int64 last_activity_at_unix_ms = 12;
   // Pending, unexpired approvals (at most 32).
   uint32 pending_approval_count = 13;
+  // Set only for a session created in a project's default location: the
+  // workspace on its device. Until it is READY the session runs no turn
+  // (it stays IDLE or QUEUED; inputs are kept) and its cwd is the
+  // placeholder "~/circus/projects/<project_id>"; when it becomes READY
+  // the cwd becomes the absolute path.
+  WorkspaceStatus workspace = 14;
 }
 
 // SessionEvent is the user-facing view, not the authoritative transcript.
@@ -132,7 +141,7 @@ message SessionEvent {
   uint64 seq = 1;
   int64 ts_unix_ms = 2;
   // Shared with worker-published events. TURN_STARTED payload includes origin.
-  // Kinds 8, 9, 10, 15, 17 and 18 are recorded by the control plane only: a
+  // Kinds 8, 9, 10, 15, 17, 18 and 19 are recorded by the control plane only: a
   // worker event batch containing one of them is dropped as INVALID.
   enum Kind {
     KIND_UNSPECIFIED = 0;
@@ -174,6 +183,15 @@ message SessionEvent {
     // input; SendMessageResponse.event_seq is its seq. payload_json:
     // {"input_id":..., "client_msg_id":..., "priority":..., "text":...}.
     KIND_INPUT_ACCEPTED = 18;
+    // Recorded by the control plane only, for sessions with a workspace:
+    // its status changed. Durable for state changes; ephemeral (seq 0) when
+    // only waiting or background changed. ts_unix_ms equals the status's
+    // new updated_at_unix_ms. payload_json:
+    // {"state","waiting","device","path","repo_url","background","action",
+    // "error","error_detail"} with the lower-case names of WorkspaceStatus
+    // values ("pending", "device_offline", "cloned", "not_empty", ...),
+    // at most 4 KiB.
+    KIND_WORKSPACE = 19;
   }
   Kind kind = 3;
   // Opaque SDK message JSON; durable view payloads over 256 KiB are truncated.
@@ -328,3 +346,14 @@ message RecoverSessionRequest {
   bool accept_transcript_gap = 2;
 }
 message RecoverSessionResponse {}
+
+// RetryWorkspace starts the session's workspace over after a failure:
+// FAILED becomes PENDING. Any other state is returned unchanged
+// (idempotent). FAILED_PRECONDITION for a session without a workspace.
+// Allowed for stopped sessions too: the workspace belongs to the project.
+message RetryWorkspaceRequest {
+  string session_id = 1;
+}
+message RetryWorkspaceResponse {
+  WorkspaceStatus workspace = 1;
+}

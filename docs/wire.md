@@ -117,7 +117,10 @@ default 10 s, on the daemon).
 The control plane considers the first 32 feature names and drops entries
 outside 1–64 bytes of `[a-z0-9_.]`. Unknown names have no effect. The
 daemon advertises `device_query.list_directory` when it accepts directory
-queries and `device_query.git_remote` when it accepts git remote queries.
+queries, `device_query.git_remote` when it accepts git remote queries,
+and `device_call.prepare_workspace` and `device_call.remove_workspace`
+when it runs the `prepare_workspace` and `remove_workspace` device calls
+(see "Workspace preparation").
 The control plane sends a feature-dependent message only when the daemon
 advertised the feature in its current Hello.
 
@@ -593,6 +596,259 @@ then up to `min(2, max_in_flight_messages)` fragments, rotating between
 started large messages. A started fragmented control message rotates like
 any large message. A sender is conforming as long as it keeps the rules of
 sections 3.2 and 3.3; this round structure is not required.
+
+### Workspace preparation
+
+A project location without a path uses the device's default directory
+`~/circus/projects/<project_id>`, the project's **workspace**. Two device
+calls manage it: `PrepareWorkspaceRequest` (`DeviceCall.prepare_workspace`)
+creates it, clones the project's repository into it, or accepts what is
+there; `RemoveWorkspaceRequest` (`DeviceCall.remove_workspace`) deletes it.
+Only the control plane sends them, with a `session_id` of the form
+`workspace-<workspace_id>` that no session has, and only to daemons that
+advertised `device_call.prepare_workspace` or `device_call.remove_workspace`
+in their current Hello. Results carry `DeviceResult.prepare_workspace` or
+`DeviceResult.remove_workspace`; `output` holds one human-readable line and
+`is_error` matches `OUTCOME_FAILED`. Daemon failures remain `DaemonFault`s.
+
+#### Daemon
+
+**Paths.** Both calls resolve `path` like `ListDirectoryQuery.path`
+(`~/` and absolute paths, valid UTF-8, at most 4096 bytes, no NUL);
+`""`, `~` alone, the root and anything else are
+`WORKSPACE_ERROR_INVALID_REQUEST`. A `~/` path while the home is unset,
+relative or not UTF-8 is `WORKSPACE_ERROR_HOME_UNKNOWN`. Results carry the
+lexically cleaned absolute path with symlinks unresolved, once it could be
+resolved. A Windows daemon answers `WORKSPACE_ERROR_UNSUPPORTED_OS`.
+
+**Preparation.** `repo_url` is at most 2048 bytes of UTF-8 without control
+characters, not starting with `-`, and must be a URL whose credentials can
+be located (otherwise `INVALID_REQUEST`). The daemon:
+
+1. creates the parent directories (mode 0755). A non-directory in the way
+   is `PATH_CONFLICT`; `EACCES`/`EPERM` is `PERMISSION_DENIED`;
+2. takes a non-blocking `flock` on `<parent>/.<name>.circus-lock`. If it is
+   held (another preparation or removal, in this daemon or another one on
+   the device) the answer is `BUSY`. The kernel releases the lock when the
+   daemon dies; releasing it normally also deletes the file;
+3. while holding the lock, deletes `<parent>/.<name>.circus-partial-<hex>`
+   (exactly 16 lowercase hex digits, the suffix clones get), the hidden
+   clones of attempts that died, with the removal walk described under
+   **Removal**. No other name matches, so neither lock files nor the
+   clones of a workspace whose name starts with `<name>.circus-partial-`.
+   If that does not finish before the call's deadline the answer is
+   `BUSY`; the next attempt continues;
+4. acts on the target. A symlink to a directory is resolved first; the
+   clone and rename then happen beside the real directory, under its lock
+   as well, and the symlink stays:
+
+| Target | `repo_url` empty | `repo_url` set |
+| --- | --- | --- |
+| absent | create it → `READY`/`CREATED` | clone → `READY`/`CLONED` |
+| file, special file, dangling symlink | `PATH_CONFLICT` | `PATH_CONFLICT` |
+| empty directory | `READY`/`USED_EMPTY` | clone, replacing the empty directory → `READY`/`CLONED` |
+| non-empty; `git rev-parse --show-toplevel` is the target itself; origin is the same remote | `NOT_EMPTY` | `READY`/`USED_REPOSITORY` |
+| non-empty repository root with another origin or none | `NOT_EMPTY` | `REMOTE_MISMATCH`, `error_detail` = the existing origin (sanitized; empty without one) |
+| anything else non-empty, including a subdirectory of an enclosing repository | `NOT_EMPTY` | `NOT_EMPTY` |
+
+The daemon never modifies the target's existing contents. A clone runs
+`git clone --progress -- <repo_url> <parent>/.<name>.circus-partial-<hex>`
+(a full clone) and renames the result onto the target only once complete,
+so a repository of the same remote at the target is always a finished
+clone. If the rename finds the target no longer empty the answer is
+`NOT_EMPTY`; a non-directory there is `PATH_CONFLICT`. Repeating a
+successful preparation reports `READY` without changing anything.
+
+**Same remote.** Both the origin and `repo_url` pass
+`git -C <target> ls-remote --get-url`, which applies `url.*.insteadOf`
+without network access. The results are compared after trimming
+whitespace, trailing `/` and one `.git` suffix, lower-casing scheme and
+host, dropping passwords (all userinfo for HTTP(S) and FTP(S)) and
+default ports, reading `[user@]host:path` as `ssh://[user@]host/path` and
+`file:///path` as `/path`.
+
+**git.** git is found on the `PATH` of the environment Bash commands get
+(the captured login-shell exports, so credential helpers and
+`SSH_AUTH_SOCK` work as in Bash); none, or a file that is not executable,
+is `GIT_UNAVAILABLE` (other start failures, such as a parent directory
+removed meanwhile, are `IO`). It runs without a shell, in its own session
+and process group, with stdin on the null device, without the
+repository-locating variables of `git rev-parse --local-env-vars`, without
+tracing (`GIT_TRACE*`, `GIT_CURL_VERBOSE`, `GIT_REDACT_COOKIES`), without
+anything that could open a graphical prompt (`SSH_ASKPASS`, `DISPLAY`,
+`WAYLAND_DISPLAY`), and with `GIT_TERMINAL_PROMPT=0`, `GIT_EDITOR=true`,
+`LC_ALL=C`, `GCM_INTERACTIVE=never`, an empty `GIT_ASKPASS` (which also
+stops git from using `core.askPass` or `SSH_ASKPASS`) and
+`SSH_ASKPASS_REQUIRE=never`. A prompt for credentials therefore fails the
+clone (`CLONE_FAILED`) instead of waiting. On Linux git gets `SIGKILL`
+when the daemon dies (`PR_SET_PDEATHSIG`); on macOS, which has no such
+signal, git outlives a crashed daemon until it ends on its own, and the
+next attempt deletes its hidden directory under the lock. Collecting that
+environment counts as tool preparation (the Bash preparation budget), not
+against `timeout_ms`. When git exits, its group is killed and reaped. A
+non-zero clone exit is `CLONE_FAILED`, or `NO_SPACE` if git reported
+`No space left on device` or `Disk quota exceeded` (`ENOSPC`/`EDQUOT`
+from the daemon's own file operations is `NO_SPACE` too); `error_detail`
+carries the end of git's stderr: progress lines folded to their last
+state, the last 16 lines, at most 1024 bytes of valid UTF-8. Other
+filesystem failures are `IO`, with details only in the daemon log.
+
+**Background.** The control plane sends `timeout_ms` = 120000. If the
+clone is still running at the deadline, the daemon turns it into a job of
+the call's session (`JobEvent`, command `git clone <sanitized URL>`; its
+`output_path` is empty, since git's stderr is not kept in a file) and
+answers `OUTCOME_IN_BACKGROUND` with `job_id`. The job
+may run for two hours more; then its group is killed (TERM, KILL two
+seconds later) and its outcome is `TIMEOUT`. It ends `EXITED` with exit
+code 0 when the workspace is ready and 1 when it failed, and `KILLED`
+when stopped or expired. `StopSessionJobs` of the session (and daemon
+shutdown) stops it with outcome `CANCELLED`.
+
+The daemon keeps a finished job's structured outcome for 30 minutes. A
+call with `resume_job_id` naming a job of the same session and path:
+
+- running: waits for it until this call's deadline, then answers its
+  outcome, or `IN_BACKGROUND` with the same `job_id` if it still runs;
+  cancelling this call stops the job (`CANCELLED`);
+- finished and retained: answers the retained outcome at once;
+- unknown (another session or path, restart, retention expired): prepares
+  as if `resume_job_id` were empty.
+
+`CancelCall` of a foreground preparation kills the clone's group and
+answers `CANCELLED`. A stopped clone's hidden directory is deleted after
+the answer, still under the lock, so a quick retry may see `BUSY`.
+
+**Limits.** At most two preparations run per daemon, foreground and
+background together; more are `BUSY` (retryable, like a held lock). Each
+git output stream is captured up to 64 KiB (stderr keeps its end).
+
+**Credentials.** `repo_url` is passed to git as given, since it may carry
+the credentials the clone needs; as with a manual clone it is stored in
+the clone's `.git/config` and visible in the device's process list. It
+never leaves the device otherwise: results, job commands and daemon logs
+carry it only with passwords removed (all userinfo for HTTP(S) and
+FTP(S)) and its query string replaced by `?[redacted]`. git's stderr has
+every occurrence of `repo_url` replaced by the sanitized form, then every
+remaining `scheme://user:password@` (quotes in the password included)
+and every scheme URL's query string redacted the same way, before it is
+cut to size; if the capture lost its beginning, the first, possibly
+partial, line is dropped first. The same applies to the existing origin
+in a `REMOTE_MISMATCH` detail.
+
+**Removal.** `RemoveWorkspaceRequest` is foreground only and stops at the
+call's deadline (the control plane sends 30 seconds). The daemon refuses
+(`REFUSED`) anything but a real directory, not a symlink, whose path is
+exactly `<home>/circus/projects/<name>` for a single, non-hidden path
+element `<name>`, where neither `circus` nor `projects` is a symlink and
+the directory is not a mount point. A symlinked home is resolved first. It
+takes the preparation's lock (`BUSY` if held), answers `OUTCOME_ABSENT`
+when nothing is there, and refuses before deleting anything when
+`/proc/self/mountinfo` lists a mount point below the directory (Linux).
+It then removes leftover hidden clones of that workspace and deletes the
+tree through directory descriptors: each directory is opened relative to
+its open parent, and the descriptor that is read is the one that was
+checked, so no check can be raced. On Linux the open is
+`openat2(RESOLVE_NO_SYMLINKS | RESOLVE_NO_XDEV)`, which rejects a symlink
+and stepping onto any mount, same-filesystem bind mounts included; a
+kernel without `openat2` (before 5.6) gets `REFUSED` rather than a weaker
+check (hidden clones, which the daemon made itself, fall back to the
+macOS rule there). On macOS the open uses `O_NOFOLLOW` and the directory
+must have its parent's `st_dev`; that covers macOS's mounts (volumes, disk
+images, network and FUSE filesystems), as it has no bind mounts. Symlinks
+and other non-directories inside are unlinked, never followed. A mount
+found by the walk itself stops it: `REFUSED` if nothing was removed yet,
+otherwise `IO`. Read-only directories the daemon user owns are made
+writable before being emptied; if the removal stops, the directories it
+leaves keep their original modes. A directory that writers refill while
+it is being emptied is emptied again up to three times, then the removal
+fails with `IO`. `EACCES`/`EPERM` is `PERMISSION_DENIED`, anything else
+`IO`; if the deadline or a cancellation stops it, the outcome is
+`FAILED`/`IO`. Removal fails safe: it stops at the first error, and
+`error_detail` (at most 1024 bytes) says what failed, how many entries
+were removed before and that the rest remains in the directory.
+
+#### Control plane
+
+Each project and device has at most one default workspace. A session at a
+default location creates that row if needed. Sessions at explicit paths use
+the existing scheduling path. Removing a location from a project leaves its
+workspace and sessions in place.
+
+| State | Control plane behavior |
+| --- | --- |
+| PENDING | Waits for a device connection, the preparation feature, a free preparation slot, or the end of retry backoff. |
+| PREPARING | Runs a device call or follows a background job on that device. |
+| READY | Holds the absolute directory and the action taken. The row is final, including after a project repository URL change. |
+| FAILED | Holds a structured error. RetryWorkspace or another session created in that default location starts preparation again. |
+
+A workspace session can accept input immediately. It stays IDLE or QUEUED
+according to the ordinary session rules. Until its workspace is READY, a
+queued session receives no Offer and AcquireLease refuses it. The READY
+transaction stores the absolute main-thread cwd for existing sessions and
+appends their workspace events. The daemon's READY path must be absolute,
+lexically clean, and end in `/circus/projects/<project_id>`. An invalid
+path fails preparation with DAEMON_FAULT. After commit, the scheduler
+wakes each non-stopped session. New sessions use the stored absolute path directly.
+
+The project owner makes the unleased device call, under a synthetic
+`session_id` of `workspace-<workspace_id>`. Workspace operations are
+control-plane-only. Preparation uses `PrepareWorkspaceRequest` with the
+default path and `timeout_ms = 120000`. The control plane checks
+`device_call.prepare_workspace` on the current daemon connection.
+Windows devices fail with UNSUPPORTED_OS without a call. Revoked devices
+fail with DEVICE_REVOKED.
+
+The control plane commits each call ID and its request snapshot before
+submitting. Recovery can resubmit the identical request to attach to the
+call or fetch its retained result. After a foreground call transfers to a
+job, the control plane keeps the job ID, dispatch boot and registration
+time. The job's terminal notification or a scan starts a follow-up call
+with a new call ID and `resume_job_id`. A missing job record is given 2 hours and 32 minutes
+from when its ID was recorded, covering execution and result retention.
+Each attempt sends at most one follow-up due to an expired missing record.
+A second missing record gets its own full window, then fails with TIMEOUT.
+This bound survives control-plane restarts.
+
+A lost call, missing retained result or lost job starts a fresh attempt.
+The third loss in the streak fails with INTERRUPTED. Consecutive retryable
+failures back off for 5 seconds times two for each preceding failure in the
+streak, capped at 5 minutes. READY, manual retry, and successful preparation
+admission after a wait other than backoff reset the counter. Moving into a
+background job also resets it. TOOL_UNAVAILABLE waits for a fresh daemon
+connection. Background work survives a session stop or deletion, because
+the real session and the synthetic call session have different IDs.
+
+At most two workspaces per device, four per user, and 64 globally prepare
+at once, including preparations in background jobs. Each preparing
+workspace has one runner and at most one subscription. Releasing a slot
+prompts another attempt for workspaces queued on the concurrency limits.
+Device connections and job-end notifications trigger recovery. A scan runs every 30 seconds
+and reads at most 1,000 active rows. Terminal calls are pruned in chunks
+once their current write-ahead reference is gone, including after project
+deletion.
+
+KIND_WORKSPACE records state changes for each non-stopped workspace session.
+When the state stays the same, changes to the waiting reason or
+`WorkspaceStatus.background` are ephemeral with seq 0. Each workspace
+change advances `updated_at` in Unix milliseconds.
+`WorkspaceStatus.updated_at_unix_ms` reports that value. If the clock has not advanced past it, the value
+increases by 1 ms. Every durable or ephemeral KIND_WORKSPACE event's
+`ts_unix_ms` equals the value for the change it reports. Workspace events
+do not move session activity. Payloads are JSON of at most 4 KiB and use
+lower-case workspace enum names. Workspace status and events redact
+repository credentials. RetryWorkspace resets a failed workspace and both
+retry counters. It returns the current state for PENDING,
+PREPARING and READY, and also accepts stopped workspace sessions.
+
+Project deletion asks the router to cancel active preparations and stop
+the synthetic session's jobs. For the requested devices with READY
+workspaces, the control plane sends one unleased `RemoveWorkspaceRequest`
+per online device that advertises `device_call.remove_workspace`. Calls
+run in parallel with a shared 30-second budget and
+`timeout_ms = 30000` on each call. The project cascade proceeds after the
+responses or the deadline. A timed-out removal is reported as KEPT,
+which means the control plane received no confirmation. No removal is
+retried. Workspace records cascade with the project.
 
 ## 7. Worker link operations
 
@@ -1389,9 +1645,14 @@ A new session requires a project location on a non-revoked device of the caller.
 A missing location or unavailable device returns FAILED_PRECONDITION with
 a `location_index` field violation.
 An out-of-range location_index is INVALID_ARGUMENT. The server fills
-default_device and one main-thread working directory: the location's
-path, or `~/circus/projects/<project_id>` for a location without a path
-(not created or cloned by this call). pinned_worker_id must name a worker
+default_device and one main-thread working directory. A default location
+ensures its workspace in the session creation transaction. Until READY, the
+cwd is the placeholder `~/circus/projects/<project_id>` and the scheduler
+holds the session. READY supplies its absolute cwd at creation.
+`Session.workspace` is populated in create, get, list and update responses
+for a default-location session. `Project.Location.workspace` is populated
+for a default location with a workspace row.
+pinned_worker_id must name a worker
 of the caller. The location becomes the project's
 last_used_location in the same transaction, without moving the project's
 updated_at.
@@ -1416,6 +1677,7 @@ transaction of the change, with JSON payloads:
 | --- | --- | --- |
 | SendMessage, new input | `KIND_INPUT_ACCEPTED` | `{"input_id","client_msg_id","priority":"normal"\|"now","text"}`, encoded without HTML escaping; not a boundary, so a filled view drops it and event_seq is 0 |
 | ResolveApproval of a pending approval | `KIND_APPROVAL_RESOLVED` (boundary) | `{"approval_id","state":"approved"\|"denied"\|"expired"}`; expired when it expired before the resolution (the call then answers FAILED_PRECONDITION) |
+| Workspace preparation changed state | `KIND_WORKSPACE` (boundary) | `{"state","waiting","device","path","repo_url","background","action","error","error_detail"}`. Changes limited to the waiting reason or background flag are ephemeral. Each event timestamp equals the workspace version reported by `WorkspaceStatus.updated_at_unix_ms`. |
 | StopSession that stopped the session | `KIND_SESSION_STATE` (boundary) | `{"state":"stopped","reason":"user"}`; a stop by the transcript quota (worker link) records `{"state":"stopped","reason":"transcript_full"}` |
 
 These kinds (with `TURN_INTERRUPTED`, `TURN_STOPPED` and
@@ -1466,8 +1728,8 @@ then session_id descending, with an exclusive keyset cursor. It leaves
 `config` unset; GetSession returns it. A Web user has at most 1000
 sessions. Both reads return project_id, title, last_activity_at_unix_ms and
 pending_approval_count. Last activity starts at creation and never moves
-backwards: every stored durable event and every newly accepted user-kind
-input sets it to max(current, its timestamp). This includes control-plane
+backwards: every stored durable event except KIND_WORKSPACE and every newly
+accepted user-kind input sets it to max(current, its timestamp). This includes control-plane
 boundaries and retained events with dropped payloads; ephemeral or dropped
 events, approval inputs and duplicate input submissions do not move it.
 A ListSessions traversal is not a snapshot. Sessions remaining in the filter
@@ -1500,12 +1762,24 @@ preconditions in one snapshot. If any is not deletable it returns
 FAILED_PRECONDITION and deletes nothing. It then deletes the checked
 sessions one at a time through chunked DeleteSession, followed by the empty
 project. The store's DeleteProject always refuses with ErrHasSessions while
-any session remains, including a deletable one. A session created during the
-cascade therefore makes the final step return FAILED_PRECONDITION; the
-client can retry. A failed or interrupted cascade may have removed some
+any session remains, including a deletable one. For a deletion without
+removals, a session created during the cascade makes the final step
+return FAILED_PRECONDITION and the client can retry. A failed or interrupted cascade may have removed some
 sessions already; retry finishes the remaining work. This avoids holding
 the database writer for all transcripts in one transaction. Like
-DeleteSession, running device job rows survive until they end.
+DeleteSession, job rows survive while their jobs are tracked.
+
+DeleteProject accepts up to 32 device names in `remove_workspaces_on`.
+During a deletion with removals, new sessions for that project are refused
+with FAILED_PRECONDITION. After preflight, bounded session deletion, device
+operations, and the final project write continue if the client disconnects.
+After session deletion, requested READY workspaces can be removed on devices
+with a current compatible connection. The response returns a result per
+name in request order, including duplicates. REMOVED includes an already
+absent directory. KEPT covers offline or outdated devices, devices with
+no READY workspace and calls that did not answer in time. FAILED carries
+the device's removal error. The shared 30-second budget and the outcome
+of device operations do not change the project's deletion preconditions.
 
 DeleteUser cascades its empty projects but refuses with ErrHasSessions if
 any owned project has sessions, deleting nothing; remove those sessions

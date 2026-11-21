@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"connectrpc.com/connect"
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -19,6 +20,9 @@ func protoProject(p store.Project) *circusv1.Project {
 		loc := &circusv1.Project_Location{Device: l.DeviceName, Path: l.Path, DeviceRevoked: l.DeviceRevoked}
 		if l.Path == "" {
 			loc.EffectivePath = defaultDir(p.ID)
+			if l.Workspace != nil {
+				loc.Workspace = l.Workspace.Status()
+			}
 		}
 		out.Locations = append(out.Locations, loc)
 	}
@@ -27,7 +31,7 @@ func protoProject(p store.Project) *circusv1.Project {
 
 // defaultDir is the directory a location without a path resolves to on its
 // device. It uses the project id, so renaming a project does not move it.
-func defaultDir(projectID string) string { return defaultPathPrefix + projectID }
+func defaultDir(projectID string) string { return store.DefaultWorkspacePath(projectID) }
 
 // locationsField names a location's field in the request.
 func locationsField(i int, field string) string { return fmt.Sprintf("locations[%d].%s", i, field) }
@@ -219,6 +223,10 @@ func (s *Service) UpdateProject(ctx context.Context, req *connect.Request[circus
 	return connect.NewResponse(&circusv1.UpdateProjectResponse{Project: protoProject(p)}), nil
 }
 
+// Each store phase of a deletion with device side effects has its own
+// deadline. The device wait cannot use up the final store write's budget.
+const projectDeleteStoreTimeout = 30 * time.Second
+
 // DeleteProject preflights every session in one snapshot, deleting nothing if
 // any fails DeleteSession's preconditions. It then deletes sessions individually
 // through the chunked store method, followed by the empty project. These are
@@ -233,6 +241,18 @@ func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circus
 		return nil, err
 	}
 	projectID := req.Msg.GetProjectId()
+	names := req.Msg.GetRemoveWorkspacesOn()
+	if err := validateRemovalNames(names); err != nil {
+		return nil, err
+	}
+	if len(names) != 0 {
+		release, err := s.beginWorkspaceRemoval(ctx, u.ID, projectID)
+		if err != nil {
+			return nil, s.internal(ctx, "delete project", err)
+		}
+		defer release()
+	}
+	out := &circusv1.DeleteProjectResponse{}
 	now := s.now().UnixMilli()
 	var ids []string
 	err = s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
@@ -259,8 +279,16 @@ func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circus
 		}
 	})
 	if err == nil {
+		deleteCtx := ctx
+		sessionCtx := ctx
+		stopSessions := func() {}
+		if len(names) != 0 {
+			deleteCtx = context.WithoutCancel(ctx)
+			sessionCtx, stopSessions = context.WithTimeout(deleteCtx, projectDeleteStoreTimeout)
+			defer stopSessions()
+		}
 		for _, id := range ids {
-			err = s.st.DeleteSession(ctx, id, s.now().UnixMilli())
+			err = s.st.DeleteSession(sessionCtx, id, s.now().UnixMilli())
 			// Another concurrent cascade may already have removed this session.
 			if errors.Is(err, store.ErrNotFound) {
 				err = nil
@@ -270,8 +298,25 @@ func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circus
 			}
 			s.bus.Deleted(id)
 		}
+		stopSessions()
 		if err == nil {
-			err = s.st.DeleteProject(ctx, u.ID, projectID, s.now().UnixMilli())
+			if s.workspaces != nil {
+				unpause := s.workspaces.PauseProject(projectID)
+				defer unpause()
+				out.WorkspaceRemovals = s.workspaces.BeforeDelete(deleteCtx, u.ID, projectID, names)
+			} else {
+				for _, name := range names {
+					out.WorkspaceRemovals = append(out.WorkspaceRemovals, &circusv1.WorkspaceRemoval{
+						Device: name, Outcome: circusv1.WorkspaceRemoval_OUTCOME_KEPT,
+					})
+				}
+			}
+			if len(names) != 0 {
+				var cancel context.CancelFunc
+				deleteCtx, cancel = context.WithTimeout(deleteCtx, projectDeleteStoreTimeout)
+				defer cancel()
+			}
+			err = s.st.DeleteProject(deleteCtx, u.ID, projectID, s.now().UnixMilli())
 		}
 	}
 	if err != nil {
@@ -288,5 +333,5 @@ func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circus
 			return nil, s.internal(ctx, "delete project", err)
 		}
 	}
-	return connect.NewResponse(&circusv1.DeleteProjectResponse{}), nil
+	return connect.NewResponse(out), nil
 }

@@ -166,6 +166,11 @@ func listSession(sess store.Session) *circusv1.Session {
 // whose working directories are the main thread's current ones.
 func fullSession(ctx context.Context, ops store.Ops, sess store.Session) (*circusv1.Session, error) {
 	out := listSession(sess)
+	status, err := readSessionWorkspace(ctx, ops, sess)
+	if err != nil {
+		return nil, err
+	}
+	out.Workspace = status
 	names := newDeviceNames(ops)
 	device, err := names.name(ctx, sess.DefaultDeviceID)
 	if err != nil {
@@ -271,8 +276,10 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 	}
 	now := s.now().UnixMilli()
 	var out *circusv1.Session
+	var workspaceChange store.WorkspaceChange
 	const requestConflict = "this client request id was used for a different session"
 	attempt := func(ctx context.Context, tx store.Ops) error {
+		workspaceChange = store.WorkspaceChange{}
 		p, err := tx.GetProject(ctx, u.ID, m.GetProjectId())
 		if errors.Is(err, store.ErrNotFound) {
 			return connect.NewError(connect.CodeNotFound, errProjectNotFound)
@@ -290,6 +297,9 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 			return err
 		case !errors.Is(err, store.ErrNotFound):
 			return err
+		}
+		if s.removingWorkspaces(p.UserID, p.ID) {
+			return connect.NewError(connect.CodeFailedPrecondition, errors.New("the project is being deleted"))
 		}
 		if len(p.Locations) == 0 {
 			return fieldError(connect.CodeFailedPrecondition, "location_index", "the project has no locations")
@@ -322,20 +332,32 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 				return invalidField("pinned_worker_id", "unknown worker")
 			}
 		}
-		// A location without a path starts in the project's default
-		// directory on the device. This step does not create or clone it;
-		// the worker's tools resolve "~".
-		cwd := l.Path
-		if cwd == "" {
-			cwd = defaultDir(p.ID)
-		}
 		id, err := newID()
 		if err != nil {
 			return err
 		}
+		cwd := l.Path
+		var workspace store.Workspace
+		var createdWorkspace bool
+		if l.Path == "" {
+			workspaceID, err := newID()
+			if err != nil {
+				return err
+			}
+			workspace, createdWorkspace, err = tx.EnsureWorkspace(ctx, store.Workspace{
+				ID: workspaceID, UserID: p.UserID, ProjectID: p.ID, DeviceID: l.DeviceID, CreatedAt: now,
+			})
+			if err != nil {
+				return err
+			}
+			cwd = defaultDir(p.ID)
+			if workspace.State == store.WorkspaceReady {
+				cwd = workspace.Path
+			}
+		}
 		sess := store.Session{
 			ID: id, UserID: u.ID, ProjectID: p.ID, ClaudeSessionID: uuid.NewString(), State: store.SessionIdle,
-			ClientRequestID: m.GetClientRequestId(), LocationIndex: uint32(index),
+			ClientRequestID: m.GetClientRequestId(), LocationIndex: uint32(index), Workspace: l.Path == "",
 			DefaultDeviceID: l.DeviceID, Model: cfg.GetModel(), PermissionMode: cfg.GetPermissionMode(),
 			PinnedWorkerID: m.GetPinnedWorkerId(), CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		}
@@ -345,6 +367,21 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 			return err
 		}
 		if res.Created {
+			if res.Session.Workspace {
+				workspaceChange, err = retryWorkspace(ctx, tx, workspace, now)
+				if err != nil {
+					return err
+				}
+				if createdWorkspace {
+					ev, err := tx.AppendEvents(ctx, id, nil, []store.EventInput{{
+						Kind: store.EventKindWorkspace, At: workspace.UpdatedAt, Payload: workspace.EventPayload(), Boundary: true,
+					}}, store.DefaultMaxViewBytes)
+					if err != nil {
+						return err
+					}
+					workspaceChange.Notices = []store.WorkspaceNotice{{SessionID: id, Seq: ev.Seqs[0]}}
+				}
+			}
 			if _, err := tx.UpdateProject(ctx, u.ID, p.ID, store.ProjectPatch{LastUsedLocation: &index, UpdatedAt: now}); err != nil {
 				return err
 			}
@@ -369,6 +406,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		}
 		return nil, s.sessionError(ctx, "create session", err)
 	}
+	s.workspaceCommitted(workspaceChange)
 	return connect.NewResponse(&circusv1.CreateSessionResponse{Session: out}), nil
 }
 
@@ -532,6 +570,7 @@ func (s *Service) ListSessions(ctx context.Context, req *connect.Request[circusv
 		filter.WebUserID = u.ID
 	}
 	out := &circusv1.ListSessionsResponse{Sessions: []*circusv1.Session{}}
+	statuses := make(map[[2]string]*circusv1.WorkspaceStatus)
 	for len(out.Sessions) < size {
 		filter.Limit = min(size-len(out.Sessions), store.MaxPageSize)
 		rows, err := s.st.ListSessions(ctx, filter)
@@ -539,7 +578,20 @@ func (s *Service) ListSessions(ctx context.Context, req *connect.Request[circusv
 			return nil, s.internal(ctx, "list sessions", err)
 		}
 		for _, sess := range rows {
-			out.Sessions = append(out.Sessions, listSession(sess))
+			summary := listSession(sess)
+			if sess.Workspace {
+				key := [2]string{sess.ProjectID, sess.DefaultDeviceID}
+				status, ok := statuses[key]
+				if !ok {
+					status, err = readSessionWorkspace(ctx, s.st, sess)
+					if err != nil {
+						return nil, s.internal(ctx, "list session workspaces", err)
+					}
+					statuses[key] = status
+				}
+				summary.Workspace = status
+			}
+			out.Sessions = append(out.Sessions, summary)
 		}
 		if len(rows) < filter.Limit {
 			return connect.NewResponse(out), nil

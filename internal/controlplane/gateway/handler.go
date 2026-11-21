@@ -342,6 +342,17 @@ func (h *handler) Deliver(ctx context.Context, t Target, m *circusv1.DaemonDownl
 	p := h.peers[t.ConnectionID]
 	var link *wire.Link
 	if p != nil {
+		var feature string
+		switch m.GetDispatchCall().GetCall().GetTool().(type) {
+		case *circusv1.DeviceCall_PrepareWorkspace:
+			feature = wire.FeaturePrepareWorkspace
+		case *circusv1.DeviceCall_RemoveWorkspace:
+			feature = wire.FeatureRemoveWorkspace
+		}
+		if _, ok := p.features[feature]; feature != "" && !ok {
+			h.mu.Unlock()
+			return ErrFeatureUnsupported
+		}
 		link = p.link
 	}
 	h.mu.Unlock()

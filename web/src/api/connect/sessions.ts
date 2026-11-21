@@ -20,6 +20,7 @@ import type {
 import { viewState, type ServerSessionState, type TurnOutcome } from "@/lib/session-state"
 
 import { call, malformed, stream } from "./call"
+import { toWorkspace } from "./workspaces"
 
 const states: Record<Session_State, ServerSessionState> = {
   [Session_State.UNSPECIFIED]: "unspecified",
@@ -62,6 +63,7 @@ export function toSummary(session: ProtoSession): SessionSummary {
     lastActivityAtUnixMs: Number(session.lastActivityAtUnixMs),
     pendingApprovalCount: session.pendingApprovalCount,
     createdAtUnixMs: Number(session.createdAtUnixMs),
+    ...(session.workspace ? { workspace: toWorkspace(session.workspace) } : {}),
   }
 }
 
@@ -145,5 +147,11 @@ export function createConnectSessions(transport: Transport): SessionService {
     recoverSession: (req) =>
       call(async () => void (await client.recoverSession({ sessionId: req.sessionId, acceptTranscriptGap: true }))),
     updateSession: (req) => call(async () => toDetails(await client.updateSession(req), "UpdateSession")),
+    retryWorkspace: (req) =>
+      call(async () => {
+        const res = await client.retryWorkspace({ sessionId: req.sessionId })
+        if (!res.workspace) throw malformed("RetryWorkspace")
+        return toWorkspace(res.workspace)
+      }),
   }
 }

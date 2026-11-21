@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/device.proto.
  */
 export const file_circus_v1_device: GenFile = /*@__PURE__*/
-  fileDesc("ChZjaXJjdXMvdjEvZGV2aWNlLnByb3RvEgljaXJjdXMudjEisgIKCkRldmljZUNhbGwSDwoHY2FsbF9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhAKCGFnZW50X2lkGAMgASgJEhIKCnRpbWVvdXRfbXMYBCABKA0SJgoEYmFzaBgKIAEoCzIWLmNpcmN1cy52MS5CYXNoUmVxdWVzdEgAEiYKBHJlYWQYCyABKAsyFi5jaXJjdXMudjEuUmVhZFJlcXVlc3RIABIoCgV3cml0ZRgMIAEoCzIXLmNpcmN1cy52MS5Xcml0ZVJlcXVlc3RIABImCgRlZGl0GA0gASgLMhYuY2lyY3VzLnYxLkVkaXRSZXF1ZXN0SAASLwoJdGFza19zdG9wGA4gASgLMhouY2lyY3VzLnYxLlRhc2tTdG9wUmVxdWVzdEgAQgYKBHRvb2wixQIKDERldmljZVJlc3VsdBIPCgdjYWxsX2lkGAEgASgJEiUKBm91dHB1dBgCIAEoCzIVLmNpcmN1cy52MS5Ub29sT3V0cHV0EiUKBWZhdWx0GAMgASgLMhYuY2lyY3VzLnYxLkRhZW1vbkZhdWx0EiUKBGJhc2gYCiABKAsyFS5jaXJjdXMudjEuQmFzaFJlc3VsdEgAEiUKBHJlYWQYCyABKAsyFS5jaXJjdXMudjEuUmVhZFJlc3VsdEgAEicKBXdyaXRlGAwgASgLMhYuY2lyY3VzLnYxLldyaXRlUmVzdWx0SAASJQoEZWRpdBgNIAEoCzIVLmNpcmN1cy52MS5FZGl0UmVzdWx0SAASLgoJdGFza19zdG9wGA4gASgLMhkuY2lyY3VzLnYxLlRhc2tTdG9wUmVzdWx0SABCCAoGZGV0YWlsIokCCgtEYWVtb25GYXVsdBIpCgRjb2RlGAEgASgOMhsuY2lyY3VzLnYxLkRhZW1vbkZhdWx0LkNvZGUSDwoHbWVzc2FnZRgCIAEoCSK9AQoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASEQoNQ09ERV9JTlRFUk5BTBABEg4KCkNPREVfUEFOSUMQAhIgChxDT0RFX0FCQU5ET05FRF9BRlRFUl9USU1FT1VUEAMSHwobQ09ERV9BQkFORE9ORURfQUZURVJfQ0FOQ0VMEAQSHgoaQ09ERV9QUkVQQVJBVElPTl9FWEhBVVNURUQQBRIZChVDT0RFX1RPT0xfVU5BVkFJTEFCTEUQBiJICgpUb29sT3V0cHV0EigKB2NvbnRlbnQYASADKAsyFy5jaXJjdXMudjEuQ29udGVudEJsb2NrEhAKCGlzX2Vycm9yGAIgASgIIk8KDENvbnRlbnRCbG9jaxIOCgR0ZXh0GAEgASgJSAASJgoFaW1hZ2UYAiABKAsyFS5jaXJjdXMudjEuSW1hZ2VCbG9ja0gAQgcKBWJsb2NrIi4KCkltYWdlQmxvY2sSEgoKbWVkaWFfdHlwZRgBIAEoCRIMCgRkYXRhGAIgASgMInEKC0Jhc2hSZXF1ZXN0Eg8KB2NvbW1hbmQYASABKAkSCwoDY3dkGAIgASgJEhkKEXJ1bl9pbl9iYWNrZ3JvdW5kGAMgASgIEhMKC2Rlc2NyaXB0aW9uGAQgASgJEhQKDHdvcmtpbmdfZGlycxgFIAMoCSKTAQoKQmFzaFJlc3VsdBIRCglleGl0X2NvZGUYASABKAUSCwoDY3dkGAIgASgJEhEKCXRpbWVkX291dBgDIAEoCBITCgtpbnRlcnJ1cHRlZBgEIAEoCBIYChBvdXRwdXRfdHJ1bmNhdGVkGAUgASgIEhMKC291dHB1dF9wYXRoGAYgASgJEg4KBmpvYl9pZBgHIAEoCSJXCgtSZWFkUmVxdWVzdBIMCgRwYXRoGAEgASgJEhMKBm9mZnNldBgCIAEoDUgAiAEBEg0KBWxpbWl0GAMgASgNEgsKA2N3ZBgEIAEoCUIJCgdfb2Zmc2V0IkgKClJlYWRSZXN1bHQSDgoGc2hhMjU2GAEgASgJEhUKDW10aW1lX3VuaXhfbXMYAiABKAMSEwoLdG90YWxfbGluZXMYAyABKA0ibAoMV3JpdGVSZXF1ZXN0EgwKBHBhdGgYASABKAkSDwoHY29udGVudBgCIAEoCRIcCg9leHBlY3RlZF9zaGEyNTYYAyABKAlIAIgBARILCgNjd2QYBCABKAlCEgoQX2V4cGVjdGVkX3NoYTI1NiIuCgtXcml0ZVJlc3VsdBIOCgZzaGEyNTYYASABKAkSDwoHY3JlYXRlZBgCIAEoCCKXAQoLRWRpdFJlcXVlc3QSDAoEcGF0aBgBIAEoCRISCgpvbGRfc3RyaW5nGAIgASgJEhIKCm5ld19zdHJpbmcYAyABKAkSEwoLcmVwbGFjZV9hbGwYBCABKAgSHAoPZXhwZWN0ZWRfc2hhMjU2GAUgASgJSACIAQESCwoDY3dkGAYgASgJQhIKEF9leHBlY3RlZF9zaGEyNTYiSgoKRWRpdFJlc3VsdBIOCgZzaGEyNTYYASABKAkSGwoTbW9kaWZpZWRfc2luY2VfcmVhZBgCIAEoCBIPCgdjcmVhdGVkGAMgASgIIiEKD1Rhc2tTdG9wUmVxdWVzdBIOCgZqb2JfaWQYASABKAkiEAoOVGFza1N0b3BSZXN1bHQiHAoJQ2FsbFF1ZXJ5Eg8KB2NhbGxfaWQYASABKAkiygEKCkNhbGxTdGF0dXMSDwoHY2FsbF9pZBgBIAEoCRIqCgVzdGF0ZRgCIAEoDjIbLmNpcmN1cy52MS5DYWxsU3RhdHVzLlN0YXRlEicKBnJlc3VsdBgDIAEoCzIXLmNpcmN1cy52MS5EZXZpY2VSZXN1bHQiVgoFU3RhdGUSFQoRU1RBVEVfVU5TUEVDSUZJRUQQABIRCg1TVEFURV9SVU5OSU5HEAESEwoPU1RBVEVfQ09NUExFVEVEEAISDgoKU1RBVEVfTE9TVBADIh0KCkNhbmNlbENhbGwSDwoHY2FsbF9pZBgBIAEoCSKFAgoISm9iRXZlbnQSDgoGam9iX2lkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSKAoFc3RhdGUYAyABKA4yGS5jaXJjdXMudjEuSm9iRXZlbnQuU3RhdGUSEQoJZXhpdF9jb2RlGAQgASgFEhMKC291dHB1dF9wYXRoGAUgASgJEgsKA3NlcRgGIAEoBBIPCgdjYWxsX2lkGAcgASgJImUKBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASEQoNU1RBVEVfUlVOTklORxABEhAKDFNUQVRFX0VYSVRFRBACEhAKDFNUQVRFX0tJTExFRBADEg4KClNUQVRFX0xPU1QQBEI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw");
+  fileDesc("ChZjaXJjdXMvdjEvZGV2aWNlLnByb3RvEgljaXJjdXMudjEisgMKCkRldmljZUNhbGwSDwoHY2FsbF9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhAKCGFnZW50X2lkGAMgASgJEhIKCnRpbWVvdXRfbXMYBCABKA0SJgoEYmFzaBgKIAEoCzIWLmNpcmN1cy52MS5CYXNoUmVxdWVzdEgAEiYKBHJlYWQYCyABKAsyFi5jaXJjdXMudjEuUmVhZFJlcXVlc3RIABIoCgV3cml0ZRgMIAEoCzIXLmNpcmN1cy52MS5Xcml0ZVJlcXVlc3RIABImCgRlZGl0GA0gASgLMhYuY2lyY3VzLnYxLkVkaXRSZXF1ZXN0SAASLwoJdGFza19zdG9wGA4gASgLMhouY2lyY3VzLnYxLlRhc2tTdG9wUmVxdWVzdEgAEj8KEXByZXBhcmVfd29ya3NwYWNlGA8gASgLMiIuY2lyY3VzLnYxLlByZXBhcmVXb3Jrc3BhY2VSZXF1ZXN0SAASPQoQcmVtb3ZlX3dvcmtzcGFjZRgQIAEoCzIhLmNpcmN1cy52MS5SZW1vdmVXb3Jrc3BhY2VSZXF1ZXN0SABCBgoEdG9vbCLDAwoMRGV2aWNlUmVzdWx0Eg8KB2NhbGxfaWQYASABKAkSJQoGb3V0cHV0GAIgASgLMhUuY2lyY3VzLnYxLlRvb2xPdXRwdXQSJQoFZmF1bHQYAyABKAsyFi5jaXJjdXMudjEuRGFlbW9uRmF1bHQSJQoEYmFzaBgKIAEoCzIVLmNpcmN1cy52MS5CYXNoUmVzdWx0SAASJQoEcmVhZBgLIAEoCzIVLmNpcmN1cy52MS5SZWFkUmVzdWx0SAASJwoFd3JpdGUYDCABKAsyFi5jaXJjdXMudjEuV3JpdGVSZXN1bHRIABIlCgRlZGl0GA0gASgLMhUuY2lyY3VzLnYxLkVkaXRSZXN1bHRIABIuCgl0YXNrX3N0b3AYDiABKAsyGS5jaXJjdXMudjEuVGFza1N0b3BSZXN1bHRIABI+ChFwcmVwYXJlX3dvcmtzcGFjZRgPIAEoCzIhLmNpcmN1cy52MS5QcmVwYXJlV29ya3NwYWNlUmVzdWx0SAASPAoQcmVtb3ZlX3dvcmtzcGFjZRgQIAEoCzIgLmNpcmN1cy52MS5SZW1vdmVXb3Jrc3BhY2VSZXN1bHRIAEIICgZkZXRhaWwiiQIKC0RhZW1vbkZhdWx0EikKBGNvZGUYASABKA4yGy5jaXJjdXMudjEuRGFlbW9uRmF1bHQuQ29kZRIPCgdtZXNzYWdlGAIgASgJIr0BCgRDb2RlEhQKEENPREVfVU5TUEVDSUZJRUQQABIRCg1DT0RFX0lOVEVSTkFMEAESDgoKQ09ERV9QQU5JQxACEiAKHENPREVfQUJBTkRPTkVEX0FGVEVSX1RJTUVPVVQQAxIfChtDT0RFX0FCQU5ET05FRF9BRlRFUl9DQU5DRUwQBBIeChpDT0RFX1BSRVBBUkFUSU9OX0VYSEFVU1RFRBAFEhkKFUNPREVfVE9PTF9VTkFWQUlMQUJMRRAGIkgKClRvb2xPdXRwdXQSKAoHY29udGVudBgBIAMoCzIXLmNpcmN1cy52MS5Db250ZW50QmxvY2sSEAoIaXNfZXJyb3IYAiABKAgiTwoMQ29udGVudEJsb2NrEg4KBHRleHQYASABKAlIABImCgVpbWFnZRgCIAEoCzIVLmNpcmN1cy52MS5JbWFnZUJsb2NrSABCBwoFYmxvY2siLgoKSW1hZ2VCbG9jaxISCgptZWRpYV90eXBlGAEgASgJEgwKBGRhdGEYAiABKAwicQoLQmFzaFJlcXVlc3QSDwoHY29tbWFuZBgBIAEoCRILCgNjd2QYAiABKAkSGQoRcnVuX2luX2JhY2tncm91bmQYAyABKAgSEwoLZGVzY3JpcHRpb24YBCABKAkSFAoMd29ya2luZ19kaXJzGAUgAygJIpMBCgpCYXNoUmVzdWx0EhEKCWV4aXRfY29kZRgBIAEoBRILCgNjd2QYAiABKAkSEQoJdGltZWRfb3V0GAMgASgIEhMKC2ludGVycnVwdGVkGAQgASgIEhgKEG91dHB1dF90cnVuY2F0ZWQYBSABKAgSEwoLb3V0cHV0X3BhdGgYBiABKAkSDgoGam9iX2lkGAcgASgJIlcKC1JlYWRSZXF1ZXN0EgwKBHBhdGgYASABKAkSEwoGb2Zmc2V0GAIgASgNSACIAQESDQoFbGltaXQYAyABKA0SCwoDY3dkGAQgASgJQgkKB19vZmZzZXQiSAoKUmVhZFJlc3VsdBIOCgZzaGEyNTYYASABKAkSFQoNbXRpbWVfdW5peF9tcxgCIAEoAxITCgt0b3RhbF9saW5lcxgDIAEoDSJsCgxXcml0ZVJlcXVlc3QSDAoEcGF0aBgBIAEoCRIPCgdjb250ZW50GAIgASgJEhwKD2V4cGVjdGVkX3NoYTI1NhgDIAEoCUgAiAEBEgsKA2N3ZBgEIAEoCUISChBfZXhwZWN0ZWRfc2hhMjU2Ii4KC1dyaXRlUmVzdWx0Eg4KBnNoYTI1NhgBIAEoCRIPCgdjcmVhdGVkGAIgASgIIpcBCgtFZGl0UmVxdWVzdBIMCgRwYXRoGAEgASgJEhIKCm9sZF9zdHJpbmcYAiABKAkSEgoKbmV3X3N0cmluZxgDIAEoCRITCgtyZXBsYWNlX2FsbBgEIAEoCBIcCg9leHBlY3RlZF9zaGEyNTYYBSABKAlIAIgBARILCgNjd2QYBiABKAlCEgoQX2V4cGVjdGVkX3NoYTI1NiJKCgpFZGl0UmVzdWx0Eg4KBnNoYTI1NhgBIAEoCRIbChNtb2RpZmllZF9zaW5jZV9yZWFkGAIgASgIEg8KB2NyZWF0ZWQYAyABKAgiIQoPVGFza1N0b3BSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSIQCg5UYXNrU3RvcFJlc3VsdCIcCglDYWxsUXVlcnkSDwoHY2FsbF9pZBgBIAEoCSLKAQoKQ2FsbFN0YXR1cxIPCgdjYWxsX2lkGAEgASgJEioKBXN0YXRlGAIgASgOMhsuY2lyY3VzLnYxLkNhbGxTdGF0dXMuU3RhdGUSJwoGcmVzdWx0GAMgASgLMhcuY2lyY3VzLnYxLkRldmljZVJlc3VsdCJWCgVTdGF0ZRIVChFTVEFURV9VTlNQRUNJRklFRBAAEhEKDVNUQVRFX1JVTk5JTkcQARITCg9TVEFURV9DT01QTEVURUQQAhIOCgpTVEFURV9MT1NUEAMiHQoKQ2FuY2VsQ2FsbBIPCgdjYWxsX2lkGAEgASgJIoUCCghKb2JFdmVudBIOCgZqb2JfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIoCgVzdGF0ZRgDIAEoDjIZLmNpcmN1cy52MS5Kb2JFdmVudC5TdGF0ZRIRCglleGl0X2NvZGUYBCABKAUSEwoLb3V0cHV0X3BhdGgYBSABKAkSCwoDc2VxGAYgASgEEg8KB2NhbGxfaWQYByABKAkiZQoFU3RhdGUSFQoRU1RBVEVfVU5TUEVDSUZJRUQQABIRCg1TVEFURV9SVU5OSU5HEAESEAoMU1RBVEVfRVhJVEVEEAISEAoMU1RBVEVfS0lMTEVEEAMSDgoKU1RBVEVfTE9TVBAEIlAKF1ByZXBhcmVXb3Jrc3BhY2VSZXF1ZXN0EgwKBHBhdGgYASABKAkSEAoIcmVwb191cmwYAiABKAkSFQoNcmVzdW1lX2pvYl9pZBgDIAEoCSLOAwoWUHJlcGFyZVdvcmtzcGFjZVJlc3VsdBI6CgdvdXRjb21lGAEgASgOMikuY2lyY3VzLnYxLlByZXBhcmVXb3Jrc3BhY2VSZXN1bHQuT3V0Y29tZRIMCgRwYXRoGAIgASgJEjgKBmFjdGlvbhgDIAEoDjIoLmNpcmN1cy52MS5QcmVwYXJlV29ya3NwYWNlUmVzdWx0LkFjdGlvbhIOCgZqb2JfaWQYBCABKAkSKAoFZXJyb3IYBSABKA4yGS5jaXJjdXMudjEuV29ya3NwYWNlRXJyb3ISFAoMZXJyb3JfZGV0YWlsGAYgASgJImQKB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhEKDU9VVENPTUVfUkVBRFkQARIZChVPVVRDT01FX0lOX0JBQ0tHUk9VTkQQAhISCg5PVVRDT01FX0ZBSUxFRBADInoKBkFjdGlvbhIWChJBQ1RJT05fVU5TUEVDSUZJRUQQABISCg5BQ1RJT05fQ1JFQVRFRBABEhUKEUFDVElPTl9VU0VEX0VNUFRZEAISEQoNQUNUSU9OX0NMT05FRBADEhoKFkFDVElPTl9VU0VEX1JFUE9TSVRPUlkQBCImChZSZW1vdmVXb3Jrc3BhY2VSZXF1ZXN0EgwKBHBhdGgYASABKAkigQIKFVJlbW92ZVdvcmtzcGFjZVJlc3VsdBI5CgdvdXRjb21lGAEgASgOMiguY2lyY3VzLnYxLlJlbW92ZVdvcmtzcGFjZVJlc3VsdC5PdXRjb21lEgwKBHBhdGgYAiABKAkSKAoFZXJyb3IYAyABKA4yGS5jaXJjdXMudjEuV29ya3NwYWNlRXJyb3ISFAoMZXJyb3JfZGV0YWlsGAQgASgJIl8KB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhMKD09VVENPTUVfUkVNT1ZFRBABEhIKDk9VVENPTUVfQUJTRU5UEAISEgoOT1VUQ09NRV9GQUlMRUQQAyqBBQoOV29ya3NwYWNlRXJyb3ISHwobV09SS1NQQUNFX0VSUk9SX1VOU1BFQ0lGSUVEEAASIwofV09SS1NQQUNFX0VSUk9SX0lOVkFMSURfUkVRVUVTVBABEiAKHFdPUktTUEFDRV9FUlJPUl9IT01FX1VOS05PV04QAhIiCh5XT1JLU1BBQ0VfRVJST1JfVU5TVVBQT1JURURfT1MQAxIhCh1XT1JLU1BBQ0VfRVJST1JfUEFUSF9DT05GTElDVBAEEh0KGVdPUktTUEFDRV9FUlJPUl9OT1RfRU1QVFkQBRIjCh9XT1JLU1BBQ0VfRVJST1JfUkVNT1RFX01JU01BVENIEAYSIwofV09SS1NQQUNFX0VSUk9SX0dJVF9VTkFWQUlMQUJMRRAHEiAKHFdPUktTUEFDRV9FUlJPUl9DTE9ORV9GQUlMRUQQCBIcChhXT1JLU1BBQ0VfRVJST1JfTk9fU1BBQ0UQCRIlCiFXT1JLU1BBQ0VfRVJST1JfUEVSTUlTU0lPTl9ERU5JRUQQChIbChdXT1JLU1BBQ0VfRVJST1JfVElNRU9VVBALEhgKFFdPUktTUEFDRV9FUlJPUl9CVVNZEAwSHQoZV09SS1NQQUNFX0VSUk9SX0NBTkNFTExFRBANEhYKEldPUktTUEFDRV9FUlJPUl9JTxAOEhsKF1dPUktTUEFDRV9FUlJPUl9SRUZVU0VEEA8SIgoeV09SS1NQQUNFX0VSUk9SX0RFVklDRV9SRVZPS0VEEGQSHwobV09SS1NQQUNFX0VSUk9SX0lOVEVSUlVQVEVEEGUSIAocV09SS1NQQUNFX0VSUk9SX0RBRU1PTl9GQVVMVBBmQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z");
 
 /**
  * DeviceCall is one tool invocation from the worker to a device daemon.
@@ -105,6 +105,22 @@ export type DeviceCall = Message<"circus.v1.DeviceCall"> & {
      */
     value: TaskStopRequest;
     case: "taskStop";
+  } | {
+    /**
+     * Project default directory preparation (control plane only).
+     *
+     * @generated from field: circus.v1.PrepareWorkspaceRequest prepare_workspace = 15;
+     */
+    value: PrepareWorkspaceRequest;
+    case: "prepareWorkspace";
+  } | {
+    /**
+     * Project default directory removal (control plane only).
+     *
+     * @generated from field: circus.v1.RemoveWorkspaceRequest remove_workspace = 16;
+     */
+    value: RemoveWorkspaceRequest;
+    case: "removeWorkspace";
   } | { case: undefined; value?: undefined };
 };
 
@@ -188,6 +204,22 @@ export type DeviceResult = Message<"circus.v1.DeviceResult"> & {
      */
     value: TaskStopResult;
     case: "taskStop";
+  } | {
+    /**
+     * Workspace preparation outcome.
+     *
+     * @generated from field: circus.v1.PrepareWorkspaceResult prepare_workspace = 15;
+     */
+    value: PrepareWorkspaceResult;
+    case: "prepareWorkspace";
+  } | {
+    /**
+     * Workspace removal outcome.
+     *
+     * @generated from field: circus.v1.RemoveWorkspaceResult remove_workspace = 16;
+     */
+    value: RemoveWorkspaceResult;
+    case: "removeWorkspace";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1020,4 +1052,489 @@ export enum JobEvent_State {
  */
 export const JobEvent_StateSchema: GenEnum<JobEvent_State> = /*@__PURE__*/
   enumDesc(file_circus_v1_device, 19, 0);
+
+/**
+ * PrepareWorkspaceRequest makes sure a project's default directory exists on
+ * the device: it creates an empty directory, clones repo_url into it, or
+ * accepts what is there (docs/wire.md "Workspace preparation"). The control
+ * plane sends it, never a worker, with a session_id of the form
+ * "workspace-<workspace_id>" that no session has. Idempotent: repeating it
+ * after success reports READY without changing anything. Daemons declare
+ * the Hello feature "device_call.prepare_workspace"; the control plane only
+ * sends it to connections that did.
+ *
+ * The daemon resolves the path, creates its parent, takes a lock beside the
+ * target, and then acts on what the target is:
+ *   - absent: creates it (repo_url empty) or clones into a hidden sibling
+ *     and renames that onto the target once the clone is complete;
+ *   - an empty directory: uses it (repo_url empty) or clones as above,
+ *     replacing the empty directory;
+ *   - a repository whose own top level is the target and whose origin is
+ *     the same remote as repo_url: uses it;
+ *   - anything else non-empty: NOT_EMPTY, or REMOTE_MISMATCH for a
+ *     repository root with a different (or no) origin; a non-directory in
+ *     the way is PATH_CONFLICT. The daemon never modifies the target's
+ *     existing contents.
+ * git runs without a shell, with the environment the Bash tool builds from
+ * the login shell (so the user's credential helpers and ssh-agent apply),
+ * GIT_TERMINAL_PROMPT=0 and no repository-locating variables. Clones are
+ * full clones.
+ *
+ * @generated from message circus.v1.PrepareWorkspaceRequest
+ */
+export type PrepareWorkspaceRequest = Message<"circus.v1.PrepareWorkspaceRequest"> & {
+  /**
+   * "~/" followed by a relative path, or an absolute path, resolved like
+   * ListDirectoryQuery.path; "" and "~" alone are INVALID_REQUEST. The
+   * control plane sends "~/circus/projects/<project_id>". Valid UTF-8, at
+   * most 4096 bytes, no NUL.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * Empty: an empty directory is the workspace. Otherwise the repository
+   * to clone, passed to git as given (it may carry credentials, which the
+   * daemon never echoes); at most 2048 bytes.
+   *
+   * @generated from field: string repo_url = 2;
+   */
+  repoUrl: string;
+
+  /**
+   * A background job of an earlier attempt of this preparation (same
+   * session_id). If the daemon still knows it, it waits for it until this
+   * call's deadline, or returns its retained outcome, instead of starting
+   * anything; otherwise it prepares as if this were empty.
+   *
+   * @generated from field: string resume_job_id = 3;
+   */
+  resumeJobId: string;
+};
+
+/**
+ * Describes the message circus.v1.PrepareWorkspaceRequest.
+ * Use `create(PrepareWorkspaceRequestSchema)` to create a new message.
+ */
+export const PrepareWorkspaceRequestSchema: GenMessage<PrepareWorkspaceRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 20);
+
+/**
+ * PrepareWorkspaceResult is the structured outcome of PrepareWorkspaceRequest.
+ * DeviceResult.output carries one human-readable line; is_error matches
+ * OUTCOME_FAILED.
+ *
+ * @generated from message circus.v1.PrepareWorkspaceResult
+ */
+export type PrepareWorkspaceResult = Message<"circus.v1.PrepareWorkspaceResult"> & {
+  /**
+   * Outcome of the call.
+   *
+   * @generated from field: circus.v1.PrepareWorkspaceResult.Outcome outcome = 1;
+   */
+  outcome: PrepareWorkspaceResult_Outcome;
+
+  /**
+   * Absolute, lexically clean, valid UTF-8 path (symlinks not resolved).
+   * Set for READY, and for FAILED once the path could be resolved.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * READY only.
+   *
+   * @generated from field: circus.v1.PrepareWorkspaceResult.Action action = 3;
+   */
+  action: PrepareWorkspaceResult_Action;
+
+  /**
+   * IN_BACKGROUND only.
+   *
+   * @generated from field: string job_id = 4;
+   */
+  jobId: string;
+
+  /**
+   * FAILED only.
+   *
+   * @generated from field: circus.v1.WorkspaceError error = 5;
+   */
+  error: WorkspaceError;
+
+  /**
+   * FAILED only: at most 1024 bytes of valid UTF-8 with credentials
+   * removed: the tail of git's stderr for CLONE_FAILED and NO_SPACE, the
+   * existing origin for REMOTE_MISMATCH, empty otherwise.
+   *
+   * @generated from field: string error_detail = 6;
+   */
+  errorDetail: string;
+};
+
+/**
+ * Describes the message circus.v1.PrepareWorkspaceResult.
+ * Use `create(PrepareWorkspaceResultSchema)` to create a new message.
+ */
+export const PrepareWorkspaceResultSchema: GenMessage<PrepareWorkspaceResult> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 21);
+
+/**
+ * Outcome of the call.
+ *
+ * @generated from enum circus.v1.PrepareWorkspaceResult.Outcome
+ */
+export enum PrepareWorkspaceResult_Outcome {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The workspace exists at path.
+   *
+   * @generated from enum value: OUTCOME_READY = 1;
+   */
+  READY = 1,
+
+  /**
+   * The clone outlived the call's deadline and continues as background
+   * job job_id of the call's session; ask again with resume_job_id once
+   * the job has ended.
+   *
+   * @generated from enum value: OUTCOME_IN_BACKGROUND = 2;
+   */
+  IN_BACKGROUND = 2,
+
+  /**
+   * Preparation failed; see error.
+   *
+   * @generated from enum value: OUTCOME_FAILED = 3;
+   */
+  FAILED = 3,
+}
+
+/**
+ * Describes the enum circus.v1.PrepareWorkspaceResult.Outcome.
+ */
+export const PrepareWorkspaceResult_OutcomeSchema: GenEnum<PrepareWorkspaceResult_Outcome> = /*@__PURE__*/
+  enumDesc(file_circus_v1_device, 21, 0);
+
+/**
+ * What a READY preparation did.
+ *
+ * @generated from enum circus.v1.PrepareWorkspaceResult.Action
+ */
+export enum PrepareWorkspaceResult_Action {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: ACTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Created an empty directory.
+   *
+   * @generated from enum value: ACTION_CREATED = 1;
+   */
+  CREATED = 1,
+
+  /**
+   * The directory existed and was empty.
+   *
+   * @generated from enum value: ACTION_USED_EMPTY = 2;
+   */
+  USED_EMPTY = 2,
+
+  /**
+   * Cloned repo_url.
+   *
+   * @generated from enum value: ACTION_CLONED = 3;
+   */
+  CLONED = 3,
+
+  /**
+   * The directory was already a repository of the same remote.
+   *
+   * @generated from enum value: ACTION_USED_REPOSITORY = 4;
+   */
+  USED_REPOSITORY = 4,
+}
+
+/**
+ * Describes the enum circus.v1.PrepareWorkspaceResult.Action.
+ */
+export const PrepareWorkspaceResult_ActionSchema: GenEnum<PrepareWorkspaceResult_Action> = /*@__PURE__*/
+  enumDesc(file_circus_v1_device, 21, 1);
+
+/**
+ * RemoveWorkspaceRequest deletes a project's default directory when the
+ * user deletes the project and asks for it. The control plane sends it,
+ * never a worker, once, with a session_id "workspace-<workspace_id>".
+ * Daemons declare the Hello feature "device_call.remove_workspace".
+ *
+ * The daemon resolves the path and refuses (REFUSED) anything but a real
+ * directory (not a symlink) whose resolved path is exactly
+ * "<home>/circus/projects/<name>" for a single path element <name>. It
+ * removes the directory recursively without following symlinks inside it.
+ *
+ * @generated from message circus.v1.RemoveWorkspaceRequest
+ */
+export type RemoveWorkspaceRequest = Message<"circus.v1.RemoveWorkspaceRequest"> & {
+  /**
+   * "~/circus/projects/<project_id>"; same rules as
+   * PrepareWorkspaceRequest.path.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+};
+
+/**
+ * Describes the message circus.v1.RemoveWorkspaceRequest.
+ * Use `create(RemoveWorkspaceRequestSchema)` to create a new message.
+ */
+export const RemoveWorkspaceRequestSchema: GenMessage<RemoveWorkspaceRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 22);
+
+/**
+ * RemoveWorkspaceResult is the structured outcome of RemoveWorkspaceRequest.
+ *
+ * @generated from message circus.v1.RemoveWorkspaceResult
+ */
+export type RemoveWorkspaceResult = Message<"circus.v1.RemoveWorkspaceResult"> & {
+  /**
+   * Outcome of the call.
+   *
+   * @generated from field: circus.v1.RemoveWorkspaceResult.Outcome outcome = 1;
+   */
+  outcome: RemoveWorkspaceResult_Outcome;
+
+  /**
+   * Absolute path, as in PrepareWorkspaceResult.path.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * FAILED only: REFUSED, PERMISSION_DENIED, HOME_UNKNOWN, INVALID_REQUEST,
+   * UNSUPPORTED_OS, BUSY (a preparation holds the lock) or IO.
+   *
+   * @generated from field: circus.v1.WorkspaceError error = 3;
+   */
+  error: WorkspaceError;
+
+  /**
+   * FAILED only: at most 1024 bytes of valid UTF-8 explaining the failure.
+   *
+   * @generated from field: string error_detail = 4;
+   */
+  errorDetail: string;
+};
+
+/**
+ * Describes the message circus.v1.RemoveWorkspaceResult.
+ * Use `create(RemoveWorkspaceResultSchema)` to create a new message.
+ */
+export const RemoveWorkspaceResultSchema: GenMessage<RemoveWorkspaceResult> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 23);
+
+/**
+ * Outcome of the call.
+ *
+ * @generated from enum circus.v1.RemoveWorkspaceResult.Outcome
+ */
+export enum RemoveWorkspaceResult_Outcome {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The directory was removed.
+   *
+   * @generated from enum value: OUTCOME_REMOVED = 1;
+   */
+  REMOVED = 1,
+
+  /**
+   * There was nothing at path.
+   *
+   * @generated from enum value: OUTCOME_ABSENT = 2;
+   */
+  ABSENT = 2,
+
+  /**
+   * Nothing or only part was removed; see error.
+   *
+   * @generated from enum value: OUTCOME_FAILED = 3;
+   */
+  FAILED = 3,
+}
+
+/**
+ * Describes the enum circus.v1.RemoveWorkspaceResult.Outcome.
+ */
+export const RemoveWorkspaceResult_OutcomeSchema: GenEnum<RemoveWorkspaceResult_Outcome> = /*@__PURE__*/
+  enumDesc(file_circus_v1_device, 23, 0);
+
+/**
+ * WorkspaceError classifies workspace failures. Daemons send values up to
+ * 99; the control plane also sets one of them when it reaches the same
+ * conclusion itself (e.g. TIMEOUT when a background clone outlived its
+ * lifetime without the daemon reporting). Values from 100 are set by the
+ * control plane only.
+ *
+ * @generated from enum circus.v1.WorkspaceError
+ */
+export enum WorkspaceError {
+  /**
+   * Not set.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Bad path or URL.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_INVALID_REQUEST = 1;
+   */
+  INVALID_REQUEST = 1,
+
+  /**
+   * The daemon user's home is unset, relative or not valid UTF-8.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_HOME_UNKNOWN = 2;
+   */
+  HOME_UNKNOWN = 2,
+
+  /**
+   * The device's OS is not supported (Windows).
+   *
+   * @generated from enum value: WORKSPACE_ERROR_UNSUPPORTED_OS = 3;
+   */
+  UNSUPPORTED_OS = 3,
+
+  /**
+   * The path or one of its ancestors is not a directory.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_PATH_CONFLICT = 4;
+   */
+  PATH_CONFLICT = 4,
+
+  /**
+   * The directory is not empty and is not a usable repository.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_NOT_EMPTY = 5;
+   */
+  NOT_EMPTY = 5,
+
+  /**
+   * The directory is a repository root whose origin is another remote.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_REMOTE_MISMATCH = 6;
+   */
+  REMOTE_MISMATCH = 6,
+
+  /**
+   * git is not installed or not on PATH.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_GIT_UNAVAILABLE = 7;
+   */
+  GIT_UNAVAILABLE = 7,
+
+  /**
+   * git clone failed.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_CLONE_FAILED = 8;
+   */
+  CLONE_FAILED = 8,
+
+  /**
+   * The device ran out of disk space or quota.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_NO_SPACE = 9;
+   */
+  NO_SPACE = 9,
+
+  /**
+   * Permission denied.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_PERMISSION_DENIED = 10;
+   */
+  PERMISSION_DENIED = 10,
+
+  /**
+   * The clone exceeded its two-hour background lifetime.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_TIMEOUT = 11;
+   */
+  TIMEOUT = 11,
+
+  /**
+   * Retryable: another preparation holds the lock, or the daemon's
+   * workspace slots are full.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_BUSY = 12;
+   */
+  BUSY = 12,
+
+  /**
+   * Cancelled by CancelCall or by stopping the background job.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_CANCELLED = 13;
+   */
+  CANCELLED = 13,
+
+  /**
+   * Any other failure; details are in the daemon log.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_IO = 14;
+   */
+  IO = 14,
+
+  /**
+   * RemoveWorkspaceRequest only: the path is not a removable workspace.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_REFUSED = 15;
+   */
+  REFUSED = 15,
+
+  /**
+   * Control plane only: the device was revoked.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_DEVICE_REVOKED = 100;
+   */
+  DEVICE_REVOKED = 100,
+
+  /**
+   * Control plane only: attempts were lost three times in a row (daemon
+   * restarts).
+   *
+   * @generated from enum value: WORKSPACE_ERROR_INTERRUPTED = 101;
+   */
+  INTERRUPTED = 101,
+
+  /**
+   * Control plane only: a daemon fault other than TOOL_UNAVAILABLE.
+   *
+   * @generated from enum value: WORKSPACE_ERROR_DAEMON_FAULT = 102;
+   */
+  DAEMON_FAULT = 102,
+}
+
+/**
+ * Describes the enum circus.v1.WorkspaceError.
+ */
+export const WorkspaceErrorSchema: GenEnum<WorkspaceError> = /*@__PURE__*/
+  enumDesc(file_circus_v1_device, 0);
 

@@ -39,6 +39,10 @@ message DeviceCall {
     EditRequest edit = 13;
     // Background job stop invocation.
     TaskStopRequest task_stop = 14;
+    // Project default directory preparation (control plane only).
+    PrepareWorkspaceRequest prepare_workspace = 15;
+    // Project default directory removal (control plane only).
+    RemoveWorkspaceRequest remove_workspace = 16;
   }
 }
 
@@ -63,6 +67,10 @@ message DeviceResult {
     EditResult edit = 13;
     // Background job stop metadata.
     TaskStopResult task_stop = 14;
+    // Workspace preparation outcome.
+    PrepareWorkspaceResult prepare_workspace = 15;
+    // Workspace removal outcome.
+    RemoveWorkspaceResult remove_workspace = 16;
   }
 }
 
@@ -314,4 +322,180 @@ message JobEvent {
   // Creating call (explicit background or timeout promotion): 1-128 bytes,
   // charset [A-Za-z0-9_-].
   string call_id = 7;
+}
+
+// PrepareWorkspaceRequest makes sure a project's default directory exists on
+// the device: it creates an empty directory, clones repo_url into it, or
+// accepts what is there (docs/wire.md "Workspace preparation"). The control
+// plane sends it, never a worker, with a session_id of the form
+// "workspace-<workspace_id>" that no session has. Idempotent: repeating it
+// after success reports READY without changing anything. Daemons declare
+// the Hello feature "device_call.prepare_workspace"; the control plane only
+// sends it to connections that did.
+//
+// The daemon resolves the path, creates its parent, takes a lock beside the
+// target, and then acts on what the target is:
+//   - absent: creates it (repo_url empty) or clones into a hidden sibling
+//     and renames that onto the target once the clone is complete;
+//   - an empty directory: uses it (repo_url empty) or clones as above,
+//     replacing the empty directory;
+//   - a repository whose own top level is the target and whose origin is
+//     the same remote as repo_url: uses it;
+//   - anything else non-empty: NOT_EMPTY, or REMOTE_MISMATCH for a
+//     repository root with a different (or no) origin; a non-directory in
+//     the way is PATH_CONFLICT. The daemon never modifies the target's
+//     existing contents.
+// git runs without a shell, with the environment the Bash tool builds from
+// the login shell (so the user's credential helpers and ssh-agent apply),
+// GIT_TERMINAL_PROMPT=0 and no repository-locating variables. Clones are
+// full clones.
+message PrepareWorkspaceRequest {
+  // "~/" followed by a relative path, or an absolute path, resolved like
+  // ListDirectoryQuery.path; "" and "~" alone are INVALID_REQUEST. The
+  // control plane sends "~/circus/projects/<project_id>". Valid UTF-8, at
+  // most 4096 bytes, no NUL.
+  string path = 1;
+  // Empty: an empty directory is the workspace. Otherwise the repository
+  // to clone, passed to git as given (it may carry credentials, which the
+  // daemon never echoes); at most 2048 bytes.
+  string repo_url = 2;
+  // A background job of an earlier attempt of this preparation (same
+  // session_id). If the daemon still knows it, it waits for it until this
+  // call's deadline, or returns its retained outcome, instead of starting
+  // anything; otherwise it prepares as if this were empty.
+  string resume_job_id = 3;
+}
+
+// PrepareWorkspaceResult is the structured outcome of PrepareWorkspaceRequest.
+// DeviceResult.output carries one human-readable line; is_error matches
+// OUTCOME_FAILED.
+message PrepareWorkspaceResult {
+  // Outcome of the call.
+  enum Outcome {
+    // Not set.
+    OUTCOME_UNSPECIFIED = 0;
+    // The workspace exists at path.
+    OUTCOME_READY = 1;
+    // The clone outlived the call's deadline and continues as background
+    // job job_id of the call's session; ask again with resume_job_id once
+    // the job has ended.
+    OUTCOME_IN_BACKGROUND = 2;
+    // Preparation failed; see error.
+    OUTCOME_FAILED = 3;
+  }
+  // What a READY preparation did.
+  enum Action {
+    // Not set.
+    ACTION_UNSPECIFIED = 0;
+    // Created an empty directory.
+    ACTION_CREATED = 1;
+    // The directory existed and was empty.
+    ACTION_USED_EMPTY = 2;
+    // Cloned repo_url.
+    ACTION_CLONED = 3;
+    // The directory was already a repository of the same remote.
+    ACTION_USED_REPOSITORY = 4;
+  }
+  // Outcome of the call.
+  Outcome outcome = 1;
+  // Absolute, lexically clean, valid UTF-8 path (symlinks not resolved).
+  // Set for READY, and for FAILED once the path could be resolved.
+  string path = 2;
+  // READY only.
+  Action action = 3;
+  // IN_BACKGROUND only.
+  string job_id = 4;
+  // FAILED only.
+  WorkspaceError error = 5;
+  // FAILED only: at most 1024 bytes of valid UTF-8 with credentials
+  // removed: the tail of git's stderr for CLONE_FAILED and NO_SPACE, the
+  // existing origin for REMOTE_MISMATCH, empty otherwise.
+  string error_detail = 6;
+}
+
+// RemoveWorkspaceRequest deletes a project's default directory when the
+// user deletes the project and asks for it. The control plane sends it,
+// never a worker, once, with a session_id "workspace-<workspace_id>".
+// Daemons declare the Hello feature "device_call.remove_workspace".
+//
+// The daemon resolves the path and refuses (REFUSED) anything but a real
+// directory (not a symlink) whose resolved path is exactly
+// "<home>/circus/projects/<name>" for a single path element <name>. It
+// removes the directory recursively without following symlinks inside it.
+message RemoveWorkspaceRequest {
+  // "~/circus/projects/<project_id>"; same rules as
+  // PrepareWorkspaceRequest.path.
+  string path = 1;
+}
+
+// RemoveWorkspaceResult is the structured outcome of RemoveWorkspaceRequest.
+message RemoveWorkspaceResult {
+  // Outcome of the call.
+  enum Outcome {
+    // Not set.
+    OUTCOME_UNSPECIFIED = 0;
+    // The directory was removed.
+    OUTCOME_REMOVED = 1;
+    // There was nothing at path.
+    OUTCOME_ABSENT = 2;
+    // Nothing or only part was removed; see error.
+    OUTCOME_FAILED = 3;
+  }
+  // Outcome of the call.
+  Outcome outcome = 1;
+  // Absolute path, as in PrepareWorkspaceResult.path.
+  string path = 2;
+  // FAILED only: REFUSED, PERMISSION_DENIED, HOME_UNKNOWN, INVALID_REQUEST,
+  // UNSUPPORTED_OS, BUSY (a preparation holds the lock) or IO.
+  WorkspaceError error = 3;
+  // FAILED only: at most 1024 bytes of valid UTF-8 explaining the failure.
+  string error_detail = 4;
+}
+
+// WorkspaceError classifies workspace failures. Daemons send values up to
+// 99; the control plane also sets one of them when it reaches the same
+// conclusion itself (e.g. TIMEOUT when a background clone outlived its
+// lifetime without the daemon reporting). Values from 100 are set by the
+// control plane only.
+enum WorkspaceError {
+  // Not set.
+  WORKSPACE_ERROR_UNSPECIFIED = 0;
+  // Bad path or URL.
+  WORKSPACE_ERROR_INVALID_REQUEST = 1;
+  // The daemon user's home is unset, relative or not valid UTF-8.
+  WORKSPACE_ERROR_HOME_UNKNOWN = 2;
+  // The device's OS is not supported (Windows).
+  WORKSPACE_ERROR_UNSUPPORTED_OS = 3;
+  // The path or one of its ancestors is not a directory.
+  WORKSPACE_ERROR_PATH_CONFLICT = 4;
+  // The directory is not empty and is not a usable repository.
+  WORKSPACE_ERROR_NOT_EMPTY = 5;
+  // The directory is a repository root whose origin is another remote.
+  WORKSPACE_ERROR_REMOTE_MISMATCH = 6;
+  // git is not installed or not on PATH.
+  WORKSPACE_ERROR_GIT_UNAVAILABLE = 7;
+  // git clone failed.
+  WORKSPACE_ERROR_CLONE_FAILED = 8;
+  // The device ran out of disk space or quota.
+  WORKSPACE_ERROR_NO_SPACE = 9;
+  // Permission denied.
+  WORKSPACE_ERROR_PERMISSION_DENIED = 10;
+  // The clone exceeded its two-hour background lifetime.
+  WORKSPACE_ERROR_TIMEOUT = 11;
+  // Retryable: another preparation holds the lock, or the daemon's
+  // workspace slots are full.
+  WORKSPACE_ERROR_BUSY = 12;
+  // Cancelled by CancelCall or by stopping the background job.
+  WORKSPACE_ERROR_CANCELLED = 13;
+  // Any other failure; details are in the daemon log.
+  WORKSPACE_ERROR_IO = 14;
+  // RemoveWorkspaceRequest only: the path is not a removable workspace.
+  WORKSPACE_ERROR_REFUSED = 15;
+  // Control plane only: the device was revoked.
+  WORKSPACE_ERROR_DEVICE_REVOKED = 100;
+  // Control plane only: attempts were lost three times in a row (daemon
+  // restarts).
+  WORKSPACE_ERROR_INTERRUPTED = 101;
+  // Control plane only: a daemon fault other than TOOL_UNAVAILABLE.
+  WORKSPACE_ERROR_DAEMON_FAULT = 102;
 }
