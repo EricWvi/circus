@@ -146,6 +146,15 @@ func runE2E(m *testing.M) (code int) {
 	if err = os.MkdirAll(tempDir, 0700); err != nil {
 		panic(err)
 	}
+	// Real Claude Code reads CLAUDE.md files of every ancestor of its
+	// working directory, so its projects live outside the user's home and
+	// this repository (see outsideRoot).
+	outside, releaseOutside, err := outsideRoot(os.TempDir())
+	if err != nil {
+		panic(err)
+	}
+	defer releaseOutside()
+	outsideDir = outside
 	_ = os.Setenv("TMPDIR", tempDir)
 	build := filepath.Join(runDir, "build")
 	if err = os.MkdirAll(build, 0700); err != nil {
@@ -170,9 +179,9 @@ func runE2E(m *testing.M) (code int) {
 	if buildChild.err != nil {
 		return 1
 	}
-	// Adopt only this test binary's orphaned tool descendants after a daemon is
-	// SIGKILLed (TestDaemonCrashLeavesCallUnknown).
-	// Reaping always targets a recorded PID, never arbitrary children.
+	// Adopt orphaned descendants of killed daemons and workers. Tests can
+	// wait for specific PIDs during a scenario. The real-worker harness
+	// drains all adopted children after its own process waits finish.
 	if _, _, errno := syscall.Syscall6(syscall.SYS_PRCTL, 36, 1, 0, 0, 0, 0); errno != 0 {
 		panic(errno)
 	}
@@ -292,8 +301,14 @@ func (h *harness) start(extra []string, input string, args ...string) *child {
 
 func (h *harness) startCommand(cmd *exec.Cmd, extra []string) *child {
 	h.t.Helper()
+	return h.startCommandEnv(cmd, append(append([]string{}, h.env...), extra...))
+}
+
+// startCommandEnv starts cmd with exactly env, tracked like startCommand.
+func (h *harness) startCommandEnv(cmd *exec.Cmd, env []string) *child {
+	h.t.Helper()
 	p := &child{cmd: cmd, done: make(chan struct{})}
-	p.cmd.Env = append(append([]string{}, h.env...), extra...)
+	p.cmd.Env = env
 	p.cmd.Stderr = &p.stderr
 	p.cmd.Stdout = &p.stdout
 	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}

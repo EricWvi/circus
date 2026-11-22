@@ -34,6 +34,8 @@ export interface WorkerConfig {
   caFile?: string;
   maxSessions: number;
   logLevel: LogLevel;
+  /** Idle time before a session's lease is released. */
+  idleMs: number;
 }
 
 export function loadConfig(env = process.env): WorkerConfig {
@@ -71,6 +73,11 @@ export function loadConfig(env = process.env): WorkerConfig {
   if (!/^\d+$/.test(rawMax) || maxSessions < 1 || maxSessions > 64) {
     throw new Error("CIRCUS_WORKER_MAX_SESSIONS must be an integer from 1 to 64");
   }
+  const rawIdle = env.CIRCUS_WORKER_IDLE_SECONDS ?? "300";
+  const idleSeconds = Number(rawIdle);
+  if (!/^\d+$/.test(rawIdle) || idleSeconds < 1 || idleSeconds > 86_400) {
+    throw new Error("CIRCUS_WORKER_IDLE_SECONDS must be an integer from 1 to 86400");
+  }
   const logLevel = env.CIRCUS_WORKER_LOG_LEVEL ?? "info";
   if (logLevel !== "debug" && logLevel !== "info" && logLevel !== "warn" && logLevel !== "error") {
     throw new Error("CIRCUS_WORKER_LOG_LEVEL must be debug, info, warn or error");
@@ -82,5 +89,6 @@ export function loadConfig(env = process.env): WorkerConfig {
     caFile: typeof credentials.ca_file === "string" ? credentials.ca_file || undefined : undefined,
     maxSessions,
     logLevel,
+    idleMs: idleSeconds * 1000,
   };
 }

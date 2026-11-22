@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -297,7 +296,7 @@ func (s *session) runTurn() error {
 		return fmt.Errorf("STARTED: %v", r)
 	}
 	// TURN_STARTED is a worker-published boundary on the current wire.
-	s.queue(pb.SessionEvent_KIND_TURN_STARTED, object{"turn_no": strconv.FormatUint(t.no, 10), "origin": originText})
+	s.queue(pb.SessionEvent_KIND_TURN_STARTED, turnStartedPayload(t.no, originText))
 	if err := s.workTurn(t, in); err != nil {
 		return s.finishTurn(t, err)
 	}
@@ -394,7 +393,7 @@ func (s *session) finishTurn(t *turn, workErr error) error {
 	default:
 		outcome = pb.TurnOutcome_TURN_OUTCOME_ERROR
 		failure = workErr.Error()
-		s.queue(pb.SessionEvent_KIND_ERROR, object{"message": failure})
+		s.queue(pb.SessionEvent_KIND_ERROR, errorPayload(failure))
 	}
 	if incomplete {
 		persisted = nil
@@ -579,7 +578,7 @@ func (s *session) loadSubpath(key string) error {
 		}
 	}
 	if len(unknown) != 0 {
-		s.queue(pb.SessionEvent_KIND_TRANSCRIPT_GAP_DETECTED, object{"subpath": key, "unknown_parents": unknown})
+		s.queue(pb.SessionEvent_KIND_TRANSCRIPT_GAP_DETECTED, gapDetectedPayload(key, unknown))
 		return s.flush()
 	}
 	return nil

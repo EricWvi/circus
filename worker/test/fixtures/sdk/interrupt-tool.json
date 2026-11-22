@@ -1,0 +1,1955 @@
+{
+ "scenario": "interrupt-tool",
+ "sdk": "0.3.330",
+ "cli": "2.1.330",
+ "steps": [
+  {
+   "t": "push",
+   "i": 0
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH0",
+    "state": "queued",
+    "uuid": "0e9b91ca-5849-426e-ab27-c0cb49bc0498",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH0",
+    "state": "started",
+    "uuid": "94fc01fe-f4f8-44c1-ab14-11d452731f32",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "$SESSION",
+    "uuid": "25472c30-f7f1-416e-aea4-d0cb15fa9dfc",
+    "cwd": "/work/project",
+    "model": "claude-sonnet-4-6",
+    "permissionMode": "bypassPermissions",
+    "claude_code_version": "2.1.330",
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "output_style": "default"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "system",
+    "subtype": "status",
+    "status": "requesting",
+    "session_id": "$SESSION",
+    "uuid": "41843d03-25e9-499b-8674-38288212ba38",
+    "user_message_uuids": [
+     "$PUSH0"
+    ]
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "message_start",
+     "message": {
+      "id": "msg_fake_1",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-4-6",
+      "content": [],
+      "stop_reason": null,
+      "stop_sequence": null,
+      "usage": {
+       "input_tokens": 25,
+       "output_tokens": 1,
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0
+      }
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "3dd27b70-cf11-4c3f-9a48-7049e38be61f",
+    "ttft_ms": 10,
+    "thinking_display": "updates",
+    "api_message_id": "msg_fake_1",
+    "user_message_uuid": "$PUSH0",
+    "user_message_uuids": [
+     "$PUSH0"
+    ],
+    "owed_rows": []
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "content_block_start",
+     "index": 0,
+     "content_block": {
+      "type": "tool_use",
+      "id": "toolu_rec_sleep",
+      "name": "Bash",
+      "input": {}
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "4596945e-fb83-4b30-82b5-f74e1a3e4f26",
+    "api_message_id": "msg_fake_1"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "content_block_delta",
+     "index": 0,
+     "delta": {
+      "type": "input_json_delta",
+      "partial_json": "{\"command\":\"sleep 5\",\"description\":\"Wait\"}"
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "8bf8e366-8a04-46aa-94bd-e929af414024",
+    "api_message_id": "msg_fake_1"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "assistant",
+    "message": {
+     "id": "msg_fake_1",
+     "type": "message",
+     "role": "assistant",
+     "model": "claude-sonnet-4-6",
+     "content": [
+      {
+       "type": "tool_use",
+       "id": "toolu_rec_sleep",
+       "name": "Bash",
+       "input": {
+        "command": "sleep 5",
+        "description": "Wait"
+       }
+      }
+     ],
+     "stop_reason": null,
+     "stop_sequence": null,
+     "usage": {
+      "input_tokens": 25,
+      "output_tokens": 1,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+     },
+     "context_management": null
+    },
+    "parent_tool_use_id": null,
+    "session_id": "$SESSION",
+    "uuid": "c7a95534-6ba0-4391-8371-6e3c868f8030",
+    "timestamp": "2026-11-21T16:49:02.914Z",
+    "user_message_uuid": "$PUSH0",
+    "user_message_uuids": [
+     "$PUSH0"
+    ]
+   }
+  },
+  {
+   "t": "hook",
+   "input": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+     "command": "sleep 5",
+     "description": "Wait"
+    },
+    "tool_use_id": "toolu_rec_sleep"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "content_block_stop",
+     "index": 0
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "cae752dc-44c3-46ec-9737-a4d1913dd889",
+    "api_message_id": "msg_fake_1"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "message_delta",
+     "delta": {
+      "stop_reason": "tool_use",
+      "stop_sequence": null
+     },
+     "usage": {
+      "output_tokens": 10
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "48aff2ca-9f15-497a-96c3-b766cef479e9",
+    "api_message_id": "msg_fake_1"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "message_stop"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "4e13ace1-a79e-4792-86bd-ec042c98de11",
+    "api_message_id": "msg_fake_1"
+   }
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "queue-operation",
+     "operation": "enqueue",
+     "timestamp": "2026-11-21T16:49:02.859Z",
+     "sessionId": "$SESSION",
+     "content": "REC hello"
+    },
+    {
+     "type": "queue-operation",
+     "operation": "dequeue",
+     "timestamp": "2026-11-21T16:49:02.860Z",
+     "sessionId": "$SESSION"
+    },
+    {
+     "parentUuid": null,
+     "isSidechain": false,
+     "promptId": "83314d82-a2b3-4121-8392-3d7d400b4a1b",
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": "REC hello"
+     },
+     "uuid": "$PUSH0",
+     "timestamp": "2026-11-21T16:49:02.873Z",
+     "permissionMode": "bypassPermissions",
+     "promptSource": "sdk",
+     "turnOrigin": "sdk",
+     "turnPosition": {
+      "promptIndex": 0,
+      "turnIndex": 1
+     },
+     "turnAttributionKey": "$PUSH0",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "$PUSH0",
+     "isSidechain": false,
+     "attachment": {
+      "type": "environment",
+      "snapshot": {
+       "workingDirectory": "/work/project",
+       "isWorktree": true,
+       "isGitRepo": true,
+       "additionalWorkingDirectories": [],
+       "platform": "linux",
+       "shell": "bash",
+       "osVersion": "Linux"
+      }
+     },
+     "type": "attachment",
+     "uuid": "9e37514f-4b80-4ffd-a7e9-dc89ca66209d",
+     "timestamp": "2026-11-21T16:49:02.872Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\n# Environment\nYou have been invoked in the following environment: \n - Primary working directory: /work…[1483 chars]"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "9e37514f-4b80-4ffd-a7e9-dc89ca66209d",
+     "isSidechain": false,
+     "attachment": {
+      "type": "model",
+      "identity": {
+       "modelId": "claude-sonnet-4-6",
+       "marketingName": "Sonnet 4.6",
+       "knowledgeCutoff": "August 2025"
+      },
+      "text": "You are powered by the model named Sonnet 4.6. The exact model ID is claude-sonnet-4-6. Assistant knowledge cutoff is August 2025."
+     },
+     "type": "attachment",
+     "uuid": "b9bb330e-187f-4d22-9dc4-6c57aa0d5170",
+     "timestamp": "2026-11-21T16:49:02.872Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nYou are powered by the model named Sonnet 4.6. The exact model ID is claude-sonnet-4-6. Assistant knowledge cutoff is August 2025.\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "b9bb330e-187f-4d22-9dc4-6c57aa0d5170",
+     "isSidechain": false,
+     "attachment": {
+      "type": "deferred_tools_delta",
+      "addedNames": [
+       "CronCreate",
+       "CronDelete",
+       "CronList",
+       "EnterWorktree",
+       "ExitWorktree",
+       "Monitor",
+       "NotebookEdit",
+       "SendMessage",
+       "TaskCreate",
+       "TaskGet",
+       "TaskList",
+       "TaskStop",
+       "TaskUpdate",
+       "WebFetch",
+       "WebSearch"
+      ],
+      "addedLines": [
+       "CronCreate",
+       "CronDelete",
+       "CronList",
+       "EnterWorktree",
+       "ExitWorktree",
+       "Monitor",
+       "NotebookEdit",
+       "SendMessage",
+       "TaskCreate",
+       "TaskGet",
+       "TaskList",
+       "TaskStop",
+       "TaskUpdate",
+       "WebFetch",
+       "WebSearch"
+      ],
+      "removedNames": [],
+      "wireHiddenNames": [],
+      "readdedNames": [],
+      "pendingMcpServers": [],
+      "needsAuthMcpServers": [],
+      "failedMcpServers": []
+     },
+     "type": "attachment",
+     "uuid": "b73e5489-6098-41a8-850e-135965578737",
+     "timestamp": "2026-11-21T16:49:02.872Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nThe following deferred tools are now available via ToolSearch. Their schemas are NOT loaded — calling …[443 chars]"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "b73e5489-6098-41a8-850e-135965578737",
+     "isSidechain": false,
+     "attachment": {
+      "type": "agent_listing_delta",
+      "addedTypes": [
+       "claude",
+       "Explore",
+       "general-purpose",
+       "Plan",
+       "statusline-setup"
+      ],
+      "addedLines": [
+       "- claude: Catch-all for any task that doesn't fit a more specific agent. FleetView's default when no agent name is typed. (Tools: *)",
+       "- Explore: Fast read-only search agent for locating code. Use it to find files by pattern (eg. \"src/components/**/*.tsx\"…[746 chars]",
+       "- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step…[309 chars]",
+       "- Plan: Software architect agent for designing implementation plans. Use this when you need to plan the implementation s…[364 chars]",
+       "- statusline-setup: Use this agent to configure the user's Claude Code status line setting. (Tools: Read, Edit)"
+      ],
+      "builtInTypes": [
+       "claude",
+       "Explore",
+       "general-purpose",
+       "Plan",
+       "statusline-setup"
+      ],
+      "builtInPluginTypes": [],
+      "removedTypes": [],
+      "isInitial": true,
+      "showConcurrencyNote": true
+     },
+     "type": "attachment",
+     "uuid": "49982c84-6819-4dff-9a5a-415ac770f3d8",
+     "timestamp": "2026-11-21T16:49:02.872Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nAvailable agent types for the Agent tool:\n- claude: Catch-all for any task that doesn't fit a more spe…[1880 chars]"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "49982c84-6819-4dff-9a5a-415ac770f3d8",
+     "isSidechain": false,
+     "attachment": {
+      "type": "skill_listing",
+      "content": "- dataviz: Use this skill whenever you are about to create ANY chart, graph, plot, dashboard, or data visualization, in …[6210 chars]",
+      "skillCount": 13,
+      "isInitial": true,
+      "names": [
+       "dataviz",
+       "update-config",
+       "keybindings-help",
+       "code-review",
+       "simplify",
+       "fewer-permission-prompts",
+       "loop",
+       "claude-api",
+       "workflow-authoring",
+       "run",
+       "plugin-authoring",
+       "init",
+       "security-review"
+      ],
+      "digests": [
+       "140faf7359fd9e4c",
+       "909bf5fe1d1fb81f",
+       "8bcbb8b001b829d1",
+       "233332cc9c0d34f7",
+       "e6e9b542dec5def2",
+       "6b9c0ebd3ca594f8",
+       "0d4f2716799e058f",
+       "8e7b82fc9f7b5ab0",
+       "49e061d3cd347fd2",
+       "c3733391c3cbaef1",
+       "b8762aae9d28fe4a",
+       "ff38bf755f0da166",
+       "08f19dfd18875bba"
+      ]
+     },
+     "type": "attachment",
+     "uuid": "bc65f554-7c3c-4c21-9e46-706bbdb3407c",
+     "timestamp": "2026-11-21T16:49:02.872Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nThe following skills are available for use with the Skill tool:\n\n- dataviz: Use this skill whenever yo…[6312 chars]"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "bc65f554-7c3c-4c21-9e46-706bbdb3407c",
+     "isSidechain": false,
+     "attachment": {
+      "type": "total_tokens_reminder",
+      "text": "<total_tokens>15000000 tokens left</total_tokens>"
+     },
+     "type": "attachment",
+     "uuid": "064e2f00-c7d3-47ab-a10a-b5f32b468ee9",
+     "timestamp": "2026-11-21T16:49:02.872Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "type": "atis-latch",
+     "atis": "",
+     "sessionId": "$SESSION"
+    },
+    {
+     "parentUuid": "064e2f00-c7d3-47ab-a10a-b5f32b468ee9",
+     "isSidechain": false,
+     "attachment": {
+      "type": "session_context",
+      "context": {}
+     },
+     "type": "attachment",
+     "uuid": "83cd4ade-f4b9-4e9f-964b-b31952cab2e2",
+     "timestamp": "2026-11-21T16:49:02.886Z",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "83cd4ade-f4b9-4e9f-964b-b31952cab2e2",
+     "isSidechain": false,
+     "attachment": {
+      "type": "date",
+      "date": "2026-11-22"
+     },
+     "type": "attachment",
+     "uuid": "c9ead687-7c01-48e8-8e43-65d698cd053f",
+     "timestamp": "2026-11-21T16:49:02.886Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nToday's date is 2026-11-22.\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "c9ead687-7c01-48e8-8e43-65d698cd053f",
+     "isSidechain": false,
+     "attachment": {
+      "type": "remote_session_change",
+      "url": null,
+      "commit": "Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>",
+      "pr": "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+      "sendUserFileHint": false,
+      "managedCommit": false,
+      "managedPr": false
+     },
+     "type": "attachment",
+     "uuid": "c3d90e9e-86bb-42b0-bcb1-40fffdd4556d",
+     "timestamp": "2026-11-21T16:49:02.887Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own…[582 chars]"
+      }
+     ],
+     "renderedRole": "user",
+     "renderedBesideToolResult": true,
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "c3d90e9e-86bb-42b0-bcb1-40fffdd4556d",
+     "isSidechain": false,
+     "attachment": {
+      "type": "prompt_snapshot",
+      "systemPrompt": [
+       ""
+      ],
+      "reminderFold": false,
+      "echoWireToolInputs": false,
+      "contextRendering": "announced"
+     },
+     "type": "attachment",
+     "uuid": "e0c72d00-16c5-440e-af73-9a27aad3852b",
+     "timestamp": "2026-11-21T16:49:02.888Z",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    }
+   ]
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "tools-used",
+     "tools": [
+      "Bash"
+     ],
+     "sessionId": "$SESSION"
+    },
+    {
+     "parentUuid": "e0c72d00-16c5-440e-af73-9a27aad3852b",
+     "isSidechain": false,
+     "message": {
+      "id": "msg_fake_1",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-4-6",
+      "content": [
+       {
+        "type": "tool_use",
+        "id": "toolu_rec_sleep",
+        "name": "Bash",
+        "input": {
+         "command": "sleep 5",
+         "description": "Wait"
+        }
+       }
+      ],
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "usage": {
+       "input_tokens": 25,
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "output_tokens": 10,
+       "output_tokens_details": {
+        "thinking_tokens": 0
+       },
+       "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+       },
+       "service_tier": "standard",
+       "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+       },
+       "inference_geo": "",
+       "iterations": [],
+       "speed": "standard",
+       "fallback_credit": null
+      },
+      "stop_details": null
+     },
+     "toolInputStreamMs": 1,
+     "apiBlockIndex": 0,
+     "requestRef": "be200a77-b363-4de8-a9bc-65802e3f3428",
+     "requestedModel": "claude-sonnet-4-6",
+     "promptCacheRequested": "5m",
+     "type": "assistant",
+     "uuid": "c7a95534-6ba0-4391-8371-6e3c868f8030",
+     "timestamp": "2026-11-21T16:49:02.914Z",
+     "effort": "high",
+     "perTurnEffort": null,
+     "madeBy": "model",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    }
+   ]
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "last-prompt",
+     "lastPrompt": "REC hello",
+     "leafUuid": "c7a95534-6ba0-4391-8371-6e3c868f8030",
+     "sessionId": "$SESSION"
+    },
+    {
+     "type": "atis-latch",
+     "atis": "",
+     "sessionId": "$SESSION"
+    }
+   ]
+  },
+  {
+   "t": "interrupt"
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "user",
+    "message": {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "content": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed. Correction to the text above: this call was stopped while running, not refused before it ran. It may have run in part or in full, and its changes may have been written. No permission prompt was involved. Work it started elsewhere (a remote command, a background process) may still be running, so check before starting the same work again. The instruction to stop and wait still stands.",
+       "is_error": true,
+       "tool_use_id": "toolu_rec_sleep"
+      }
+     ]
+    },
+    "parent_tool_use_id": null,
+    "session_id": "$SESSION",
+    "uuid": "156d7475-b97c-4987-be55-c67279f6fadc",
+    "timestamp": "2026-11-21T16:49:03.523Z",
+    "tool_use_result": "User rejected tool use",
+    "tool_result_meta": [
+     {
+      "id": "toolu_rec_sleep",
+      "non_execution_kind": "user-rejected"
+     }
+    ]
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "user",
+    "message": {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "[Request interrupted by user for tool use]"
+      }
+     ]
+    },
+    "parent_tool_use_id": null,
+    "session_id": "$SESSION",
+    "uuid": "73c1cdaa-5fc2-4b0c-8b8f-7f330bb7e537",
+    "timestamp": "2026-11-21T16:49:03.524Z"
+   }
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "parentUuid": "c7a95534-6ba0-4391-8371-6e3c868f8030",
+     "isSidechain": false,
+     "promptId": "83314d82-a2b3-4121-8392-3d7d400b4a1b",
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "content": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_strin…[611 chars]",
+        "is_error": true,
+        "tool_use_id": "toolu_rec_sleep"
+       }
+      ]
+     },
+     "uuid": "156d7475-b97c-4987-be55-c67279f6fadc",
+     "timestamp": "2026-11-21T16:49:03.523Z",
+     "toolUseResult": "User rejected tool use",
+     "toolDenialKind": "user-rejected",
+     "sourceToolAssistantUUID": "c7a95534-6ba0-4391-8371-6e3c868f8030",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "156d7475-b97c-4987-be55-c67279f6fadc",
+     "isSidechain": false,
+     "attachment": {
+      "type": "prompt_snapshot",
+      "systemPrompt": [
+       ""
+      ],
+      "tools": [
+       {
+        "name": "Agent",
+        "description": "Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to…[8227 chars]",
+        "schema": {
+         "name": "Agent",
+         "description": "Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to…[8227 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "description": {
+            "description": "A short (3-5 word) description of the task",
+            "type": "string"
+           },
+           "prompt": {
+            "description": "The task for the agent to perform",
+            "type": "string"
+           },
+           "subagent_type": {
+            "description": "The type of specialized agent to use for this task",
+            "type": "string"
+           },
+           "model": {
+            "description": "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter and the configure…[358 chars]",
+            "type": "string",
+            "enum": [
+             "sonnet",
+             "opus",
+             "haiku",
+             "fable"
+            ]
+           },
+           "effort": {
+            "description": "Reasoning effort for this agent. Set this ONLY when the user, or instructions such as CLAUDE.md or a skill, explicitly a…[341 chars]",
+            "type": "string",
+            "enum": [
+             "low",
+             "medium",
+             "high",
+             "xhigh",
+             "max"
+            ]
+           },
+           "run_in_background": {
+            "description": "Agents run in the background by default; you will be notified when one completes. Set to false only when your very next action depends on this agent's result and nothing else could usefully happen while it runs — otherwise leave it in the background so the user can hand you other work.",
+            "type": "boolean"
+           },
+           "isolation": {
+            "description": "Isolation mode. \"worktree\" creates a temporary git worktree so the agent works on an isolated copy of the repo. \"remote\" launches the agent in a remote cloud environment (always runs in background; availability is gated).",
+            "type": "string",
+            "enum": [
+             "worktree",
+             "remote"
+            ]
+           }
+          },
+          "required": [
+           "description",
+           "prompt"
+          ],
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "Bash",
+        "description": "Executes a given bash command and returns its output.\n\n`cd` carries to the next call only in the main session, if the co…[10778 chars]",
+        "schema": {
+         "name": "Bash",
+         "description": "Executes a given bash command and returns its output.\n\n`cd` carries to the next call only in the main session, if the co…[10778 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "command": {
+            "description": "The command to execute",
+            "type": "string"
+           },
+           "timeout": {
+            "description": "Optional timeout in milliseconds (max 600000 for a foreground command)",
+            "type": "number"
+           },
+           "description": {
+            "description": "Clear, concise description of what this command does in active voice. Never use words like \"complex\" or \"risk\" in the de…[926 chars]",
+            "type": "string"
+           },
+           "run_in_background": {
+            "description": "Set to true to run this command in the background. With it, `timeout` limits how long the command may run in the background before it is stopped (default 1800000 ms, max 7200000 ms).",
+            "type": "boolean"
+           },
+           "dangerouslyDisableSandbox": {
+            "description": "Set this to true to dangerously override sandbox mode and run commands without sandboxing.",
+            "type": "boolean"
+           }
+          },
+          "required": [
+           "command"
+          ],
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "Edit",
+        "description": "Performs exact string replacements in files.\n\nUsage:\n- You must use your `Read` tool at least once in the conversation b…[1094 chars]",
+        "schema": {
+         "name": "Edit",
+         "description": "Performs exact string replacements in files.\n\nUsage:\n- You must use your `Read` tool at least once in the conversation b…[1094 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "file_path": {
+            "description": "The absolute path to the file to modify",
+            "type": "string"
+           },
+           "old_string": {
+            "description": "The text to replace",
+            "type": "string"
+           },
+           "new_string": {
+            "description": "The text to replace it with (must be different from old_string)",
+            "type": "string"
+           },
+           "replace_all": {
+            "description": "Replace all occurrences of old_string (default false)",
+            "default": false,
+            "type": "boolean"
+           }
+          },
+          "required": [
+           "file_path",
+           "old_string",
+           "new_string"
+          ],
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "ListAgents",
+        "description": "Lists agents you can SendMessage to — in-process subagents you spawned, the teammates on your team, other local Claude s…[1433 chars]",
+        "schema": {
+         "name": "ListAgents",
+         "description": "Lists agents you can SendMessage to — in-process subagents you spawned, the teammates on your team, other local Claude s…[1433 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "channel": {
+            "description": "Not available in this build; leave unset.",
+            "type": "string",
+            "maxLength": 256
+           },
+           "q": {
+            "description": "Not available in this build; leave unset.",
+            "type": "string",
+            "maxLength": 256
+           },
+           "cursor": {
+            "description": "The cursor the last line of a long listing gave, for its next page. Omit to list from the start.",
+            "type": "string",
+            "maxLength": 256
+           }
+          },
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "Read",
+        "description": "Reads a file from the local filesystem. You can access any file directly by using this tool.\nAssume this tool is able to…[1782 chars]",
+        "schema": {
+         "name": "Read",
+         "description": "Reads a file from the local filesystem. You can access any file directly by using this tool.\nAssume this tool is able to…[1782 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "file_path": {
+            "description": "The absolute path to the file to read",
+            "type": "string"
+           },
+           "offset": {
+            "description": "The line number to start reading from. Only provide if the file is too large to read at once",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+           },
+           "limit": {
+            "description": "The number of lines to read. Only provide if the file is too large to read at once.",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+           },
+           "pages": {
+            "description": "Page range for PDF files (e.g., \"1-5\", \"3\", \"10-20\"). Only applicable to PDF files. Maximum 20 pages per request.",
+            "type": "string"
+           },
+           "allow_large": {
+            "description": "Set to true to read a text file, or a line range of one, that is over the usual size limits, up to what still fits in your context. Only use this when you genuinely need all of it or the user asked for the whole file; otherwise read it in parts with offset and limit, or search it.",
+            "type": "boolean"
+           }
+          },
+          "required": [
+           "file_path"
+          ],
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "ReportFindings",
+        "description": "Report code-review findings as a typed list so the host UI can render them. Use this only when the active code-review in…[574 chars]",
+        "schema": {
+         "name": "ReportFindings",
+         "description": "Report code-review findings as a typed list so the host UI can render them. Use this only when the active code-review in…[574 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "level": {
+            "description": "Effort level the review ran at",
+            "type": "string",
+            "enum": [
+             "low",
+             "medium",
+             "high",
+             "xhigh",
+             "max"
+            ]
+           },
+           "findings": {
+            "description": "Verified findings, most-severe first; empty if none survived",
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+             "type": "object",
+             "properties": {
+              "file": {
+               "description": "Repo-relative path of the file the finding is in",
+               "type": "string"
+              },
+              "line": {
+               "description": "1-indexed line the finding anchors to",
+               "type": "integer",
+               "minimum": -9007199254740991,
+               "maximum": 9007199254740991
+              },
+              "summary": {
+               "description": "Statement of the defect",
+               "type": "string"
+              },
+              "short_summary": {
+               "description": "Compressed label for compact UI (≤60 chars): the claim alone, no rationale or consequence clause",
+               "type": "string",
+               "maxLength": 60
+              },
+              "failure_scenario": {
+               "description": "Concrete inputs/state → wrong output/crash",
+               "type": "string"
+              },
+              "category": {
+               "description": "Short kebab-case slug of the finding type, e.g. \"correctness\", \"simplification\", \"efficiency\", \"test-coverage\"",
+               "type": "string",
+               "maxLength": 40
+              },
+              "severity": {
+               "description": "Set when the review instructions ask for it. important: a bug the change adds or makes worse; pre_existing: a bug that was there before the change; nit: a minor issue",
+               "type": "string",
+               "enum": [
+                "important",
+                "pre_existing",
+                "nit"
+               ]
+              },
+              "verdict": {
+               "description": "Set when a verify pass ran; absent on inline-only reviews",
+               "type": "string",
+               "enum": [
+                "CONFIRMED",
+                "PLAUSIBLE"
+               ]
+              },
+              "outcome": {
+               "description": "Set ONLY when re-reporting after applying fixes: what happened to this finding",
+               "type": "string",
+               "enum": [
+                "fixed",
+                "skipped",
+                "no_change_needed"
+               ]
+              }
+             },
+             "required": [
+              "file",
+              "summary",
+              "failure_scenario"
+             ],
+             "additionalProperties": false
+            }
+           }
+          },
+          "required": [
+           "findings"
+          ],
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "ScheduleWakeup",
+        "description": "Schedule when to resume work in /loop dynamic mode — the user invoked /loop without an interval, asking you to self-pace…[3396 chars]",
+        "schema": {
+         "name": "ScheduleWakeup",
+         "description": "Schedule when to resume work in /loop dynamic mode — the user invoked /loop without an interval, asking you to self-pace…[3396 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "delaySeconds": {
+            "description": "Seconds from now to wake up. Clamped to [60, 3600] by the runtime. Required unless `stop` is true.",
+            "type": "number"
+           },
+           "reason": {
+            "description": "One short sentence explaining the chosen delay. Goes to telemetry and is shown to the user. Be specific. Required unless `stop` is true.",
+            "type": "string"
+           },
+           "prompt": {
+            "description": "The /loop input to fire on wake-up. Pass the same /loop input verbatim each turn so the next firing re-enters the skill …[355 chars]",
+            "type": "string"
+           },
+           "stop": {
+            "description": "Set to true to end the dynamic loop immediately instead of scheduling another wakeup. When true, all other fields are ignored and no further wakeups fire.",
+            "type": "boolean"
+           },
+           "noop": {
+            "description": "true = nothing changed (you checked and there is nothing to report). false = something happened worth keeping (edited a …[307 chars]",
+            "type": "boolean"
+           }
+          },
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "Skill",
+        "description": "Invoke a skill.\n\nA skill is a packaged set of instructions the user or project has set up for a particular kind of task …[1417 chars]",
+        "schema": {
+         "name": "Skill",
+         "description": "Invoke a skill.\n\nA skill is a packaged set of instructions the user or project has set up for a particular kind of task …[1417 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "skill": {
+            "description": "The name of a skill from the available-skills list. Do not guess names.",
+            "type": "string"
+           },
+           "args": {
+            "description": "Optional arguments for the skill",
+            "type": "string"
+           }
+          },
+          "required": [
+           "skill"
+          ],
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "ToolSearch",
+        "description": "Fetches full schema definitions for deferred tools so they can be called.\n\nDeferred tools appear by name in <system-remi…[953 chars]",
+        "schema": {
+         "name": "ToolSearch",
+         "description": "Fetches full schema definitions for deferred tools so they can be called.\n\nDeferred tools appear by name in <system-remi…[953 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "query": {
+            "description": "Query to find deferred tools. Use \"select:<tool_name>\" for direct selection, or keywords to search.",
+            "type": "string"
+           },
+           "max_results": {
+            "description": "Maximum number of results to return (default: 5)",
+            "default": 5,
+            "type": "number"
+           }
+          },
+          "required": [
+           "query",
+           "max_results"
+          ],
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "Workflow",
+        "description": "Execute a workflow script that orchestrates multiple subagents deterministically. Workflows run in the background — this…[3480 chars]",
+        "schema": {
+         "name": "Workflow",
+         "description": "Execute a workflow script that orchestrates multiple subagents deterministically. Workflows run in the background — this…[3480 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "script": {
+            "description": "Self-contained workflow script. Must begin with `export const meta = { name, description, phases }` (pure literal, no computed values) followed by the script body using agent()/parallel()/pipeline()/phase().",
+            "type": "string",
+            "maxLength": 524288
+           },
+           "name": {
+            "description": "Name of a predefined workflow (built-in or from .claude/workflows/). Resolves to a self-contained script.",
+            "type": "string"
+           },
+           "description": {
+            "description": "Ignored — set the workflow description in the script's `meta` block.",
+            "type": "string"
+           },
+           "title": {
+            "description": "Ignored — set the workflow title in the script's `meta` block.",
+            "type": "string"
+           },
+           "args": {
+            "description": "Optional input value exposed to the script as the global `args`, verbatim. Pass arrays/objects as actual JSON values, NOT as a JSON-encoded string — a stringified list breaks `args.filter`/`args.map` in the script. Use for parameterized named workflows (e.g. a research question)."
+           },
+           "scriptPath": {
+            "description": "Path to a workflow script file on disk. Every Workflow invocation persists its script under the session directory and re…[329 chars]",
+            "type": "string"
+           },
+           "resumeFromRunId": {
+            "description": "Run ID of a prior Workflow invocation to resume from. The cache is positional: agent() calls replay from cache up to the…[568 chars]",
+            "type": "string",
+            "pattern": "^wf_[a-z0-9-]{6,}$"
+           }
+          },
+          "additionalProperties": false
+         }
+        }
+       },
+       {
+        "name": "Write",
+        "description": "Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provi…[618 chars]",
+        "schema": {
+         "name": "Write",
+         "description": "Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provi…[618 chars]",
+         "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+           "file_path": {
+            "description": "The absolute path to the file to write (must be absolute, not relative)",
+            "type": "string"
+           },
+           "content": {
+            "description": "The content to write to the file",
+            "type": "string"
+           }
+          },
+          "required": [
+           "file_path",
+           "content"
+          ],
+          "additionalProperties": false
+         }
+        }
+       }
+      ],
+      "cliPrefix": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+      "reminderFold": false,
+      "echoWireToolInputs": false,
+      "contextRendering": "announced"
+     },
+     "type": "attachment",
+     "uuid": "3ec4b094-0808-4f70-b5bf-af6f914b82bc",
+     "timestamp": "2026-11-21T16:49:03.524Z",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "3ec4b094-0808-4f70-b5bf-af6f914b82bc",
+     "isSidechain": false,
+     "promptId": "83314d82-a2b3-4121-8392-3d7d400b4a1b",
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "[Request interrupted by user for tool use]"
+       }
+      ]
+     },
+     "uuid": "73c1cdaa-5fc2-4b0c-8b8f-7f330bb7e537",
+     "timestamp": "2026-11-21T16:49:03.524Z",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    }
+   ]
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "last-prompt",
+     "lastPrompt": "REC hello",
+     "leafUuid": "73c1cdaa-5fc2-4b0c-8b8f-7f330bb7e537",
+     "sessionId": "$SESSION"
+    },
+    {
+     "type": "atis-latch",
+     "atis": "",
+     "sessionId": "$SESSION"
+    }
+   ]
+  },
+  {
+   "t": "msg",
+   "m": {
+    "duration_api_ms": 24,
+    "stop_reason": "tool_use",
+    "session_id": "$SESSION",
+    "total_cost_usd": 0.00022500000000000002,
+    "usage": {
+     "input_tokens": 25,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "output_tokens": 10,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+     },
+     "service_tier": "standard",
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "inference_geo": "",
+     "iterations": [],
+     "speed": "standard",
+     "fallback_credit": null
+    },
+    "modelUsage": {
+     "claude-sonnet-4-6": {
+      "inputTokens": 25,
+      "outputTokens": 10,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.00022500000000000002,
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "thinkingTokens": 0,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 0,
+      "canonicalModel": "claude-sonnet-4-6",
+      "provider": "firstParty",
+      "costBasis": "list"
+     }
+    },
+    "permission_denials": [],
+    "terminal_reason": "aborted_tools",
+    "fast_mode_state": "off",
+    "fast_mode_disabled_reason": "sdk_opt_in_required",
+    "subagent_stats": {
+     "spawned": 0,
+     "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+     },
+     "started_in_background": 0,
+     "max_depth": 0,
+     "spawned_by_subagents": 0,
+     "completed": 0,
+     "failed": 0,
+     "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+     },
+     "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+     },
+     "by_type": {}
+    },
+    "safety_stops": 0,
+    "is_error": true,
+    "num_turns": 3,
+    "subtype": "error_during_execution",
+    "errors": [
+     "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use"
+    ],
+    "user_message_uuid": "$PUSH0",
+    "type": "result",
+    "duration_ms": 663,
+    "uuid": "99a4a970-2224-46fc-af2a-f8e3eab619bf",
+    "begun_message_ids": [
+     "msg_fake_1"
+    ],
+    "user_message_uuids": [
+     "$PUSH0"
+    ],
+    "queued_turn_count": 0,
+    "result_index": 0,
+    "model_usage_since_last_result": {
+     "claude-sonnet-4-6": {
+      "inputTokens": 25,
+      "outputTokens": 10,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.00022500000000000002,
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "thinkingTokens": 0,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 0,
+      "canonicalModel": "claude-sonnet-4-6",
+      "provider": "firstParty",
+      "costBasis": "list"
+     }
+    }
+   }
+  },
+  {
+   "t": "push",
+   "i": 1
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH0",
+    "state": "cancelled",
+    "uuid": "441563bd-7e86-47d2-b4e2-16f76629d57d",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH1",
+    "state": "queued",
+    "uuid": "400fbe2d-30c7-4e95-8b06-b263cfcd6f44",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH1",
+    "state": "started",
+    "uuid": "fdce2d57-3171-457e-86b0-54111cfbf98f",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "$SESSION",
+    "uuid": "01ad1aa5-c831-415a-ab69-29e6d8e13222",
+    "cwd": "/work/project",
+    "model": "claude-sonnet-4-6",
+    "permissionMode": "bypassPermissions",
+    "claude_code_version": "2.1.330",
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "output_style": "default"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "system",
+    "subtype": "status",
+    "status": "requesting",
+    "session_id": "$SESSION",
+    "uuid": "501cb8f4-09b7-48f3-8589-f8d4db425dc4",
+    "user_message_uuids": [
+     "$PUSH1"
+    ]
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "message_start",
+     "message": {
+      "id": "msg_fake_2",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-4-6",
+      "content": [],
+      "stop_reason": null,
+      "stop_sequence": null,
+      "usage": {
+       "input_tokens": 25,
+       "output_tokens": 1,
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0
+      }
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "248ca0a6-18c0-48c8-b8e2-67337e6c670b",
+    "ttft_ms": 3,
+    "thinking_display": "updates",
+    "api_message_id": "msg_fake_2",
+    "user_message_uuid": "$PUSH1",
+    "user_message_uuids": [
+     "$PUSH1"
+    ],
+    "owed_rows": []
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "content_block_start",
+     "index": 0,
+     "content_block": {
+      "type": "text",
+      "text": ""
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "9377ea25-c884-40f6-927a-2ce342ab4ffb",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "content_block_delta",
+     "index": 0,
+     "delta": {
+      "type": "text_delta",
+      "text": "Follow-up answer."
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "3218e331-005f-4560-be3a-a8d7f7498b8e",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "assistant",
+    "message": {
+     "id": "msg_fake_2",
+     "type": "message",
+     "role": "assistant",
+     "model": "claude-sonnet-4-6",
+     "content": [
+      {
+       "type": "text",
+       "text": "Follow-up answer."
+      }
+     ],
+     "stop_reason": null,
+     "stop_sequence": null,
+     "usage": {
+      "input_tokens": 25,
+      "output_tokens": 1,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+     },
+     "context_management": null
+    },
+    "parent_tool_use_id": null,
+    "session_id": "$SESSION",
+    "uuid": "cd92ee48-c3e2-428d-8d3c-3b9718be3b33",
+    "timestamp": "2026-11-21T16:49:03.545Z",
+    "user_message_uuid": "$PUSH1",
+    "user_message_uuids": [
+     "$PUSH1"
+    ]
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "content_block_stop",
+     "index": 0
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "d2926ef1-3908-4659-af62-e52c04b41307",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "message_delta",
+     "delta": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null
+     },
+     "usage": {
+      "output_tokens": 10
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "c9d386e7-e757-4925-9c31-65fe14ac3444",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "message_stop"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "dfde26eb-5b80-44af-b6bd-a085827e8fcd",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "queue-operation",
+     "operation": "enqueue",
+     "timestamp": "2026-11-21T16:49:03.531Z",
+     "sessionId": "$SESSION",
+     "content": "REC FOLLOW"
+    },
+    {
+     "type": "queue-operation",
+     "operation": "dequeue",
+     "timestamp": "2026-11-21T16:49:03.531Z",
+     "sessionId": "$SESSION"
+    },
+    {
+     "parentUuid": "73c1cdaa-5fc2-4b0c-8b8f-7f330bb7e537",
+     "isSidechain": false,
+     "promptId": "3542fe6a-f028-476a-aed0-4fd2430623f7",
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": "REC FOLLOW"
+     },
+     "uuid": "$PUSH1",
+     "timestamp": "2026-11-21T16:49:03.534Z",
+     "permissionMode": "bypassPermissions",
+     "promptSource": "sdk",
+     "turnOrigin": "sdk",
+     "turnPosition": {
+      "promptIndex": 0,
+      "turnIndex": 2
+     },
+     "turnAttributionKey": "$PUSH1",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "$PUSH1",
+     "isSidechain": false,
+     "attachment": {
+      "type": "total_tokens_reminder",
+      "text": "<total_tokens>15000000 tokens left</total_tokens>"
+     },
+     "type": "attachment",
+     "uuid": "379c63d3-8d74-4a14-b313-8bc768bcb059",
+     "timestamp": "2026-11-21T16:49:03.534Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    }
+   ]
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "parentUuid": "379c63d3-8d74-4a14-b313-8bc768bcb059",
+     "isSidechain": false,
+     "message": {
+      "id": "msg_fake_2",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-4-6",
+      "content": [
+       {
+        "type": "text",
+        "text": "Follow-up answer."
+       }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+       "input_tokens": 25,
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "output_tokens": 10,
+       "output_tokens_details": {
+        "thinking_tokens": 0
+       },
+       "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+       },
+       "service_tier": "standard",
+       "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+       },
+       "inference_geo": "",
+       "iterations": [],
+       "speed": "standard",
+       "fallback_credit": null
+      },
+      "stop_details": null
+     },
+     "apiBlockIndex": 0,
+     "requestRef": "215f9a5d-8238-4eea-b363-c14576fb6f01",
+     "requestedModel": "claude-sonnet-4-6",
+     "promptCacheRequested": "5m",
+     "type": "assistant",
+     "uuid": "cd92ee48-c3e2-428d-8d3c-3b9718be3b33",
+     "timestamp": "2026-11-21T16:49:03.545Z",
+     "effort": "high",
+     "perTurnEffort": null,
+     "madeBy": "model",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    }
+   ]
+  },
+  {
+   "t": "msg",
+   "m": {
+    "duration_api_ms": 30,
+    "stop_reason": "end_turn",
+    "session_id": "$SESSION",
+    "total_cost_usd": 0.00045000000000000004,
+    "usage": {
+     "input_tokens": 25,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "output_tokens": 10,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+     },
+     "service_tier": "standard",
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "inference_geo": "",
+     "iterations": [],
+     "speed": "standard",
+     "fallback_credit": null
+    },
+    "modelUsage": {
+     "claude-sonnet-4-6": {
+      "inputTokens": 50,
+      "outputTokens": 20,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.00045000000000000004,
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "thinkingTokens": 0,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 0,
+      "canonicalModel": "claude-sonnet-4-6",
+      "provider": "firstParty",
+      "costBasis": "list"
+     }
+    },
+    "permission_denials": [],
+    "terminal_reason": "completed",
+    "fast_mode_state": "off",
+    "fast_mode_disabled_reason": "sdk_opt_in_required",
+    "subagent_stats": {
+     "spawned": 0,
+     "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+     },
+     "started_in_background": 0,
+     "max_depth": 0,
+     "spawned_by_subagents": 0,
+     "completed": 0,
+     "failed": 0,
+     "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+     },
+     "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+     },
+     "by_type": {}
+    },
+    "safety_stops": 0,
+    "is_error": false,
+    "num_turns": 1,
+    "subtype": "success",
+    "api_error_status": null,
+    "result": "Follow-up answer.",
+    "ttft_ms": 14,
+    "type": "result",
+    "duration_ms": 17,
+    "uuid": "eda9fbb0-179f-4e82-bacc-81280b547935",
+    "begun_message_ids": [
+     "msg_fake_2"
+    ],
+    "ttft_stream_ms": 13,
+    "time_to_request_ms": 11,
+    "first_content_frame_ms": 14,
+    "user_message_uuid": "$PUSH1",
+    "user_message_uuids": [
+     "$PUSH1"
+    ],
+    "request_sent_wall_ms": 1795279743542,
+    "first_request_input_tokens": 25,
+    "first_request_cache_read_input_tokens": 0,
+    "queued_turn_count": 0,
+    "result_index": 1,
+    "model_usage_since_last_result": {
+     "claude-sonnet-4-6": {
+      "inputTokens": 25,
+      "outputTokens": 10,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.00022500000000000002,
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "thinkingTokens": 0,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 0,
+      "canonicalModel": "claude-sonnet-4-6",
+      "provider": "firstParty",
+      "costBasis": "list"
+     }
+    }
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH1",
+    "state": "completed",
+    "uuid": "9617341d-4b2b-40a5-b70c-d04f3e96cfe8",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "last-prompt",
+     "lastPrompt": "REC FOLLOW",
+     "leafUuid": "cd92ee48-c3e2-428d-8d3c-3b9718be3b33",
+     "sessionId": "$SESSION"
+    }
+   ]
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "cost-state",
+     "sessionId": "$SESSION",
+     "totalCostUSD": 0.00045000000000000004,
+     "totalAPIDuration": 30,
+     "totalAPIDurationWithoutRetries": 26,
+     "totalToolDuration": 587,
+     "totalLinesAdded": 0,
+     "totalLinesRemoved": 0,
+     "totalDuration": 1194,
+     "startTime": 1795279742662,
+     "modelUsage": {
+      "claude-sonnet-4-6": {
+       "inputTokens": 50,
+       "outputTokens": 20,
+       "thinkingTokens": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0,
+       "cacheCreationEphemeral5mInputTokens": 0,
+       "cacheCreationEphemeral1hInputTokens": 0,
+       "webSearchRequests": 0,
+       "costUSD": 0.00045000000000000004
+      }
+     },
+     "hasUnknownModelCost": false
+    }
+   ]
+  }
+ ]
+}

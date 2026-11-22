@@ -1,7 +1,8 @@
 # Process end-to-end tests
 
 Run on Linux with Go, Bash, the usual coreutils and Node.js 24 or later installed.
-Run `npm ci` from the repository root before running the suite.
+Run `npm ci` from the repository root before running the suite (it installs
+the Agent SDK and the Claude Code CLI for this platform).
 
 ```sh
 go test -tags e2e ./tests/e2e/ -count=1
@@ -101,5 +102,96 @@ metadata, marker files or bounded polling; no sleep establishes test ordering.
   LastConnectedAt and has a device_grace timer before Router.Close could lose
   that evidence. The daemon stays alive and executes after the server restarts.
 
-The normal suite completes in seconds; the target is under 60 seconds including
-build. Tests have individual deadlines and never start Docker or BuildKit.
+## Real worker against a fake model
+
+The `TestClaude*` tests run the real worker (`node worker/dist/main.js`)
+with the Claude Code CLI
+the Agent SDK bundles, a real control plane and a real daemon on one
+machine, in local mode. The model is `internal/testutil/fakemodel`, an
+in-process fake Messages API that each test scripts with a Go closure;
+the worker gets `ANTHROPIC_BASE_URL` pointing at it, a fake
+`ANTHROPIC_API_KEY`, `CIRCUS_BIN` pointing at the built `circus` (for
+`internal exec-guard`), and `HOME`, `CLAUDE_CONFIG_DIR` and
+`XDG_RUNTIME_DIR` under the test's directories. The worker's environment,
+which Claude Code and every Bash command the fake model scripts inherit, is
+built from an allowlist (`PATH`, `LANG`, `LC_*`, `TZ`, `USER`, `LOGNAME`,
+`SHELL`, `TERM`, `TMPDIR`, the harness's `HOME` and `XDG_*_HOME`) plus what
+the stack sets, with `NO_PROXY=127.0.0.1,localhost` and no proxy: no
+credential, proxy, agent socket or git variable of the caller gets
+through. Telemetry, error reporting, auto-updates and other non-essential
+traffic are disabled, so nothing reaches a real account or the network. The sessions' project
+directories live in `<TMPDIR or /tmp>/circus-e2e-<uid>/e2e-run-*` (flock'd
+and swept like the main run root), never under the user's home or this
+repository: Claude Code reads the `CLAUDE.md` files of every ancestor of its
+working directory, which would include the real `~/.claude/CLAUDE.md`.
+
+The harness builds the worker once per run, and only when its inputs
+(`worker/src`, the proto package's sources, the package files) changed since
+the last e2e build: a stamp under `.tmp/` records their hash, and the check
+and the build hold one lock, so concurrent runs never rewrite `worker/dist`
+while another one starts a worker from it. The fake is strict: a request it
+does not route to the test's script (a Claude Code session's request
+offering Bash, not a subagent's) fails the test. Scripted tool loops are
+bounded (`for i in $(seq 1200)`), and waits for files and session events
+are bounded to 20 s. After the harness waits for its direct children, it
+kills any remaining recorded session leaders and kills and reaps every
+process the test binary adopted as a child subreaper.
+
+Each test asserts the control plane's events and session state, the files
+on disk where tools ran, the requests the fake model received and, where
+it matters, the stored transcript (no duplicated input, answer or tool
+result). Sessions of scenarios the Go fake worker also has are compared
+with its recording (`web/src/lib/session-events/fake-worker.fixture.json`,
+what the Web reducer is tested against): the same durable event kinds in
+the same order, and the payload keys the reducer reads present with the
+same JSON type (equal values where it branches on them). The streamed
+copies are checked against the durable events the way the reducer joins
+them: a stream's `message_start` id is the durable `message.id`, its
+`content_block_start` indexes count from 0, and the n-th durable assistant
+event of a message carries block n of the same type. One known
+difference is spelled out: the real worker publishes the approval card
+right after the permission denial, before the tool result carrying the
+denial.
+
+- TestClaudeTextAndTools: a text turn, a thinking turn, one Bash, two
+  parallel Bash calls, and Write, Read, Edit and Bash changing a file in
+  the project directory.
+- TestClaudeMergeAndNow: an input sent while Bash runs joins the turn
+  (Claude Code's transcript shows it queued before the command is let go;
+  the model sees it with the tool result; one turn); an input with NOW
+  priority stops the streaming turn and starts its own; the turn after it
+  completes.
+- TestClaudeInterruptAndStop: interrupt while the model streams and while
+  Bash runs (the command's process is gone afterwards), each followed by a
+  turn that completes; stop mid-turn releases the lease and ends the
+  session's Claude Code.
+- TestClaudeApproval: auto mode's server-side check (`safeguards` answered
+  `flagged` by the fake) denies Bash, the approval card is resolved, and
+  the retried command runs exactly once although the check flags it again
+  (the worker's PreToolUse hook allows the approved call). A denied
+  approval is not retried and the session takes its next input (compared
+  with the fake worker's "deny").
+- TestClaudeWorkerKilled: SIGKILL of the worker mid-stream (input already
+  in the stored transcript) and with another session idle: both guards
+  exit and both CLI PIDs are verified reaped, the held stream is cut, no
+  model request follows; a new worker process resumes both sessions in a
+  new epoch; the interrupted one tells the model about the interruption.
+- TestClaudeWorkerKilledDuringBash: SIGKILL of the worker while Bash runs
+  in a separate session. The guard reaps the shell and the CLI before
+  exiting, and a new worker resumes the session in a new epoch.
+- TestClaudeControlPlaneRestart: the control plane restarts mid-stream; the
+  lease is resumed (same epoch and boot, new connection) and the turn
+  completes once; the worker then shuts down and releases its lease.
+- TestClaudeIdleRelease: with `CIRCUS_WORKER_IDLE_SECONDS=1` the idle lease
+  is released and Claude Code exits (its process is taken while the answer
+  is held); the next input acquires a new epoch and the conversation
+  resumes from the stored transcript.
+- TestClaudeBackgroundTask: a background Bash task ends while the session
+  is idle; its end is published, then Claude Code's own turn (origin `cli`)
+  tells the model.
+- TestClaudeMissingDirectory: the session's directory is gone when the
+  worker takes it: an ERROR event is published before the lease is
+  released, and no Claude Code starts.
+
+The normal suite completes in about a minute including the builds; the
+real-worker tests take a few seconds each. Tests have individual deadlines and never start Docker or BuildKit.

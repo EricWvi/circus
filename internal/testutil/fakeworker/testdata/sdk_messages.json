@@ -495,5 +495,35 @@
       "type": "user",
       "uuid": "018f0000-0000-7000-8000-000000000003"
     }
+  },
+  {
+    "kind": "KIND_BGTASK_STARTED",
+    "ephemeral": false,
+    "payload": {
+      "description": "Background",
+      "is_backgrounded": true,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "subtype": "task_started",
+      "task_id": "task-1",
+      "task_type": "local_bash",
+      "tool_use_id": "toolu_fake",
+      "type": "system",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_BGTASK_ENDED",
+    "ephemeral": false,
+    "payload": {
+      "output_file": "/tmp/task-1.output",
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "status": "completed",
+      "subtype": "task_notification",
+      "summary": "Background finished",
+      "task_id": "task-1",
+      "tool_use_id": "toolu_fake",
+      "type": "system",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
   }
 ]

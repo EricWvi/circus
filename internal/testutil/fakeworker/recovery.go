@@ -32,16 +32,7 @@ func (s *session) recoverCalls(t *turn) error {
 		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), text, noteLostBgtask)); err != nil {
 			return err
 		}
-		// Simulate the CLI's own task_notification for an orphaned SDK task.
-		payload := object{
-			"type": "system", "subtype": "task_notification", "uuid": uuid.NewString(),
-			"session_id": s.sdkID, "task_id": task.GetTaskId(), "status": "stopped",
-			"reason": "worker_restart", "summary": text, "output_file": "",
-		}
-		if id := task.GetToolUseId(); id != "" {
-			payload["tool_use_id"] = id
-		}
-		s.queue(pb.SessionEvent_KIND_BGTASK_ENDED, payload)
+		s.queue(pb.SessionEvent_KIND_BGTASK_ENDED, lostTaskPayload(s.sdkID, uuid.NewString(), task, text))
 		t.tasks = append(t.tasks, task.GetTaskId())
 	}
 	s.recovery = nil

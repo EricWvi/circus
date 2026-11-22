@@ -20,6 +20,15 @@ var version = "dev"
 
 const usage = "usage: circus <version|update|daemon|server|join|doctor|call>"
 
+// init keeps the exec-guard's main goroutine on the main OS thread from the
+// start: on Linux the guard arms its death signal and forks the CLI on that
+// thread, which stays alive throughout supervision.
+func init() {
+	if isExecGuard(os.Args) {
+		runtime.LockOSThread()
+	}
+}
+
 func main() {
 	if runtime.GOOS == "darwin" && len(os.Args) > 1 && os.Args[1] == daemonservice.LaunchReloadFlag {
 		os.Exit(daemonservice.RunLaunchReload(os.Args[2:], os.Stderr))
@@ -50,6 +59,9 @@ func main() {
 		exitOn(joinCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	case "doctor":
 		exitOn(doctorCommand(os.Args[2:], os.Stdout, os.Stderr))
+	case "internal":
+		// Helpers other circus components run; not part of the usage text.
+		os.Exit(internalCommand(os.Args[2:], os.Stderr))
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(1)

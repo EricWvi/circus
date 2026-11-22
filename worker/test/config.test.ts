@@ -33,20 +33,24 @@ it("reads what circus join writes under CIRCUS_HOME", () => {
     XDG_CONFIG_HOME: join(dir, "unused"),
     CIRCUS_WORKER_MAX_SESSIONS: "64",
     CIRCUS_WORKER_LOG_LEVEL: "debug",
+    CIRCUS_WORKER_IDLE_SECONDS: "2",
   })).toEqual({
     url: credential.control_plane_url, principalId: credential.principal_id, token: credential.token,
-    caFile, maxSessions: 64, logLevel: "debug",
+    caFile, maxSessions: 64, logLevel: "debug", idleMs: 2000,
   });
 });
 
 it("uses XDG and checks permissions and worker settings", () => {
   const path = write(join(dir, "circus"));
   const env = { XDG_CONFIG_HOME: dir };
-  expect(loadConfig(env)).toMatchObject({ maxSessions: 4, logLevel: "info" });
+  expect(loadConfig(env)).toMatchObject({ maxSessions: 4, logLevel: "info", idleMs: 300_000 });
   for (const value of ["0", "65", "4.5", "1e1"]) {
     expect(() => loadConfig({ ...env, CIRCUS_WORKER_MAX_SESSIONS: value })).toThrow("CIRCUS_WORKER_MAX_SESSIONS");
   }
   expect(() => loadConfig({ ...env, CIRCUS_WORKER_LOG_LEVEL: "verbose" })).toThrow("CIRCUS_WORKER_LOG_LEVEL");
+  for (const value of ["0", "86401", "1.5", ""]) {
+    expect(() => loadConfig({ ...env, CIRCUS_WORKER_IDLE_SECONDS: value })).toThrow("CIRCUS_WORKER_IDLE_SECONDS");
+  }
   chmodSync(path, 0o640);
   expect(() => loadConfig(env)).toThrow("chmod 600");
 });

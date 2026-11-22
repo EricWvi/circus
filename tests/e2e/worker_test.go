@@ -24,10 +24,8 @@ import (
 )
 
 func TestTypeScriptWorkerLink(t *testing.T) {
+	buildWorker(t)
 	h := newHarness(t)
-	build := exec.Command("npm", "-w", "@circus/worker", "run", "build")
-	build.Dir = root
-	must(t, h.startCommand(build, nil).wait(t, 15*time.Second))
 
 	api, project := browserSessionAPI(t, h)
 	ctx, cancel := context.WithTimeout(t.Context(), 35*time.Second)

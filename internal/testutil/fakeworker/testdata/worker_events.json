@@ -1,0 +1,197 @@
+[
+  {
+    "name": "turn_started",
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "payload": {
+      "origin": "input",
+      "turn_no": "18446744073709551615"
+    }
+  },
+  {
+    "name": "turn_started_cli",
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "payload": {
+      "origin": "cli",
+      "turn_no": "2"
+    }
+  },
+  {
+    "name": "approval_pending",
+    "kind": "KIND_APPROVAL_PENDING",
+    "ephemeral": false,
+    "payload": {
+      "approval_id": "018f0000-0000-7000-8000-000000000003",
+      "device": "box",
+      "display": "echo hi",
+      "reason": "Scripted Bash approval required",
+      "tool": "Bash",
+      "tool_use_id": "toolu_fake"
+    }
+  },
+  {
+    "name": "error",
+    "kind": "KIND_ERROR",
+    "ephemeral": false,
+    "payload": {
+      "message": "scripted worker error"
+    }
+  },
+  {
+    "name": "gap_detected",
+    "kind": "KIND_TRANSCRIPT_GAP_DETECTED",
+    "ephemeral": false,
+    "payload": {
+      "subpath": "",
+      "unknown_parents": [
+        "018f0000-0000-7000-8000-000000000003",
+        "018f0000-0000-7000-8000-000000000002"
+      ]
+    }
+  },
+  {
+    "name": "lost_task",
+    "kind": "KIND_BGTASK_ENDED",
+    "ephemeral": false,
+    "payload": {
+      "output_file": "",
+      "reason": "worker_restart",
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "status": "stopped",
+      "subtype": "task_notification",
+      "summary": "Background task task-1 was lost.",
+      "task_id": "task-1",
+      "tool_use_id": "toolu_fake",
+      "type": "system",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "name": "lost_task_without_tool_use",
+    "kind": "KIND_BGTASK_ENDED",
+    "ephemeral": false,
+    "payload": {
+      "output_file": "",
+      "reason": "worker_restart",
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "status": "stopped",
+      "subtype": "task_notification",
+      "summary": "Background task task-1 was lost.",
+      "task_id": "task-1",
+      "type": "system",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "name": "user_input",
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "message": {
+        "content": "hello",
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "timestamp": "2026-01-02T03:04:05.006Z",
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000002"
+    }
+  },
+  {
+    "name": "note_approval_retry",
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "circus_note": "approval_retry",
+      "isSynthetic": true,
+      "message": {
+        "content": "Retry it now.",
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "timestamp": "2026-01-02T03:04:05.006Z",
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000002"
+    }
+  },
+  {
+    "name": "note_user_interrupt",
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "circus_note": "user_interrupt",
+      "isSynthetic": true,
+      "message": {
+        "content": [
+          {
+            "text": "[Request interrupted by user]",
+            "type": "text"
+          }
+        ],
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "timestamp": "2026-01-02T03:04:05.006Z",
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "name": "note_previous_turn_interrupted",
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "circus_note": "previous_turn_interrupted",
+      "isSynthetic": true,
+      "message": {
+        "content": "The previous turn was interrupted.",
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "timestamp": "2026-01-02T03:04:05.006Z",
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "name": "note_lost_bgtask",
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "circus_note": "lost_bgtask",
+      "isSynthetic": true,
+      "message": {
+        "content": "Background task task-1 was lost.",
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "timestamp": "2026-01-02T03:04:05.006Z",
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "name": "note_history_missing",
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "circus_note": "history_missing",
+      "isSynthetic": true,
+      "message": {
+        "content": "Part of the conversation history is missing.",
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "timestamp": "2026-01-02T03:04:05.006Z",
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  }
+]

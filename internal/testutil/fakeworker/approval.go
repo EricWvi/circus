@@ -70,10 +70,8 @@ func (s *session) denyApproval(t *turn, toolID, command string, input object) er
 	if r.GetApproval().GetApprovalId() == "" {
 		return fmt.Errorf("approval: %v", r)
 	}
-	s.queue(pb.SessionEvent_KIND_APPROVAL_PENDING, object{
-		"approval_id": r.GetApproval().GetApprovalId(), "tool": "bash", "device": s.device,
-		"tool_use_id": toolID, "display": display, "reason": approvalReason,
-	})
+	s.queue(pb.SessionEvent_KIND_APPROVAL_PENDING, approvalPendingPayload(
+		r.GetApproval().GetApprovalId(), "bash", s.device, toolID, display, approvalReason))
 	return s.stream(t, "I need approval to run this Bash command.", s.w.opts.StreamDelay, false)
 }
 

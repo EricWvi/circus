@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -623,6 +624,23 @@ type sessionWatch struct {
 	stream  *connect.ServerStreamForClient[pb.SessionEvent]
 	seq     uint64
 	durable []*pb.SessionEvent
+	// all keeps every event received, ephemeral ones too.
+	all []*pb.SessionEvent
+	// expired is set when a bounded wait closed the stream (within).
+	expired atomic.Bool
+}
+
+// within runs wait with the watch bounded to d: past it the stream is
+// closed and the wait fails as a deadline instead of blocking until the
+// session's context ends.
+func (w *sessionWatch) within(d time.Duration, wait func()) {
+	w.t.Helper()
+	timer := time.AfterFunc(d, func() {
+		w.expired.Store(true)
+		_ = w.stream.Close()
+	})
+	defer timer.Stop()
+	wait()
 }
 
 func (s *sessionBrowser) watch(after uint64) *sessionWatch {
@@ -636,9 +654,13 @@ func (s *sessionBrowser) watch(after uint64) *sessionWatch {
 func (w *sessionWatch) next() *pb.SessionEvent {
 	w.t.Helper()
 	if !w.stream.Receive() {
+		if w.expired.Load() {
+			w.t.Fatalf("no expected event within the deadline after seq %d", w.seq)
+		}
 		w.t.Fatalf("watch ended after seq %d: %v", w.seq, w.stream.Err())
 	}
 	e := w.stream.Msg()
+	w.all = append(w.all, e)
 	if e.GetEphemeral() {
 		if e.GetSeq() != 0 {
 			w.t.Fatalf("ephemeral event with durable sequence: %v", e)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"maps"
+	"strconv"
 	"time"
 
 	pb "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -184,4 +185,57 @@ func jsonString(payload any) string {
 		panic(err)
 	}
 	return string(bytes.TrimSuffix(b.Bytes(), []byte{'\n'}))
+}
+
+// The payloads below are the events the worker writes itself rather than
+// forwards from the SDK. The TypeScript worker builds the same shapes; the
+// golden test exports them to testdata/worker_events.json for its tests.
+
+func turnStartedPayload(turnNo uint64, origin string) object {
+	return object{"turn_no": strconv.FormatUint(turnNo, 10), "origin": origin}
+}
+
+func approvalPendingPayload(approvalID, tool, device, toolUseID, display, reason string) object {
+	return object{
+		"approval_id": approvalID, "tool": tool, "device": device,
+		"tool_use_id": toolUseID, "display": display, "reason": reason,
+	}
+}
+
+func errorPayload(message string) object { return object{"message": message} }
+
+func gapDetectedPayload(subpath string, unknownParents []string) object {
+	return object{"subpath": subpath, "unknown_parents": unknownParents}
+}
+
+// sdkTaskStarted is the CLI's task_started message for a background task.
+func sdkTaskStarted(sessionID, id, taskID, toolUseID, description, taskType string) sdkMessage {
+	m := object{
+		"type": "system", "subtype": "task_started", "uuid": id, "session_id": sessionID,
+		"task_id": taskID, "description": description, "task_type": taskType, "is_backgrounded": true,
+	}
+	if toolUseID != "" {
+		m["tool_use_id"] = toolUseID
+	}
+	return sdkMessage{pb.SessionEvent_KIND_BGTASK_STARTED, m}
+}
+
+// sdkTaskNotification is the CLI's task_notification message for an ended task.
+func sdkTaskNotification(sessionID, id, taskID, toolUseID, status, summary, outputFile string) sdkMessage {
+	m := object{
+		"type": "system", "subtype": "task_notification", "uuid": id, "session_id": sessionID,
+		"task_id": taskID, "status": status, "summary": summary, "output_file": outputFile,
+	}
+	if toolUseID != "" {
+		m["tool_use_id"] = toolUseID
+	}
+	return sdkMessage{pb.SessionEvent_KIND_BGTASK_ENDED, m}
+}
+
+// lostTaskPayload simulates the CLI's own task_notification for an SDK
+// background task orphaned with its worker.
+func lostTaskPayload(sessionID, id string, task *pb.PatchSessionState_BackgroundTask, summary string) object {
+	payload := sdkTaskNotification(sessionID, id, task.GetTaskId(), task.GetToolUseId(), "stopped", summary, "").payload
+	payload["reason"] = "worker_restart"
+	return payload
 }
