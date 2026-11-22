@@ -316,6 +316,12 @@ func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circus
 				deleteCtx, cancel = context.WithTimeout(deleteCtx, projectDeleteStoreTimeout)
 				defer cancel()
 			}
+			if s.ledger != nil {
+				// Reads during the deletion must not rebuild the index
+				// it is clearing.
+				done := s.ledger.Deleting(projectID)
+				defer done()
+			}
 			err = s.st.DeleteProject(deleteCtx, u.ID, projectID, s.now().UnixMilli())
 		}
 	}
@@ -331,6 +337,13 @@ func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circus
 			return nil, connect.NewError(connect.CodeNotFound, errProjectNotFound)
 		default:
 			return nil, s.internal(ctx, "delete project", err)
+		}
+	}
+	if s.ledger != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), projectDeleteStoreTimeout)
+		defer cancel()
+		if err := s.ledger.Remove(cleanupCtx, projectID); err != nil {
+			s.logger.WarnContext(ctx, "remove project ledger failed", "project_id", projectID, "error", err)
 		}
 	}
 	return connect.NewResponse(out), nil

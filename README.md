@@ -383,6 +383,80 @@ payload each) and counted in the watch streams' figure. See
 `internal/controlplane/sessions` (doc.go and bus.go) and
 `internal/controlplane/calls/DESIGN.md`.
 
+### Ledger
+
+Each project with ledger entries has a bare Git repository at
+`ledger/<project_id>.git` beside the SQLite database (`/data/circus/ledger/`
+in the container). Back up these repositories with the rest of the data
+volume. At startup the server rebuilds any stale SQLite ledger index from
+the repository's main line and removes repositories for deleted projects.
+
+A snapshot permits up to 4096 decision files of 256 KiB each, about 1 GiB of
+uncompressed data plus the generated index. CommitMain scans the complete
+submitted snapshot to validate and hash it. It reads prior bodies when
+their blob hashes differ, reuses unchanged subtrees, streams new blobs one
+at a time, and updates the changed index rows. The caller owns the input
+bodies. Repository work uses bounded file buffers and metadata for up to
+4096 decisions and their directory paths. Git objects and the SQLite
+history index grow with recorded changes.
+
+Each new Git object is compressed into a temporary file, fsynced and only
+then renamed to its final name, and main moves only after the object
+directories are fsynced. An object file that already exists but is not
+reachable from the parent commit, for example one left by a crash, is
+inflated and hashed before it is reused, and replaced when it is wrong. A
+blob reused from the parent only has to exist and be nonempty, unless an
+earlier read of it failed; then it is verified in full as well, so the
+next commit that supplies its bytes repairs it.
+
+On Linux amd64 with Go 1.26.4, a local run with 4096 files of about 256 KiB
+each in 16 directories measured the following. Allocation is cumulative
+within the operation. The peak RSS of the run with repeating text was
+1.21 GiB, including the roughly 1 GiB of caller-owned input; the run with
+random text peaked at 1.74 GiB because generating its input leaves garbage.
+
+| Full-size workload | Time | Allocated |
+| --- | ---: | ---: |
+| Initial commit, repeating text | 3.95 s | 41 MiB |
+| One changed body, repeating text | 0.92 s | 12 MiB |
+| All bodies changed, repeating text | 6.27 s | 125 MiB |
+| Initial commit, seeded random Base64 text | 17.66 s | 41 MiB |
+| One changed body, seeded random Base64 text | 0.88 s | 12 MiB |
+| All bodies changed, seeded random Base64 text | 25.53 s | 124 MiB |
+
+Compression, fsync latency and directory depth affect wall time.
+
+A rebuild replays main's first-parent line from Git before it writes to
+SQLite, and spools 20 bytes per commit plus the encoded versions on
+temporary disk. When the indexed head is on that line and at most 4096
+versions follow it, one transaction keeps the indexed prefix and adds the
+rest. Otherwise the index is replaced in transactions of at most 64 rows
+each: the new rows are staged under a new generation, readers keep the
+previous complete index until a final one-row update switches them over,
+and the old rows are deleted in batches afterwards. Rows staged by an
+install that failed are deleted right away, even when its request was
+cancelled; rows left by a crash are deleted by the next commit or
+replacement. Deleting a project, or a user with projects, first clears
+its ledger index and deletes the rows in transactions of 64 rows, then
+removes the project; rows written meanwhile are deleted the same way
+first. These steps continue when the request ends. If the project
+survives, for example because a session was created meanwhile, the next
+read rebuilds its index from the repository. In the same local run,
+replacing an index of 102,400 versions took 4.1 s while other store calls
+waited at most 7 ms.
+
+The server isolates unreadable repositories during startup. A read of such
+a project returns an internal error and, once a retry delay has passed,
+starts a check of the repository, so a transient error clears without a
+restart. The check runs apart from the request, with a budget of ten
+minutes, which covers rebuilding a long history. One check per project
+and two in total run at a time, and the server stops them on shutdown. The delay starts at one
+second and doubles after each failed or timed-out check, up to one minute.
+
+The Web API serves up to four authenticated, decoded ledger requests at
+once, at most two for one user. Each response is bounded by its procedure,
+with a full listing capped at about 31 MiB of encoded data.
+
 ## Releases and deployment
 
 Pushing a `v*` tag publishes the Linux amd64 image to GitHub Container

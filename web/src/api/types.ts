@@ -470,4 +470,79 @@ export interface CircusClient {
   projects: ProjectService
   machines: MachineService
   sessions: SessionService
+  ledger: LedgerService
+}
+
+/** One decision of a ledger, as the ledger's listing shows it. */
+export interface LedgerEntry {
+  /** Referred to as D<number>; unique within the project, never reused. 0 is valid. */
+  number: number
+  title: string
+  /** Relative to the ledger root, without leading or trailing "/"; empty for the root. */
+  dir: string
+  /** "<dir>/D<number>-<name>.md", relative to the ledger root. */
+  path: string
+  /** When the last main-line commit that changed this decision was made. */
+  updatedAtUnixMs: number
+}
+
+/** A project's ledger: its decisions on the main line. */
+export interface Ledger {
+  /** Full hex id of the main line's head commit; empty for an empty ledger. */
+  headCommit: string
+  /** Ordered by path (directory, then file name). */
+  entries: LedgerEntry[]
+  /** The number the next merged decision will get. */
+  nextNumber: number
+}
+
+/** One decision as it is now, or as it was at a commit. */
+export interface Decision {
+  number: number
+  title: string
+  dir: string
+  path: string
+  /** Markdown, exactly as stored. Written by agents: untrusted input. */
+  body: string
+  /** The main-line commit this version was read at, and its time. */
+  commit: string
+  committedAtUnixMs: number
+}
+
+/** A main-line commit that changed a decision. */
+export interface DecisionVersion {
+  commit: string
+  committedAtUnixMs: number
+  /** A session, an orchestrator, or "import". */
+  author: string
+  /** First line of the commit message. */
+  summary: string
+  /** The decision's path and title in this version. */
+  path: string
+  title: string
+  /** Only the version that created the decision; the other flags are false then. */
+  added: boolean
+  contentChanged: boolean
+  moved: boolean
+  retitled: boolean
+  /** The code commit merged together with this version; empty when none. */
+  codeCommit: string
+}
+
+/** Read-only access to projects' ledgers. A project of another user is `not_found`. */
+export interface LedgerService {
+  getLedger(req: { projectId: string }): Promise<Ledger>
+  /**
+   * The decision as it is now, or with `commit` as it was at that
+   * main-line commit (`not_found` if it didn't exist there, or the commit
+   * isn't on the main line).
+   */
+  getDecision(req: { projectId: string; number: number; commit?: string }): Promise<Decision>
+  /** Newest first. `pageSize` 1 to 100 (0 or missing: 50); `nextPageToken` is empty after the last page. */
+  listDecisionHistory(req: {
+    projectId: string
+    number: number
+    pageSize?: number
+    pageToken?: string
+  }): Promise<{ versions: DecisionVersion[]; nextPageToken: string }>
 }

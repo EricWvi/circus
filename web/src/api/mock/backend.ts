@@ -24,7 +24,10 @@ import {
   validatePassword,
 } from "@/api/validation"
 
+import { seedLedgers } from "@/mock/ledger"
+
 import { listMockDirectory, readMockGitRemote } from "./directories"
+import { decisionOf, historyOf, ledgerOf, type MockLedgers } from "./ledger"
 import {
   createMockSessionRuntime,
   defaultSessionTiming,
@@ -78,6 +81,12 @@ export interface MockBackendOptions {
   note?: (message: string) => void
   /** Whether an OIDC provider is configured (default true). */
   oidc?: boolean
+  /**
+   * Every project's ledger, by project id (the demo ledgers by default).
+   * In memory only, like the sessions; a project without one has an empty
+   * ledger.
+   */
+  ledgers?: MockLedgers
 }
 
 /** Failed sign-ins per email within the window before further tries are refused. */
@@ -99,6 +108,7 @@ export function createMockBackend({
   workspaceTiming = defaultWorkspaceTiming,
   note = () => {},
   oidc = true,
+  ledgers = seedLedgers(now()),
 }: MockBackendOptions): MockBackend {
   const methods = (): LoginMethods =>
     oidc ? structuredClone(MOCK_LOGIN_METHODS) : { password: MOCK_LOGIN_METHODS.password }
@@ -245,6 +255,12 @@ export function createMockBackend({
       out.push(location)
     }
     return out
+  }
+
+  /** The main line of one of the signed-in user's projects; empty for a ledger without decisions. */
+  function mainLine(projectId: string) {
+    const project = ownedProject(currentUser(), projectId)
+    return ledgers.get(project.projectId) ?? []
   }
 
   /** A session of the signed-in user's; not_found otherwise. */
@@ -465,6 +481,7 @@ export function createMockBackend({
         state.projects = state.projects.filter((p) => p !== project)
         state.sessions = state.sessions.filter((s) => s.projectId !== project.projectId)
         workspaces.forget(project.projectId)
+        ledgers.delete(project.projectId)
         changed()
         return { workspaceRemovals }
       }),
@@ -593,6 +610,19 @@ export function createMockBackend({
       }),
 
       ...runtime.service,
+    },
+
+    ledger: {
+      getLedger: call(({ projectId }: { projectId: string }) =>
+        ledgerOf(mainLine(projectId)),
+      ),
+      getDecision: call(({ projectId, number, commit }: { projectId: string; number: number; commit?: string }) =>
+        decisionOf(mainLine(projectId), number, commit),
+      ),
+      listDecisionHistory: call(
+        (req: { projectId: string; number: number; pageSize?: number; pageToken?: string }) =>
+          historyOf(mainLine(req.projectId), req.number, req.pageSize, req.pageToken),
+      ),
     },
   }
 

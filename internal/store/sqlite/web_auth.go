@@ -110,15 +110,28 @@ func (o *ops) DeleteUser(ctx context.Context, id string) error {
 	if err := store.CheckID("user id", id); err != nil {
 		return err
 	}
-	return o.unit(ctx, func(tx *ops) error {
+	deletable := func(ctx context.Context, tx *ops) ([]string, error) {
 		var hasSessions bool
 		if err := tx.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sessions s
             JOIN projects p ON p.id = s.project_id WHERE p.user_id = ?)`, id).Scan(&hasSessions); err != nil {
-			return mapErr(err)
+			return nil, mapErr(err)
 		}
 		if hasSessions {
-			return store.ErrHasSessions
+			return nil, store.ErrHasSessions
 		}
+		// The user's projects, at most MaxProjectsPerUser, lose their
+		// ledger rows in bounded transactions before the cascade.
+		rows, err := tx.q.QueryContext(ctx, `SELECT h.project_id FROM ledger_heads h JOIN projects p ON p.id = h.project_id
+			WHERE p.user_id = ? ORDER BY h.project_id`, id)
+		if err != nil {
+			return nil, mapErr(err)
+		}
+		return collect(rows, func(sc scanner) (string, error) {
+			var p string
+			return p, mapErr(sc.Scan(&p))
+		})
+	}
+	return o.deleteWithLedgers(ctx, deletable, func(ctx context.Context, tx *ops) error {
 		_, err := tx.exec(ctx, `DELETE FROM users WHERE id = ?`, id)
 		return err
 	})

@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +16,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
+	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/store"
 )
 
@@ -376,5 +380,34 @@ func TestDeleteProjectContextErrors(t *testing.T) {
 				t.Fatalf("context error was logged: %q", logs.String())
 			}
 		})
+	}
+}
+
+// A store deletion that gives up because ledger commits kept racing it is
+// a retryable refusal, and the ledger repository stays until it succeeds.
+func TestDeleteProjectGivesUpRetryably(t *testing.T) {
+	wrapped := &projectDeleteStore{
+		beforeProjectDelete: func(context.Context, string, string, int64) error {
+			return fmt.Errorf("%w: ledger rows were written during the deletion", store.ErrBusy)
+		},
+	}
+	h, owner := newHarness(t, func(c *webapi.Config) { wrapped.Store, c.Store = c.Store, wrapped })
+	ctx := t.Context()
+	id := createLedgerProject(t, owner)
+	ledgerCommit(t, h, id, []ledger.Decision{{Title: "Kept"}}, "Seed", "")
+	remove := func() error {
+		_, err := owner.projects.DeleteProject(ctx, connect.NewRequest(&circusv1.DeleteProjectRequest{ProjectId: id}))
+		return err
+	}
+	wantDeleteError(t, remove(), connect.CodeUnavailable, "busy; retry")
+	repo := filepath.Join(h.dir, "ledger", id+".git")
+	if _, err := os.Stat(repo); err != nil {
+		t.Fatalf("repository after a refused delete: %v", err)
+	}
+	if err := remove(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(repo); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("repository after the delete: %v", err)
 	}
 }

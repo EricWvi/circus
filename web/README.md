@@ -81,6 +81,19 @@ deleting the folder along with the project fails. An offline device
 (`eric-win`) waits until it is online; a Windows device that is online
 fails as unsupported.
 
+### Mock ledgers
+
+Ledgers live in the tab's memory too (`src/api/mock/ledger.ts`, demo data in
+`src/mock/ledger.ts`), rebuilt on every page load. `circus` has sixteen
+decisions in a few directories (one nested), with history: one decision
+edited many times (its history pages), one moved, one retitled, some with a
+code commit. Its bodies use lists, tables, code, links (absolute, relative
+and `mailto:`), raw HTML, an image, and references to existing and missing
+decisions and to `palace#D1`. `palace` has two decisions and `toolbox` none.
+`?mock=stress` adds two decisions to `palace` for that page load: `Layout
+torture` (long words, inline code, headings, links, deep lists and quotes,
+footnotes) and `Large body` (about 250 KiB with some 25,000 references).
+
 ## Running against the control plane
 
 Run the control plane and the Web UI in separate terminals from the
@@ -221,6 +234,24 @@ sure that server's `public_url` is the Vite origin.
   stream decides whether a turn runs, except that a stopped or broken
   session runs nothing and a turn the server already counts as over is over
   even when its RESULT never came (`turnRunning` in `src/lib/session-state.ts`).
+
+## Ledger page
+
+`/p/:projectId/ledger` shows a project's Ledger read-only:
+`/p/:projectId/ledger/D12` one decision, `?view=history` its versions and
+`?at=<commit>` the version at that commit. Bodies are written by agents and
+rendered as untrusted Markdown (`src/components/ledger/ledger-markdown.tsx`,
+rules in `src/lib/ledger-markdown.ts`): raw HTML shows as text, only
+`http:`, `https:` and `mailto:` links are links (in a new tab), relative
+links are plain text and images are linked, never loaded. `D12` and
+`<project name>#D12` outside code become links to those decisions, with a
+preview on hover and keyboard focus (`src/lib/ledger-refs.ts`). A body may
+hold tens of thousands of references, so each is a plain anchor resolved in
+constant time against sets of decision numbers worked out once per ledger
+(`use-ref-resolver.ts`), and one layer around the body handles clicks and
+previews for all of them (`decision-ref.tsx`). The tree sorts by itself,
+whatever order the server lists: subdirectories by name, then decisions by
+number.
 
 ## Validation rules
 

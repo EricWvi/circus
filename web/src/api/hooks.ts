@@ -1,4 +1,12 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQueries,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
 import { useEffect } from "react"
 
 import { localDeadline } from "@/lib/enroll"
@@ -12,6 +20,7 @@ import type {
   DirectoryListing,
   EnrollLink,
   EnrollRole,
+  Ledger,
   Project,
   ProjectService,
   SessionDetails,
@@ -390,6 +399,7 @@ export function useDeleteProject() {
       // Drop the project from the cache now, so whatever renders next (the
       // landing page) never picks it, and its own session list isn't refetched.
       queryClient.removeQueries({ queryKey: queryKeys.sessions(projectId), exact: true })
+      queryClient.removeQueries({ queryKey: queryKeys.ledgerAll(projectId) })
       queryClient.setQueryData<Project[]>(queryKeys.projects, (list) =>
         list?.filter((p) => p.projectId !== projectId),
       )
@@ -429,3 +439,74 @@ export function useCreateSession() {
 
 const sortByName = (projects: Project[]) =>
   projects.sort((a, b) => a.name.localeCompare(b.name))
+
+/** A project's ledger: its decisions on the main line. */
+export function useLedger(projectId: string, { enabled = true }: { enabled?: boolean } = {}) {
+  const client = useClient()
+  return useQuery({
+    queryKey: queryKeys.ledger(projectId),
+    queryFn: () => client.ledger.getLedger({ projectId }),
+    enabled,
+  })
+}
+
+/** A ledger's decision numbers. */
+const numbersOf = (ledger: Ledger): ReadonlySet<number> => new Set(ledger.entries.map((e) => e.number))
+
+/**
+ * What is known of each ledger's numbers: the set once loaded, "failed",
+ * or undefined while loading. Stable while nothing changes.
+ */
+export type LedgerNumbers = ReadonlyArray<ReadonlySet<number> | "failed" | undefined>
+const combineNumbers = (results: Array<{ data?: ReadonlySet<number>; isError: boolean }>): LedgerNumbers =>
+  results.map((r) => r.data ?? (r.isError ? "failed" : undefined))
+
+/**
+ * The decision numbers of several projects' ledgers, in the order asked,
+ * each worked out once per ledger (shares the cache with `useLedger`).
+ */
+export function useLedgerNumbers(projectIds: readonly string[]): LedgerNumbers {
+  const client = useClient()
+  return useQueries({
+    queries: projectIds.map((projectId) => ({
+      queryKey: queryKeys.ledger(projectId),
+      queryFn: () => client.ledger.getLedger({ projectId }),
+      select: numbersOf,
+    })),
+    combine: combineNumbers,
+  })
+}
+
+/**
+ * One decision, as it is now or (with `commit`) as it was at that commit.
+ * A version at a commit never changes, so it is never refetched.
+ */
+export function useDecision(
+  req: { projectId: string; number: number; commit?: string },
+  { enabled = true }: { enabled?: boolean } = {},
+) {
+  const client = useClient()
+  const { projectId, number } = req
+  const commit = req.commit ?? ""
+  return useQuery({
+    queryKey: queryKeys.decision(projectId, number, commit),
+    queryFn: () => client.ledger.getDecision({ projectId, number, commit }),
+    staleTime: commit === "" ? undefined : Infinity,
+    enabled,
+  })
+}
+
+/** How many versions a page of a decision's history holds. */
+export const HISTORY_PAGE_SIZE = 20
+
+/** A decision's versions, newest first, loaded a page at a time. */
+export function useDecisionHistory(projectId: string, number: number) {
+  const client = useClient()
+  return useInfiniteQuery({
+    queryKey: queryKeys.decisionHistory(projectId, number),
+    queryFn: ({ pageParam }) =>
+      client.ledger.listDecisionHistory({ projectId, number, pageSize: HISTORY_PAGE_SIZE, pageToken: pageParam }),
+    initialPageParam: "",
+    getNextPageParam: (last) => last.nextPageToken || undefined,
+  })
+}

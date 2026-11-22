@@ -800,3 +800,27 @@ describe("deleting a project with default folders", () => {
     expect(dialog.getByText("eric-mbp 离线，工作目录 /Users/eric/circus/projects/fresh 会保留在该设备上。")).toBeTruthy()
   })
 })
+
+describe("deleting a project with a ledger", () => {
+  it("says that the ledger goes too, with its number of decisions, and forgets it", async () => {
+    const { queryClient } = await renderSettings("circus", withStoppedSessions(seedState(), "circus"))
+    queryClient.setQueryData(queryKeys.decision("circus", 4, ""), { number: 4 })
+    fireEvent.click(screen.getByRole("button", { name: "Delete project" }))
+    await advance(10)
+    const dialog = within(screen.getByRole("dialog"))
+    expect(dialog.getByText("Its stopped sessions and its Ledger, 16 decisions with their history, are deleted too.")).toBeTruthy()
+    expect(queryClient.getQueryData(queryKeys.ledger("circus"))).toBeTruthy()
+    fireEvent.click(dialog.getByRole("button", { name: "Delete" }))
+    await advance(50)
+    expect(queryClient.getQueryCache().findAll({ queryKey: queryKeys.ledgerAll("circus") })).toEqual([])
+  })
+
+  it("names the ledger even when it is empty", async () => {
+    await renderSettings("toolbox", withStoppedSessions(seedState(), "toolbox"))
+    fireEvent.click(screen.getByRole("button", { name: "Delete project" }))
+    await advance(10)
+    expect(within(screen.getByRole("dialog")).getByText(
+      "Its stopped sessions and its Ledger (decisions and their history) are deleted too.",
+    )).toBeTruthy()
+  })
+})

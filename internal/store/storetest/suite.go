@@ -54,6 +54,8 @@ func Run(t *testing.T, b Backend) {
 		{"ProjectBytes", testProjectBytes},
 		{"ProjectValidation", testProjectValidation},
 		{"ProjectCascade", testProjectCascade},
+		{"Ledger", testLedger},
+		{"LedgerStagedReplacement", testLedgerStagedReplacement},
 		{"ProjectLimit", testProjectLimit},
 		{"ProjectConcurrentCreate", testProjectConcurrentCreate},
 		{"ProjectNameKey", testProjectNameKey},

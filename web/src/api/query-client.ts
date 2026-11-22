@@ -23,6 +23,13 @@ export const queryKeys = {
   session: (sessionId: string) => ["session", sessionId] as const,
   directory: (device: string, path: string, includeHidden: boolean) =>
     ["directory", device, path, includeHidden] as const,
+  /** Everything of one project's ledger: the listing, decisions and histories. */
+  ledgerAll: (projectId: string) => ["ledger", projectId] as const,
+  ledger: (projectId: string) => ["ledger", projectId, "entries"] as const,
+  /** A decision now (`commit` empty) or at a commit. */
+  decision: (projectId: string, number: number, commit: string) =>
+    ["ledger", projectId, "decision", number, commit] as const,
+  decisionHistory: (projectId: string, number: number) => ["ledger", projectId, "history", number] as const,
 }
 
 /**

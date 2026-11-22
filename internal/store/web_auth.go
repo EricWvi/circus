@@ -67,7 +67,8 @@ type WebAuthOps interface {
 	// ErrHasSessions, deleting nothing; callers must remove those sessions
 	// through the chunked deletion flow first. Existing
 	// machine resources still prevent deletion (ErrNotFound for referenced rows).
-	// Missing users are ignored.
+	// Missing users are ignored. Like DeleteProject, it first deletes the
+	// ledger rows of the user's projects in bounded transactions.
 	DeleteUser(context.Context, string) error
 	CreateWebSession(context.Context, WebSession) error
 	// UseWebSession rejects expired sessions with ErrNotFound, and advances

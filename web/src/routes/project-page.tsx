@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { FolderIcon, SettingsIcon } from "lucide-react"
+import { BookOpenIcon, FolderIcon, SettingsIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Trans, useTranslation } from "react-i18next"
 import { Link, Navigate, useNavigate, useParams } from "react-router"
@@ -26,7 +26,7 @@ import { i18n } from "@/i18n/i18n"
 import { locationDirectory, pickLocation, projectErrorMessage } from "@/lib/location-form"
 import { formatRelative } from "@/lib/time"
 import { sessionTitle } from "@/lib/title"
-import { projectSettingsPath, sessionPath } from "@/lib/tree"
+import { ledgerPath, projectSettingsPath, sessionPath } from "@/lib/tree"
 import { cn } from "@/lib/utils"
 import { useOutbox } from "@/state/outbox-context"
 import { forgetStartKey, startKey } from "@/state/start-keys"
@@ -119,11 +119,18 @@ function ProjectHome({ project }: { project: Project }) {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         actions={
-          <Button variant="ghost" size="icon-sm" asChild>
-            <Link to={projectSettingsPath(project.projectId)} aria-label={t("projects.projectSettings")}>
-              <SettingsIcon />
-            </Link>
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon-sm" asChild>
+              <Link to={ledgerPath(project.projectId)} aria-label={t("ledger.title")} title={t("ledger.title")}>
+                <BookOpenIcon />
+              </Link>
+            </Button>
+            <Button variant="ghost" size="icon-sm" asChild>
+              <Link to={projectSettingsPath(project.projectId)} aria-label={t("projects.projectSettings")}>
+                <SettingsIcon />
+              </Link>
+            </Button>
+          </div>
         }
       >
         <h1 className="max-w-[65%] min-w-0 shrink-0 truncate font-medium">{project.name}</h1>

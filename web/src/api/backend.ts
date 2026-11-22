@@ -7,6 +7,7 @@
 //          origin; in development the Vite server proxies it).
 
 import { createConnectAuth } from "./connect/auth"
+import { createConnectLedger } from "./connect/ledger"
 import { createConnectMachines } from "./connect/machines"
 import { createConnectProjects } from "./connect/projects"
 import { createConnectSessions } from "./connect/sessions"
@@ -45,6 +46,7 @@ export function startBackend(): Backend {
       projects: createConnectProjects(transport),
       machines: createConnectMachines(transport),
       sessions: createConnectSessions(transport),
+      ledger: createConnectLedger(transport),
     },
     onExternalChange: () => () => {},
   }

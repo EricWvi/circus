@@ -54,6 +54,9 @@ type DB struct {
 	// handle, runs between DeleteSession's transactions; an error stops the
 	// delete there, as a crash would.
 	afterDeleteChunk func() error
+	// afterLedgerChunk, likewise, runs between the transactions that delete
+	// invisible ledger rows.
+	afterLedgerChunk func() error
 }
 
 var _ store.Store = (*DB)(nil)

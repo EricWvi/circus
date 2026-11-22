@@ -13,6 +13,7 @@ export function AppShell() {
   const sessionId = useMatch("/p/:projectId/s/:sessionId")?.params.sessionId
   const projectHome = useMatch("/p/:projectId")?.params.projectId
   const projectSettings = useMatch("/p/:projectId/settings")?.params.projectId
+  const projectLedger = useMatch("/p/:projectId/ledger/*")?.params.projectId
   const devicesPage = useMatch("/devices") !== null
   const { user } = useCurrentUser()
 
@@ -24,7 +25,8 @@ export function AppShell() {
           <NewProjectDialogProvider>
             <AppSidebar
               activeSessionId={sessionId}
-              activeProjectId={projectHome ?? projectSettings}
+              activeProjectId={projectHome ?? projectSettings ?? projectLedger}
+              ledgerProjectId={projectLedger}
               devicesActive={devicesPage}
             />
             <SidebarInset className="min-h-0 overflow-hidden outline-none">

@@ -26,6 +26,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
+	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
 	"github.com/EricWvi/circus/internal/testutil/wait"
@@ -41,6 +42,8 @@ const password = "password-123"
 
 type harness struct {
 	st     *sqlite.DB
+	ledger *ledger.Manager
+	dir    string
 	server *httptest.Server
 	owner  store.User // the super user
 	clock  atomic.Int64
@@ -70,7 +73,9 @@ func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *clien
 	t.Helper()
 	h := &harness{online: map[string]bool{}, bus: sessions.NewBus(sessions.BusOptions{}), waker: &recordingWaker{}, jobs: &recordingJobs{}}
 	h.clock.Store(time.Date(2026, 11, 17, 8, 0, 0, 0, time.UTC).UnixMilli())
-	st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "web.db"), sqlite.Options{})
+	h.dir = t.TempDir()
+	dbPath := filepath.Join(h.dir, "web.db")
+	st, err := sqlite.Open(t.Context(), dbPath, sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +99,16 @@ func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *clien
 		t.Fatal(err)
 	}
 	web.Register(mux)
-	cfg := webapi.Config{Store: st, Interceptor: web.Interceptor(), Now: now, Online: h.onlineDevices, Bus: h.bus, Waker: h.waker, Jobs: h.jobs, PublicURL: h.server.URL}
+	h.ledger, err = ledger.New(dbPath, st, now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := h.ledger.Close(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	cfg := webapi.Config{Store: st, Ledger: h.ledger, Interceptor: web.Interceptor(), Now: now, Online: h.onlineDevices, Bus: h.bus, Waker: h.waker, Jobs: h.jobs, PublicURL: h.server.URL}
 	for _, option := range options {
 		option(&cfg)
 	}

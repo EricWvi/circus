@@ -3,6 +3,8 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 
 	"github.com/EricWvi/circus/internal/store"
 )
@@ -306,21 +308,103 @@ func (o *ops) DeleteProject(ctx context.Context, userID, projectID string, now i
 	if now == 0 {
 		return invalid("DeleteProject needs a time")
 	}
-	return o.unit(ctx, func(tx *ops) error {
+	deletable := func(ctx context.Context, tx *ops) ([]string, error) {
 		if _, err := tx.GetProject(ctx, userID, projectID); err != nil {
-			return err
+			return nil, err
 		}
 		var hasSessions bool
 		if err := tx.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sessions WHERE project_id = ?)`, projectID).Scan(&hasSessions); err != nil {
-			return mapErr(err)
+			return nil, mapErr(err)
 		}
 		if hasSessions {
-			return store.ErrHasSessions
+			return nil, store.ErrHasSessions
 		}
+		return []string{projectID}, nil
+	}
+	return o.deleteWithLedgers(ctx, deletable, func(ctx context.Context, tx *ops) error {
 		n, err := tx.exec(ctx, `DELETE FROM projects WHERE id = ? AND user_id = ?`, projectID, userID)
 		if err == nil && n == 0 {
 			err = store.ErrNotFound
 		}
 		return err
 	})
+}
+
+// errLedgerRowsBack reports ledger rows written for a project between the
+// purge and the final delete transaction of its deletion.
+var errLedgerRowsBack = errors.New("ledger rows were written during the deletion")
+
+// Attempts of a deletion whose ledger rows keep coming back, as from a
+// commit racing it, before it gives up with ErrBusy.
+const ledgerDeleteAttempts = 3
+
+// deleteWithLedgers deletes what final deletes, after the ledger rows of
+// the projects that deletable returns, so the final transaction cascades
+// over their head rows only. deletable checks the deletion's
+// preconditions in every transaction that changes something.
+//
+// The first transaction hides each index: the head is cleared and readers
+// move to a new, empty generation. The rows are then deleted in bounded
+// transactions. A failure or crash after the hiding leaves a project that
+// still exists with an empty index and invisible rows; the ledger rebuilds
+// such an index on the next read, and a retried deletion finishes the
+// rows. The final transaction refuses to cascade rows written meanwhile,
+// and the deletion starts over instead. These steps continue when ctx
+// ends, within the ledger cleanup budget, so a caller that goes away does
+// not leave the index hidden.
+func (o *ops) deleteWithLedgers(ctx context.Context, deletable func(context.Context, *ops) ([]string, error), final func(context.Context, *ops) error) error {
+	ctx, cancel := ledgerCleanupContext(ctx)
+	defer cancel()
+	for attempt := 1; ; attempt++ {
+		var indexed []string
+		err := o.unit(ctx, func(tx *ops) error {
+			indexed = indexed[:0]
+			projects, err := deletable(ctx, tx)
+			if err != nil {
+				return err
+			}
+			for _, id := range projects {
+				n, err := tx.exec(ctx, `UPDATE ledger_heads SET head = '', next_position = 0, generation = reserved + 1,
+					reserved = reserved + 1 WHERE project_id = ?`, id)
+				if err != nil {
+					return err
+				}
+				if n > 0 {
+					indexed = append(indexed, id)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		for _, id := range indexed {
+			if err := o.purgeLedgerIndex(ctx, id); err != nil {
+				return err
+			}
+		}
+		err = o.unit(ctx, func(tx *ops) error {
+			projects, err := deletable(ctx, tx)
+			if err != nil {
+				return err
+			}
+			for _, id := range projects {
+				var rows bool
+				if err := tx.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM ledger_versions WHERE project_id = ?1)
+					OR EXISTS(SELECT 1 FROM ledger_entries WHERE project_id = ?1)`, id).Scan(&rows); err != nil {
+					return mapErr(err)
+				}
+				if rows {
+					return errLedgerRowsBack
+				}
+			}
+			return final(ctx, tx)
+		})
+		if !errors.Is(err, errLedgerRowsBack) {
+			return err
+		}
+		if attempt == ledgerDeleteAttempts {
+			return fmt.Errorf("%w: %w", store.ErrBusy, err)
+		}
+	}
 }

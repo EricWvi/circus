@@ -8,6 +8,7 @@ import { isApiError } from "@/api/errors"
 import {
   useDeleteProject,
   useDevices,
+  useLedger,
   useProjects,
   useSessionList,
   useUpdateProject,
@@ -431,6 +432,8 @@ function DeleteSection({ project }: { project: Project }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const sessions = useSessionList(project.projectId)
+  const ledger = useLedger(project.projectId)
+  const decisions = ledger.data?.entries.length ?? 0
   const remove = useDeleteProject()
   const showNotice = useShowNotice()
   const [open, setOpen] = useState(false)
@@ -548,7 +551,11 @@ function DeleteSection({ project }: { project: Project }) {
         <DialogContent showCloseButton={false} onCloseAutoFocus={focus.onCloseAutoFocus}>
           <DialogHeader>
             <DialogTitle>{t("projects.deleteTitle", { name: project.name })}</DialogTitle>
-            <DialogDescription>{t("projects.deleteDescription")}</DialogDescription>
+            <DialogDescription>
+              {decisions > 0
+                ? t("projects.deleteDescriptionLedger", { count: decisions })
+                : t("projects.deleteDescription")}
+            </DialogDescription>
           </DialogHeader>
           {folders.length > 0 && devices.data === undefined && (
             // Which folders can go depends on which devices are online.

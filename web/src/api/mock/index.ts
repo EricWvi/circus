@@ -3,6 +3,8 @@
 // through context.
 
 import { createMockBackend, type MockBackend } from "./backend"
+import { stressLedgers } from "@/mock/ledger"
+
 import { parsePersisted, serialize, STORAGE_KEY } from "./persist"
 import { freshState, seedState, type MockState } from "./state"
 
@@ -31,7 +33,8 @@ function save(state: MockState) {
 /**
  * Starts the mock backend from persisted state. `?mock=fresh` resets it to
  * an uninitialized server and `?mock=reset` restores the demo seed;
- * `?mock=nooidc` turns the OIDC provider off until the next page load.
+ * `?mock=nooidc` turns the OIDC provider off until the next page load and
+ * `?mock=stress` adds decisions at the ledger's size limits to `palace`.
  * Modes combine with commas (`?mock=reset,nooidc`); the query parameter is
  * removed afterwards. Sessions live in this tab's memory only.
  */
@@ -61,6 +64,7 @@ export function startMockBackend(): MockBackend {
     onChange: save,
     note: (message) => console.info(message),
     oidc: !modes.has("nooidc"),
+    ...(modes.has("stress") ? { ledgers: stressLedgers() } : {}),
   })
 
   // Another tab changed the store: adopt its state so this tab's next write

@@ -25,6 +25,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
 	"github.com/EricWvi/circus/internal/controlplane/workspaces"
+	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/loopback"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
@@ -53,6 +54,8 @@ type Config struct {
 	// Listen is the TCP address, host:port. Port 0 picks a free port; see
 	// Server.Addr.
 	Listen string
+	// DBPath is the SQLite file. The server keeps ledger repositories beside it.
+	DBPath string
 	// TLSCert and TLSKey are PEM files; the server terminates TLS.
 	TLSCert, TLSKey string
 	// BehindProxy serves plaintext for a reverse proxy that terminates TLS.
@@ -240,6 +243,18 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	}
 	s.logger = slog.New(slog.NewJSONHandler(cfg.LogOutput, &slog.HandlerOptions{Level: cfg.LogLevel})).
 		With("instance_id", s.instanceID)
+	var ledgerManager *ledger.Manager
+	if cfg.DBPath != "" {
+		ledgerManager, err = ledger.New(cfg.DBPath, st, now, s.logger)
+		if err != nil {
+			return nil, err
+		}
+		if err := ledgerManager.Reconcile(ctx); err != nil {
+			return nil, err
+		}
+		// Background checks of broken ledgers stop with the server.
+		s.hooks = append(s.hooks, shutdownHook{"ledger checks", ledgerManager.Close})
+	}
 	s.authn = auth.NewAuthenticator(st, auth.Options{Now: now, Logger: s.logger})
 
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { writeText(w, http.StatusOK, "ok\n") })
@@ -294,7 +309,7 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	// finish; the session service closes with the call plane.
 	s.hooks = append(s.hooks, shutdownHook{"session watchers", func(context.Context) error { s.bus.Close(); return nil }})
 	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger,
-		Bus: s.bus, Waker: s.sessions, Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query, Workspaces: s.workspaces})
+		Bus: s.bus, Waker: s.sessions, Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query, Workspaces: s.workspaces, Ledger: ledgerManager})
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Link } from "react-router"
-import { ChevronRightIcon, MonitorSmartphoneIcon, PlusIcon, SearchIcon } from "lucide-react"
+import { BookOpenIcon, ChevronRightIcon, MonitorSmartphoneIcon, PlusIcon, SearchIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { useCurrentUser, useDevices, useProjects, useSessionList } from "@/api/hooks"
@@ -18,6 +18,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
@@ -29,7 +30,8 @@ import {
 import { rollupState } from "@/lib/status"
 import { formatRelative } from "@/lib/time"
 import { sessionTitle } from "@/lib/title"
-import { buildTree, projectPath, sessionPath, type ProjectNode } from "@/lib/tree"
+import { buildTree, ledgerPath, projectPath, sessionPath, type ProjectNode } from "@/lib/tree"
+import { cn } from "@/lib/utils"
 
 import { UserMenu } from "./user-menu"
 
@@ -41,10 +43,13 @@ export function AppSidebar({
   activeSessionId,
   activeProjectId,
   devicesActive = false,
+  ledgerProjectId,
 }: {
   activeSessionId?: string
-  /** The project whose own page (home or settings) is open. */
+  /** The project whose own page (home, settings or ledger) is open. */
   activeProjectId?: string
+  /** The project whose ledger is open. */
+  ledgerProjectId?: string
   /** The devices page is open. */
   devicesActive?: boolean
 }) {
@@ -90,6 +95,7 @@ export function AppSidebar({
                 node={node}
                 activeSessionId={activeSessionId}
                 active={node.project.projectId === activeProjectId}
+                ledgerActive={node.project.projectId === ledgerProjectId}
               />
             ))}
             {!tree && !loadFailed && (
@@ -158,10 +164,12 @@ function ProjectGroup({
   node: { project, sessions },
   activeSessionId,
   active,
+  ledgerActive,
 }: {
   node: ProjectNode
   activeSessionId?: string
   active: boolean
+  ledgerActive: boolean
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(true)
@@ -190,6 +198,26 @@ function ProjectGroup({
             )}
           </Link>
         </SidebarMenuButton>
+        {/* The ledger, quietly: shown while the row is hovered or focused (always on touch screens). */}
+        <SidebarMenuAction
+          asChild
+          className={cn(
+            `top-1.5 right-1.5 text-muted-foreground hover:text-sidebar-foreground ${rowStates}`,
+            !ledgerActive &&
+              "md:opacity-0 md:peer-hover/menu-button:opacity-100 md:peer-focus-visible/menu-button:opacity-100 md:hover:opacity-100 md:focus-visible:opacity-100",
+            ledgerActive && "bg-sidebar-foreground/10 text-sidebar-foreground",
+          )}
+        >
+          <Link
+            to={ledgerPath(project.projectId)}
+            aria-label={t("ledger.ledgerOf", { name: project.name })}
+            title={t("ledger.title")}
+            aria-current={ledgerActive ? "page" : undefined}
+            onClick={() => isMobile && setOpenMobile(false)}
+          >
+            <BookOpenIcon />
+          </Link>
+        </SidebarMenuAction>
         <CollapsibleTrigger asChild>
           <button
             type="button"

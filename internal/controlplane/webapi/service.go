@@ -16,6 +16,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/workspaces"
+	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -93,6 +94,7 @@ type Config struct {
 	// Jobs stops the background device jobs of a stopped session.
 	Jobs       JobStopper
 	Workspaces *workspaces.Manager
+	Ledger     *ledger.Manager
 	// WatchKeepalive is how long a WatchSession stream may stay silent
 	// before a keepalive; zero means DefaultWatchKeepalive.
 	WatchKeepalive time.Duration
@@ -107,7 +109,7 @@ type Config struct {
 	WatchWriteTimeout time.Duration
 }
 
-// Service implements ProjectService, MachineService and SessionService.
+// Service implements ProjectService, MachineService, SessionService and LedgerService.
 type Service struct {
 	st            store.Store
 	publicURL     string
@@ -120,6 +122,7 @@ type Service struct {
 	waker         sessions.Waker
 	jobs          JobStopper
 	workspaces    *workspaces.Manager
+	ledger        *ledger.Manager
 	removalMu     sync.Mutex
 	removals      map[[2]string]chan struct{}
 	keepalive     time.Duration
@@ -135,6 +138,7 @@ var (
 	_ circusv1connect.ProjectServiceHandler = (*Service)(nil)
 	_ circusv1connect.MachineServiceHandler = (*Service)(nil)
 	_ circusv1connect.SessionServiceHandler = (*Service)(nil)
+	_ circusv1connect.LedgerServiceHandler  = (*Service)(nil)
 )
 
 // New returns the services. Store, Interceptor, Online, Bus, Waker and Jobs
@@ -147,7 +151,7 @@ func New(cfg Config) (*Service, error) {
 		publicURL: strings.TrimRight(cfg.PublicURL, "/"), version: cfg.Version,
 		bus: cfg.Bus, waker: cfg.Waker, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
 		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout,
-		query: cfg.Query, workspaces: cfg.Workspaces, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
+		query: cfg.Query, workspaces: cfg.Workspaces, ledger: cfg.Ledger, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
 	if s.query == nil {
 		s.query = func(context.Context, string, *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {
 			return nil, gateway.ErrDeviceOffline
@@ -192,6 +196,7 @@ func (s *Service) Register(mux *http.ServeMux) {
 		connect.WithSendMaxBytes(maxSessionResponseBytes), connect.WithInterceptors(s.interceptor),
 		connect.WithCompression("gzip", nil, nil))
 	mux.Handle(path, withStreamWriter(h, s.writeTimeout))
+	s.registerLedger(mux)
 }
 
 // user returns the signed-in Web user, or UNAUTHENTICATED.

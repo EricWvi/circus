@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package circus.v1;
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// LedgerService reads a project's ledger: its numbered decisions, filed in
+// directories. The ledger is read-only here; it changes only through
+// changesets merged by an orchestrator.
+//
+// Every call needs a browser session cookie (UNAUTHENTICATED without one)
+// and is refused with PERMISSION_DENIED when its Origin header differs from
+// the server's public URL. A project of another user is NOT_FOUND, like an
+// unknown one. Invalid input is INVALID_ARGUMENT with a google.rpc.BadRequest
+// field violation naming the field ("project_id", "number", "commit",
+// "page_size" or "page_token").
+//
+// A project that has never had a decision has an empty ledger: GetLedger
+// answers with no entries and an empty head_commit.
+//
+// Bounds: at most 4096 decisions per project; a decision file is at most
+// 256 KiB; a title is at most 512 bytes; a directory is at most 256 bytes of
+// '/'-separated segments of at most 64 bytes each.
+service LedgerService {
+  // GetLedger lists every decision on the ledger's main line, ordered by
+  // path (directory, then file name).
+  rpc GetLedger(GetLedgerRequest) returns (GetLedgerResponse);
+  // GetDecision returns one decision, by default as it is now; with commit,
+  // as it was at that commit of the main line (NOT_FOUND if the decision
+  // did not exist there or the commit is not on the main line).
+  rpc GetDecision(GetDecisionRequest) returns (GetDecisionResponse);
+  // ListDecisionHistory lists the main-line commits that changed one
+  // decision (its content, title or directory), newest first.
+  rpc ListDecisionHistory(ListDecisionHistoryRequest) returns (ListDecisionHistoryResponse);
+}
+
+message LedgerEntry {
+  // The decision is referred to as D<number>. Numbers are unique within a
+  // project and never reused; 0 is a valid number.
+  uint32 number = 1;
+  string title = 2;
+  // Directory relative to the ledger root, without leading or trailing
+  // '/'; empty for the root.
+  string dir = 3;
+  // File path relative to the ledger root: "<dir>/D<number>-<name>.md".
+  string path = 4;
+  // Commit time of the last main-line commit that changed this decision.
+  int64 updated_at_unix_ms = 5;
+}
+
+message GetLedgerRequest {
+  string project_id = 1;
+}
+message GetLedgerResponse {
+  // Full hex id of the main line's head commit; empty for an empty ledger.
+  string head_commit = 1;
+  repeated LedgerEntry entries = 2;
+  // The number the next merged decision will get.
+  uint32 next_number = 3;
+}
+
+message Decision {
+  uint32 number = 1;
+  string title = 2;
+  string dir = 3;
+  string path = 4;
+  // Markdown body after the front matter, exactly as stored. It is written
+  // by agents: render it as untrusted input, without raw HTML.
+  string body = 5;
+  // The main-line commit this version was read at, and its commit time.
+  string commit = 6;
+  int64 committed_at_unix_ms = 7;
+}
+
+message GetDecisionRequest {
+  string project_id = 1;
+  uint32 number = 2;
+  // Optional full hex commit id on the main line; empty reads the head.
+  string commit = 3;
+}
+message GetDecisionResponse {
+  Decision decision = 1;
+}
+
+message DecisionVersion {
+  // Full hex id of the main-line commit that made this version.
+  string commit = 1;
+  int64 committed_at_unix_ms = 2;
+  // Commit author name: a session, an orchestrator, or "import".
+  string author = 3;
+  // First line of the commit message.
+  string summary = 4;
+  // The decision's path and title in this version.
+  string path = 5;
+  string title = 6;
+  // added is true only for the version that created the decision; the
+  // other flags say what changed relative to the previous version and are
+  // false when added is true.
+  bool added = 7;
+  bool content_changed = 8;
+  bool moved = 9;
+  bool retitled = 10;
+  // Code commit merged together with this version, when there was one.
+  string code_commit = 11;
+}
+
+message ListDecisionHistoryRequest {
+  string project_id = 1;
+  uint32 number = 2;
+  // 1 to 100; 0 selects 50.
+  uint32 page_size = 3;
+  // next_page_token of the previous page; empty starts at the head.
+  string page_token = 4;
+}
+message ListDecisionHistoryResponse {
+  repeated DecisionVersion versions = 1;
+  // Empty when there are no more versions.
+  string next_page_token = 2;
+}

@@ -4,6 +4,7 @@ import { AppShell } from "@/routes/app-shell"
 import { AuthGate } from "@/routes/auth-gate"
 import { DevicesPage } from "@/routes/devices-page"
 import { HomePage } from "@/routes/home-page"
+import { LedgerPage } from "@/routes/ledger-page"
 import { LoginPage } from "@/routes/login-page"
 import { ProjectPage } from "@/routes/project-page"
 import { ProjectSettingsPage } from "@/routes/project-settings-page"
@@ -26,6 +27,8 @@ export function createAppRouter() {
             { path: "/", element: <HomePage /> },
             { path: "/p/:projectId", element: <ProjectPage /> },
             { path: "/p/:projectId/settings", element: <ProjectSettingsPage /> },
+            { path: "/p/:projectId/ledger", element: <LedgerPage /> },
+            { path: "/p/:projectId/ledger/:decision", element: <LedgerPage /> },
             { path: "/p/:projectId/s/:sessionId", element: <SessionPage /> },
             { path: "/devices", element: <DevicesPage /> },
             { path: "/settings", element: <SettingsPage /> },

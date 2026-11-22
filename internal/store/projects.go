@@ -154,6 +154,10 @@ type ProjectOps interface {
 	// meanwhile makes this final step refuse, so the client can retry.
 	// ErrNotFound if absent or owned by another Web user. now is required
 	// Unix milliseconds, retained for the caller's deletion timestamp.
+	// Outside a transaction, the project's ledger index is first cleared and
+	// its rows deleted in bounded transactions, so a refusal or crash after
+	// the checks can leave the project with an empty ledger index, which the
+	// ledger rebuilds from its repository.
 	DeleteProject(ctx context.Context, userID, projectID string, now int64) error
 }
 
