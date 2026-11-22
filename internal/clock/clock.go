@@ -38,9 +38,20 @@ func (c *Fake) Waiters() int {
 func (c *Fake) After(d time.Duration) <-chan time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.until(c.now.Add(d))
+}
+
+// Until arms a timer for the instant at. Unlike After(at.Sub(Now())), an
+// Advance that races with the call cannot postpone the timer past at.
+func (c *Fake) Until(at time.Time) <-chan time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.until(at)
+}
+
+func (c *Fake) until(at time.Time) chan time.Time {
 	ch := make(chan time.Time, 1)
-	at := c.now.Add(d)
-	if d <= 0 {
+	if !at.After(c.now) {
 		ch <- c.now
 	} else {
 		c.timers = append(c.timers, timer{at: at, ch: ch})
@@ -68,6 +79,18 @@ func (c *Fake) Advance(d time.Duration) {
 type Clock interface {
 	Now() time.Time
 	After(time.Duration) <-chan time.Time
+}
+
+// Until returns a channel that receives once clk reaches at. A clock that
+// arms timers by deadline does so in one step; any other waits for the
+// remaining duration measured now.
+func Until(clk Clock, at time.Time) <-chan time.Time {
+	if c, ok := clk.(interface {
+		Until(time.Time) <-chan time.Time
+	}); ok {
+		return c.Until(at)
+	}
+	return clk.After(at.Sub(clk.Now()))
 }
 
 // Real delegates directly to the standard library clock.

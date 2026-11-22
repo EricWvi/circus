@@ -26,6 +26,26 @@ func TestFakeWaiters(t *testing.T) {
 	}
 }
 
+func TestUntil(t *testing.T) {
+	c := New()
+	start := c.Now()
+	late := Until(c, start.Add(time.Second))
+	c.Advance(time.Second)
+	select {
+	case <-late:
+	default:
+		t.Fatal("timer armed for a deadline did not fire at it")
+	}
+	select {
+	case <-Until(c, start):
+	default:
+		t.Fatal("timer armed for a past deadline did not fire immediately")
+	}
+	if got := c.Waiters(); got != 0 {
+		t.Fatalf("waiters = %d, want 0", got)
+	}
+}
+
 func TestWithTimeoutUsesClock(t *testing.T) {
 	c := New()
 	ctx, cancel := WithTimeout(context.Background(), c, time.Second)

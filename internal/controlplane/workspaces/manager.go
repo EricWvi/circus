@@ -166,7 +166,7 @@ func (m *Manager) Run(ctx context.Context) {
 		}
 		if timer == nil || next.Before(armedAt) {
 			armedAt = next
-			timer = m.cfg.Clock.After(next.Sub(m.cfg.Clock.Now()))
+			timer = clock.Until(m.cfg.Clock, next)
 		}
 		select {
 		case <-ctx.Done():
@@ -274,6 +274,12 @@ func (m *Manager) consider(ctx context.Context, w store.Workspace, queue *workQu
 		m.admitting = &admission{projectID: w.ProjectID, cancel: cancel}
 		m.mu.Unlock()
 
+		// Admission decides on its own, later clock reading. Comparing
+		// against one taken before it queues every backoff it found not
+		// yet due, even one that falls due before the check below. Only a
+		// backoff already due here, left by a failed admission, waits for
+		// the scan instead of retrying in a tight loop.
+		before := m.now()
 		var err error
 		w, err = m.admit(admitCtx, w, allowed)
 		m.logError(w, err)
@@ -286,7 +292,7 @@ func (m *Manager) consider(ctx context.Context, w store.Workspace, queue *workQu
 			m.mu.Unlock()
 			return
 		}
-		if w.Waiting == store.WorkspaceBackoff && w.RetryAt > m.now() && len(queue.retries) < scanLimit {
+		if w.Waiting == store.WorkspaceBackoff && w.RetryAt > before && len(queue.retries) < scanLimit {
 			queue.retries[w.ID] = w.RetryAt
 		}
 	}

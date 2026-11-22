@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/testutil/wait"
@@ -441,5 +442,83 @@ func TestBeforeDeleteJoinsWorkCutShort(t *testing.T) {
 	close(returned)
 	if !finished.Load() {
 		t.Fatal("cancellation still running after BeforeDelete returned")
+	}
+}
+
+// afterTxStore runs a hook once, after the next admission transaction ends.
+type afterTxStore struct {
+	store.Store
+	hook atomic.Pointer[func()]
+}
+
+func (s *afterTxStore) Tx(ctx context.Context, fn func(context.Context, store.Ops) error) error {
+	err := s.Store.Tx(ctx, fn)
+	if hook := s.hook.Swap(nil); hook != nil {
+		(*hook)()
+	}
+	return err
+}
+
+// The retry time passes after admission found the backoff not yet due but
+// before the manager queued the retry. The retry must still start without
+// waiting for the periodic scan.
+func TestWorkspaceBackoffDueDuringAdmission(t *testing.T) {
+	f := newManagerFixture(t)
+	w := f.setup("linux")
+	st := &afterTxStore{Store: f.st}
+	f.start(func(c *Config) { c.Store = st })
+	first := f.next()
+	advance := func() { f.clk.Advance(5 * time.Second) }
+	st.hook.Store(&advance)
+	first.reply <- fakeUpdate{update: failedResult(pb.WorkspaceError_WORKSPACE_ERROR_BUSY)}
+	if f.next().request.GetCallId() == first.request.GetCallId() {
+		t.Fatal("backoff reused the call id")
+	}
+	if st.hook.Load() != nil {
+		t.Fatal("no admission ran after the backoff")
+	}
+	if row := f.row(w, func(x store.Workspace) bool { return x.Attempt == 2 }); row.BackoffStreak != 1 {
+		t.Fatalf("retry did not follow the first backoff: %+v", row.WorkspacePatch)
+	}
+}
+
+// armingClock runs a hook once, just before the next timer is armed.
+type armingClock struct {
+	*clock.Fake
+	hook atomic.Pointer[func()]
+}
+
+func (c *armingClock) fire() {
+	if hook := c.hook.Swap(nil); hook != nil {
+		(*hook)()
+	}
+}
+
+func (c *armingClock) After(d time.Duration) <-chan time.Time {
+	c.fire()
+	return c.Fake.After(d)
+}
+
+func (c *armingClock) Until(at time.Time) <-chan time.Time {
+	c.fire()
+	return c.Fake.Until(at)
+}
+
+// The retry time passes while the manager arms its retry timer. The timer
+// must still fire at the retry time.
+func TestWorkspaceBackoffDueWhileArming(t *testing.T) {
+	f := newManagerFixture(t)
+	f.setup("linux")
+	clk := &armingClock{Fake: f.clk}
+	f.start(func(c *Config) { c.Clock = clk })
+	first := f.next()
+	advance := func() { f.clk.Advance(5 * time.Second) }
+	clk.hook.Store(&advance)
+	first.reply <- fakeUpdate{update: failedResult(pb.WorkspaceError_WORKSPACE_ERROR_BUSY)}
+	if f.next().request.GetCallId() == first.request.GetCallId() {
+		t.Fatal("backoff reused the call id")
+	}
+	if clk.hook.Load() != nil {
+		t.Fatal("no timer was armed after the backoff")
 	}
 }
