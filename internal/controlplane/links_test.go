@@ -23,9 +23,26 @@ import (
 	"go.uber.org/goleak"
 )
 
+// readinessStore models a store outage as the router sees it: while fail is
+// set, the device lookup and the router sweep's health probe (a direct
+// ListTimers read) both fail. A fault that spared the probe would let the
+// sweep legitimately restore health at any tick of the outage. probed reports
+// each failed probe.
 type readinessStore struct {
 	store.Store
-	fail atomic.Bool
+	fail   atomic.Bool
+	probed chan struct{}
+}
+
+func (s *readinessStore) ListTimers(ctx context.Context, filter store.TimerFilter) ([]store.Timer, error) {
+	if s.fail.Load() {
+		select {
+		case s.probed <- struct{}{}:
+		default:
+		}
+		return nil, errors.New("timer read unavailable")
+	}
+	return s.Store.ListTimers(ctx, filter)
 }
 
 func (s *readinessStore) GetIdentityByName(ctx context.Context, kind store.PrincipalKind, userID, name string) (store.Identity, error) {
@@ -41,7 +58,7 @@ func TestReadinessUsesRouterHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	faulty := &readinessStore{Store: db}
+	faulty := &readinessStore{Store: db, probed: make(chan struct{}, 1)}
 	s, err := New(ctx, faulty, Config{Listen: "127.0.0.1:0", DevInsecure: true, TimerPollInterval: 10 * time.Millisecond, LogOutput: io.Discard})
 	if err != nil {
 		t.Fatal(err)
@@ -77,6 +94,8 @@ func TestReadinessUsesRouterHealth(t *testing.T) {
 	if s.router.Healthy() {
 		t.Fatal("store write failure did not mark router unhealthy")
 	}
+	// A sweep probe during the outage must leave the router unhealthy.
+	wait.Recv(t, faulty.probed)
 	status, body := ready()
 	if status != 503 || !strings.Contains(body, "calls") || strings.Contains(body, "timers") {
 		t.Fatalf("readiness ignored router health: status=%d body=%q", status, body)
