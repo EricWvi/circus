@@ -37,8 +37,9 @@
 //
 // A process belongs to a test when its cwd, an open file or its command line
 // is below one of the test's roots, and no unrelated test's roots match it
-// too: a child between fork and exec still holds every descriptor of the
-// test process, so it stays unattributed until exec. A background sampler
+// too. A child forked by the test process stays unattributed until its exec
+// has finished: before that, its cwd, descriptors and command line are the
+// test process's, including other parallel tests' files. A background sampler
 // (every 25 ms, read only) remembers the owning test of each process, its
 // process group and its session, so a zombie, which has no cwd, files or
 // command line, is still attributed and reported with the command it was

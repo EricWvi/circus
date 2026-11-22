@@ -16,7 +16,17 @@ type process struct {
 	pid, ppid, pgid, sid int
 	state                string
 	start                uint64
+	// execed reports that the process runs an image of its own: it has
+	// exec'd since it was forked, and the exec has finished replacing what
+	// it inherited. See ownState.
+	execed bool
+	// image is start_code and start_stack of the address space.
+	image [2]uint64
 }
+
+// pfForkNoExec is PF_FORKNOEXEC in the flags field of /proc/<pid>/stat: set
+// by fork, cleared by exec.
+const pfForkNoExec = 0x40
 
 // key distinguishes a recycled pid from the process recorded earlier.
 func (p process) key() string { return fmt.Sprintf("%d:%d", p.pid, p.start) }
@@ -26,13 +36,18 @@ func readStat(pid int) (process, bool) {
 	if err != nil {
 		return process{}, false
 	}
+	return parseStat(pid, data)
+}
+
+func parseStat(pid int, data []byte) (process, bool) {
 	// comm may contain spaces and parentheses; the last ')' ends it.
 	i := bytes.LastIndexByte(data, ')')
 	if i < 0 || i+2 > len(data) {
 		return process{}, false
 	}
+	// fields[0] is field 3 (state) of proc_pid_stat(5).
 	fields := strings.Fields(string(data[i+2:]))
-	if len(fields) < 20 {
+	if len(fields) < 26 {
 		return process{}, false
 	}
 	p := process{pid: pid, state: fields[0]}
@@ -40,7 +55,55 @@ func readStat(pid int) (process, bool) {
 	p.pgid, _ = strconv.Atoi(fields[2])
 	p.sid, _ = strconv.Atoi(fields[3])
 	p.start, _ = strconv.ParseUint(fields[19], 10, 64)
+	flags, _ := strconv.ParseUint(fields[6], 10, 64)
+	startCode, _ := strconv.ParseUint(fields[23], 10, 64)
+	startStack, _ := strconv.ParseUint(fields[25], 10, 64)
+	p.image = [2]uint64{startCode, startStack}
+	// The kernel sets start_code only when it maps the new image, after the
+	// exec cleared PF_FORKNOEXEC and closed close-on-exec descriptors. It is
+	// 0 without an address space and 1 when the reader may not see it.
+	p.execed = flags&pfForkNoExec == 0 && startCode > 1
 	return p, true
+}
+
+// selfImage is the test process's image, which a child it forks shares or
+// copies until its exec.
+var selfImage = func() [2]uint64 {
+	p, _ := readStat(os.Getpid())
+	return p.image
+}()
+
+// ownState reports whether the cwd, descriptors and command line of p are
+// its own evidence of ownership. A child of the test process shows the test
+// process's until its exec completes: between fork and exec it holds a copy
+// of every descriptor of the test process, including the files of other
+// parallel tests, keeps the package directory as cwd until it changes to
+// cmd.Dir, and (sharing the test process's memory) shows its command line.
+// The exec closes the inherited copies only after it clears PF_FORKNOEXEC,
+// hence the start_code check too. The stat is read before cwd, cmdline and
+// openFiles, and those only move forward from fork to exec, so a finished
+// exec in it proves that they show the child's own state. Pid, start time,
+// group and session survive the exec: pinning the child earlier would bind
+// it to the wrong test for good.
+//
+// A deeper descendant inherits from a process other than the test process,
+// whose state is evidence of the same owner. So does a never-exec'd orphan
+// reparented to the test process (the subreaper), such as a subshell whose
+// shell exited: it runs its former parent's image, not the test's. A child
+// in the middle of its exec has a new, still empty address space (start_code
+// 0) and stays unattributed.
+//
+// A direct child that the test process may not inspect, such as a setuid
+// or file-capability program or one that made itself non-dumpable, reads
+// start_code 1 for its whole life and is never attributed; its cwd and
+// descriptors are unreadable anyway. So is a never-exec'd orphan forked by
+// such a process, whose copied address space is not dumpable either. Their
+// leaks are reported at package end.
+func ownState(p process) bool {
+	if p.execed || p.ppid != os.Getpid() {
+		return true
+	}
+	return p.image[0] > 1 && p.image != selfImage
 }
 
 // descendants is the sampler's cheap walk (about 50 times faster) along

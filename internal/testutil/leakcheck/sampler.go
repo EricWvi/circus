@@ -139,15 +139,17 @@ func sample() {
 	}
 }
 
-// attribute returns the test that owns p, or nil while that is ambiguous. A
-// subtest may write into its parent's shared root, so among nested matching
-// tests the most specific (longest-named) one owns the process. A match by
-// an unrelated test makes the process ambiguous: a child between fork and
-// exec still holds a copy of every descriptor of the test process, including
-// the files of other parallel tests, and keeps its pid, start time, group and
-// session through exec. Pinning it then would make another test's check
-// kill it.
+// attribute returns the test that owns p, or nil while that is ambiguous or
+// p still shows the test process's state (see ownState). A subtest may write
+// into its parent's shared root, so among nested matching tests the most
+// specific (longest-named) one owns the process. A match by an unrelated
+// test makes the process ambiguous: a process may hold another test's
+// descriptor, such as one passed to it on purpose, and pinning it then would
+// make that test's check kill it.
 func attribute(p process, checkers []*checker) *checker {
+	if !ownState(p) {
+		return nil
+	}
 	var matches []*checker
 	var owner *checker
 	for _, c := range checkers {

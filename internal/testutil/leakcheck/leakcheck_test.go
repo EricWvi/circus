@@ -325,10 +325,24 @@ type named struct {
 
 func (n named) Name() string { return n.name }
 
-// A child between fork and exec holds every descriptor of the test process,
-// including other parallel tests' files. Matching tests that are not nested
-// make it ambiguous: it is pinned to no test until only its own test matches,
-// and the other test's check neither reports nor kills it.
+// waitExeced waits until the process runs its own image.
+func waitExeced(t *testing.T, pid int) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if p, ok := readStat(pid); ok && p.execed {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("process %d did not finish its exec", pid)
+		}
+		time.Sleep(pollInterval)
+	}
+}
+
+// A process that holds another test's descriptor, here one passed to it,
+// matches two tests that are not nested. That makes it ambiguous: it is
+// pinned to no test until only its own test matches, and the other test's
+// check neither reports nor kills it.
 func TestAmbiguousProcessIsNotPinnedToAnotherTest(t *testing.T) {
 	own, other := scratch(t), scratch(t)
 	ownTest := named{newRecorder(t), "TestParent/short"}
@@ -339,8 +353,8 @@ func TestAmbiguousProcessIsNotPinnedToAnotherTest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// fd 3 stands in for the other test's descriptor that a child holds until
-	// exec; the shell then closes it and execs, keeping its pid and group.
+	// The shell holds the other test's file as fd 3 until it closes it and
+	// execs, keeping its pid and group.
 	cmd := exec.Command("/bin/sh", "-c", `read -r _; exec 3>&-; exec /bin/sleep 30`)
 	cmd.Dir = own
 	cmd.ExtraFiles = []*os.File{foreign}
@@ -361,6 +375,8 @@ func TestAmbiguousProcessIsNotPinnedToAnotherTest(t *testing.T) {
 		_ = cmd.Process.Kill()
 		<-waited
 	}()
+	// Until its exec has finished, the shell is not attributed at all.
+	waitExeced(t, cmd.Process.Pid)
 	shell, ok := readStat(cmd.Process.Pid)
 	if !ok {
 		t.Fatal("no /proc entry for the child")
@@ -372,15 +388,20 @@ func TestAmbiguousProcessIsNotPinnedToAnotherTest(t *testing.T) {
 	if _, err := gate.Write([]byte("\n")); err != nil {
 		t.Fatal(err)
 	}
-	fd3 := fmt.Sprintf("/proc/%d/fd/3", cmd.Process.Pid)
-	for deadline := time.Now().Add(5 * time.Second); ; {
-		if _, err := os.Lstat(fd3); os.IsNotExist(err) {
-			break
-		}
+	// The shell closes fd 3, then execs sleep; while that exec runs, the
+	// process is not attributed either.
+	for deadline := time.Now().Add(5 * time.Second); cmdline(cmd.Process.Pid) != "/bin/sleep 30"; {
 		if time.Now().After(deadline) {
-			t.Fatal("the child kept the foreign descriptor")
+			t.Fatalf("the shell did not exec sleep: %q", cmdline(cmd.Process.Pid))
 		}
 		time.Sleep(pollInterval)
+	}
+	waitExeced(t, cmd.Process.Pid)
+	// sleep may open files of its own, such as the locale archive, as fd 3.
+	for fd, target := range openFiles(cmd.Process.Pid) {
+		if under(target, []string{other}) {
+			t.Fatalf("the child kept the foreign descriptor as fd %d", fd)
+		}
 	}
 	sample()
 	if owner := ownerOf(shell); owner == nil || owner.state.t != ownTest {
