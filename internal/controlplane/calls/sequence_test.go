@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,6 +30,7 @@ import (
 	daemonlink "github.com/EricWvi/circus/internal/daemon/link"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/store/storetest"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/coder/websocket"
@@ -581,7 +581,7 @@ func runSequence(t *testing.T, seed uint64, steps int) *seqResult {
 	baseline := goleak.IgnoreCurrent()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
 	defer cancel()
-	w := &seqWorld{t: t, seed: seed, rng: rand.New(rand.NewPCG(seed, 0x5eed)), ctx: ctx, clock: clock.New(), dbPath: filepath.Join(t.TempDir(), "db"), quiet: slog.New(slog.NewTextHandler(io.Discard, nil)), cov: make(map[string]int), net: newSeqNet()}
+	w := &seqWorld{t: t, seed: seed, rng: rand.New(rand.NewPCG(seed, 0x5eed)), ctx: ctx, clock: clock.New(), dbPath: sqlitetest.Path(t), quiet: slog.New(slog.NewTextHandler(io.Discard, nil)), cov: make(map[string]int), net: newSeqNet()}
 	w.m = newSeqModel(w)
 	previous := slog.Default()
 	slog.SetDefault(w.quiet)

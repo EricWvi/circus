@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +18,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	wc "github.com/EricWvi/circus/internal/testutil/workerclient"
 	"github.com/EricWvi/circus/internal/wire"
@@ -47,7 +47,7 @@ func newSessionLink(t *testing.T, clk clock.Clock, hook func(*circusv1.WorkerDow
 	baseline := goleak.IgnoreCurrent()
 	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
 	ctx := t.Context()
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	st, err := sqlite.Open(ctx, sqlitetest.Path(t), sqlite.Options{})
 	must(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	now := time.Now()

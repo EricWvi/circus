@@ -16,6 +16,7 @@ import (
 
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -25,7 +26,7 @@ var baseTime = time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC)
 
 func openLedger(t *testing.T, now func() time.Time, projects ...string) (*Manager, *sqlite.DB) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "circus.db")
+	path := sqlitetest.Path(t)
 	db, err := sqlite.Open(t.Context(), path, sqlite.Options{})
 	check(t, err)
 	t.Cleanup(func() { check(t, db.Close()) })

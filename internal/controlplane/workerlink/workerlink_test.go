@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,6 +22,7 @@ import (
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/EricWvi/circus/internal/workerclient"
@@ -92,7 +92,7 @@ func setup(t *testing.T, configure ...func(*workerlink.Config)) *fixture {
 	t.Helper()
 	baseline := goleak.IgnoreCurrent()
 	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
-	st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	st, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 	must(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	u := store.User{ID: "owner", Email: "owner@example.com", Role: store.RoleUser, CreatedAt: time.Now().UnixMilli()}

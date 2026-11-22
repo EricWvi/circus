@@ -31,6 +31,7 @@ import (
 	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/coder/websocket"
@@ -91,6 +92,7 @@ func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *clien
 	h.clock.Store(time.Date(2026, 11, 17, 8, 0, 0, 0, time.UTC).UnixMilli())
 	h.dir = t.TempDir()
 	dbPath := filepath.Join(h.dir, "web.db")
+	sqlitetest.Seed(t, dbPath)
 	st, err := sqlite.Open(t.Context(), dbPath, sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)

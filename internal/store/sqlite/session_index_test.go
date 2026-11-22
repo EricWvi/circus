@@ -9,7 +9,7 @@ import (
 )
 
 func TestSessionClientRequestIDIndex(t *testing.T) {
-	d := openAt(t, t.TempDir(), Options{})
+	d := openSeeded(t, t.TempDir(), Options{})
 	defer d.Close()
 	ctx := t.Context()
 	const now = 1

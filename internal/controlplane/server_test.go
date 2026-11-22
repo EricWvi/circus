@@ -30,6 +30,7 @@ import (
 
 	"connectrpc.com/connect"
 	"go.uber.org/goleak"
+	"golang.org/x/crypto/bcrypt"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
@@ -37,6 +38,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 )
@@ -78,7 +80,7 @@ type harness struct {
 
 func openStore(t *testing.T) *sqlite.DB {
 	t.Helper()
-	st, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "circus.db"), sqlite.Options{})
+	st, err := sqlite.Open(context.Background(), sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +105,12 @@ func newServer(t *testing.T, cfg controlplane.Config, setup func(*controlplane.S
 	}
 	if cfg.Listen == "" {
 		cfg.Listen = "127.0.0.1:0"
+	}
+	if cfg.BcryptCost == 0 {
+		// Hashing the dummy password at the production cost would dominate
+		// each server's start under the race detector. The production cost
+		// is covered by the auth package's tests.
+		cfg.BcryptCost = bcrypt.MinCost
 	}
 	cfg.LogOutput = h.logs
 	cfg.LogLevel = -4 // debug: health probes too
@@ -328,6 +336,7 @@ func TestTransportModes(t *testing.T) {
 	}
 	for _, c := range cases {
 		c.cfg.LogOutput = io.Discard
+		c.cfg.BcryptCost = bcrypt.MinCost
 		srv, err := controlplane.New(context.Background(), st, c.cfg)
 		if err == nil {
 			_ = srv.Shutdown(context.Background())

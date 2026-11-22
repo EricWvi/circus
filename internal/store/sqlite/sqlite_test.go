@@ -16,6 +16,7 @@ import (
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/storetest"
+	"github.com/EricWvi/circus/internal/testutil/dbtemplate"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 )
@@ -33,13 +34,36 @@ func openAt(t testing.TB, dir string, opts Options) *DB {
 	return d
 }
 
-// backend opens the database file in dir. Its crash image is the database
-// and WAL files as they are on disk at the crash point: exactly what a
-// SIGKILLed process leaves behind (SQLite never writes uncommitted pages to
-// the main file in WAL mode, and recovery ignores WAL frames after the last
-// commit). The shared-memory index is not part of it; SQLite rebuilds it.
+// template is a migrated database for tests that are not about how a
+// database is created or migrated.
+var template = dbtemplate.New(func(path string) error {
+	d, err := Open(context.Background(), path, Options{})
+	if err != nil {
+		return err
+	}
+	return d.Close()
+})
+
+// openSeeded is openAt on a copy of template when dir holds no database yet.
+func openSeeded(t testing.TB, dir string, opts Options) *DB {
+	t.Helper()
+	path := filepath.Join(dir, dbName)
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+		template.Seed(t, path)
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	return openAt(t, dir, opts)
+}
+
+// backend opens the database file in dir, starting from template. Its crash
+// image is the database and WAL files as they are on disk at the crash
+// point: exactly what a SIGKILLed process leaves behind (SQLite never writes
+// uncommitted pages to the main file in WAL mode, and recovery ignores WAL
+// frames after the last commit). The shared-memory index is not part of it;
+// SQLite rebuilds it.
 var backend = storetest.Backend{
-	Open: func(t testing.TB, dir string) store.Store { return openAt(t, dir, Options{}) },
+	Open: func(t testing.TB, dir string) store.Store { return openSeeded(t, dir, Options{}) },
 	Image: func(t testing.TB, dir string) func() {
 		t.Helper()
 		files := map[string][]byte{}
@@ -239,7 +263,7 @@ func TestOpenRejectsNonFilePaths(t *testing.T) {
 // a bug that bypasses them still cannot redispatch a call, store long text
 // or cross users.
 func TestSchemaGuards(t *testing.T) {
-	d := openAt(t, t.TempDir(), Options{})
+	d := openSeeded(t, t.TempDir(), Options{})
 	defer d.Close()
 	ctx := t.Context()
 	for _, err := range []error{

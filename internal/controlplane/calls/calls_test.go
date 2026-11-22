@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -19,6 +18,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/store/storetest"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"github.com/EricWvi/circus/internal/testutil/wait"
@@ -124,7 +124,7 @@ func setup(t *testing.T, configure ...func(*calls.Config, *gateway.Config)) *fix
 	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	t.Cleanup(cancel)
-	dbPath := filepath.Join(t.TempDir(), "db")
+	dbPath := sqlitetest.Path(t)
 	db, err := sqlite.Open(ctx, dbPath, sqlite.Options{})
 	must(t, err)
 	f := &fixture{t: t, ctx: ctx, clock: clock.New(), db: db, dbPath: dbPath}

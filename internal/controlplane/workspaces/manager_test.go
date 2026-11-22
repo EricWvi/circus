@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"google.golang.org/protobuf/proto"
@@ -57,7 +57,7 @@ type managerFixture struct {
 }
 
 func newManagerFixture(t *testing.T) *managerFixture {
-	st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "workspace.db"), sqlite.Options{})
+	st, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 	check(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	f := &managerFixture{t: t, st: st, clk: clock.New(), submitted: make(chan fakeCall, 128), bus: sessions.NewBus(sessions.BusOptions{})}

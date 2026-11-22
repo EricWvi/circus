@@ -3,7 +3,6 @@ package calls
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 )
@@ -467,7 +467,7 @@ func TestBufferedUpdateBytesShareByUser(t *testing.T) {
 
 func TestRouterValidatesSharedBudgets(t *testing.T) {
 	ctx := t.Context()
-	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	db, err := sqlite.Open(ctx, sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

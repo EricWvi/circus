@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +18,7 @@ import (
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
 
@@ -41,7 +41,7 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	ctx := context.Background()
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "circus.db"), sqlite.Options{})
+	st, err := sqlite.Open(ctx, sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +547,7 @@ func TestRequireBeforeUpgrade(t *testing.T) {
 // store failure as an error rather than as a revocation.
 func TestValidAcrossInstancesAndStoreFailure(t *testing.T) {
 	ctx := t.Context()
-	path := filepath.Join(t.TempDir(), "db")
+	path := sqlitetest.Path(t)
 	st, err := sqlite.Open(ctx, path, sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)

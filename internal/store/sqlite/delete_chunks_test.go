@@ -12,7 +12,7 @@ import (
 // transaction, as by a crash, leaves the transcript charges in step with
 // the entries left, and calling DeleteSession again finishes it.
 func TestDeleteStopsBetweenChunks(t *testing.T) {
-	d := openAt(t, t.TempDir(), Options{})
+	d := openSeeded(t, t.TempDir(), Options{})
 	defer d.Close()
 	ctx := context.Background()
 	const now = int64(1_700_000_000_000)

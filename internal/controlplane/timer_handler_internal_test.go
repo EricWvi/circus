@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,11 +12,12 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 )
 
 func purgeTestServer(t *testing.T, logs *bytes.Buffer) (*Server, *sqlite.DB) {
 	t.Helper()
-	st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	st, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestSetupBannerFallback(t *testing.T) {
 		{"proxy empty host", ":8443", true, "/setup?token=", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+			st, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 			if err != nil {
 				t.Fatal(err)
 			}

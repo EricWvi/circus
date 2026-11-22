@@ -14,6 +14,7 @@ import (
 	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 )
 
 type failLedgerAdvance struct {
@@ -26,7 +27,7 @@ func (failLedgerAdvance) AdvanceLedgerIndex(context.Context, string, string, str
 
 func TestServerRebuildsLedgerAtStartup(t *testing.T) {
 	ctx := t.Context()
-	dbPath := filepath.Join(t.TempDir(), "circus.db")
+	dbPath := sqlitetest.Path(t)
 	st, err := sqlite.Open(ctx, dbPath, sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)

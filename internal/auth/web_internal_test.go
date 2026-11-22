@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -14,11 +13,12 @@ import (
 	"connectrpc.com/connect"
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"golang.org/x/crypto/bcrypt"
 )
 
 func TestWebTokenHashAndProductionDefaults(t *testing.T) {
-	st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "auth.db"), sqlite.Options{})
+	st, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

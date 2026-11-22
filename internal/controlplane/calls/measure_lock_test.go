@@ -27,6 +27,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/proto"
@@ -262,7 +263,9 @@ func runLockPhase(t *testing.T, phase lockPhase, duration time.Duration, samples
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	h := &lockHarness{t: t, ctx: ctx, result: strings.Repeat("r", max(phase.bytes, phase.bigBytes))}
-	db, err := sqlite.Open(ctx, filepath.Join(dir, "db"), sqlite.Options{})
+	dbPath := filepath.Join(dir, "db")
+	sqlitetest.Seed(t, dbPath)
+	db, err := sqlite.Open(ctx, dbPath, sqlite.Options{})
 	must(t, err)
 	h.db = db
 	must(t, db.CreateUser(ctx, store.User{ID: "u", Name: "user", CreatedAt: 1}))

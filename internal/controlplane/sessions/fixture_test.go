@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -20,6 +19,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/testutil/workerclient"
 	"github.com/EricWvi/circus/internal/wire"
@@ -133,7 +133,7 @@ func newFixture(t *testing.T, opts ...option) *fixture {
 	baseline := goleak.IgnoreCurrent()
 	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
 	ctx := t.Context()
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	st, err := sqlite.Open(ctx, sqlitetest.Path(t), sqlite.Options{})
 	must(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	f := &fixture{t: t, st: st, clk: clock.New(), bus: &bus{durable: map[string]uint64{}}}

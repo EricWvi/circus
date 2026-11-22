@@ -24,6 +24,7 @@ import (
 	"github.com/EricWvi/circus/internal/machineid"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 )
 
 const enrollmentEmail = "owner@example.com"
@@ -46,6 +47,7 @@ func newJoinHarness(t *testing.T) *joinHarness {
 	h := &joinHarness{t: t, db: filepath.Join(dir, "circus.db"), cfgDir: filepath.Join(dir, "config")}
 	t.Setenv("CIRCUS_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", h.cfgDir)
+	sqlitetest.Seed(t, h.db)
 	st, err := sqlite.Open(context.Background(), h.db, sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)

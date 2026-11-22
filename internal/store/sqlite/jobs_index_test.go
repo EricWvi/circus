@@ -9,7 +9,7 @@ import (
 // lookup when a session call settles lost) searches the jobs_call index on
 // all three columns instead of scanning every job of the boot.
 func TestJobsCallLookupUsesIndex(t *testing.T) {
-	d := openAt(t, t.TempDir(), Options{})
+	d := openSeeded(t, t.TempDir(), Options{})
 	defer d.Close()
 	rows, err := d.sqldb.QueryContext(t.Context(), `EXPLAIN QUERY PLAN SELECT `+jobCols+
 		` FROM jobs WHERE device_id = ? AND boot_id = ? AND call_id = ? ORDER BY device_id, boot_id, job_id LIMIT ?`, "d", "b", "c", 4)

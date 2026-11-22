@@ -210,9 +210,16 @@ func TestBootChange(t *testing.T) {
 
 	c2 := f.dial(0, "boot-b")
 	// The old connection (half-open, in a real crash) is told and fenced.
-	e := next(t, ev)
-	if e.GetLeaseRevoked().GetSessionId() != "s1" || e.GetLeaseRevoked().GetEpoch() != epoch {
-		t.Fatalf("revoked %v", e)
+	// Other hints may come first: the scheduler can handle the input's Wake
+	// only after the acquisition and then nudge the holder.
+	for {
+		e := next(t, ev)
+		if r := e.GetLeaseRevoked(); r != nil {
+			if r.GetSessionId() != "s1" || r.GetEpoch() != epoch {
+				t.Fatalf("revoked %v", r)
+			}
+			break
+		}
 	}
 	l := f.lease("s1")
 	s := f.get("s1")

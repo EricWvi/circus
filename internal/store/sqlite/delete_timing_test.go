@@ -19,7 +19,7 @@ func TestDeleteFullSessionTiming(t *testing.T) {
 	if os.Getenv("CIRCUS_MEASURE_DELETE") == "" {
 		t.Skip("set CIRCUS_MEASURE_DELETE=1 to measure")
 	}
-	d := openAt(t, t.TempDir(), Options{})
+	d := openSeeded(t, t.TempDir(), Options{})
 	defer d.Close()
 	ctx := context.Background()
 	const now = int64(1_700_000_000_000)

@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/coder/websocket"
@@ -54,7 +54,7 @@ func (s *readinessStore) GetIdentityByName(ctx context.Context, kind store.Princ
 
 func TestReadinessUsesRouterHealth(t *testing.T) {
 	ctx := t.Context()
-	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	db, err := sqlite.Open(ctx, sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestShutdownSubbudgetsAndOrdering(t *testing.T) {
 // that connects receives the reconnect sync's ListJobs from the router.
 func TestAssembledSenderDelivers(t *testing.T) {
 	ctx := t.Context()
-	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	db, err := sqlite.Open(ctx, sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestAssembledSenderDelivers(t *testing.T) {
 // New refuses an undersized pool after it built the router; the router's
 // goroutines are released again.
 func TestNewFailureReleasesCallPlane(t *testing.T) {
-	db, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	db, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

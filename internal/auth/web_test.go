@@ -12,7 +12,6 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -25,6 +24,7 @@ import (
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 )
@@ -44,7 +44,7 @@ func newWebHarness(t *testing.T, oidc *auth.OIDCConfig, options ...func(*auth.We
 	t.Helper()
 	h := &webHarness{}
 	h.clock.Store(time.Now().UnixMilli())
-	st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "auth.db"), sqlite.Options{})
+	st, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

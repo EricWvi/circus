@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +17,7 @@ import (
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -43,7 +43,7 @@ func (s *heldLoginStore) GetUserByEmail(ctx context.Context, email string) (stor
 }
 func loginTestService(t *testing.T, wrap func(store.Store) store.Store) (*WebService, circusv1connect.AuthServiceClient) {
 	t.Helper()
-	st, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "auth.db"), sqlite.Options{})
+	st, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

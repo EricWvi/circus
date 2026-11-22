@@ -7,9 +7,9 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"go.uber.org/goleak"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -17,7 +17,7 @@ import (
 func TestClaimCompleteAndJoin(t *testing.T) {
 	baseline := goleak.IgnoreCurrent()
 	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
-	s, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	s, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestClaimCompleteAndJoin(t *testing.T) {
 // A failing handler leaves its claim to lease expiry; the timer is then claimed
 // again with a fresh token. A timer that is not due is never handed out.
 func TestFailedClaimIsReclaimedAfterLease(t *testing.T) {
-	s, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	s, err := sqlite.Open(t.Context(), sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

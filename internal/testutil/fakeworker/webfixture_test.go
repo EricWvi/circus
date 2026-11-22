@@ -33,6 +33,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/link"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/fakeworker"
 	"github.com/google/uuid"
 )
@@ -273,7 +274,9 @@ func startStack(t *testing.T) *stack {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	t.Cleanup(cancel)
 	dir := t.TempDir()
-	st, err := sqlite.Open(ctx, filepath.Join(dir, "circus.db"), sqlite.Options{})
+	dbPath := filepath.Join(dir, "circus.db")
+	sqlitetest.Seed(t, dbPath)
+	st, err := sqlite.Open(ctx, dbPath, sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

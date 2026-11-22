@@ -15,7 +15,7 @@ import (
 // Rows staged by a full index replacement that could not clean up after
 // itself, as after a crash, are invisible and are deleted by the next one.
 func TestLedgerReplacementPurgesAbandonedRows(t *testing.T) {
-	d := openAt(t, t.TempDir(), Options{})
+	d := openSeeded(t, t.TempDir(), Options{})
 	defer d.Close()
 	ctx := t.Context()
 	if err := d.CreateUser(ctx, store.User{ID: "owner", Name: "Owner", CreatedAt: 1}); err != nil {
@@ -177,7 +177,7 @@ func ledgerRows(t *testing.T, d *DB, projectID string) int {
 // transactions, so other store calls keep running. A crash between them
 // leaves the project with an empty index, and the retry finishes.
 func TestDeleteProjectWithLargeLedger(t *testing.T) {
-	d := openAt(t, t.TempDir(), Options{})
+	d := openSeeded(t, t.TempDir(), Options{})
 	defer d.Close()
 	ctx := t.Context()
 	if err := d.CreateUser(ctx, store.User{ID: "owner", Name: "Owner", CreatedAt: 1}); err != nil {
@@ -257,7 +257,7 @@ func TestDeleteProjectWithLargeLedger(t *testing.T) {
 
 // Deleting a user drops the ledgers of its projects the same way.
 func TestDeleteUserWithLedgers(t *testing.T) {
-	d := openAt(t, t.TempDir(), Options{})
+	d := openSeeded(t, t.TempDir(), Options{})
 	defer d.Close()
 	ctx := t.Context()
 	if err := d.CreateUser(ctx, store.User{ID: "owner", Name: "Owner", CreatedAt: 1}); err != nil {
@@ -288,7 +288,7 @@ func TestDeleteUserWithLedgers(t *testing.T) {
 // ledger index holds rows version rows.
 func deleteFixture(t *testing.T, rows int) *DB {
 	t.Helper()
-	d := openAt(t, t.TempDir(), Options{})
+	d := openSeeded(t, t.TempDir(), Options{})
 	t.Cleanup(func() { _ = d.Close() })
 	ctx := t.Context()
 	if err := d.CreateUser(ctx, store.User{ID: "owner", Name: "Owner", CreatedAt: 1}); err != nil {

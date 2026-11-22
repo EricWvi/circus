@@ -5,7 +5,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/cookiejar"
-	"path/filepath"
 	"regexp"
 	"sync"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
+	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/coder/websocket"
@@ -48,7 +48,7 @@ func (b *lockedBuffer) String() string {
 // and last_seen follows the stored times.
 func TestOnlineDevicesFollowDaemonLink(t *testing.T) {
 	ctx := t.Context()
-	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "db"), sqlite.Options{})
+	db, err := sqlite.Open(ctx, sqlitetest.Path(t), sqlite.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
