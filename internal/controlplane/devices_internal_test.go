@@ -15,6 +15,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/controlplane/gateway"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/store/sqlite"
 	"github.com/EricWvi/circus/internal/testutil/wait"
@@ -41,9 +42,10 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
-// A device is online exactly while its daemon link is registered: the
-// server's onlineDevices and MachineService.ListDevices follow a real link
-// through connect and close, and last_seen follows the stored times.
+// A device is online exactly while its daemon link is ready (registered and
+// synchronized, so its connection is stored): the server's onlineDevices and
+// MachineService.ListDevices follow a real link through connect and close,
+// and last_seen follows the stored times.
 func TestOnlineDevicesFollowDaemonLink(t *testing.T) {
 	ctx := t.Context()
 	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "db"), sqlite.Options{})
@@ -111,6 +113,20 @@ func TestOnlineDevicesFollowDaemonLink(t *testing.T) {
 
 	if d := listDevice(); d.Online || d.LastSeenUnixMs != 0 || d.Name != "desk" || d.Version != "1.2.3" || online() {
 		t.Fatalf("before connecting: %v", d)
+	}
+
+	// A route the gateway registered but the router has not yet synchronized
+	// is not online: its connection is not recorded, and a link closing now
+	// would leave the row with a disconnect and no connect.
+	unready := gateway.Connection{Target: gateway.Target{InstanceID: "i", ConnectionID: "c", DeviceID: e.Identity.ID, BootID: "boot-0"}, UserID: ownerID, DeviceName: "desk"}
+	if _, err := s.registry.Register(ctx, unready); err != nil {
+		t.Fatal(err)
+	}
+	if d := listDevice(); d.Online || d.LastSeenUnixMs != 0 || online() {
+		t.Fatalf("unready route: %v", d)
+	}
+	if removed, err := s.registry.Unregister(ctx, unready); !removed || err != nil {
+		t.Fatal(removed, err)
 	}
 
 	// Connect a real daemon link.

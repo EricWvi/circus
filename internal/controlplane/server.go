@@ -566,8 +566,11 @@ func (s *Server) storeReady(ctx context.Context) error {
 	return err
 }
 
-// onlineDevices returns the ids of userID's devices with a registered daemon
-// link, connected now.
+// onlineDevices returns the ids of userID's devices with a ready daemon
+// link. A route is registered before the router records the connection, and a
+// link that closes during reconnect synchronization never records it; only
+// Activate, which follows SetConnected, makes the device online here, so an
+// online device always has its connection stored.
 func (s *Server) onlineDevices(ctx context.Context, userID string) (map[string]bool, error) {
 	conns, err := s.registry.ListOnline(ctx, userID)
 	if err != nil {
@@ -575,7 +578,9 @@ func (s *Server) onlineDevices(ctx context.Context, userID string) (map[string]b
 	}
 	out := make(map[string]bool, len(conns))
 	for _, c := range conns {
-		out[c.Target.DeviceID] = true
+		if c.Ready {
+			out[c.Target.DeviceID] = true
+		}
 	}
 	return out, nil
 }
