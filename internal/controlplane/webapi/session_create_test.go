@@ -60,7 +60,7 @@ func TestCreateSessionRepeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := super.sessions.UpdateSession(ctx, connect.NewRequest(&circusv1.UpdateSessionRequest{
-		SessionId: first.SessionId, Title: "Renamed",
+		SessionId: first.SessionId, Title: proto.String("Renamed"),
 	})); err != nil {
 		t.Fatal(err)
 	}

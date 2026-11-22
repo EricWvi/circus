@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest"
 
 import fixture from "./validation-parity.json"
+import { baseUrlProblem, envNameProblem, keyProblem } from "./provider-rules"
 import {
   checkPath,
   checkProjectName,
@@ -77,6 +78,43 @@ describe("validation parity with the control plane", () => {
         }
       })
       .map((c) => `${label(c)}: Go ${c.problem ? "refuses" : JSON.stringify(c.result)}, Web ${JSON.stringify(run[c.fn](c.args))}`)
+    expect(mismatches).toEqual([])
+  })
+})
+
+type ProviderFn = "checkBaseURL" | "checkProviderKey" | "checkEnvName"
+
+interface ProviderCase {
+  fn: ProviderFn
+  args: [string]
+  result: string
+  /** Empty when the server accepts the input. */
+  problem: string
+}
+
+const providerCases = fixture.providerCases as ProviderCase[]
+
+/** Whether the Web's rule accepts the input (the server's form rules, ported in provider-rules.ts). */
+const accepts: Record<ProviderFn, (raw: string) => boolean> = {
+  checkBaseURL: (raw) => baseUrlProblem(raw) === null,
+  // The server checks a key it was sent; an empty one means "keep" there.
+  checkProviderKey: (raw) => keyProblem(raw, true) === null,
+  checkEnvName: (raw) => envNameProblem(raw) === null,
+}
+
+describe("provider rules' parity with the control plane", () => {
+  it("covers both outcomes of every rule", () => {
+    for (const fn of ["checkBaseURL", "checkProviderKey", "checkEnvName"] as const) {
+      const of = providerCases.filter((c) => c.fn === fn)
+      expect.soft(of.filter((c) => c.problem === "").length, `${fn} accepted`).toBeGreaterThanOrEqual(2)
+      expect.soft(of.filter((c) => c.problem !== "").length, `${fn} refused`).toBeGreaterThanOrEqual(5)
+    }
+  })
+
+  it("agrees on every case", () => {
+    const mismatches = providerCases
+      .filter((c) => accepts[c.fn](c.args[0]) !== (c.problem === ""))
+      .map((c) => `${c.fn}(${JSON.stringify(c.args[0].length > 60 ? `${c.args[0].slice(0, 60)}…` : c.args[0])}): Go ${c.problem === "" ? "accepts" : "refuses"}`)
     expect(mismatches).toEqual([])
   })
 })

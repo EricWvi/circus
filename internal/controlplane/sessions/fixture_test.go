@@ -32,6 +32,8 @@ type bus struct {
 	mu        sync.Mutex
 	durable   map[string]uint64
 	ephemeral []*circusv1.SessionEvent
+	// ephemeralIDs holds each ephemeral event's session, index for index.
+	ephemeralIDs []string
 }
 
 func (b *bus) Durable(id string, seq uint64) {
@@ -46,6 +48,7 @@ func (b *bus) Ephemeral(id string, ev *circusv1.SessionEvent) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ephemeral = append(b.ephemeral, ev)
+	b.ephemeralIDs = append(b.ephemeralIDs, id)
 }
 
 func (b *bus) seq(id string) uint64 {

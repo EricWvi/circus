@@ -14,7 +14,7 @@ import (
 // projectQuery reads projects with their locations, one row per location
 // (one row with NULL location columns for a project without locations), in
 // one statement (one snapshot).
-const projectQuery = `SELECT p.id, p.user_id, p.name, p.repo_url, p.last_used_location, p.created_at, p.updated_at,
+const projectQuery = `SELECT p.id, p.user_id, p.name, p.repo_url, p.last_used_location, p.created_at, p.updated_at, p.default_provider_id,
 	l.device_id, d.name, l.path, d.deleted_at IS NOT NULL, ` + workspaceCols + `
 	FROM projects p LEFT JOIN project_locations l ON l.project_id = p.id LEFT JOIN devices d ON d.id = l.device_id
 	LEFT JOIN workspaces w ON l.path = '' AND w.project_id = p.id AND w.device_id = l.device_id
@@ -32,7 +32,7 @@ func (o *ops) queryProjects(ctx context.Context, where string, args ...any) ([]s
 		var l store.ProjectLocation
 		var hasLocation sql.NullString
 		var workspace workspaceScan
-		dest := []any{&p.ID, &p.UserID, &p.Name, nullStr{&p.RepoURL}, &p.LastUsedLocation, &p.CreatedAt, &p.UpdatedAt,
+		dest := []any{&p.ID, &p.UserID, &p.Name, nullStr{&p.RepoURL}, &p.LastUsedLocation, &p.CreatedAt, &p.UpdatedAt, nullStr{&p.DefaultProviderID},
 			&hasLocation, nullStr{&l.DeviceName}, nullStr{&l.Path}, &l.DeviceRevoked}
 		if err := rows.Scan(append(dest, workspace.dest()...)...); err != nil {
 			return nil, mapErr(err)
@@ -85,6 +85,22 @@ func (o *ops) nameTaken(ctx context.Context, userID, key, exceptID string) error
 	}
 	if n > 0 {
 		return store.ErrExists
+	}
+	return nil
+}
+
+// checkProviderRef returns ErrUnknownProvider unless providerID is empty or
+// names a provider of the user.
+func (o *ops) checkProviderRef(ctx context.Context, userID, providerID string) error {
+	if providerID == "" {
+		return nil
+	}
+	n, err := o.count(ctx, `SELECT COUNT(*) FROM providers WHERE id = ? AND user_id = ?`, providerID, userID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return store.ErrUnknownProvider
 	}
 	return nil
 }
@@ -147,8 +163,12 @@ func (o *ops) CreateProject(ctx context.Context, p store.Project) (store.Project
 		if err := tx.nameTaken(ctx, p.UserID, key, p.ID); err != nil {
 			return err
 		}
-		if _, err := tx.exec(ctx, `INSERT INTO projects (id, user_id, name, name_key, repo_url, last_used_location, created_at, updated_at)
-			VALUES (?,?,?,?,?,?,?,?)`, p.ID, p.UserID, p.Name, key, nstr(p.RepoURL), p.LastUsedLocation, p.CreatedAt, p.UpdatedAt); err != nil {
+		if err := tx.checkProviderRef(ctx, p.UserID, p.DefaultProviderID); err != nil {
+			return err
+		}
+		if _, err := tx.exec(ctx, `INSERT INTO projects (id, user_id, name, name_key, repo_url, last_used_location, created_at, updated_at,
+			default_provider_id) VALUES (?,?,?,?,?,?,?,?,?)`, p.ID, p.UserID, p.Name, key, nstr(p.RepoURL), p.LastUsedLocation,
+			p.CreatedAt, p.UpdatedAt, nstr(p.DefaultProviderID)); err != nil {
 			return err
 		}
 		if err := tx.insertLocations(ctx, p.ID, p.Locations, p.UserID); err != nil {
@@ -191,6 +211,11 @@ func (o *ops) UpdateProject(ctx context.Context, userID, projectID string, patch
 			return store.Project{}, err
 		}
 	}
+	if patch.DefaultProviderID != nil {
+		if err := store.CheckOptionalID("default provider id", *patch.DefaultProviderID); err != nil {
+			return store.Project{}, err
+		}
+	}
 	if patch.UpdatedAt <= 0 {
 		return store.Project{}, invalid("project update needs a time")
 	}
@@ -200,7 +225,7 @@ func (o *ops) UpdateProject(ctx context.Context, userID, projectID string, patch
 		if err != nil {
 			return err
 		}
-		edits := patch.Name != nil || patch.RepoURL != nil || patch.Locations != nil
+		edits := patch.Name != nil || patch.RepoURL != nil || patch.Locations != nil || patch.DefaultProviderID != nil
 		if edits && patch.ExpectedUpdatedAt != nil && *patch.ExpectedUpdatedAt != cur.UpdatedAt {
 			return store.ErrProjectStale
 		}
@@ -210,7 +235,8 @@ func (o *ops) UpdateProject(ctx context.Context, userID, projectID string, patch
 		}
 		changed := (patch.Name != nil && *patch.Name != cur.Name) ||
 			(patch.RepoURL != nil && *patch.RepoURL != cur.RepoURL) ||
-			(patch.Locations != nil && !sameLocations(cur.Locations, patch.Locations))
+			(patch.Locations != nil && !sameLocations(cur.Locations, patch.Locations)) ||
+			(patch.DefaultProviderID != nil && *patch.DefaultProviderID != cur.DefaultProviderID)
 		if patch.Name != nil {
 			key := store.ProjectNameKey(*patch.Name)
 			if err := tx.nameTaken(ctx, userID, key, projectID); err != nil {
@@ -222,6 +248,14 @@ func (o *ops) UpdateProject(ctx context.Context, userID, projectID string, patch
 		}
 		if patch.RepoURL != nil {
 			if _, err := tx.exec(ctx, `UPDATE projects SET repo_url = ? WHERE id = ?`, nstr(*patch.RepoURL), projectID); err != nil {
+				return err
+			}
+		}
+		if patch.DefaultProviderID != nil {
+			if err := tx.checkProviderRef(ctx, userID, *patch.DefaultProviderID); err != nil {
+				return err
+			}
+			if _, err := tx.exec(ctx, `UPDATE projects SET default_provider_id = ? WHERE id = ?`, nstr(*patch.DefaultProviderID), projectID); err != nil {
 				return err
 			}
 		}

@@ -226,12 +226,14 @@ type SessionOps interface {
 	// one transaction. The project must belong to the user (ErrNotFound
 	// otherwise). A session with the same (ProjectID, ClientRequestID)
 	// returns its current row with Created false when the resolved
-	// LocationIndex, the requested worker (RequestedWorkerID), Model and
-	// PermissionMode match. Local requires PinnedWorkerID, and PinDerived
+	// LocationIndex, the requested worker (RequestedWorkerID), Model,
+	// PermissionMode and ProviderID match. Local requires PinnedWorkerID, and PinDerived
 	// requires Local (ErrInvalid).
 	// ErrExists reports different creation settings or a unique-key conflict.
 	// Only a fresh session checks the cap (ErrLimit) and ownership of the
-	// default device and any pinned worker (ErrNotFound). Title starts empty
+	// default device and any pinned worker (ErrNotFound) and that a
+	// nonempty ProviderID names a provider of the user (ErrUnknownProvider).
+	// Title starts empty
 	// and LastActivityAt starts at CreatedAt. len(cwds) ≤ MaxSessionCwds.
 	//
 	// The epoch starts over for a new session, so session ids must never
@@ -260,6 +262,17 @@ type SessionOps interface {
 	// fence: the user-facing API shows them. ErrNotFound if the session is
 	// absent.
 	ListSessionCwds(ctx context.Context, sessionID string) ([]SessionCwd, error)
+	// SetSessionProvider changes the session's provider to providerID (""
+	// for local login; otherwise a provider of the session's user, else
+	// ErrUnknownProvider) at time at. Naming the current provider again is
+	// no change in any state (see below). Otherwise it refuses with ErrTurnRunning while
+	// the session is running and ErrStopped when it is stopped, writing
+	// nothing. A change while the lease has a holder (live or expired)
+	// releases that lease with the lease-loss rule in the same transaction
+	// and reports it as Loss, so the caller revokes it and the session is
+	// scheduled again under the new provider. The same provider again is
+	// no change: Changed false, nothing written. ErrNotFound if absent.
+	SetSessionProvider(ctx context.Context, sessionID, providerID string, at int64) (SessionProviderSet, error)
 	// SetSessionTitle unconditionally sets a nonempty title of at most
 	// MaxSessionTitleBytes. Character validation is the service's job.
 	// ErrNotFound if absent. It does not move LastActivityAt.
@@ -362,6 +375,15 @@ type SessionOps interface {
 	// or ErrBroken (a new holder for a stopped or broken session),
 	// ErrNotFound (no such session, or the worker is not the session
 	// user's).
+	//
+	// A new holder (anything but the re-attachment above) of a session
+	// with a provider is gated in the same transaction, after the stopped
+	// and broken rules: a provider that is deleted or not assigned to r's
+	// worker is ErrProviderUnavailable, and one whose MaxSessions other
+	// sessions already hold live leases under it is ErrProviderFull; both
+	// write nothing. The lease records the session's provider
+	// (Lease.ProviderID) until it loses its holder; a re-attachment keeps
+	// the provider recorded.
 	AcquireLease(ctx context.Context, r LeaseRequest) (LeaseAcquired, error)
 	// HasLiveLease reports whether workerID holds, under bootID, any lease
 	// that has not expired at now. The worker link uses it to tell whether
@@ -396,10 +418,14 @@ type SessionOps interface {
 	// last extension of the previous process plus the lifetime, so after
 	// an outage longer than the lifetime the first sweep would otherwise
 	// reclaim every lease and interrupt running turns whose workers are
-	// about to resume. Leases already past their expiry are extended too;
-	// a released lease (no holder) is not touched, and no expiry is moved
-	// earlier.
-	ExtendLeasesAfterRestart(ctx context.Context, expiresAt int64) (int, error)
+	// about to resume. Leases already past their expiry at now are
+	// extended too, except one acquired under a provider that is gone or
+	// whose MaxSessions leases are live (counting those extended here,
+	// oldest acquisition first): a lease that ran out before the restart
+	// never takes a provider past its cap, and is left to ExpireLeases. A
+	// released lease (no holder) is not touched, and no expiry is moved
+	// earlier. now < expiresAt.
+	ExtendLeasesAfterRestart(ctx context.Context, now, expiresAt int64) (int, error)
 	// ReleaseWorkerLeases releases at most limit (1..MaxPageSize) leases
 	// held by workerID under a boot other than keepBootID, applying the
 	// lease-loss rule to each, oldest acquisition first. It runs when the

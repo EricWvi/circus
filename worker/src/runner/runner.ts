@@ -7,9 +7,10 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { InputPriority, TurnOrigin, TurnOutcome, type SessionConfig } from "@circus/proto/circus/v1/session_pb";
 import {
-  ConsumeGrantSchema, GetSessionStateSchema, GetSessionState_Section, PatchSessionStateSchema,
+  ConsumeGrantSchema, GetLaunchEnvSchema, GetSessionStateSchema, GetSessionState_Section, PatchSessionStateSchema,
   PatchSessionState_BackgroundTaskSchema, ReleaseLeaseSchema, ReleaseLease_Reason, ReportTurnSchema,
   ReportTurn_PersistedSchema, ReportTurn_Phase, RequestApprovalSchema, SessionReply_Inputs_Input_Kind as InputKind,
+  SessionReply_Rejected_Code as RejectCode,
   TakeInputsSchema, TranscriptRepairedSchema, WorkerEvent_Nudge_Reason as Reason,
   type PatchSessionState_BackgroundTask, type ReportTurn_Persisted, type SessionReply_Inputs_Input, type SessionReply_Lease,
 } from "@circus/proto/circus/v1/worker_link_pb";
@@ -28,6 +29,7 @@ import {
 import {
   BrokenError, FencedError, RejectedError, SessionOps, StoppedError, type LinkPort, type ReadyWaiter, type Semaphore,
 } from "./ops.js";
+import { PROVIDER_DEFAULT_MODEL, launchPlan } from "./launch.js";
 import { PushQueue } from "./push.js";
 import { RetainedBudget, TranscriptLostError, TranscriptStore } from "./store.js";
 
@@ -57,6 +59,8 @@ export interface RunnerDeps {
   grantBudgetMs?: number;
   /** The worker-wide budget of retained transcript entries; the process's by default. */
   retained?: RetainedBudget;
+  /** The worker's environment, the base of a provider's CLI environment; process.env by default. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** released: the lease was released; failed: released with ERROR; lost: dropped without a release. */
@@ -183,6 +187,8 @@ export class SessionRunner {
 
   #cwd = "";
   #gen?: Generation;
+  /** The closed query's CLI is confirming its exit: no new CLI starts before. */
+  #exited?: Promise<void>;
   #hasTranscript: boolean;
   #turn?: Turn;
   #localSeq = 0n;
@@ -200,6 +206,8 @@ export class SessionRunner {
   /** Background tasks that ended between turns: the CLI has yet to start the turn telling the model. */
   #undelivered = new Map<string, { toolUseId: string; status: string; summary: string }>();
   #stopping = false;
+  /** The CLI ended on its own: the session ends with ERROR and no other CLI starts. */
+  #cliFailed = false;
   /** The query's login failed: replace the query when nothing of it is still needed. */
   #closeAfterAuth = false;
   #releasing = false;
@@ -404,10 +412,44 @@ export class SessionRunner {
 
   // ---- The query ----
 
-  #ensureQuery(): Generation {
+  /**
+   * The open query, or a new one. Every CLI start asks GetLaunchEnv first
+   * (never reused across starts, so provider edits reach the next CLI).
+   * Undefined when the session is ending (PROVIDER_UNAVAILABLE included:
+   * then no CLI starts and the lease is released with PROVIDER).
+   */
+  async #ensureQuery(): Promise<Generation | undefined> {
     if (this.#gen) return this.#gen;
+    if (!this.#mayStart()) return undefined;
     // The exec guard's parent-death signal follows the spawning thread.
     if (!isMainThread) throw new Error("query() must run on the main thread");
+    // A query closed by another path (a replaced login) may still be waiting for its CLI.
+    await this.#exited;
+    if (!this.#mayStart()) return undefined;
+    let reply;
+    try {
+      reply = await this.ops.call({ case: "getLaunchEnv", value: create(GetLaunchEnvSchema) });
+    } catch (error) {
+      if (!(error instanceof RejectedError) || error.code !== RejectCode.PROVIDER_UNAVAILABLE) throw error;
+      // The diagnostic comes from the control plane and holds no secret.
+      this.#log.warn("the session's provider is unavailable to this worker; releasing", {
+        session_id: this.sessionId, reason: error.message.slice(0, 512),
+      });
+      this.#finish({ release: ReleaseLease_Reason.PROVIDER });
+      return undefined;
+    }
+    // Stopped, lost or failed while asking: no CLI.
+    if (!this.#mayStart()) return undefined;
+    // The reply holds secrets: only the provider id and counts are logged.
+    const plan = launchPlan(reply, this.deps.env ?? process.env);
+    if (plan.skipped.length) {
+      this.#log.warn("launch environment variables not applied", {
+        session_id: this.sessionId, provider_id: plan.providerId.slice(0, 128), names: plan.skipped.slice(0, 16).join(","),
+      });
+    }
+    this.#log.info("starting Claude Code", plan.env
+      ? { session_id: this.sessionId, provider_id: plan.providerId.slice(0, 128), variables: reply.env.length - plan.skipped.length }
+      : { session_id: this.sessionId, local_login: true });
     const prompt = new PushQueue();
     const mode = (this.#config?.permissionMode || "auto") as PermissionMode;
     const hook: HookCallback = (input, _toolUseId, { signal }) => this.#preToolUse(input, signal);
@@ -417,13 +459,18 @@ export class SessionRunner {
       systemPrompt: { type: "preset", preset: "claude_code" },
       permissionMode: mode,
       ...(mode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
-      ...(this.#config?.model ? { model: this.#config.model } : {}),
+      // An empty model: local login leaves it to the CLI; a provider session
+      // names the CLI's own default alias, so that no settings file picks it
+      // and the provider's alias variables map it.
+      ...(this.#config?.model ? { model: this.#config.model } : plan.env ? { model: PROVIDER_DEFAULT_MODEL } : {}),
       includePartialMessages: true,
       ...(this.#hasTranscript ? { resume: this.#claudeSessionId } : { sessionId: this.#claudeSessionId }),
       sessionStore: this.#store,
       sessionStoreFlush: "eager",
       hooks: { PreToolUse: [{ hooks: [hook] }] },
       spawnClaudeCodeProcess: this.deps.processes.spawner(this.sessionId),
+      // Local login: the worker's own environment, unchanged.
+      ...(plan.env ? { env: plan.env } : {}),
     };
     const query = this.deps.query({ prompt, options });
     const gen: Generation = { query, prompt, closing: false };
@@ -434,10 +481,22 @@ export class SessionRunner {
     return gen;
   }
 
-  /** Closes the query and confirms its CLI exited. */
+  /**
+   * Whether a new CLI may start. Not during a transcript repair: an input
+   * taken before it began (its grants refresh still in flight) would start
+   * one on the transcript being repaired; the repair takes the inputs again.
+   */
+  #mayStart(): boolean {
+    return !this.#ending && !this.#stopping && !this.#cliFailed && !this.#repair;
+  }
+
+  /** Closes the query and confirms its CLI exited (also one closed by another path). */
   async #closeQuery(waitLoop: boolean): Promise<void> {
     const gen = this.#gen;
-    if (!gen) return;
+    if (!gen) {
+      await this.#exited;
+      return;
+    }
     this.#gen = undefined;
     gen.closing = true;
     gen.prompt.end();
@@ -446,7 +505,9 @@ export class SessionRunner {
     } catch (error) {
       this.#log.warn("closing the query failed", { session_id: this.sessionId, error: String(error).slice(0, 512) });
     }
-    await this.deps.processes.confirmExit(this.sessionId);
+    const exited = this.deps.processes.confirmExit(this.sessionId);
+    this.#exited = exited;
+    await exited;
     if (waitLoop) await gen.done;
     // Inputs pushed and never taken by a turn go to the next query.
     for (const delivery of [...this.#nextTurn, ...this.#deliveries.values()]) {
@@ -714,6 +775,8 @@ export class SessionRunner {
   // ---- The CLI ended or the transcript mirror failed ----
 
   async #cliEnded(failure: unknown): Promise<void> {
+    // Before any await: an input taken meanwhile must not start another CLI.
+    this.#cliFailed = true;
     const message = failure === undefined ? "Claude Code exited unexpectedly." : `Claude Code failed: ${String(failure).slice(0, 2048)}`;
     this.#log.error("Claude Code ended", { session_id: this.sessionId, error: message });
     await this.#closeQuery(false);
@@ -888,11 +951,12 @@ export class SessionRunner {
     // The next input replaces a query whose login failed (its background tasks are told lost).
     await this.#replaceAfterAuth(false);
     if (this.#ending) return;
-    for (const input of inputs) this.#push(input);
+    const gen = await this.#ensureQuery();
+    if (!gen || this.#ending) return;
+    for (const input of inputs) this.#push(gen, input);
   }
 
-  #push(input: SessionReply_Inputs_Input): void {
-    const gen = this.#ensureQuery();
+  #push(gen: Generation, input: SessionReply_Inputs_Input): void {
     const timestamp = new Date().toISOString();
     const notes = this.#notes.splice(0);
     const events: Delivery["events"] = [];

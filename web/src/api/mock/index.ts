@@ -6,7 +6,7 @@ import { createMockBackend, type MockBackend } from "./backend"
 import { stressLedgers } from "@/mock/ledger"
 
 import { parsePersisted, serialize, STORAGE_KEY } from "./persist"
-import { freshState, seedState, type MockState } from "./state"
+import { addQueueDemo, freshState, seedState, type MockState } from "./state"
 
 export type { MockBackend } from "./backend"
 
@@ -34,7 +34,8 @@ function save(state: MockState) {
  * Starts the mock backend from persisted state. `?mock=fresh` resets it to
  * an uninitialized server and `?mock=reset` restores the demo seed;
  * `?mock=nooidc` turns the OIDC provider off until the next page load and
- * `?mock=stress` adds decisions at the ledger's size limits to `palace`.
+ * `?mock=stress` adds decisions at the ledger's size limits to `palace`;
+ * `?mock=queue` adds sessions that wait for each reason a session can.
  * Modes combine with commas (`?mock=reset,nooidc`); the query parameter is
  * removed afterwards. Sessions live in this tab's memory only.
  */
@@ -53,6 +54,7 @@ export function startMockBackend(): MockBackend {
     window.history.replaceState(window.history.state, "", url)
   }
   save(state)
+  if (modes.has("queue")) addQueueDemo(state)
 
   if (state.setupToken !== null && !state.users.some((u) => u.role === "super")) {
     const link = new URL(`/setup?token=${encodeURIComponent(state.setupToken)}`, url.origin)

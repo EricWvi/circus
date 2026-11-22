@@ -343,6 +343,15 @@ The SQLite database defaults to `$XDG_DATA_HOME/circus/circus.db`
 `device`, `worker`) also accept `--config` and read its `db` key; they open
 only an existing database.
 
+Model provider secrets (API keys and custom variable values) are stored
+encrypted with AES-256-GCM. The key is `provider.key` beside the database
+(`provider_key_file` overrides the path): 32 random bytes created with mode
+0600 on first start. The server refuses a key file of another size or one
+readable by group or others. Back it up with the database; if it is lost or
+replaced the server still starts, but every provider reports its secrets
+unreadable and its sessions wait until the user enters the key and the
+variable values again.
+
 Memory. All daemon links share ONE `wire.Budget`, sized by
 `send_pool_bytes` and `receive_pool_bytes` (0 = the default, twice
 `wire.MinBudget`; the server refuses smaller pools and names the key and

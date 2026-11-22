@@ -174,10 +174,21 @@ export interface Project {
   lastUsedLocation: number
   createdAtUnixMs: number
   updatedAtUnixMs: ProjectVersion
+  /**
+   * The model provider new sessions in this project use unless they name
+   * one; empty for none. May name a deleted provider, which counts as none.
+   */
+  defaultProviderId: string
 }
 
 export interface ProjectService {
-  createProject(req: { name: string; repoUrl: string; locations: Location[] }): Promise<Project>
+  createProject(req: {
+    name: string
+    repoUrl: string
+    locations: Location[]
+    /** Empty or missing: none. */
+    defaultProviderId?: string
+  }): Promise<Project>
   /** Ordered by name. */
   listProjects(): Promise<Project[]>
   getProject(req: { projectId: string }): Promise<Project>
@@ -194,6 +205,8 @@ export interface ProjectService {
     locations?: Location[]
     /** "" clears it. */
     repoUrl?: string
+    /** "" clears it; otherwise one of the caller's model providers. Versioned like the name. */
+    defaultProviderId?: string
     lastUsedLocation?: number
     expectedUpdatedAt?: ProjectVersion
   }): Promise<Project>
@@ -216,6 +229,27 @@ export interface Device {
   os: string
   arch: string
   version: string
+}
+
+/** A worker: runs the Claude Code CLI for sessions. */
+export interface Worker {
+  workerId: string
+  /** Unique among the user's workers. */
+  name: string
+  /** A worker link is connected now. */
+  online: boolean
+  /** As `Device.lastSeenUnixMs`; 0 when it never connected. */
+  lastSeenUnixMs: number
+  os: string
+  arch: string
+  hostname: string
+  /** The worker's client version. */
+  version: string
+  /**
+   * Names of the user's devices on the same machine: sessions in their
+   * locations run in local mode on this worker.
+   */
+  localDevices: string[]
 }
 
 /** Which identities an enrollment link enrolls: a device (daemon), a worker, or both. */
@@ -316,6 +350,10 @@ export interface MachineService {
    */
   getGitRemote(req: { device: string; path: string }): Promise<GitRemote>
   /**
+   * The caller's workers that are not deleted, ordered by name.
+   */
+  listWorkers(): Promise<Worker[]>
+  /**
    * Issues a one-time link that enrolls machines for the caller. Fails with
    * `resource_exhausted` while the caller has too many unused links, and
    * with `failed_precondition` when the server has no public URL.
@@ -346,7 +384,30 @@ export interface SessionSummary {
    * folder on the device. Until it is ready no turn runs; messages wait.
    */
   workspace?: WorkspaceStatus
+  /**
+   * The model provider the CLI starts with; empty for local login (the
+   * worker machine's own Claude Code login). May name a deleted provider.
+   */
+  providerId: string
+  /** Why a queued session is not running yet; `unspecified` otherwise. */
+  queueReason: QueueReason
 }
+
+/**
+ * Why a queued session can't be taken by a worker now, by the proto names
+ * without `QUEUE_REASON_`.
+ */
+export type QueueReason =
+  | "unspecified"
+  /** The provider's session limit is reached. */
+  | "provider_full"
+  /** None of the provider's workers that may run the session is online. */
+  | "no_assigned_worker"
+  | "provider_deleted"
+  /** The provider's key and variable values have to be entered again. */
+  | "provider_secrets_unreadable"
+  /** The session's worker (or every worker) is offline. */
+  | "worker_offline"
 
 /** A session with where it runs, as GetSession returns it. */
 export interface SessionDetails extends SessionSummary {
@@ -378,6 +439,7 @@ export type SessionEventKind =
   | "turn_stopped"
   | "input_accepted"
   | "workspace"
+  | "queue"
 
 /**
  * A session event as the control plane streams it. Durable events have
@@ -393,6 +455,11 @@ export interface RawSessionEvent {
   ephemeral: boolean
   /** The payload was too large for the view and was dropped. */
   truncated: boolean
+  /**
+   * Client only: when this browser received a live event, by its clock
+   * (set by the session watch for KIND_QUEUE events).
+   */
+  receivedAtMs?: number
 }
 
 export type InputPriority = "normal" | "now"
@@ -414,6 +481,11 @@ export interface CreateSessionRequest {
   locationIndex: number
   /** A UUID, 1 to 128 bytes; see `SessionService.createSession`. */
   clientRequestId: string
+  /**
+   * Missing: the project's default provider, else the user's, else local
+   * login. "" chooses local login; otherwise one of the user's providers.
+   */
+  providerId?: string
 }
 
 export interface SessionService {
@@ -455,7 +527,12 @@ export interface SessionService {
   resolveApproval(req: { approvalId: string; approve: boolean }): Promise<void>
   /** Lets a broken session go on without the part of its history that was lost. */
   recoverSession(req: { sessionId: string }): Promise<void>
-  updateSession(req: { sessionId: string; title: string }): Promise<SessionDetails>
+  /**
+   * Changes the fields that are set (at least one). `providerId` ("" for
+   * local login) is refused with `failed_precondition` while a turn runs
+   * and once the session is stopped; it applies from the next CLI start.
+   */
+  updateSession(req: { sessionId: string; title?: string; providerId?: string }): Promise<SessionDetails>
   /**
    * Starts a failed workspace of the session over (it becomes pending);
    * any other state comes back unchanged. `failed_precondition` for a
@@ -471,6 +548,96 @@ export interface CircusClient {
   machines: MachineService
   sessions: SessionService
   ledger: LedgerService
+  modelProviders: ModelProviderService
+}
+
+/** How a provider's key is sent: as x-api-key, or as Authorization: Bearer. */
+export type ProviderScheme = "x_api_key" | "bearer"
+
+/**
+ * A model provider's version: the exact `updated_at_unix_ms` int64 as a
+ * decimal string, sent back as `expectedUpdatedAt`.
+ */
+export type ProviderVersion = string
+
+/** A custom environment variable, as the server returns it: the value is secret. */
+export interface ProviderEnvVar {
+  name: string
+  /** The value's last four characters (fewer when shorter). */
+  valueLast4: string
+}
+
+/**
+ * A model provider: the credentials and environment a worker gives Claude
+ * Code when it starts the CLI for a session. Secrets (the key and the
+ * variable values) are write-only; only their last four characters come back.
+ */
+export interface ModelProvider {
+  providerId: string
+  name: string
+  /** Empty: Claude Code's default endpoint. */
+  baseUrl: string
+  /** "unspecified" for a scheme this client doesn't know (from a newer server). */
+  scheme: ProviderScheme | "unspecified"
+  keyLast4: string
+  opusModel: string
+  sonnetModel: string
+  haikuModel: string
+  env: ProviderEnvVar[]
+  /** Workers that may run sessions with this provider. */
+  workerIds: string[]
+  /** 0: unlimited. */
+  maxSessions: number
+  /** The user's default provider. */
+  isDefault: boolean
+  /** Sessions with this provider holding a lease now. */
+  leasedSessions: number
+  /** The stored secrets can't be decrypted; the key and every value must be entered again. */
+  secretsUnreadable: boolean
+  createdAtUnixMs: number
+  updatedAtUnixMs: ProviderVersion
+}
+
+/** A provider as a create or update request carries it. */
+export interface ModelProviderInput {
+  name: string
+  baseUrl: string
+  scheme: ProviderScheme
+  /** Required on create; on update "" keeps the stored key. */
+  key: string
+  opusModel: string
+  sonnetModel: string
+  haikuModel: string
+  /**
+   * Replaces the list. A variable without `value` keeps the value stored
+   * under the same name (update only).
+   */
+  env: { name: string; value?: string }[]
+  workerIds: string[]
+  maxSessions: number
+  isDefault: boolean
+}
+
+/**
+ * The signed-in user's model providers. Invalid input is `invalid_argument`
+ * with the field ("name", "api.base_url", "api.key", "env[1].name", ...);
+ * a name in use is `already_exists` on "name"; more than 32 providers is
+ * `resource_exhausted`; another user's provider is `not_found`.
+ */
+export interface ModelProviderService {
+  createProvider(req: ModelProviderInput): Promise<ModelProvider>
+  /** Ordered by name, ignoring case. */
+  listProviders(): Promise<ModelProvider[]>
+  getProvider(req: { providerId: string }): Promise<ModelProvider>
+  /**
+   * Replaces the provider's fields. With `expectedUpdatedAt`, applies only
+   * if the provider is still at that version (`aborted` otherwise).
+   */
+  updateProvider(
+    req: ModelProviderInput & { providerId: string; expectedUpdatedAt?: ProviderVersion },
+  ): Promise<ModelProvider>
+  /** `failed_precondition` while a session using it holds a lease. */
+  deleteProvider(req: { providerId: string }): Promise<void>
 }
 
 /** One decision of a ledger, as the ledger's listing shows it. */

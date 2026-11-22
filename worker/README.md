@@ -28,8 +28,10 @@ bearer token and optional CA bundle.
 | `CIRCUS_WORKER_IDLE_SECONDS` | `300` | Integer from 1 to 86400: how long an idle session keeps its lease |
 | `CIRCUS_BIN` | `circus` on `PATH` | The `circus` binary providing `internal exec-guard` |
 
-Claude Code runs with the user's own login on this machine
-(`CLAUDE_CONFIG_DIR` is left alone) and the environment of the worker.
+Claude Code runs with the environment of the worker (`CLAUDE_CONFIG_DIR` is
+left alone): with the user's own login on this machine for a session
+without a provider, with the provider's credentials otherwise (see
+"Providers and the launch environment").
 
 ## Claude Agent SDK
 
@@ -43,8 +45,12 @@ Each session runs one `query()` on the main thread with: `cwd` the
 'project', 'local']`; the `claude_code` preset system prompt; the session's
 permission mode (`auto` when empty); partial messages; `sessionId`, or
 `resume` once the session has a transcript; the control-plane SessionStore
-with eager flushing; a PreToolUse hook; and
-the CLI launcher below. No tool list, MCP server, alias or agent is set.
+with eager flushing; a PreToolUse hook; the CLI launcher below; and, for a
+session with a provider, the launch environment below. No tool list, MCP
+server, alias or agent is set. The model is `SessionConfig.model`; when it
+is empty, none is passed for local login, and a session with a provider
+gets `opus[1m]` (see "Providers and the launch environment").
+`persistSession` is left at its default (see below).
 
 SDK behaviour the worker relies on, measured with this version against a
 fake Messages API (`test/fixtures/sdk/` holds the recordings its tests
@@ -100,6 +106,111 @@ ReportTurn ENDED and before the next STARTED; right after STARTED, the
 turn's TURN_STARTED and the USER events of its inputs are flushed at once,
 so a worker that dies early in a turn still leaves them in the view (unless
 it dies before that flush is acknowledged).
+
+## Providers and the launch environment
+
+Before every CLI start (a new session, a resume, the replacement of a query
+whose login failed or whose transcript was repaired) the runner calls
+GetLaunchEnv, with the retries of any session read (a lost link is retried
+after readiness); the reply is never kept for a later start. A new CLI
+also waits until the previous CLI of the session has exited, and so does
+every ReleaseLease. Once the CLI has ended on its own, no other CLI starts:
+the session ends with ERROR.
+
+- `local_login`: the CLI gets the worker's environment unchanged.
+- A provider: the worker's environment without every variable that selects
+  a credential, an endpoint or a model, plus the returned variables (which
+  win over inherited ones of the same name), plus
+  `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1`. Removed: every `ANTHROPIC_*`
+  (`ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL` and the alias variables
+  included) and `CLAUDE_CODE_3P_*` variable; `CLAUDE_CODE_OAUTH_TOKEN` and its `_FILE_DESCRIPTOR`,
+  `_REFRESH_TOKEN`, `_SCOPES`, `_CLIENT_ID` and `CLAUDE_CODE_CUSTOM_OAUTH_URL`;
+  `CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR`, `CLAUDE_CODE_API_BASE_URL`,
+  `CLAUDE_CODE_SESSION_ACCESS_TOKEN`; `CLAUDE_CODE_USE_{BEDROCK,VERTEX,FOUNDRY,
+  ANTHROPIC_AWS,ANTHROPIC_GOOGLE_CLOUD,MANTLE,GATEWAY}` and the matching
+  `CLAUDE_CODE_SKIP_*_AUTH`; `AWS_BEARER_TOKEN_BEDROCK`, `CLOUD_ML_REGION`;
+  `CLAUDE_CODE_GATEWAY_TOKEN` (and `_FILE_DESCRIPTOR`); the host-auth
+  hand-offs (`CLAUDE_CODE_HOST_AUTH_*`, `CLAUDE_CODE_HOST_CREDS_FILE`,
+  `CLAUDE_CODE_SDK_HAS_*_REFRESH`, `CLAUDE_CODE_LAUNCHER_RUNS_API_KEY_HELPER`);
+  the mTLS client certificate (`CLAUDE_CODE_CLIENT_CERT`, `_KEY`,
+  `_KEY_PASSPHRASE`); `CLAUDE_CODE_RUNNER_MODEL_SOCKET` and
+  `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL`; and the model choices
+  `CLAUDE_CODE_SUBAGENT_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`,
+  `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`, `CLAUDE_CODE_AUTO_MODE_MODEL`,
+  `CLAUDE_CODE_BG_CLASSIFIER_MODEL`, `CLAUDE_CODE_MODEL_CATALOG` and
+  `CLAUDE_CODE_MODEL_CATALOG_URL`. Proxy, CA and general AWS/GCP variables
+  stay. Returned variables named `HOME`, `PATH`, `CLAUDE_CONFIG_DIR`,
+  `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` or
+  `CIRCUS_*`, malformed names and values with NUL are not applied (logged
+  by name only).
+- The model: with an empty `SessionConfig.model` a provider session passes
+  `opus[1m]`, the alias Claude Code 2.1.330 uses by default with an API key
+  or auth token on the Anthropic API (the opus alias target, with the 1M
+  context where it applies), so the provider's
+  `ANTHROPIC_DEFAULT_OPUS_MODEL` maps it and no `model` in a settings file
+  chooses it. A non-empty model is passed as it is.
+- `PROVIDER_UNAVAILABLE`: no CLI starts; the query is closed and the lease
+  released with `PROVIDER`. Fenced, STOPPED and other rejections end the
+  session as for any session operation.
+
+The reply holds secrets: the worker itself puts no value in its logs,
+events, errors or process records, only the provider id and the number of
+variables (`test/runner/launch.test.ts` checks a debug-level run). Claude
+Code hides the API key and auth token from the tools the model runs; the
+provider's custom variables (and the base URL and alias variables) stay
+visible to them, so a tool such as `env` can show their values in the
+transcript and the session's events.
+
+Measured with Claude Code 2.1.330 against the fake Messages API
+(`internal/testutil/fakemodel`), the CLI in a private network namespace,
+`settingSources: ['user', 'project', 'local']`, fake keys only:
+
+- The `env` of the user's `settings.json` overrides the process
+  environment: with `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_DEFAULT_OPUS_MODEL` there, the
+  request went to the settings' URL with the settings' `x-api-key`, an
+  `Authorization: Bearer` of the settings' token, and the settings' model.
+  An `apiKeyHelper` in the user's settings added `Authorization: Bearer
+  <helper output>` next to the process's `x-api-key`.
+- Flag settings (the SDK's `settings` option) win over the user's settings
+  for the names they set, but the user's other variables still apply (the
+  user's `ANTHROPIC_AUTH_TOKEN` was still sent as a bearer). Flag
+  `apiKeyHelper: ""` disables the user's helper.
+- With `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1` in the process
+  environment, Claude Code ignores the provider, credential and model-alias
+  variables and `apiKeyHelper` of every settings file, flag settings
+  included: only the process's values were sent (`x-api-key` alone, or
+  `Authorization: Bearer` alone, and the process's alias model). It also
+  drops the user settings' proxy and certificate variables, and removes the
+  API key and auth token from the environment of Bash commands (the
+  provider's other variables stay). Hence the worker passes everything in
+  the process environment with that variable set. It does not drop a
+  top-level `model` of user, project or local settings (only of managed
+  settings): with no model passed, the request carried the user settings'
+  `user-settings-model`, or the project's `.claude/settings.local.json`
+  `project-settings-model`, to the provider's endpoint.
+- The default model: without any `model`, the request carried
+  `ANTHROPIC_DEFAULT_OPUS_MODEL` (`provider-opus`) with the 1M context beta
+  (`context-1m` in `anthropic-beta`), or `claude-opus-5-5` without that
+  beta when the provider sets no opus alias, for an API key and for a
+  bearer token alike. Passing `opus[1m]` gave exactly the same requests in
+  all three cases (`opus` alone dropped the 1M context), and with
+  `opus[1m]` passed, the settings' `model` (user or project) no longer
+  applied: `provider-opus` with `context-1m` was sent. This matches the
+  CLI's source, whose default is the opus alias target with `[1m]` where
+  the 1M context applies.
+- A provider's `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` wins over a
+  stored login (`.credentials.json`) and over an inherited
+  `CLAUDE_CODE_OAUTH_TOKEN`: neither was sent. Without a key, the stored
+  login's OAuth token goes to `ANTHROPIC_BASE_URL`, so the base URL is never
+  applied without the provider's credential. With both a key and a token,
+  both headers are sent.
+- `persistSession: false` with a `sessionStore` is refused by the SDK
+  (`query()` throws). Forcing `--no-session-persistence` through
+  `extraArgs` mirrors nothing (no `append` call) and a resume from the
+  store finds no history; without it every entry is mirrored and a resume
+  keeps every uuid in order. The worker therefore keeps the default, and
+  Claude Code also writes its transcript under `<config dir>/projects/`.
 
 ## Transcript mirroring and repair
 

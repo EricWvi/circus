@@ -124,6 +124,50 @@ describe.skipIf(!linux)("CLI processes", () => {
     }
   });
 
+  test("a failed CLI's stderr tail includes what is written after its exit, until stderr ends", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "circus-cli-"));
+    const log = captureLogger();
+    const processes = new CliProcesses(dir, undefined, log);
+    // A descendant keeps stderr open and writes to it after the CLI exited.
+    const script = "require('child_process').spawn('sh', ['-c', 'sleep 0.2; echo late-line >&2'], { stdio: ['ignore', 'ignore', 'inherit'] }).unref(); " +
+      "console.error('early-line'); process.exit(3)";
+    spawnCli(processes, "s1", script);
+    try {
+      await waitFor(() => log.lines.some((l) => l.message === "Claude Code exited"), "the exit logged", 3_000);
+      const line = log.lines.find((l) => l.message === "Claude Code exited")!;
+      expect(line.fields).toMatchObject({ code: 3 });
+      expect(String(line.fields?.stderr)).toContain("early-line");
+      expect(String(line.fields?.stderr)).toContain("late-line");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("flush logs an exited CLI's tail while a descendant still holds its stderr, once", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "circus-cli-"));
+    const log = captureLogger();
+    const processes = new CliProcesses(dir, undefined, log);
+    const script = "require('child_process').spawn('sh', ['-c', 'sleep 0.4; echo late-line >&2'], { stdio: ['ignore', 'ignore', 'inherit'] }).unref(); " +
+      "console.error('early-line'); process.exit(3)";
+    spawnCli(processes, "s1", script);
+    const exitLines = () => log.lines.filter((l) => l.message === "Claude Code exited");
+    try {
+      await processes.confirmExit("s1");
+      await waitFor(() => readFileSync(join(dir, readdirSync(dir).find((n) => n.endsWith(".cli.json"))!), "utf8").includes("exited"), "exit recorded");
+      // stderr is still open: nothing logged yet; the worker exits now.
+      expect(exitLines()).toHaveLength(0);
+      processes.flush();
+      expect(exitLines()).toHaveLength(1);
+      expect(exitLines()[0].fields).toMatchObject({ code: 3 });
+      expect(String(exitLines()[0].fields?.stderr)).toContain("early-line");
+      // The descendant's later output and the end of stderr log nothing more.
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      expect(exitLines()).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("a CLI that does not exit is killed with its process group", async () => {
     const dir = mkdtempSync(join(tmpdir(), "circus-cli-"));
     const processes = new CliProcesses(dir, undefined, captureLogger(), true, 100);

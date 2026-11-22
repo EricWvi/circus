@@ -15,6 +15,7 @@ import (
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
 	"github.com/EricWvi/circus/internal/store"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestSendMessage(t *testing.T) {
@@ -233,7 +234,7 @@ func TestUpdateSessionTitle(t *testing.T) {
 	ctx := t.Context()
 	_, sess := sessionSetup(t, h, super)
 	update := func(title string) (*circusv1.Session, error) {
-		resp, err := super.sessions.UpdateSession(ctx, connect.NewRequest(&circusv1.UpdateSessionRequest{SessionId: sess.SessionId, Title: title}))
+		resp, err := super.sessions.UpdateSession(ctx, connect.NewRequest(&circusv1.UpdateSessionRequest{SessionId: sess.SessionId, Title: proto.String(title)}))
 		if err != nil {
 			return nil, err
 		}

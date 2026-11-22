@@ -78,7 +78,8 @@ func (s *session) signal() {
 func (s *session) run() error {
 	defer s.shutdownLease()
 	r, err := s.request(wc.Acquire(s.id, true))
-	if rejected(err, pb.SessionReply_Rejected_CODE_NOT_OFFERED) || errors.Is(err, errStopped) {
+	if rejected(err, pb.SessionReply_Rejected_CODE_NOT_OFFERED) || rejected(err, pb.SessionReply_Rejected_CODE_PROVIDER_FULL) ||
+		rejected(err, pb.SessionReply_Rejected_CODE_PROVIDER_UNAVAILABLE) || errors.Is(err, errStopped) {
 		return nil
 	}
 	if err != nil {
@@ -88,7 +89,17 @@ func (s *session) run() error {
 	if lease.GetEpoch() == 0 {
 		return fmt.Errorf("acquire %s: %v", s.id, r)
 	}
-	err = s.serve(lease)
+	if s.w.opts.Acquired != nil {
+		s.w.opts.Acquired(s.id, lease.GetEpoch())
+	}
+	err = s.launch()
+	if err == nil {
+		err = s.serve(lease)
+	}
+	if errors.Is(err, errProvider) {
+		// No CLI starts without its provider: the session queues again.
+		return s.release(s.ctx, pb.ReleaseLease_REASON_PROVIDER)
+	}
 	if s.ctx.Err() != nil || errors.Is(err, errFenced) || errors.Is(err, errCrash) {
 		return err
 	}
@@ -101,6 +112,23 @@ func (s *session) run() error {
 		reason = pb.ReleaseLease_REASON_ERROR
 	}
 	return errors.Join(err, s.release(s.ctx, reason))
+}
+
+// launch stands in for starting the CLI: it asks for the launch
+// environment, hands the reply to Options.LaunchEnv and drops it. A
+// provider that is gone is errProvider.
+func (s *session) launch() error {
+	r, err := s.request(wc.LaunchEnv(s.id, s.epoch))
+	if r != nil && s.w.opts.LaunchEnv != nil {
+		s.w.opts.LaunchEnv(s.id, r)
+	}
+	if rejected(err, pb.SessionReply_Rejected_CODE_PROVIDER_UNAVAILABLE) {
+		return errProvider
+	}
+	if err == nil && r.GetLaunchEnv() == nil {
+		return fmt.Errorf("launch env %s: unexpected reply", s.id)
+	}
+	return err
 }
 
 func (s *session) release(ctx context.Context, reason pb.ReleaseLease_Reason) error {

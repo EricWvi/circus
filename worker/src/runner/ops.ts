@@ -29,6 +29,7 @@ const expected = {
   requestApproval: "approval",
   consumeGrant: "grant",
   transcriptRepaired: "ok",
+  getLaunchEnv: "launchEnv",
 } as const satisfies Expected;
 
 export type ReplyOf<C extends SessionOp["case"]> = ReplyValues[(typeof expected)[C]];

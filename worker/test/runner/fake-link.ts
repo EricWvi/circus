@@ -88,6 +88,8 @@ export class FakeLink implements LinkPort {
   released: number[] = [];
   repaired = 0;
   stopped = false;
+  /** The GetLaunchEnv reply; local login unless a test sets a provider's. */
+  launchEnv: () => SessionReply = () => reply({ case: "launchEnv", value: { localLogin: true } });
 
   constructor(cwd: string, readonly sessionId = "sess-1", readonly claudeSessionId = "00000000-0000-4000-8000-0000000000aa") {
     this.lease = create(SessionReply_LeaseSchema, {
@@ -256,6 +258,9 @@ export class FakeLink implements LinkPort {
       case "transcriptRepaired":
         this.repaired++;
         return ok();
+      case "getLaunchEnv":
+        if (this.stopped) return rejected(Code.STOPPED);
+        return this.launchEnv();
     }
     throw new Error(`unhandled op ${(op as SessionOp).case}`);
   }

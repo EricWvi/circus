@@ -3,6 +3,7 @@ package webapi_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
 	"github.com/EricWvi/circus/internal/ledger"
@@ -50,9 +52,12 @@ type harness struct {
 	bus    *sessions.Bus
 	waker  *recordingWaker
 	jobs   *recordingJobs
+	box    *providers.Box
+	sched  *recordingScheduler
 
-	mu     sync.Mutex
-	online map[string]bool // device id → link connected
+	mu      sync.Mutex
+	online  map[string]bool // device id → link connected
+	workers map[string]bool // worker id → link connected
 }
 
 // client is one browser: a cookie jar and the services.
@@ -62,6 +67,7 @@ type client struct {
 	projects circusv1connect.ProjectServiceClient
 	machines circusv1connect.MachineServiceClient
 	sessions circusv1connect.SessionServiceClient
+	provs    circusv1connect.ProviderServiceClient
 	// streams opens WatchSession streams (watch). Its HTTP client has no
 	// Timeout: net/http counts reading the body in it, so it would bound a
 	// stream's whole life, however long the test keeps it busy. watch bounds
@@ -71,7 +77,17 @@ type client struct {
 
 func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *client) {
 	t.Helper()
-	h := &harness{online: map[string]bool{}, bus: sessions.NewBus(sessions.BusOptions{}), waker: &recordingWaker{}, jobs: &recordingJobs{}}
+	h := &harness{online: map[string]bool{}, workers: map[string]bool{}, bus: sessions.NewBus(sessions.BusOptions{}), waker: &recordingWaker{},
+		jobs: &recordingJobs{}, sched: &recordingScheduler{reasons: map[string]circusv1.QueueReason{}}}
+	key := make([]byte, providers.KeyBytes)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	box, err := providers.NewBox(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.box = box
 	h.clock.Store(time.Date(2026, 11, 17, 8, 0, 0, 0, time.UTC).UnixMilli())
 	h.dir = t.TempDir()
 	dbPath := filepath.Join(h.dir, "web.db")
@@ -108,7 +124,8 @@ func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *clien
 			t.Error(err)
 		}
 	})
-	cfg := webapi.Config{Store: st, Ledger: h.ledger, Interceptor: web.Interceptor(), Now: now, Online: h.onlineDevices, Bus: h.bus, Waker: h.waker, Jobs: h.jobs, PublicURL: h.server.URL}
+	cfg := webapi.Config{Store: st, Ledger: h.ledger, Interceptor: web.Interceptor(), Now: now, Online: h.onlineDevices, Bus: h.bus, Waker: h.waker, Jobs: h.jobs, PublicURL: h.server.URL,
+		Secrets: h.box, Scheduler: h.sched, OnlineWorkers: h.onlineWorkers}
 	for _, option := range options {
 		option(&cfg)
 	}
@@ -153,6 +170,44 @@ func (h *harness) onlineDevices(_ context.Context, userID string) (map[string]bo
 	return out, nil
 }
 
+func (h *harness) onlineWorkers(_ context.Context, userID string) (map[string]bool, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := map[string]bool{}
+	for id, on := range h.workers {
+		out[id] = on
+	}
+	return out, nil
+}
+
+// recordingScheduler answers queue reasons from a table and records
+// ProviderChanged calls as "user:provider".
+type recordingScheduler struct {
+	mu      sync.Mutex
+	reasons map[string]circusv1.QueueReason
+	changed []string
+}
+
+func (r *recordingScheduler) QueueReason(id string) circusv1.QueueReason {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reasons[id]
+}
+
+func (r *recordingScheduler) ProviderChanged(userID, providerID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.changed = append(r.changed, userID+":"+providerID)
+}
+
+func (r *recordingScheduler) take() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.changed
+	r.changed = nil
+	return out
+}
+
 func (h *harness) setOnline(id string, on bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -171,6 +226,7 @@ func (h *harness) browser(t *testing.T) *client {
 		projects: circusv1connect.NewProjectServiceClient(c, h.server.URL),
 		machines: circusv1connect.NewMachineServiceClient(c, h.server.URL),
 		sessions: circusv1connect.NewSessionServiceClient(c, h.server.URL),
+		provs:    circusv1connect.NewProviderServiceClient(c, h.server.URL),
 		streams:  circusv1connect.NewSessionServiceClient(streams, h.server.URL),
 	}
 }

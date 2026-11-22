@@ -4,6 +4,12 @@
 listen: ":8443"
 # Empty uses $XDG_DATA_HOME/circus/circus.db (or ~/.local/share/circus/circus.db).
 db: ""
+# The key that encrypts model provider secrets (API keys, variable values).
+# Empty uses provider.key in the directory of db, created with a random key
+# and mode 0600 on first start. The file must be 32 bytes and not readable
+# by group or others. Back it up with the database: without it the stored
+# provider secrets cannot be decrypted and must be entered again.
+provider_key_file: ""
 
 # Choose exactly one transport mode: tls_cert + tls_key, behind_proxy, or dev_insecure.
 tls_cert: ""

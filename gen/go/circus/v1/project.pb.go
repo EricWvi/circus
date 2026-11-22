@@ -89,8 +89,8 @@ type Project struct {
 	// meaningless, while the project has no locations.
 	LastUsedLocation uint32 `protobuf:"varint,4,opt,name=last_used_location,json=lastUsedLocation,proto3" json:"last_used_location,omitempty"`
 	CreatedAtUnixMs  int64  `protobuf:"varint,5,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
-	// The version of the name, locations and repository URL: it moves only
-	// when one of them changes (see UpdateProjectRequest), not with
+	// The version of the name, locations, repository URL and default
+	// provider: it moves only when one of them changes (see UpdateProjectRequest), not with
 	// last_used_location.
 	UpdatedAtUnixMs int64 `protobuf:"varint,6,opt,name=updated_at_unix_ms,json=updatedAtUnixMs,proto3" json:"updated_at_unix_ms,omitempty"`
 	// Optional git remote of the project; empty means none. Trimmed, at most
@@ -98,9 +98,13 @@ type Project struct {
 	// https://host/path, http://host/path, ssh://[user@]host[:port]/path,
 	// git://host/path, file:///abs/path, or scp-like user@host:path. Stored
 	// as given otherwise (not rewritten).
-	RepoUrl       string `protobuf:"bytes,7,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RepoUrl string `protobuf:"bytes,7,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
+	// Optional: the provider new sessions in this project use unless they
+	// name one (see CreateSessionRequest.provider_id). Empty means none;
+	// may name a deleted provider, which counts as none.
+	DefaultProviderId string `protobuf:"bytes,8,opt,name=default_provider_id,json=defaultProviderId,proto3" json:"default_provider_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Project) Reset() {
@@ -182,13 +186,22 @@ func (x *Project) GetRepoUrl() string {
 	return ""
 }
 
+func (x *Project) GetDefaultProviderId() string {
+	if x != nil {
+		return x.DefaultProviderId
+	}
+	return ""
+}
+
 type CreateProjectRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Locations     []*Project_Location    `protobuf:"bytes,2,rep,name=locations,proto3" json:"locations,omitempty"`
-	RepoUrl       string                 `protobuf:"bytes,3,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Name      string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Locations []*Project_Location    `protobuf:"bytes,2,rep,name=locations,proto3" json:"locations,omitempty"`
+	RepoUrl   string                 `protobuf:"bytes,3,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
+	// As UpdateProjectRequest.default_provider_id; empty means none.
+	DefaultProviderId string `protobuf:"bytes,4,opt,name=default_provider_id,json=defaultProviderId,proto3" json:"default_provider_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *CreateProjectRequest) Reset() {
@@ -238,6 +251,13 @@ func (x *CreateProjectRequest) GetLocations() []*Project_Location {
 func (x *CreateProjectRequest) GetRepoUrl() string {
 	if x != nil {
 		return x.RepoUrl
+	}
+	return ""
+}
+
+func (x *CreateProjectRequest) GetDefaultProviderId() string {
+	if x != nil {
+		return x.DefaultProviderId
 	}
 	return ""
 }
@@ -468,18 +488,23 @@ type UpdateProjectRequest struct {
 	LastUsedLocation *uint32 `protobuf:"varint,4,opt,name=last_used_location,json=lastUsedLocation,proto3,oneof" json:"last_used_location,omitempty"`
 	// Replaces the repository URL when set; "" clears it.
 	RepoUrl *string `protobuf:"bytes,5,opt,name=repo_url,json=repoUrl,proto3,oneof" json:"repo_url,omitempty"`
-	// When set, and name, locations or repo_url is set, the update applies
-	// only if the project's updated_at_unix_ms still equals this value (the
-	// version the caller read, such as an edit form opened in another tab);
+	// Replaces the default provider when set; "" clears it. Otherwise one of
+	// the caller's providers that is not deleted. Moves updated_at_unix_ms
+	// like the name does.
+	DefaultProviderId *string `protobuf:"bytes,7,opt,name=default_provider_id,json=defaultProviderId,proto3,oneof" json:"default_provider_id,omitempty"`
+	// When set, and name, locations, repo_url or default_provider_id is set,
+	// the update applies only if the project's updated_at_unix_ms still
+	// equals this value (the version the caller read, such as an edit form
+	// opened in another tab);
 	// otherwise it fails with ABORTED, without a field, and changes nothing.
 	// An update that sets only last_used_location (as starting a session
 	// does) is never refused this way.
 	//
 	// updated_at_unix_ms moves forward, also within the same millisecond,
-	// only when the name, the locations or the repository URL actually
-	// change. A field set to its current value is no change, and
-	// last_used_location alone never moves it, so an open settings form
-	// stays current while sessions start.
+	// only when the name, the locations, the repository URL or the default
+	// provider actually change. A field set to its current value is no
+	// change, and last_used_location alone never moves it, so an open
+	// settings form stays current while sessions start.
 	ExpectedUpdatedAtUnixMs *int64 `protobuf:"varint,6,opt,name=expected_updated_at_unix_ms,json=expectedUpdatedAtUnixMs,proto3,oneof" json:"expected_updated_at_unix_ms,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
@@ -546,6 +571,13 @@ func (x *UpdateProjectRequest) GetLastUsedLocation() uint32 {
 func (x *UpdateProjectRequest) GetRepoUrl() string {
 	if x != nil && x.RepoUrl != nil {
 		return *x.RepoUrl
+	}
+	return ""
+}
+
+func (x *UpdateProjectRequest) GetDefaultProviderId() string {
+	if x != nil && x.DefaultProviderId != nil {
+		return *x.DefaultProviderId
 	}
 	return ""
 }
@@ -926,7 +958,7 @@ var File_circus_v1_project_proto protoreflect.FileDescriptor
 
 const file_circus_v1_project_proto_rawDesc = "" +
 	"\n" +
-	"\x17circus/v1/project.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x19circus/v1/workspace.proto\"\xdb\x03\n" +
+	"\x17circus/v1/project.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x19circus/v1/workspace.proto\"\x8b\x04\n" +
 	"\aProject\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
@@ -935,17 +967,19 @@ const file_circus_v1_project_proto_rawDesc = "" +
 	"\x12last_used_location\x18\x04 \x01(\rR\x10lastUsedLocation\x12+\n" +
 	"\x12created_at_unix_ms\x18\x05 \x01(\x03R\x0fcreatedAtUnixMs\x12+\n" +
 	"\x12updated_at_unix_ms\x18\x06 \x01(\x03R\x0fupdatedAtUnixMs\x12\x19\n" +
-	"\brepo_url\x18\a \x01(\tR\arepoUrl\x1a\xbe\x01\n" +
+	"\brepo_url\x18\a \x01(\tR\arepoUrl\x12.\n" +
+	"\x13default_provider_id\x18\b \x01(\tR\x11defaultProviderId\x1a\xbe\x01\n" +
 	"\bLocation\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12%\n" +
 	"\x0eeffective_path\x18\x03 \x01(\tR\reffectivePath\x12%\n" +
 	"\x0edevice_revoked\x18\x04 \x01(\bR\rdeviceRevoked\x128\n" +
-	"\tworkspace\x18\x05 \x01(\v2\x1a.circus.v1.WorkspaceStatusR\tworkspace\"\x80\x01\n" +
+	"\tworkspace\x18\x05 \x01(\v2\x1a.circus.v1.WorkspaceStatusR\tworkspace\"\xb0\x01\n" +
 	"\x14CreateProjectRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x129\n" +
 	"\tlocations\x18\x02 \x03(\v2\x1b.circus.v1.Project.LocationR\tlocations\x12\x19\n" +
-	"\brepo_url\x18\x03 \x01(\tR\arepoUrl\"E\n" +
+	"\brepo_url\x18\x03 \x01(\tR\arepoUrl\x12.\n" +
+	"\x13default_provider_id\x18\x04 \x01(\tR\x11defaultProviderId\"E\n" +
 	"\x15CreateProjectResponse\x12,\n" +
 	"\aproject\x18\x01 \x01(\v2\x12.circus.v1.ProjectR\aproject\"\x15\n" +
 	"\x13ListProjectsRequest\"F\n" +
@@ -955,20 +989,22 @@ const file_circus_v1_project_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\"B\n" +
 	"\x12GetProjectResponse\x12,\n" +
-	"\aproject\x18\x01 \x01(\v2\x12.circus.v1.ProjectR\aproject\"\xc8\x03\n" +
+	"\aproject\x18\x01 \x01(\v2\x12.circus.v1.ProjectR\aproject\"\x95\x04\n" +
 	"\x14UpdateProjectRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12J\n" +
 	"\tlocations\x18\x03 \x01(\v2,.circus.v1.UpdateProjectRequest.LocationListR\tlocations\x121\n" +
 	"\x12last_used_location\x18\x04 \x01(\rH\x01R\x10lastUsedLocation\x88\x01\x01\x12\x1e\n" +
-	"\brepo_url\x18\x05 \x01(\tH\x02R\arepoUrl\x88\x01\x01\x12A\n" +
-	"\x1bexpected_updated_at_unix_ms\x18\x06 \x01(\x03H\x03R\x17expectedUpdatedAtUnixMs\x88\x01\x01\x1aI\n" +
+	"\brepo_url\x18\x05 \x01(\tH\x02R\arepoUrl\x88\x01\x01\x123\n" +
+	"\x13default_provider_id\x18\a \x01(\tH\x03R\x11defaultProviderId\x88\x01\x01\x12A\n" +
+	"\x1bexpected_updated_at_unix_ms\x18\x06 \x01(\x03H\x04R\x17expectedUpdatedAtUnixMs\x88\x01\x01\x1aI\n" +
 	"\fLocationList\x129\n" +
 	"\tlocations\x18\x01 \x03(\v2\x1b.circus.v1.Project.LocationR\tlocationsB\a\n" +
 	"\x05_nameB\x15\n" +
 	"\x13_last_used_locationB\v\n" +
-	"\t_repo_urlB\x1e\n" +
+	"\t_repo_urlB\x16\n" +
+	"\x14_default_provider_idB\x1e\n" +
 	"\x1c_expected_updated_at_unix_ms\"E\n" +
 	"\x15UpdateProjectResponse\x12,\n" +
 	"\aproject\x18\x01 \x01(\v2\x12.circus.v1.ProjectR\aproject\"g\n" +

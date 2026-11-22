@@ -6,6 +6,7 @@
 // same ids and React keeps its elements.
 
 import type { RawSessionEvent, WorkspaceStatus } from "@/api/types"
+import { queueReasonFromPayload, type LiveQueueReason } from "@/lib/queue-reason"
 import { workspaceFromPayload, type LiveWorkspace } from "@/lib/workspace"
 
 import { NO_RESULT_TOOL_ERROR, settleEvents } from "../settle"
@@ -28,6 +29,8 @@ export interface Transcript {
   readonly turnNo: number
   /** The latest workspace state the stream brought (durable or live); null before any. */
   readonly workspace: LiveWorkspace | null
+  /** The latest queue reason the stream announced (live only); null before any. */
+  readonly queue: LiveQueueReason | null
   /** Bookkeeping; opaque to callers. */
   readonly internal: Internal
 }
@@ -69,6 +72,7 @@ export const emptyTranscript: Transcript = {
   turnOpen: false,
   turnNo: 0,
   workspace: null,
+  queue: null,
   internal: {
     order: [],
     byId: new Map(),
@@ -193,6 +197,7 @@ class Builder {
   turnOpen: boolean
   turnNo: number
   workspace: LiveWorkspace | null
+  queue: LiveQueueReason | null
   private changed = false
 
   constructor(private readonly base: Transcript) {
@@ -213,6 +218,7 @@ class Builder {
     this.turnOpen = base.turnOpen
     this.turnNo = base.turnNo
     this.workspace = base.workspace
+    this.queue = base.queue
   }
 
   build(): Transcript {
@@ -222,6 +228,7 @@ class Builder {
       turnOpen: this.turnOpen,
       turnNo: this.turnNo,
       workspace: this.workspace,
+      queue: this.queue,
       events: this.changed ? order.map((id) => byId.get(id)!) : this.base.events,
       internal: this.internal,
     }
@@ -370,6 +377,10 @@ class Builder {
         return
       case "workspace":
         return this.workspaceChanged(p, raw, at)
+      case "queue":
+        // Live only, applied in the order received: the latest one counts.
+        this.queue = { reason: queueReasonFromPayload(p), receivedAtMs: raw.receivedAtMs ?? 0 }
+        return
       default:
         // Progress, background tasks, notices and kinds this view doesn't know.
         return

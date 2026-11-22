@@ -15,8 +15,9 @@ export interface SeedProject {
  * - `interrupted`: the worker was lost in the second turn.
  * - `broken`: the second turn's transcript couldn't be saved.
  * - `stopped`: the user stopped the session.
+ * - `queued`: the second message waits for a worker to take the session.
  */
-export type SeedEnding = "idle" | "approval" | "interrupted" | "broken" | "stopped"
+export type SeedEnding = "idle" | "approval" | "interrupted" | "broken" | "stopped" | "queued"
 
 export interface SeedSession {
   id: string
@@ -31,6 +32,10 @@ export interface SeedSession {
   followUp?: string
   /** The command waiting for approval (`approval`). */
   command?: string
+  /** The model provider's id; local login when missing. */
+  provider?: string
+  /** The session holds a lease (it was taken by a worker and keeps it while idle). */
+  leased?: boolean
 }
 
 export const projects: SeedProject[] = [
@@ -120,5 +125,72 @@ export const sessions: SeedSession[] = [
     minutesAgo: 60 * 50,
     device: "devbox",
     ending: "idle",
+  },
+]
+
+/**
+ * Sessions that wait, one for each reason a session can't be leased (the
+ * mock's `?mock=queue` mode). "Team proxy" is limited to one session then,
+ * which `proxy-holder` holds.
+ */
+export const queueDemoSessions: SeedSession[] = [
+  {
+    id: "proxy-holder",
+    projectId: "circus",
+    title: "Profile the event list rendering",
+    minutesAgo: 12,
+    device: "devbox",
+    ending: "idle",
+    provider: "provider-proxy",
+    leased: true,
+  },
+  {
+    id: "queue-full",
+    projectId: "circus",
+    title: "Add a dark mode screenshot test",
+    minutesAgo: 5,
+    device: "devbox",
+    ending: "queued",
+    followUp: "Now cover the Chinese catalog too",
+    provider: "provider-proxy",
+  },
+  {
+    id: "queue-no-worker",
+    projectId: "toolbox",
+    title: "Package the installer for Windows",
+    minutesAgo: 6,
+    device: "eric-win",
+    ending: "queued",
+    followUp: "Build the MSI",
+    provider: "provider-anthropic",
+  },
+  {
+    id: "queue-deleted",
+    projectId: "palace",
+    title: "Tune the image cache size",
+    minutesAgo: 7,
+    device: "palace-builder",
+    ending: "queued",
+    followUp: "Try 512 MiB",
+    provider: "provider-gone",
+  },
+  {
+    id: "queue-secrets",
+    projectId: "palace",
+    title: "Summarize last week's crash reports",
+    minutesAgo: 8,
+    device: "palace-builder",
+    ending: "queued",
+    followUp: "Group them by module",
+    provider: "provider-legacy",
+  },
+  {
+    id: "queue-offline",
+    projectId: "toolbox",
+    title: "Clean up the PowerShell profile",
+    minutesAgo: 9,
+    device: "eric-win",
+    ending: "queued",
+    followUp: "Remove the unused aliases",
   },
 ]

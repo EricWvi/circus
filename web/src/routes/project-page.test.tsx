@@ -4,7 +4,7 @@ import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError } from "@/api/errors"
-import { seedState, type MockState } from "@/api/mock/state"
+import { addQueueDemo, seedState, type MockState } from "@/api/mock/state"
 import type { CircusClient } from "@/api/types"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
@@ -322,5 +322,146 @@ describe("a project deleted elsewhere", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit" }))
     await advance(100)
     expect(router.state.location.pathname).toBe("/")
+  })
+})
+
+describe("the provider of a new session", () => {
+  type CreateReq = Parameters<CircusClient["sessions"]["createSession"]>[0]
+  const picker = () => screen.getByRole("combobox", { name: "Provider" })
+  const openPicker = async () => {
+    fireEvent.click(picker())
+    await advance(0)
+    return screen.getAllByRole("option").map((o) => o.textContent)
+  }
+  const start = async (text = "Hello") => {
+    fireEvent.change(composer(), { target: { value: text } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(50)
+  }
+  const newSession = (state: MockState, before: Set<string>) => state.sessions.find((s) => !before.has(s.sessionId))!
+
+  it("starts with the user's default, sending none so the server applies it", async () => {
+    const creates: CreateReq[] = []
+    const state = seedState()
+    const before = new Set(state.sessions.map((s) => s.sessionId))
+    await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: { ...client.sessions, createSession: (req) => (creates.push(req), client.sessions.createSession(req)) },
+    }))
+    expect(picker().textContent).toBe("My default (Anthropic)")
+    expect(screen.queryByText(/Local login uses the worker machine's own Claude login/)).toBeNull()
+    expect(await openPicker()).toEqual(["My default (Anthropic)", "Anthropic", "Legacy key", "Team proxy", "Local login"])
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" })
+    await advance(0)
+    await start()
+    expect(creates[0].providerId).toBeUndefined()
+    expect(newSession(state, before).providerId).toBe("provider-anthropic")
+  })
+
+  it("names the project's default first, and sends local login as an empty provider", async () => {
+    const creates: CreateReq[] = []
+    const state = withCircus((p) => (p.defaultProviderId = "provider-proxy"))
+    const before = new Set(state.sessions.map((s) => s.sessionId))
+    await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: { ...client.sessions, createSession: (req) => (creates.push(req), client.sessions.createSession(req)) },
+    }))
+    expect(picker().textContent).toBe("Project default (Team proxy)")
+    await openPicker()
+    fireEvent.click(screen.getByRole("option", { name: "Local login" }))
+    await advance(0)
+    expect(picker().textContent).toBe("Local login")
+    expect(screen.getByText(/A resumed session may find that login expired/)).toBeTruthy()
+    await start()
+    expect(creates[0].providerId).toBe("")
+    expect(newSession(state, before).providerId).toBe("")
+  })
+
+  it("offers local login alone as the default without any default provider, sending it once chosen", async () => {
+    const creates: CreateReq[] = []
+    const state = seedState()
+    for (const p of state.providers) p.isDefault = false
+    await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: { ...client.sessions, createSession: (req) => (creates.push(req), client.sessions.createSession(req)) },
+    }))
+    expect(picker().textContent).toBe("Local login")
+    expect(screen.getByText(/Local login uses the worker machine's own Claude login/)).toBeTruthy()
+    expect(await openPicker()).toEqual(["Anthropic", "Legacy key", "Team proxy", "Local login"])
+    // Shown, but not chosen: the request names none.
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" })
+    await advance(0)
+    await start("First")
+    expect(creates[0].providerId).toBeUndefined()
+  })
+
+  it("sends local login once chosen, even when it is what the default means", async () => {
+    const creates: CreateReq[] = []
+    const state = seedState()
+    for (const p of state.providers) p.isDefault = false
+    await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: { ...client.sessions, createSession: (req) => (creates.push(req), client.sessions.createSession(req)) },
+    }))
+    await openPicker()
+    fireEvent.click(screen.getByRole("option", { name: "Local login" }))
+    await advance(0)
+    await start()
+    expect(creates[0].providerId).toBe("")
+  })
+
+  it("uses a request key per provider, so a retry with another provider is a new start", async () => {
+    const creates: CreateReq[] = []
+    await renderProject("circus", seedState(), (client) => ({
+      ...client,
+      sessions: {
+        ...client.sessions,
+        createSession: (req) => {
+          creates.push(req)
+          return Promise.reject(new ApiError("unavailable", "down"))
+        },
+      },
+    }))
+    await start("Hello")
+    await start("Hello")
+    await openPicker()
+    fireEvent.click(screen.getByRole("option", { name: "Team proxy" }))
+    await advance(0)
+    await start("Hello")
+    expect(creates.map((c) => c.providerId)).toEqual([undefined, undefined, "provider-proxy"])
+    expect(creates[1].clientRequestId).toBe(creates[0].clientRequestId)
+    expect(creates[2].clientRequestId).not.toBe(creates[0].clientRequestId)
+  })
+
+  it("drops a picked provider deleted since, and refreshes the list when the server says so", async () => {
+    const creates: CreateReq[] = []
+    const state = seedState()
+    const { queryClient } = await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: { ...client.sessions, createSession: (req) => (creates.push(req), client.sessions.createSession(req)) },
+    }))
+    await openPicker()
+    fireEvent.click(screen.getByRole("option", { name: "Team proxy" }))
+    await advance(0)
+    // Deleted in another tab; the server refuses it and the list is read again.
+    state.providers = state.providers.filter((p) => p.providerId !== "provider-proxy")
+    await start("Hello")
+    expect(screen.getByRole("alert").textContent).toBe("That provider no longer exists. Choose another.")
+    expect(picker().textContent).toBe("My default (Anthropic)")
+    expect(queryClient.getQueryData<{ providerId: string }[]>(queryKeys.modelProviders)?.map((p) => p.providerId)).not.toContain(
+      "provider-proxy",
+    )
+    await start("Hello again")
+    expect(creates.map((c) => c.providerId)).toEqual(["provider-proxy", undefined])
+  })
+
+  it("shows why a session in the list waits", async () => {
+    const state = seedState()
+    addQueueDemo(state)
+    await renderProject("circus", state)
+    const dot = screen.getByText("Add a dark mode screenshot test").closest("a")!.querySelector("[title]")!
+    expect(dot.getAttribute("title")).toBe(
+      "Queued: Team proxy already runs as many sessions as it allows. This one starts when one of them ends.",
+    )
   })
 })

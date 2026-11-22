@@ -163,6 +163,14 @@ describe("protobuf limits", () => {
       .toThrow("field count limit");
   });
 
+  it("caps a launch environment at 72 variables", () => {
+    const launch = (n: number) => new BinaryWriter().tag(12, WireType.LengthDelimited).bytes(toBinary(SessionReplySchema, create(SessionReplySchema, {
+      result: { case: "launchEnv", value: { providerId: "p", env: Array.from({ length: n }, (_, i) => ({ name: `V${i}`, value: "x" })) } },
+    }))).finish();
+    expect(() => decodeEnvelope(WorkerDownlinkSchema, launch(72), 1 << 20)).not.toThrow();
+    expect(() => decodeEnvelope(WorkerDownlinkSchema, launch(73), 1 << 20)).toThrow("repeated field limit");
+  });
+
   it("refuses malformed protobuf and outbound unpaired surrogates", () => {
     for (const hex of ["00", "1a", "1b1c", "1a0008ff", "1a001a00", "7a06520052005200", "7a00"]) {
       expect(() => decodeEnvelope(WorkerUplinkSchema, Buffer.from(hex, "hex"), 100)).toThrow(ProtocolError);

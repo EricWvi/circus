@@ -12,6 +12,8 @@ option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 service MachineService {
   // The caller's devices, ordered by name.
   rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+  // The caller's workers that are not deleted, ordered by name.
+  rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
   // Issues a one-time enrollment link for the caller's machines. Any
   // signed-in user may call it. Tokens are returned only here; the server
   // stores only their hashes.
@@ -51,6 +53,27 @@ message Device {
 message ListDevicesRequest {}
 message ListDevicesResponse {
   repeated Device devices = 1;
+}
+message Worker {
+  string worker_id = 1;
+  // Unique among the user's workers.
+  string name = 2;
+  // A worker link is connected now.
+  bool online = 3;
+  // As Device.last_seen_unix_ms.
+  int64 last_seen_unix_ms = 4;
+  string os = 5;
+  string arch = 6;
+  string hostname = 7;
+  // Worker client version.
+  string version = 8;
+  // Names of the user's devices on the same machine: sessions in their
+  // locations run in local mode on this worker.
+  repeated string local_devices = 9;
+}
+message ListWorkersRequest {}
+message ListWorkersResponse {
+  repeated Worker workers = 1;
 }
 
 message CreateEnrollLinkRequest {

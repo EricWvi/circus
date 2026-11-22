@@ -41,7 +41,9 @@ message SessionConfig {
   string default_device = 1;
   // Initial main-thread working directories, at most 256, one per device.
   repeated Cwd cwds = 2;
-  // At most 128 bytes.
+  // At most 128 bytes. Empty starts the CLI without a model, so it uses its
+  // default alias, which the provider's ANTHROPIC_DEFAULT_*_MODEL variables
+  // may map to a model id.
   string model = 3;
   // SDK permission mode, at most 128 bytes; empty selects auto.
   string permission_mode = 4;
@@ -139,6 +141,33 @@ message Session {
   // placeholder "~/circus/projects/<project_id>"; when it becomes READY
   // the cwd becomes the absolute path.
   WorkspaceStatus workspace = 14;
+  // The provider whose credentials and environment the CLI starts with;
+  // empty means local login: the worker's own Claude Code login and
+  // environment (a resumed session may find that login expired). May name
+  // a deleted provider (see queue_reason).
+  string provider_id = 15;
+  // Why a QUEUED session is not running yet; UNSPECIFIED otherwise, and
+  // also while it simply waits for a worker to take it. Kept by the
+  // control plane in memory, not stored: after a control-plane start it is
+  // UNSPECIFIED until the scheduler next evaluates the session. Changes
+  // are announced live with KIND_QUEUE events.
+  QueueReason queue_reason = 16;
+}
+
+// QueueReason says why a queued session cannot be leased now.
+enum QueueReason {
+  QUEUE_REASON_UNSPECIFIED = 0;
+  // The provider's max_sessions sessions hold leases already.
+  QUEUE_REASON_PROVIDER_FULL = 1;
+  // No online worker may run it: none of the provider's workers is online,
+  // or the session is pinned to a worker the provider is not assigned to.
+  QUEUE_REASON_NO_ASSIGNED_WORKER = 2;
+  // The provider was deleted; pick another with UpdateSession.
+  QUEUE_REASON_PROVIDER_DELETED = 3;
+  // The provider's secrets cannot be decrypted; enter them again.
+  QUEUE_REASON_PROVIDER_SECRETS_UNREADABLE = 4;
+  // The pinned worker (or, unpinned, every worker of the user) is offline.
+  QUEUE_REASON_WORKER_OFFLINE = 5;
 }
 
 // SessionEvent is the user-facing view, not the authoritative transcript.
@@ -199,6 +228,11 @@ message SessionEvent {
     // values ("pending", "device_offline", "cloned", "not_empty", ...),
     // at most 4 KiB.
     KIND_WORKSPACE = 19;
+    // Recorded by the control plane only, always ephemeral (seq 0): the
+    // session's queue_reason changed. payload_json:
+    // {"queue_reason":"<lower-case name without prefix>"}, for example
+    // {"queue_reason":"provider_full"}; "unspecified" when it cleared.
+    KIND_QUEUE = 20;
   }
   Kind kind = 3;
   // Opaque SDK message JSON; durable view payloads over 256 KiB are truncated.
@@ -225,6 +259,15 @@ message CreateSessionRequest {
   // location_index, pinned_worker_id and config (ALREADY_EXISTS otherwise).
   // The key is forgotten when its session is deleted.
   string client_request_id = 5;
+  // Absent: the project's default_provider_id, else the user's default
+  // provider, else local login (a default naming a deleted provider counts
+  // as unset). "" chooses local login. Otherwise one of the caller's
+  // providers that is not deleted (INVALID_ARGUMENT with field
+  // "provider_id" otherwise). A local session's pinned worker need not be
+  // assigned to it: the session then queues with
+  // QUEUE_REASON_NO_ASSIGNED_WORKER. Part of the idempotent repeat as
+  // config is.
+  optional string provider_id = 6;
 }
 message CreateSessionResponse {
   Session session = 1;
@@ -267,10 +310,20 @@ message ListSessionsResponse {
 message GetSessionRequest {
   string session_id = 1;
 }
+// UpdateSessionRequest changes the fields that are set; at least one must
+// be.
 message UpdateSessionRequest {
   string session_id = 1;
   // Trimmed; 1 to 200 characters after trimming, at most 1024 bytes.
-  string title = 2;
+  optional string title = 2;
+  // "" chooses local login; otherwise one of the caller's providers that
+  // is not deleted. Refused with FAILED_PRECONDITION while a turn runs
+  // (state RUNNING) and for a stopped session. When the session holds a
+  // lease and no turn runs, a change of provider revokes that lease, as
+  // lease loss does, and the session is scheduled again under the new
+  // provider's workers and max_sessions; inputs and events are kept. The
+  // next CLI the session starts uses the new provider.
+  optional string provider_id = 3;
 }
 
 // Approval requests merge while pending by (session, tool, device, match_key),

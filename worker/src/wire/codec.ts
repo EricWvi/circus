@@ -54,6 +54,7 @@ const repeatedLimits = new Map<string, number>(Object.entries({
   "SessionReply.Inputs.inputs": 32,
   "SessionReply.Devices.devices": 256,
   "SessionReply.Resumed.leases": 64,
+  "SessionReply.LaunchEnv.env": 72,
 }));
 
 const outboundStringLimits = new Map<string, number>(Object.entries({

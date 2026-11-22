@@ -85,6 +85,7 @@ const success = {
   requestApproval: "approval",
   consumeGrant: "grant",
   transcriptRepaired: "ok",
+  getLaunchEnv: "launchEnv",
 } as const satisfies Record<SessionOp["case"], SessionReply["result"]["case"]>;
 
 interface Operation {

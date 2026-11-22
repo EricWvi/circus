@@ -5,10 +5,11 @@ import { Trans, useTranslation } from "react-i18next"
 import { Link, Navigate, useNavigate, useParams } from "react-router"
 
 import { isApiError } from "@/api/errors"
-import { useCreateSession, useDevices, useProjects, useSessionList } from "@/api/hooks"
+import { useCreateSession, useDevices, useModelProviders, useProjects, useSessionList } from "@/api/hooks"
 import { queryKeys } from "@/api/query-client"
 import type { Device, Location, Project, ProjectLocation, SessionSummary } from "@/api/types"
 import { InfoTip } from "@/components/info-tip"
+import { NewSessionProviderPicker } from "@/components/model-providers/provider-picker"
 import { PageHeader } from "@/components/page-header"
 import { SessionPrompt } from "@/components/session/session-prompt"
 import { StatusDot, WorkspaceMark } from "@/components/status-dot"
@@ -24,6 +25,8 @@ import {
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { i18n } from "@/i18n/i18n"
 import { locationDirectory, pickLocation, projectErrorMessage } from "@/lib/location-form"
+import { choiceIsLocalLogin, DEFAULT_CHOICE, LOCAL_LOGIN, requestedProvider } from "@/lib/provider-choice"
+import { queueReasonText } from "@/lib/queue-reason"
 import { formatRelative } from "@/lib/time"
 import { sessionTitle } from "@/lib/title"
 import { ledgerPath, projectSettingsPath, sessionPath } from "@/lib/tree"
@@ -52,7 +55,19 @@ function ProjectHome({ project }: { project: Project }) {
   const devices = useDevices()
   const sessions = useSessionList(project.projectId)
   const createSession = useCreateSession()
+  const providers = useModelProviders()
   const outbox = useOutbox()
+  // The provider picked for new sessions; null until the user picks one
+  // (the request then names none, and the server applies the defaults). A
+  // picked provider that is gone since counts as not picked.
+  const [pickedProvider, setPickedProvider] = useState<string | null>(null)
+  const providerChoice =
+    pickedProvider === null ||
+    pickedProvider === DEFAULT_CHOICE ||
+    pickedProvider === LOCAL_LOGIN ||
+    providers.data?.some((p) => p.providerId === pickedProvider) !== false
+      ? pickedProvider
+      : null
   // The chosen location, remembered by value: the project can change under
   // us (another tab removes or reorders locations), so the index is derived.
   // -1 when no location can be used.
@@ -86,11 +101,13 @@ function ProjectHome({ project }: { project: Project }) {
     inFlight.current = true
     setStarting(true)
     setError(null)
+    const providerId = requestedProvider(providerChoice)
     try {
       const session = await createSession.mutateAsync({
         projectId: project.projectId,
         locationIndex,
-        clientRequestId: startKey(project.projectId, locationIndex, location),
+        clientRequestId: startKey(project.projectId, locationIndex, location, providerId),
+        ...(providerId === undefined ? {} : { providerId }),
       })
       forgetStartKey(project.projectId)
       // Once the session exists, the message belongs to it: its page shows
@@ -110,6 +127,10 @@ function ProjectHome({ project }: { project: Project }) {
       // The location is gone on the server: refresh the project's locations.
       if (locationGone(e)) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.projects })
+      }
+      // The provider is gone: refresh the list, which drops the choice.
+      if (isApiError(e) && e.field === "provider_id") {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.modelProviders })
       }
       throw e
     }
@@ -161,13 +182,29 @@ function ProjectHome({ project }: { project: Project }) {
                 />
               </p>
             ) : (
-              <LocationPicker
-                project={project}
-                devices={devices.data}
-                value={locationIndex}
-                disabled={starting}
-                onChange={(i) => setChosen(project.locations[i])}
-              />
+              <>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1">
+                  <LocationPicker
+                    project={project}
+                    devices={devices.data}
+                    value={locationIndex}
+                    disabled={starting}
+                    onChange={(i) => setChosen(project.locations[i])}
+                  />
+                  {providers.data && (
+                    <NewSessionProviderPicker
+                      project={project}
+                      providers={providers.data}
+                      value={providerChoice}
+                      disabled={starting}
+                      onChange={setPickedProvider}
+                    />
+                  )}
+                </div>
+                {providers.data && choiceIsLocalLogin(providerChoice, project, providers.data) && (
+                  <p className="px-2 text-xs text-muted-foreground">{t("providers.select.localLoginHint")}</p>
+                )}
+              </>
             )}
             {error !== null && (
               <p role="alert" className="text-sm text-destructive">
@@ -193,6 +230,7 @@ const locationGone = (error: unknown) =>
 /** Why starting a session failed, as one line. */
 function startErrorMessage(error: unknown): string {
   if (locationGone(error)) return i18n.t("projects.locationGone")
+  if (isApiError(error) && error.field === "provider_id") return i18n.t("validation.providerGone")
   // The key was used for another request; the page never does that.
   if (isApiError(error, "already_exists")) return i18n.t("projects.startConflict")
   return projectErrorMessage(error)
@@ -291,6 +329,14 @@ function LocationPicker({
 
 function SessionList({ sessions, failed }: { sessions: SessionSummary[] | undefined; failed: boolean }) {
   const { t } = useTranslation()
+  const providers = useModelProviders()
+  /** The state, and why a queued session waits. */
+  const stateTitle = (s: SessionSummary) => {
+    const state = t(`status.${s.state}`)
+    if (s.state !== "queued" || s.queueReason === "unspecified") return state
+    const provider = providers.data?.find((p) => p.providerId === s.providerId)
+    return t("session.queue.stateWithReason", { state, reason: queueReasonText(s.queueReason, provider) })
+  }
   const note = (text: string) => <p className="px-2 text-sm text-muted-foreground">{text}</p>
   if (failed) return note(t("projects.sessionsLoadFailed"))
   if (!sessions) return null
@@ -309,7 +355,7 @@ function SessionList({ sessions, failed }: { sessions: SessionSummary[] | undefi
                 stopped && "text-muted-foreground",
               )}
             >
-              <span className="flex w-3 justify-center" title={t(`status.${s.state}`)}>
+              <span className="flex w-3 justify-center" title={stateTitle(s)}>
                 <StatusDot state={s.state} />
               </span>
               <span className="min-w-0 flex-1 truncate">{sessionTitle(s.title)}</span>

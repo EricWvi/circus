@@ -174,7 +174,7 @@ func TestSessionProjectMigration(t *testing.T) {
 			indexes = append(indexes, entry.Name)
 		}
 	}
-	if want := []string{"sessions_keyset", "sessions_project_client_request_id", "sessions_project_keyset", "sessions_queued", "sessions_user_keyset"}; !reflect.DeepEqual(indexes, want) {
+	if want := []string{"sessions_keyset", "sessions_project_client_request_id", "sessions_project_keyset", "sessions_provider", "sessions_queued", "sessions_user_keyset"}; !reflect.DeepEqual(indexes, want) {
 		t.Fatalf("session indexes = %v, want %v", indexes, want)
 	}
 	for _, table := range dependents {

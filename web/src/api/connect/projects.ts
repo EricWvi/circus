@@ -30,6 +30,7 @@ export function toProject(project: ProtoProject | undefined, rpc: string): Proje
     lastUsedLocation: project.lastUsedLocation,
     createdAtUnixMs: Number(project.createdAtUnixMs),
     updatedAtUnixMs: project.updatedAtUnixMs.toString(),
+    defaultProviderId: project.defaultProviderId,
   }
 }
 
@@ -53,6 +54,7 @@ export function createConnectProjects(transport: Transport): ProjectService {
           name: req.name,
           repoUrl: req.repoUrl,
           locations: toProtoLocations(req.locations),
+          defaultProviderId: req.defaultProviderId ?? "",
         })
         return toProject(res.project, "CreateProject")
       }),
@@ -66,6 +68,7 @@ export function createConnectProjects(transport: Transport): ProjectService {
           projectId: req.projectId,
           name: req.name,
           repoUrl: req.repoUrl,
+          defaultProviderId: req.defaultProviderId,
           lastUsedLocation: req.lastUsedLocation,
           locations: req.locations && { locations: toProtoLocations(req.locations) },
           expectedUpdatedAtUnixMs:

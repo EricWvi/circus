@@ -187,6 +187,71 @@ func (TurnOutcome) EnumDescriptor() ([]byte, []int) {
 	return file_circus_v1_session_proto_rawDescGZIP(), []int{2}
 }
 
+// QueueReason says why a queued session cannot be leased now.
+type QueueReason int32
+
+const (
+	QueueReason_QUEUE_REASON_UNSPECIFIED QueueReason = 0
+	// The provider's max_sessions sessions hold leases already.
+	QueueReason_QUEUE_REASON_PROVIDER_FULL QueueReason = 1
+	// No online worker may run it: none of the provider's workers is online,
+	// or the session is pinned to a worker the provider is not assigned to.
+	QueueReason_QUEUE_REASON_NO_ASSIGNED_WORKER QueueReason = 2
+	// The provider was deleted; pick another with UpdateSession.
+	QueueReason_QUEUE_REASON_PROVIDER_DELETED QueueReason = 3
+	// The provider's secrets cannot be decrypted; enter them again.
+	QueueReason_QUEUE_REASON_PROVIDER_SECRETS_UNREADABLE QueueReason = 4
+	// The pinned worker (or, unpinned, every worker of the user) is offline.
+	QueueReason_QUEUE_REASON_WORKER_OFFLINE QueueReason = 5
+)
+
+// Enum value maps for QueueReason.
+var (
+	QueueReason_name = map[int32]string{
+		0: "QUEUE_REASON_UNSPECIFIED",
+		1: "QUEUE_REASON_PROVIDER_FULL",
+		2: "QUEUE_REASON_NO_ASSIGNED_WORKER",
+		3: "QUEUE_REASON_PROVIDER_DELETED",
+		4: "QUEUE_REASON_PROVIDER_SECRETS_UNREADABLE",
+		5: "QUEUE_REASON_WORKER_OFFLINE",
+	}
+	QueueReason_value = map[string]int32{
+		"QUEUE_REASON_UNSPECIFIED":                 0,
+		"QUEUE_REASON_PROVIDER_FULL":               1,
+		"QUEUE_REASON_NO_ASSIGNED_WORKER":          2,
+		"QUEUE_REASON_PROVIDER_DELETED":            3,
+		"QUEUE_REASON_PROVIDER_SECRETS_UNREADABLE": 4,
+		"QUEUE_REASON_WORKER_OFFLINE":              5,
+	}
+)
+
+func (x QueueReason) Enum() *QueueReason {
+	p := new(QueueReason)
+	*p = x
+	return p
+}
+
+func (x QueueReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (QueueReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_session_proto_enumTypes[3].Descriptor()
+}
+
+func (QueueReason) Type() protoreflect.EnumType {
+	return &file_circus_v1_session_proto_enumTypes[3]
+}
+
+func (x QueueReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use QueueReason.Descriptor instead.
+func (QueueReason) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_session_proto_rawDescGZIP(), []int{3}
+}
+
 type Session_State int32
 
 const (
@@ -237,11 +302,11 @@ func (x Session_State) String() string {
 }
 
 func (Session_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_session_proto_enumTypes[3].Descriptor()
+	return file_circus_v1_session_proto_enumTypes[4].Descriptor()
 }
 
 func (Session_State) Type() protoreflect.EnumType {
-	return &file_circus_v1_session_proto_enumTypes[3]
+	return &file_circus_v1_session_proto_enumTypes[4]
 }
 
 func (x Session_State) Number() protoreflect.EnumNumber {
@@ -307,6 +372,11 @@ const (
 	// values ("pending", "device_offline", "cloned", "not_empty", ...),
 	// at most 4 KiB.
 	SessionEvent_KIND_WORKSPACE SessionEvent_Kind = 19
+	// Recorded by the control plane only, always ephemeral (seq 0): the
+	// session's queue_reason changed. payload_json:
+	// {"queue_reason":"<lower-case name without prefix>"}, for example
+	// {"queue_reason":"provider_full"}; "unspecified" when it cleared.
+	SessionEvent_KIND_QUEUE SessionEvent_Kind = 20
 )
 
 // Enum value maps for SessionEvent_Kind.
@@ -332,6 +402,7 @@ var (
 		17: "KIND_TURN_STOPPED",
 		18: "KIND_INPUT_ACCEPTED",
 		19: "KIND_WORKSPACE",
+		20: "KIND_QUEUE",
 	}
 	SessionEvent_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED":             0,
@@ -354,6 +425,7 @@ var (
 		"KIND_TURN_STOPPED":            17,
 		"KIND_INPUT_ACCEPTED":          18,
 		"KIND_WORKSPACE":               19,
+		"KIND_QUEUE":                   20,
 	}
 )
 
@@ -368,11 +440,11 @@ func (x SessionEvent_Kind) String() string {
 }
 
 func (SessionEvent_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_session_proto_enumTypes[4].Descriptor()
+	return file_circus_v1_session_proto_enumTypes[5].Descriptor()
 }
 
 func (SessionEvent_Kind) Type() protoreflect.EnumType {
-	return &file_circus_v1_session_proto_enumTypes[4]
+	return &file_circus_v1_session_proto_enumTypes[5]
 }
 
 func (x SessionEvent_Kind) Number() protoreflect.EnumNumber {
@@ -394,7 +466,9 @@ type SessionConfig struct {
 	DefaultDevice string `protobuf:"bytes,1,opt,name=default_device,json=defaultDevice,proto3" json:"default_device,omitempty"`
 	// Initial main-thread working directories, at most 256, one per device.
 	Cwds []*SessionConfig_Cwd `protobuf:"bytes,2,rep,name=cwds,proto3" json:"cwds,omitempty"`
-	// At most 128 bytes.
+	// At most 128 bytes. Empty starts the CLI without a model, so it uses its
+	// default alias, which the provider's ANTHROPIC_DEFAULT_*_MODEL variables
+	// may map to a model id.
 	Model string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
 	// SDK permission mode, at most 128 bytes; empty selects auto.
 	PermissionMode string `protobuf:"bytes,4,opt,name=permission_mode,json=permissionMode,proto3" json:"permission_mode,omitempty"`
@@ -506,7 +580,18 @@ type Session struct {
 	// (it stays IDLE or QUEUED; inputs are kept) and its cwd is the
 	// placeholder "~/circus/projects/<project_id>"; when it becomes READY
 	// the cwd becomes the absolute path.
-	Workspace     *WorkspaceStatus `protobuf:"bytes,14,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	Workspace *WorkspaceStatus `protobuf:"bytes,14,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	// The provider whose credentials and environment the CLI starts with;
+	// empty means local login: the worker's own Claude Code login and
+	// environment (a resumed session may find that login expired). May name
+	// a deleted provider (see queue_reason).
+	ProviderId string `protobuf:"bytes,15,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	// Why a QUEUED session is not running yet; UNSPECIFIED otherwise, and
+	// also while it simply waits for a worker to take it. Kept by the
+	// control plane in memory, not stored: after a control-plane start it is
+	// UNSPECIFIED until the scheduler next evaluates the session. Changes
+	// are announced live with KIND_QUEUE events.
+	QueueReason   QueueReason `protobuf:"varint,16,opt,name=queue_reason,json=queueReason,proto3,enum=circus.v1.QueueReason" json:"queue_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -639,6 +724,20 @@ func (x *Session) GetWorkspace() *WorkspaceStatus {
 	return nil
 }
 
+func (x *Session) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *Session) GetQueueReason() QueueReason {
+	if x != nil {
+		return x.QueueReason
+	}
+	return QueueReason_QUEUE_REASON_UNSPECIFIED
+}
+
 // SessionEvent is the user-facing view, not the authoritative transcript.
 // Durable events have increasing seq; ephemeral events are live-only, have
 // seq = 0 and cannot be replayed. after_seq refers only to durable events.
@@ -746,8 +845,17 @@ type CreateSessionRequest struct {
 	// location_index, pinned_worker_id and config (ALREADY_EXISTS otherwise).
 	// The key is forgotten when its session is deleted.
 	ClientRequestId string `protobuf:"bytes,5,opt,name=client_request_id,json=clientRequestId,proto3" json:"client_request_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Absent: the project's default_provider_id, else the user's default
+	// provider, else local login (a default naming a deleted provider counts
+	// as unset). "" chooses local login. Otherwise one of the caller's
+	// providers that is not deleted (INVALID_ARGUMENT with field
+	// "provider_id" otherwise). A local session's pinned worker need not be
+	// assigned to it: the session then queues with
+	// QUEUE_REASON_NO_ASSIGNED_WORKER. Part of the idempotent repeat as
+	// config is.
+	ProviderId    *string `protobuf:"bytes,6,opt,name=provider_id,json=providerId,proto3,oneof" json:"provider_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateSessionRequest) Reset() {
@@ -811,6 +919,13 @@ func (x *CreateSessionRequest) GetLocationIndex() uint32 {
 func (x *CreateSessionRequest) GetClientRequestId() string {
 	if x != nil {
 		return x.ClientRequestId
+	}
+	return ""
+}
+
+func (x *CreateSessionRequest) GetProviderId() string {
+	if x != nil && x.ProviderId != nil {
+		return *x.ProviderId
 	}
 	return ""
 }
@@ -1198,11 +1313,21 @@ func (x *GetSessionRequest) GetSessionId() string {
 	return ""
 }
 
+// UpdateSessionRequest changes the fields that are set; at least one must
+// be.
 type UpdateSessionRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// Trimmed; 1 to 200 characters after trimming, at most 1024 bytes.
-	Title         string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Title *string `protobuf:"bytes,2,opt,name=title,proto3,oneof" json:"title,omitempty"`
+	// "" chooses local login; otherwise one of the caller's providers that
+	// is not deleted. Refused with FAILED_PRECONDITION while a turn runs
+	// (state RUNNING) and for a stopped session. When the session holds a
+	// lease and no turn runs, a change of provider revokes that lease, as
+	// lease loss does, and the session is scheduled again under the new
+	// provider's workers and max_sessions; inputs and events are kept. The
+	// next CLI the session starts uses the new provider.
+	ProviderId    *string `protobuf:"bytes,3,opt,name=provider_id,json=providerId,proto3,oneof" json:"provider_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1245,8 +1370,15 @@ func (x *UpdateSessionRequest) GetSessionId() string {
 }
 
 func (x *UpdateSessionRequest) GetTitle() string {
-	if x != nil {
-		return x.Title
+	if x != nil && x.Title != nil {
+		return *x.Title
+	}
+	return ""
+}
+
+func (x *UpdateSessionRequest) GetProviderId() string {
+	if x != nil && x.ProviderId != nil {
+		return *x.ProviderId
 	}
 	return ""
 }
@@ -2077,7 +2209,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x05local\x18\x05 \x01(\bR\x05local\x1a/\n" +
 	"\x03Cwd\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x10\n" +
-	"\x03cwd\x18\x02 \x01(\tR\x03cwd\"\xef\x05\n" +
+	"\x03cwd\x18\x02 \x01(\tR\x03cwd\"\xcb\x06\n" +
 	"\aSession\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12.\n" +
@@ -2096,7 +2228,10 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x05title\x18\v \x01(\tR\x05title\x126\n" +
 	"\x18last_activity_at_unix_ms\x18\f \x01(\x03R\x14lastActivityAtUnixMs\x124\n" +
 	"\x16pending_approval_count\x18\r \x01(\rR\x14pendingApprovalCount\x128\n" +
-	"\tworkspace\x18\x0e \x01(\v2\x1a.circus.v1.WorkspaceStatusR\tworkspace\"x\n" +
+	"\tworkspace\x18\x0e \x01(\v2\x1a.circus.v1.WorkspaceStatusR\tworkspace\x12\x1f\n" +
+	"\vprovider_id\x18\x0f \x01(\tR\n" +
+	"providerId\x129\n" +
+	"\fqueue_reason\x18\x10 \x01(\x0e2\x16.circus.v1.QueueReasonR\vqueueReason\"x\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -2104,7 +2239,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\fSTATE_QUEUED\x10\x02\x12\x11\n" +
 	"\rSTATE_RUNNING\x10\x03\x12\x11\n" +
 	"\rSTATE_STOPPED\x10\x04\x12\x10\n" +
-	"\fSTATE_BROKEN\x10\x05\"\xc0\x05\n" +
+	"\fSTATE_BROKEN\x10\x05\"\xd0\x05\n" +
 	"\fSessionEvent\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x1c\n" +
 	"\n" +
@@ -2112,7 +2247,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x04kind\x18\x03 \x01(\x0e2\x1c.circus.v1.SessionEvent.KindR\x04kind\x12!\n" +
 	"\fpayload_json\x18\x04 \x01(\tR\vpayloadJson\x12\x1c\n" +
 	"\tephemeral\x18\x05 \x01(\bR\tephemeral\x12\x1c\n" +
-	"\ttruncated\x18\x06 \x01(\bR\ttruncated\"\xee\x03\n" +
+	"\ttruncated\x18\x06 \x01(\bR\ttruncated\"\xfe\x03\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11KIND_TURN_STARTED\x10\x01\x12\x12\n" +
@@ -2135,16 +2270,21 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x1cKIND_TRANSCRIPT_GAP_DETECTED\x10\x10\x12\x15\n" +
 	"\x11KIND_TURN_STOPPED\x10\x11\x12\x17\n" +
 	"\x13KIND_INPUT_ACCEPTED\x10\x12\x12\x12\n" +
-	"\x0eKIND_WORKSPACE\x10\x13\"\x96\x02\n" +
+	"\x0eKIND_WORKSPACE\x10\x13\x12\x0e\n" +
+	"\n" +
+	"KIND_QUEUE\x10\x14\"\xcc\x02\n" +
 	"\x14CreateSessionRequest\x120\n" +
 	"\x06config\x18\x01 \x01(\v2\x18.circus.v1.SessionConfigR\x06config\x12-\n" +
 	"\x10pinned_worker_id\x18\x02 \x01(\tH\x00R\x0epinnedWorkerId\x88\x01\x01\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x03 \x01(\tR\tprojectId\x12*\n" +
 	"\x0elocation_index\x18\x04 \x01(\rH\x01R\rlocationIndex\x88\x01\x01\x12*\n" +
-	"\x11client_request_id\x18\x05 \x01(\tR\x0fclientRequestIdB\x13\n" +
+	"\x11client_request_id\x18\x05 \x01(\tR\x0fclientRequestId\x12$\n" +
+	"\vprovider_id\x18\x06 \x01(\tH\x02R\n" +
+	"providerId\x88\x01\x01B\x13\n" +
 	"\x11_pinned_worker_idB\x11\n" +
-	"\x0f_location_index\"E\n" +
+	"\x0f_location_indexB\x0e\n" +
+	"\f_provider_id\"E\n" +
 	"\x15CreateSessionResponse\x12,\n" +
 	"\asession\x18\x01 \x01(\v2\x12.circus.v1.SessionR\asession\"\xa1\x01\n" +
 	"\x12SendMessageRequest\x12\x1d\n" +
@@ -2171,11 +2311,15 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"2\n" +
 	"\x11GetSessionRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"K\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\x90\x01\n" +
 	"\x14UpdateSessionRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
-	"\x05title\x18\x02 \x01(\tR\x05title\"\xe1\x02\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x19\n" +
+	"\x05title\x18\x02 \x01(\tH\x00R\x05title\x88\x01\x01\x12$\n" +
+	"\vprovider_id\x18\x03 \x01(\tH\x01R\n" +
+	"providerId\x88\x01\x01B\b\n" +
+	"\x06_titleB\x0e\n" +
+	"\f_provider_id\"\xe1\x02\n" +
 	"\x0fSessionApproval\x12\x1f\n" +
 	"\vapproval_id\x18\x01 \x01(\tR\n" +
 	"approvalId\x12\x1d\n" +
@@ -2238,7 +2382,14 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x16TURN_OUTCOME_COMPLETED\x10\x01\x12\x1c\n" +
 	"\x18TURN_OUTCOME_INTERRUPTED\x10\x02\x12\x16\n" +
 	"\x12TURN_OUTCOME_ERROR\x10\x03\x12\x18\n" +
-	"\x14TURN_OUTCOME_STOPPED\x10\x042\x9a\b\n" +
+	"\x14TURN_OUTCOME_STOPPED\x10\x04*\xe2\x01\n" +
+	"\vQueueReason\x12\x1c\n" +
+	"\x18QUEUE_REASON_UNSPECIFIED\x10\x00\x12\x1e\n" +
+	"\x1aQUEUE_REASON_PROVIDER_FULL\x10\x01\x12#\n" +
+	"\x1fQUEUE_REASON_NO_ASSIGNED_WORKER\x10\x02\x12!\n" +
+	"\x1dQUEUE_REASON_PROVIDER_DELETED\x10\x03\x12,\n" +
+	"(QUEUE_REASON_PROVIDER_SECRETS_UNREADABLE\x10\x04\x12\x1f\n" +
+	"\x1bQUEUE_REASON_WORKER_OFFLINE\x10\x052\x9a\b\n" +
 	"\x0eSessionService\x12R\n" +
 	"\rCreateSession\x12\x1f.circus.v1.CreateSessionRequest\x1a .circus.v1.CreateSessionResponse\x12L\n" +
 	"\vSendMessage\x12\x1d.circus.v1.SendMessageRequest\x1a\x1e.circus.v1.SendMessageResponse\x12I\n" +
@@ -2267,88 +2418,90 @@ func file_circus_v1_session_proto_rawDescGZIP() []byte {
 	return file_circus_v1_session_proto_rawDescData
 }
 
-var file_circus_v1_session_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_circus_v1_session_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
 var file_circus_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_circus_v1_session_proto_goTypes = []any{
 	(InputPriority)(0),              // 0: circus.v1.InputPriority
 	(TurnOrigin)(0),                 // 1: circus.v1.TurnOrigin
 	(TurnOutcome)(0),                // 2: circus.v1.TurnOutcome
-	(Session_State)(0),              // 3: circus.v1.Session.State
-	(SessionEvent_Kind)(0),          // 4: circus.v1.SessionEvent.Kind
-	(*SessionConfig)(nil),           // 5: circus.v1.SessionConfig
-	(*Session)(nil),                 // 6: circus.v1.Session
-	(*SessionEvent)(nil),            // 7: circus.v1.SessionEvent
-	(*CreateSessionRequest)(nil),    // 8: circus.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil),   // 9: circus.v1.CreateSessionResponse
-	(*SendMessageRequest)(nil),      // 10: circus.v1.SendMessageRequest
-	(*SendMessageResponse)(nil),     // 11: circus.v1.SendMessageResponse
-	(*WatchSessionRequest)(nil),     // 12: circus.v1.WatchSessionRequest
-	(*ListSessionsRequest)(nil),     // 13: circus.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),    // 14: circus.v1.ListSessionsResponse
-	(*GetSessionRequest)(nil),       // 15: circus.v1.GetSessionRequest
-	(*UpdateSessionRequest)(nil),    // 16: circus.v1.UpdateSessionRequest
-	(*SessionApproval)(nil),         // 17: circus.v1.SessionApproval
-	(*ListApprovalsRequest)(nil),    // 18: circus.v1.ListApprovalsRequest
-	(*ListApprovalsResponse)(nil),   // 19: circus.v1.ListApprovalsResponse
-	(*ResolveApprovalRequest)(nil),  // 20: circus.v1.ResolveApprovalRequest
-	(*ResolveApprovalResponse)(nil), // 21: circus.v1.ResolveApprovalResponse
-	(*InterruptRequest)(nil),        // 22: circus.v1.InterruptRequest
-	(*InterruptResponse)(nil),       // 23: circus.v1.InterruptResponse
-	(*StopSessionRequest)(nil),      // 24: circus.v1.StopSessionRequest
-	(*StopSessionResponse)(nil),     // 25: circus.v1.StopSessionResponse
-	(*DeleteSessionRequest)(nil),    // 26: circus.v1.DeleteSessionRequest
-	(*DeleteSessionResponse)(nil),   // 27: circus.v1.DeleteSessionResponse
-	(*RecoverSessionRequest)(nil),   // 28: circus.v1.RecoverSessionRequest
-	(*RecoverSessionResponse)(nil),  // 29: circus.v1.RecoverSessionResponse
-	(*RetryWorkspaceRequest)(nil),   // 30: circus.v1.RetryWorkspaceRequest
-	(*RetryWorkspaceResponse)(nil),  // 31: circus.v1.RetryWorkspaceResponse
-	(*SessionConfig_Cwd)(nil),       // 32: circus.v1.SessionConfig.Cwd
-	(*WorkspaceStatus)(nil),         // 33: circus.v1.WorkspaceStatus
+	(QueueReason)(0),                // 3: circus.v1.QueueReason
+	(Session_State)(0),              // 4: circus.v1.Session.State
+	(SessionEvent_Kind)(0),          // 5: circus.v1.SessionEvent.Kind
+	(*SessionConfig)(nil),           // 6: circus.v1.SessionConfig
+	(*Session)(nil),                 // 7: circus.v1.Session
+	(*SessionEvent)(nil),            // 8: circus.v1.SessionEvent
+	(*CreateSessionRequest)(nil),    // 9: circus.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),   // 10: circus.v1.CreateSessionResponse
+	(*SendMessageRequest)(nil),      // 11: circus.v1.SendMessageRequest
+	(*SendMessageResponse)(nil),     // 12: circus.v1.SendMessageResponse
+	(*WatchSessionRequest)(nil),     // 13: circus.v1.WatchSessionRequest
+	(*ListSessionsRequest)(nil),     // 14: circus.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),    // 15: circus.v1.ListSessionsResponse
+	(*GetSessionRequest)(nil),       // 16: circus.v1.GetSessionRequest
+	(*UpdateSessionRequest)(nil),    // 17: circus.v1.UpdateSessionRequest
+	(*SessionApproval)(nil),         // 18: circus.v1.SessionApproval
+	(*ListApprovalsRequest)(nil),    // 19: circus.v1.ListApprovalsRequest
+	(*ListApprovalsResponse)(nil),   // 20: circus.v1.ListApprovalsResponse
+	(*ResolveApprovalRequest)(nil),  // 21: circus.v1.ResolveApprovalRequest
+	(*ResolveApprovalResponse)(nil), // 22: circus.v1.ResolveApprovalResponse
+	(*InterruptRequest)(nil),        // 23: circus.v1.InterruptRequest
+	(*InterruptResponse)(nil),       // 24: circus.v1.InterruptResponse
+	(*StopSessionRequest)(nil),      // 25: circus.v1.StopSessionRequest
+	(*StopSessionResponse)(nil),     // 26: circus.v1.StopSessionResponse
+	(*DeleteSessionRequest)(nil),    // 27: circus.v1.DeleteSessionRequest
+	(*DeleteSessionResponse)(nil),   // 28: circus.v1.DeleteSessionResponse
+	(*RecoverSessionRequest)(nil),   // 29: circus.v1.RecoverSessionRequest
+	(*RecoverSessionResponse)(nil),  // 30: circus.v1.RecoverSessionResponse
+	(*RetryWorkspaceRequest)(nil),   // 31: circus.v1.RetryWorkspaceRequest
+	(*RetryWorkspaceResponse)(nil),  // 32: circus.v1.RetryWorkspaceResponse
+	(*SessionConfig_Cwd)(nil),       // 33: circus.v1.SessionConfig.Cwd
+	(*WorkspaceStatus)(nil),         // 34: circus.v1.WorkspaceStatus
 }
 var file_circus_v1_session_proto_depIdxs = []int32{
-	32, // 0: circus.v1.SessionConfig.cwds:type_name -> circus.v1.SessionConfig.Cwd
-	3,  // 1: circus.v1.Session.state:type_name -> circus.v1.Session.State
+	33, // 0: circus.v1.SessionConfig.cwds:type_name -> circus.v1.SessionConfig.Cwd
+	4,  // 1: circus.v1.Session.state:type_name -> circus.v1.Session.State
 	2,  // 2: circus.v1.Session.last_turn_outcome:type_name -> circus.v1.TurnOutcome
-	5,  // 3: circus.v1.Session.config:type_name -> circus.v1.SessionConfig
-	33, // 4: circus.v1.Session.workspace:type_name -> circus.v1.WorkspaceStatus
-	4,  // 5: circus.v1.SessionEvent.kind:type_name -> circus.v1.SessionEvent.Kind
-	5,  // 6: circus.v1.CreateSessionRequest.config:type_name -> circus.v1.SessionConfig
-	6,  // 7: circus.v1.CreateSessionResponse.session:type_name -> circus.v1.Session
-	0,  // 8: circus.v1.SendMessageRequest.priority:type_name -> circus.v1.InputPriority
-	6,  // 9: circus.v1.ListSessionsResponse.sessions:type_name -> circus.v1.Session
-	17, // 10: circus.v1.ListApprovalsResponse.approvals:type_name -> circus.v1.SessionApproval
-	33, // 11: circus.v1.RetryWorkspaceResponse.workspace:type_name -> circus.v1.WorkspaceStatus
-	8,  // 12: circus.v1.SessionService.CreateSession:input_type -> circus.v1.CreateSessionRequest
-	10, // 13: circus.v1.SessionService.SendMessage:input_type -> circus.v1.SendMessageRequest
-	12, // 14: circus.v1.SessionService.WatchSession:input_type -> circus.v1.WatchSessionRequest
-	13, // 15: circus.v1.SessionService.ListSessions:input_type -> circus.v1.ListSessionsRequest
-	15, // 16: circus.v1.SessionService.GetSession:input_type -> circus.v1.GetSessionRequest
-	16, // 17: circus.v1.SessionService.UpdateSession:input_type -> circus.v1.UpdateSessionRequest
-	18, // 18: circus.v1.SessionService.ListApprovals:input_type -> circus.v1.ListApprovalsRequest
-	20, // 19: circus.v1.SessionService.ResolveApproval:input_type -> circus.v1.ResolveApprovalRequest
-	22, // 20: circus.v1.SessionService.Interrupt:input_type -> circus.v1.InterruptRequest
-	24, // 21: circus.v1.SessionService.StopSession:input_type -> circus.v1.StopSessionRequest
-	26, // 22: circus.v1.SessionService.DeleteSession:input_type -> circus.v1.DeleteSessionRequest
-	28, // 23: circus.v1.SessionService.RecoverSession:input_type -> circus.v1.RecoverSessionRequest
-	30, // 24: circus.v1.SessionService.RetryWorkspace:input_type -> circus.v1.RetryWorkspaceRequest
-	9,  // 25: circus.v1.SessionService.CreateSession:output_type -> circus.v1.CreateSessionResponse
-	11, // 26: circus.v1.SessionService.SendMessage:output_type -> circus.v1.SendMessageResponse
-	7,  // 27: circus.v1.SessionService.WatchSession:output_type -> circus.v1.SessionEvent
-	14, // 28: circus.v1.SessionService.ListSessions:output_type -> circus.v1.ListSessionsResponse
-	6,  // 29: circus.v1.SessionService.GetSession:output_type -> circus.v1.Session
-	6,  // 30: circus.v1.SessionService.UpdateSession:output_type -> circus.v1.Session
-	19, // 31: circus.v1.SessionService.ListApprovals:output_type -> circus.v1.ListApprovalsResponse
-	21, // 32: circus.v1.SessionService.ResolveApproval:output_type -> circus.v1.ResolveApprovalResponse
-	23, // 33: circus.v1.SessionService.Interrupt:output_type -> circus.v1.InterruptResponse
-	25, // 34: circus.v1.SessionService.StopSession:output_type -> circus.v1.StopSessionResponse
-	27, // 35: circus.v1.SessionService.DeleteSession:output_type -> circus.v1.DeleteSessionResponse
-	29, // 36: circus.v1.SessionService.RecoverSession:output_type -> circus.v1.RecoverSessionResponse
-	31, // 37: circus.v1.SessionService.RetryWorkspace:output_type -> circus.v1.RetryWorkspaceResponse
-	25, // [25:38] is the sub-list for method output_type
-	12, // [12:25] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	6,  // 3: circus.v1.Session.config:type_name -> circus.v1.SessionConfig
+	34, // 4: circus.v1.Session.workspace:type_name -> circus.v1.WorkspaceStatus
+	3,  // 5: circus.v1.Session.queue_reason:type_name -> circus.v1.QueueReason
+	5,  // 6: circus.v1.SessionEvent.kind:type_name -> circus.v1.SessionEvent.Kind
+	6,  // 7: circus.v1.CreateSessionRequest.config:type_name -> circus.v1.SessionConfig
+	7,  // 8: circus.v1.CreateSessionResponse.session:type_name -> circus.v1.Session
+	0,  // 9: circus.v1.SendMessageRequest.priority:type_name -> circus.v1.InputPriority
+	7,  // 10: circus.v1.ListSessionsResponse.sessions:type_name -> circus.v1.Session
+	18, // 11: circus.v1.ListApprovalsResponse.approvals:type_name -> circus.v1.SessionApproval
+	34, // 12: circus.v1.RetryWorkspaceResponse.workspace:type_name -> circus.v1.WorkspaceStatus
+	9,  // 13: circus.v1.SessionService.CreateSession:input_type -> circus.v1.CreateSessionRequest
+	11, // 14: circus.v1.SessionService.SendMessage:input_type -> circus.v1.SendMessageRequest
+	13, // 15: circus.v1.SessionService.WatchSession:input_type -> circus.v1.WatchSessionRequest
+	14, // 16: circus.v1.SessionService.ListSessions:input_type -> circus.v1.ListSessionsRequest
+	16, // 17: circus.v1.SessionService.GetSession:input_type -> circus.v1.GetSessionRequest
+	17, // 18: circus.v1.SessionService.UpdateSession:input_type -> circus.v1.UpdateSessionRequest
+	19, // 19: circus.v1.SessionService.ListApprovals:input_type -> circus.v1.ListApprovalsRequest
+	21, // 20: circus.v1.SessionService.ResolveApproval:input_type -> circus.v1.ResolveApprovalRequest
+	23, // 21: circus.v1.SessionService.Interrupt:input_type -> circus.v1.InterruptRequest
+	25, // 22: circus.v1.SessionService.StopSession:input_type -> circus.v1.StopSessionRequest
+	27, // 23: circus.v1.SessionService.DeleteSession:input_type -> circus.v1.DeleteSessionRequest
+	29, // 24: circus.v1.SessionService.RecoverSession:input_type -> circus.v1.RecoverSessionRequest
+	31, // 25: circus.v1.SessionService.RetryWorkspace:input_type -> circus.v1.RetryWorkspaceRequest
+	10, // 26: circus.v1.SessionService.CreateSession:output_type -> circus.v1.CreateSessionResponse
+	12, // 27: circus.v1.SessionService.SendMessage:output_type -> circus.v1.SendMessageResponse
+	8,  // 28: circus.v1.SessionService.WatchSession:output_type -> circus.v1.SessionEvent
+	15, // 29: circus.v1.SessionService.ListSessions:output_type -> circus.v1.ListSessionsResponse
+	7,  // 30: circus.v1.SessionService.GetSession:output_type -> circus.v1.Session
+	7,  // 31: circus.v1.SessionService.UpdateSession:output_type -> circus.v1.Session
+	20, // 32: circus.v1.SessionService.ListApprovals:output_type -> circus.v1.ListApprovalsResponse
+	22, // 33: circus.v1.SessionService.ResolveApproval:output_type -> circus.v1.ResolveApprovalResponse
+	24, // 34: circus.v1.SessionService.Interrupt:output_type -> circus.v1.InterruptResponse
+	26, // 35: circus.v1.SessionService.StopSession:output_type -> circus.v1.StopSessionResponse
+	28, // 36: circus.v1.SessionService.DeleteSession:output_type -> circus.v1.DeleteSessionResponse
+	30, // 37: circus.v1.SessionService.RecoverSession:output_type -> circus.v1.RecoverSessionResponse
+	32, // 38: circus.v1.SessionService.RetryWorkspace:output_type -> circus.v1.RetryWorkspaceResponse
+	26, // [26:39] is the sub-list for method output_type
+	13, // [13:26] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_session_proto_init() }
@@ -2358,12 +2511,13 @@ func file_circus_v1_session_proto_init() {
 	}
 	file_circus_v1_workspace_proto_init()
 	file_circus_v1_session_proto_msgTypes[3].OneofWrappers = []any{}
+	file_circus_v1_session_proto_msgTypes[11].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_session_proto_rawDesc), len(file_circus_v1_session_proto_rawDesc)),
-			NumEnums:      5,
+			NumEnums:      6,
 			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,

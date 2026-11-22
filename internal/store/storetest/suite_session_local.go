@@ -37,8 +37,8 @@ func testSessionLocal(t *testing.T, b Backend) {
 	stored := getSession(t, s, "derived")
 	mustEqual(t, "derived stored", []any{created.Created, stored.Local, stored.PinDerived, stored.PinnedWorkerID, stored.RequestedWorkerID()},
 		[]any{true, true, true, "w1", ""})
-	mustEqual(t, "derived matches no requested worker", stored.MatchesCreate(nil, "", stored.Model, stored.PermissionMode), true)
-	mustEqual(t, "derived does not match its derived pin", stored.MatchesCreate(nil, "w1", stored.Model, stored.PermissionMode), false)
+	mustEqual(t, "derived matches no requested worker", stored.MatchesCreate(nil, "", stored.Model, stored.PermissionMode, nil), true)
+	mustEqual(t, "derived does not match its derived pin", stored.MatchesCreate(nil, "w1", stored.Model, stored.PermissionMode, nil), false)
 
 	// A repeat compares the requested worker: one that again derives
 	// another pin (or none) matches, one naming a worker does not.

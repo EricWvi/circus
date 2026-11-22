@@ -165,3 +165,38 @@ describe("getGitRemote over Connect", () => {
     expect((await rejection(client.getGitRemote({ device: "box", path: "/x" }))).code).toBe("internal")
   })
 })
+
+describe("listWorkers", () => {
+  it("maps workers with the devices on their machine", async () => {
+    const list = await machines({
+      listWorkers: () => ({
+        workers: [
+          {
+            workerId: "w1",
+            name: "devbox",
+            online: false,
+            lastSeenUnixMs: 1_700_000_000_000n,
+            os: "linux",
+            arch: "amd64",
+            hostname: "devbox.lan",
+            version: "0.2.0",
+            localDevices: ["devbox"],
+          },
+        ],
+      }),
+    }).listWorkers()
+    expect(list).toEqual([
+      {
+        workerId: "w1",
+        name: "devbox",
+        online: false,
+        lastSeenUnixMs: 1_700_000_000_000,
+        os: "linux",
+        arch: "amd64",
+        hostname: "devbox.lan",
+        version: "0.2.0",
+        localDevices: ["devbox"],
+      },
+    ])
+  })
+})

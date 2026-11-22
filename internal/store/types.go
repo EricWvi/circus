@@ -110,6 +110,10 @@ type User struct {
 	// sessions, kept by AppendTranscript and DeleteSession for the per-user
 	// cap. CreateUser ignores it.
 	TranscriptBytes int64
+	// DefaultProviderID is the user's default provider, set by
+	// CreateProvider and UpdateProvider (Provider.IsDefault); it may name a
+	// deleted provider. CreateUser ignores it.
+	DefaultProviderID string
 }
 
 // Identity is one machine × role: a device or a worker.
@@ -933,7 +937,10 @@ type Session struct {
 	// shares the default device's machine. It requires PinnedWorkerID.
 	// Local, PinnedWorkerID and PinDerived are set at creation and never
 	// change.
-	Local           bool
+	Local bool
+	// ProviderID is the provider the session's CLI starts with; empty means
+	// local login. It may name a deleted provider.
+	ProviderID      string
 	TurnCount       int64
 	LastTurnOutcome TurnOutcome // empty before the first turn ends
 	// InterruptTurnNo is the highest turn number the user asked to
@@ -977,12 +984,14 @@ func (s Session) RequestedWorkerID() string {
 }
 
 // MatchesCreate reports whether the creation settings match. A nil index
-// accepts the location resolved for the original request. pinnedWorkerID
-// is the worker the request named (RequestedWorkerID), not a derived pin.
-// An empty permission mode selects auto.
-func (s Session) MatchesCreate(index *uint32, pinnedWorkerID, model, permissionMode string) bool {
+// accepts the location resolved for the original request, and a nil
+// providerID the provider resolved for it. pinnedWorkerID is the worker the
+// request named (RequestedWorkerID), not a derived pin. An empty permission
+// mode selects auto.
+func (s Session) MatchesCreate(index *uint32, pinnedWorkerID, model, permissionMode string, providerID *string) bool {
 	return (index == nil || *index == s.LocationIndex) && pinnedWorkerID == s.RequestedWorkerID() &&
-		model == s.Model && cmp.Or(permissionMode, "auto") == cmp.Or(s.PermissionMode, "auto")
+		model == s.Model && cmp.Or(permissionMode, "auto") == cmp.Or(s.PermissionMode, "auto") &&
+		(providerID == nil || *providerID == s.ProviderID)
 }
 
 // SessionCreated is the current session and whether the call created it.
@@ -1007,11 +1016,21 @@ type SessionFilter struct {
 	// WebUserID selects the sessions of the projects this Web user owns
 	// (projects.user_id).
 	WebUserID string
+	// ProviderID selects the sessions naming this provider.
+	ProviderID string
 	// Now is the read time in Unix milliseconds, required for approval expiry.
 	Now    int64
 	States []SessionState
 	Limit  int
 	After  *SessionCursor
+}
+
+// SessionProviderSet is SetSessionProvider's result. Loss is the lease the
+// change released, if any.
+type SessionProviderSet struct {
+	Session Session
+	Changed bool
+	Loss    *LeaseLoss
 }
 
 // SessionSettled is the result of SettleSession. Loss is set when the
@@ -1032,6 +1051,9 @@ type Lease struct {
 	ConnID     string // the connection the lease is bound to
 	AcquiredAt int64
 	ExpiresAt  int64
+	// ProviderID is the provider the lease was acquired under, empty for
+	// local login or when the lease has no holder.
+	ProviderID string
 }
 
 // Live reports whether the lease has a holder and has not expired at now.

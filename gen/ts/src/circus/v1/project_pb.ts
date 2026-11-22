@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/project.proto.
  */
 export const file_circus_v1_project: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvcHJvamVjdC5wcm90bxIJY2lyY3VzLnYxIssCCgdQcm9qZWN0EhIKCnByb2plY3RfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIuCglsb2NhdGlvbnMYAyADKAsyGy5jaXJjdXMudjEuUHJvamVjdC5Mb2NhdGlvbhIaChJsYXN0X3VzZWRfbG9jYXRpb24YBCABKA0SGgoSY3JlYXRlZF9hdF91bml4X21zGAUgASgDEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgGIAEoAxIQCghyZXBvX3VybBgHIAEoCRqHAQoITG9jYXRpb24SDgoGZGV2aWNlGAEgASgJEgwKBHBhdGgYAiABKAkSFgoOZWZmZWN0aXZlX3BhdGgYAyABKAkSFgoOZGV2aWNlX3Jldm9rZWQYBCABKAgSLQoJd29ya3NwYWNlGAUgASgLMhouY2lyY3VzLnYxLldvcmtzcGFjZVN0YXR1cyJmChRDcmVhdGVQcm9qZWN0UmVxdWVzdBIMCgRuYW1lGAEgASgJEi4KCWxvY2F0aW9ucxgCIAMoCzIbLmNpcmN1cy52MS5Qcm9qZWN0LkxvY2F0aW9uEhAKCHJlcG9fdXJsGAMgASgJIjwKFUNyZWF0ZVByb2plY3RSZXNwb25zZRIjCgdwcm9qZWN0GAEgASgLMhIuY2lyY3VzLnYxLlByb2plY3QiFQoTTGlzdFByb2plY3RzUmVxdWVzdCI8ChRMaXN0UHJvamVjdHNSZXNwb25zZRIkCghwcm9qZWN0cxgBIAMoCzISLmNpcmN1cy52MS5Qcm9qZWN0IicKEUdldFByb2plY3RSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiOQoSR2V0UHJvamVjdFJlc3BvbnNlEiMKB3Byb2plY3QYASABKAsyEi5jaXJjdXMudjEuUHJvamVjdCLtAgoUVXBkYXRlUHJvamVjdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIRCgRuYW1lGAIgASgJSACIAQESPwoJbG9jYXRpb25zGAMgASgLMiwuY2lyY3VzLnYxLlVwZGF0ZVByb2plY3RSZXF1ZXN0LkxvY2F0aW9uTGlzdBIfChJsYXN0X3VzZWRfbG9jYXRpb24YBCABKA1IAYgBARIVCghyZXBvX3VybBgFIAEoCUgCiAEBEigKG2V4cGVjdGVkX3VwZGF0ZWRfYXRfdW5peF9tcxgGIAEoA0gDiAEBGj4KDExvY2F0aW9uTGlzdBIuCglsb2NhdGlvbnMYASADKAsyGy5jaXJjdXMudjEuUHJvamVjdC5Mb2NhdGlvbkIHCgVfbmFtZUIVChNfbGFzdF91c2VkX2xvY2F0aW9uQgsKCV9yZXBvX3VybEIeChxfZXhwZWN0ZWRfdXBkYXRlZF9hdF91bml4X21zIjwKFVVwZGF0ZVByb2plY3RSZXNwb25zZRIjCgdwcm9qZWN0GAEgASgLMhIuY2lyY3VzLnYxLlByb2plY3QiSAoURGVsZXRlUHJvamVjdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIcChRyZW1vdmVfd29ya3NwYWNlc19vbhgCIAMoCSJQChVEZWxldGVQcm9qZWN0UmVzcG9uc2USNwoSd29ya3NwYWNlX3JlbW92YWxzGAEgAygLMhsuY2lyY3VzLnYxLldvcmtzcGFjZVJlbW92YWwihQIKEFdvcmtzcGFjZVJlbW92YWwSDgoGZGV2aWNlGAEgASgJEjQKB291dGNvbWUYAiABKA4yIy5jaXJjdXMudjEuV29ya3NwYWNlUmVtb3ZhbC5PdXRjb21lEgwKBHBhdGgYAyABKAkSKAoFZXJyb3IYBCABKA4yGS5jaXJjdXMudjEuV29ya3NwYWNlRXJyb3ISFAoMZXJyb3JfZGV0YWlsGAUgASgJIl0KB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhMKD09VVENPTUVfUkVNT1ZFRBABEhAKDE9VVENPTUVfS0VQVBACEhIKDk9VVENPTUVfRkFJTEVEEAMyqAMKDlByb2plY3RTZXJ2aWNlElIKDUNyZWF0ZVByb2plY3QSHy5jaXJjdXMudjEuQ3JlYXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuQ3JlYXRlUHJvamVjdFJlc3BvbnNlEk8KDExpc3RQcm9qZWN0cxIeLmNpcmN1cy52MS5MaXN0UHJvamVjdHNSZXF1ZXN0Gh8uY2lyY3VzLnYxLkxpc3RQcm9qZWN0c1Jlc3BvbnNlEkkKCkdldFByb2plY3QSHC5jaXJjdXMudjEuR2V0UHJvamVjdFJlcXVlc3QaHS5jaXJjdXMudjEuR2V0UHJvamVjdFJlc3BvbnNlElIKDVVwZGF0ZVByb2plY3QSHy5jaXJjdXMudjEuVXBkYXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuVXBkYXRlUHJvamVjdFJlc3BvbnNlElIKDURlbGV0ZVByb2plY3QSHy5jaXJjdXMudjEuRGVsZXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuRGVsZXRlUHJvamVjdFJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_workspace]);
+  fileDesc("ChdjaXJjdXMvdjEvcHJvamVjdC5wcm90bxIJY2lyY3VzLnYxIugCCgdQcm9qZWN0EhIKCnByb2plY3RfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIuCglsb2NhdGlvbnMYAyADKAsyGy5jaXJjdXMudjEuUHJvamVjdC5Mb2NhdGlvbhIaChJsYXN0X3VzZWRfbG9jYXRpb24YBCABKA0SGgoSY3JlYXRlZF9hdF91bml4X21zGAUgASgDEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgGIAEoAxIQCghyZXBvX3VybBgHIAEoCRIbChNkZWZhdWx0X3Byb3ZpZGVyX2lkGAggASgJGocBCghMb2NhdGlvbhIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCRIWCg5lZmZlY3RpdmVfcGF0aBgDIAEoCRIWCg5kZXZpY2VfcmV2b2tlZBgEIAEoCBItCgl3b3Jrc3BhY2UYBSABKAsyGi5jaXJjdXMudjEuV29ya3NwYWNlU3RhdHVzIoMBChRDcmVhdGVQcm9qZWN0UmVxdWVzdBIMCgRuYW1lGAEgASgJEi4KCWxvY2F0aW9ucxgCIAMoCzIbLmNpcmN1cy52MS5Qcm9qZWN0LkxvY2F0aW9uEhAKCHJlcG9fdXJsGAMgASgJEhsKE2RlZmF1bHRfcHJvdmlkZXJfaWQYBCABKAkiPAoVQ3JlYXRlUHJvamVjdFJlc3BvbnNlEiMKB3Byb2plY3QYASABKAsyEi5jaXJjdXMudjEuUHJvamVjdCIVChNMaXN0UHJvamVjdHNSZXF1ZXN0IjwKFExpc3RQcm9qZWN0c1Jlc3BvbnNlEiQKCHByb2plY3RzGAEgAygLMhIuY2lyY3VzLnYxLlByb2plY3QiJwoRR2V0UHJvamVjdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCSI5ChJHZXRQcm9qZWN0UmVzcG9uc2USIwoHcHJvamVjdBgBIAEoCzISLmNpcmN1cy52MS5Qcm9qZWN0IqcDChRVcGRhdGVQcm9qZWN0UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhEKBG5hbWUYAiABKAlIAIgBARI/Cglsb2NhdGlvbnMYAyABKAsyLC5jaXJjdXMudjEuVXBkYXRlUHJvamVjdFJlcXVlc3QuTG9jYXRpb25MaXN0Eh8KEmxhc3RfdXNlZF9sb2NhdGlvbhgEIAEoDUgBiAEBEhUKCHJlcG9fdXJsGAUgASgJSAKIAQESIAoTZGVmYXVsdF9wcm92aWRlcl9pZBgHIAEoCUgDiAEBEigKG2V4cGVjdGVkX3VwZGF0ZWRfYXRfdW5peF9tcxgGIAEoA0gEiAEBGj4KDExvY2F0aW9uTGlzdBIuCglsb2NhdGlvbnMYASADKAsyGy5jaXJjdXMudjEuUHJvamVjdC5Mb2NhdGlvbkIHCgVfbmFtZUIVChNfbGFzdF91c2VkX2xvY2F0aW9uQgsKCV9yZXBvX3VybEIWChRfZGVmYXVsdF9wcm92aWRlcl9pZEIeChxfZXhwZWN0ZWRfdXBkYXRlZF9hdF91bml4X21zIjwKFVVwZGF0ZVByb2plY3RSZXNwb25zZRIjCgdwcm9qZWN0GAEgASgLMhIuY2lyY3VzLnYxLlByb2plY3QiSAoURGVsZXRlUHJvamVjdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIcChRyZW1vdmVfd29ya3NwYWNlc19vbhgCIAMoCSJQChVEZWxldGVQcm9qZWN0UmVzcG9uc2USNwoSd29ya3NwYWNlX3JlbW92YWxzGAEgAygLMhsuY2lyY3VzLnYxLldvcmtzcGFjZVJlbW92YWwihQIKEFdvcmtzcGFjZVJlbW92YWwSDgoGZGV2aWNlGAEgASgJEjQKB291dGNvbWUYAiABKA4yIy5jaXJjdXMudjEuV29ya3NwYWNlUmVtb3ZhbC5PdXRjb21lEgwKBHBhdGgYAyABKAkSKAoFZXJyb3IYBCABKA4yGS5jaXJjdXMudjEuV29ya3NwYWNlRXJyb3ISFAoMZXJyb3JfZGV0YWlsGAUgASgJIl0KB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhMKD09VVENPTUVfUkVNT1ZFRBABEhAKDE9VVENPTUVfS0VQVBACEhIKDk9VVENPTUVfRkFJTEVEEAMyqAMKDlByb2plY3RTZXJ2aWNlElIKDUNyZWF0ZVByb2plY3QSHy5jaXJjdXMudjEuQ3JlYXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuQ3JlYXRlUHJvamVjdFJlc3BvbnNlEk8KDExpc3RQcm9qZWN0cxIeLmNpcmN1cy52MS5MaXN0UHJvamVjdHNSZXF1ZXN0Gh8uY2lyY3VzLnYxLkxpc3RQcm9qZWN0c1Jlc3BvbnNlEkkKCkdldFByb2plY3QSHC5jaXJjdXMudjEuR2V0UHJvamVjdFJlcXVlc3QaHS5jaXJjdXMudjEuR2V0UHJvamVjdFJlc3BvbnNlElIKDVVwZGF0ZVByb2plY3QSHy5jaXJjdXMudjEuVXBkYXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuVXBkYXRlUHJvamVjdFJlc3BvbnNlElIKDURlbGV0ZVByb2plY3QSHy5jaXJjdXMudjEuRGVsZXRlUHJvamVjdFJlcXVlc3QaIC5jaXJjdXMudjEuRGVsZXRlUHJvamVjdFJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device, file_circus_v1_workspace]);
 
 /**
  * @generated from message circus.v1.Project
@@ -54,8 +54,8 @@ export type Project = Message<"circus.v1.Project"> & {
   createdAtUnixMs: bigint;
 
   /**
-   * The version of the name, locations and repository URL: it moves only
-   * when one of them changes (see UpdateProjectRequest), not with
+   * The version of the name, locations, repository URL and default
+   * provider: it moves only when one of them changes (see UpdateProjectRequest), not with
    * last_used_location.
    *
    * @generated from field: int64 updated_at_unix_ms = 6;
@@ -72,6 +72,15 @@ export type Project = Message<"circus.v1.Project"> & {
    * @generated from field: string repo_url = 7;
    */
   repoUrl: string;
+
+  /**
+   * Optional: the provider new sessions in this project use unless they
+   * name one (see CreateSessionRequest.provider_id). Empty means none;
+   * may name a deleted provider, which counts as none.
+   *
+   * @generated from field: string default_provider_id = 8;
+   */
+  defaultProviderId: string;
 };
 
 /**
@@ -158,6 +167,13 @@ export type CreateProjectRequest = Message<"circus.v1.CreateProjectRequest"> & {
    * @generated from field: string repo_url = 3;
    */
   repoUrl: string;
+
+  /**
+   * As UpdateProjectRequest.default_provider_id; empty means none.
+   *
+   * @generated from field: string default_provider_id = 4;
+   */
+  defaultProviderId: string;
 };
 
 /**
@@ -289,18 +305,28 @@ export type UpdateProjectRequest = Message<"circus.v1.UpdateProjectRequest"> & {
   repoUrl?: string | undefined;
 
   /**
-   * When set, and name, locations or repo_url is set, the update applies
-   * only if the project's updated_at_unix_ms still equals this value (the
-   * version the caller read, such as an edit form opened in another tab);
+   * Replaces the default provider when set; "" clears it. Otherwise one of
+   * the caller's providers that is not deleted. Moves updated_at_unix_ms
+   * like the name does.
+   *
+   * @generated from field: optional string default_provider_id = 7;
+   */
+  defaultProviderId?: string | undefined;
+
+  /**
+   * When set, and name, locations, repo_url or default_provider_id is set,
+   * the update applies only if the project's updated_at_unix_ms still
+   * equals this value (the version the caller read, such as an edit form
+   * opened in another tab);
    * otherwise it fails with ABORTED, without a field, and changes nothing.
    * An update that sets only last_used_location (as starting a session
    * does) is never refused this way.
    *
    * updated_at_unix_ms moves forward, also within the same millisecond,
-   * only when the name, the locations or the repository URL actually
-   * change. A field set to its current value is no change, and
-   * last_used_location alone never moves it, so an open settings form
-   * stays current while sessions start.
+   * only when the name, the locations, the repository URL or the default
+   * provider actually change. A field set to its current value is no
+   * change, and last_used_location alone never moves it, so an open
+   * settings form stays current while sessions start.
    *
    * @generated from field: optional int64 expected_updated_at_unix_ms = 6;
    */
@@ -489,10 +515,11 @@ export const WorkspaceRemoval_OutcomeSchema: GenEnum<WorkspaceRemoval_Outcome> =
  * unknown one. Invalid input is INVALID_ARGUMENT with a google.rpc.BadRequest
  * field violation naming the field: "name", "locations",
  * "locations[i].device", "locations[i].path", "last_used_location",
- * "repo_url" or "project_id". A name another of the user's projects
- * already has is ALREADY_EXISTS with field "name". A user's projects are
- * bounded: at most 1000, and at most 4 MiB of names, repository URLs and
- * paths together; a write past either is RESOURCE_EXHAUSTED.
+ * "repo_url", "default_provider_id" or "project_id". A name another of
+ * the user's projects already has is ALREADY_EXISTS with field "name". A
+ * user's projects are bounded: at most 1000, and at most 4 MiB of names,
+ * repository URLs and paths together; a write past either is
+ * RESOURCE_EXHAUSTED.
  *
  * @generated from service circus.v1.ProjectService
  */

@@ -1,5 +1,5 @@
 import { CircleCheckIcon, TimerOffIcon } from "lucide-react"
-import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react"
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react"
 import { useTranslation } from "react-i18next"
 
 import { useCreateEnrollLink, useDevices, useFetchDevices } from "@/api/hooks"
@@ -42,7 +42,11 @@ const roles: readonly EnrollRole[] = ["daemon", "worker", "both"]
  * generate a one-time link, and run the command it makes on the machine.
  * The link lives only in this dialog's state; closing it discards the link.
  */
-export function AddDeviceDialog({
+/**
+ * Memoized: the devices page renders again on every status poll, and the
+ * dialog (which follows the devices itself) has nothing to take from that.
+ */
+export const AddDeviceDialog = memo(function AddDeviceDialog({
   open,
   onOpenChange,
   onCloseAutoFocus,
@@ -61,7 +65,7 @@ export function AddDeviceDialog({
       </DialogContent>
     </Dialog>
   )
-}
+})
 
 /** The dialog's contents. Mounted with the dialog, so every opening starts over. */
 function AddDevice() {

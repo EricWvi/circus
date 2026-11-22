@@ -9,12 +9,13 @@ import {
   useDeleteProject,
   useDevices,
   useLedger,
+  useModelProviders,
   useProjects,
   useSessionList,
   useUpdateProject,
 } from "@/api/hooks"
 import { queryKeys } from "@/api/query-client"
-import type { Project, WorkspaceRemoval } from "@/api/types"
+import type { ModelProvider, Project, WorkspaceRemoval } from "@/api/types"
 import { defaultPath } from "@/api/validation"
 import { DisabledReason } from "@/components/disabled-reason"
 import { useShowNotice, type NoticeLine } from "@/components/notice-context"
@@ -35,8 +36,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FieldError, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { i18n } from "@/i18n/i18n"
@@ -49,6 +51,7 @@ import {
   type FormValues,
 } from "@/lib/location-form"
 import { deleteBlockedReason } from "@/lib/project-delete"
+import { NO_PROVIDER } from "@/lib/provider-choice"
 import { projectPath } from "@/lib/tree"
 import { showsDetail, workspaceReason } from "@/lib/workspace"
 
@@ -137,6 +140,15 @@ export function ProjectForm({
     otherProjects,
     savedLocations: base.locations,
   })
+  // The default provider: "" for none. Kept beside the form's other values.
+  const providers = useModelProviders()
+  const [providerId, setProviderId] = useState(project.defaultProviderId)
+  // A save refused because of the provider (gone since), shown until it changes.
+  const [providerError, setProviderError] = useState(false)
+  const chooseProvider = (id: string) => {
+    setProviderError(false)
+    setProviderId(id)
+  }
   // A save was refused because the project changed elsewhere.
   const [stale, setStale] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -171,17 +183,20 @@ export function ProjectForm({
   // does one that already holds the new values; edits in progress stay on
   // the version they started from.
   if (project.updatedAtUnixMs !== base.updatedAtUnixMs) {
-    const untouched = !formChanged(base, form.values, devices.data)
-    if (untouched || !formChanged(project, form.values, devices.data)) {
+    const untouched = !formChanged(base, form.values, devices.data) && providerId === base.defaultProviderId
+    const caughtUp = !formChanged(project, form.values, devices.data) && providerId === project.defaultProviderId
+    if (untouched || caughtUp) {
       if (untouched) {
         form.reset(valuesOf(project))
         remote.reset()
+        setProviderId(project.defaultProviderId)
       }
       setBase(project)
       setStale(false)
     }
   }
-  const dirty = formChanged(base, form.values, devices.data)
+  const providerChanged = providerId !== base.defaultProviderId
+  const dirty = formChanged(base, form.values, devices.data) || providerChanged
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -197,6 +212,7 @@ export function ProjectForm({
         name: req.name,
         repoUrl: req.repoUrl,
         ...(sendLocations ? { locations: req.locations } : {}),
+        ...(providerChanged ? { defaultProviderId: providerId } : {}),
         expectedUpdatedAt: base.updatedAtUnixMs,
       },
       {
@@ -204,11 +220,15 @@ export function ProjectForm({
           setBase(next)
           form.reset(valuesOf(next))
           remote.reset()
+          setProviderId(next.defaultProviderId)
           setSavedAt(Date.now())
         },
         onError: (error) => {
           if (isApiError(error, "aborted")) setStale(true)
-          else form.serverError(error)
+          else if (isApiError(error) && error.field === "default_provider_id") {
+            setProviderError(true)
+            void providers.refetch()
+          } else form.serverError(error)
         },
       },
     )
@@ -226,6 +246,7 @@ export function ProjectForm({
         setBase(fresh)
         form.reset(valuesOf(fresh))
         remote.reset()
+        chooseProvider(fresh.defaultProviderId)
       }
       setStale(false)
     } catch (error) {
@@ -277,6 +298,13 @@ export function ProjectForm({
           onChange={remote.editRepoUrl}
           onBlur={() => form.touch("repoUrl")}
           onUseSuggestion={remote.applySuggested}
+        />
+        <DefaultProviderField
+          value={providerId}
+          providers={providers.data}
+          busy={busy}
+          error={providerError ? t("validation.providerGone") : undefined}
+          onChange={chooseProvider}
         />
       </section>
 
@@ -382,6 +410,76 @@ export function ProjectForm({
         </DialogContent>
       </Dialog>
     </form>
+  )
+}
+
+/** The project's default provider: none, or one of the user's providers. */
+function DefaultProviderField({
+  value,
+  providers,
+  busy,
+  error,
+  onChange,
+}: {
+  /** "" for none. */
+  value: string
+  providers: ModelProvider[] | undefined
+  busy: boolean
+  error: string | undefined
+  onChange: (providerId: string) => void
+}) {
+  const { t } = useTranslation()
+  const { triggerRef, onOpenChange, onCloseAutoFocus } = useOverlayFocus<HTMLButtonElement>()
+  // Unknown until the list loads; then a provider it doesn't hold was deleted.
+  const deleted = value !== "" && providers !== undefined && !providers.some((p) => p.providerId === value)
+  const name = (id: string) =>
+    id === ""
+      ? t("projects.defaultProviderNone")
+      : (providers?.find((p) => p.providerId === id)?.name ??
+        (providers ? t("projects.defaultProviderDeleted") : ""))
+  return (
+    <Field className="max-w-sm">
+      <FieldLabel htmlFor="project-default-provider">{t("projects.defaultProvider")}</FieldLabel>
+      <Select
+        value={value === "" ? NO_PROVIDER : value}
+        disabled={busy || providers === undefined}
+        onValueChange={(v) => onChange(v === NO_PROVIDER ? "" : v)}
+        onOpenChange={onOpenChange}
+      >
+        <SelectTrigger
+          id="project-default-provider"
+          ref={triggerRef}
+          className="w-full"
+          aria-invalid={error || deleted ? true : undefined}
+          aria-describedby="project-default-provider-hint"
+        >
+          <SelectValue>
+            <span className={deleted ? "text-destructive" : undefined}>{name(value)}</span>
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent position="popper" onCloseAutoFocus={onCloseAutoFocus}>
+          <SelectItem value={NO_PROVIDER}>{t("projects.defaultProviderNone")}</SelectItem>
+          {(providers?.length ?? 0) > 0 && <SelectSeparator />}
+          {deleted && (
+            <SelectItem value={value} disabled>
+              {t("projects.defaultProviderDeleted")}
+            </SelectItem>
+          )}
+          {providers?.map((p) => (
+            <SelectItem key={p.providerId} value={p.providerId}>
+              {p.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {error ? (
+        <FieldError>{error}</FieldError>
+      ) : (
+        <FieldDescription id="project-default-provider-hint" className="text-xs">
+          {value === "" ? t("projects.defaultProviderNoneHint") : t("projects.defaultProviderHint")}
+        </FieldDescription>
+      )}
+    </Field>
   )
 }
 

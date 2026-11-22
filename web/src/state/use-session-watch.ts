@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 
 import { useClient } from "@/api/context"
-import { invalidateSession } from "@/api/hooks"
+import { invalidateSession, onSessionRead } from "@/api/hooks"
 
 import { lostSince, LOST_NOTICE_MS } from "./connection"
 import { createSessionWatch, type SessionWatch, type SessionWatchState } from "./session-watch"
@@ -30,6 +30,8 @@ export function useSessionWatch(sessionId: string): SessionWatchState & {
       onBoundary: () => invalidateSession(queryClient, sessionId),
     }),
   )
+
+  useEffect(() => onSessionRead(sessionId, watch.sessionRead), [sessionId, watch])
 
   useEffect(() => {
     const online = () => watch.setOnline(true)

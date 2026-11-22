@@ -1,4 +1,4 @@
-import { FileWarningIcon, MessageSquareDashedIcon, MonitorOffIcon } from "lucide-react"
+import { FileWarningIcon, HourglassIcon, MessageSquareDashedIcon, MonitorOffIcon } from "lucide-react"
 import { useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router"
@@ -7,14 +7,16 @@ import { useStickToBottomContext } from "use-stick-to-bottom"
 import { errorMessage, isApiError } from "@/api/errors"
 import { i18n } from "@/i18n/i18n"
 import {
+  useChangeSessionProvider,
   useDevices,
   useInterrupt,
+  useModelProviders,
   useRecoverSession,
   useResolveApproval,
   useRetryWorkspace,
   useStopSession,
 } from "@/api/hooks"
-import type { Project, SessionDetails, WorkspaceStatus } from "@/api/types"
+import type { ModelProvider, Project, QueueReason, SessionDetails, WorkspaceStatus } from "@/api/types"
 import type { ApprovalRequest } from "@/lib/types"
 import {
   Conversation,
@@ -23,9 +25,11 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation"
 import { Shimmer } from "@/components/ai-elements/shimmer"
+import { SessionProviderPicker } from "@/components/model-providers/provider-picker"
 import { PageHeader } from "@/components/page-header"
 import { StatusBadge, WorkspaceBadge } from "@/components/status-dot"
 import { lastInputWasKeyboard, lastInputWasTouch } from "@/lib/input-modality"
+import { currentQueueReason, fixedOnProvidersPage, queueReasonText } from "@/lib/queue-reason"
 import { withOutbox } from "@/lib/session-events/outbox"
 import { approvalLapsed, turnRunning } from "@/lib/session-state"
 import { sessionTitle } from "@/lib/title"
@@ -65,6 +69,9 @@ export function SessionView({ project, session }: { project: Project; session: S
   const recover = useRecoverSession()
   const resolveApproval = useResolveApproval()
   const retryWorkspace = useRetryWorkspace()
+  const providers = useModelProviders()
+  const changeProvider = useChangeSessionProvider()
+  const [providerOpen, setProviderOpen] = useState(false)
   // The last action that failed, shown until the next one.
   const [actionError, setActionError] = useState<unknown>(null)
   const act = <Req,>(mutation: { mutate: (req: Req, options: { onError: (e: unknown) => void }) => void }, req: Req) => {
@@ -102,6 +109,8 @@ export function SessionView({ project, session }: { project: Project; session: S
   const workspace = currentWorkspace(session.workspace, transcript.workspace)
   const waitsForFolder = workspaceBlocks(workspace) && session.state !== "stopped" && !watch.gone
   const waiting = !busy && session.state === "queued" && !waitsForFolder
+  const queueReason = currentQueueReason(session.queueReason, transcript.queue)
+  const provider = providers.data?.find((p) => p.providerId === session.providerId)
   const announcement = useWorkspaceAnnouncement(workspace, waitsForFolder)
 
   const device = devices.data?.find((d) => d.name === session.device)
@@ -113,6 +122,11 @@ export function SessionView({ project, session }: { project: Project; session: S
     connection.kind !== "connected" && watch.lossNoticed ? t("session.connection.disconnected") : null
   const interruptId = session.state === "interrupted" ? latestInterruptId(events) : undefined
   const stopped = session.state === "stopped"
+  // The provider changes only between turns; it takes effect when the next CLI starts.
+  const providerBlocked =
+    busy || session.serverState === "running" ? t("session.provider.blockedRunning") : disconnected
+  // A change that became disallowed while the menu was open closes it.
+  if (providerOpen && (providerBlocked !== null || stopped || watch.gone)) setProviderOpen(false)
 
   // Approvals that can't be decided any more: the session stopped, or the
   // request lapsed (`approvalLapsed`; the server records no event for that).
@@ -149,6 +163,22 @@ export function SessionView({ project, session }: { project: Project; session: S
               {t("session.onDevice", { device: session.device })}
               {deviceOffline && <OfflineMark device={session.device} />}
             </span>
+            <SessionProviderPicker
+              className="max-w-44"
+              providerId={session.providerId}
+              providers={providers.data}
+              stopped={stopped || watch.gone}
+              disabledReason={providerBlocked}
+              open={providerOpen}
+              onOpenChange={setProviderOpen}
+              onChange={(providerId) => {
+                setActionError(null)
+                changeProvider.mutate(
+                  { sessionId, providerId },
+                  { onError: (error) => setActionError(new ProviderChangeError(error)) },
+                )
+              }}
+            />
             {/* On narrow screens, the folder's badge and banner already say it. */}
             {deviceOffline && !waitsForFolder && (
               <span className="flex shrink-0 md:hidden">
@@ -244,7 +274,13 @@ export function SessionView({ project, session }: { project: Project; session: S
               <Shimmer>{t("session.working")}</Shimmer>
             </div>
           )}
-          {waiting && <p className="text-sm text-muted-foreground">{t("session.queued")}</p>}
+          {waiting && (
+            <QueueNotice
+              reason={queueReason}
+              provider={provider}
+              onChangeProvider={providerBlocked === null ? () => setProviderOpen(true) : undefined}
+            />
+          )}
           {session.viewTruncated && (
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
               <FileWarningIcon className="mt-px size-3 shrink-0" aria-hidden />
@@ -259,7 +295,7 @@ export function SessionView({ project, session }: { project: Project; session: S
       <div ref={composer} className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-4 pb-4">
         {actionError !== null && (
           <p role="alert" className="px-1 text-sm text-destructive">
-            {actionErrorMessage(actionError)}
+            {actionErrorMessage(actionError, stopped)}
           </p>
         )}
         {notice}
@@ -313,8 +349,23 @@ function useNow(intervalMs: number | null): number {
   return now
 }
 
-/** Why a session action failed, by the server's answer. */
-function actionErrorMessage(error: unknown): string {
+/** A failed change of the session's provider, told apart from other actions. */
+class ProviderChangeError extends Error {
+  constructor(readonly error: unknown) {
+    super("provider change failed")
+  }
+}
+
+/** Why a session action failed, by the server's answer and whether the session is stopped now. */
+function actionErrorMessage(error: unknown, stopped: boolean): string {
+  if (error instanceof ProviderChangeError) {
+    const cause = error.error
+    if (isApiError(cause, "failed_precondition")) {
+      return i18n.t(stopped ? "session.provider.changeFailedStopped" : "session.provider.changeFailedRunning")
+    }
+    if (isApiError(cause) && cause.field === "provider_id") return i18n.t("validation.providerGone")
+    return actionErrorMessage(cause, stopped)
+  }
   // Stopped, no longer broken, an approval that expired: the view is behind.
   if (isApiError(error, "failed_precondition")) return i18n.t("session.actionError.stale")
   if (isApiError(error, "not_found")) return i18n.t("session.actionError.gone")
@@ -341,6 +392,43 @@ function KeepBottomOnShrink() {
     return () => observer.disconnect()
   }, [scrollRef])
   return null
+}
+
+/**
+ * Why the session waits for a worker, and what to do about it: the
+ * Providers page for a provider's limit, workers or secrets, another
+ * provider for a deleted one.
+ */
+function QueueNotice({
+  reason,
+  provider,
+  onChangeProvider,
+}: {
+  reason: QueueReason
+  provider: ModelProvider | undefined
+  onChangeProvider?: () => void
+}) {
+  const { t } = useTranslation()
+  if (reason === "unspecified") return <p className="text-sm text-muted-foreground">{t("session.queued")}</p>
+  const action = "rounded-sm text-foreground underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
+  return (
+    <p role="status" data-queue-reason={reason} className="flex items-start gap-2 text-sm text-muted-foreground">
+      <HourglassIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0">
+        {queueReasonText(reason, provider)}{" "}
+        {fixedOnProvidersPage(reason) && (
+          <Link to="/providers" className={action}>
+            {t("session.queue.openProviders")}
+          </Link>
+        )}
+        {reason === "provider_deleted" && onChangeProvider && (
+          <button type="button" className={action} onClick={onChangeProvider}>
+            {t("session.provider.change")}
+          </button>
+        )}
+      </span>
+    </p>
+  )
 }
 
 /** "offline" next to the session's device; names the device for assistive technology. */

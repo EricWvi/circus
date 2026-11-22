@@ -367,6 +367,26 @@ func startStack(t *testing.T) *stack {
 	}
 	env.api = circusv1connect.NewSessionServiceClient(client, base)
 	env.project = project.Msg.GetProject().GetProjectId()
+	// A probe turn proves the worker attached before any scenario runs: a
+	// session queued before then would wait with QUEUE_REASON_WORKER_OFFLINE,
+	// and its KIND_QUEUE events would enter the recording.
+	probe, err := env.api.CreateSession(ctx, connect.NewRequest(&pb.CreateSessionRequest{ProjectId: env.project, ClientRequestId: uuid.NewString()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.api.SendMessage(ctx, connect.NewRequest(&pb.SendMessageRequest{SessionId: probe.Msg.GetSession().GetSessionId(), ClientMsgId: "probe", Text: "probe"})); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		got, err := env.api.GetSession(ctx, connect.NewRequest(&pb.GetSessionRequest{SessionId: probe.Msg.GetSession().GetSessionId()}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Msg.GetLastTurnOutcome() == pb.TurnOutcome_TURN_OUTCOME_COMPLETED {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	return env
 }
 

@@ -75,7 +75,22 @@ describe("projects over Connect", () => {
       lastUsedLocation: 1,
       createdAtUnixMs: 1_700_000_000_000,
       updatedAtUnixMs: "9007199254740993",
+      defaultProviderId: "",
     })
+  })
+
+  it("sets and clears the default provider only when asked", async () => {
+    const received: (string | undefined)[] = []
+    const client = projects({
+      updateProject: (req) => {
+        received.push(req.defaultProviderId)
+        return { project: { ...protoProject, defaultProviderId: req.defaultProviderId ?? "" } }
+      },
+    })
+    expect((await client.updateProject({ projectId: "p1", defaultProviderId: "prov-1" })).defaultProviderId).toBe("prov-1")
+    await client.updateProject({ projectId: "p1", defaultProviderId: "" })
+    await client.updateProject({ projectId: "p1", name: "web" })
+    expect(received).toEqual(["prov-1", "", undefined])
   })
 
   it("sends the version back unchanged as the expected one", async () => {

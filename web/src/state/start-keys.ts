@@ -3,23 +3,33 @@
 // server creates its session once even if the failed request got through;
 // the key outlives the project page, so this holds after leaving the page
 // and coming back too. The server matches a retry by location index only,
-// so a start in another location, or in a different location now at the
-// same index (edited elsewhere meanwhile), takes a key of its own.
+// and provider, so a start in another location, or in a different location
+// now at the same index (edited elsewhere meanwhile), or with another
+// provider, takes a key of its own.
 
 import { randomUuid } from "@/lib/uuid"
 
 interface StartKey {
   key: string
   locationIndex: number
-  /** The location's device and path. */
+  /** The location's device and path, and the provider asked for. */
   location: string
 }
 
 const pending = new Map<string, StartKey>()
 
-/** The key for starting a session at `location`, the one at `locationIndex` of the project. */
-export function startKey(projectId: string, locationIndex: number, location: { device: string; path: string }): string {
-  const where = `${location.device}\n${location.path}`
+/**
+ * The key for starting a session at `location`, the one at `locationIndex`
+ * of the project, with `providerId` as the request names it (undefined:
+ * the default).
+ */
+export function startKey(
+  projectId: string,
+  locationIndex: number,
+  location: { device: string; path: string },
+  providerId?: string,
+): string {
+  const where = JSON.stringify([location.device, location.path, providerId ?? null])
   const current = pending.get(projectId)
   if (current && current.locationIndex === locationIndex && current.location === where) return current.key
   const next = { key: randomUuid(), locationIndex, location: where }

@@ -11,6 +11,7 @@ const project = (...states: (WorkspaceState | `pending/${WorkspaceWaiting}` | un
   lastUsedLocation: 0,
   createdAtUnixMs: 0,
   updatedAtUnixMs: "0",
+  defaultProviderId: "",
   locations: states.map((spec) => {
     const [state, waiting = "unspecified"] = (spec ?? "").split("/") as [WorkspaceState, WorkspaceWaiting?]
     return {

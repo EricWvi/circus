@@ -70,9 +70,14 @@ type Project struct {
 	LastUsedLocation int
 	// RepoURL is the project's git remote; empty means none. Validating its
 	// form is the caller's job; the store bounds it to MaxRepoURLBytes.
-	RepoURL   string
-	CreatedAt int64
-	UpdatedAt int64
+	RepoURL string
+	// DefaultProviderID is the provider new sessions of the project use
+	// unless they name one; empty means none. It may name a deleted
+	// provider, which counts as none. Writes require a provider of the
+	// user (ErrUnknownProvider).
+	DefaultProviderID string
+	CreatedAt         int64
+	UpdatedAt         int64
 }
 
 // ProjectLocation is one directory of a project. The store references the
@@ -110,16 +115,21 @@ type ProjectPatch struct {
 	LastUsedLocation *int
 	// RepoURL, when set, replaces the repository URL; "" clears it.
 	RepoURL *string
+	// DefaultProviderID, when set, replaces the default provider; "" clears
+	// it. A nonempty one must name a provider of the user, else
+	// ErrUnknownProvider.
+	DefaultProviderID *string
 	// ExpectedUpdatedAt, when set, must equal the project's UpdatedAt, else
 	// ErrProjectStale: an edit applies only to the version the caller read.
-	// It is checked only when Name, RepoURL or Locations is set; a patch
-	// that sets only LastUsedLocation (or nothing) is never stale.
+	// It is checked only when Name, RepoURL, Locations or
+	// DefaultProviderID is set; a patch that sets only LastUsedLocation (or
+	// nothing) is never stale.
 	ExpectedUpdatedAt *int64
 	// UpdatedAt is the time of the change (required). The stored UpdatedAt
 	// becomes max(UpdatedAt, previous UpdatedAt + 1), so it strictly
-	// increases, but only when the name, repository URL or locations
-	// actually change: a field set to its current value is no change, and
-	// LastUsedLocation alone never moves UpdatedAt.
+	// increases, but only when the name, repository URL, locations or
+	// default provider actually change: a field set to its current value is
+	// no change, and LastUsedLocation alone never moves UpdatedAt.
 	UpdatedAt int64
 }
 
@@ -203,6 +213,9 @@ func CheckProject(p Project) error {
 		return invalid("project needs creation and update times")
 	}
 	if err := CheckRepoURLSize(p.RepoURL); err != nil {
+		return err
+	}
+	if err := CheckOptionalID("default provider id", p.DefaultProviderID); err != nil {
 		return err
 	}
 	return CheckProjectLocations(p.Locations)

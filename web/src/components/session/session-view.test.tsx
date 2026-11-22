@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen } from "@testing-library/react"
+import { Profiler } from "react"
 import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError } from "@/api/errors"
-import { seedState, type MockState } from "@/api/mock/state"
+import { addQueueDemo, seedState, type MockState } from "@/api/mock/state"
 import type { CircusClient, RawSessionEvent, SessionDetails, SessionService } from "@/api/types"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
@@ -17,11 +18,17 @@ type SendReq = Parameters<SessionService["sendMessage"]>[0]
 
 async function renderSession(
   path: string,
-  { state = seedState(), wrapClient }: { state?: MockState; wrapClient?: (client: CircusClient) => CircusClient } = {},
+  {
+    state = seedState(),
+    wrapClient,
+    onCommit,
+  }: { state?: MockState; wrapClient?: (client: CircusClient) => CircusClient; onCommit?: () => void } = {},
 ) {
   const page = (
     <SidebarProvider>
-      <SessionPage />
+      <Profiler id="session" onRender={() => onCommit?.()}>
+        <SessionPage />
+      </Profiler>
     </SidebarProvider>
   )
   const router = createMemoryRouter([{ path: "/p/:projectId/s/:sessionId", element: page }], {
@@ -235,7 +242,11 @@ describe("interrupted turn", () => {
   it("continues with the continue prompt in the active language", async () => {
     await i18n.changeLanguage("zh-CN")
     const sent: SendReq[] = []
+    // The session runs on eric-win's worker, offline in the seed.
+    const state = seedState()
+    state.workers.find((w) => w.name === "eric-win")!.online = true
     await renderSession("/p/toolbox/s/dotfiles-go", {
+      state,
       wrapClient: withSessions((mock) => ({
         sendMessage: (req) => {
           sent.push(req)
@@ -250,7 +261,11 @@ describe("interrupted turn", () => {
 
   it("retries once with the turn's message, as a new message", async () => {
     const sent: SendReq[] = []
+    // The session runs on eric-win's worker, offline in the seed.
+    const state = seedState()
+    state.workers.find((w) => w.name === "eric-win")!.online = true
     await renderSession("/p/toolbox/s/dotfiles-go", {
+      state,
       wrapClient: withSessions((mock) => ({
         sendMessage: (req) => {
           sent.push(req)
@@ -548,5 +563,303 @@ describe("notices above the composer", () => {
     await renderSession("/p/toolbox/s/golangci-v2", { state })
     expect(screen.getByText(offlineNotice)).toBeTruthy()
     expect(composer().disabled).toBe(false)
+  })
+})
+
+describe("the session's provider", () => {
+  const picker = () => screen.getByRole("combobox", { name: "Change provider" })
+  async function choose(name: string) {
+    fireEvent.click(picker())
+    await advance(0)
+    fireEvent.click(screen.getByRole("option", { name }))
+    await advance(50)
+  }
+
+  it("shows it in the header and changes it between turns, taking effect at the next start", async () => {
+    const updates: Parameters<SessionService["updateSession"]>[0][] = []
+    const { state } = await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions((mock) => ({
+        updateSession: (req) => {
+          updates.push(req)
+          return mock.updateSession(req)
+        },
+      })),
+    })
+    expect(picker().textContent).toBe("Local login")
+    fireEvent.click(picker())
+    await advance(0)
+    expect(screen.getByText("Takes effect the next time Claude Code starts for this session.")).toBeTruthy()
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Anthropic",
+      "Legacy key",
+      "Team proxy",
+      "Local login",
+    ])
+    fireEvent.click(screen.getByRole("option", { name: "Team proxy" }))
+    await advance(50)
+    expect(updates).toEqual([{ sessionId: "web-vite", providerId: "provider-proxy" }])
+    expect(state.sessions.find((s) => s.sessionId === "web-vite")!.providerId).toBe("provider-proxy")
+    expect(picker().textContent).toBe("Team proxy")
+
+    await choose("Local login")
+    expect(updates.at(-1)).toEqual({ sessionId: "web-vite", providerId: "" })
+  })
+
+  it("can't be changed while a turn runs", async () => {
+    await renderSession("/p/circus/s/web-vite")
+    await type("Look around")
+    await advance(300)
+    expect(picker().hasAttribute("disabled")).toBe(true)
+    expect(picker().closest("[aria-label]:not([role=combobox])")?.getAttribute("aria-label")).toBe(
+      "Can't change it while a turn runs.",
+    )
+    // The turn ends: it can change again.
+    await advance(10_000)
+    expect(picker().hasAttribute("disabled")).toBe(false)
+  })
+
+  it("can't be changed while the server runs a turn the stream hasn't shown", async () => {
+    // Another tab's turn: the session reads as running, nothing streamed here.
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions((mock) => ({
+        getSession: async (req) => ({ ...(await mock.getSession(req)), serverState: "running" as const, state: "running" as const }),
+      })),
+    })
+    expect(picker().hasAttribute("disabled")).toBe(true)
+  })
+
+  it("can't be changed while the stream shows a turn the server hasn't reported", async () => {
+    let turnCount: number | undefined
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions((mock) => ({
+        // Reads lag behind: idle, at the turn count of the first read.
+        getSession: async (req) => {
+          const s = await mock.getSession(req)
+          turnCount ??= s.turnCount
+          return { ...s, serverState: "idle" as const, state: "idle" as const, turnCount }
+        },
+      })),
+    })
+    expect(picker().hasAttribute("disabled")).toBe(false)
+    await type("Look around")
+    await advance(300)
+    expect(picker().hasAttribute("disabled")).toBe(true)
+  })
+
+  it("closes its menu once a change isn't allowed", async () => {
+    let running = false
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions((mock) => ({
+        getSession: async (req) => {
+          const s = await mock.getSession(req)
+          return running ? { ...s, serverState: "running" as const, state: "running" as const } : s
+        },
+      })),
+    })
+    fireEvent.click(picker())
+    await advance(0)
+    expect(screen.getAllByRole("option").length).toBeGreaterThan(0)
+    // Another tab starts a turn; the next read says so.
+    running = true
+    await advance(5_000)
+    expect(screen.queryAllByRole("option")).toEqual([])
+    // Once the turn is over, the menu stays closed until opened again.
+    running = false
+    await advance(5_000)
+    expect(picker().hasAttribute("disabled")).toBe(false)
+    expect(screen.queryAllByRole("option")).toEqual([])
+  })
+
+  it("says the session was stopped when that refused the change", async () => {
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions((mock) => ({
+        // Stopped elsewhere just before the change arrives.
+        updateSession: async (req) => {
+          await mock.stopSession({ sessionId: req.sessionId })
+          return mock.updateSession(req)
+        },
+      })),
+    })
+    await choose("Anthropic")
+    await advance(50)
+    expect(screen.getByRole("alert").textContent).toBe("The session was stopped, so its provider can't change.")
+  })
+
+  it("is only shown for a stopped session", async () => {
+    await renderSession("/p/circus/s/quic-spike")
+    expect(screen.queryByRole("combobox", { name: "Change provider" })).toBeNull()
+    expect(screen.getByText("Local login")).toBeTruthy()
+  })
+
+  it("says why a change was refused", async () => {
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions(() => ({
+        updateSession: () => Promise.reject(new ApiError("failed_precondition", "a turn runs")),
+      })),
+    })
+    await choose("Anthropic")
+    expect(screen.getByRole("alert").textContent).toBe("A turn started meanwhile. Change the provider once it ends.")
+  })
+})
+
+describe("a queued session", () => {
+  const notice = () => document.querySelector("[data-queue-reason]")
+
+  it.each([
+    ["queue-full", "provider_full", "Team proxy already runs as many sessions as it allows. This one starts when one of them ends. Open Providers"],
+    ["queue-no-worker", "no_assigned_worker", "No online worker assigned to Anthropic can run this session. Open Providers"],
+    ["queue-secrets", "provider_secrets_unreadable", "The key and variable values of Legacy key can't be read. Enter them again. Open Providers"],
+    ["queue-offline", "worker_offline", "The worker that runs this session is offline. "],
+    ["queue-deleted", "provider_deleted", "This session's provider was deleted. Pick another provider to go on. Change provider"],
+  ])("%s says why it waits (%s)", async (id, reason, text) => {
+    const state = seedState()
+    addQueueDemo(state)
+    const project = state.sessions.find((s) => s.sessionId === id)!.projectId
+    await renderSession(`/p/${project}/s/${id}`, { state })
+    expect(notice()?.getAttribute("data-queue-reason")).toBe(reason)
+    expect(notice()?.textContent).toBe(text)
+  })
+
+  it("offers another provider when its own was deleted, and goes on with it", async () => {
+    const state = seedState()
+    addQueueDemo(state)
+    await renderSession("/p/palace/s/queue-deleted", { state })
+    expect(screen.getByRole("combobox", { name: "Change provider" }).textContent).toBe("Deleted provider")
+    fireEvent.click(screen.getByRole("button", { name: "Change provider" }))
+    await advance(0)
+    fireEvent.click(screen.getByRole("option", { name: "Anthropic" }))
+    await advance(50)
+    // palace-builder has no worker of its own: any of Anthropic's takes it.
+    expect(state.sessions.find((s) => s.sessionId === "queue-deleted")!.providerId).toBe("provider-anthropic")
+    await advance(10_000)
+    expect(notice()).toBeNull()
+    expect(screen.getByText(/this is the mock backend/)).toBeTruthy()
+  })
+
+  /**
+   * A stream the test writes: each connection starts with a keepalive and
+   * then gets what `push` sends; `drop` ends it as the server's hourly end does.
+   */
+  function scriptedStream() {
+    const control = { push: (_e: RawSessionEvent) => {}, drop: () => {}, connections: 0 }
+    const watchSession: SessionService["watchSession"] = async function* () {
+      control.connections++
+      yield { seq: 0, tsUnixMs: Date.now(), kind: "unspecified", payloadJson: "", ephemeral: true, truncated: false }
+      const queue: (RawSessionEvent | "drop")[] = []
+      let wake = () => {}
+      control.push = (e) => {
+        queue.push(e)
+        wake()
+      }
+      control.drop = () => {
+        queue.push("drop")
+        wake()
+      }
+      for (;;) {
+        const next = queue.shift()
+        if (next === "drop") throw new ApiError("unavailable", "stream ended")
+        if (next) yield next
+        else await new Promise<void>((resolve) => (wake = resolve))
+      }
+    }
+    return { control, watchSession }
+  }
+  const queueEvent = (reason: string): RawSessionEvent => ({
+    seq: 0,
+    tsUnixMs: Date.now(),
+    kind: "queue",
+    payloadJson: JSON.stringify({ queue_reason: reason }),
+    ephemeral: true,
+    truncated: false,
+  })
+  const reason = () => notice()?.getAttribute("data-queue-reason")
+
+  it("renders nothing again for a read that changed nothing", async () => {
+    const state = seedState()
+    addQueueDemo(state)
+    let commits = 0
+    let reads = 0
+    await renderSession("/p/circus/s/queue-full", {
+      state,
+      onCommit: () => commits++,
+      wrapClient: withSessions((mock) => ({ getSession: (req) => (reads++, mock.getSession(req)) })),
+    })
+    await advance(1_000)
+    const [commitsBefore, readsBefore] = [commits, reads]
+    // Polls every five seconds, each answered with the same session.
+    await advance(15_000)
+    expect(reads - readsBefore).toBe(3)
+    expect(commits).toBe(commitsBefore)
+  })
+
+  it("follows the stream's queue events between reads of the session", async () => {
+    const state = seedState()
+    addQueueDemo(state)
+    const { control, watchSession } = scriptedStream()
+    await renderSession("/p/circus/s/queue-full", { state, wrapClient: withSessions(() => ({ watchSession })) })
+    expect(reason()).toBe("provider_full")
+
+    // The reason changes between the session's reads, which come every five seconds.
+    act(() => control.push(queueEvent("worker_offline")))
+    await advance(10)
+    expect(reason()).toBe("worker_offline")
+    // A read sent after it arrived wins again.
+    await advance(5_000)
+    expect(reason()).toBe("provider_full")
+  })
+
+  it("keeps a reason that arrived while a read was under way", async () => {
+    const state = seedState()
+    addQueueDemo(state)
+    const { control, watchSession } = scriptedStream()
+    let hold: Promise<void> | null = null
+    let release = () => {}
+    await renderSession("/p/circus/s/queue-full", {
+      state,
+      wrapClient: withSessions((mock) => ({
+        watchSession,
+        // The server builds the answer at once; it reaches the browser when released.
+        getSession: async (req) => {
+          const answer = await mock.getSession(req)
+          if (hold) await hold
+          return answer
+        },
+      })),
+    })
+    expect(reason()).toBe("provider_full")
+    hold = new Promise<void>((resolve) => (release = resolve))
+    await advance(5_000)
+    // The poll's read is under way when the reason changes.
+    act(() => control.push(queueEvent("no_assigned_worker")))
+    await advance(10)
+    act(() => release())
+    hold = null
+    await advance(10)
+    expect(reason()).toBe("no_assigned_worker")
+  })
+
+  it("forgets the stream's reason when the stream opens again", async () => {
+    const state = seedState()
+    addQueueDemo(state)
+    const { control, watchSession } = scriptedStream()
+    // After the first reads, reads never come back: only the stream's
+    // reopening can retire the reason it brought.
+    let reads = 0
+    await renderSession("/p/circus/s/queue-full", {
+      state,
+      wrapClient: withSessions((mock) => ({
+        watchSession,
+        getSession: async (req) => (++reads > 3 ? new Promise<never>(() => {}) : mock.getSession(req)),
+      })),
+    })
+    // A stream that served a while reopens at once when it ends.
+    await advance(HEALTHY_STREAM_MS)
+    act(() => control.push(queueEvent("worker_offline")))
+    await advance(10)
+    expect(reason()).toBe("worker_offline")
+    act(() => control.drop())
+    await advance(100)
+    expect(control.connections).toBe(2)
+    expect(reason()).toBe("provider_full")
   })
 })

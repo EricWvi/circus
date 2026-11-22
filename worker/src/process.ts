@@ -22,6 +22,8 @@ import type { Logger } from "./log.js";
 // directory of a resumed query, which holds a copy of the credentials.
 
 const STDERR_TAIL_BYTES = 8 << 10;
+/** How long an exited CLI's stderr may stay open before its tail is logged. */
+const STDERR_DRAIN_MS = 1_000;
 const GUARD_PROBE_MS = 5_000;
 const EXIT_GRACE_MS = 5_000;
 const KILL_WAIT_MS = 2_000;
@@ -188,6 +190,8 @@ export interface CliProcessesPort {
 
 export class CliProcesses implements CliProcessesPort {
   #live = new Map<string, { child: ChildProcess; exited: Promise<void> }>();
+  /** Exits whose stderr tail waits for stderr to end; flush() logs them at once. */
+  #pendingReports = new Set<() => void>();
   readonly #boot: string;
   readonly #self: { pid: number; start: string };
 
@@ -227,13 +231,32 @@ export class CliProcesses implements CliProcessesPort {
       tail = (tail + chunk).slice(-STDERR_TAIL_BYTES);
     });
     child.on("error", () => {});
+    // "exit" can come before the last stderr chunk is read: the tail is
+    // complete once stderr ends, which a descendant holding it open can delay.
+    const stderrEnded = new Promise<void>((done) => {
+      if (!child.stderr) return done();
+      child.stderr.once("end", done);
+      child.stderr.once("close", done);
+      child.stderr.once("error", () => done());
+    });
     const exited = new Promise<void>((done) => child.once("exit", (code, signal) => {
-      if (code !== 0 && code !== null) {
-        this.log.warn("Claude Code exited", { session_id: sessionId, code, stderr: tail.slice(-2048) });
-      } else {
-        this.log.debug("Claude Code exited", { session_id: sessionId, signal: signal ?? "" });
-      }
       done();
+      let logged = false;
+      const report = () => {
+        if (logged) return;
+        logged = true;
+        clearTimeout(timer);
+        this.#pendingReports.delete(report);
+        if (code !== 0 && code !== null) {
+          this.log.warn("Claude Code exited", { session_id: sessionId, code, stderr: tail.slice(-2048) });
+        } else {
+          this.log.debug("Claude Code exited", { session_id: sessionId, signal: signal ?? "" });
+        }
+      };
+      const timer = setTimeout(report, STDERR_DRAIN_MS);
+      timer.unref?.();
+      this.#pendingReports.add(report);
+      void stderrEnded.then(report);
     }));
     if (child.pid !== undefined) {
       const record: CliRecord = {
@@ -256,6 +279,14 @@ export class CliProcesses implements CliProcessesPort {
       });
     }
     return child;
+  }
+
+  /**
+   * Logs every exited CLI whose stderr tail is still waiting for stderr to
+   * end, with what has been read so far: the worker is exiting.
+   */
+  flush(): void {
+    for (const report of [...this.#pendingReports]) report();
   }
 
   async confirmExit(sessionId: string): Promise<void> {

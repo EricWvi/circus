@@ -57,7 +57,7 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 	}
 	bus := sessions.NewBus(sessions.DefaultBusOptions())
 	svc, err = sessions.New(sessions.Config{Store: s.st, Bus: bus, InstanceID: s.instanceID, Clock: clk, Logger: s.logger,
-		StopJobs: r.StopSessionJobs, Online: s.onlineDevices, MaxMessageBytes: c.MaxMessageBytes})
+		StopJobs: r.StopSessionJobs, Online: s.onlineDevices, MaxMessageBytes: c.MaxMessageBytes, Secrets: s.secrets})
 	if err == nil {
 		err = svc.Start(ctx)
 	}

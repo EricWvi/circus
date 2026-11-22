@@ -14,6 +14,7 @@ import (
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/workspaces"
 	"github.com/EricWvi/circus/internal/ledger"
@@ -91,6 +92,15 @@ type Config struct {
 	Bus *sessions.Bus
 	// Waker hints the scheduler after commits a worker must act on.
 	Waker sessions.Waker
+	// Scheduler reports queue reasons and hears of provider changes;
+	// optional (nil: no queue reasons, no provider re-evaluation).
+	Scheduler Scheduler
+	// OnlineWorkers reports which of a user's workers have a live worker
+	// link; optional (nil: every worker offline).
+	OnlineWorkers OnlineFunc
+	// Secrets seals and opens provider secrets. Without it providers
+	// cannot be created and every provider reads as unreadable.
+	Secrets *providers.Box
 	// Jobs stops the background device jobs of a stopped session.
 	Jobs       JobStopper
 	Workspaces *workspaces.Manager
@@ -109,7 +119,7 @@ type Config struct {
 	WatchWriteTimeout time.Duration
 }
 
-// Service implements ProjectService, MachineService, SessionService and LedgerService.
+// Service implements ProjectService, MachineService, SessionService, ProviderService and LedgerService.
 type Service struct {
 	st            store.Store
 	publicURL     string
@@ -120,6 +130,9 @@ type Service struct {
 	logger        *slog.Logger
 	bus           *sessions.Bus
 	waker         sessions.Waker
+	scheduler     Scheduler
+	onlineWorkers OnlineFunc
+	secrets       *providers.Box
 	jobs          JobStopper
 	workspaces    *workspaces.Manager
 	ledger        *ledger.Manager
@@ -135,10 +148,11 @@ type Service struct {
 }
 
 var (
-	_ circusv1connect.ProjectServiceHandler = (*Service)(nil)
-	_ circusv1connect.MachineServiceHandler = (*Service)(nil)
-	_ circusv1connect.SessionServiceHandler = (*Service)(nil)
-	_ circusv1connect.LedgerServiceHandler  = (*Service)(nil)
+	_ circusv1connect.ProjectServiceHandler  = (*Service)(nil)
+	_ circusv1connect.MachineServiceHandler  = (*Service)(nil)
+	_ circusv1connect.SessionServiceHandler  = (*Service)(nil)
+	_ circusv1connect.LedgerServiceHandler   = (*Service)(nil)
+	_ circusv1connect.ProviderServiceHandler = (*Service)(nil)
 )
 
 // New returns the services. Store, Interceptor, Online, Bus, Waker and Jobs
@@ -149,7 +163,7 @@ func New(cfg Config) (*Service, error) {
 	}
 	s := &Service{st: cfg.Store, interceptor: cfg.Interceptor, online: cfg.Online, now: cfg.Now, logger: cfg.Logger,
 		publicURL: strings.TrimRight(cfg.PublicURL, "/"), version: cfg.Version,
-		bus: cfg.Bus, waker: cfg.Waker, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
+		bus: cfg.Bus, waker: cfg.Waker, scheduler: cfg.Scheduler, onlineWorkers: cfg.OnlineWorkers, secrets: cfg.Secrets, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
 		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout,
 		query: cfg.Query, workspaces: cfg.Workspaces, ledger: cfg.Ledger, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
 	if s.query == nil {
@@ -159,6 +173,12 @@ func New(cfg Config) (*Service, error) {
 	}
 	if s.version == "" {
 		s.version = "dev"
+	}
+	if s.scheduler == nil {
+		s.scheduler = noScheduler{}
+	}
+	if s.onlineWorkers == nil {
+		s.onlineWorkers = func(context.Context, string) (map[string]bool, error) { return map[string]bool{}, nil }
 	}
 	if s.now == nil {
 		s.now = time.Now
@@ -188,6 +208,9 @@ func (s *Service) Register(mux *http.ServeMux) {
 	mux.Handle(path, h)
 	path, h = circusv1connect.NewMachineServiceHandler(s, connect.WithReadMaxBytes(maxMachineRequestBytes),
 		connect.WithSendMaxBytes(maxMachineResponseBytes), connect.WithInterceptors(s.interceptor))
+	mux.Handle(path, h)
+	path, h = circusv1connect.NewProviderServiceHandler(s, connect.WithReadMaxBytes(maxProviderRequestBytes),
+		connect.WithSendMaxBytes(maxProviderResponseBytes), connect.WithInterceptors(s.interceptor))
 	mux.Handle(path, h)
 	// Without response compression a stream's encoding buffer is bounded by
 	// the message it sends (see the memory bound in sessions/bus.go); a

@@ -49,6 +49,7 @@ var repeatedLimits = [...]struct {
 	{"circus.v1.SessionReply.Inputs.inputs", 32},
 	{"circus.v1.SessionReply.Devices.devices", 256},
 	{"circus.v1.SessionReply.Resumed.leases", 64},
+	{"circus.v1.SessionReply.LaunchEnv.env", 72},
 	{"circus.v1.ListSessionsResponse.sessions", 1000},
 	{"circus.v1.ListApprovalsResponse.approvals", 32},
 }

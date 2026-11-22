@@ -11,6 +11,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 // recordingWaker records Wake calls as "session:REASON,REASON".
@@ -212,7 +213,7 @@ func TestSessionAuthorization(t *testing.T) {
 	notFound("SendMessage", err)
 	_, err = bob.sessions.GetSession(ctx, connect.NewRequest(&circusv1.GetSessionRequest{SessionId: id}))
 	notFound("GetSession", err)
-	_, err = bob.sessions.UpdateSession(ctx, connect.NewRequest(&circusv1.UpdateSessionRequest{SessionId: id, Title: "bob's"}))
+	_, err = bob.sessions.UpdateSession(ctx, connect.NewRequest(&circusv1.UpdateSessionRequest{SessionId: id, Title: proto.String("bob's")}))
 	notFound("UpdateSession", err)
 	_, err = bob.sessions.ListApprovals(ctx, connect.NewRequest(&circusv1.ListApprovalsRequest{SessionId: id}))
 	notFound("ListApprovals", err)

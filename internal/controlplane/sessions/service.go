@@ -14,6 +14,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/clock"
+	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/google/uuid"
 )
@@ -42,6 +43,11 @@ const (
 	// MaxTracked bounds the in-memory session table: sessions with a lease
 	// bound to a connection this process knows, or an outstanding Offer.
 	MaxTracked = 8192
+	// ReasonRecheck is how long a queue reason no event re-derived stays
+	// before the fallback evaluates its session again; MaxReasonRechecks
+	// bounds those evaluations per fallback pass.
+	ReasonRecheck     = 5 * time.Minute
+	MaxReasonRechecks = 256
 	// MaxWakeQueue bounds the sessions waiting for the scheduler; past it a
 	// Wake of an untracked session is dropped and the next fallback scan
 	// finds the session queued in the store.
@@ -92,6 +98,10 @@ type Config struct {
 	// MaxViewBytes bounds a session's stored event payloads; zero means
 	// store.DefaultMaxViewBytes.
 	MaxViewBytes int64
+	// Secrets opens providers' sealed secrets, for GetLaunchEnv and to
+	// tell whether a provider's secrets are readable. Nil: no provider's
+	// secrets are.
+	Secrets *providers.Box
 }
 
 // Service is the worker-link side of sessions: it serves session operations
@@ -121,6 +131,12 @@ type Service struct {
 	rescan  map[string]struct{} // users whose queued sessions to offer
 	gen     uint64              // Wake generation, see entry.gen
 	kick    chan struct{}
+	// provScans are providers (→ their user) whose queued sessions to
+	// evaluate (ProviderChanged), at most MaxWakeQueue.
+	provScans map[string]string
+	// provEpoch counts provider leases that ended and provider changes, so
+	// an evaluation can tell that its provider read may be stale.
+	provEpoch uint64
 
 	// boots is the current boot of each worker that has connected since
 	// start (one entry per worker identity, kept after its connections
@@ -191,6 +207,7 @@ func New(cfg Config) (*Service, error) {
 		entries:    make(map[string]*entry),
 		wakes:      make(map[string]reasonSet),
 		rescan:     make(map[string]struct{}),
+		provScans:  make(map[string]string),
 		boots:      make(map[string]bootRec),
 		maxTracked: MaxTracked,
 		kick:       make(chan struct{}, 1),
@@ -211,7 +228,8 @@ func (s *Service) Start(ctx context.Context) error {
 	s.startedAt = s.nowMs()
 	s.mu.Unlock()
 	tctx, cancel := context.WithTimeout(ctx, StoreTimeout)
-	n, err := s.cfg.Store.ExtendLeasesAfterRestart(tctx, s.nowMs()+LeaseLifetime.Milliseconds())
+	at := s.nowMs()
+	n, err := s.cfg.Store.ExtendLeasesAfterRestart(tctx, at, at+LeaseLifetime.Milliseconds())
 	cancel()
 	if err != nil {
 		return fmt.Errorf("sessions: extend leases after restart: %w", err)

@@ -15,7 +15,11 @@ import { withDefaultProject } from "@/test/workspace-state"
 
 import { ProjectSettingsPage } from "./project-settings-page"
 
-async function renderSettings(projectId: string, state: MockState = seedState()) {
+async function renderSettings(
+  projectId: string,
+  state: MockState = seedState(),
+  wrapClient?: (client: CircusClient) => CircusClient,
+) {
   const router = createMemoryRouter(
     [
       {
@@ -30,7 +34,7 @@ async function renderSettings(projectId: string, state: MockState = seedState())
     ],
     { initialEntries: [`/p/${projectId}/settings`] },
   )
-  const result = await renderWithBackend(<RouterProvider router={router} />, { state })
+  const result = await renderWithBackend(<RouterProvider router={router} />, { state, wrapClient })
   await advance(50)
   return { ...result, router }
 }
@@ -822,5 +826,91 @@ describe("deleting a project with a ledger", () => {
     expect(within(screen.getByRole("dialog")).getByText(
       "Its stopped sessions and its Ledger (decisions and their history) are deleted too.",
     )).toBeTruthy()
+  })
+})
+
+describe("the default provider", () => {
+  const picker = () => screen.getByRole("combobox", { name: "Default provider" })
+  async function choose(name: string) {
+    fireEvent.click(picker())
+    await advance(0)
+    fireEvent.click(screen.getByRole("option", { name }))
+    await advance(0)
+  }
+
+  it("is saved with the rest of the form, moving the version", async () => {
+    const { state } = await renderSettings("circus")
+    expect(picker().textContent).toBe("None")
+    expect(
+      screen.getByText("Without one, new sessions use your default provider, or local login if you have none."),
+    ).toBeTruthy()
+    const before = state.projects.find((p) => p.projectId === "circus")!.updatedAtUnixMs
+    fireEvent.click(picker())
+    await advance(0)
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["None", "Anthropic", "Legacy key", "Team proxy"])
+    fireEvent.click(screen.getByRole("option", { name: "Team proxy" }))
+    await advance(0)
+    expect(screen.getByText("New sessions in this project use it unless they pick another.")).toBeTruthy()
+    vi.setSystemTime(Date.parse("2026-11-17T12:01:00Z"))
+    fireEvent.click(save())
+    await advance(50)
+    const project = state.projects.find((p) => p.projectId === "circus")!
+    expect(project.defaultProviderId).toBe("provider-proxy")
+    expect(project.updatedAtUnixMs).toBeGreaterThan(before)
+    expect(screen.getByText("Saved")).toBeTruthy()
+
+    await choose("None")
+    fireEvent.click(save())
+    await advance(50)
+    expect(state.projects.find((p) => p.projectId === "circus")!.defaultProviderId).toBe("")
+  })
+
+  it("is sent only when it changed, so renaming works while it names a deleted provider", async () => {
+    const state = seedState()
+    state.projects.find((p) => p.projectId === "circus")!.defaultProviderId = "provider-gone"
+    const sent: (string | undefined)[] = []
+    await renderSettings("circus", state, (client) => ({
+      ...client,
+      projects: {
+        ...client.projects,
+        updateProject: (req) => (sent.push(req.defaultProviderId), client.projects.updateProject(req)),
+      },
+    }))
+    fireEvent.change(nameInput(), { target: { value: "circus-web" } })
+    fireEvent.click(save())
+    await advance(50)
+    expect(sent).toEqual([undefined])
+    expect(state.projects.find((p) => p.projectId === "circus")!.name).toBe("circus-web")
+    expect(screen.getByText("Saved")).toBeTruthy()
+  })
+
+  it("says when it names a deleted provider", async () => {
+    const state = seedState()
+    state.projects.find((p) => p.projectId === "circus")!.defaultProviderId = "provider-gone"
+    await renderSettings("circus", state)
+    expect(picker().textContent).toBe("Deleted provider")
+    expect(picker().getAttribute("aria-invalid")).toBe("true")
+  })
+
+  it("says so when the provider was deleted before the save", async () => {
+    const { state } = await renderSettings("circus")
+    await choose("Team proxy")
+    state.providers = state.providers.filter((p) => p.providerId !== "provider-proxy")
+    fireEvent.click(save())
+    await advance(50)
+    expect(screen.getByText("That provider no longer exists. Choose another.")).toBeTruthy()
+    // The list is fetched again, so the choice reads as deleted.
+    expect(picker().textContent).toBe("Deleted provider")
+    await choose("Anthropic")
+    expect(screen.queryByText("That provider no longer exists. Choose another.")).toBeNull()
+  })
+
+  it("is caught up when another tab changes it on an untouched form", async () => {
+    const { backend, queryClient } = await renderSettings("circus")
+    vi.setSystemTime(Date.parse("2026-11-17T12:01:00Z"))
+    await settle(backend.client.projects.updateProject({ projectId: "circus", defaultProviderId: "provider-anthropic" }))
+    act(() => void queryClient.invalidateQueries({ queryKey: queryKeys.projects }))
+    await advance(50)
+    expect(picker().textContent).toBe("Anthropic")
   })
 })

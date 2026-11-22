@@ -152,20 +152,26 @@ func (d *deviceNames) name(ctx context.Context, id string) (string, error) {
 	return idn.Name, nil
 }
 
-// listSession is the Session of ListSessions: without config.
-func listSession(sess store.Session) *circusv1.Session {
-	return &circusv1.Session{
+// listSession is the Session of ListSessions: without config. A queued
+// session carries the scheduler's queue reason.
+func (s *Service) listSession(sess store.Session) *circusv1.Session {
+	out := &circusv1.Session{
 		SessionId: sess.ID, State: protoState(sess.State), LastTurnOutcome: protoOutcome(sess.LastTurnOutcome),
 		TurnCount: uint64(max(sess.TurnCount, 0)), CreatedAtUnixMs: sess.CreatedAt, StoppedAtUnixMs: sess.StoppedAt,
 		ViewTruncated: sess.ViewTruncated, PinnedWorkerId: sess.PinnedWorkerID, ProjectId: sess.ProjectID,
 		Title: sess.Title, LastActivityAtUnixMs: sess.LastActivityAt, PendingApprovalCount: sess.PendingApprovalCount,
+		ProviderId: sess.ProviderID,
 	}
+	if sess.State == store.SessionQueued {
+		out.QueueReason = s.scheduler.QueueReason(sess.ID)
+	}
+	return out
 }
 
 // fullSession is the Session of GetSession and the writes: with config,
 // whose working directories are the main thread's current ones.
-func fullSession(ctx context.Context, ops store.Ops, sess store.Session) (*circusv1.Session, error) {
-	out := listSession(sess)
+func (s *Service) fullSession(ctx context.Context, ops store.Ops, sess store.Session) (*circusv1.Session, error) {
+	out := s.listSession(sess)
 	status, err := readSessionWorkspace(ctx, ops, sess)
 	if err != nil {
 		return nil, err
@@ -275,6 +281,8 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		return nil, invalidField("config.local", "local mode is decided by the server")
 	case len(m.GetPinnedWorkerId()) > store.MaxIDBytes:
 		return nil, invalidField("pinned_worker_id", "worker id is too long")
+	case len(m.GetProviderId()) > store.MaxIDBytes:
+		return nil, invalidField("provider_id", "provider id is too long")
 	}
 	now := s.now().UnixMilli()
 	var out *circusv1.Session
@@ -292,10 +300,10 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		old, err := tx.GetSessionByClientRequestID(ctx, p.ID, m.GetClientRequestId(), now)
 		switch {
 		case err == nil:
-			if !old.MatchesCreate(m.LocationIndex, m.GetPinnedWorkerId(), cfg.GetModel(), cfg.GetPermissionMode()) {
+			if !old.MatchesCreate(m.LocationIndex, m.GetPinnedWorkerId(), cfg.GetModel(), cfg.GetPermissionMode(), m.ProviderId) {
 				return fieldError(connect.CodeAlreadyExists, "client_request_id", requestConflict)
 			}
-			out, err = fullSession(ctx, tx, old)
+			out, err = s.fullSession(ctx, tx, old)
 			return err
 		case !errors.Is(err, store.ErrNotFound):
 			return err
@@ -329,6 +337,10 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		if err != nil {
 			return err
 		}
+		provider, err := resolveProvider(ctx, tx, u, p, m.ProviderId, now)
+		if err != nil {
+			return err
+		}
 		id, err := newID()
 		if err != nil {
 			return err
@@ -356,7 +368,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 			ID: id, UserID: u.ID, ProjectID: p.ID, ClaudeSessionID: uuid.NewString(), State: store.SessionIdle,
 			ClientRequestID: m.GetClientRequestId(), LocationIndex: uint32(index), Workspace: l.Path == "",
 			DefaultDeviceID: l.DeviceID, Model: cfg.GetModel(), PermissionMode: cfg.GetPermissionMode(),
-			PinnedWorkerID: pin, PinDerived: derived, Local: local, CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+			PinnedWorkerID: pin, PinDerived: derived, Local: local, ProviderID: provider, CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		}
 		cwds := []store.SessionCwd{{DeviceID: l.DeviceID, Cwd: cwd, UpdatedAt: now}}
 		res, err := tx.CreateSession(ctx, sess, cwds, store.DefaultMaxSessionsPerUser)
@@ -383,7 +395,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 				return err
 			}
 		}
-		out, err = fullSession(ctx, tx, res.Session)
+		out, err = s.fullSession(ctx, tx, res.Session)
 		return err
 	}
 	err = s.st.Tx(ctx, attempt)
@@ -606,7 +618,7 @@ func (s *Service) ListSessions(ctx context.Context, req *connect.Request[circusv
 			return nil, s.internal(ctx, "list sessions", err)
 		}
 		for _, sess := range rows {
-			summary := listSession(sess)
+			summary := s.listSession(sess)
 			if sess.Workspace {
 				key := [2]string{sess.ProjectID, sess.DefaultDeviceID}
 				status, ok := statuses[key]
@@ -645,7 +657,7 @@ func (s *Service) GetSession(ctx context.Context, req *connect.Request[circusv1.
 		if err != nil {
 			return err
 		}
-		out, err = fullSession(ctx, tx, sess)
+		out, err = s.fullSession(ctx, tx, sess)
 		return err
 	})
 	if err != nil {
@@ -659,31 +671,76 @@ func (s *Service) UpdateSession(ctx context.Context, req *connect.Request[circus
 	if err != nil {
 		return nil, err
 	}
-	if err := sessionIDArg(req.Msg.GetSessionId()); err != nil {
+	m := req.Msg
+	if err := sessionIDArg(m.GetSessionId()); err != nil {
 		return nil, err
 	}
-	title, problem := checkTitle(req.Msg.GetTitle())
-	if problem != "" {
-		return nil, invalidField("title", problem)
+	if m.Title == nil && m.ProviderId == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("set the title or the provider"))
+	}
+	var title string
+	if m.Title != nil {
+		var problem string
+		if title, problem = checkTitle(m.GetTitle()); problem != "" {
+			return nil, invalidField("title", problem)
+		}
+	}
+	if len(m.GetProviderId()) > store.MaxIDBytes {
+		return nil, invalidField("provider_id", "provider id is too long")
 	}
 	var out *circusv1.Session
+	var set store.SessionProviderSet
 	err = s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
 		now := s.now().UnixMilli()
-		if _, err := ownSession(ctx, tx, u, req.Msg.GetSessionId(), now); err != nil {
-			return err
-		}
-		if err := tx.SetSessionTitle(ctx, req.Msg.GetSessionId(), title); err != nil {
-			return err
-		}
-		sess, err := tx.GetSession(ctx, req.Msg.GetSessionId(), now)
+		set = store.SessionProviderSet{}
+		cur, err := ownSession(ctx, tx, u, m.GetSessionId(), now)
 		if err != nil {
 			return err
 		}
-		out, err = fullSession(ctx, tx, sess)
+		if m.Title != nil {
+			if err := tx.SetSessionTitle(ctx, m.GetSessionId(), title); err != nil {
+				return err
+			}
+		}
+		// The current provider again is no change, in any state.
+		if m.ProviderId != nil && m.GetProviderId() != cur.ProviderID {
+			if pid := m.GetProviderId(); pid != "" {
+				_, err := tx.GetProvider(ctx, u.ID, pid, now)
+				if errors.Is(err, store.ErrNotFound) {
+					return invalidField("provider_id", "unknown provider")
+				}
+				if err != nil {
+					return err
+				}
+			}
+			set, err = tx.SetSessionProvider(ctx, m.GetSessionId(), m.GetProviderId(), now)
+			switch {
+			case errors.Is(err, store.ErrTurnRunning):
+				return connect.NewError(connect.CodeFailedPrecondition, errors.New("a turn is running; interrupt it or wait until it ends"))
+			case errors.Is(err, store.ErrUnknownProvider):
+				return invalidField("provider_id", "unknown provider")
+			case err != nil:
+				return err
+			}
+		}
+		sess, err := tx.GetSession(ctx, m.GetSessionId(), now)
+		if err != nil {
+			return err
+		}
+		out, err = s.fullSession(ctx, tx, sess)
 		return err
 	})
 	if err != nil {
 		return nil, s.sessionError(ctx, "update session", err)
+	}
+	if set.Changed {
+		if l := set.Loss; l != nil && l.Interrupted && l.Session.LastEventSeq > 0 {
+			s.bus.Durable(m.GetSessionId(), uint64(l.Session.LastEventSeq))
+		}
+		// The scheduler finds the lease released: it revokes it on the
+		// holder's connection and schedules the session under its new
+		// provider.
+		s.waker.Wake(m.GetSessionId())
 	}
 	return connect.NewResponse(out), nil
 }

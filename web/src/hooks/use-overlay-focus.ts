@@ -1,4 +1,4 @@
-import { useRef } from "react"
+import { useMemo, useRef } from "react"
 
 import { lastInputWasKeyboard } from "@/lib/input-modality"
 
@@ -8,13 +8,14 @@ import { lastInputWasKeyboard } from "@/lib/input-modality"
  * overlay opened (Radix dialogs opened without a DialogTrigger would drop
  * it). After pointer-only use, returning focus would leave a ring behind,
  * so focus stays put instead; pass `triggerRef` (a select's trigger) to keep
- * focus there for the Tab order without the ring.
+ * focus there for the Tab order without the ring. The result is stable, so
+ * memoized components that get its callbacks don't render again.
  */
 export function useOverlayFocus<T extends HTMLElement = HTMLElement>() {
   const openedByKeyboard = useRef(false)
   const returnTo = useRef<HTMLElement | null>(null)
   const triggerRef = useRef<T>(null)
-  return {
+  return useMemo(() => ({
     triggerRef,
     onOpenChange: (open: boolean) => {
       if (!open) return
@@ -30,5 +31,5 @@ export function useOverlayFocus<T extends HTMLElement = HTMLElement>() {
       }
       triggerRef.current?.focus({ preventScroll: true, focusVisible: false } as FocusOptions)
     },
-  }
+  }), [])
 }

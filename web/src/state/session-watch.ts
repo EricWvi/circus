@@ -50,6 +50,12 @@ export interface SessionWatch {
    * before any.
    */
   serverOffsetMs(): number
+  /**
+   * A read of the session whose request was sent at `sentAtMs` (this
+   * browser's clock) landed: a live queue reason that arrived before it is
+   * in that read already, or outdated by it, and is dropped.
+   */
+  sessionRead(sentAtMs: number): void
 }
 
 /** Events after which the session's state (GetSession) may have changed. */
@@ -122,7 +128,8 @@ export function createSessionWatch({
       transcript.lastSeq === state.transcript.lastSeq &&
       transcript.turnOpen === state.transcript.turnOpen &&
       transcript.turnNo === state.transcript.turnNo &&
-      transcript.workspace === state.transcript.workspace
+      transcript.workspace === state.transcript.workspace &&
+      transcript.queue === state.transcript.queue
     if (sameView && connection === state.connection && gone === state.gone) return
     state = { transcript, connection, gone }
     for (const listener of listeners) listener()
@@ -159,7 +166,8 @@ export function createSessionWatch({
     const sentNow = event.seq === 0 || (lastReceivedAt > 0 && now - lastReceivedAt >= LIVE_GAP_MS)
     if (sentNow && event.tsUnixMs > 0) serverOffset = now - event.tsUnixMs
     lastReceivedAt = now
-    pending.push(event)
+    // A queue reason is weighed against reads of the session by when it arrived.
+    pending.push(event.kind === "queue" ? { ...event, receivedAtMs: now } : event)
     flushTimer ??= setTimeout(flush, 0)
   }
 
@@ -194,6 +202,9 @@ export function createSessionWatch({
     const afterSeq = transcript.lastSeq
     // A new stream starts with its replay.
     lastReceivedAt = 0
+    // Live queue reasons aren't replayed: what the stream said before may be
+    // stale, and the session's next read says it again.
+    if (transcript.queue !== null) transcript = { ...transcript, queue: null }
     return new Promise((resolve) => {
       let opened = false
       let openedAt = 0
@@ -277,6 +288,11 @@ export function createSessionWatch({
     },
     retryNow: () => controller.retryNow(),
     serverOffsetMs: () => serverOffset,
+    sessionRead(sentAtMs) {
+      if (transcript.queue === null || transcript.queue.receivedAtMs >= sentAtMs) return
+      transcript = { ...transcript, queue: null }
+      publish()
+    },
     setOnline(next) {
       if (!next) closeStream()
       controller.setOnline(next)

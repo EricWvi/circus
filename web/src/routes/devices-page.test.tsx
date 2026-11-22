@@ -34,9 +34,10 @@ async function renderDevices(state: MockState) {
   return { ...result, router }
 }
 
-/** The list item of the device with that name. */
+/** The list item of the device with that name (the workers below have names too). */
 const row = (name: string) => {
-  const item = screen.getByText(name, { selector: "span" }).closest("li")
+  const devices = within(screen.getAllByRole("region")[0])
+  const item = devices.getByText(name, { selector: "span" }).closest("li")
   if (!item) throw new Error(`no row for ${name}`)
   return within(item)
 }
@@ -179,7 +180,7 @@ describe("when the list can't load", () => {
     restore()
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
     await advance(50)
-    expect(screen.getByText("devbox", { selector: "span" })).toBeTruthy()
+    expect(row("devbox").getByText("Online")).toBeTruthy()
   })
 })
 
@@ -218,3 +219,40 @@ async function renderDevicesFailing(state: MockState) {
     },
   }
 }
+
+describe("the worker list", () => {
+  const workers = () => within(screen.getByRole("region", { name: "Workers" }))
+  const workerRow = (name: string) => within(workers().getByText(name, { selector: "span.font-medium" }).closest("li")!)
+
+  it("lists workers read-only, with status, version and the devices on the same machine", async () => {
+    await renderDevices(seedState(NOW))
+    expect(workers().getByText("Workers run Claude Code for your sessions.")).toBeTruthy()
+    const names = workers()
+      .getAllByText(/./, { selector: "span.font-medium" })
+      .map((e) => e.textContent)
+    expect(names).toEqual(["cloud-runner", "devbox", "eric-mbp", "eric-win"])
+    expect(workerRow("devbox").getByText("Online")).toBeTruthy()
+    expect(workerRow("devbox").getByText("worker 0.1.0")).toBeTruthy()
+    expect(workerRow("devbox").getByText("linux/amd64")).toBeTruthy()
+    const same = workerRow("devbox").getByRole("list", { name: "Devices on the same machine as devbox" })
+    expect(within(same).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["devbox"])
+    expect(workerRow("cloud-runner").queryByRole("list")).toBeNull()
+    expect(workerRow("eric-win").getByText("Last seen 2d ago")).toBeTruthy()
+    expect(workers().queryAllByRole("button")).toEqual([])
+  })
+
+  it("says when there are none", async () => {
+    const state = seedState(NOW)
+    state.workers = []
+    await renderDevices(state)
+    expect(workers().getByText(/No workers yet/)).toBeTruthy()
+  })
+
+  it("reads in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    await renderDevices(seedState(NOW))
+    const section = within(screen.getByRole("region", { name: "Worker" }))
+    expect(section.getByText("Worker 为你的会话运行 Claude Code。")).toBeTruthy()
+    expect(section.getByRole("list", { name: "与 devbox 在同一台机器上的设备" })).toBeTruthy()
+  })
+})

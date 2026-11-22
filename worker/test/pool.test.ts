@@ -43,8 +43,9 @@ function setup(maxSessions = 4) {
   const link = new FakeLink("/");
   const runners: StubRunner[] = [];
   const processes = new FakeProcesses();
+  const log = captureLogger();
   const pool = new SessionPool({
-    link, maxSessions, log: captureLogger(), processes, runner: { query: () => { throw new Error("unused"); } },
+    link, maxSessions, log, processes, runner: { query: () => { throw new Error("unused"); } },
     createRunner: (lease, id) => {
       const runner = new StubRunner(lease, id);
       runners.push(runner);
@@ -54,7 +55,7 @@ function setup(maxSessions = 4) {
   const hint = (event: MessageInitShape<typeof WorkerEventSchema>["event"]) => pool.hint(create(WorkerEventSchema, { event }));
   const offer = (sessionId: string) => hint({ case: "offer", value: { sessionId } });
   const acquires = () => link.calls.filter((c) => c.op.case === "acquireLease");
-  return { link, pool, runners, processes, hint, offer, acquires };
+  return { link, pool, runners, processes, hint, offer, acquires, log };
 }
 
 describe("SessionPool", () => {
@@ -105,6 +106,20 @@ describe("SessionPool", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(runners).toEqual([]);
     expect(pool.held).toBe(0);
+  });
+
+  test("a provider at its cap refuses quietly; an unavailable provider is logged", async () => {
+    const { link, pool, runners, offer, log } = setup();
+    link.interceptors.push((call) => call.op.case === "acquireLease"
+      ? rejected(call.sessionId === "full" ? Code.PROVIDER_FULL : Code.PROVIDER_UNAVAILABLE, "provider") : undefined);
+    offer("full");
+    offer("gone");
+    await waitFor(() => link.calls.length === 2, "acquires");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(runners).toEqual([]);
+    expect(pool.held).toBe(0);
+    const warned = log.lines.filter((l) => l.message === "AcquireLease rejected").map((l) => l.fields?.session_id);
+    expect(warned).toEqual(["gone"]);
   });
 
   test("LeaseRevoked drops the runner holding that epoch only", async () => {

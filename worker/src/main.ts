@@ -34,6 +34,9 @@ async function main(): Promise<void> {
   }
   const processes = new CliProcesses(dir, guard, log);
   processes.cleanupAll();
+  // A crashed CLI's stderr tail is logged when its stderr ends: not later than the worker's exit.
+  const flushExits = () => processes.flush();
+  process.once("exit", flushExits);
 
   const link = new WorkerLink({
     ...config, bootId: bootID(), clientVersion: version, log,
@@ -64,6 +67,7 @@ async function main(): Promise<void> {
     process.removeListener("SIGINT", onInt);
     if (!stopping) await pool.shutdown(SHUTDOWN_MS);
     await link.close();
+    processes.flush();
   }
 }
 

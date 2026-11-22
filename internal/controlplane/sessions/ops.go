@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"strings"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/identifier"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/google/uuid"
@@ -85,6 +87,8 @@ func (c *Conn) Handle(ctx context.Context, rid uint64, req *circusv1.SessionRequ
 		return c.consumeGrant(ctx, f, op.ConsumeGrant), nil
 	case *circusv1.SessionRequest_TranscriptRepaired:
 		return c.repaired(ctx, f), nil
+	case *circusv1.SessionRequest_GetLaunchEnv:
+		return nil, plain(func(ctx context.Context) *circusv1.SessionReply { return c.launchEnv(ctx, c.fence(id, epoch)) })
 	}
 	return invalidReply("missing operation"), nil
 }
@@ -123,7 +127,7 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	s.mu.Lock()
 	e := s.entries[id]
 	if e == nil {
-		if len(s.entries) >= s.maxTracked {
+		if !s.room(1) {
 			s.mu.Unlock()
 			s.log.Warn("session table full; acquisition refused", "session_id", id)
 			return rejected(circusv1.SessionReply_Rejected_CODE_STORE_UNAVAILABLE, "session table full; retry"), nil
@@ -136,40 +140,47 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
-		if e := s.entries[id]; e != nil {
-			e.reserved--
-			s.forget(id, e)
-		}
+		s.unreserve(id)
 		s.mu.Unlock()
 	}()
 	now := s.nowMs()
 	var res store.LeaseAcquired
-	notOffered, notLocal := false, false
+	notOffered, notLocal, unreadable := false, false, false
 	err := c.tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		sess, err := tx.GetSession(ctx, id, now)
+		if err != nil {
+			return err
+		}
 		// The store enforces the pin; a local-only connection also takes
 		// only local sessions, whatever the path (an Offer, or a lease its
 		// boot already holds).
-		if localOnly {
-			sess, err := tx.GetSession(ctx, id, now)
-			if err != nil {
+		if localOnly && !sess.Local {
+			notLocal = true
+			return nil
+		}
+		l, err := tx.GetLease(ctx, id)
+		if err != nil {
+			return err
+		}
+		own := l.Live(now) && l.WorkerID == c.workerID && l.BootID == c.bootID
+		if !offered && !own {
+			notOffered = true
+			return nil
+		}
+		// The store gates a new holder by the provider's assignment and
+		// cap; whether its secrets open is only known here, in the same
+		// transaction. Stopped and broken sessions go to the store, which
+		// releases a fresh holder's lease.
+		if sess.ProviderID != "" && (fresh || !own) && sess.State.Refusal() == nil {
+			p, err := tx.GetProvider(ctx, sess.UserID, sess.ProviderID, now)
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
 				return err
 			}
-			if !sess.Local {
-				notLocal = true
+			if err == nil && !s.cfg.Secrets.Readable(p) {
+				unreadable = true
 				return nil
 			}
 		}
-		if !offered {
-			l, err := tx.GetLease(ctx, id)
-			if err != nil {
-				return err
-			}
-			if !l.Live(now) || l.WorkerID != c.workerID || l.BootID != c.bootID {
-				notOffered = true
-				return nil
-			}
-		}
-		var err error
 		res, err = tx.AcquireLease(ctx, store.LeaseRequest{SessionID: id, WorkerID: c.workerID, BootID: c.bootID, ConnID: c.id,
 			Now: now, ExpiresAt: now + LeaseLifetime.Milliseconds(), Fresh: fresh})
 		return err
@@ -177,17 +188,28 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	if err == nil && res.Loss != nil {
 		s.lost(*res.Loss, c, false)
 	}
-	if err != nil || notOffered || notLocal || res.Released {
+	providerRefused := unreadable || errors.Is(err, store.ErrProviderUnavailable) || errors.Is(err, store.ErrProviderFull)
+	if err != nil || notOffered || notLocal || unreadable || res.Released {
 		// Re-derive the session: an Offer to a session that is no longer
-		// queued is withdrawn, one that still is stays.
+		// queued is withdrawn, one that still is stays. One the provider
+		// refused is withdrawn, so the evaluation records why it waits.
 		s.mu.Lock()
 		if e := s.entries[id]; e != nil {
+			if providerRefused && e.offered == c {
+				s.setOffer(e, nil)
+			}
 			s.forget(id, e)
 		}
 		s.queueWake(id, 0)
 		s.mu.Unlock()
 	}
 	switch {
+	case unreadable:
+		return rejected(circusv1.SessionReply_Rejected_CODE_PROVIDER_UNAVAILABLE, "the session's provider secrets cannot be decrypted"), nil
+	case errors.Is(err, store.ErrProviderUnavailable):
+		return rejected(circusv1.SessionReply_Rejected_CODE_PROVIDER_UNAVAILABLE, "the session's provider is deleted or not assigned to this worker"), nil
+	case errors.Is(err, store.ErrProviderFull):
+		return rejected(circusv1.SessionReply_Rejected_CODE_PROVIDER_FULL, "the session's provider is at its session limit"), nil
 	case notOffered:
 		return rejected(circusv1.SessionReply_Rejected_CODE_NOT_OFFERED, "no current offer to this connection"), nil
 	case notLocal:
@@ -372,6 +394,62 @@ func (c *Conn) leaseReply(ctx context.Context, id string, epoch int64, reattache
 		return nil, err
 	}
 	return &circusv1.SessionReply{Result: &circusv1.SessionReply_Lease_{Lease: lease}}, nil
+}
+
+// launchEnv is GetLaunchEnv: fenced, refused after a stop; local login
+// without a provider; otherwise the provider's variables, decrypted, when
+// the provider exists, is assigned to this worker and its secrets open.
+// The reply holds secrets: nothing of it is logged.
+func (c *Conn) launchEnv(ctx context.Context, f store.Fence) *circusv1.SessionReply {
+	var p store.Provider
+	local, unavailable := false, ""
+	err := c.tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		if _, err := tx.CheckFence(ctx, f); err != nil {
+			return err
+		}
+		sess, err := tx.GetSession(ctx, f.SessionID, f.Now)
+		if err != nil {
+			return err
+		}
+		switch {
+		case sess.State == store.SessionStopped:
+			return store.ErrStopped
+		case sess.ProviderID == "":
+			local = true
+			return nil
+		}
+		p, err = tx.GetProvider(ctx, sess.UserID, sess.ProviderID, f.Now)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			unavailable = "the session's provider was deleted"
+			return nil
+		case err != nil:
+			return err
+		case !slices.Contains(p.WorkerIDs, c.workerID):
+			unavailable = "the session's provider is not assigned to this worker"
+		}
+		return nil
+	})
+	switch {
+	case err != nil:
+		return c.failed(ctx, f, "launch env", err)
+	case local:
+		return &circusv1.SessionReply{Result: &circusv1.SessionReply_LaunchEnv_{LaunchEnv: &circusv1.SessionReply_LaunchEnv{LocalLogin: true}}}
+	case unavailable != "":
+		return rejected(circusv1.SessionReply_Rejected_CODE_PROVIDER_UNAVAILABLE, unavailable)
+	}
+	if c.s.cfg.Secrets == nil {
+		return rejected(circusv1.SessionReply_Rejected_CODE_PROVIDER_UNAVAILABLE, "the session's provider secrets cannot be decrypted")
+	}
+	secrets, err := c.s.cfg.Secrets.OpenProvider(p)
+	if err != nil {
+		return rejected(circusv1.SessionReply_Rejected_CODE_PROVIDER_UNAVAILABLE, "the session's provider secrets cannot be decrypted")
+	}
+	env := &circusv1.SessionReply_LaunchEnv{ProviderId: p.ID}
+	for _, v := range providers.LaunchEnv(p, secrets) {
+		env.Env = append(env.Env, &circusv1.SessionReply_LaunchEnv_Var{Name: v.Name, Value: v.Value})
+	}
+	return &circusv1.SessionReply{Result: &circusv1.SessionReply_LaunchEnv_{LaunchEnv: env}}
 }
 
 func (c *Conn) release(ctx context.Context, f store.Fence) *circusv1.SessionReply {
@@ -839,7 +917,7 @@ func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.S
 			missing++
 		}
 	}
-	if len(s.entries)+missing > s.maxTracked {
+	if !s.room(missing) {
 		s.mu.Unlock()
 		s.log.Warn("session table full; resume refused")
 		return rejected(circusv1.SessionReply_Rejected_CODE_STORE_UNAVAILABLE, "session table full; retry")
@@ -856,10 +934,7 @@ func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.S
 	defer func() {
 		s.mu.Lock()
 		for _, k := range keys {
-			if e := s.entries[k.SessionID]; e != nil {
-				e.reserved--
-				s.forget(k.SessionID, e)
-			}
+			s.unreserve(k.SessionID)
 		}
 		s.mu.Unlock()
 	}()

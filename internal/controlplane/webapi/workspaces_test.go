@@ -114,7 +114,7 @@ func TestWorkspaceSessionCreateAndProjection(t *testing.T) {
 			t.Fatalf("get session = %v", got)
 		}
 	}
-	update, err := browser.sessions.UpdateSession(ctx, connect.NewRequest(&pb.UpdateSessionRequest{SessionId: first.SessionId, Title: "ready"}))
+	update, err := browser.sessions.UpdateSession(ctx, connect.NewRequest(&pb.UpdateSessionRequest{SessionId: first.SessionId, Title: proto.String("ready")}))
 	workspaceCheck(t, err)
 	if !proto.Equal(update.Msg.GetWorkspace(), third.GetWorkspace()) {
 		t.Fatalf("update session = %v", update.Msg)

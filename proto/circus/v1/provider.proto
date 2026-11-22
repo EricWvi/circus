@@ -1,0 +1,162 @@
+syntax = "proto3";
+
+package circus.v1;
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// ProviderService manages the signed-in browser user's model providers: the
+// credentials and environment a worker gives Claude Code when it starts the
+// CLI for a session (see worker_link GetLaunchEnv).
+//
+// Every call needs a browser session cookie (UNAUTHENTICATED without one)
+// and is refused with PERMISSION_DENIED when its Origin header differs from
+// the server's public URL. A provider of another user is NOT_FOUND, like an
+// unknown one. Invalid input is INVALID_ARGUMENT with a google.rpc.BadRequest
+// field violation naming the field: "name", "kind", "api", "api.base_url",
+// "api.scheme", "api.key", "api.opus_model", "api.sonnet_model",
+// "api.haiku_model", "env", "env[i].name", "env[i].value", "worker_ids",
+// "worker_ids[i]", "max_sessions" or "provider_id". A name another of the
+// user's providers already has is ALREADY_EXISTS with field "name". A user
+// has at most 32 providers; a create past that is RESOURCE_EXHAUSTED.
+//
+// Secrets are write-only: the API key and every environment variable value
+// are stored encrypted and never returned; a response carries only their
+// last four characters.
+service ProviderService {
+  rpc CreateProvider(CreateProviderRequest) returns (CreateProviderResponse);
+  // Ordered by name (case-insensitive), then provider_id.
+  rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
+  rpc GetProvider(GetProviderRequest) returns (GetProviderResponse);
+  rpc UpdateProvider(UpdateProviderRequest) returns (UpdateProviderResponse);
+  // Refused with FAILED_PRECONDITION while a session using the provider
+  // holds a lease. Otherwise the provider is deleted, and sessions,
+  // projects and the user default that named it keep naming it: such a
+  // session stays queued (QUEUE_REASON_PROVIDER_DELETED) until the user
+  // picks another provider with UpdateSession. A project default or user
+  // default naming a deleted provider resolves as unset.
+  rpc DeleteProvider(DeleteProviderRequest) returns (DeleteProviderResponse);
+}
+
+message Provider {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    // Claude Code, through the Agent SDK.
+    KIND_CLAUDE_CODE = 1;
+  }
+  // An Anthropic-compatible API endpoint and key.
+  message ApiEndpoint {
+    enum Scheme {
+      SCHEME_UNSPECIFIED = 0;
+      // Sent as the x-api-key header: sets ANTHROPIC_API_KEY.
+      SCHEME_X_API_KEY = 1;
+      // Sent as Authorization: Bearer: sets ANTHROPIC_AUTH_TOKEN.
+      SCHEME_BEARER = 2;
+    }
+    // Optional: empty uses Claude Code's default endpoint. Otherwise an
+    // absolute http or https URL without user info, query or fragment, at
+    // most 2048 bytes. Sets ANTHROPIC_BASE_URL.
+    string base_url = 1;
+    Scheme scheme = 2;
+    // Write-only: 1 to 4096 bytes on create; empty in responses, and empty
+    // on update keeps the stored key.
+    string key = 3;
+    // Output only: the key's last four characters.
+    string key_last4 = 4;
+    // Optional model ids the CLI's opus, sonnet and haiku aliases resolve
+    // to, each at most 256 bytes without whitespace or control characters.
+    // Set ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL and
+    // ANTHROPIC_DEFAULT_HAIKU_MODEL. Not secret.
+    string opus_model = 5;
+    string sonnet_model = 6;
+    string haiku_model = 7;
+  }
+  // A custom environment variable for the CLI. The name matches
+  // [A-Z_][A-Z0-9_]* (at most 128 bytes) and is none of CLAUDE_CONFIG_DIR,
+  // HOME, PATH, CIRCUS_*, CLAUDE_CODE_OAUTH_TOKEN,
+  // CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST (the worker sets it) and the
+  // variables the endpoint sets (ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY,
+  // ANTHROPIC_AUTH_TOKEN, ANTHROPIC_DEFAULT_OPUS_MODEL,
+  // ANTHROPIC_DEFAULT_SONNET_MODEL, ANTHROPIC_DEFAULT_HAIKU_MODEL). Names
+  // are distinct within a provider. A provider has at most 64 variables,
+  // and at most 64 KiB of names and values together.
+  message EnvVar {
+    string name = 1;
+    // Write-only, treated as a secret. Required for a new name; on update
+    // an absent value keeps the stored value of the same name. Never set
+    // in responses. May be empty.
+    optional string value = 2;
+    // Output only: the value's last four characters (fewer when shorter).
+    string value_last4 = 3;
+  }
+
+  string provider_id = 1;
+  // Trimmed, 1 to 64 Unicode code points, no control characters; unique
+  // per user ignoring case.
+  string name = 2;
+  Kind kind = 3;
+  // Required. (An OAuth token credential may come later.)
+  ApiEndpoint api = 4;
+  repeated EnvVar env = 5;
+  // Workers of the user that may run sessions with this provider, at most
+  // 256, distinct. A session with this provider is offered only to these
+  // workers. Deleted workers are dropped from the list.
+  repeated string worker_ids = 6;
+  // The most sessions with this provider that may hold a lease at once,
+  // across the control plane; 0 means unlimited. At most 1024.
+  uint32 max_sessions = 7;
+  // The user's default provider, used by a new session when neither the
+  // request nor its project names one. At most one provider of a user.
+  bool is_default = 8;
+  // Output only: sessions with this provider holding a lease now.
+  uint32 leased_sessions = 9;
+  // Output only: the stored secrets cannot be decrypted (the key file was
+  // lost or replaced). Sessions with this provider stay queued until the
+  // user enters the key and every variable value again.
+  bool secrets_unreadable = 10;
+  int64 created_at_unix_ms = 11;
+  // The version of every field except leased_sessions and
+  // secrets_unreadable; moves forward on each change that changes
+  // something.
+  int64 updated_at_unix_ms = 12;
+}
+
+message CreateProviderRequest {
+  // provider_id and the output-only fields are ignored. api.key and every
+  // variable value are required (variable values may be empty).
+  Provider provider = 1;
+}
+message CreateProviderResponse {
+  Provider provider = 1;
+}
+message ListProvidersRequest {}
+message ListProvidersResponse {
+  repeated Provider providers = 1;
+}
+message GetProviderRequest {
+  string provider_id = 1;
+}
+message GetProviderResponse {
+  Provider provider = 1;
+}
+// UpdateProviderRequest replaces the provider's fields with provider's. An
+// empty api.key keeps the stored key. env replaces the list; a variable
+// without a value keeps the value stored under the same name
+// (INVALID_ARGUMENT when there is none). Setting is_default makes this the
+// user's default and clears it elsewhere; clearing it leaves the user
+// without a default. Changes reach a session's CLI the next time a worker
+// starts one; running CLIs keep the environment they started with.
+// Lowering max_sessions or removing a worker revokes no lease.
+message UpdateProviderRequest {
+  // provider.provider_id names the provider.
+  Provider provider = 1;
+  // When set, the update applies only if updated_at_unix_ms still equals
+  // this value; otherwise ABORTED and nothing changes.
+  optional int64 expected_updated_at_unix_ms = 2;
+}
+message UpdateProviderResponse {
+  Provider provider = 1;
+}
+message DeleteProviderRequest {
+  string provider_id = 1;
+}
+message DeleteProviderResponse {}

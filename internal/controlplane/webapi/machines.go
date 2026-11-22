@@ -106,3 +106,49 @@ func (s *Service) CreateEnrollLink(ctx context.Context, req *connect.Request[cir
 		Link: s.publicURL + "/join#" + strings.Join(tokens, "."), ExpiresUnixMs: expires, ServerVersion: s.version,
 	}), nil
 }
+
+// ListWorkers lists the caller's workers that are not deleted, by name.
+// Online comes from the live worker links, as ListDevices' does from the
+// daemon links; local_devices are the caller's devices on the same
+// machine.
+func (s *Service) ListWorkers(ctx context.Context, _ *connect.Request[circusv1.ListWorkersRequest]) (*connect.Response[circusv1.ListWorkersResponse], error) {
+	u, err := user(ctx)
+	if err != nil {
+		return nil, err
+	}
+	workers, err := s.st.ListIdentities(ctx, store.KindWorker, u.ID)
+	if err != nil {
+		return nil, s.internal(ctx, "list workers", err)
+	}
+	devices, err := s.st.ListIdentities(ctx, store.KindDevice, u.ID)
+	if err != nil {
+		return nil, s.internal(ctx, "list devices", err)
+	}
+	online, err := s.onlineWorkers(ctx, u.ID)
+	if err != nil {
+		return nil, s.internal(ctx, "online workers", err)
+	}
+	byMachine := make(map[string][]string)
+	for _, d := range devices {
+		if d.MachineID != "" {
+			byMachine[d.MachineID] = append(byMachine[d.MachineID], d.Name)
+		}
+	}
+	now := s.now().UnixMilli()
+	out := &circusv1.ListWorkersResponse{Workers: make([]*circusv1.Worker, 0, len(workers))}
+	for _, w := range workers {
+		lastSeen := max(w.LastConnectedAt, w.LastDisconnectedAt)
+		if online[w.ID] {
+			lastSeen = now
+		}
+		var local []string
+		if w.MachineID != "" {
+			local = byMachine[w.MachineID]
+		}
+		out.Workers = append(out.Workers, &circusv1.Worker{
+			WorkerId: w.ID, Name: w.Name, Online: online[w.ID], LastSeenUnixMs: lastSeen,
+			Os: w.OS, Arch: w.Arch, Hostname: w.Hostname, Version: w.ClientVersion, LocalDevices: local,
+		})
+	}
+	return connect.NewResponse(out), nil
+}

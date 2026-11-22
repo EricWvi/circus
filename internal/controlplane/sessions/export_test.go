@@ -15,7 +15,7 @@ func Fallback(s *Service, ctx context.Context) { s.fallback(ctx) }
 func Idle(s *Service) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.wakes) == 0 && len(s.rescan) == 0 && s.busy == 0
+	return len(s.wakes) == 0 && len(s.rescan) == 0 && len(s.provScans) == 0 && s.busy == 0
 }
 
 // Tracked returns the number of sessions in the in-memory table.

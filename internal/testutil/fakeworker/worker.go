@@ -48,6 +48,7 @@ var (
 	errNow      = errors.New("turn preempted by NOW input")
 	errShutdown = errors.New("worker shutting down")
 	errCrash    = errors.New("scripted process crash")
+	errProvider = errors.New("session provider unavailable")
 )
 
 func isAbort(err error) bool { return errors.Is(err, errAbort) || errors.Is(err, errNow) }
@@ -63,6 +64,16 @@ type Options struct {
 	StreamDelay time.Duration // Defaults to 100 ms between chunks.
 	Clock       clock.Clock
 	Logger      *slog.Logger
+	// LaunchEnv, when set, receives the reply of the GetLaunchEnv the
+	// worker sends after each acquisition, standing in for a CLI start:
+	// a LaunchEnv or a rejection. The reply holds secrets; the worker
+	// never logs it.
+	LaunchEnv func(sessionID string, reply *pb.SessionReply)
+	// Offer, when set, is told of every Offer the worker receives, and
+	// Acquired of every lease it acquires (its epoch). Both are called
+	// synchronously and must not block.
+	Offer    func(sessionID string)
+	Acquired func(sessionID string, epoch uint64)
 }
 
 // Run starts a new UUIDv7 boot and reconnects until ctx is canceled. It
@@ -364,6 +375,9 @@ func (w *worker) hint(l *connection, event *pb.WorkerEvent) {
 	offer := event.GetOffer()
 	if offer != nil {
 		id = offer.GetSessionId()
+		if w.opts.Offer != nil {
+			w.opts.Offer(id)
+		}
 	}
 	if id == "" {
 		return

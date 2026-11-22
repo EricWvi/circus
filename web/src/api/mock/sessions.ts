@@ -9,6 +9,7 @@ import { nanoid } from "nanoid"
 
 import { ApiError } from "@/api/errors"
 import type {
+  QueueReason,
   RawSessionEvent,
   SessionApproval,
   SessionDetails,
@@ -47,9 +48,18 @@ export interface MockSession {
   queue: { inputId: string; text: string; approval: boolean }[]
   turns: number
   /** The request that created the session, for retries of it; forgotten with the session. */
-  created?: { clientRequestId: string; locationIndex: number }
+  created?: { clientRequestId: string; locationIndex: number; providerId?: string }
   /** Created in a default location: its folder, which holds turns until ready. */
   workspace?: MockWorkspace
+  /** The model provider's id; empty or missing for local login. */
+  providerId?: string
+  /** Why the session waits; missing or `unspecified` when it doesn't. */
+  queueReason?: QueueReason
+  /**
+   * Taken by a worker: the mock keeps the lease from the first turn until
+   * the session stops or changes provider, as a worker keeping its CLI.
+   */
+  leased?: boolean
 }
 
 /** How the scripted replies pace themselves; tests shorten it. */
@@ -161,6 +171,8 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
     approvals: [],
     queue: [],
     turns: 0,
+    providerId: seed.provider ?? "",
+    ...(seed.leased ? { leased: true } : {}),
   }
   let clock = at - 40 * MINUTE
   const r = new Recorder(session, () => (clock += 1_000))
@@ -218,6 +230,12 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
       r.durable("session_state", { state: "stopped", reason: "user" })
       session.state = "stopped"
       break
+    case "queued": {
+      const text = seed.followUp ?? "Go on"
+      session.queue.push({ inputId: r.input(text), text, approval: false })
+      session.state = "queued"
+      break
+    }
   }
   session.lastActivityAtUnixMs = at
   return session
@@ -239,6 +257,8 @@ export function summaryOf(s: MockSession): SessionSummary {
     pendingApprovalCount,
     createdAtUnixMs: s.createdAtUnixMs,
     ...(s.workspace ? { workspace: workspaceStatus(s.workspace) } : {}),
+    providerId: s.providerId ?? "",
+    queueReason: s.state === "queued" ? (s.queueReason ?? "unspecified") : "unspecified",
   }
 }
 
@@ -253,6 +273,18 @@ export interface MockSessionHost {
   delay(): Promise<void>
   now(): number
   timing: MockSessionTiming
+  /**
+   * Whether a worker may take the session for its next turn now; leases it
+   * if so. When not, the host has recorded why (`queueReason`).
+   */
+  admit?(s: MockSession): boolean
+  /**
+   * Changes the session's provider ("" for local login) once the session
+   * runs no turn and isn't stopped; throws as the server refuses.
+   */
+  setProvider?(s: MockSession, providerId: string): void
+  /** The session stopped: its lease, if any, is released. */
+  stopped?(s: MockSession): void
 }
 
 type Live = (event: RawSessionEvent) => void
@@ -356,6 +388,10 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
   function startNext(s: MockSession) {
     if (turns.has(s.sessionId) || s.state === "stopped" || s.state === "broken") return
     if (s.workspace && s.workspace.state !== "ready") return
+    if (s.queue.length > 0 && host.admit && !host.admit(s)) {
+      s.state = "queued"
+      return
+    }
     const input = s.queue.shift()
     if (!input) {
       if (s.state === "running" || s.state === "queued") s.state = "idle"
@@ -521,6 +557,7 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       }
       s.queue = []
       for (const a of s.approvals) if (a.state === "pending") a.state = "denied"
+      host.stopped?.(s)
     },
     listApprovals: async ({ sessionId }) => {
       await host.delay()
@@ -563,12 +600,25 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       recorder(s).durable("transcript_gap_accepted", null)
       startNext(s)
     },
-    updateSession: async ({ sessionId, title }) => {
+    updateSession: async ({ sessionId, title, providerId }) => {
       await host.delay()
       const s = host.own(sessionId)
-      const trimmed = title.trim()
-      if (trimmed === "" || [...trimmed].length > 200) throw new ApiError("invalid_argument", "Invalid title.", "title")
-      s.title = trimmed
+      if (title === undefined && providerId === undefined) {
+        throw new ApiError("invalid_argument", "Nothing to change.", "session_id")
+      }
+      const trimmed = title?.trim()
+      if (trimmed !== undefined && (trimmed === "" || [...trimmed].length > 200)) {
+        throw new ApiError("invalid_argument", "Invalid title.", "title")
+      }
+      if (providerId !== undefined) {
+        if (s.state === "running" || turns.has(s.sessionId)) {
+          throw new ApiError("failed_precondition", "A turn is running.")
+        }
+        if (s.state === "stopped") throw new ApiError("failed_precondition", "The session is stopped.")
+        host.setProvider?.(s, providerId)
+      }
+      if (trimmed !== undefined) s.title = trimmed
+      startNext(s)
       return detailsOf(s)
     },
   }

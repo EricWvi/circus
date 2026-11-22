@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -48,6 +49,9 @@ const (
 type holder struct {
 	conn, worker, boot string
 	epoch              int64
+	// provider is the provider the lease was acquired under ("" for local
+	// login).
+	provider string
 }
 
 // entry is the in-memory state of one tracked session: the lease binding
@@ -91,6 +95,19 @@ type entry struct {
 	// the entry while their transaction runs; a reserved entry is never
 	// forgotten.
 	reserved int
+	// deferred holds the reasons of an evaluation skipped while the entry
+	// was reserved (bit 0 marks one without reasons); the end of the
+	// reservation queues it again (unreserve).
+	deferred reasonSet
+	// queue is why the queued session could not be offered when it was
+	// last evaluated (UNSPECIFIED: nothing known against it), and provider
+	// the session's provider then. An entry that holds only a reason is
+	// kept until the reason clears, and gives way to a lease when the
+	// table is full (room).
+	queue    circusv1.QueueReason
+	provider string
+	// derivedAt is when an evaluation last derived queue (Unix ms).
+	derivedAt int64
 }
 
 // bit returns the reason value of a one-reason set.
@@ -175,12 +192,12 @@ func (s *Service) clearReasons(id string, epoch int64, rs reasonSet, g uint64) {
 	}
 }
 
-// track returns session id's entry, creating it unless the table is full;
-// s.mu held.
+// track returns session id's entry, creating it unless the table is full
+// (entries holding only a queue reason give way to it); s.mu held.
 func (s *Service) track(id, user string) *entry {
 	e := s.entries[id]
 	if e == nil {
-		if len(s.entries) >= s.maxTracked {
+		if !s.room(1) {
 			s.log.Warn("session table full; session not tracked", "session_id", id)
 			return nil
 		}
@@ -193,11 +210,124 @@ func (s *Service) track(id, user string) *entry {
 	return e
 }
 
+// room makes room for n new entries, dropping entries that hold only a
+// queue reason (their sessions read UNSPECIFIED until evaluated again),
+// and reports whether there is room; s.mu held.
+func (s *Service) room(n int) bool {
+	for id, e := range s.entries {
+		if len(s.entries)+n <= s.maxTracked {
+			break
+		}
+		if e.queue != 0 && e.holder == (holder{}) && e.offered == nil && e.bound == nil && e.reserved == 0 {
+			// Dropped silently: the reason did not go away, the table only
+			// forgets it, so no event says it cleared.
+			delete(s.entries, id)
+		}
+	}
+	return len(s.entries)+n <= s.maxTracked
+}
+
+// unreserve ends one reservation of session id's entry (AcquireLease,
+// ResumeLeases) and queues an evaluation skipped meanwhile; s.mu held.
+func (s *Service) unreserve(id string) {
+	e := s.entries[id]
+	if e == nil {
+		return
+	}
+	e.reserved--
+	if e.reserved == 0 && e.deferred != 0 {
+		s.queueWake(id, e.deferred&allReasons)
+		e.deferred = 0
+	}
+	s.forget(id, e)
+}
+
 // forget drops e when it holds nothing; s.mu held.
 func (s *Service) forget(id string, e *entry) {
-	if e.holder == (holder{}) && e.offered == nil && e.bound == nil && e.reserved == 0 {
+	if e.holder == (holder{}) && e.offered == nil && e.bound == nil && e.reserved == 0 && e.queue == 0 {
 		delete(s.entries, id)
 	}
+}
+
+// setQueue records session id's queue reason and the provider it applies
+// to, and announces a change of reason with an ephemeral KIND_QUEUE event;
+// s.mu held, so the events of one session go out in order.
+func (s *Service) setQueue(id string, e *entry, r circusv1.QueueReason, provider string) {
+	e.provider = provider
+	if e.queue == r {
+		return
+	}
+	e.queue = r
+	name := strings.ToLower(strings.TrimPrefix(r.String(), "QUEUE_REASON_"))
+	s.cfg.Bus.Ephemeral(id, &circusv1.SessionEvent{TsUnixMs: s.nowMs(), Kind: circusv1.SessionEvent_KIND_QUEUE,
+		PayloadJson: `{"queue_reason":"` + name + `"}`, Ephemeral: true})
+}
+
+// clearQueue clears session id's queue reason, if it is tracked; s.mu
+// held. The caller forgets the entry when it holds nothing else.
+func (s *Service) clearQueue(id string, e *entry) {
+	if e != nil {
+		s.setQueue(id, e, 0, "")
+	}
+}
+
+// QueueReason returns why queued session id is not running yet, as of its
+// last evaluation; UNSPECIFIED when nothing is known against it.
+func (s *Service) QueueReason(id string) circusv1.QueueReason {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e := s.entries[id]; e != nil {
+		return e.queue
+	}
+	return circusv1.QueueReason_QUEUE_REASON_UNSPECIFIED
+}
+
+// providerFreed notes that a lease acquired under provider p ended:
+// sessions queued because p was full are evaluated again; s.mu held.
+func (s *Service) providerFreed(p string) {
+	if p == "" {
+		return
+	}
+	s.provEpoch++
+	for id, e := range s.entries {
+		if e.queue == circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL && e.provider == p {
+			s.queueWake(id, 0)
+		}
+	}
+}
+
+// ProviderChanged tells the scheduler that provider providerID of user
+// userID changed (assignments, cap, secrets) or was deleted: every queued
+// session naming it is evaluated again, and the user's queued sessions
+// are offered again. Leases are never revoked for it.
+func (s *Service) ProviderChanged(userID, providerID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.provEpoch++
+	for id, e := range s.entries {
+		if e.queue != 0 && e.provider == providerID {
+			s.queueWake(id, 0)
+		}
+	}
+	if _, ok := s.provScans[providerID]; ok || len(s.provScans) < MaxWakeQueue {
+		s.provScans[providerID] = userID
+	}
+	s.rescan[userID] = struct{}{}
+	s.signal()
+}
+
+// OnlineWorkers reports which of the user's workers have a worker process
+// connected now (a link with a boot id), for ListWorkers.
+func (s *Service) OnlineWorkers(_ context.Context, userID string) (map[string]bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]bool)
+	for _, c := range s.conns {
+		if !c.closed && c.bootID != "" && c.userID == userID {
+			out[c.workerID] = true
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) setBound(e *entry, c *Conn) {
@@ -244,7 +374,7 @@ func (s *Service) freed(c *Conn, n int) {
 // than the one recorded before means the old holder lost it: the old
 // connection gets LeaseRevoked unless revokeOld is false.
 func (s *Service) bind(id string, e *entry, l store.Lease, c *Conn, revokeOld bool) {
-	h := holder{conn: l.ConnID, worker: l.WorkerID, boot: l.BootID, epoch: l.Epoch}
+	h := holder{conn: l.ConnID, worker: l.WorkerID, boot: l.BootID, epoch: l.Epoch, provider: l.ProviderID}
 	old := e.holder
 	if old != (holder{}) && (old.epoch != h.epoch || old.worker != h.worker || old.boot != h.boot) {
 		s.unbind(id, e, revokeOld)
@@ -255,6 +385,7 @@ func (s *Service) bind(id string, e *entry, l store.Lease, c *Conn, revokeOld bo
 	// connection of this process, set or reset them.
 	s.setBound(e, c)
 	s.setOffer(e, nil)
+	s.clearQueue(id, e)
 }
 
 // unbind forgets e's lease; s.mu held. With revoke the connection it was
@@ -271,6 +402,7 @@ func (s *Service) unbind(id string, e *entry, revoke bool) {
 		}
 	}
 	s.setBound(e, nil)
+	s.providerFreed(e.holder.provider)
 	e.holder = holder{}
 	e.reasons, e.interrupt = 0, 0
 	e.pending, e.abandoned, e.known, e.token = false, false, false, 0
@@ -308,6 +440,7 @@ func (s *Service) lost(l store.LeaseLoss, initiator *Conn, mayOffer bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	revoke := initiator == nil || initiator.id != l.Released.ConnID
+	s.providerFreed(l.Released.ProviderID)
 	e := s.entries[id]
 	switch {
 	case e != nil && e.holder.epoch == l.Released.Epoch && e.holder.worker == l.Released.WorkerID:
@@ -389,16 +522,19 @@ func (s *Service) upkeep(ctx context.Context, now time.Time, alarm <-chan time.T
 func (s *Service) processWakes(ctx context.Context) {
 	for ctx.Err() == nil {
 		s.mu.Lock()
-		wakes, users := s.wakes, s.rescan
-		if len(wakes) == 0 && len(users) == 0 {
+		wakes, users, scans := s.wakes, s.rescan, s.provScans
+		if len(wakes) == 0 && len(users) == 0 && len(scans) == 0 {
 			s.mu.Unlock()
 			return
 		}
-		s.wakes, s.rescan = make(map[string]reasonSet), make(map[string]struct{})
+		s.wakes, s.rescan, s.provScans = make(map[string]reasonSet), make(map[string]struct{}), make(map[string]string)
 		s.busy++
 		s.mu.Unlock()
 		for id, rs := range wakes {
 			s.evaluate(ctx, id, rs)
+		}
+		for p, u := range scans {
+			s.scanProvider(ctx, u, p)
 		}
 		for u := range users {
 			s.rescanUser(ctx, u)
@@ -422,6 +558,7 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 		if e := s.entries[id]; e != nil {
 			s.unbind(id, e, true)
 			s.setOffer(e, nil)
+			e.queue = 0 // the session is gone; nobody watches it
 			s.forget(id, e)
 		}
 		s.mu.Unlock()
@@ -436,16 +573,41 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 	if st.Loss != nil {
 		s.lost(*st.Loss, nil, false)
 	}
+	var g gate
+	if !st.Lease.Live(now) && st.Session.State == store.SessionQueued && !st.Session.WorkspaceBlocked {
+		if g, err = s.gateOf(ctx, st.Session, now); err != nil {
+			if ctx.Err() == nil {
+				s.log.Warn("session provider read failed; the fallback retries", "session_id", id, "error", err)
+			}
+			return
+		}
+	}
 	// Re-raising rs here gives it a newer generation than the Wake's, so
 	// an operation that started between the Wake and now no longer clears
 	// it: at worst one spurious Nudge, never a lost one.
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// The reads above ran without s.mu: an AcquireLease or ResumeLeases may
+	// have bound a newer lease since, or be binding one now. Acting on the
+	// stale read would revoke that lease and offer the session again, so
+	// the session is evaluated again instead: at once when a newer epoch is
+	// bound, when its reservation ends while one is in flight.
+	if e := s.entries[id]; e != nil {
+		if e.holder.epoch > st.Lease.Epoch {
+			s.queueWake(id, rs)
+			return
+		}
+		if e.reserved > 0 && !st.Lease.Live(now) {
+			e.deferred |= rs | reasonSet(1) // nonzero even without reasons
+			return
+		}
+	}
 	if st.Lease.Live(now) {
 		e := s.track(id, st.Session.UserID)
 		if e == nil {
 			return
 		}
+		s.clearQueue(id, e)
 		live := s.liveConn(st.Lease.ConnID, st.Lease.WorkerID)
 		s.bind(id, e, st.Lease, live, true)
 		if live != nil {
@@ -464,29 +626,169 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 		s.unbind(id, e, true)
 	}
 	if st.Session.State == store.SessionQueued && !st.Session.WorkspaceBlocked {
-		s.offer(id, st.Session)
+		s.offer(id, st.Session, g)
 		return
 	}
 	if e != nil {
 		s.setOffer(e, nil)
+		s.clearQueue(id, e)
 		s.forget(id, e)
+	}
+}
+
+// gate is what a queued session's provider allows, read from the store
+// for one evaluation. The zero gate (local login) allows every worker.
+type gate struct {
+	provider            string
+	deleted, unreadable bool
+	full                bool
+	workers             map[string]bool
+	// epoch is provEpoch before the read: a provider lease that ended or a
+	// provider change since then may have made the read stale.
+	epoch uint64
+}
+
+// gateOf reads the gate of queued session sess at now.
+func (s *Service) gateOf(ctx context.Context, sess store.Session, now int64) (gate, error) {
+	if sess.ProviderID == "" {
+		return gate{}, nil
+	}
+	s.mu.Lock()
+	g := gate{provider: sess.ProviderID, epoch: s.provEpoch}
+	s.mu.Unlock()
+	tctx, cancel := storeCtx(ctx)
+	p, err := s.cfg.Store.GetProvider(tctx, sess.UserID, sess.ProviderID, now)
+	cancel()
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		g.deleted = true
+		return g, nil
+	case err != nil:
+		return g, err
+	}
+	g.unreadable = !s.cfg.Secrets.Readable(p)
+	g.full = p.MaxSessions > 0 && p.LeasedSessions >= p.MaxSessions
+	g.workers = make(map[string]bool, len(p.WorkerIDs))
+	for _, w := range p.WorkerIDs {
+		g.workers[w] = true
+	}
+	return g, nil
+}
+
+// allows reports whether worker may run a session behind g.
+func (g gate) allows(worker string) bool { return g.provider == "" || g.workers[worker] }
+
+// blocked returns why g keeps sess from every worker, whoever is online:
+// a deleted provider, unreadable secrets, a pinned worker the provider is
+// not assigned to, or a full provider; UNSPECIFIED when it does not.
+func (g gate) blocked(sess store.Session) circusv1.QueueReason {
+	switch {
+	case g.provider == "":
+		return 0
+	case g.deleted:
+		return circusv1.QueueReason_QUEUE_REASON_PROVIDER_DELETED
+	case g.unreadable:
+		return circusv1.QueueReason_QUEUE_REASON_PROVIDER_SECRETS_UNREADABLE
+	case sess.PinnedWorkerID != "" && !g.workers[sess.PinnedWorkerID]:
+		return circusv1.QueueReason_QUEUE_REASON_NO_ASSIGNED_WORKER
+	case g.full:
+		return circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL
+	}
+	return 0
+}
+
+// offlineReason returns why no connection can take sess behind g: none of
+// the workers that may run it is online (UNSPECIFIED when one is online
+// but busy); s.mu held.
+func (s *Service) offlineReason(sess store.Session, g gate) circusv1.QueueReason {
+	for _, c := range s.conns {
+		if !c.closed && !s.stale(c) && c.attached && c.userID == sess.UserID && c.runs(sess.Local, sess.PinnedWorkerID) && g.allows(c.workerID) {
+			return 0
+		}
+	}
+	if g.provider != "" && sess.PinnedWorkerID == "" {
+		return circusv1.QueueReason_QUEUE_REASON_NO_ASSIGNED_WORKER
+	}
+	return circusv1.QueueReason_QUEUE_REASON_WORKER_OFFLINE
+}
+
+// queued records reason r for queued session id (entry e, if tracked),
+// read behind g; s.mu held. A cleared reason may let the entry go. When a
+// provider event raced the gate's read, the session is evaluated again.
+func (s *Service) queued(id string, e *entry, sess store.Session, r circusv1.QueueReason, g gate) {
+	if r == 0 {
+		if e != nil {
+			s.clearQueue(id, e)
+			s.forget(id, e)
+		}
+		return
+	}
+	if e == nil {
+		if len(s.entries) >= s.maxTracked {
+			return // the reason is not kept; the session reads UNSPECIFIED
+		}
+		e = &entry{user: sess.UserID}
+		s.entries[id] = e
+	}
+	s.setQueue(id, e, r, g.provider)
+	e.derivedAt = s.nowMs()
+	if g.provider != "" && g.epoch != s.provEpoch {
+		s.queueWake(id, 0)
+	}
+}
+
+// scanProvider evaluates every queued session of user that names
+// provider, read in pages (at most the store's per-user session cap).
+func (s *Service) scanProvider(ctx context.Context, user, provider string) {
+	var after *store.SessionCursor
+	for ctx.Err() == nil {
+		tctx, cancel := storeCtx(ctx)
+		page, err := s.cfg.Store.ListSessions(tctx, store.SessionFilter{UserID: user, ProviderID: provider,
+			States: []store.SessionState{store.SessionQueued}, Now: s.nowMs(), Limit: store.MaxPageSize, After: after})
+		cancel()
+		if err != nil {
+			if ctx.Err() == nil {
+				s.log.Warn("provider session scan failed; the fallback retries", "error", err)
+			}
+			return
+		}
+		for _, sess := range page {
+			s.evaluate(ctx, sess.ID, 0)
+		}
+		if len(page) < store.MaxPageSize {
+			return
+		}
+		last := page[len(page)-1]
+		after = &store.SessionCursor{LastActivityAt: last.LastActivityAt, ID: last.ID}
 	}
 }
 
 // offer offers a queued session without a live lease to its pinned worker,
 // else to the user's attached, non-full connection with the fewest leases
-// (a local-only connection takes only local sessions pinned to its worker);
-// with none it stays queued until a connection attaches or frees capacity.
-// An Offer stays with its connection for ScheduleInterval. s.mu held.
-func (s *Service) offer(id string, sess store.Session) {
+// (a local-only connection takes only local sessions pinned to its worker;
+// a session with a provider goes only to the provider's workers, and only
+// while the provider is not full); with none it stays queued, with its
+// queue reason, until a connection attaches, frees capacity or the
+// provider changes. An Offer stays with its connection for
+// ScheduleInterval. s.mu held.
+func (s *Service) offer(id string, sess store.Session, g gate) {
 	e := s.entries[id]
 	now := s.nowMs()
-	if e != nil && e.offered != nil && !e.offered.closed && !s.stale(e.offered) && e.offered.attached && now < e.offeredAt+ScheduleInterval.Milliseconds() {
+	if r := g.blocked(sess); r != 0 {
+		if e != nil {
+			s.setOffer(e, nil)
+		}
+		s.queued(id, e, sess, r, g)
+		return
+	}
+	if e != nil && e.offered != nil && !e.offered.closed && !s.stale(e.offered) && e.offered.attached && now < e.offeredAt+ScheduleInterval.Milliseconds() &&
+		g.allows(e.offered.workerID) {
+		s.clearQueue(id, e)
 		return
 	}
 	var best *Conn
 	for _, c := range s.conns {
-		if !s.candidate(c, sess, e) {
+		if !s.candidate(c, sess, e) || !g.allows(c.workerID) {
 			continue
 		}
 		if best == nil || c.leases+c.offers < best.leases+best.offers ||
@@ -497,8 +799,8 @@ func (s *Service) offer(id string, sess store.Session) {
 	if best == nil {
 		if e != nil {
 			s.setOffer(e, nil)
-			s.forget(id, e)
 		}
+		s.queued(id, e, sess, s.offlineReason(sess, g), g)
 		return
 	}
 	if e == nil {
@@ -507,6 +809,7 @@ func (s *Service) offer(id string, sess store.Session) {
 		}
 	}
 	e.local, e.pin = sess.Local, sess.PinnedWorkerID
+	s.clearQueue(id, e)
 	s.setOffer(e, best)
 	e.offeredAt = now
 	best.queue(id, func(h *hint) { h.offer = true })
@@ -599,10 +902,20 @@ func (s *Service) fallback(ctx context.Context) {
 		// Offers not taken within ScheduleInterval are withdrawn, so the
 		// rescan sees their capacity and offers the sessions again.
 		now := s.nowMs()
+		rechecks := 0
 		for id, e := range s.entries {
 			if e.offered != nil && now >= e.offeredAt+ScheduleInterval.Milliseconds() {
 				s.setOffer(e, nil)
 				s.forget(id, e)
+			}
+			// Events re-derive reasons; one no event touched for
+			// ReasonRecheck is derived again, a bounded number per pass,
+			// so one whose session left the queue unseen (a Wake dropped
+			// past MaxWakeQueue) clears.
+			if e.queue != 0 && e.offered == nil && e.holder == (holder{}) && now >= e.derivedAt+ReasonRecheck.Milliseconds() &&
+				rechecks < MaxReasonRechecks {
+				rechecks++
+				s.queueWake(id, 0)
 			}
 		}
 		for _, c := range s.conns {

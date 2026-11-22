@@ -406,6 +406,11 @@ func Release(session string, epoch uint64, reason circusv1.ReleaseLease_Reason) 
 	return &circusv1.SessionRequest{SessionId: session, Epoch: epoch, Op: &circusv1.SessionRequest_ReleaseLease{ReleaseLease: &circusv1.ReleaseLease{Reason: reason}}}
 }
 
+// LaunchEnv is GetLaunchEnv.
+func LaunchEnv(session string, epoch uint64) *circusv1.SessionRequest {
+	return &circusv1.SessionRequest{SessionId: session, Epoch: epoch, Op: &circusv1.SessionRequest_GetLaunchEnv{GetLaunchEnv: &circusv1.GetLaunchEnv{}}}
+}
+
 // TakeInputs is TakeInputs.
 func TakeInputs(session string, epoch uint64) *circusv1.SessionRequest {
 	return &circusv1.SessionRequest{SessionId: session, Epoch: epoch, Op: &circusv1.SessionRequest_TakeInputs{TakeInputs: &circusv1.TakeInputs{}}}

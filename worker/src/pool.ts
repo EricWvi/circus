@@ -242,7 +242,8 @@ export class SessionPool {
           backoff = Math.min(backoff * 2, 2_000);
           continue;
         }
-        if (code !== Code.NOT_OFFERED && code !== Code.STOPPED) {
+        // PROVIDER_FULL: the provider's other sessions hold its leases; it is offered again later.
+        if (code !== Code.NOT_OFFERED && code !== Code.STOPPED && code !== Code.PROVIDER_FULL) {
           this.#log.warn("AcquireLease rejected", { session_id: id, code: Code[code] ?? code, error: message.slice(0, 512) });
         }
         return undefined;

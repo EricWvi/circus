@@ -36,6 +36,9 @@ const (
 	// MachineServiceListDevicesProcedure is the fully-qualified name of the MachineService's
 	// ListDevices RPC.
 	MachineServiceListDevicesProcedure = "/circus.v1.MachineService/ListDevices"
+	// MachineServiceListWorkersProcedure is the fully-qualified name of the MachineService's
+	// ListWorkers RPC.
+	MachineServiceListWorkersProcedure = "/circus.v1.MachineService/ListWorkers"
 	// MachineServiceCreateEnrollLinkProcedure is the fully-qualified name of the MachineService's
 	// CreateEnrollLink RPC.
 	MachineServiceCreateEnrollLinkProcedure = "/circus.v1.MachineService/CreateEnrollLink"
@@ -51,6 +54,8 @@ const (
 type MachineServiceClient interface {
 	// The caller's devices, ordered by name.
 	ListDevices(context.Context, *connect.Request[v1.ListDevicesRequest]) (*connect.Response[v1.ListDevicesResponse], error)
+	// The caller's workers that are not deleted, ordered by name.
+	ListWorkers(context.Context, *connect.Request[v1.ListWorkersRequest]) (*connect.Response[v1.ListWorkersResponse], error)
 	// Issues a one-time enrollment link for the caller's machines. Any
 	// signed-in user may call it. Tokens are returned only here; the server
 	// stores only their hashes.
@@ -90,6 +95,12 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(machineServiceMethods.ByName("ListDevices")),
 			connect.WithClientOptions(opts...),
 		),
+		listWorkers: connect.NewClient[v1.ListWorkersRequest, v1.ListWorkersResponse](
+			httpClient,
+			baseURL+MachineServiceListWorkersProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("ListWorkers")),
+			connect.WithClientOptions(opts...),
+		),
 		createEnrollLink: connect.NewClient[v1.CreateEnrollLinkRequest, v1.CreateEnrollLinkResponse](
 			httpClient,
 			baseURL+MachineServiceCreateEnrollLinkProcedure,
@@ -114,6 +125,7 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 // machineServiceClient implements MachineServiceClient.
 type machineServiceClient struct {
 	listDevices      *connect.Client[v1.ListDevicesRequest, v1.ListDevicesResponse]
+	listWorkers      *connect.Client[v1.ListWorkersRequest, v1.ListWorkersResponse]
 	createEnrollLink *connect.Client[v1.CreateEnrollLinkRequest, v1.CreateEnrollLinkResponse]
 	listDirectory    *connect.Client[v1.ListDirectoryRequest, v1.ListDirectoryResponse]
 	getGitRemote     *connect.Client[v1.GetGitRemoteRequest, v1.GetGitRemoteResponse]
@@ -122,6 +134,11 @@ type machineServiceClient struct {
 // ListDevices calls circus.v1.MachineService.ListDevices.
 func (c *machineServiceClient) ListDevices(ctx context.Context, req *connect.Request[v1.ListDevicesRequest]) (*connect.Response[v1.ListDevicesResponse], error) {
 	return c.listDevices.CallUnary(ctx, req)
+}
+
+// ListWorkers calls circus.v1.MachineService.ListWorkers.
+func (c *machineServiceClient) ListWorkers(ctx context.Context, req *connect.Request[v1.ListWorkersRequest]) (*connect.Response[v1.ListWorkersResponse], error) {
+	return c.listWorkers.CallUnary(ctx, req)
 }
 
 // CreateEnrollLink calls circus.v1.MachineService.CreateEnrollLink.
@@ -143,6 +160,8 @@ func (c *machineServiceClient) GetGitRemote(ctx context.Context, req *connect.Re
 type MachineServiceHandler interface {
 	// The caller's devices, ordered by name.
 	ListDevices(context.Context, *connect.Request[v1.ListDevicesRequest]) (*connect.Response[v1.ListDevicesResponse], error)
+	// The caller's workers that are not deleted, ordered by name.
+	ListWorkers(context.Context, *connect.Request[v1.ListWorkersRequest]) (*connect.Response[v1.ListWorkersResponse], error)
 	// Issues a one-time enrollment link for the caller's machines. Any
 	// signed-in user may call it. Tokens are returned only here; the server
 	// stores only their hashes.
@@ -178,6 +197,12 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithSchema(machineServiceMethods.ByName("ListDevices")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceListWorkersHandler := connect.NewUnaryHandler(
+		MachineServiceListWorkersProcedure,
+		svc.ListWorkers,
+		connect.WithSchema(machineServiceMethods.ByName("ListWorkers")),
+		connect.WithHandlerOptions(opts...),
+	)
 	machineServiceCreateEnrollLinkHandler := connect.NewUnaryHandler(
 		MachineServiceCreateEnrollLinkProcedure,
 		svc.CreateEnrollLink,
@@ -200,6 +225,8 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		switch r.URL.Path {
 		case MachineServiceListDevicesProcedure:
 			machineServiceListDevicesHandler.ServeHTTP(w, r)
+		case MachineServiceListWorkersProcedure:
+			machineServiceListWorkersHandler.ServeHTTP(w, r)
 		case MachineServiceCreateEnrollLinkProcedure:
 			machineServiceCreateEnrollLinkHandler.ServeHTTP(w, r)
 		case MachineServiceListDirectoryProcedure:
@@ -217,6 +244,10 @@ type UnimplementedMachineServiceHandler struct{}
 
 func (UnimplementedMachineServiceHandler) ListDevices(context.Context, *connect.Request[v1.ListDevicesRequest]) (*connect.Response[v1.ListDevicesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.ListDevices is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) ListWorkers(context.Context, *connect.Request[v1.ListWorkersRequest]) (*connect.Response[v1.ListWorkersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.ListWorkers is not implemented"))
 }
 
 func (UnimplementedMachineServiceHandler) CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error) {

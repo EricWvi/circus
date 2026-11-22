@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/machine.proto.
  */
 export const file_circus_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UiPgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlIlkKGENyZWF0ZUVucm9sbExpbmtSZXNwb25zZRIMCgRsaW5rGAEgASgJEhcKD2V4cGlyZXNfdW5peF9tcxgCIAEoAxIWCg5zZXJ2ZXJfdmVyc2lvbhgDIAEoCSJMChRMaXN0RGlyZWN0b3J5UmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCRIWCg5pbmNsdWRlX2hpZGRlbhgDIAEoCCJHChVMaXN0RGlyZWN0b3J5UmVzcG9uc2USLgoGcmVzdWx0GAEgASgLMh4uY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXN1bHQiMwoTR2V0R2l0UmVtb3RlUmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCSJCChRHZXRHaXRSZW1vdGVSZXNwb25zZRIqCgZyZXN1bHQYASABKAsyGi5jaXJjdXMudjEuR2l0UmVtb3RlUmVzdWx0Km8KCkVucm9sbFJvbGUSGwoXRU5ST0xMX1JPTEVfVU5TUEVDSUZJRUQQABIWChJFTlJPTExfUk9MRV9EQUVNT04QARIWChJFTlJPTExfUk9MRV9XT1JLRVIQAhIUChBFTlJPTExfUk9MRV9CT1RIEAMy4AIKDk1hY2hpbmVTZXJ2aWNlEkwKC0xpc3REZXZpY2VzEh0uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVxdWVzdBoeLmNpcmN1cy52MS5MaXN0RGV2aWNlc1Jlc3BvbnNlElsKEENyZWF0ZUVucm9sbExpbmsSIi5jaXJjdXMudjEuQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QaIy5jaXJjdXMudjEuQ3JlYXRlRW5yb2xsTGlua1Jlc3BvbnNlElIKDUxpc3REaXJlY3RvcnkSHy5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlcXVlc3QaIC5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3BvbnNlEk8KDEdldEdpdFJlbW90ZRIeLmNpcmN1cy52MS5HZXRHaXRSZW1vdGVSZXF1ZXN0Gh8uY2lyY3VzLnYxLkdldEdpdFJlbW90ZVJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_daemon_link]);
+  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UiqAEKBldvcmtlchIRCgl3b3JrZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZvbmxpbmUYAyABKAgSGQoRbGFzdF9zZWVuX3VuaXhfbXMYBCABKAMSCgoCb3MYBSABKAkSDAoEYXJjaBgGIAEoCRIQCghob3N0bmFtZRgHIAEoCRIPCgd2ZXJzaW9uGAggASgJEhUKDWxvY2FsX2RldmljZXMYCSADKAkiFAoSTGlzdFdvcmtlcnNSZXF1ZXN0IjkKE0xpc3RXb3JrZXJzUmVzcG9uc2USIgoHd29ya2VycxgBIAMoCzIRLmNpcmN1cy52MS5Xb3JrZXIiPgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlIlkKGENyZWF0ZUVucm9sbExpbmtSZXNwb25zZRIMCgRsaW5rGAEgASgJEhcKD2V4cGlyZXNfdW5peF9tcxgCIAEoAxIWCg5zZXJ2ZXJfdmVyc2lvbhgDIAEoCSJMChRMaXN0RGlyZWN0b3J5UmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCRIWCg5pbmNsdWRlX2hpZGRlbhgDIAEoCCJHChVMaXN0RGlyZWN0b3J5UmVzcG9uc2USLgoGcmVzdWx0GAEgASgLMh4uY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXN1bHQiMwoTR2V0R2l0UmVtb3RlUmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCSJCChRHZXRHaXRSZW1vdGVSZXNwb25zZRIqCgZyZXN1bHQYASABKAsyGi5jaXJjdXMudjEuR2l0UmVtb3RlUmVzdWx0Km8KCkVucm9sbFJvbGUSGwoXRU5ST0xMX1JPTEVfVU5TUEVDSUZJRUQQABIWChJFTlJPTExfUk9MRV9EQUVNT04QARIWChJFTlJPTExfUk9MRV9XT1JLRVIQAhIUChBFTlJPTExfUk9MRV9CT1RIEAMyrgMKDk1hY2hpbmVTZXJ2aWNlEkwKC0xpc3REZXZpY2VzEh0uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVxdWVzdBoeLmNpcmN1cy52MS5MaXN0RGV2aWNlc1Jlc3BvbnNlEkwKC0xpc3RXb3JrZXJzEh0uY2lyY3VzLnYxLkxpc3RXb3JrZXJzUmVxdWVzdBoeLmNpcmN1cy52MS5MaXN0V29ya2Vyc1Jlc3BvbnNlElsKEENyZWF0ZUVucm9sbExpbmsSIi5jaXJjdXMudjEuQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QaIy5jaXJjdXMudjEuQ3JlYXRlRW5yb2xsTGlua1Jlc3BvbnNlElIKDUxpc3REaXJlY3RvcnkSHy5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlcXVlc3QaIC5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3BvbnNlEk8KDEdldEdpdFJlbW90ZRIeLmNpcmN1cy52MS5HZXRHaXRSZW1vdGVSZXF1ZXN0Gh8uY2lyY3VzLnYxLkdldEdpdFJlbW90ZVJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_daemon_link]);
 
 /**
  * @generated from message circus.v1.Device
@@ -97,6 +97,104 @@ export const ListDevicesResponseSchema: GenMessage<ListDevicesResponse> = /*@__P
   messageDesc(file_circus_v1_machine, 2);
 
 /**
+ * @generated from message circus.v1.Worker
+ */
+export type Worker = Message<"circus.v1.Worker"> & {
+  /**
+   * @generated from field: string worker_id = 1;
+   */
+  workerId: string;
+
+  /**
+   * Unique among the user's workers.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * A worker link is connected now.
+   *
+   * @generated from field: bool online = 3;
+   */
+  online: boolean;
+
+  /**
+   * As Device.last_seen_unix_ms.
+   *
+   * @generated from field: int64 last_seen_unix_ms = 4;
+   */
+  lastSeenUnixMs: bigint;
+
+  /**
+   * @generated from field: string os = 5;
+   */
+  os: string;
+
+  /**
+   * @generated from field: string arch = 6;
+   */
+  arch: string;
+
+  /**
+   * @generated from field: string hostname = 7;
+   */
+  hostname: string;
+
+  /**
+   * Worker client version.
+   *
+   * @generated from field: string version = 8;
+   */
+  version: string;
+
+  /**
+   * Names of the user's devices on the same machine: sessions in their
+   * locations run in local mode on this worker.
+   *
+   * @generated from field: repeated string local_devices = 9;
+   */
+  localDevices: string[];
+};
+
+/**
+ * Describes the message circus.v1.Worker.
+ * Use `create(WorkerSchema)` to create a new message.
+ */
+export const WorkerSchema: GenMessage<Worker> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 3);
+
+/**
+ * @generated from message circus.v1.ListWorkersRequest
+ */
+export type ListWorkersRequest = Message<"circus.v1.ListWorkersRequest"> & {
+};
+
+/**
+ * Describes the message circus.v1.ListWorkersRequest.
+ * Use `create(ListWorkersRequestSchema)` to create a new message.
+ */
+export const ListWorkersRequestSchema: GenMessage<ListWorkersRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 4);
+
+/**
+ * @generated from message circus.v1.ListWorkersResponse
+ */
+export type ListWorkersResponse = Message<"circus.v1.ListWorkersResponse"> & {
+  /**
+   * @generated from field: repeated circus.v1.Worker workers = 1;
+   */
+  workers: Worker[];
+};
+
+/**
+ * Describes the message circus.v1.ListWorkersResponse.
+ * Use `create(ListWorkersResponseSchema)` to create a new message.
+ */
+export const ListWorkersResponseSchema: GenMessage<ListWorkersResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 5);
+
+/**
  * @generated from message circus.v1.CreateEnrollLinkRequest
  */
 export type CreateEnrollLinkRequest = Message<"circus.v1.CreateEnrollLinkRequest"> & {
@@ -113,7 +211,7 @@ export type CreateEnrollLinkRequest = Message<"circus.v1.CreateEnrollLinkRequest
  * Use `create(CreateEnrollLinkRequestSchema)` to create a new message.
  */
 export const CreateEnrollLinkRequestSchema: GenMessage<CreateEnrollLinkRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 3);
+  messageDesc(file_circus_v1_machine, 6);
 
 /**
  * @generated from message circus.v1.CreateEnrollLinkResponse
@@ -146,7 +244,7 @@ export type CreateEnrollLinkResponse = Message<"circus.v1.CreateEnrollLinkRespon
  * Use `create(CreateEnrollLinkResponseSchema)` to create a new message.
  */
 export const CreateEnrollLinkResponseSchema: GenMessage<CreateEnrollLinkResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 4);
+  messageDesc(file_circus_v1_machine, 7);
 
 /**
  * @generated from message circus.v1.ListDirectoryRequest
@@ -178,7 +276,7 @@ export type ListDirectoryRequest = Message<"circus.v1.ListDirectoryRequest"> & {
  * Use `create(ListDirectoryRequestSchema)` to create a new message.
  */
 export const ListDirectoryRequestSchema: GenMessage<ListDirectoryRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 5);
+  messageDesc(file_circus_v1_machine, 8);
 
 /**
  * @generated from message circus.v1.ListDirectoryResponse
@@ -197,7 +295,7 @@ export type ListDirectoryResponse = Message<"circus.v1.ListDirectoryResponse"> &
  * Use `create(ListDirectoryResponseSchema)` to create a new message.
  */
 export const ListDirectoryResponseSchema: GenMessage<ListDirectoryResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 6);
+  messageDesc(file_circus_v1_machine, 9);
 
 /**
  * @generated from message circus.v1.GetGitRemoteRequest
@@ -223,7 +321,7 @@ export type GetGitRemoteRequest = Message<"circus.v1.GetGitRemoteRequest"> & {
  * Use `create(GetGitRemoteRequestSchema)` to create a new message.
  */
 export const GetGitRemoteRequestSchema: GenMessage<GetGitRemoteRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 7);
+  messageDesc(file_circus_v1_machine, 10);
 
 /**
  * @generated from message circus.v1.GetGitRemoteResponse
@@ -242,7 +340,7 @@ export type GetGitRemoteResponse = Message<"circus.v1.GetGitRemoteResponse"> & {
  * Use `create(GetGitRemoteResponseSchema)` to create a new message.
  */
 export const GetGitRemoteResponseSchema: GenMessage<GetGitRemoteResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 8);
+  messageDesc(file_circus_v1_machine, 11);
 
 /**
  * @generated from enum circus.v1.EnrollRole
@@ -292,6 +390,16 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof ListDevicesRequestSchema;
     output: typeof ListDevicesResponseSchema;
+  },
+  /**
+   * The caller's workers that are not deleted, ordered by name.
+   *
+   * @generated from rpc circus.v1.MachineService.ListWorkers
+   */
+  listWorkers: {
+    methodKind: "unary";
+    input: typeof ListWorkersRequestSchema;
+    output: typeof ListWorkersResponseSchema;
   },
   /**
    * Issues a one-time enrollment link for the caller's machines. Any

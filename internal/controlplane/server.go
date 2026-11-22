@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
@@ -56,6 +58,11 @@ type Config struct {
 	Listen string
 	// DBPath is the SQLite file. The server keeps ledger repositories beside it.
 	DBPath string
+	// ProviderKeyFile is the file holding the key that seals provider
+	// secrets; empty means provider.key beside DBPath. It is created, with
+	// a new random key and mode 0600, when missing. With neither set (a
+	// test server without files) the key is random and lives in memory.
+	ProviderKeyFile string
 	// TLSCert and TLSKey are PEM files; the server terminates TLS.
 	TLSCert, TLSKey string
 	// BehindProxy serves plaintext for a reverse proxy that terminates TLS.
@@ -188,6 +195,8 @@ type Server struct {
 	sessions   *sessions.Service
 	bus        *sessions.Bus
 	workspaces *workspaces.Manager
+	// secrets seals and opens provider secrets.
+	secrets *providers.Box
 
 	mu             sync.Mutex
 	started        bool
@@ -243,6 +252,9 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	}
 	s.logger = slog.New(slog.NewJSONHandler(cfg.LogOutput, &slog.HandlerOptions{Level: cfg.LogLevel})).
 		With("instance_id", s.instanceID)
+	if s.secrets, err = providerBox(cfg); err != nil {
+		return nil, fmt.Errorf("controlplane: %w", err)
+	}
 	var ledgerManager *ledger.Manager
 	if cfg.DBPath != "" {
 		ledgerManager, err = ledger.New(cfg.DBPath, st, now, s.logger)
@@ -309,7 +321,8 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	// finish; the session service closes with the call plane.
 	s.hooks = append(s.hooks, shutdownHook{"session watchers", func(context.Context) error { s.bus.Close(); return nil }})
 	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger,
-		Bus: s.bus, Waker: s.sessions, Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query, Workspaces: s.workspaces, Ledger: ledgerManager})
+		Bus: s.bus, Waker: s.sessions, Scheduler: s.sessions, OnlineWorkers: s.sessions.OnlineWorkers, Secrets: s.secrets,
+		Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query, Workspaces: s.workspaces, Ledger: ledgerManager})
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
@@ -583,6 +596,25 @@ func (s *Server) onlineDevices(ctx context.Context, userID string) (map[string]b
 		}
 	}
 	return out, nil
+}
+
+// providerBox opens the provider key file (ProviderKeyFile, else
+// provider.key beside the database), creating it when missing. A server
+// without either path gets a random key that lives in memory.
+func providerBox(cfg Config) (*providers.Box, error) {
+	if cfg.DBPath == "" && cfg.ProviderKeyFile == "" {
+		key := make([]byte, providers.KeyBytes)
+		if _, err := rand.Read(key); err != nil {
+			return nil, err
+		}
+		return providers.NewBox(key)
+	}
+	key, err := providers.LoadOrCreateKey(providers.KeyPath(cfg.DBPath, cfg.ProviderKeyFile))
+	if err != nil {
+		return nil, fmt.Errorf("provider key: %w", err)
+	}
+	defer clear(key)
+	return providers.NewBox(key)
 }
 
 func serveWhoami(w http.ResponseWriter, r *http.Request) {

@@ -60,6 +60,20 @@ export function createConnectMachines(transport: Transport): MachineService {
           version: d.version,
         })),
       ),
+    listWorkers: () =>
+      call(async () =>
+        (await client.listWorkers({})).workers.map((w) => ({
+          workerId: w.workerId,
+          name: w.name,
+          online: w.online,
+          lastSeenUnixMs: Number(w.lastSeenUnixMs),
+          os: w.os,
+          arch: w.arch,
+          hostname: w.hostname,
+          version: w.version,
+          localDevices: [...w.localDevices],
+        })),
+      ),
     createEnrollLink: ({ role }) =>
       call(async () => {
         const res = await client.createEnrollLink({ role: enrollRoles[role] })

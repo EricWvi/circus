@@ -176,6 +176,7 @@ func TestRepeatedLimitsMatchWireDoc(t *testing.T) {
 		"circus.v1.SessionReply.Resumed.leases":             64,
 		"circus.v1.SessionReply.TranscriptKeys.subpaths":    1024,
 		"circus.v1.SessionReply.Devices.devices":            256,
+		"circus.v1.SessionReply.LaunchEnv.env":              72,
 		"circus.v1.ListSessionsResponse.sessions":           1000,
 		"circus.v1.ListApprovalsResponse.approvals":         32,
 	}

@@ -467,14 +467,17 @@ it("does not share objects with the store", async () => {
 })
 
 describe("persistence", () => {
-  it("round-trips the state without sessions, which start again from the demo seed", () => {
+  it("round-trips the state without sessions, providers and workers, which start again from the demo seed", () => {
     const state = seedState()
-    expect(JSON.parse(serialize(state)).state.sessions).toBeUndefined()
+    const persisted = JSON.parse(serialize(state)).state
+    expect([persisted.sessions, persisted.providers, persisted.workers]).toEqual([undefined, undefined, undefined])
     const loaded = parsePersisted(serialize(state))!
-    const { sessions: loadedSessions, ...rest } = loaded
-    const { sessions, ...expected } = state
+    const { sessions: loadedSessions, providers: loadedProviders, workers: loadedWorkers, ...rest } = loaded
+    const { sessions, providers, workers, ...expected } = state
     expect(rest).toEqual(JSON.parse(JSON.stringify(expected)))
     expect(loadedSessions.map((s) => s.sessionId)).toEqual(sessions.map((s) => s.sessionId))
+    expect(loadedProviders.map((p) => p.providerId)).toEqual(providers.map((p) => p.providerId))
+    expect(loadedWorkers.map((w) => w.workerId)).toEqual(workers.map((w) => w.workerId))
   })
 
   it("starts no demo sessions for demo projects that are gone", () => {
@@ -497,5 +500,80 @@ describe("persistence", () => {
     for (const raw of [null, "", "{", "null", "42", "[]", '{"version":2}', '{"version":2,"state":{"users":"x"}}']) {
       expect(parsePersisted(raw)).toBeNull()
     }
+  })
+})
+
+describe("model providers", () => {
+  const base = {
+    name: "Staging",
+    baseUrl: "",
+    scheme: "x_api_key" as const,
+    key: "sk-staging-1234",
+    opusModel: "",
+    sonnetModel: "",
+    haikuModel: "",
+    env: [{ name: "REGION", value: "eu" }],
+    workerIds: ["worker-devbox"],
+    maxSessions: 0,
+    isDefault: false,
+  }
+
+  it("never return secrets, only their last four characters", async () => {
+    const { client } = backend(asOwner(seedState()))
+    const created = await client.modelProviders.createProvider(base)
+    expect(created.keyLast4).toBe("1234")
+    expect(created.env).toEqual([{ name: "REGION", valueLast4: "eu" }])
+    expect(JSON.stringify(await client.modelProviders.listProviders())).not.toContain("sk-staging")
+  })
+
+  it("keep the stored key and values a write leaves out, and check the version", async () => {
+    const state = asOwner(seedState())
+    const { client } = backend(state)
+    const p = await client.modelProviders.createProvider(base)
+    const update = { ...base, providerId: p.providerId, key: "", env: [{ name: "REGION" }] }
+    await client.modelProviders.updateProvider({ ...update, name: "Staging 2", expectedUpdatedAt: p.updatedAtUnixMs })
+    const stored = state.providers.find((x) => x.providerId === p.providerId)!
+    expect([stored.key, stored.env]).toEqual(["sk-staging-1234", [{ name: "REGION", value: "eu" }]])
+    await expectCode(client.modelProviders.updateProvider({ ...update, expectedUpdatedAt: p.updatedAtUnixMs }), "aborted")
+    expect(await fieldOf(client.modelProviders.updateProvider({ ...update, env: [{ name: "OTHER" }] }))).toBe(
+      "env[0].value",
+    )
+  })
+
+  it("can't keep secrets that can't be read", async () => {
+    const { client } = backend(asOwner(seedState()))
+    const legacy = await client.modelProviders.getProvider({ providerId: "provider-legacy" })
+    const update = { ...base, providerId: legacy.providerId, name: legacy.name, env: [{ name: "LEGACY_REGION" }] }
+    expect(await fieldOf(client.modelProviders.updateProvider({ ...update, key: "" }))).toBe("api.key")
+    expect(await fieldOf(client.modelProviders.updateProvider(update))).toBe("env[0].value")
+    const fixed = await client.modelProviders.updateProvider({ ...update, env: [{ name: "LEGACY_REGION", value: "eu" }] })
+    expect(fixed.secretsUnreadable).toBe(false)
+  })
+
+  it("resolve a new session's provider: asked for, else the project's default, else the user's", async () => {
+    const state = asOwner(seedState())
+    const { client } = backend(state)
+    const create = (key: string, providerId?: string) =>
+      client.sessions.createSession({ projectId: "circus", locationIndex: 0, clientRequestId: key, providerId })
+    expect((await create("a")).providerId).toBe("provider-anthropic")
+    expect((await create("b", "")).providerId).toBe("")
+    await client.projects.updateProject({ projectId: "circus", defaultProviderId: "provider-proxy" })
+    expect((await create("c")).providerId).toBe("provider-proxy")
+    // A default naming a deleted provider counts as unset.
+    state.providers = state.providers.filter((p) => p.providerId !== "provider-proxy")
+    expect((await create("d")).providerId).toBe("provider-anthropic")
+    expect(await fieldOf(create("e", "provider-proxy"))).toBe("provider_id")
+  })
+
+  it("refuse deleting a provider while a session using it holds a lease", async () => {
+    const state = asOwner(seedState())
+    const { client } = backend(state)
+    const session = state.sessions.find((s) => s.sessionId === "web-vite")!
+    Object.assign(session, { providerId: "provider-proxy", leased: true })
+    await expectCode(client.modelProviders.deleteProvider({ providerId: "provider-proxy" }), "failed_precondition")
+    await client.sessions.updateSession({ sessionId: "web-vite", providerId: "provider-anthropic" })
+    expect(session.leased).toBe(false)
+    await client.modelProviders.deleteProvider({ providerId: "provider-proxy" })
+    expect(state.providers.some((p) => p.providerId === "provider-proxy")).toBe(false)
   })
 })

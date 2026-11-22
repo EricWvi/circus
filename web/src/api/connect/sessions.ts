@@ -1,6 +1,7 @@
 import { createClient, type Transport } from "@connectrpc/connect"
 import {
   InputPriority as ProtoInputPriority,
+  QueueReason as ProtoQueueReason,
   SessionEvent_Kind,
   SessionService as SessionServiceDesc,
   Session_State,
@@ -11,6 +12,7 @@ import {
 } from "@circus/proto/circus/v1/session_pb"
 
 import type {
+  QueueReason,
   RawSessionEvent,
   SessionDetails,
   SessionEventKind,
@@ -39,6 +41,15 @@ const outcomes: Record<ProtoTurnOutcome, TurnOutcome> = {
   [ProtoTurnOutcome.STOPPED]: "stopped",
 }
 
+const queueReasons: Record<ProtoQueueReason, QueueReason> = {
+  [ProtoQueueReason.UNSPECIFIED]: "unspecified",
+  [ProtoQueueReason.PROVIDER_FULL]: "provider_full",
+  [ProtoQueueReason.NO_ASSIGNED_WORKER]: "no_assigned_worker",
+  [ProtoQueueReason.PROVIDER_DELETED]: "provider_deleted",
+  [ProtoQueueReason.PROVIDER_SECRETS_UNREADABLE]: "provider_secrets_unreadable",
+  [ProtoQueueReason.WORKER_OFFLINE]: "worker_offline",
+}
+
 /** The proto kind names, lower case without `KIND_`; a newer kind reads as unspecified. */
 const kinds = Object.fromEntries(
   Object.entries(SessionEvent_Kind)
@@ -64,6 +75,9 @@ export function toSummary(session: ProtoSession): SessionSummary {
     pendingApprovalCount: session.pendingApprovalCount,
     createdAtUnixMs: Number(session.createdAtUnixMs),
     ...(session.workspace ? { workspace: toWorkspace(session.workspace) } : {}),
+    providerId: session.providerId,
+    // A reason this client doesn't know yet reads as none.
+    queueReason: queueReasons[session.queueReason] ?? "unspecified",
   }
 }
 
@@ -124,6 +138,7 @@ export function createConnectSessions(transport: Transport): SessionService {
           projectId: req.projectId,
           locationIndex: req.locationIndex,
           clientRequestId: req.clientRequestId,
+          providerId: req.providerId,
         })
         return toDetails(res.session, "CreateSession")
       }),
@@ -146,7 +161,13 @@ export function createConnectSessions(transport: Transport): SessionService {
     resolveApproval: (req) => call(async () => void (await client.resolveApproval(req))),
     recoverSession: (req) =>
       call(async () => void (await client.recoverSession({ sessionId: req.sessionId, acceptTranscriptGap: true }))),
-    updateSession: (req) => call(async () => toDetails(await client.updateSession(req), "UpdateSession")),
+    updateSession: (req) =>
+      call(async () =>
+        toDetails(
+          await client.updateSession({ sessionId: req.sessionId, title: req.title, providerId: req.providerId }),
+          "UpdateSession",
+        ),
+      ),
     retryWorkspace: (req) =>
       call(async () => {
         const res = await client.retryWorkspace({ sessionId: req.sessionId })

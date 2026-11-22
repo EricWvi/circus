@@ -21,6 +21,8 @@ import type {
   EnrollLink,
   EnrollRole,
   Ledger,
+  ModelProvider,
+  ModelProviderService,
   Project,
   ProjectService,
   SessionDetails,
@@ -91,6 +93,34 @@ export function useSessionList(projectId?: string) {
   })
 }
 
+type SessionReadListener = (sentAtMs: number) => void
+const sessionReadListeners = new Map<string, Set<SessionReadListener>>()
+
+/**
+ * Tells the session's watchers that a read of it, whose request was sent at
+ * `sentAtMs` (this browser's clock), is about to land in the cache. Called
+ * once the answer is there, so they hear it after the cache has it.
+ */
+function announceSessionRead(sessionId: string, sentAtMs: number) {
+  setTimeout(() => {
+    for (const listener of sessionReadListeners.get(sessionId) ?? []) listener(sentAtMs)
+  }, 0)
+}
+
+/**
+ * Calls `listener` after each read of the session lands in the cache, with
+ * when its request was sent. Returns the unsubscribe.
+ */
+export function onSessionRead(sessionId: string, listener: SessionReadListener): () => void {
+  const set = sessionReadListeners.get(sessionId) ?? new Set()
+  sessionReadListeners.set(sessionId, set)
+  set.add(listener)
+  return () => {
+    set.delete(listener)
+    if (set.size === 0) sessionReadListeners.delete(sessionId)
+  }
+}
+
 /**
  * One session with where it runs. Its stream refreshes it at turn and
  * approval boundaries (see `useSessionWatch`); a slow poll covers the rest.
@@ -99,7 +129,12 @@ export function useSession(sessionId: string) {
   const client = useClient()
   return useQuery({
     queryKey: queryKeys.session(sessionId),
-    queryFn: () => client.sessions.getSession({ sessionId }),
+    queryFn: async () => {
+      const sentAt = Date.now()
+      const session = await client.sessions.getSession({ sessionId })
+      announceSessionRead(sessionId, sentAt)
+      return session
+    },
     refetchInterval: SESSIONS_LIVE_INTERVAL_MS,
   })
 }
@@ -181,6 +216,128 @@ export function useDevices({ live = false }: { live?: boolean } = {}) {
     queryFn: () => client.machines.listDevices(),
     refetchInterval: live ? DEVICES_LIVE_INTERVAL_MS : false,
     refetchOnWindowFocus: live ? "always" : true,
+  })
+}
+
+/**
+ * The caller's workers. `live` keeps their status fresh while the page is
+ * visible, as for devices.
+ */
+export function useWorkers({ live = false }: { live?: boolean } = {}) {
+  const client = useClient()
+  return useQuery({
+    queryKey: queryKeys.workers,
+    queryFn: () => client.machines.listWorkers(),
+    refetchInterval: live ? DEVICES_LIVE_INTERVAL_MS : false,
+    refetchOnWindowFocus: live ? "always" : true,
+  })
+}
+
+/**
+ * The caller's model providers, ordered by name. `live` refreshes their
+ * session counts while the page is visible.
+ */
+export function useModelProviders({ live = false }: { live?: boolean } = {}) {
+  const client = useClient()
+  return useQuery({
+    queryKey: queryKeys.modelProviders,
+    queryFn: () => client.modelProviders.listProviders(),
+    refetchInterval: live ? DEVICES_LIVE_INTERVAL_MS : false,
+  })
+}
+
+const sortProviders = (list: ModelProvider[]) =>
+  list.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.providerId.localeCompare(b.providerId))
+
+/**
+ * Puts a provider the server returned into the cached list. Making it the
+ * default clears the mark elsewhere, as the server does.
+ */
+function cacheProvider(queryClient: QueryClient, provider: ModelProvider) {
+  queryClient.setQueryData<ModelProvider[]>(queryKeys.modelProviders, (list) => {
+    if (!list) return list
+    const others = list
+      .filter((p) => p.providerId !== provider.providerId)
+      .map((p) => (provider.isDefault && p.isDefault ? { ...p, isDefault: false } : p))
+    return sortProviders([...others, provider])
+  })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.modelProviders })
+}
+
+/** Refreshes what a failed provider call showed to be stale. */
+function refreshAfterProviderError(queryClient: QueryClient, error: unknown) {
+  if (isApiError(error, "not_found") || isApiError(error, "aborted")) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.modelProviders })
+  }
+  if (isApiError(error) && /^worker_ids/.test(error.field ?? "")) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.workers })
+  }
+}
+
+export function useCreateModelProvider() {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (req: Parameters<ModelProviderService["createProvider"]>[0]) => client.modelProviders.createProvider(req),
+    // The request holds secrets: nothing keeps it once the form is gone.
+    gcTime: 0,
+    onSuccess: (provider) => cacheProvider(queryClient, provider),
+    onError: (error) => refreshAfterProviderError(queryClient, error),
+  })
+}
+
+export function useUpdateModelProvider() {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (req: Parameters<ModelProviderService["updateProvider"]>[0]) => client.modelProviders.updateProvider(req),
+    // The request holds secrets: nothing keeps it once the form is gone.
+    gcTime: 0,
+    onSuccess: (provider) => {
+      cacheProvider(queryClient, provider)
+      // Sessions waiting on it may go on now.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.allSessions })
+    },
+    onError: (error) => refreshAfterProviderError(queryClient, error),
+  })
+}
+
+export function useDeleteModelProvider() {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (req: { providerId: string }) => client.modelProviders.deleteProvider(req),
+    onSuccess: (_, { providerId }) => {
+      queryClient.setQueryData<ModelProvider[]>(queryKeys.modelProviders, (list) =>
+        list?.filter((p) => p.providerId !== providerId),
+      )
+      void queryClient.invalidateQueries({ queryKey: queryKeys.modelProviders })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.allSessions })
+    },
+    onError: (error) => {
+      // Sessions using it hold leases now: the counts are behind.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.modelProviders })
+      refreshAfterProviderError(queryClient, error)
+    },
+  })
+}
+
+/** Switches a session to another provider ("" for local login). */
+export function useChangeSessionProvider() {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (req: { sessionId: string; providerId: string }) => {
+      const sentAt = Date.now()
+      const session = await client.sessions.updateSession(req)
+      announceSessionRead(req.sessionId, sentAt)
+      return session
+    },
+    onSuccess: (session) => queryClient.setQueryData(queryKeys.session(session.sessionId), session),
+    onSettled: (_data, _error, { sessionId }) => {
+      invalidateSession(queryClient, sessionId)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.modelProviders })
+    },
   })
 }
 

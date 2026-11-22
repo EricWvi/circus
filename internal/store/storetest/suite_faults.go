@@ -205,8 +205,15 @@ func crashScript(f fixture) []crashStep {
 			_, err := s.CreateProject(ctx, newProject("session-project", "u1", "Sessions"))
 			return err
 		}},
+		{"provider", 1, func(ctx context.Context, s store.Store) error {
+			p := newProvider("p1", "u1", "Prod", "w1")
+			p.IsDefault, p.MaxSessions = true, 2
+			return errOf(s.CreateProvider(ctx, p))
+		}},
 		{"session", 1, func(ctx context.Context, s store.Store) error {
-			return errOf(s.CreateSession(ctx, newSession("s1", f), []store.SessionCwd{{DeviceID: "d1", Cwd: "/w"}}, 10))
+			sess := newSession("s1", f)
+			sess.ProviderID = "p1"
+			return errOf(s.CreateSession(ctx, sess, []store.SessionCwd{{DeviceID: "d1", Cwd: "/w"}}, 10))
 		}},
 		{"lease", 1, func(ctx context.Context, s store.Store) error {
 			_, err := s.AcquireLease(ctx, store.LeaseRequest{SessionID: "s1", WorkerID: "w1", BootID: "wb1", ConnID: "wc1", Now: t0 + 10, ExpiresAt: t0 + 10 + ttl})
@@ -250,6 +257,19 @@ func crashScript(f fixture) []crashStep {
 				Persisted: store.TurnPersisted{InputIDs: []string{"s1-in1"}, CallIDs: []string{"c2"}}})
 			return err
 		}},
+		{"provider update", 1, func(ctx context.Context, s store.Store) error {
+			p := newProvider("p1", "u1", "Prod", "w1")
+			p.Secrets, p.UpdatedAt, p.MaxSessions = []byte("resealed"), t0+14, 1
+			return errOf(s.UpdateProvider(ctx, "u1", p, ptr(t0)))
+		}},
+		{"switch provider", 1, func(ctx context.Context, s store.Store) error {
+			res, err := s.SetSessionProvider(ctx, "s1", "", t0+15)
+			if err == nil && (res.Loss == nil || res.Loss.Released.ProviderID != "p1") {
+				err = errors.New("the provider change released no lease")
+			}
+			return err
+		}},
+		{"delete provider", 1, func(ctx context.Context, s store.Store) error { return s.DeleteProvider(ctx, "u1", "p1", t0+16) }},
 	}
 }
 
@@ -270,6 +290,7 @@ type snapshot struct {
 	Jobs             []store.Job
 	Timers           []store.Timer
 	Projects         []store.Project
+	Providers        []store.Provider
 	Events           []store.SessionEvent
 	Sessions         []store.Session
 	Leases           []store.Lease
@@ -306,6 +327,8 @@ func takeSnapshot(t testing.TB, s store.Ops) snapshot {
 		snap.Timers[i].Token = "" // random per claim
 	}
 	snap.Projects, err = s.ListProjects(ctx, "u1")
+	must(t, err)
+	snap.Providers, err = s.ListProviders(ctx, "u1", t0)
 	must(t, err)
 	snap.Sessions, err = s.ListSessions(ctx, store.SessionFilter{Now: t0, Limit: store.MaxPageSize})
 	must(t, err)

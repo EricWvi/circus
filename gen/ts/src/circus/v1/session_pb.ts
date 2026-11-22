@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/session.proto.
  */
 export const file_circus_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvc2Vzc2lvbi5wcm90bxIJY2lyY3VzLnYxIq4BCg1TZXNzaW9uQ29uZmlnEhYKDmRlZmF1bHRfZGV2aWNlGAEgASgJEioKBGN3ZHMYAiADKAsyHC5jaXJjdXMudjEuU2Vzc2lvbkNvbmZpZy5Dd2QSDQoFbW9kZWwYAyABKAkSFwoPcGVybWlzc2lvbl9tb2RlGAQgASgJEg0KBWxvY2FsGAUgASgIGiIKA0N3ZBIOCgZkZXZpY2UYASABKAkSCwoDY3dkGAIgASgJIq8ECgdTZXNzaW9uEhIKCnNlc3Npb25faWQYASABKAkSJwoFc3RhdGUYAiABKA4yGC5jaXJjdXMudjEuU2Vzc2lvbi5TdGF0ZRIxChFsYXN0X3R1cm5fb3V0Y29tZRgDIAEoDjIWLmNpcmN1cy52MS5UdXJuT3V0Y29tZRISCgp0dXJuX2NvdW50GAQgASgEEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgFIAEoAxIaChJzdG9wcGVkX2F0X3VuaXhfbXMYBiABKAMSKAoGY29uZmlnGAcgASgLMhguY2lyY3VzLnYxLlNlc3Npb25Db25maWcSFgoOdmlld190cnVuY2F0ZWQYCCABKAgSGAoQcGlubmVkX3dvcmtlcl9pZBgJIAEoCRISCgpwcm9qZWN0X2lkGAogASgJEg0KBXRpdGxlGAsgASgJEiAKGGxhc3RfYWN0aXZpdHlfYXRfdW5peF9tcxgMIAEoAxIeChZwZW5kaW5nX2FwcHJvdmFsX2NvdW50GA0gASgNEi0KCXdvcmtzcGFjZRgOIAEoCzIaLmNpcmN1cy52MS5Xb3Jrc3BhY2VTdGF0dXMieAoFU3RhdGUSFQoRU1RBVEVfVU5TUEVDSUZJRUQQABIOCgpTVEFURV9JRExFEAESEAoMU1RBVEVfUVVFVUVEEAISEQoNU1RBVEVfUlVOTklORxADEhEKDVNUQVRFX1NUT1BQRUQQBBIQCgxTVEFURV9CUk9LRU4QBSKIBQoMU2Vzc2lvbkV2ZW50EgsKA3NlcRgBIAEoBBISCgp0c191bml4X21zGAIgASgDEioKBGtpbmQYAyABKA4yHC5jaXJjdXMudjEuU2Vzc2lvbkV2ZW50LktpbmQSFAoMcGF5bG9hZF9qc29uGAQgASgJEhEKCWVwaGVtZXJhbBgFIAEoCBIRCgl0cnVuY2F0ZWQYBiABKAgi7gMKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEhUKEUtJTkRfVFVSTl9TVEFSVEVEEAESEgoOS0lORF9BU1NJU1RBTlQQAhINCglLSU5EX1VTRVIQAxIWChJLSU5EX1RPT0xfUFJPR1JFU1MQBBIPCgtLSU5EX1JFU1VMVBAFEhoKFktJTkRfUEVSTUlTU0lPTl9ERU5JRUQQBhIZChVLSU5EX0FQUFJPVkFMX1BFTkRJTkcQBxIaChZLSU5EX0FQUFJPVkFMX1JFU09MVkVEEAgSGQoVS0lORF9UVVJOX0lOVEVSUlVQVEVEEAkSFgoSS0lORF9TRVNTSU9OX1NUQVRFEAoSFwoTS0lORF9CR1RBU0tfU1RBUlRFRBALEhUKEUtJTkRfQkdUQVNLX0VOREVEEAwSHwobS0lORF9OT1RJRklDQVRJT05fREVMSVZFUkVEEA0SDgoKS0lORF9FUlJPUhAOEiAKHEtJTkRfVFJBTlNDUklQVF9HQVBfQUNDRVBURUQQDxIgChxLSU5EX1RSQU5TQ1JJUFRfR0FQX0RFVEVDVEVEEBASFQoRS0lORF9UVVJOX1NUT1BQRUQQERIXChNLSU5EX0lOUFVUX0FDQ0VQVEVEEBISEgoOS0lORF9XT1JLU1BBQ0UQEyLTAQoUQ3JlYXRlU2Vzc2lvblJlcXVlc3QSKAoGY29uZmlnGAEgASgLMhguY2lyY3VzLnYxLlNlc3Npb25Db25maWcSHQoQcGlubmVkX3dvcmtlcl9pZBgCIAEoCUgAiAEBEhIKCnByb2plY3RfaWQYAyABKAkSGwoObG9jYXRpb25faW5kZXgYBCABKA1IAYgBARIZChFjbGllbnRfcmVxdWVzdF9pZBgFIAEoCUITChFfcGlubmVkX3dvcmtlcl9pZEIRCg9fbG9jYXRpb25faW5kZXgiPAoVQ3JlYXRlU2Vzc2lvblJlc3BvbnNlEiMKB3Nlc3Npb24YASABKAsyEi5jaXJjdXMudjEuU2Vzc2lvbiJ5ChJTZW5kTWVzc2FnZVJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIVCg1jbGllbnRfbXNnX2lkGAIgASgJEgwKBHRleHQYAyABKAkSKgoIcHJpb3JpdHkYBCABKA4yGC5jaXJjdXMudjEuSW5wdXRQcmlvcml0eSI6ChNTZW5kTWVzc2FnZVJlc3BvbnNlEhAKCGlucHV0X2lkGAEgASgJEhEKCWV2ZW50X3NlcRgCIAEoBCI8ChNXYXRjaFNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSEQoJYWZ0ZXJfc2VxGAIgASgEIlAKE0xpc3RTZXNzaW9uc1JlcXVlc3QSEQoJcGFnZV9zaXplGAEgASgNEhIKCnBhZ2VfdG9rZW4YAiABKAkSEgoKcHJvamVjdF9pZBgDIAEoCSJVChRMaXN0U2Vzc2lvbnNSZXNwb25zZRIkCghzZXNzaW9ucxgBIAMoCzISLmNpcmN1cy52MS5TZXNzaW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSInChFHZXRTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIjkKFFVwZGF0ZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDQoFdGl0bGUYAiABKAki6wEKD1Nlc3Npb25BcHByb3ZhbBITCgthcHByb3ZhbF9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhMKC3Rvb2xfdXNlX2lkGAMgASgJEhAKCGFnZW50X2lkGAQgASgJEgwKBHRvb2wYBSABKAkSDgoGZGV2aWNlGAYgASgJEhEKCW1hdGNoX2tleRgHIAEoCRIPCgdkaXNwbGF5GAggASgJEg4KBnJlYXNvbhgJIAEoCRIaChJjcmVhdGVkX2F0X3VuaXhfbXMYCiABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGAsgASgDIioKFExpc3RBcHByb3ZhbHNSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiRgoVTGlzdEFwcHJvdmFsc1Jlc3BvbnNlEi0KCWFwcHJvdmFscxgBIAMoCzIaLmNpcmN1cy52MS5TZXNzaW9uQXBwcm92YWwiPgoWUmVzb2x2ZUFwcHJvdmFsUmVxdWVzdBITCgthcHByb3ZhbF9pZBgBIAEoCRIPCgdhcHByb3ZlGAIgASgIIhkKF1Jlc29sdmVBcHByb3ZhbFJlc3BvbnNlIiYKEEludGVycnVwdFJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSITChFJbnRlcnJ1cHRSZXNwb25zZSIoChJTdG9wU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIVChNTdG9wU2Vzc2lvblJlc3BvbnNlIioKFERlbGV0ZVNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiFwoVRGVsZXRlU2Vzc2lvblJlc3BvbnNlIkoKFVJlY292ZXJTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEh0KFWFjY2VwdF90cmFuc2NyaXB0X2dhcBgCIAEoCCIYChZSZWNvdmVyU2Vzc2lvblJlc3BvbnNlIisKFVJldHJ5V29ya3NwYWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIkcKFlJldHJ5V29ya3NwYWNlUmVzcG9uc2USLQoJd29ya3NwYWNlGAEgASgLMhouY2lyY3VzLnYxLldvcmtzcGFjZVN0YXR1cypiCg1JbnB1dFByaW9yaXR5Eh4KGklOUFVUX1BSSU9SSVRZX1VOU1BFQ0lGSUVEEAASGQoVSU5QVVRfUFJJT1JJVFlfTk9STUFMEAESFgoSSU5QVVRfUFJJT1JJVFlfTk9XEAIqcwoKVHVybk9yaWdpbhIbChdUVVJOX09SSUdJTl9VTlNQRUNJRklFRBAAEhUKEVRVUk5fT1JJR0lOX0lOUFVUEAESHAoYVFVSTl9PUklHSU5fTk9USUZJQ0FUSU9OEAISEwoPVFVSTl9PUklHSU5fQ0xJEAMqlwEKC1R1cm5PdXRjb21lEhwKGFRVUk5fT1VUQ09NRV9VTlNQRUNJRklFRBAAEhoKFlRVUk5fT1VUQ09NRV9DT01QTEVURUQQARIcChhUVVJOX09VVENPTUVfSU5URVJSVVBURUQQAhIWChJUVVJOX09VVENPTUVfRVJST1IQAxIYChRUVVJOX09VVENPTUVfU1RPUFBFRBAEMpoICg5TZXNzaW9uU2VydmljZRJSCg1DcmVhdGVTZXNzaW9uEh8uY2lyY3VzLnYxLkNyZWF0ZVNlc3Npb25SZXF1ZXN0GiAuY2lyY3VzLnYxLkNyZWF0ZVNlc3Npb25SZXNwb25zZRJMCgtTZW5kTWVzc2FnZRIdLmNpcmN1cy52MS5TZW5kTWVzc2FnZVJlcXVlc3QaHi5jaXJjdXMudjEuU2VuZE1lc3NhZ2VSZXNwb25zZRJJCgxXYXRjaFNlc3Npb24SHi5jaXJjdXMudjEuV2F0Y2hTZXNzaW9uUmVxdWVzdBoXLmNpcmN1cy52MS5TZXNzaW9uRXZlbnQwARJPCgxMaXN0U2Vzc2lvbnMSHi5jaXJjdXMudjEuTGlzdFNlc3Npb25zUmVxdWVzdBofLmNpcmN1cy52MS5MaXN0U2Vzc2lvbnNSZXNwb25zZRI+CgpHZXRTZXNzaW9uEhwuY2lyY3VzLnYxLkdldFNlc3Npb25SZXF1ZXN0GhIuY2lyY3VzLnYxLlNlc3Npb24SRAoNVXBkYXRlU2Vzc2lvbhIfLmNpcmN1cy52MS5VcGRhdGVTZXNzaW9uUmVxdWVzdBoSLmNpcmN1cy52MS5TZXNzaW9uElIKDUxpc3RBcHByb3ZhbHMSHy5jaXJjdXMudjEuTGlzdEFwcHJvdmFsc1JlcXVlc3QaIC5jaXJjdXMudjEuTGlzdEFwcHJvdmFsc1Jlc3BvbnNlElgKD1Jlc29sdmVBcHByb3ZhbBIhLmNpcmN1cy52MS5SZXNvbHZlQXBwcm92YWxSZXF1ZXN0GiIuY2lyY3VzLnYxLlJlc29sdmVBcHByb3ZhbFJlc3BvbnNlEkYKCUludGVycnVwdBIbLmNpcmN1cy52MS5JbnRlcnJ1cHRSZXF1ZXN0GhwuY2lyY3VzLnYxLkludGVycnVwdFJlc3BvbnNlEkwKC1N0b3BTZXNzaW9uEh0uY2lyY3VzLnYxLlN0b3BTZXNzaW9uUmVxdWVzdBoeLmNpcmN1cy52MS5TdG9wU2Vzc2lvblJlc3BvbnNlElIKDURlbGV0ZVNlc3Npb24SHy5jaXJjdXMudjEuRGVsZXRlU2Vzc2lvblJlcXVlc3QaIC5jaXJjdXMudjEuRGVsZXRlU2Vzc2lvblJlc3BvbnNlElUKDlJlY292ZXJTZXNzaW9uEiAuY2lyY3VzLnYxLlJlY292ZXJTZXNzaW9uUmVxdWVzdBohLmNpcmN1cy52MS5SZWNvdmVyU2Vzc2lvblJlc3BvbnNlElUKDlJldHJ5V29ya3NwYWNlEiAuY2lyY3VzLnYxLlJldHJ5V29ya3NwYWNlUmVxdWVzdBohLmNpcmN1cy52MS5SZXRyeVdvcmtzcGFjZVJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_workspace]);
+  fileDesc("ChdjaXJjdXMvdjEvc2Vzc2lvbi5wcm90bxIJY2lyY3VzLnYxIq4BCg1TZXNzaW9uQ29uZmlnEhYKDmRlZmF1bHRfZGV2aWNlGAEgASgJEioKBGN3ZHMYAiADKAsyHC5jaXJjdXMudjEuU2Vzc2lvbkNvbmZpZy5Dd2QSDQoFbW9kZWwYAyABKAkSFwoPcGVybWlzc2lvbl9tb2RlGAQgASgJEg0KBWxvY2FsGAUgASgIGiIKA0N3ZBIOCgZkZXZpY2UYASABKAkSCwoDY3dkGAIgASgJIvIECgdTZXNzaW9uEhIKCnNlc3Npb25faWQYASABKAkSJwoFc3RhdGUYAiABKA4yGC5jaXJjdXMudjEuU2Vzc2lvbi5TdGF0ZRIxChFsYXN0X3R1cm5fb3V0Y29tZRgDIAEoDjIWLmNpcmN1cy52MS5UdXJuT3V0Y29tZRISCgp0dXJuX2NvdW50GAQgASgEEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgFIAEoAxIaChJzdG9wcGVkX2F0X3VuaXhfbXMYBiABKAMSKAoGY29uZmlnGAcgASgLMhguY2lyY3VzLnYxLlNlc3Npb25Db25maWcSFgoOdmlld190cnVuY2F0ZWQYCCABKAgSGAoQcGlubmVkX3dvcmtlcl9pZBgJIAEoCRISCgpwcm9qZWN0X2lkGAogASgJEg0KBXRpdGxlGAsgASgJEiAKGGxhc3RfYWN0aXZpdHlfYXRfdW5peF9tcxgMIAEoAxIeChZwZW5kaW5nX2FwcHJvdmFsX2NvdW50GA0gASgNEi0KCXdvcmtzcGFjZRgOIAEoCzIaLmNpcmN1cy52MS5Xb3Jrc3BhY2VTdGF0dXMSEwoLcHJvdmlkZXJfaWQYDyABKAkSLAoMcXVldWVfcmVhc29uGBAgASgOMhYuY2lyY3VzLnYxLlF1ZXVlUmVhc29uIngKBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASDgoKU1RBVEVfSURMRRABEhAKDFNUQVRFX1FVRVVFRBACEhEKDVNUQVRFX1JVTk5JTkcQAxIRCg1TVEFURV9TVE9QUEVEEAQSEAoMU1RBVEVfQlJPS0VOEAUimAUKDFNlc3Npb25FdmVudBILCgNzZXEYASABKAQSEgoKdHNfdW5peF9tcxgCIAEoAxIqCgRraW5kGAMgASgOMhwuY2lyY3VzLnYxLlNlc3Npb25FdmVudC5LaW5kEhQKDHBheWxvYWRfanNvbhgEIAEoCRIRCgllcGhlbWVyYWwYBSABKAgSEQoJdHJ1bmNhdGVkGAYgASgIIv4DCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIVChFLSU5EX1RVUk5fU1RBUlRFRBABEhIKDktJTkRfQVNTSVNUQU5UEAISDQoJS0lORF9VU0VSEAMSFgoSS0lORF9UT09MX1BST0dSRVNTEAQSDwoLS0lORF9SRVNVTFQQBRIaChZLSU5EX1BFUk1JU1NJT05fREVOSUVEEAYSGQoVS0lORF9BUFBST1ZBTF9QRU5ESU5HEAcSGgoWS0lORF9BUFBST1ZBTF9SRVNPTFZFRBAIEhkKFUtJTkRfVFVSTl9JTlRFUlJVUFRFRBAJEhYKEktJTkRfU0VTU0lPTl9TVEFURRAKEhcKE0tJTkRfQkdUQVNLX1NUQVJURUQQCxIVChFLSU5EX0JHVEFTS19FTkRFRBAMEh8KG0tJTkRfTk9USUZJQ0FUSU9OX0RFTElWRVJFRBANEg4KCktJTkRfRVJST1IQDhIgChxLSU5EX1RSQU5TQ1JJUFRfR0FQX0FDQ0VQVEVEEA8SIAocS0lORF9UUkFOU0NSSVBUX0dBUF9ERVRFQ1RFRBAQEhUKEUtJTkRfVFVSTl9TVE9QUEVEEBESFwoTS0lORF9JTlBVVF9BQ0NFUFRFRBASEhIKDktJTkRfV09SS1NQQUNFEBMSDgoKS0lORF9RVUVVRRAUIv0BChRDcmVhdGVTZXNzaW9uUmVxdWVzdBIoCgZjb25maWcYASABKAsyGC5jaXJjdXMudjEuU2Vzc2lvbkNvbmZpZxIdChBwaW5uZWRfd29ya2VyX2lkGAIgASgJSACIAQESEgoKcHJvamVjdF9pZBgDIAEoCRIbCg5sb2NhdGlvbl9pbmRleBgEIAEoDUgBiAEBEhkKEWNsaWVudF9yZXF1ZXN0X2lkGAUgASgJEhgKC3Byb3ZpZGVyX2lkGAYgASgJSAKIAQFCEwoRX3Bpbm5lZF93b3JrZXJfaWRCEQoPX2xvY2F0aW9uX2luZGV4Qg4KDF9wcm92aWRlcl9pZCI8ChVDcmVhdGVTZXNzaW9uUmVzcG9uc2USIwoHc2Vzc2lvbhgBIAEoCzISLmNpcmN1cy52MS5TZXNzaW9uInkKElNlbmRNZXNzYWdlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhUKDWNsaWVudF9tc2dfaWQYAiABKAkSDAoEdGV4dBgDIAEoCRIqCghwcmlvcml0eRgEIAEoDjIYLmNpcmN1cy52MS5JbnB1dFByaW9yaXR5IjoKE1NlbmRNZXNzYWdlUmVzcG9uc2USEAoIaW5wdXRfaWQYASABKAkSEQoJZXZlbnRfc2VxGAIgASgEIjwKE1dhdGNoU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIRCglhZnRlcl9zZXEYAiABKAQiUAoTTGlzdFNlc3Npb25zUmVxdWVzdBIRCglwYWdlX3NpemUYASABKA0SEgoKcGFnZV90b2tlbhgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJIlUKFExpc3RTZXNzaW9uc1Jlc3BvbnNlEiQKCHNlc3Npb25zGAEgAygLMhIuY2lyY3VzLnYxLlNlc3Npb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIicKEUdldFNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkicgoUVXBkYXRlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRISCgV0aXRsZRgCIAEoCUgAiAEBEhgKC3Byb3ZpZGVyX2lkGAMgASgJSAGIAQFCCAoGX3RpdGxlQg4KDF9wcm92aWRlcl9pZCLrAQoPU2Vzc2lvbkFwcHJvdmFsEhMKC2FwcHJvdmFsX2lkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSEwoLdG9vbF91c2VfaWQYAyABKAkSEAoIYWdlbnRfaWQYBCABKAkSDAoEdG9vbBgFIAEoCRIOCgZkZXZpY2UYBiABKAkSEQoJbWF0Y2hfa2V5GAcgASgJEg8KB2Rpc3BsYXkYCCABKAkSDgoGcmVhc29uGAkgASgJEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgKIAEoAxIaChJleHBpcmVzX2F0X3VuaXhfbXMYCyABKAMiKgoUTGlzdEFwcHJvdmFsc1JlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSJGChVMaXN0QXBwcm92YWxzUmVzcG9uc2USLQoJYXBwcm92YWxzGAEgAygLMhouY2lyY3VzLnYxLlNlc3Npb25BcHByb3ZhbCI+ChZSZXNvbHZlQXBwcm92YWxSZXF1ZXN0EhMKC2FwcHJvdmFsX2lkGAEgASgJEg8KB2FwcHJvdmUYAiABKAgiGQoXUmVzb2x2ZUFwcHJvdmFsUmVzcG9uc2UiJgoQSW50ZXJydXB0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhMKEUludGVycnVwdFJlc3BvbnNlIigKElN0b3BTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhUKE1N0b3BTZXNzaW9uUmVzcG9uc2UiKgoURGVsZXRlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSIXChVEZWxldGVTZXNzaW9uUmVzcG9uc2UiSgoVUmVjb3ZlclNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSHQoVYWNjZXB0X3RyYW5zY3JpcHRfZ2FwGAIgASgIIhgKFlJlY292ZXJTZXNzaW9uUmVzcG9uc2UiKwoVUmV0cnlXb3Jrc3BhY2VSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiRwoWUmV0cnlXb3Jrc3BhY2VSZXNwb25zZRItCgl3b3Jrc3BhY2UYASABKAsyGi5jaXJjdXMudjEuV29ya3NwYWNlU3RhdHVzKmIKDUlucHV0UHJpb3JpdHkSHgoaSU5QVVRfUFJJT1JJVFlfVU5TUEVDSUZJRUQQABIZChVJTlBVVF9QUklPUklUWV9OT1JNQUwQARIWChJJTlBVVF9QUklPUklUWV9OT1cQAipzCgpUdXJuT3JpZ2luEhsKF1RVUk5fT1JJR0lOX1VOU1BFQ0lGSUVEEAASFQoRVFVSTl9PUklHSU5fSU5QVVQQARIcChhUVVJOX09SSUdJTl9OT1RJRklDQVRJT04QAhITCg9UVVJOX09SSUdJTl9DTEkQAyqXAQoLVHVybk91dGNvbWUSHAoYVFVSTl9PVVRDT01FX1VOU1BFQ0lGSUVEEAASGgoWVFVSTl9PVVRDT01FX0NPTVBMRVRFRBABEhwKGFRVUk5fT1VUQ09NRV9JTlRFUlJVUFRFRBACEhYKElRVUk5fT1VUQ09NRV9FUlJPUhADEhgKFFRVUk5fT1VUQ09NRV9TVE9QUEVEEAQq4gEKC1F1ZXVlUmVhc29uEhwKGFFVRVVFX1JFQVNPTl9VTlNQRUNJRklFRBAAEh4KGlFVRVVFX1JFQVNPTl9QUk9WSURFUl9GVUxMEAESIwofUVVFVUVfUkVBU09OX05PX0FTU0lHTkVEX1dPUktFUhACEiEKHVFVRVVFX1JFQVNPTl9QUk9WSURFUl9ERUxFVEVEEAMSLAooUVVFVUVfUkVBU09OX1BST1ZJREVSX1NFQ1JFVFNfVU5SRUFEQUJMRRAEEh8KG1FVRVVFX1JFQVNPTl9XT1JLRVJfT0ZGTElORRAFMpoICg5TZXNzaW9uU2VydmljZRJSCg1DcmVhdGVTZXNzaW9uEh8uY2lyY3VzLnYxLkNyZWF0ZVNlc3Npb25SZXF1ZXN0GiAuY2lyY3VzLnYxLkNyZWF0ZVNlc3Npb25SZXNwb25zZRJMCgtTZW5kTWVzc2FnZRIdLmNpcmN1cy52MS5TZW5kTWVzc2FnZVJlcXVlc3QaHi5jaXJjdXMudjEuU2VuZE1lc3NhZ2VSZXNwb25zZRJJCgxXYXRjaFNlc3Npb24SHi5jaXJjdXMudjEuV2F0Y2hTZXNzaW9uUmVxdWVzdBoXLmNpcmN1cy52MS5TZXNzaW9uRXZlbnQwARJPCgxMaXN0U2Vzc2lvbnMSHi5jaXJjdXMudjEuTGlzdFNlc3Npb25zUmVxdWVzdBofLmNpcmN1cy52MS5MaXN0U2Vzc2lvbnNSZXNwb25zZRI+CgpHZXRTZXNzaW9uEhwuY2lyY3VzLnYxLkdldFNlc3Npb25SZXF1ZXN0GhIuY2lyY3VzLnYxLlNlc3Npb24SRAoNVXBkYXRlU2Vzc2lvbhIfLmNpcmN1cy52MS5VcGRhdGVTZXNzaW9uUmVxdWVzdBoSLmNpcmN1cy52MS5TZXNzaW9uElIKDUxpc3RBcHByb3ZhbHMSHy5jaXJjdXMudjEuTGlzdEFwcHJvdmFsc1JlcXVlc3QaIC5jaXJjdXMudjEuTGlzdEFwcHJvdmFsc1Jlc3BvbnNlElgKD1Jlc29sdmVBcHByb3ZhbBIhLmNpcmN1cy52MS5SZXNvbHZlQXBwcm92YWxSZXF1ZXN0GiIuY2lyY3VzLnYxLlJlc29sdmVBcHByb3ZhbFJlc3BvbnNlEkYKCUludGVycnVwdBIbLmNpcmN1cy52MS5JbnRlcnJ1cHRSZXF1ZXN0GhwuY2lyY3VzLnYxLkludGVycnVwdFJlc3BvbnNlEkwKC1N0b3BTZXNzaW9uEh0uY2lyY3VzLnYxLlN0b3BTZXNzaW9uUmVxdWVzdBoeLmNpcmN1cy52MS5TdG9wU2Vzc2lvblJlc3BvbnNlElIKDURlbGV0ZVNlc3Npb24SHy5jaXJjdXMudjEuRGVsZXRlU2Vzc2lvblJlcXVlc3QaIC5jaXJjdXMudjEuRGVsZXRlU2Vzc2lvblJlc3BvbnNlElUKDlJlY292ZXJTZXNzaW9uEiAuY2lyY3VzLnYxLlJlY292ZXJTZXNzaW9uUmVxdWVzdBohLmNpcmN1cy52MS5SZWNvdmVyU2Vzc2lvblJlc3BvbnNlElUKDlJldHJ5V29ya3NwYWNlEiAuY2lyY3VzLnYxLlJldHJ5V29ya3NwYWNlUmVxdWVzdBohLmNpcmN1cy52MS5SZXRyeVdvcmtzcGFjZVJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_workspace]);
 
 /**
  * SessionConfig is reused unchanged when creating a session and acquiring it.
@@ -38,7 +38,9 @@ export type SessionConfig = Message<"circus.v1.SessionConfig"> & {
   cwds: SessionConfig_Cwd[];
 
   /**
-   * At most 128 bytes.
+   * At most 128 bytes. Empty starts the CLI without a model, so it uses its
+   * default alias, which the provider's ANTHROPIC_DEFAULT_*_MODEL variables
+   * may map to a model id.
    *
    * @generated from field: string model = 3;
    */
@@ -198,6 +200,27 @@ export type Session = Message<"circus.v1.Session"> & {
    * @generated from field: circus.v1.WorkspaceStatus workspace = 14;
    */
   workspace?: WorkspaceStatus | undefined;
+
+  /**
+   * The provider whose credentials and environment the CLI starts with;
+   * empty means local login: the worker's own Claude Code login and
+   * environment (a resumed session may find that login expired). May name
+   * a deleted provider (see queue_reason).
+   *
+   * @generated from field: string provider_id = 15;
+   */
+  providerId: string;
+
+  /**
+   * Why a QUEUED session is not running yet; UNSPECIFIED otherwise, and
+   * also while it simply waits for a worker to take it. Kept by the
+   * control plane in memory, not stored: after a control-plane start it is
+   * UNSPECIFIED until the scheduler next evaluates the session. Changes
+   * are announced live with KIND_QUEUE events.
+   *
+   * @generated from field: circus.v1.QueueReason queue_reason = 16;
+   */
+  queueReason: QueueReason;
 };
 
 /**
@@ -451,6 +474,16 @@ export enum SessionEvent_Kind {
    * @generated from enum value: KIND_WORKSPACE = 19;
    */
   WORKSPACE = 19,
+
+  /**
+   * Recorded by the control plane only, always ephemeral (seq 0): the
+   * session's queue_reason changed. payload_json:
+   * {"queue_reason":"<lower-case name without prefix>"}, for example
+   * {"queue_reason":"provider_full"}; "unspecified" when it cleared.
+   *
+   * @generated from enum value: KIND_QUEUE = 20;
+   */
+  QUEUE = 20,
 }
 
 /**
@@ -503,6 +536,20 @@ export type CreateSessionRequest = Message<"circus.v1.CreateSessionRequest"> & {
    * @generated from field: string client_request_id = 5;
    */
   clientRequestId: string;
+
+  /**
+   * Absent: the project's default_provider_id, else the user's default
+   * provider, else local login (a default naming a deleted provider counts
+   * as unset). "" chooses local login. Otherwise one of the caller's
+   * providers that is not deleted (INVALID_ARGUMENT with field
+   * "provider_id" otherwise). A local session's pinned worker need not be
+   * assigned to it: the session then queues with
+   * QUEUE_REASON_NO_ASSIGNED_WORKER. Part of the idempotent repeat as
+   * config is.
+   *
+   * @generated from field: optional string provider_id = 6;
+   */
+  providerId?: string | undefined;
 };
 
 /**
@@ -690,6 +737,9 @@ export const GetSessionRequestSchema: GenMessage<GetSessionRequest> = /*@__PURE_
   messageDesc(file_circus_v1_session, 10);
 
 /**
+ * UpdateSessionRequest changes the fields that are set; at least one must
+ * be.
+ *
  * @generated from message circus.v1.UpdateSessionRequest
  */
 export type UpdateSessionRequest = Message<"circus.v1.UpdateSessionRequest"> & {
@@ -701,9 +751,22 @@ export type UpdateSessionRequest = Message<"circus.v1.UpdateSessionRequest"> & {
   /**
    * Trimmed; 1 to 200 characters after trimming, at most 1024 bytes.
    *
-   * @generated from field: string title = 2;
+   * @generated from field: optional string title = 2;
    */
-  title: string;
+  title?: string | undefined;
+
+  /**
+   * "" chooses local login; otherwise one of the caller's providers that
+   * is not deleted. Refused with FAILED_PRECONDITION while a turn runs
+   * (state RUNNING) and for a stopped session. When the session holds a
+   * lease and no turn runs, a change of provider revokes that lease, as
+   * lease loss does, and the session is scheduled again under the new
+   * provider's workers and max_sessions; inputs and events are kept. The
+   * next CLI the session starts uses the new provider.
+   *
+   * @generated from field: optional string provider_id = 3;
+   */
+  providerId?: string | undefined;
 };
 
 /**
@@ -1167,6 +1230,60 @@ export enum TurnOutcome {
  */
 export const TurnOutcomeSchema: GenEnum<TurnOutcome> = /*@__PURE__*/
   enumDesc(file_circus_v1_session, 2);
+
+/**
+ * QueueReason says why a queued session cannot be leased now.
+ *
+ * @generated from enum circus.v1.QueueReason
+ */
+export enum QueueReason {
+  /**
+   * @generated from enum value: QUEUE_REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The provider's max_sessions sessions hold leases already.
+   *
+   * @generated from enum value: QUEUE_REASON_PROVIDER_FULL = 1;
+   */
+  PROVIDER_FULL = 1,
+
+  /**
+   * No online worker may run it: none of the provider's workers is online,
+   * or the session is pinned to a worker the provider is not assigned to.
+   *
+   * @generated from enum value: QUEUE_REASON_NO_ASSIGNED_WORKER = 2;
+   */
+  NO_ASSIGNED_WORKER = 2,
+
+  /**
+   * The provider was deleted; pick another with UpdateSession.
+   *
+   * @generated from enum value: QUEUE_REASON_PROVIDER_DELETED = 3;
+   */
+  PROVIDER_DELETED = 3,
+
+  /**
+   * The provider's secrets cannot be decrypted; enter them again.
+   *
+   * @generated from enum value: QUEUE_REASON_PROVIDER_SECRETS_UNREADABLE = 4;
+   */
+  PROVIDER_SECRETS_UNREADABLE = 4,
+
+  /**
+   * The pinned worker (or, unpinned, every worker of the user) is offline.
+   *
+   * @generated from enum value: QUEUE_REASON_WORKER_OFFLINE = 5;
+   */
+  WORKER_OFFLINE = 5,
+}
+
+/**
+ * Describes the enum circus.v1.QueueReason.
+ */
+export const QueueReasonSchema: GenEnum<QueueReason> = /*@__PURE__*/
+  enumDesc(file_circus_v1_session, 3);
 
 /**
  * SessionService is the user-facing session API. Every call authenticates a

@@ -50,7 +50,7 @@ const sessionCols = `session_id, user_id, claude_session_id, state, default_devi
 	pinned_worker_id, turn_count, last_turn_outcome, interrupt_turn_no, previous_turn_interrupted, transcript_gap_turn_no, input_tokens, output_tokens,
 	cache_read_tokens, cache_create_tokens, cost_micro_usd, duration_ms, transcript_bytes, view_bytes,
 	view_truncated, last_event_seq, dropped_event_batches, reason, created_at, updated_at, stopped_at,
-	project_id, client_request_id, location_index, title, last_activity_at, workspace, local, pin_derived, ` + workspaceBlocked + `,
+	project_id, client_request_id, location_index, title, last_activity_at, workspace, local, pin_derived, provider_id, ` + workspaceBlocked + `,
 	(SELECT COUNT(*) FROM session_approvals a WHERE a.session_id = sessions.session_id
 		AND a.state = 'pending' AND a.expires_at > ?1)`
 
@@ -64,7 +64,7 @@ func scanSession(s scanner) (store.Session, error) {
 		&x.Usage.CacheCreationInputTokens, &x.Usage.CostMicroUSD, &x.Usage.DurationMs,
 		&x.TranscriptBytes, &x.ViewBytes, &truncated, &x.LastEventSeq, &x.DroppedEventBatches, nullStr{&x.Reason},
 		&x.CreatedAt, &x.UpdatedAt, nullInt{&x.StoppedAt},
-		&x.ProjectID, nullStr{&x.ClientRequestID}, &x.LocationIndex, &x.Title, &x.LastActivityAt, &x.Workspace, &x.Local, &x.PinDerived, &x.WorkspaceBlocked, &x.PendingApprovalCount)
+		&x.ProjectID, nullStr{&x.ClientRequestID}, &x.LocationIndex, &x.Title, &x.LastActivityAt, &x.Workspace, &x.Local, &x.PinDerived, nullStr{&x.ProviderID}, &x.WorkspaceBlocked, &x.PendingApprovalCount)
 	x.State = store.SessionState(state)
 	x.LastTurnOutcome = store.TurnOutcome(outcome)
 	x.ViewTruncated = truncated != 0
@@ -107,7 +107,7 @@ func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.S
 		}
 	}
 	for _, c := range []struct{ what, v string }{
-		{"model", s.Model}, {"permission mode", s.PermissionMode}, {"pinned worker id", s.PinnedWorkerID},
+		{"model", s.Model}, {"permission mode", s.PermissionMode}, {"pinned worker id", s.PinnedWorkerID}, {"provider id", s.ProviderID},
 	} {
 		if err := store.CheckOptionalID(c.what, c.v); err != nil {
 			return out, err
@@ -144,7 +144,7 @@ func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.S
 		old, err := tx.GetSessionByClientRequestID(ctx, s.ProjectID, s.ClientRequestID, s.CreatedAt)
 		switch {
 		case err == nil:
-			if !old.MatchesCreate(&s.LocationIndex, s.RequestedWorkerID(), s.Model, s.PermissionMode) {
+			if !old.MatchesCreate(&s.LocationIndex, s.RequestedWorkerID(), s.Model, s.PermissionMode, &s.ProviderID) {
 				return fmt.Errorf("%w: client request %q was used for a different session", store.ErrExists, s.ClientRequestID)
 			}
 			out.Session = old
@@ -159,12 +159,15 @@ func (o *ops) CreateSession(ctx context.Context, s store.Session, cwds []store.S
 		if n >= maxSessions {
 			return fmt.Errorf("%w: user %q has %d sessions", store.ErrLimit, s.UserID, n)
 		}
+		if err := tx.checkProviderRef(ctx, s.UserID, s.ProviderID); err != nil {
+			return err
+		}
 		if _, err := tx.exec(ctx, `INSERT INTO sessions (session_id, user_id, claude_session_id, state, default_device_id,
 			model, permission_mode, pinned_worker_id, created_at, updated_at, project_id, last_activity_at,
-			client_request_id, location_index, workspace, local, pin_derived) VALUES (?,?,?,'idle',?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			client_request_id, location_index, workspace, local, pin_derived, provider_id) VALUES (?,?,?,'idle',?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			s.ID, s.UserID, s.ClaudeSessionID, s.DefaultDeviceID, nstr(s.Model), nstr(s.PermissionMode),
 			nstr(s.PinnedWorkerID), s.CreatedAt, s.CreatedAt, s.ProjectID, s.CreatedAt, s.ClientRequestID, s.LocationIndex, b2i(s.Workspace),
-			b2i(s.Local), b2i(s.PinDerived)); err != nil {
+			b2i(s.Local), b2i(s.PinDerived), nstr(s.ProviderID)); err != nil {
 			return err
 		}
 		if _, err := tx.exec(ctx, `INSERT INTO session_leases (session_id) VALUES (?)`, s.ID); err != nil {
@@ -231,6 +234,9 @@ func (o *ops) ListSessions(ctx context.Context, f store.SessionFilter) ([]store.
 	if err := store.CheckOptionalID("web user id", f.WebUserID); err != nil {
 		return nil, err
 	}
+	if err := store.CheckOptionalID("provider id", f.ProviderID); err != nil {
+		return nil, err
+	}
 	if f.Now == 0 {
 		return nil, invalid("ListSessions needs a time")
 	}
@@ -244,6 +250,9 @@ func (o *ops) ListSessions(ctx context.Context, f store.SessionFilter) ([]store.
 	}
 	if f.WebUserID != "" {
 		where, args = append(where, "project_id IN (SELECT id FROM projects WHERE user_id = ?)"), append(args, f.WebUserID)
+	}
+	if f.ProviderID != "" {
+		where, args = append(where, "provider_id = ?"), append(args, f.ProviderID)
 	}
 	if f.Runnable {
 		where = append(where, "NOT "+workspaceBlocked)
@@ -568,12 +577,12 @@ func (o *ops) pendingWork(ctx context.Context, sessionID string) (bool, error) {
 
 // Leases.
 
-const leaseCols = `session_id, epoch, holder_worker_id, holder_boot_id, holder_conn_id, acquired_at, expires_at`
+const leaseCols = `session_id, epoch, holder_worker_id, holder_boot_id, holder_conn_id, acquired_at, expires_at, provider_id`
 
 func scanLease(s scanner) (store.Lease, error) {
 	var l store.Lease
 	err := s.Scan(&l.SessionID, &l.Epoch, nullStr{&l.WorkerID}, nullStr{&l.BootID}, nullStr{&l.ConnID},
-		nullInt{&l.AcquiredAt}, nullInt{&l.ExpiresAt})
+		nullInt{&l.AcquiredAt}, nullInt{&l.ExpiresAt}, nullStr{&l.ProviderID})
 	return l, mapErr(err)
 }
 
@@ -620,7 +629,7 @@ func (o *ops) fence(ctx context.Context, f store.Fence) (store.Lease, error) {
 func (o *ops) loseLease(ctx context.Context, l store.Lease, now int64) (store.LeaseLoss, error) {
 	loss := store.LeaseLoss{Released: l}
 	if _, err := o.exec(ctx, `UPDATE session_leases SET holder_worker_id = NULL, holder_boot_id = NULL,
-		holder_conn_id = NULL, acquired_at = NULL, expires_at = NULL, released_worker_id = ?, released_boot_id = ?
+		holder_conn_id = NULL, acquired_at = NULL, expires_at = NULL, provider_id = NULL, released_worker_id = ?, released_boot_id = ?
 		WHERE session_id = ?`, l.WorkerID, l.BootID, l.SessionID); err != nil {
 		return loss, err
 	}
@@ -737,6 +746,9 @@ func (o *ops) AcquireLease(ctx context.Context, r store.LeaseRequest) (store.Lea
 		if l.Live(r.Now) && !own {
 			return fmt.Errorf("%w: epoch %d", store.ErrLeaseHeld, l.Epoch)
 		}
+		if err := tx.gateProvider(ctx, s, r); err != nil {
+			return err
+		}
 		if l.WorkerID != "" {
 			loss, err := tx.loseLease(ctx, l, r.Now)
 			if err != nil {
@@ -745,8 +757,8 @@ func (o *ops) AcquireLease(ctx context.Context, r store.LeaseRequest) (store.Lea
 			out.Loss = &loss
 		}
 		if _, err := tx.exec(ctx, `UPDATE session_leases SET epoch = epoch + 1, holder_worker_id = ?, holder_boot_id = ?,
-			holder_conn_id = ?, acquired_at = ?, expires_at = ? WHERE session_id = ?`,
-			r.WorkerID, r.BootID, r.ConnID, r.Now, r.ExpiresAt, r.SessionID); err != nil {
+			holder_conn_id = ?, acquired_at = ?, expires_at = ?, provider_id = ? WHERE session_id = ?`,
+			r.WorkerID, r.BootID, r.ConnID, r.Now, r.ExpiresAt, nstr(s.ProviderID), r.SessionID); err != nil {
 			return err
 		}
 		if _, err := tx.exec(ctx, `UPDATE sessions SET state = CASE state WHEN 'queued' THEN 'idle' ELSE state END,
@@ -761,6 +773,98 @@ func (o *ops) AcquireLease(ctx context.Context, r store.LeaseRequest) (store.Lea
 	})
 	if err != nil {
 		return store.LeaseAcquired{}, err
+	}
+	return out, nil
+}
+
+// gateProvider checks a new holder of session s against its provider:
+// ErrProviderUnavailable when the provider is gone or not assigned to the
+// requesting worker, ErrProviderFull when MaxSessions other sessions hold
+// live leases under it. Local login is not gated.
+func (o *ops) gateProvider(ctx context.Context, s store.Session, r store.LeaseRequest) error {
+	if s.ProviderID == "" {
+		return nil
+	}
+	var maxSessions int
+	err := o.q.QueryRow(ctx, `SELECT max_sessions FROM providers WHERE id = ? AND user_id = ?`, s.ProviderID, s.UserID).Scan(&maxSessions)
+	if isNotFound(mapErr(err)) {
+		return fmt.Errorf("%w: provider deleted", store.ErrProviderUnavailable)
+	}
+	if err != nil {
+		return mapErr(err)
+	}
+	assigned, err := o.count(ctx, `SELECT COUNT(*) FROM provider_workers WHERE provider_id = ? AND worker_id = ?`, s.ProviderID, r.WorkerID)
+	if err != nil {
+		return err
+	}
+	if assigned == 0 {
+		return fmt.Errorf("%w: provider not assigned to worker %q", store.ErrProviderUnavailable, r.WorkerID)
+	}
+	if maxSessions == 0 {
+		return nil
+	}
+	held, err := o.count(ctx, `SELECT COUNT(*) FROM session_leases WHERE provider_id = ? AND holder_worker_id IS NOT NULL
+		AND expires_at > ? AND session_id <> ?`, s.ProviderID, r.Now, s.ID)
+	if err != nil {
+		return err
+	}
+	if held >= maxSessions {
+		return fmt.Errorf("%w: %d of %d", store.ErrProviderFull, held, maxSessions)
+	}
+	return nil
+}
+
+func (o *ops) SetSessionProvider(ctx context.Context, sessionID, providerID string, at int64) (store.SessionProviderSet, error) {
+	if err := store.CheckID("session id", sessionID); err != nil {
+		return store.SessionProviderSet{}, err
+	}
+	if err := store.CheckOptionalID("provider id", providerID); err != nil {
+		return store.SessionProviderSet{}, err
+	}
+	if at == 0 {
+		return store.SessionProviderSet{}, invalid("SetSessionProvider needs a time")
+	}
+	var out store.SessionProviderSet
+	err := o.unit(ctx, func(tx *ops) error {
+		s, err := tx.getSession(ctx, sessionID, at)
+		if err != nil {
+			return err
+		}
+		if s.ProviderID == providerID {
+			// No change, in any state, even for a provider deleted since.
+			out.Session = s
+			return nil
+		}
+		switch s.State {
+		case store.SessionRunning:
+			return store.ErrTurnRunning
+		case store.SessionStopped:
+			return fmt.Errorf("%w: session %q", store.ErrStopped, sessionID)
+		}
+		if err := tx.checkProviderRef(ctx, s.UserID, providerID); err != nil {
+			return err
+		}
+		if _, err := tx.exec(ctx, `UPDATE sessions SET provider_id = ?, updated_at = ? WHERE session_id = ?`,
+			nstr(providerID), at, sessionID); err != nil {
+			return err
+		}
+		l, err := tx.getLease(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+		if l.WorkerID != "" {
+			loss, err := tx.loseLease(ctx, l, at)
+			if err != nil {
+				return err
+			}
+			out.Loss = &loss
+		}
+		out.Changed = true
+		out.Session, err = tx.getSession(ctx, sessionID, at)
+		return err
+	})
+	if err != nil {
+		return store.SessionProviderSet{}, err
 	}
 	return out, nil
 }
@@ -891,7 +995,7 @@ func (o *ops) ReleaseLease(ctx context.Context, f store.Fence) (store.LeaseLoss,
 		var releasedWorker, releasedBoot string
 		if err := tx.q.QueryRow(ctx, `SELECT `+leaseCols+`, released_worker_id, released_boot_id FROM session_leases
 			WHERE session_id = ?`, f.SessionID).Scan(&l.SessionID, &l.Epoch, nullStr{&l.WorkerID}, nullStr{&l.BootID},
-			nullStr{&l.ConnID}, nullInt{&l.AcquiredAt}, nullInt{&l.ExpiresAt}, nullStr{&releasedWorker}, nullStr{&releasedBoot}); err != nil {
+			nullStr{&l.ConnID}, nullInt{&l.AcquiredAt}, nullInt{&l.ExpiresAt}, nullStr{&l.ProviderID}, nullStr{&releasedWorker}, nullStr{&releasedBoot}); err != nil {
 			return mapErr(err)
 		}
 		if l.WorkerID == "" && l.Epoch == f.Epoch && releasedWorker == f.WorkerID && releasedBoot == f.BootID {
@@ -935,12 +1039,56 @@ func (o *ops) loseMany(ctx context.Context, now int64, query string, args ...any
 	return out, err
 }
 
-func (o *ops) ExtendLeasesAfterRestart(ctx context.Context, expiresAt int64) (int, error) {
-	if expiresAt == 0 {
-		return 0, invalid("ExtendLeasesAfterRestart needs an expiry")
+func (o *ops) ExtendLeasesAfterRestart(ctx context.Context, now, expiresAt int64) (int, error) {
+	if now == 0 || expiresAt <= now {
+		return 0, invalid("ExtendLeasesAfterRestart needs a time and a later expiry")
 	}
-	return o.exec(ctx, `UPDATE session_leases SET expires_at = ? WHERE holder_worker_id IS NOT NULL AND expires_at < ?`,
-		expiresAt, expiresAt)
+	var n int
+	err := o.unit(ctx, func(tx *ops) error {
+		// Unexpired leases and expired ones without a provider.
+		var err error
+		n, err = tx.exec(ctx, `UPDATE session_leases SET expires_at = ?1 WHERE holder_worker_id IS NOT NULL AND expires_at < ?1
+			AND (expires_at > ?2 OR provider_id IS NULL)`, expiresAt, now)
+		if err != nil {
+			return err
+		}
+		// Expired leases under a provider, oldest first, while it has room.
+		rows, err := tx.q.QueryContext(ctx, `SELECT l.session_id, p.max_sessions FROM session_leases l
+			JOIN providers p ON p.id = l.provider_id
+			WHERE l.holder_worker_id IS NOT NULL AND l.expires_at <= ? ORDER BY l.acquired_at, l.session_id`, now)
+		if err != nil {
+			return mapErr(err)
+		}
+		type expired struct {
+			id  string
+			max int
+		}
+		leases, err := collect(rows, func(s scanner) (expired, error) {
+			var e expired
+			return e, mapErr(s.Scan(&e.id, &e.max))
+		})
+		if err != nil {
+			return err
+		}
+		for _, e := range leases {
+			if e.max > 0 {
+				live, err := tx.count(ctx, `SELECT COUNT(*) FROM session_leases WHERE provider_id =
+					(SELECT provider_id FROM session_leases WHERE session_id = ?) AND holder_worker_id IS NOT NULL AND expires_at > ?`, e.id, now)
+				if err != nil {
+					return err
+				}
+				if live >= e.max {
+					continue
+				}
+			}
+			if _, err := tx.exec(ctx, `UPDATE session_leases SET expires_at = ? WHERE session_id = ?`, expiresAt, e.id); err != nil {
+				return err
+			}
+			n++
+		}
+		return nil
+	})
+	return n, err
 }
 
 func (o *ops) RecoverSession(ctx context.Context, sessionID string, accept bool, at int64, maxViewBytes int64) (store.SessionRecovered, error) {

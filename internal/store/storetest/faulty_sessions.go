@@ -224,8 +224,8 @@ func (o *faultyOps) ConsumeGrant(ctx context.Context, f store.Fence, k store.Gra
 	return v, err
 }
 
-func (o *faultyOps) ExtendLeasesAfterRestart(ctx context.Context, expiresAt int64) (n int, err error) {
-	err = o.write(ctx, func(x store.Ops) error { n, err = x.ExtendLeasesAfterRestart(ctx, expiresAt); return err })
+func (o *faultyOps) ExtendLeasesAfterRestart(ctx context.Context, now, expiresAt int64) (n int, err error) {
+	err = o.write(ctx, func(x store.Ops) error { n, err = x.ExtendLeasesAfterRestart(ctx, now, expiresAt); return err })
 	return n, err
 }
 

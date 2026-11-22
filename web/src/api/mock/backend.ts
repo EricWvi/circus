@@ -8,7 +8,10 @@ import type {
   CreateSessionRequest,
   Location,
   LoginMethods,
+  ModelProviderInput,
   Project,
+  ProviderVersion,
+  QueueReason,
   User,
 } from "@/api/types"
 import {
@@ -28,6 +31,7 @@ import { seedLedgers } from "@/mock/ledger"
 
 import { listMockDirectory, readMockGitRemote } from "./directories"
 import { decisionOf, historyOf, ledgerOf, type MockLedgers } from "./ledger"
+import { createMockModelProviders } from "./model-providers"
 import {
   createMockSessionRuntime,
   defaultSessionTiming,
@@ -272,12 +276,51 @@ export function createMockBackend({
     return session
   }
 
+  const ownerOf = (s: MockSession) => state.projects.find((p) => p.projectId === s.projectId)?.owner
+
+  /** Looks at every waiting session again, as the scheduler does after a change. */
+  const reschedule = () => {
+    for (const s of state.sessions) if (s.queue.length > 0 && !s.leased) runtime.wake(s)
+  }
+  const providers = createMockModelProviders({ state, currentUser, now, ownerOf, reschedule })
+
+  /** Records why the session waits, announcing a change live as the server does. */
+  function setQueueReason(s: MockSession, reason: QueueReason) {
+    if ((s.queueReason ?? "unspecified") === reason) return
+    s.queueReason = reason
+    runtime.record(s, "queue", { queue_reason: reason }, false, now())
+  }
+
   const runtime = createMockSessionRuntime({
     sessions: () => state.sessions,
     own: ownSession,
     delay: () => sleep(latency()),
     now,
     timing: sessionTiming,
+    admit(s) {
+      if (s.leased) return true
+      const reason = providers.queueReasonOf(s)
+      setQueueReason(s, reason)
+      if (reason !== "unspecified") return false
+      s.leased = true
+      return true
+    },
+    setProvider(s, providerId) {
+      providers.checkSessionProvider(ownerOf(s) ?? "", providerId)
+      if ((s.providerId ?? "") === providerId) return
+      s.providerId = providerId
+      // A new provider means a new lease, under its workers and limit.
+      if (s.leased) {
+        s.leased = false
+        reschedule()
+      }
+    },
+    stopped(s) {
+      setQueueReason(s, "unspecified")
+      if (!s.leased) return
+      s.leased = false
+      reschedule()
+    },
   })
 
   const workspaces = createMockWorkspaces({
@@ -299,8 +342,9 @@ export function createMockBackend({
     },
   })
 
-  const publicProject = ({ owner, updatedAtUnixMs, ...project }: MockProject): Project => ({
+  const publicProject = ({ owner, updatedAtUnixMs, defaultProviderId, ...project }: MockProject): Project => ({
     ...project,
+    defaultProviderId: defaultProviderId ?? "",
     locations: project.locations.map(({ deviceId, ...l }) => {
       const workspace = l.path === "" ? workspaces.get(`${project.projectId}/${deviceId}`) : undefined
       return {
@@ -375,11 +419,12 @@ export function createMockBackend({
     },
 
     projects: {
-      createProject: call((req: { name: string; repoUrl: string; locations: Location[] }) => {
+      createProject: call((req: { name: string; repoUrl: string; locations: Location[]; defaultProviderId?: string }) => {
         const owner = currentUser()
         const name = checkName(owner, req.name)
         const repoUrl = checkRepo(req.repoUrl)
         const locations = checkLocations(owner, req.locations)
+        const defaultProviderId = providers.checkProjectDefault(owner, req.defaultProviderId ?? "")
         const at = now()
         const project: MockProject = {
           owner,
@@ -390,6 +435,7 @@ export function createMockBackend({
           lastUsedLocation: 0,
           createdAtUnixMs: at,
           updatedAtUnixMs: at,
+          defaultProviderId,
         }
         state.projects.push(project)
         changed()
@@ -414,6 +460,7 @@ export function createMockBackend({
           name?: string
           locations?: Location[]
           repoUrl?: string
+          defaultProviderId?: string
           lastUsedLocation?: number
           expectedUpdatedAt?: string
         }) => {
@@ -423,8 +470,15 @@ export function createMockBackend({
           const repoUrl = req.repoUrl === undefined ? project.repoUrl : checkRepo(req.repoUrl)
           const locations =
             req.locations === undefined ? project.locations : checkLocations(owner, req.locations)
+          const defaultProviderId =
+            req.defaultProviderId === undefined
+              ? (project.defaultProviderId ?? "")
+              : providers.checkProjectDefault(owner, req.defaultProviderId)
           const versioned =
-            req.name !== undefined || req.repoUrl !== undefined || req.locations !== undefined
+            req.name !== undefined ||
+            req.repoUrl !== undefined ||
+            req.locations !== undefined ||
+            req.defaultProviderId !== undefined
           if (
             versioned &&
             req.expectedUpdatedAt !== undefined &&
@@ -450,9 +504,10 @@ export function createMockBackend({
           const moved =
             name !== project.name ||
             repoUrl !== project.repoUrl ||
+            defaultProviderId !== (project.defaultProviderId ?? "") ||
             JSON.stringify(locations) !== JSON.stringify(project.locations)
           if (moved) project.updatedAtUnixMs = nextVersion(project.updatedAtUnixMs)
-          Object.assign(project, { name, repoUrl, locations, lastUsedLocation: lastUsed })
+          Object.assign(project, { name, repoUrl, locations, lastUsedLocation: lastUsed, defaultProviderId })
           changed()
           return publicProject(project)
         },
@@ -494,6 +549,14 @@ export function createMockBackend({
           .filter((d) => d.owner === owner)
           .sort((a, b) => a.name.localeCompare(b.name))
           .map(({ owner: _, deviceId: __, ...device }) => device)
+      }),
+      listWorkers: call(() => {
+        const owner = currentUser()
+        const devices = new Set(state.devices.filter((d) => d.owner === owner).map((d) => d.name))
+        return state.workers
+          .filter((w) => w.owner === owner)
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(({ owner: _, ...worker }) => ({ ...worker, localDevices: worker.localDevices.filter((d) => devices.has(d)) }))
       }),
       // A link that enrolls nothing: the mock has no enrollment endpoint.
       createEnrollLink: call(({ role }: { role: EnrollRole }) => {
@@ -544,10 +607,13 @@ export function createMockBackend({
         // A retry returns the session the first request created, without
         // checking the location again; the same key for another request is
         // refused.
-        ownedProject(owner, req.projectId)
+        const owned = ownedProject(owner, req.projectId)
         const retried = () => {
           const earlier = state.sessions.find((s) => s.projectId === req.projectId && s.created?.clientRequestId === key)
-          if (earlier && earlier.created!.locationIndex !== req.locationIndex) {
+          if (
+            earlier &&
+            (earlier.created!.locationIndex !== req.locationIndex || earlier.created!.providerId !== req.providerId)
+          ) {
             throw new ApiError("already_exists", "client_request_id was used for another request.", "client_request_id")
           }
           return earlier && detailsOf(earlier)
@@ -557,6 +623,7 @@ export function createMockBackend({
           await sleep(latency())
           return first
         }
+        const providerId = providers.resolve(owner, req.providerId, owned.defaultProviderId)
         const usable = (p: Project) => {
           const location = Number.isInteger(req.locationIndex) ? p.locations[req.locationIndex] : undefined
           return location && !location.deviceRevoked ? location : undefined
@@ -594,8 +661,9 @@ export function createMockBackend({
           approvals: [],
           queue: [],
           turns: 0,
-          created: { clientRequestId: key, locationIndex: req.locationIndex },
+          created: { clientRequestId: key, locationIndex: req.locationIndex, providerId: req.providerId },
           ...(workspace ? { workspace } : {}),
+          providerId,
         }
         state.sessions.push(session)
         return detailsOf(session)
@@ -612,6 +680,17 @@ export function createMockBackend({
       ...runtime.service,
     },
 
+    modelProviders: {
+      createProvider: call((req: ModelProviderInput) => providers.service.createProvider(req)),
+      listProviders: call(() => providers.service.listProviders()),
+      getProvider: call((req: { providerId: string }) => providers.service.getProvider(req)),
+      updateProvider: call(
+        (req: ModelProviderInput & { providerId: string; expectedUpdatedAt?: ProviderVersion }) =>
+          providers.service.updateProvider(req),
+      ),
+      deleteProvider: call((req: { providerId: string }) => providers.service.deleteProvider(req)),
+    },
+
     ledger: {
       getLedger: call(({ projectId }: { projectId: string }) =>
         ledgerOf(mainLine(projectId)),
@@ -626,12 +705,15 @@ export function createMockBackend({
     },
   }
 
+  // Seeded sessions that wait learn why.
+  reschedule()
+
   return {
     client,
     adopt(next) {
       const data = (m: MockState) => JSON.stringify([m.projects, m.devices])
       const dataChanged = data(state) !== data(next)
-      Object.assign(state, { ...next, sessions: state.sessions })
+      Object.assign(state, { ...next, sessions: state.sessions, providers: state.providers, workers: state.workers })
       if (dataChanged) for (const listener of externalListeners) listener()
     },
     onExternalChange(listener) {

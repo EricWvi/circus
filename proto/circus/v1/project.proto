@@ -15,10 +15,11 @@ option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 // unknown one. Invalid input is INVALID_ARGUMENT with a google.rpc.BadRequest
 // field violation naming the field: "name", "locations",
 // "locations[i].device", "locations[i].path", "last_used_location",
-// "repo_url" or "project_id". A name another of the user's projects
-// already has is ALREADY_EXISTS with field "name". A user's projects are
-// bounded: at most 1000, and at most 4 MiB of names, repository URLs and
-// paths together; a write past either is RESOURCE_EXHAUSTED.
+// "repo_url", "default_provider_id" or "project_id". A name another of
+// the user's projects already has is ALREADY_EXISTS with field "name". A
+// user's projects are bounded: at most 1000, and at most 4 MiB of names,
+// repository URLs and paths together; a write past either is
+// RESOURCE_EXHAUSTED.
 service ProjectService {
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
   // Ordered by name (case-insensitive), then project_id.
@@ -63,8 +64,8 @@ message Project {
   // meaningless, while the project has no locations.
   uint32 last_used_location = 4;
   int64 created_at_unix_ms = 5;
-  // The version of the name, locations and repository URL: it moves only
-  // when one of them changes (see UpdateProjectRequest), not with
+  // The version of the name, locations, repository URL and default
+  // provider: it moves only when one of them changes (see UpdateProjectRequest), not with
   // last_used_location.
   int64 updated_at_unix_ms = 6;
   // Optional git remote of the project; empty means none. Trimmed, at most
@@ -73,12 +74,18 @@ message Project {
   // git://host/path, file:///abs/path, or scp-like user@host:path. Stored
   // as given otherwise (not rewritten).
   string repo_url = 7;
+  // Optional: the provider new sessions in this project use unless they
+  // name one (see CreateSessionRequest.provider_id). Empty means none;
+  // may name a deleted provider, which counts as none.
+  string default_provider_id = 8;
 }
 
 message CreateProjectRequest {
   string name = 1;
   repeated Project.Location locations = 2;
   string repo_url = 3;
+  // As UpdateProjectRequest.default_provider_id; empty means none.
+  string default_provider_id = 4;
 }
 message CreateProjectResponse {
   // last_used_location is 0.
@@ -109,18 +116,23 @@ message UpdateProjectRequest {
   optional uint32 last_used_location = 4;
   // Replaces the repository URL when set; "" clears it.
   optional string repo_url = 5;
-  // When set, and name, locations or repo_url is set, the update applies
-  // only if the project's updated_at_unix_ms still equals this value (the
-  // version the caller read, such as an edit form opened in another tab);
+  // Replaces the default provider when set; "" clears it. Otherwise one of
+  // the caller's providers that is not deleted. Moves updated_at_unix_ms
+  // like the name does.
+  optional string default_provider_id = 7;
+  // When set, and name, locations, repo_url or default_provider_id is set,
+  // the update applies only if the project's updated_at_unix_ms still
+  // equals this value (the version the caller read, such as an edit form
+  // opened in another tab);
   // otherwise it fails with ABORTED, without a field, and changes nothing.
   // An update that sets only last_used_location (as starting a session
   // does) is never refused this way.
   //
   // updated_at_unix_ms moves forward, also within the same millisecond,
-  // only when the name, the locations or the repository URL actually
-  // change. A field set to its current value is no change, and
-  // last_used_location alone never moves it, so an open settings form
-  // stays current while sessions start.
+  // only when the name, the locations, the repository URL or the default
+  // provider actually change. A field set to its current value is no
+  // change, and last_used_location alone never moves it, so an open
+  // settings form stays current while sessions start.
   optional int64 expected_updated_at_unix_ms = 6;
 }
 message UpdateProjectResponse {

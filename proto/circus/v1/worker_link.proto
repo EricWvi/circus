@@ -274,8 +274,8 @@ message WorkerEvent {
 // upper bounds never all reachable together; split marks across several
 // requests instead.
 //
-// After the session is stopped, TakeInputs, RequestApproval and ConsumeGrant
-// return Rejected STOPPED (SubmitCall: CODE_SESSION_STOPPED); AppendTranscript,
+// After the session is stopped, TakeInputs, RequestApproval, ConsumeGrant
+// and GetLaunchEnv return Rejected STOPPED (SubmitCall: CODE_SESSION_STOPPED); AppendTranscript,
 // ReportTurn, PatchSessionState, PublishEvents, TranscriptRepaired, the reads
 // and ReleaseLease are still accepted so the holder can flush. On any STOPPED
 // the worker closes the query and sends ReleaseLease with REASON_STOPPED.
@@ -298,6 +298,7 @@ message SessionRequest {
     RequestApproval request_approval = 20;
     ConsumeGrant consume_grant = 21;
     TranscriptRepaired transcript_repaired = 22;
+    GetLaunchEnv get_launch_env = 23;
   }
 }
 
@@ -315,6 +316,16 @@ message SessionRequest {
 // lease lifetime later. A worker sends at most one AcquireLease per session at
 // a time; a session with an AcquireLease in flight counts as held, and hints
 // for it are ignored until the reply arrives.
+//
+// The session's provider (Session.provider_id) gates acquisition in the
+// same transaction: a deleted provider, one not assigned to this worker or
+// one whose secrets cannot be decrypted is Rejected PROVIDER_UNAVAILABLE,
+// and a provider whose max_sessions sessions already hold leases is
+// Rejected PROVIDER_FULL; either leaves the session queued with its
+// queue_reason. Local login (no provider) is not gated. The lease records
+// the provider; it counts toward that provider's max_sessions until it is
+// released, revoked or expires. A provider change through UpdateSession
+// revokes the lease (see SessionService).
 message AcquireLease {
   // Set whenever the worker holds no local state for the session (no epoch,
   // local_seq or batch_seq counters, no pushed-input set). A holder's fresh
@@ -335,6 +346,8 @@ message ReleaseLease {
     REASON_STOPPED = 2;
     REASON_ERROR = 3;
     REASON_FENCED = 4;
+    // GetLaunchEnv returned PROVIDER_UNAVAILABLE; the session queues again.
+    REASON_PROVIDER = 5;
   }
 }
 
@@ -676,6 +689,23 @@ message TranscriptRepaired {}
 // connection. Failure for one lease does not reject the others. A stopped
 // session still resumes, with stopped set, so the holder can flush and
 // release.
+// GetLaunchEnv returns the environment for the next Claude Code CLI the
+// worker starts for this session. The worker calls it before every CLI start
+// (a new session, a resume, a replacement query) and never caches it across
+// starts, so provider edits reach the next CLI. With a provider, the worker
+// first removes every inherited authentication and endpoint variable
+// (ANTHROPIC_*, CLAUDE_CODE_OAUTH_TOKEN, CLAUDE_CODE_USE_BEDROCK,
+// CLAUDE_CODE_USE_VERTEX, CLAUDE_CODE_USE_FOUNDRY, AWS_BEARER_TOKEN_BEDROCK
+// and the like; the list is the worker's) and then sets env. With
+// local_login it starts the CLI with its own environment unchanged.
+//
+// Rejected PROVIDER_UNAVAILABLE when the provider was deleted, is no longer
+// assigned to this worker or its secrets cannot be decrypted: the worker
+// starts no CLI, closes the query and releases with REASON_PROVIDER. A
+// provider at max_sessions does not refuse it: the lease already counts.
+// The reply holds secrets: the worker never logs it or publishes it.
+message GetLaunchEnv {}
+
 message ResumeLeases {
   repeated Held leases = 1;
   message Held {
@@ -703,6 +733,7 @@ message SessionReply {
     Grant grant = 17;
     Devices devices = 18;
     Resumed resumed = 19;
+    LaunchEnv launch_env = 20;
   }
   message Ok {
     bool deduplicated = 1;
@@ -731,6 +762,14 @@ message SessionReply {
       // the worker stops calling them until TranscriptRepaired, or until a
       // RecoverSession ends its lease.
       CODE_BROKEN = 8;
+      // AcquireLease or GetLaunchEnv: the session's provider is deleted,
+      // not assigned to this worker, or its secrets cannot be decrypted.
+      // Not retryable for this lease.
+      CODE_PROVIDER_UNAVAILABLE = 9;
+      // AcquireLease: the provider's max_sessions sessions hold leases.
+      // Nothing was written; the control plane offers the session again
+      // when one is released.
+      CODE_PROVIDER_FULL = 10;
     }
   }
   // At most 25.5 MiB with every cap reached. state carries every section
@@ -805,6 +844,22 @@ message SessionReply {
       string arch = 4;
       string hostname = 5;
       int64 last_seen_unix_ms = 6;
+    }
+  }
+  // At most 72 variables and 96 KiB in all.
+  message LaunchEnv {
+    // No provider: keep the worker's own login and environment; env is
+    // empty.
+    bool local_login = 1;
+    // The provider the variables come from, for logs; empty with
+    // local_login.
+    string provider_id = 2;
+    // Distinct names. The credential's variables, then the provider's
+    // custom variables, decrypted.
+    repeated Var env = 3;
+    message Var {
+      string name = 1;
+      string value = 2;
     }
   }
   message Resumed {

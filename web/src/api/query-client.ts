@@ -18,6 +18,8 @@ export const queryKeys = {
   auth: ["auth"] as const,
   projects: ["projects"] as const,
   devices: ["devices"] as const,
+  workers: ["workers"] as const,
+  modelProviders: ["model-providers"] as const,
   sessions: (projectId?: string) => ["sessions", projectId ?? "all"] as const,
   allSessions: ["sessions"] as const,
   session: (sessionId: string) => ["session", sessionId] as const,

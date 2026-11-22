@@ -9,6 +9,7 @@
 import { createConnectAuth } from "./connect/auth"
 import { createConnectLedger } from "./connect/ledger"
 import { createConnectMachines } from "./connect/machines"
+import { createConnectModelProviders } from "./connect/model-providers"
 import { createConnectProjects } from "./connect/projects"
 import { createConnectSessions } from "./connect/sessions"
 import { createServerTransport } from "./connect/transport"
@@ -47,6 +48,7 @@ export function startBackend(): Backend {
       machines: createConnectMachines(transport),
       sessions: createConnectSessions(transport),
       ledger: createConnectLedger(transport),
+      modelProviders: createConnectModelProviders(transport),
     },
     onExternalChange: () => () => {},
   }

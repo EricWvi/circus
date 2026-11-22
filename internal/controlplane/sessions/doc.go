@@ -95,6 +95,45 @@
 // bind the lease. The store refuses a pinned session's lease to another
 // worker.
 //
+// # Providers and queue reasons
+//
+// A session with a provider (Session.ProviderID) is offered only to the
+// provider's workers, and only while fewer than its max_sessions sessions
+// hold live leases; every evaluation reads the provider in its own store
+// read (gate), and AcquireLease checks deletion, assignment, the cap and
+// whether the secrets open again in its transaction (PROVIDER_UNAVAILABLE,
+// PROVIDER_FULL; an Offer the provider refused is withdrawn). Local login
+// is not gated.
+//
+// An evaluation that finds a queued session it cannot offer records why
+// on the session's entry (QueueReason): a deleted provider, unreadable
+// secrets, a pinned worker the provider is not assigned to, a full
+// provider, or no worker that may run it online (UNSPECIFIED when one is
+// online but busy). An Offer, a lease or leaving the queue clears it, and
+// every change is announced with an ephemeral KIND_QUEUE event. An entry
+// holding only a reason stays until the reason clears; the fallback
+// re-evaluates a reason no event re-derived for ReasonRecheck (at most
+// MaxReasonRechecks per pass), so one whose session left the queue unseen
+// clears too; when the table is full such entries give way to leases,
+// silently (the reason did not clear).
+//
+// An evaluation reads the store without s.mu (SettleSession, then the
+// provider). Before acting it checks, under s.mu, that no AcquireLease or
+// ResumeLeases bound a newer lease meanwhile (the entry's epoch is above
+// the one read: the session is evaluated again) and that none is in
+// flight (the entry is reserved: the evaluation is deferred to the end of
+// the reservation), so a stale read never revokes or re-offers a lease
+// just taken.
+//
+// Wake-ups: a lease acquired under a provider that ends (release, revoke,
+// expiry, takeover) evaluates the sessions waiting as PROVIDER_FULL for
+// that provider; ProviderChanged (assignment, cap, secrets, deletion)
+// evaluates every queued session naming it, read from the store, and
+// rescans the user. A provider counter (provEpoch) moves with both, so an
+// evaluation whose provider read raced one is repeated. A provider change
+// never revokes a lease; changing a session's provider releases its lease
+// in the store, and the Wake that follows revokes it on the holder.
+//
 // For a held session, Wake adds Nudge reasons to the session's pending set
 // and the scheduler nudges the holder's connection (with the stored
 // interrupt level); reasons stay pending until the holder acts (TakeInputs
@@ -136,8 +175,17 @@
 //     of up to M), plus the connection's queue of inline replies not yet
 //     handed to the link, at most 16 MiB encoded (one larger reply alone),
 //     about twice that decoded: C·(M + 32 MiB) = 768 MiB;
-//   - the session table: at most MaxTracked (8192) entries of about 0.5 KiB
-//     (4 MiB); the Wake queue at most MaxWakeQueue (4096) ids (1 MiB); a
+//   - the session table: at most MaxTracked (8192) entries, queue reasons
+//     included. An entry is a 280-byte struct (288-byte size class), about
+//     32 bytes of map slot, and up to eight ids of at most 128 bytes each
+//     (the session id key, user, pin, the holder's worker, boot,
+//     connection and provider, the reason's provider): 288 + 32 + 8·128 =
+//     1,344 bytes, so 8192 · 1,344 B = 10.5 MiB at every id's cap (about
+//     5.5 MiB with 36-byte UUIDs: 288 + 32 + 8·48 = 704 B). The Wake queue
+//     holds at most MaxWakeQueue (4096) ids (1 MiB); the provider scans at
+//     most MaxWakeQueue provider and user ids, each pair about 2·16 bytes
+//     of string headers, 8 of slot and 2·128 of ids: 4096 · 296 B =
+//     1.2 MiB; a
 //     connection's hint queue at most one hint per session of its user (the
 //     store's per-user cap, 1000), so all queues together at most C·1000
 //     hints (about 2 MiB); one lease extension round copies at most
@@ -150,7 +198,7 @@
 //     per connection, all but ReadConcurrency waiting for a permit or a
 //     send).
 //
-// At the defaults that is about 1,030 MiB. Live-only events handed to the
+// At the defaults that is about 1,038 MiB. Live-only events handed to the
 // Bus (at most 128 per batch, each payload at most 256 KiB) are charged to
 // each watcher's queue (bus.go) and counted with the watch streams; a
 // payload nobody watches is dropped at once. These are ownership bounds,

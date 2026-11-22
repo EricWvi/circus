@@ -21,6 +21,7 @@ import (
 type Config struct {
 	Listen            string           `yaml:"listen"`
 	DB                string           `yaml:"db"`
+	ProviderKeyFile   string           `yaml:"provider_key_file"`
 	TLSCert           string           `yaml:"tls_cert"`
 	TLSKey            string           `yaml:"tls_key"`
 	BehindProxy       bool             `yaml:"behind_proxy"`
@@ -91,7 +92,7 @@ func Load(path string) (Config, error) {
 // outside the YAML file.
 func (c Config) Server() controlplane.Config {
 	return controlplane.Config{
-		Listen: c.Listen, DBPath: c.DB, TLSCert: c.TLSCert, TLSKey: c.TLSKey,
+		Listen: c.Listen, DBPath: c.DB, ProviderKeyFile: c.ProviderKeyFile, TLSCert: c.TLSCert, TLSKey: c.TLSKey,
 		BehindProxy: c.BehindProxy, DevInsecure: c.DevInsecure, PublicURL: c.PublicURL,
 		ShutdownTimeout: c.ShutdownTimeout, TimerPollInterval: c.TimerPollInterval,
 		MaxMessageBytes: c.MaxMessageBytes, GracePeriod: c.DeviceGrace,

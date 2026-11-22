@@ -179,12 +179,13 @@ func (o *ops) CreateUser(ctx context.Context, u store.User) error {
 	return o.insertUser(ctx, u)
 }
 
-const userCols = `id, name, created_at, transcript_bytes, email, role, password_hash`
+const userCols = `id, name, created_at, transcript_bytes, email, role, password_hash, default_provider_id`
 
 func scanUser(s scanner) (store.User, error) {
 	var u store.User
 	var role string
-	err := s.Scan(&u.ID, &u.Name, &u.CreatedAt, &u.TranscriptBytes, nullStr{&u.Email}, nullStr{&role}, nullStr{&u.PasswordHash})
+	err := s.Scan(&u.ID, &u.Name, &u.CreatedAt, &u.TranscriptBytes, nullStr{&u.Email}, nullStr{&role}, nullStr{&u.PasswordHash},
+		nullStr{&u.DefaultProviderID})
 	u.Role = store.UserRole(role)
 	return u, mapErr(err)
 }
@@ -379,9 +380,22 @@ func (o *ops) DeleteIdentity(ctx context.Context, kind store.PrincipalKind, id s
 		if was != 0 {
 			return nil
 		}
-		_, err := tx.exec(ctx, `UPDATE `+table+` SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`, at, id)
-		deleted = err == nil
-		return err
+		if _, err := tx.exec(ctx, `UPDATE `+table+` SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`, at, id); err != nil {
+			return err
+		}
+		if kind == store.KindWorker {
+			// A deleted worker leaves every provider it was assigned to;
+			// their worker lists change, so their versions move.
+			if _, err := tx.exec(ctx, `UPDATE providers SET updated_at = MAX(?1, updated_at + 1)
+				WHERE id IN (SELECT provider_id FROM provider_workers WHERE worker_id = ?2)`, at, id); err != nil {
+				return err
+			}
+			if _, err := tx.exec(ctx, `DELETE FROM provider_workers WHERE worker_id = ?`, id); err != nil {
+				return err
+			}
+		}
+		deleted = true
+		return nil
 	})
 	return deleted, err
 }

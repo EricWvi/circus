@@ -53,6 +53,8 @@ type Ops interface {
 	LedgerOps
 	// ProjectOps holds the project operations (projects.go).
 	ProjectOps
+	// ProviderOps holds the provider operations (providers.go).
+	ProviderOps
 	// SessionOps holds the session operations (sessions.go). They are part
 	// of Ops so a session write and a call write can share one Tx.
 	SessionOps

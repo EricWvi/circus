@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/store"
 )
 
@@ -38,10 +39,12 @@ const (
 // tests in rules_test.go make to the checked functions, and more inputs for
 // the corners of net/url, net/netip and case folding the rules rely on. Add
 // a case here when adding one to rules_test.go.
-var webParityInputs = []struct {
+type webParityInput struct {
 	fn   string
 	args []string
-}{
+}
+
+var webParityInputs = []webParityInput{
 	{"normalizePath", []string{"/src/a/", "linux"}},
 	{"normalizePath", []string{"/src/a", "linux"}},
 	{"normalizePath", []string{" /a ", "darwin"}},
@@ -477,11 +480,41 @@ func runWebParityCase(t *testing.T, fn string, args []string) webParityCase {
 	case "sameProjectName":
 		a := arg(2)
 		c.Result = fmt.Sprint(store.ProjectNameKey(jsTrim(a[0])) == store.ProjectNameKey(jsTrim(a[1])))
+	case "checkBaseURL":
+		raw := arg(1)[0]
+		checked(raw, checkBaseURL(raw))
+	case "checkProviderKey":
+		raw := arg(1)[0]
+		checked(raw, checkKey(raw))
+	case "checkEnvName":
+		raw := arg(1)[0]
+		checked(raw, providers.CheckEnvName(raw))
 	default:
 		t.Fatalf("unknown function %q", fn)
 	}
 	return c
 }
+
+// webProviderParityInputs are the provider form's rules (providers.go and
+// providers.CheckEnvName): the base URL, the API key and custom variable
+// names. They go to their own section, "providerCases", because the Web's
+// parity test runs every entry of "cases" through a port it already has;
+// the Web wires these once its provider form ports the rules. Each base
+// URL case's expected outcome is also pinned in TestCheckBaseURL.
+var webProviderParityInputs = func() []webParityInput {
+	var out []webParityInput
+	for _, c := range baseURLCases {
+		out = append(out, webParityInput{"checkBaseURL", []string{c.raw}})
+	}
+	for _, k := range []string{"sk-fake", "with space inside", "\u00e9t\u00e9", "line\nbreak", "cr\r", "tab\t", "nul\x00", "del\x7f", "c1\u0085"} {
+		out = append(out, webParityInput{"checkProviderKey", []string{k}})
+	}
+	for _, n := range []string{"FOO", "_X1", "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CONFIG_DIR", "HOME", "PATH",
+		"CIRCUS_X", "CIRCUS", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "lower", "1A", ""} {
+		out = append(out, webParityInput{"checkEnvName", []string{n}})
+	}
+	return out
+}()
 
 func webParityJSON(t *testing.T) []byte {
 	t.Helper()
@@ -489,26 +522,36 @@ func webParityJSON(t *testing.T) []byte {
 	about, _ := json.Marshal("What the control plane's rules (internal/controlplane/webapi/rules.go) return " +
 		"for the inputs of the Web UI's parity test (validation-parity.test.ts). Generated; do not edit. " +
 		"Regenerate with: go test ./internal/controlplane/webapi -run TestWebParityFixture -update")
-	b.WriteString("{\n  \"about\": " + string(about) + ",\n  \"cases\": [\n")
+	b.WriteString("{\n  \"about\": " + string(about) + ",\n")
 	seen := map[string]bool{}
-	for i, in := range webParityInputs {
-		key := in.fn + "\x00" + strings.Join(in.args, "\x00")
-		if seen[key] {
-			t.Fatalf("duplicate parity input %s%q", in.fn, in.args)
+	section := func(name string, inputs []webParityInput, last bool) {
+		b.WriteString("  \"" + name + "\": [\n")
+		for i, in := range inputs {
+			key := in.fn + "\x00" + strings.Join(in.args, "\x00")
+			if seen[key] {
+				t.Fatalf("duplicate parity input %s%q", in.fn, in.args)
+			}
+			seen[key] = true
+			line, err := json.Marshal(runWebParityCase(t, in.fn, in.args))
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.WriteString("    ")
+			b.Write(line)
+			if i < len(inputs)-1 {
+				b.WriteByte(',')
+			}
+			b.WriteByte('\n')
 		}
-		seen[key] = true
-		line, err := json.Marshal(runWebParityCase(t, in.fn, in.args))
-		if err != nil {
-			t.Fatal(err)
+		if last {
+			b.WriteString("  ]\n")
+		} else {
+			b.WriteString("  ],\n")
 		}
-		b.WriteString("    ")
-		b.Write(line)
-		if i < len(webParityInputs)-1 {
-			b.WriteByte(',')
-		}
-		b.WriteByte('\n')
 	}
-	b.WriteString("  ]\n}\n")
+	section("cases", webParityInputs, false)
+	section("providerCases", webProviderParityInputs, true)
+	b.WriteString("}\n")
 	return b.Bytes()
 }
 

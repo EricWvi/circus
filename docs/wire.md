@@ -459,6 +459,7 @@ Further size rules:
 | `ResumeLeases.leases`, `SessionReply.Resumed.leases` | 64 each |
 | `SessionReply.TranscriptKeys.subpaths` | 1024 |
 | `SessionReply.Devices.devices` | 256 |
+| `SessionReply.LaunchEnv.env` | 72 |
 
 User-side RPC response caps are registered in the same table:
 `ListSessionsResponse.sessions` ≤ 1000, `ListApprovalsResponse.approvals` ≤ 32.
@@ -1013,6 +1014,37 @@ stop) is the same for local sessions. The daemon still prepares the
 working directory (the session is leased only once it is ready) and
 serves the path picker.
 
+#### Providers and the launch environment
+
+A session names a provider (`Session.provider_id`) or none, which means
+local login: the worker's own Claude Code login and environment. A
+provider belongs to a Web user and carries an API endpoint
+(`ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, and
+the `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` aliases) plus custom
+variables. The control plane stores its secrets encrypted and never returns
+them on the user-side API.
+
+- **Scheduling.** A session with a provider is offered only to workers the
+  provider is assigned to, and only while fewer than its `max_sessions`
+  sessions hold leases across the control plane. AcquireLease checks both
+  again in its transaction (`PROVIDER_UNAVAILABLE`, `PROVIDER_FULL`); the
+  lease records the provider and counts until it ends. A session that
+  cannot be leased stays QUEUED with a `queue_reason`, announced by
+  ephemeral `KIND_QUEUE` events.
+- **Launch.** Before every CLI start (new session, resume, replacement
+  query) the holder calls `GetLaunchEnv`. With a provider it removes the
+  inherited authentication and endpoint variables, then sets the returned
+  ones; with `local_login` it keeps its environment. The reply holds
+  secrets and is never logged or published. `PROVIDER_UNAVAILABLE` means
+  start no CLI and release with `REASON_PROVIDER`.
+- **Model.** An empty `SessionConfig.model` starts the CLI without a model,
+  so its default alias applies through the provider's alias variables.
+- **Changes.** Provider edits reach the next CLI start; running CLIs keep
+  their environment, and lowering `max_sessions` or unassigning a worker
+  revokes no lease. Changing a session's provider (UpdateSession) is
+  refused while a turn runs; with an idle lease it revokes the lease and
+  the session is scheduled again under the new provider.
+
 #### Fencing and leases
 
 Session ids are 1-128 bytes of `[A-Za-z0-9_-]`. Every SessionRequest has
@@ -1203,7 +1235,7 @@ has flushed and released. The holder observes it through
 
 | After stop | Operations |
 | --- | --- |
-| Refused | TakeInputs, RequestApproval, ConsumeGrant: `rejected STOPPED`. SubmitCall: `rejected SESSION_STOPPED` (terminal; nothing recorded or executed). A non-reattaching AcquireLease: `STOPPED` (a `fresh` one by the holder also releases the lease). |
+| Refused | TakeInputs, RequestApproval, ConsumeGrant, GetLaunchEnv: `rejected STOPPED`. SubmitCall: `rejected SESSION_STOPPED` (terminal; nothing recorded or executed). A non-reattaching AcquireLease: `STOPPED` (a `fresh` one by the holder also releases the lease). |
 | Accepted | AppendTranscript, ReportTurn, PatchSessionState, PublishEvents, TranscriptRepaired, LoadTranscript, ListTranscriptKeys, GetSessionState, ReleaseLease, ResumeLeases, a reattaching AcquireLease. |
 
 On any STOPPED the worker closes the query and sends ReleaseLease with
@@ -1216,8 +1248,9 @@ the worker then releases with `REASON_STOPPED` rather than dropping entries.
 
 | Session op | Successful SessionReply | Rules |
 | --- | --- | --- |
-| AcquireLease | lease | `fresh` as above. epoch, stable claude_session_id, has_transcript, `state` (every section except calls), `recovery`, shared SessionConfig, `reattached` and `transcript_gap_turn_no` (broken transcripts below). NOT_OFFERED and STOPPED as above. |
-| ReleaseLease | ok | Reason IDLE, STOPPED, ERROR or FENCED; relinquishes ownership; repeats as above. |
+| AcquireLease | lease | `fresh` as above. epoch, stable claude_session_id, has_transcript, `state` (every section except calls), `recovery`, shared SessionConfig, `reattached` and `transcript_gap_turn_no` (broken transcripts below). NOT_OFFERED and STOPPED as above. A new holder of a session with a provider: PROVIDER_UNAVAILABLE or PROVIDER_FULL, nothing written (Providers and the launch environment); a reattaching one is not gated. |
+| ReleaseLease | ok | Reason IDLE, STOPPED, ERROR, FENCED or PROVIDER; relinquishes ownership; repeats as above. |
+| GetLaunchEnv | launch_env | Before every CLI start. `local_login` without a provider; otherwise the provider's variables, at most 72. PROVIDER_UNAVAILABLE when the provider is deleted, not assigned to this worker or its secrets cannot be decrypted. Never logged. |
 | LoadTranscript | transcript_page | Opaque subpath (empty = main), exclusive after_seq, max_bytes 1..8 MiB. Return at least one entry if available, even if it alone exceeds max_bytes; it must fit M with its envelope. Continue at next_seq until done. |
 | ListTranscriptKeys | transcript_keys | At most 1024 subpaths. |
 | AppendTranscript | ok | Atomic append; at most 8 MiB encoded entries, or one larger entry fitting M. JSON is opaque and never parsed. Retry rules below. |

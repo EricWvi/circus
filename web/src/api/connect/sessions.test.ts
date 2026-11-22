@@ -1,6 +1,7 @@
 import { Code, ConnectError, createRouterTransport, type ServiceImpl } from "@connectrpc/connect"
 import {
   InputPriority,
+  QueueReason,
   SessionEvent_Kind,
   SessionService,
   Session_State,
@@ -60,7 +61,51 @@ describe("the Connect session client", () => {
       createdAtUnixMs: 1_000,
       device: "box",
       cwd: "/src",
+      providerId: "",
+      queueReason: "unspecified",
     })
+  })
+
+  it("maps the provider and why a queued session waits; a newer reason reads as none", async () => {
+    const queued = { ...protoSession, state: Session_State.QUEUED, providerId: "prov-1" }
+    const client = sessions({
+      listSessions: () => ({
+        sessions: [
+          { ...queued, queueReason: QueueReason.PROVIDER_FULL },
+          { ...queued, sessionId: "s2", queueReason: QueueReason.PROVIDER_SECRETS_UNREADABLE },
+          { ...queued, sessionId: "s3", queueReason: 99 as QueueReason },
+        ],
+        nextPageToken: "",
+      }),
+    })
+    const list = await client.listSessions({})
+    expect(list.map((s) => [s.providerId, s.queueReason])).toEqual([
+      ["prov-1", "provider_full"],
+      ["prov-1", "provider_secrets_unreadable"],
+      ["prov-1", "unspecified"],
+    ])
+  })
+
+  it("sends a provider for a new session only when one is chosen, and changes it with UpdateSession", async () => {
+    const created: (string | undefined)[] = []
+    const updates: { title?: string; providerId?: string }[] = []
+    const client = sessions({
+      createSession: (req) => {
+        created.push(req.providerId)
+        return { session: { ...protoSession, config: { defaultDevice: "box", cwds: [] } } }
+      },
+      updateSession: (req) => {
+        updates.push({ title: req.title, providerId: req.providerId })
+        return { ...protoSession, providerId: req.providerId ?? "", config: { defaultDevice: "box", cwds: [] } }
+      },
+    })
+    await client.createSession({ projectId: "p1", locationIndex: 0, clientRequestId: "k1" })
+    await client.createSession({ projectId: "p1", locationIndex: 0, clientRequestId: "k2", providerId: "" })
+    await client.createSession({ projectId: "p1", locationIndex: 0, clientRequestId: "k3", providerId: "prov-1" })
+    expect(created).toEqual([undefined, "", "prov-1"])
+    const session = await client.updateSession({ sessionId: "s1", providerId: "" })
+    expect(updates).toEqual([{ title: undefined, providerId: "" }])
+    expect(session.providerId).toBe("")
   })
 
   it("follows list pages to the end", async () => {
@@ -155,7 +200,7 @@ describe("the Connect session client", () => {
     let title = ""
     const client = sessions({
       updateSession: (req) => {
-        title = req.title
+        title = req.title ?? ""
         return { ...protoSession, title: req.title, viewTruncated: true, config: { defaultDevice: "box", cwds: [] } }
       },
     })

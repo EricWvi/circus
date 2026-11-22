@@ -14,7 +14,7 @@ import (
 func protoProject(p store.Project) *circusv1.Project {
 	out := &circusv1.Project{
 		ProjectId: p.ID, Name: p.Name, LastUsedLocation: uint32(p.LastUsedLocation),
-		CreatedAtUnixMs: p.CreatedAt, UpdatedAtUnixMs: p.UpdatedAt, RepoUrl: p.RepoURL,
+		CreatedAtUnixMs: p.CreatedAt, UpdatedAtUnixMs: p.UpdatedAt, RepoUrl: p.RepoURL, DefaultProviderId: p.DefaultProviderID,
 	}
 	for _, l := range p.Locations {
 		loc := &circusv1.Project_Location{Device: l.DeviceName, Path: l.Path, DeviceRevoked: l.DeviceRevoked}
@@ -83,6 +83,9 @@ func (s *Service) resolveLocations(ctx context.Context, u store.User, in []*circ
 func (s *Service) writeError(ctx context.Context, op string, err error) error {
 	var de *store.LocationDeviceError
 	switch {
+	case errors.Is(err, store.ErrUnknownProvider):
+		// Deleted after the request was checked, or never the caller's.
+		return invalidField("default_provider_id", "unknown provider")
 	case errors.As(err, &de):
 		// The device was revoked after the request was checked.
 		return invalidField(locationsField(de.Index, "device"), "unknown device")
@@ -131,12 +134,16 @@ func (s *Service) CreateProject(ctx context.Context, req *connect.Request[circus
 	if err != nil {
 		return nil, err
 	}
+	if len(req.Msg.GetDefaultProviderId()) > store.MaxIDBytes {
+		return nil, invalidField("default_provider_id", "provider id is too long")
+	}
 	id, err := newID()
 	if err != nil {
 		return nil, s.internal(ctx, "project id", err)
 	}
 	now := s.now().UnixMilli()
-	p, err := s.st.CreateProject(ctx, store.Project{ID: id, UserID: u.ID, Name: name, Locations: locs, RepoURL: repoURL, CreatedAt: now, UpdatedAt: now})
+	p, err := s.st.CreateProject(ctx, store.Project{ID: id, UserID: u.ID, Name: name, Locations: locs, RepoURL: repoURL,
+		DefaultProviderID: req.Msg.GetDefaultProviderId(), CreatedAt: now, UpdatedAt: now})
 	if err != nil {
 		return nil, s.writeError(ctx, "create project", err)
 	}
@@ -205,6 +212,12 @@ func (s *Service) UpdateProject(ctx context.Context, req *connect.Request[circus
 		if patch.Locations, err = s.resolveLocations(ctx, u, m.GetLocations().GetLocations()); err != nil {
 			return nil, err
 		}
+	}
+	if m.DefaultProviderId != nil {
+		if len(m.GetDefaultProviderId()) > store.MaxIDBytes {
+			return nil, invalidField("default_provider_id", "provider id is too long")
+		}
+		patch.DefaultProviderID = new(m.GetDefaultProviderId())
 	}
 	if m.LastUsedLocation != nil {
 		i := m.GetLastUsedLocation()
