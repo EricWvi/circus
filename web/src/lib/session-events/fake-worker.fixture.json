@@ -1742,6 +1742,24 @@
     }
    },
    {
+    "seq": 0,
+    "kind": "KIND_WORKER",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "disconnected_at_unix_ms": "1"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_WORKER",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "disconnected_at_unix_ms": "0"
+    }
+   },
+   {
     "seq": 4,
     "kind": "KIND_TURN_INTERRUPTED",
     "ephemeral": false,
@@ -1796,6 +1814,24 @@
      "session_id": "00000000-0000-4000-8000-000000000003",
      "type": "user",
      "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_WORKER",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "disconnected_at_unix_ms": "1"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_WORKER",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "disconnected_at_unix_ms": "0"
     }
    },
    {

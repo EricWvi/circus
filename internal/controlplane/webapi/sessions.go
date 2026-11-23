@@ -153,14 +153,15 @@ func (d *deviceNames) name(ctx context.Context, id string) (string, error) {
 }
 
 // listSession is the Session of ListSessions: without config. A queued
-// session carries the scheduler's queue reason.
+// session carries the scheduler's queue reason; every session, whether its
+// lease holder is disconnected.
 func (s *Service) listSession(sess store.Session) *circusv1.Session {
 	out := &circusv1.Session{
 		SessionId: sess.ID, State: protoState(sess.State), LastTurnOutcome: protoOutcome(sess.LastTurnOutcome),
 		TurnCount: uint64(max(sess.TurnCount, 0)), CreatedAtUnixMs: sess.CreatedAt, StoppedAtUnixMs: sess.StoppedAt,
 		ViewTruncated: sess.ViewTruncated, PinnedWorkerId: sess.PinnedWorkerID, ProjectId: sess.ProjectID,
 		Title: sess.Title, LastActivityAtUnixMs: sess.LastActivityAt, PendingApprovalCount: sess.PendingApprovalCount,
-		ProviderId: sess.ProviderID,
+		ProviderId: sess.ProviderID, WorkerDisconnectedAtUnixMs: s.scheduler.WorkerDisconnectedAt(sess.ID),
 	}
 	if sess.State == store.SessionQueued {
 		out.QueueReason = s.scheduler.QueueReason(sess.ID)

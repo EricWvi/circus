@@ -16,8 +16,9 @@ export interface SeedProject {
  * - `broken`: the second turn's transcript couldn't be saved.
  * - `stopped`: the user stopped the session.
  * - `queued`: the second message waits for a worker to take the session.
+ * - `running`: the second turn is still running.
  */
-export type SeedEnding = "idle" | "approval" | "interrupted" | "broken" | "stopped" | "queued"
+export type SeedEnding = "idle" | "approval" | "interrupted" | "broken" | "stopped" | "queued" | "running"
 
 export interface SeedSession {
   id: string
@@ -36,6 +37,11 @@ export interface SeedSession {
   provider?: string
   /** The session holds a lease (it was taken by a worker and keeps it while idle). */
   leased?: boolean
+  /**
+   * The worker holding the lease lost its connection this many seconds
+   * before the page loaded; the lease ends a minute after that.
+   */
+  workerDisconnectedSecondsAgo?: number
 }
 
 export const projects: SeedProject[] = [
@@ -192,5 +198,35 @@ export const queueDemoSessions: SeedSession[] = [
     device: "eric-win",
     ending: "queued",
     followUp: "Remove the unused aliases",
+  },
+]
+
+/**
+ * Sessions whose worker lost its connection as the page loaded (the mock's
+ * `?mock=worker` mode): one in the middle of a turn, one idle. The worker
+ * doesn't come back, so each lease ends a minute after the disconnect (the
+ * longest a server lease can last), interrupting the running turn.
+ */
+export const workerDemoSessions: SeedSession[] = [
+  {
+    id: "worker-gone-running",
+    projectId: "circus",
+    title: "Run the full end-to-end suite",
+    minutesAgo: 0,
+    device: "devbox",
+    ending: "running",
+    followUp: "Run it again with the race detector",
+    leased: true,
+    workerDisconnectedSecondsAgo: 0,
+  },
+  {
+    id: "worker-gone-idle",
+    projectId: "palace",
+    title: "Check the nightly backup logs",
+    minutesAgo: 1,
+    device: "palace-builder",
+    ending: "idle",
+    leased: true,
+    workerDisconnectedSecondsAgo: 0,
   },
 ]

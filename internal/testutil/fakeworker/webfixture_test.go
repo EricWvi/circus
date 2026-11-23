@@ -591,13 +591,17 @@ var unstableFields = map[string]bool{
 	"usage": true, "modelUsage": true, "diagnostics": true, "context_management": true, "container": true,
 }
 
-// normalize drops keepalives, numbers ids by first use and drops unstable fields.
+// normalize drops keepalives, numbers ids by first use, drops unstable
+// fields and replaces a nonzero worker disconnect time with "1".
 func normalize(t *testing.T, events []*pb.SessionEvent) []fixtureEvent {
 	ids := map[string]string{}
 	out := []fixtureEvent{}
 	for _, e := range events {
 		if e.GetKind() == pb.SessionEvent_KIND_UNSPECIFIED && e.GetPayloadJson() == "" {
 			continue
+		}
+		if e.GetKind() == pb.SessionEvent_KIND_WORKER && e.GetPayloadJson() != `{"disconnected_at_unix_ms":"0"}` {
+			e = &pb.SessionEvent{Seq: e.GetSeq(), Kind: e.GetKind(), Ephemeral: e.GetEphemeral(), PayloadJson: `{"disconnected_at_unix_ms":"1"}`}
 		}
 		var payload any
 		if raw := e.GetPayloadJson(); raw != "" {

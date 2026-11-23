@@ -156,10 +156,11 @@ func testEventBatches(t *testing.T, b Backend) {
 	r, err = pub(fence, 4, ev("RESULT"))
 	must(t, err)
 	mustEqual(t, "continues", r.Seqs, []int64{2})
-	// Turn boundaries, accepted inputs, resolved approvals and session
-	// states are control-plane-only, like gap acceptance.
+	// Turn boundaries, accepted inputs, resolved approvals, session states,
+	// workspace changes and the live-only queue and worker announcements
+	// are control-plane-only, like gap acceptance.
 	for i, kind := range []string{store.EventKindTurnInterrupted, store.EventKindTurnStopped, store.EventKindInputAccepted,
-		store.EventKindApprovalResolved, store.EventKindSessionState} {
+		store.EventKindApprovalResolved, store.EventKindSessionState, store.EventKindWorkspace, store.EventKindQueue, store.EventKindWorker} {
 		batch := int64(i + 5)
 		r, err = pub(fence, batch, append(ev("ASSISTANT"), ev(kind)...))
 		must(t, err)
@@ -188,7 +189,7 @@ func testEventBatches(t *testing.T, b Backend) {
 	r, err = pub(next, 2, nil)
 	must(t, err)
 	mustEqual(t, "empty batch", []any{r.Dropped, r.Deduplicated, len(r.Seqs), last(), getSession(t, s, "s1").DroppedEventBatches},
-		[]any{false, false, 0, int64(3), int64(7)})
+		[]any{false, false, 0, int64(3), int64(10)})
 	r, err = pub(next, 2, nil)
 	must(t, err)
 	mustEqual(t, "empty batch consumed", r.Deduplicated, true)

@@ -48,6 +48,15 @@ const (
 	// bounds those evaluations per fallback pass.
 	ReasonRecheck     = 5 * time.Minute
 	MaxReasonRechecks = 256
+	// goneRecheck is how long after its holder disconnected a lease still
+	// marked disconnected is evaluated again by the fallback (also at most
+	// MaxReasonRechecks per pass): by then the sweep has released it unless
+	// it ended unseen.
+	goneRecheck = LeaseLifetime + ScheduleInterval
+	// MaxStaleRetries bounds how many times in a row an evaluation whose
+	// store read turned out stale is repeated at once; past it the session
+	// is evaluated at the next fallback pass.
+	MaxStaleRetries = 3
 	// MaxWakeQueue bounds the sessions waiting for the scheduler; past it a
 	// Wake of an untracked session is dropped and the next fallback scan
 	// finds the session queued in the store.
@@ -156,6 +165,15 @@ type Service struct {
 	startedAt int64
 	// tokens numbers acquisitions (entry.token).
 	tokens uint64
+	// leaseGen counts bindings of leases to live connections and unbinds
+	// (entry.changedAt); losses counts applied lease losses (lost). Both
+	// let an evaluation tell that its store read is older than them.
+	leaseGen, losses uint64
+	// staleReads counts each session's stale reads in a row (retryStale);
+	// parked holds sessions that reached MaxStaleRetries, with their
+	// reasons, until the next fallback pass.
+	staleReads map[string]int
+	parked     map[string]reasonSet
 	// maxTracked is MaxTracked (lowered by tests).
 	maxTracked int
 
@@ -208,6 +226,8 @@ func New(cfg Config) (*Service, error) {
 		wakes:      make(map[string]reasonSet),
 		rescan:     make(map[string]struct{}),
 		provScans:  make(map[string]string),
+		staleReads: make(map[string]int),
+		parked:     make(map[string]reasonSet),
 		boots:      make(map[string]bootRec),
 		maxTracked: MaxTracked,
 		kick:       make(chan struct{}, 1),
@@ -548,7 +568,10 @@ func (c *Conn) ID() string { return c.id }
 
 // Close unregisters the connection. Leases bound to it stay in the store
 // and expire unless the worker resumes them on a new connection; Offers
-// made to it go to another connection.
+// made to it go to another connection. When it was the last connection of
+// its worker's boot, every lease that boot holds without a live connection
+// is marked disconnected (worker_disconnected_at, KIND_WORKER) until it is
+// bound again or ends.
 func (c *Conn) Close() {
 	s := c.s
 	s.mu.Lock()
@@ -562,14 +585,15 @@ func (c *Conn) Close() {
 	// although the store write lands after the sender has stopped.
 	at := s.nowMs()
 	delete(s.conns, c.id)
-	// The last connection of the current boot records the disconnect: the
-	// boot counts as alive for LeaseLifetime more (checkOrder).
-	lastOfCurrent := c.bootID != "" && s.boots[c.workerID].boot == c.bootID
+	lastOfBoot := c.bootID != ""
 	for _, o := range s.conns {
 		if o.workerID == c.workerID && o.bootID == c.bootID {
-			lastOfCurrent = false
+			lastOfBoot = false
 		}
 	}
+	// The last connection of the current boot records the disconnect: the
+	// boot counts as alive for LeaseLifetime more (checkOrder).
+	lastOfCurrent := lastOfBoot && s.boots[c.workerID].boot == c.bootID
 	for id, e := range s.entries {
 		if e.offered == c {
 			s.setOffer(e, nil)
@@ -577,6 +601,13 @@ func (c *Conn) Close() {
 		}
 		if e.bound == c {
 			s.setBound(e, nil)
+		}
+		// Leases bound here, and those left unbound by an earlier
+		// connection of the boot that closed while this one was live: the
+		// boot now has no connection at all. A lease bound to a live
+		// connection cannot belong to this boot (none is left).
+		if lastOfBoot && e.bound == nil && e.holder.worker == c.workerID && e.holder.boot == c.bootID {
+			s.setGone(id, e, at)
 		}
 	}
 	c.outbox, c.queued = nil, nil

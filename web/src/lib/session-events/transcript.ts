@@ -7,6 +7,7 @@
 
 import type { RawSessionEvent, WorkspaceStatus } from "@/api/types"
 import { queueReasonFromPayload, type LiveQueueReason } from "@/lib/queue-reason"
+import { workerDisconnectedAtFromPayload, type LiveWorkerLink } from "@/lib/worker-link"
 import { workspaceFromPayload, type LiveWorkspace } from "@/lib/workspace"
 
 import { NO_RESULT_TOOL_ERROR, settleEvents } from "../settle"
@@ -31,6 +32,8 @@ export interface Transcript {
   readonly workspace: LiveWorkspace | null
   /** The latest queue reason the stream announced (live only); null before any. */
   readonly queue: LiveQueueReason | null
+  /** The latest worker disconnect time the stream announced (live only); null before any. */
+  readonly worker: LiveWorkerLink | null
   /** Bookkeeping; opaque to callers. */
   readonly internal: Internal
 }
@@ -73,6 +76,7 @@ export const emptyTranscript: Transcript = {
   turnNo: 0,
   workspace: null,
   queue: null,
+  worker: null,
   internal: {
     order: [],
     byId: new Map(),
@@ -198,6 +202,7 @@ class Builder {
   turnNo: number
   workspace: LiveWorkspace | null
   queue: LiveQueueReason | null
+  worker: LiveWorkerLink | null
   private changed = false
 
   constructor(private readonly base: Transcript) {
@@ -219,6 +224,7 @@ class Builder {
     this.turnNo = base.turnNo
     this.workspace = base.workspace
     this.queue = base.queue
+    this.worker = base.worker
   }
 
   build(): Transcript {
@@ -229,6 +235,7 @@ class Builder {
       turnNo: this.turnNo,
       workspace: this.workspace,
       queue: this.queue,
+      worker: this.worker,
       events: this.changed ? order.map((id) => byId.get(id)!) : this.base.events,
       internal: this.internal,
     }
@@ -380,6 +387,10 @@ class Builder {
       case "queue":
         // Live only, applied in the order received: the latest one counts.
         this.queue = { reason: queueReasonFromPayload(p), receivedAtMs: raw.receivedAtMs ?? 0 }
+        return
+      case "worker":
+        // Live only, like a queue reason: the latest one received counts.
+        this.worker = { disconnectedAtUnixMs: workerDisconnectedAtFromPayload(p), receivedAtMs: raw.receivedAtMs ?? 0 }
         return
       default:
         // Progress, background tasks, notices and kinds this view doesn't know.

@@ -509,6 +509,12 @@ export const zhCN = {
       changeFailedRunning: "期间已有回合开始，请在它结束后再更换提供方。",
       changeFailedStopped: "会话已停止，无法更换提供方。",
     },
+    worker: {
+      disconnectedRunning: "worker 连接已断开（{{ago}}）。1 分钟内未重连，本轮将中断。",
+      disconnected: "worker 连接已断开（{{ago}}），等待重连。",
+      disconnectedRunningUntimed: "worker 连接已断开。1 分钟内未重连，本轮将中断。",
+      disconnectedUntimed: "worker 连接已断开，等待重连。",
+    },
     queue: {
       provider_full: "{{provider}} 的会话数已达上限，其中有会话结束后此会话才会开始。",
       no_assigned_worker: "分配给 {{provider}} 的 worker 中，没有在线且能运行此会话的。",

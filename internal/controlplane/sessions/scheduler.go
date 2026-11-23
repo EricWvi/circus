@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,14 +84,14 @@ type entry struct {
 	// (unwatched, send failed, link closed), so the worker never learned
 	// the lease and it is no longer extended (it expires).
 	pending, abandoned bool
-	// token identifies the acquisition pending and abandoned belong to;
-	// 0 after a resumption.
-	token uint64
 	// known: this process has bound the lease itself (AcquireLease,
 	// ResumeLeases, or a store lease found bound to one of its live
 	// connections). A resumption of a lease not known is the first one
 	// after a restart, whoever created the entry.
 	known bool
+	// token identifies the acquisition pending and abandoned belong to;
+	// 0 after a resumption.
+	token uint64
 	// reserved counts AcquireLease and ResumeLeases operations that hold
 	// the entry while their transaction runs; a reserved entry is never
 	// forgotten.
@@ -108,6 +109,18 @@ type entry struct {
 	provider string
 	// derivedAt is when an evaluation last derived queue (Unix ms).
 	derivedAt int64
+	// gone is when the last connection of the holder's boot closed while
+	// this lease was bound to none of the holder's live connections (Unix
+	// ms): the session's worker_disconnected_at. 0 while the holder is
+	// connected, without a holder, and when unknown (a lease this process
+	// has not seen a connection of its holder's boot close for). Only a
+	// lease's binding (bind) and its end (unbind) clear it.
+	gone int64
+	// changedAt is s.leaseGen when the lease was last bound to a live
+	// connection or forgotten (unbind), so an evaluation can tell that its
+	// read predates either (a resumption moves a lease without a new
+	// epoch; a release keeps it).
+	changedAt uint64
 }
 
 // bit returns the reason value of a one-reason set.
@@ -271,6 +284,31 @@ func (s *Service) clearQueue(id string, e *entry) {
 	}
 }
 
+// setGone records session id's worker_disconnected_at and announces a
+// change with an ephemeral KIND_WORKER event; s.mu held, so the events of
+// one session go out in order. Setting 0 on an entry never marked sends
+// nothing.
+func (s *Service) setGone(id string, e *entry, at int64) {
+	if e.gone == at {
+		return
+	}
+	e.gone = at
+	s.cfg.Bus.Ephemeral(id, &circusv1.SessionEvent{TsUnixMs: s.nowMs(), Kind: circusv1.SessionEvent_KIND_WORKER,
+		PayloadJson: `{"disconnected_at_unix_ms":"` + strconv.FormatInt(at, 10) + `"}`, Ephemeral: true})
+}
+
+// WorkerDisconnectedAt returns when the worker holding session id's lease
+// lost its last connection (Unix ms), or 0 while it is connected, when no
+// lease is held, or when that is unknown.
+func (s *Service) WorkerDisconnectedAt(id string) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e := s.entries[id]; e != nil {
+		return e.gone
+	}
+	return 0
+}
+
 // QueueReason returns why queued session id is not running yet, as of its
 // last evaluation; UNSPECIFIED when nothing is known against it.
 func (s *Service) QueueReason(id string) circusv1.QueueReason {
@@ -384,6 +422,12 @@ func (s *Service) bind(id string, e *entry, l store.Lease, c *Conn, revokeOld bo
 	// AcquireLease and ResumeLeases, the two ways a lease is bound to a
 	// connection of this process, set or reset them.
 	s.setBound(e, c)
+	if c != nil {
+		s.leaseGen++
+		e.changedAt = s.leaseGen
+		// Bound to a live connection: the holder is connected again.
+		s.setGone(id, e, 0)
+	}
 	s.setOffer(e, nil)
 	s.clearQueue(id, e)
 }
@@ -402,6 +446,9 @@ func (s *Service) unbind(id string, e *entry, revoke bool) {
 		}
 	}
 	s.setBound(e, nil)
+	s.setGone(id, e, 0)
+	s.leaseGen++
+	e.changedAt = s.leaseGen
 	s.providerFreed(e.holder.provider)
 	e.holder = holder{}
 	e.reasons, e.interrupt = 0, 0
@@ -434,11 +481,9 @@ func (s *Service) lost(l store.LeaseLoss, initiator *Conn, mayOffer bool) {
 		return
 	}
 	id := l.Released.SessionID
-	if l.Interrupted && l.Session.LastEventSeq > 0 {
-		s.cfg.Bus.Durable(id, uint64(l.Session.LastEventSeq))
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.losses++
 	revoke := initiator == nil || initiator.id != l.Released.ConnID
 	s.providerFreed(l.Released.ProviderID)
 	e := s.entries[id]
@@ -450,6 +495,16 @@ func (s *Service) lost(l store.LeaseLoss, initiator *Conn, mayOffer bool) {
 			epoch := l.Released.Epoch
 			c.queue(id, func(h *hint) { h.revoke = epoch })
 		}
+	}
+	// Announced after unbind cleared a disconnect mark (KIND_WORKER): the
+	// two are published in that order, which keeps the order a watcher
+	// sees stable against its next writes (best effort: a catch-up in
+	// between may still deliver the stored boundary first). Paths that end
+	// a lease in a write of their own (UpdateSession's provider change,
+	// RecoverSession) announce the boundary before the Wake that clears
+	// the mark; clients must not rely on either order.
+	if l.Interrupted && l.Session.LastEventSeq > 0 {
+		s.cfg.Bus.Durable(id, uint64(l.Session.LastEventSeq))
 	}
 	if mayOffer && l.Session.State == store.SessionQueued {
 		s.queueWake(id, 0)
@@ -549,12 +604,16 @@ func (s *Service) processWakes(ctx context.Context) {
 // its holder, an Offer to a worker, a LeaseRevoked to a holder that lost it,
 // or nothing.
 func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
+	s.mu.Lock()
+	gen, losses, prev := s.leaseGen, s.losses, s.entries[id]
+	s.mu.Unlock()
 	now := s.nowMs()
 	tctx, cancel := storeCtx(ctx)
 	st, err := s.cfg.Store.SettleSession(tctx, id, now)
 	cancel()
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrInvalid) {
 		s.mu.Lock()
+		delete(s.staleReads, id)
 		if e := s.entries[id]; e != nil {
 			s.unbind(id, e, true)
 			s.setOffer(e, nil)
@@ -588,15 +647,28 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// The reads above ran without s.mu: an AcquireLease or ResumeLeases may
-	// have bound a newer lease since, or be binding one now. Acting on the
-	// stale read would revoke that lease and offer the session again, so
-	// the session is evaluated again instead: at once when a newer epoch is
-	// bound, when its reservation ends while one is in flight.
-	if e := s.entries[id]; e != nil {
-		if e.holder.epoch > st.Lease.Epoch {
-			s.queueWake(id, rs)
-			return
-		}
+	// have bound a newer lease since, or be binding one now, and the lease
+	// read may have ended since. Acting on the stale read would revoke a
+	// new lease and offer the session again, unbind a lease just resumed on
+	// a new connection (the read names the closed one), or track a holder
+	// for a lease that has ended (which a later close of its boot would
+	// mark disconnected). So the session is evaluated again instead, at
+	// once, when since the read began a newer epoch was bound, the entry
+	// was bound to a live connection or unbound, the entry was forgotten
+	// or replaced, or, with no entry before or now, any lease loss was
+	// applied (it may have been this session's); and when its reservation
+	// ends while an acquisition is in flight.
+	// Each session is read again at most MaxStaleRetries times in a row;
+	// past that it waits for the next fallback pass, so churn elsewhere
+	// cannot keep it re-reading, and a stale read is never acted on.
+	cur := s.entries[id]
+	if (cur != nil && (cur.holder.epoch > st.Lease.Epoch || cur.changedAt > gen)) || (prev != nil && cur != prev) ||
+		(prev == nil && cur == nil && st.Lease.Live(now) && s.losses != losses) {
+		s.retryStale(id, rs)
+		return
+	}
+	delete(s.staleReads, id)
+	if e := cur; e != nil {
 		if e.reserved > 0 && !st.Lease.Live(now) {
 			e.deferred |= rs | reasonSet(1) // nonzero even without reasons
 			return
@@ -634,6 +706,26 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 		s.clearQueue(id, e)
 		s.forget(id, e)
 	}
+}
+
+// retryStale evaluates session id again after a stale read: at once up to
+// MaxStaleRetries times in a row, then at the next fallback pass (parked;
+// both maps hold at most MaxWakeQueue ids, past that the session goes
+// straight to the Wake queue or is dropped like a Wake past it); s.mu
+// held.
+func (s *Service) retryStale(id string, rs reasonSet) {
+	n := s.staleReads[id] + 1
+	if n <= MaxStaleRetries && (s.staleReads[id] > 0 || len(s.staleReads) < MaxWakeQueue) {
+		s.staleReads[id] = n
+		s.queueWake(id, rs)
+		return
+	}
+	delete(s.staleReads, id)
+	if _, ok := s.parked[id]; ok || len(s.parked) < MaxWakeQueue {
+		s.parked[id] |= rs | reasonSet(1) // nonzero even without reasons
+		return
+	}
+	s.queueWake(id, rs)
 }
 
 // gate is what a queued session's provider allows, read from the store
@@ -902,7 +994,7 @@ func (s *Service) fallback(ctx context.Context) {
 		// Offers not taken within ScheduleInterval are withdrawn, so the
 		// rescan sees their capacity and offers the sessions again.
 		now := s.nowMs()
-		rechecks := 0
+		rechecks, goneChecks := 0, 0
 		for id, e := range s.entries {
 			if e.offered != nil && now >= e.offeredAt+ScheduleInterval.Milliseconds() {
 				s.setOffer(e, nil)
@@ -917,7 +1009,19 @@ func (s *Service) fallback(ctx context.Context) {
 				rechecks++
 				s.queueWake(id, 0)
 			}
+			// A lease marked disconnected is not extended, so the sweep
+			// ends it within about LeaseLifetime; one still marked well
+			// after that ended unseen (its Wake dropped past
+			// MaxWakeQueue) and is derived again, so the mark clears.
+			if e.gone != 0 && now >= e.gone+goneRecheck.Milliseconds() && goneChecks < MaxReasonRechecks {
+				goneChecks++
+				s.queueWake(id, 0)
+			}
 		}
+		for id, rs := range s.parked {
+			s.queueWake(id, rs&allReasons)
+		}
+		clear(s.parked)
 		for _, c := range s.conns {
 			if c.attached {
 				s.rescan[c.userID] = struct{}{}

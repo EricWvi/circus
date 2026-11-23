@@ -391,6 +391,12 @@ export interface SessionSummary {
   providerId: string
   /** Why a queued session is not running yet; `unspecified` otherwise. */
   queueReason: QueueReason
+  /**
+   * When the connection of the worker holding the session's lease closed
+   * (the server's clock), while it hasn't reconnected; 0 when it is
+   * connected, no lease is held, or nothing is known.
+   */
+  workerDisconnectedAtUnixMs: number
 }
 
 /**
@@ -415,6 +421,13 @@ export interface SessionDetails extends SessionSummary {
   device: string
   /** The main thread's working directory on that device. */
   cwd: string
+  /**
+   * Client only: when the request that read this session was sent (this
+   * browser's clock). A live value the stream announced at or after it is
+   * newer than the read's; one announced before it is in the read already
+   * or outdated by it. Unset for a session not read by this client.
+   */
+  readSentAtMs?: number
 }
 
 /** The control plane's kinds of session events, by their proto names without `KIND_`. */
@@ -440,6 +453,7 @@ export type SessionEventKind =
   | "input_accepted"
   | "workspace"
   | "queue"
+  | "worker"
 
 /**
  * A session event as the control plane streams it. Durable events have
@@ -457,7 +471,7 @@ export interface RawSessionEvent {
   truncated: boolean
   /**
    * Client only: when this browser received a live event, by its clock
-   * (set by the session watch for KIND_QUEUE events).
+   * (set by the session watch for KIND_QUEUE and KIND_WORKER events).
    */
   receivedAtMs?: number
 }

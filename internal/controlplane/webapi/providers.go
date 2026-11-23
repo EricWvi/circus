@@ -35,6 +35,10 @@ var (
 type Scheduler interface {
 	// QueueReason is why a queued session is not running yet.
 	QueueReason(sessionID string) circusv1.QueueReason
+	// WorkerDisconnectedAt is when the worker holding the session's lease
+	// lost its last connection (Unix ms), 0 while it is connected, without
+	// a lease, or unknown.
+	WorkerDisconnectedAt(sessionID string) int64
 	// ProviderChanged re-evaluates the queued sessions of a provider that
 	// changed or was deleted.
 	ProviderChanged(userID, providerID string)
@@ -43,6 +47,7 @@ type Scheduler interface {
 type noScheduler struct{}
 
 func (noScheduler) QueueReason(string) circusv1.QueueReason { return 0 }
+func (noScheduler) WorkerDisconnectedAt(string) int64       { return 0 }
 func (noScheduler) ProviderChanged(string, string)          {}
 
 // providerIDArg checks a request's provider id. An empty one is NOT_FOUND

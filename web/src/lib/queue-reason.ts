@@ -26,13 +26,17 @@ export interface LiveQueueReason {
 }
 
 /**
- * The reason as the view shows it: the stream's while it has one, else the
- * read's. The watch keeps a live reason until a read whose request was sent
- * after it arrived has landed (`SessionWatch.sessionRead`), and drops it
- * when the stream opens again. Only this browser's clock is involved.
+ * The reason as the view shows it: the stream's when it arrived no earlier
+ * than the read's request was sent (`readSentAtMs`, unset: the stream's
+ * whenever it has one), else the read's. Only this browser's clock is
+ * involved; the read and the live value reach the view in the same render.
  */
-export function currentQueueReason(fetched: QueueReason, live: LiveQueueReason | null): QueueReason {
-  return live ? live.reason : fetched
+export function currentQueueReason(
+  fetched: QueueReason,
+  readSentAtMs: number | undefined,
+  live: LiveQueueReason | null,
+): QueueReason {
+  return live && live.receivedAtMs >= (readSentAtMs ?? 0) ? live.reason : fetched
 }
 
 /** Reasons the Providers page can do something about. */

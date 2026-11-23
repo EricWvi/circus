@@ -31,6 +31,11 @@ export interface SessionWatchState {
   connection: Connection
   /** The session no longer exists. */
   gone: boolean
+  /**
+   * A live event has told the server's clock (`serverOffsetMs`); before
+   * that, the server's time is this browser's.
+   */
+  clockKnown: boolean
 }
 
 export interface SessionWatch {
@@ -51,11 +56,12 @@ export interface SessionWatch {
    */
   serverOffsetMs(): number
   /**
-   * A read of the session whose request was sent at `sentAtMs` (this
-   * browser's clock) landed: a live queue reason that arrived before it is
-   * in that read already, or outdated by it, and is dropped.
+   * When the live values that reads are weighed against (queue reasons,
+   * worker disconnect times) arrived, this browser's clock: the applied
+   * ones and those received but not applied yet (applying waits for a 0 ms
+   * timer), so a read landing in between still counts them.
    */
-  sessionRead(sentAtMs: number): void
+  liveArrivals(): number[]
 }
 
 /** Events after which the session's state (GetSession) may have changed. */
@@ -89,6 +95,14 @@ export interface SessionWatchOptions {
    * reports the turn's end, so the session read right after may still run.
    */
   onBoundary?: (kinds: ReadonlySet<SessionEventKind>) => void
+  /**
+   * A stream opened again after an earlier one (only between `start` and
+   * `stop`): what is live only (queue reason, worker disconnect time) may
+   * have changed unannounced while it was closed, so the session should be
+   * read again. The live values are kept meanwhile: they are newer than
+   * any read sent before they arrived.
+   */
+  onReopen?: () => void
   afterResultMs?: number
   online?: boolean
 }
@@ -97,6 +111,7 @@ export function createSessionWatch({
   sessions,
   sessionId,
   onBoundary = () => {},
+  onReopen = () => {},
   afterResultMs = 1_000,
   online = true,
 }: SessionWatchOptions): SessionWatch {
@@ -110,15 +125,18 @@ export function createSessionWatch({
   let stream: AbortController | null = null
   /** Streams in a row that broke soon after they opened. */
   let shortLived = 0
+  /** A stream has opened before. */
+  let openedBefore = false
   let pending: RawSessionEvent[] = []
   let serverOffset = 0
+  let clockKnown = false
   /** When the last event arrived, by this browser's clock; 0 before any. */
   let lastReceivedAt = 0
   let flushTimer: ReturnType<typeof setTimeout> | null = null
   const listeners = new Set<() => void>()
 
   const controller = createConnectionController({ attempt: () => attempt(), online })
-  let state: SessionWatchState = { transcript, connection: controller.get(), gone }
+  let state: SessionWatchState = { transcript, connection: controller.get(), gone, clockKnown }
 
   const publish = () => {
     const connection = controller.get()
@@ -129,9 +147,10 @@ export function createSessionWatch({
       transcript.turnOpen === state.transcript.turnOpen &&
       transcript.turnNo === state.transcript.turnNo &&
       transcript.workspace === state.transcript.workspace &&
-      transcript.queue === state.transcript.queue
-    if (sameView && connection === state.connection && gone === state.gone) return
-    state = { transcript, connection, gone }
+      transcript.queue === state.transcript.queue &&
+      transcript.worker === state.transcript.worker
+    if (sameView && connection === state.connection && gone === state.gone && clockKnown === state.clockKnown) return
+    state = { transcript, connection, gone, clockKnown }
     for (const listener of listeners) listener()
   }
   controller.subscribe(publish)
@@ -164,10 +183,15 @@ export function createSessionWatch({
     // event after a pause is sent as it is recorded.
     const now = Date.now()
     const sentNow = event.seq === 0 || (lastReceivedAt > 0 && now - lastReceivedAt >= LIVE_GAP_MS)
-    if (sentNow && event.tsUnixMs > 0) serverOffset = now - event.tsUnixMs
+    if (sentNow && event.tsUnixMs > 0) {
+      serverOffset = now - event.tsUnixMs
+      // The flush queued below publishes the change.
+      clockKnown = true
+    }
     lastReceivedAt = now
-    // A queue reason is weighed against reads of the session by when it arrived.
-    pending.push(event.kind === "queue" ? { ...event, receivedAtMs: now } : event)
+    // Queue reasons and worker disconnect times are weighed against reads
+    // of the session by when they arrived (see `SessionDetails.readSentAtMs`).
+    pending.push(event.kind === "queue" || event.kind === "worker" ? { ...event, receivedAtMs: now } : event)
     flushTimer ??= setTimeout(flush, 0)
   }
 
@@ -202,9 +226,9 @@ export function createSessionWatch({
     const afterSeq = transcript.lastSeq
     // A new stream starts with its replay.
     lastReceivedAt = 0
-    // Live queue reasons aren't replayed: what the stream said before may be
-    // stale, and the session's next read says it again.
-    if (transcript.queue !== null) transcript = { ...transcript, queue: null }
+    // Live queue reasons and worker disconnect times aren't replayed. The
+    // last ones stay: whatever the session's cached read says is older. The
+    // read `onReopen` asks for replaces them once it lands.
     return new Promise((resolve) => {
       let opened = false
       let openedAt = 0
@@ -219,6 +243,8 @@ export function createSessionWatch({
               transcript = withoutStreaming(transcript)
               publish()
               resolve("opened")
+              if (openedBefore && running) onReopen()
+              openedBefore = true
             }
             receive(event)
           }
@@ -288,10 +314,11 @@ export function createSessionWatch({
     },
     retryNow: () => controller.retryNow(),
     serverOffsetMs: () => serverOffset,
-    sessionRead(sentAtMs) {
-      if (transcript.queue === null || transcript.queue.receivedAtMs >= sentAtMs) return
-      transcript = { ...transcript, queue: null }
-      publish()
+    liveArrivals: () => {
+      const out: number[] = []
+      for (const live of [transcript.queue, transcript.worker]) if (live) out.push(live.receivedAtMs)
+      for (const e of pending) if (e.receivedAtMs !== undefined) out.push(e.receivedAtMs)
+      return out
     },
     setOnline(next) {
       if (!next) closeStream()

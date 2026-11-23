@@ -517,6 +517,14 @@ export const en = {
       changeFailedRunning: "A turn started meanwhile. Change the provider once it ends.",
       changeFailedStopped: "The session was stopped, so its provider can't change.",
     },
+    worker: {
+      disconnectedRunning:
+        "The worker disconnected {{ago}}. If it doesn't reconnect within a minute, this turn will be interrupted.",
+      disconnected: "The worker disconnected {{ago}}; waiting for it to reconnect.",
+      disconnectedRunningUntimed:
+        "The worker disconnected. If it doesn't reconnect within a minute, this turn will be interrupted.",
+      disconnectedUntimed: "The worker disconnected; waiting for it to reconnect.",
+    },
     queue: {
       provider_full:
         "{{provider}} already runs as many sessions as it allows. This one starts when one of them ends.",

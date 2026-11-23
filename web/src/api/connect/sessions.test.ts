@@ -63,7 +63,40 @@ describe("the Connect session client", () => {
       cwd: "/src",
       providerId: "",
       queueReason: "unspecified",
+      workerDisconnectedAtUnixMs: 0,
     })
+  })
+
+  it("maps when the worker holding the session disconnected, 0 while it is connected", async () => {
+    const client = sessions({
+      listSessions: () => ({
+        sessions: [
+          { ...protoSession, state: Session_State.RUNNING, workerDisconnectedAtUnixMs: 1_763_380_800_000n },
+          { ...protoSession, sessionId: "s2" },
+        ],
+        nextPageToken: "",
+      }),
+    })
+    const list = await client.listSessions({})
+    expect(list.map((s) => s.workerDisconnectedAtUnixMs)).toEqual([1_763_380_800_000, 0])
+  })
+
+  it("names worker events", async () => {
+    const client = sessions({
+      async *watchSession() {
+        yield {
+          tsUnixMs: 4n,
+          kind: SessionEvent_Kind.WORKER,
+          payloadJson: '{"disconnected_at_unix_ms":"3"}',
+          ephemeral: true,
+        }
+      },
+    })
+    const kinds: string[] = []
+    for await (const e of client.watchSession({ sessionId: "s1", afterSeq: 0, signal: new AbortController().signal })) {
+      kinds.push(e.kind)
+    }
+    expect(kinds).toEqual(["worker"])
   })
 
   it("maps the provider and why a queued session waits; a newer reason reads as none", async () => {

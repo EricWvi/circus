@@ -66,6 +66,29 @@
 // timestamps come from the workers' clocks. Connections of any boot but the
 // worker's current one are stale and get no Offers.
 //
+// A lease stays valid while its holder is disconnected: the reconnect
+// window, in which the same process resumes it. The user is told at once
+// instead (Session.worker_disconnected_at_unix_ms). When the last
+// connection of a worker's boot closes (no other connection of that worker
+// and boot is registered), every tracked lease of that boot not bound to a
+// live connection (those bound to the closing connection, and those left
+// unbound by an earlier connection of the boot) is marked with the close
+// time on its entry, announced by an ephemeral KIND_WORKER event. The mark
+// clears, announced the same way ("0"), when the lease is bound to a live
+// connection again (ResumeLeases, AcquireLease, an evaluation that finds it
+// bound to one) and when it ends for any reason (unbind: release, expiry,
+// revocation, a boot change, a takeover, a stopped session's release); a
+// later close of the boot's last connection moves it. A lease this process
+// has seen no connection of its holder's boot close for (after a restart,
+// before the boot reconnects) is not marked: unknown reads 0, and
+// a restarted control plane cannot tell a worker about to reconnect from
+// one that is gone. A marked lease is unbound, and unbound leases were
+// never extended, so it expires 40 to 60 seconds (LeaseLifetime minus up
+// to one ExtendInterval) after the mark and the sweep ends it within one
+// SweepInterval more; the fallback evaluates a lease still marked
+// LeaseLifetime + ScheduleInterval after its mark (at most
+// MaxReasonRechecks per pass), so one that ended unseen clears too.
+//
 // Each AcquireLease takes a token; its pending and abandoned marks belong to
 // that token, so the end of an earlier operation never touches a later
 // acquisition. Each connection remembers its last 16 AcquireLeases
@@ -118,12 +141,18 @@
 // silently (the reason did not clear).
 //
 // An evaluation reads the store without s.mu (SettleSession, then the
-// provider). Before acting it checks, under s.mu, that no AcquireLease or
-// ResumeLeases bound a newer lease meanwhile (the entry's epoch is above
-// the one read: the session is evaluated again) and that none is in
-// flight (the entry is reserved: the evaluation is deferred to the end of
-// the reservation), so a stale read never revokes or re-offers a lease
-// just taken.
+// provider). Before acting it checks, under s.mu, that nothing changed the
+// lease in memory meanwhile (the entry's epoch is above the one read; the
+// entry was bound to a live connection or unbound after the read began,
+// since a resumption and a release keep the epoch; the entry was forgotten
+// or replaced; or, with no entry before or after, any lease loss was
+// applied: the session is evaluated again, at once up to MaxStaleRetries
+// times in a row and then at the next fallback pass, so a read of a lease
+// that ended meanwhile never tracks a holder for it) and
+// that none is in flight (the entry is reserved: the evaluation is
+// deferred to the end of the reservation), so a stale read never revokes
+// or re-offers a lease just taken, nor unbinds one just resumed on a new
+// connection.
 //
 // Wake-ups: a lease acquired under a provider that ends (release, revoke,
 // expiry, takeover) evaluates the sessions waiting as PROVIDER_FULL for
@@ -176,7 +205,9 @@
 //     handed to the link, at most 16 MiB encoded (one larger reply alone),
 //     about twice that decoded: C·(M + 32 MiB) = 768 MiB;
 //   - the session table: at most MaxTracked (8192) entries, queue reasons
-//     included. An entry is a 280-byte struct (288-byte size class), about
+//     and disconnect marks included (a mark is a field of its lease's
+//     entry, never an entry of its own). An entry is a 288-byte struct
+//     (its own size class), about
 //     32 bytes of map slot, and up to eight ids of at most 128 bytes each
 //     (the session id key, user, pin, the holder's worker, boot,
 //     connection and provider, the reason's provider): 288 + 32 + 8·128 =
@@ -185,7 +216,9 @@
 //     holds at most MaxWakeQueue (4096) ids (1 MiB); the provider scans at
 //     most MaxWakeQueue provider and user ids, each pair about 2·16 bytes
 //     of string headers, 8 of slot and 2·128 of ids: 4096 · 296 B =
-//     1.2 MiB; a
+//     1.2 MiB; the stale-read counts and the sessions parked for the
+//     fallback at most MaxWakeQueue ids each (about 0.6 MiB each at
+//     128-byte ids); a
 //     connection's hint queue at most one hint per session of its user (the
 //     store's per-user cap, 1000), so all queues together at most C·1000
 //     hints (about 2 MiB); one lease extension round copies at most
@@ -198,8 +231,9 @@
 //     per connection, all but ReadConcurrency waiting for a permit or a
 //     send).
 //
-// At the defaults that is about 1,038 MiB. Live-only events handed to the
-// Bus (at most 128 per batch, each payload at most 256 KiB) are charged to
+// At the defaults that is about 1,039 MiB. Live-only events handed to the
+// Bus (at most 128 per batch, each payload at most 256 KiB; KIND_QUEUE and
+// KIND_WORKER announcements under 64 bytes each) are charged to
 // each watcher's queue (bus.go) and counted with the watch streams; a
 // payload nobody watches is dropped at once. These are ownership bounds,
 // not RSS.

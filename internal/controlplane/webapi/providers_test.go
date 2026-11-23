@@ -696,3 +696,37 @@ func TestUpdateSessionProviderAnnouncesInterruptedTurn(t *testing.T) {
 	}
 	collect(t, stream, after.LastEventSeq)
 }
+
+// TestSessionWorkerDisconnected: GetSession and ListSessions carry the
+// scheduler's disconnect time of the session's lease holder, whatever the
+// session's state, and zero for a session it does not mark.
+func TestSessionWorkerDisconnected(t *testing.T) {
+	h, super := newHarness(t)
+	_, sess := sessionSetup(t, h, super)
+	h.sched.mu.Lock()
+	h.sched.gone[sess.GetSessionId()] = 1234
+	h.sched.mu.Unlock()
+	if got := super.getSession(t, sess.GetSessionId()); got.GetWorkerDisconnectedAtUnixMs() != 1234 {
+		t.Fatalf("session %v, want disconnected at 1234", got)
+	}
+	resp, err := super.sessions.ListSessions(t.Context(), connect.NewRequest(&circusv1.ListSessionsRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range resp.Msg.GetSessions() {
+		found = found || s.GetSessionId() == sess.GetSessionId()
+		if want := h.sched.gone[s.GetSessionId()]; s.GetWorkerDisconnectedAtUnixMs() != want {
+			t.Fatalf("listed %v, want disconnected at %d", s, want)
+		}
+	}
+	if !found {
+		t.Fatal("session not listed")
+	}
+	h.sched.mu.Lock()
+	delete(h.sched.gone, sess.GetSessionId())
+	h.sched.mu.Unlock()
+	if got := super.getSession(t, sess.GetSessionId()); got.GetWorkerDisconnectedAtUnixMs() != 0 {
+		t.Fatalf("cleared session %v", got)
+	}
+}

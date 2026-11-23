@@ -36,13 +36,14 @@ import { sessionTitle } from "@/lib/title"
 import { projectPath } from "@/lib/tree"
 import { interruptedTurnInput, latestInterruptId } from "@/lib/turns"
 import { useOutbox, useOutboxMessages } from "@/state/outbox-context"
+import { currentWorkerDisconnectedAt } from "@/lib/worker-link"
 import { currentWorkspace, workspaceBlocks, workspaceEventText } from "@/lib/workspace"
 import { useSessionWatch } from "@/state/use-session-watch"
 
 import { ConnectionBanner } from "./connection-banner"
 import { EventItem } from "./event-list"
 import { SessionMenu } from "./session-menu"
-import { BrokenCard, DeviceOfflineNotice, GoneNotice, StoppedNotice } from "./session-notices"
+import { BrokenCard, DeviceOfflineNotice, GoneNotice, StoppedNotice, WorkerDisconnectedNotice } from "./session-notices"
 import { SessionPrompt } from "./session-prompt"
 import { WorkspaceBanner, WorkspaceComposerNote } from "./workspace-banner"
 
@@ -109,12 +110,19 @@ export function SessionView({ project, session }: { project: Project; session: S
   const workspace = currentWorkspace(session.workspace, transcript.workspace)
   const waitsForFolder = workspaceBlocks(workspace) && session.state !== "stopped" && !watch.gone
   const waiting = !busy && session.state === "queued" && !waitsForFolder
-  const queueReason = currentQueueReason(session.queueReason, transcript.queue)
+  const queueReason = currentQueueReason(session.queueReason, session.readSentAtMs, transcript.queue)
   const provider = providers.data?.find((p) => p.providerId === session.providerId)
   const announcement = useWorkspaceAnnouncement(workspace, waitsForFolder)
 
   const device = devices.data?.find((d) => d.name === session.device)
   const deviceOffline = device?.online === false
+  // The worker holding the lease lost its connection; it has 40 to 60
+  // seconds to come back before the lease (and a running turn) ends.
+  const workerDisconnectedAt = currentWorkerDisconnectedAt(
+    session.workerDisconnectedAtUnixMs,
+    session.readSentAtMs,
+    transcript.worker,
+  )
   // Anything that needs the server waits for the connection, once its loss
   // is noticed: the brief reconnect when the server ends a stream (about
   // once an hour) doesn't block anything, and calls don't need the stream.
@@ -138,7 +146,8 @@ export function SessionView({ project, session }: { project: Project; session: S
     return disconnected
   }
 
-  // At most one notice above the composer: gone > stopped (instead of it) > broken > device offline.
+  // At most one notice above the composer: gone > stopped (instead of it) >
+  // broken > worker disconnected > device offline.
   let notice = null
   if (session.state === "broken" && !watch.gone) {
     notice = (
@@ -147,6 +156,15 @@ export function SessionView({ project, session }: { project: Project; session: S
         onContinueWithout={() => act(recover, { sessionId })}
         onStopSession={() => act(stopSession, { sessionId })}
         onContinued={focusComposer}
+      />
+    )
+  } else if (!stopped && !watch.gone && workerDisconnectedAt > 0) {
+    notice = (
+      <WorkerDisconnectedNotice
+        disconnectedAtUnixMs={workerDisconnectedAt}
+        turnRunning={busy}
+        serverNow={watch.serverNow}
+        clockKnown={watch.clockKnown}
       />
     )
   } else if (!stopped && device && deviceOffline && !waitsForFolder) {

@@ -56,6 +56,11 @@ export interface MockSession {
   /** Why the session waits; missing or `unspecified` when it doesn't. */
   queueReason?: QueueReason
   /**
+   * When the connection of the worker holding the lease closed; missing or
+   * 0 while it is connected (or no lease is held).
+   */
+  workerDisconnectedAtUnixMs?: number
+  /**
    * Taken by a worker: the mock keeps the lease from the first turn until
    * the session stops or changes provider, as a worker keeping its CLI.
    */
@@ -173,6 +178,9 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
     turns: 0,
     providerId: seed.provider ?? "",
     ...(seed.leased ? { leased: true } : {}),
+    ...(seed.workerDisconnectedSecondsAgo !== undefined
+      ? { workerDisconnectedAtUnixMs: loadedAt - seed.workerDisconnectedSecondsAgo * 1_000 }
+      : {}),
   }
   let clock = at - 40 * MINUTE
   const r = new Recorder(session, () => (clock += 1_000))
@@ -236,6 +244,14 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
       session.state = "queued"
       break
     }
+    case "running": {
+      const text = seed.followUp ?? "Go on"
+      const inputId = r.input(text)
+      r.turnStarted()
+      r.durable("user", userMessage(inputId, text))
+      r.text("Starting the suite; it takes a few minutes.")
+      break
+    }
   }
   session.lastActivityAtUnixMs = at
   return session
@@ -259,6 +275,7 @@ export function summaryOf(s: MockSession): SessionSummary {
     ...(s.workspace ? { workspace: workspaceStatus(s.workspace) } : {}),
     providerId: s.providerId ?? "",
     queueReason: s.state === "queued" ? (s.queueReason ?? "unspecified") : "unspecified",
+    workerDisconnectedAtUnixMs: s.workerDisconnectedAtUnixMs ?? 0,
   }
 }
 
@@ -297,6 +314,8 @@ export interface MockSessionRuntime {
   record(s: MockSession, kind: SessionEventKind, payload: object, durable: boolean, tsUnixMs: number): void
   /** Starts the next turn if one waits and the session can run it. */
   wake(s: MockSession): void
+  /** The session's lease ended without its holder: an open turn ends as interrupted. */
+  leaseLost(s: MockSession): void
 }
 
 export function createMockSessionRuntime(host: MockSessionHost): MockSessionRuntime {
@@ -536,8 +555,12 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
     interrupt: async ({ sessionId }) => {
       await host.delay()
       const s = host.own(sessionId)
-      if (!turns.has(sessionId)) return
-      abortTurn(s, "stopped")
+      if (turns.has(sessionId)) abortTurn(s, "stopped")
+      else if (s.state === "running") {
+        // A turn the mock was seeded in the middle of: it stops at once.
+        recorder(s).durable("turn_stopped", { turn_no: String(s.turns), outcome: "stopped" })
+        s.lastTurnOutcome = "stopped"
+      } else return
       s.state = "idle"
       startNext(s)
     },
@@ -545,19 +568,21 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       await host.delay()
       const s = host.own(sessionId)
       if (s.state === "stopped") return
-      const running = turns.has(s.sessionId)
+      // A turn the mock runs, or one it was seeded in the middle of.
+      const running = turns.has(s.sessionId) || s.state === "running"
       const turn = turns.get(s.sessionId)
       if (turn) for (const timer of turn.timers) clearTimeout(timer)
       turns.delete(s.sessionId)
       s.state = "stopped"
+      s.queue = []
+      for (const a of s.approvals) if (a.state === "pending") a.state = "denied"
       recorder(s).durable("session_state", { state: "stopped", reason: "user" })
+      // The lease ends here (its live announcements first), then the turn.
+      host.stopped?.(s)
       if (running) {
         recorder(s).durable("turn_interrupted", { turn_no: String(s.turns), outcome: "interrupted" })
         s.lastTurnOutcome = "interrupted"
       }
-      s.queue = []
-      for (const a of s.approvals) if (a.state === "pending") a.state = "denied"
-      host.stopped?.(s)
     },
     listApprovals: async ({ sessionId }) => {
       await host.delay()
@@ -631,5 +656,14 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       else r.ephemeral(kind, payload, tsUnixMs)
     },
     wake: startNext,
+    leaseLost(s) {
+      if (turns.has(s.sessionId)) abortTurn(s, "interrupted")
+      else if (s.state === "running") {
+        recorder(s).durable("turn_interrupted", { turn_no: String(s.turns), outcome: "interrupted" })
+        s.lastTurnOutcome = "interrupted"
+      } else return
+      s.state = "idle"
+      startNext(s)
+    },
   }
 }

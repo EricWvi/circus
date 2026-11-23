@@ -78,6 +78,7 @@ export function toSummary(session: ProtoSession): SessionSummary {
     providerId: session.providerId,
     // A reason this client doesn't know yet reads as none.
     queueReason: queueReasons[session.queueReason] ?? "unspecified",
+    workerDisconnectedAtUnixMs: Number(session.workerDisconnectedAtUnixMs),
   }
 }
 

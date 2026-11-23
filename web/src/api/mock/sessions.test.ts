@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError } from "@/api/errors"
 import type { CircusClient, RawSessionEvent } from "@/api/types"
 import { applyEvents, emptyTranscript } from "@/lib/session-events/transcript"
 
 import { createMockBackend } from "./backend"
-import { SEED_OWNER_ID, seedState, type MockState } from "./state"
+import { addWorkerDemo, SEED_OWNER_ID, seedState, type MockState } from "./state"
 
 function mock(state: MockState = seedState()) {
   state.cookie = SEED_OWNER_ID
@@ -150,5 +150,80 @@ describe("mock sessions", () => {
     fewerLocations.projects[0].locations.pop()
     adopt(fewerLocations)
     expect(calls).toBe(1)
+  })
+})
+
+describe("the worker demo", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+  const demo = () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.parse("2026-11-17T12:00:00Z"))
+    const state = seedState()
+    addWorkerDemo(state)
+    return mock(state)
+  }
+  const find = (state: MockState, id: string) => state.sessions.find((s) => s.sessionId === id)!
+  /** Follows the session's stream from now on: what it sends live, kind and payload. */
+  const follow = (client: CircusClient, sessionId: string, afterSeq: number) => {
+    const seen: [string, string][] = []
+    const abort = new AbortController()
+    void (async () => {
+      for await (const e of client.sessions.watchSession({ sessionId, afterSeq, signal: abort.signal })) {
+        if (e.kind !== "unspecified") seen.push([e.kind, e.payloadJson])
+      }
+    })().catch(() => {})
+    return { seen, stop: () => abort.abort() }
+  }
+
+  it("stopping a session ends its lease: the mark clears, then the turn ends", async () => {
+    const { client, state } = demo()
+    const s = find(state, "worker-gone-running")
+    expect(s.workerDisconnectedAtUnixMs).toBe(Date.now())
+    const stream = follow(client, s.sessionId, s.events.at(-1)!.seq)
+    await vi.advanceTimersByTimeAsync(10)
+    const stopped = client.sessions.stopSession({ sessionId: s.sessionId })
+    await vi.advanceTimersByTimeAsync(10)
+    await stopped
+    stream.stop()
+    expect(s.workerDisconnectedAtUnixMs).toBe(0)
+    expect(stream.seen).toEqual([
+      ["session_state", JSON.stringify({ state: "stopped", reason: "user" })],
+      ["worker", JSON.stringify({ disconnected_at_unix_ms: "0" })],
+      ["turn_interrupted", JSON.stringify({ turn_no: String(s.turns), outcome: "interrupted" })],
+    ])
+  })
+
+  it("ends the lease a minute after the disconnect, the mark clearing before the turn ends", async () => {
+    const { client, state } = demo()
+    const s = find(state, "worker-gone-running")
+    const stream = follow(client, s.sessionId, s.events.at(-1)!.seq)
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(s.workerDisconnectedAtUnixMs).not.toBe(0)
+    expect(s.state).toBe("running")
+    await vi.advanceTimersByTimeAsync(1)
+    stream.stop()
+    expect(s.workerDisconnectedAtUnixMs).toBe(0)
+    expect(s.state).toBe("idle")
+    expect(stream.seen).toEqual([
+      ["worker", JSON.stringify({ disconnected_at_unix_ms: "0" })],
+      ["turn_interrupted", JSON.stringify({ turn_no: String(s.turns), outcome: "interrupted" })],
+    ])
+  })
+
+  it("runs nothing while the worker is away, and the waiting message once the lease ended", async () => {
+    const { client, state } = demo()
+    const s = find(state, "worker-gone-idle")
+    const turns = s.turns
+    const sent = client.sessions.sendMessage({ sessionId: s.sessionId, clientMsgId: "m1", text: "hello" })
+    await vi.advanceTimersByTimeAsync(10)
+    await sent
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(s.turns).toBe(turns)
+    expect(s.state).toBe("queued")
+    await vi.advanceTimersByTimeAsync(50_000)
+    expect(s.workerDisconnectedAtUnixMs).toBe(0)
+    expect(s.turns).toBe(turns + 1)
   })
 })

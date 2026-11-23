@@ -5,7 +5,6 @@ import {
   MonitorOffIcon,
   TriangleAlertIcon,
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import type { WorkspaceStatus } from "@/api/types"
@@ -13,6 +12,7 @@ import { DisabledReason } from "@/components/disabled-reason"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Spinner } from "@/components/ui/spinner"
+import { useSeconds } from "@/hooks/use-seconds"
 import { cn } from "@/lib/utils"
 import {
   formatElapsed,
@@ -22,26 +22,6 @@ import {
 } from "@/lib/workspace"
 
 import { NoteText } from "./event-list"
-
-/** The time by `clock` (the latest one given), read again every second while `active`. */
-function useSeconds(active: boolean, clock: () => number): number {
-  const latest = useRef(clock)
-  useEffect(() => {
-    latest.current = clock
-  })
-  const [now, setNow] = useState(clock)
-  useEffect(() => {
-    if (!active) return
-    const tick = () => setNow(latest.current())
-    const first = window.setTimeout(tick, 0)
-    const timer = window.setInterval(tick, 1000)
-    return () => {
-      window.clearTimeout(first)
-      window.clearInterval(timer)
-    }
-  }, [active])
-  return now
-}
 
 const localClock = () => Date.now()
 

@@ -176,12 +176,16 @@ func TestEventAndTranscriptRules(t *testing.T) {
 		{Kind: circusv1.SessionEvent_KIND_TURN_INTERRUPTED, Json: `{}`, Ephemeral: true},
 		{Kind: circusv1.SessionEvent_KIND_UNSPECIFIED, Json: `{}`},
 		{Kind: circusv1.SessionEvent_Kind(99), Json: `{}`, Ephemeral: true},
+		{Kind: circusv1.SessionEvent_KIND_QUEUE, Json: `{"queue_reason":"unspecified"}`, Ephemeral: true},
+		{Kind: circusv1.SessionEvent_KIND_QUEUE, Json: `{"queue_reason":"unspecified"}`},
+		{Kind: circusv1.SessionEvent_KIND_WORKER, Json: `{"disconnected_at_unix_ms":"0"}`, Ephemeral: true},
+		{Kind: circusv1.SessionEvent_KIND_WORKER, Json: `{"disconnected_at_unix_ms":"0"}`},
 	} {
 		seq := uint64(i + 2)
 		wantRejected(t, call(t, c, wc.Publish("s1", epoch, seq, assistant, bad)), circusv1.SessionReply_Rejected_CODE_INVALID)
 		wantOk(t, call(t, c, wc.Publish("s1", epoch, seq, assistant)), true)
 	}
-	if len(f.bus.live()) != 0 || f.get("s1").DroppedEventBatches != 4 {
+	if len(f.bus.live()) != 0 || f.get("s1").DroppedEventBatches != 8 {
 		t.Fatal("a dropped batch published")
 	}
 

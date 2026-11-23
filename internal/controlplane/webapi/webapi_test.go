@@ -79,7 +79,7 @@ type client struct {
 func newHarness(t *testing.T, options ...func(*webapi.Config)) (*harness, *client) {
 	t.Helper()
 	h := &harness{online: map[string]bool{}, workers: map[string]bool{}, bus: sessions.NewBus(sessions.BusOptions{}), waker: &recordingWaker{},
-		jobs: &recordingJobs{}, sched: &recordingScheduler{reasons: map[string]circusv1.QueueReason{}}}
+		jobs: &recordingJobs{}, sched: &recordingScheduler{reasons: map[string]circusv1.QueueReason{}, gone: map[string]int64{}}}
 	key := make([]byte, providers.KeyBytes)
 	if _, err := rand.Read(key); err != nil {
 		t.Fatal(err)
@@ -182,11 +182,12 @@ func (h *harness) onlineWorkers(_ context.Context, userID string) (map[string]bo
 	return out, nil
 }
 
-// recordingScheduler answers queue reasons from a table and records
-// ProviderChanged calls as "user:provider".
+// recordingScheduler answers queue reasons and disconnect times from
+// tables and records ProviderChanged calls as "user:provider".
 type recordingScheduler struct {
 	mu      sync.Mutex
 	reasons map[string]circusv1.QueueReason
+	gone    map[string]int64
 	changed []string
 }
 
@@ -194,6 +195,12 @@ func (r *recordingScheduler) QueueReason(id string) circusv1.QueueReason {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.reasons[id]
+}
+
+func (r *recordingScheduler) WorkerDisconnectedAt(id string) int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.gone[id]
 }
 
 func (r *recordingScheduler) ProviderChanged(userID, providerID string) {

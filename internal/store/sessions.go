@@ -397,9 +397,10 @@ type SessionOps interface {
 	// are listed oldest first, at most MaxPageSize, with CallsTruncated set
 	// when more exist (list them with ListCalls and CallFilter.Recovery).
 	GetRecovery(ctx context.Context, f Fence) (Recovery, error)
-	// ExtendLeases moves ExpiresAt to expiresAt, in one statement, for each
-	// key whose lease still has that epoch, worker, boot and connection and
-	// has not expired at now; stopped sessions included. It returns the
+	// ExtendLeases moves ExpiresAt to expiresAt, never backwards (a later
+	// expiry already written stays), in one statement, for each key whose
+	// lease still has that epoch, worker, boot and connection and has not
+	// expired at now; stopped sessions included. It returns the
 	// keys it did not extend (lease lost, taken over, rebound or expired),
 	// in input order; the caller revokes them on their connections.
 	// len(keys) ≤ MaxPageSize; the caller chunks.

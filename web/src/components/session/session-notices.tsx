@@ -1,4 +1,4 @@
-import { MonitorOffIcon, TriangleAlertIcon } from "lucide-react"
+import { MonitorOffIcon, TriangleAlertIcon, UnplugIcon } from "lucide-react"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -15,7 +15,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
+import { useSeconds } from "@/hooks/use-seconds"
 import { formatTimeAgo } from "@/lib/time"
+import { workerDisconnectedText } from "@/lib/worker-link"
 
 /** Takes the composer's place in a stopped session. */
 export function StoppedNotice() {
@@ -127,6 +129,39 @@ export function DeviceOfflineNotice({ device }: { device: Device }) {
       <p className="text-pretty">
         {t("session.deviceOffline", { device: device.name, ago: formatTimeAgo(device.lastSeenUnixMs) })}
       </p>
+    </div>
+  )
+}
+
+/**
+ * The worker holding the session lost its connection to the server. Its
+ * lease lasts 40 to 60 seconds more, so it can come back and carry on;
+ * with a turn running, the turn is interrupted if it doesn't. The time is
+ * the server's: `serverNow` is its clock, which the stream tells
+ * (`clockKnown`); until it has, the notice says no time rather than one
+ * this browser's clock may get wrong.
+ */
+export function WorkerDisconnectedNotice({
+  disconnectedAtUnixMs,
+  turnRunning,
+  serverNow,
+  clockKnown,
+}: {
+  disconnectedAtUnixMs: number
+  turnRunning: boolean
+  serverNow: () => number
+  clockKnown: boolean
+}) {
+  // Subscribes the notice to language changes.
+  useTranslation()
+  // Re-renders every 15 seconds; each render reads the clock as it is
+  // then, so the time is right at once when the stream tells the clock.
+  useSeconds(true, serverNow, 15_000)
+  const now = clockKnown ? serverNow() : null
+  return (
+    <div role="status" data-worker-disconnected className="flex gap-2 border px-3 py-2 text-sm text-muted-foreground">
+      <UnplugIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <p className="text-pretty">{workerDisconnectedText(disconnectedAtUnixMs, turnRunning, now)}</p>
     </div>
   )
 }

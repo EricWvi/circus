@@ -1,5 +1,11 @@
 import type { Device, Location, LoginMethods, ProviderScheme, Role, Worker } from "@/api/types"
-import { projects as seedProjects, queueDemoSessions, sessions as seedSessionList, type SeedSession } from "@/mock/data"
+import {
+  projects as seedProjects,
+  queueDemoSessions,
+  sessions as seedSessionList,
+  workerDemoSessions,
+  type SeedSession,
+} from "@/mock/data"
 
 import { seedSession, type MockSession } from "./sessions"
 
@@ -257,6 +263,14 @@ export function addQueueDemo(state: MockState, now: number = Date.now()) {
   state.sessions.push(...seedSessions(state, now, queueDemoSessions))
   const proxy = state.providers.find((p) => p.providerId === "provider-proxy")
   if (proxy) proxy.maxSessions = 1
+}
+
+/**
+ * Adds the worker demo: sessions of the demo projects whose worker lost its
+ * connection, one running a turn and one idle (`?mock=worker`).
+ */
+export function addWorkerDemo(state: MockState, now: number = Date.now()) {
+  state.sessions.push(...seedSessions(state, now, workerDemoSessions))
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>

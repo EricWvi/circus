@@ -1030,7 +1030,11 @@ them on the user-side API.
   again in its transaction (`PROVIDER_UNAVAILABLE`, `PROVIDER_FULL`); the
   lease records the provider and counts until it ends. A session that
   cannot be leased stays QUEUED with a `queue_reason`, announced by
-  ephemeral `KIND_QUEUE` events.
+  ephemeral `KIND_QUEUE` events (`{"queue_reason":"<name>"}`). Like
+  `worker_disconnected_at_unix_ms` and its `KIND_WORKER` events
+  (**Disconnected holder** under "Fencing and leases"), it is kept in
+  memory and filled on every
+  Session that GetSession, ListSessions and the writes return.
 - **Launch.** Before every CLI start (new session, resume, replacement
   query) the holder calls `GetLaunchEnv`. With a provider it removes the
   inherited authentication and endpoint variables, then sets the returned
@@ -1091,6 +1095,24 @@ start, no lease expires sooner than one lifetime later, so holders can
 reconnect and ResumeLeases even after a longer outage. Workers reconnect with
 backoff capped at 10 seconds. A new worker process uses a new `boot_id`; the
 control plane then releases every lease of the previous boot.
+
+**Disconnected holder.** The control plane cannot tell a dead worker process
+from a broken network, so a lease outlives its holder's connection for the
+rest of its lifetime: it is no longer extended, so it expires 40 to 60
+seconds after the disconnect (its last extension was at most 20 seconds
+before), and is released within 5 seconds more. A worker that reconnects
+and resumes it within that window keeps its turn. Users are told instead:
+when the last connection of a
+worker boot closes, every session whose lease that boot holds without a
+live connection gets `Session.worker_disconnected_at_unix_ms` set to the
+close time, announced by an ephemeral `KIND_WORKER` event
+(`{"disconnected_at_unix_ms":"<int64>"}`). It returns to 0, announced with
+`"0"`, when the lease is bound to a live connection again (ResumeLeases, an
+idempotent AcquireLease; a boot that reconnected but has not resumed the
+lease yet keeps the mark) and when the lease ends for any reason (expiry,
+release, revocation, a new boot); a turn still running at expiry ends
+interrupted. The value lives in the control plane's memory only: after a
+control-plane start it reads 0 until a holder's connection closes again.
 
 **AcquireLease is idempotent for the holder.**
 - If this worker and boot already hold the unexpired lease and `fresh` is
@@ -1768,7 +1790,9 @@ transaction of the change, with JSON payloads:
 | StopSession that stopped the session | `KIND_SESSION_STATE` (boundary) | `{"state":"stopped","reason":"user"}`; a stop by the transcript quota (worker link) records `{"state":"stopped","reason":"transcript_full"}` |
 
 These kinds (with `TURN_INTERRUPTED`, `TURN_STOPPED` and
-`TRANSCRIPT_GAP_ACCEPTED`) are recorded by the control plane only; a worker
+`TRANSCRIPT_GAP_ACCEPTED`, and the live-only `KIND_QUEUE` and `KIND_WORKER`
+announcements) are recorded by the control plane only: a worker event batch
+with any of them, durable or ephemeral, is dropped as INVALID. A worker
 publishes `KIND_USER` for the SDK's user messages.
 
 A repeated SendMessage returns the seq stored with its input. After

@@ -149,3 +149,12 @@ func Busy(s *Service) bool {
 	defer s.mu.Unlock()
 	return s.busy > 0
 }
+
+// Parked reports whether session id waits for the fallback after too many
+// stale reads in a row.
+func Parked(s *Service, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.parked[id]
+	return ok
+}

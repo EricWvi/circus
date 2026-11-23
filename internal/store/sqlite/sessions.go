@@ -959,7 +959,9 @@ func (o *ops) ExtendLeases(ctx context.Context, keys []store.LeaseKey, now, expi
 		values[i] = "(?,?,?,?,?)"
 		args = append(args, k.SessionID, k.Epoch, k.WorkerID, k.BootID, k.ConnID)
 	}
-	rows, err := o.q.QueryContext(ctx, `UPDATE session_leases SET expires_at = ?
+	// Never backwards: an extension computed earlier (a delivery's) that
+	// commits after a later one keeps the later expiry.
+	rows, err := o.q.QueryContext(ctx, `UPDATE session_leases SET expires_at = MAX(expires_at, ?)
 		WHERE expires_at > ? AND (session_id, epoch, holder_worker_id, holder_boot_id, holder_conn_id) IN (VALUES `+
 		strings.Join(values, ",")+`) RETURNING session_id, epoch, holder_worker_id, holder_boot_id, holder_conn_id`, args...)
 	if err != nil {

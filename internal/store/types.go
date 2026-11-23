@@ -1585,12 +1585,21 @@ const (
 	EventKindWorkspace        = "WORKSPACE"
 )
 
+// Live-only kinds the control plane announces and never stores: a queued
+// session's queue reason and its lease holder's disconnect. A worker batch
+// with either is dropped as invalid like any other control-plane kind.
+const (
+	EventKindQueue  = "QUEUE"
+	EventKindWorker = "WORKER"
+)
+
 // ControlPlaneOnlyKind reports whether only the control plane records events
 // of kind: a worker event batch containing one is dropped as invalid.
 func ControlPlaneOnlyKind(kind string) bool {
 	switch kind {
 	case EventKindTranscriptGapAccepted, EventKindTurnInterrupted, EventKindTurnStopped,
-		EventKindInputAccepted, EventKindApprovalResolved, EventKindSessionState, EventKindWorkspace:
+		EventKindInputAccepted, EventKindApprovalResolved, EventKindSessionState, EventKindWorkspace,
+		EventKindQueue, EventKindWorker:
 		return true
 	}
 	return false

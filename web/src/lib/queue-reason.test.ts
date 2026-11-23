@@ -32,9 +32,13 @@ describe("queue reasons", () => {
     expect(t.lastSeq).toBe(0)
   })
 
-  it("come from the stream while it has one", () => {
-    expect(currentQueueReason("worker_offline", null)).toBe("worker_offline")
-    expect(currentQueueReason("worker_offline", { reason: "provider_full", receivedAtMs: 1 })).toBe("provider_full")
+  it("come from the stream when it spoke after the read was sent, else from the read", () => {
+    expect(currentQueueReason("worker_offline", 5, null)).toBe("worker_offline")
+    expect(currentQueueReason("worker_offline", 5, { reason: "provider_full", receivedAtMs: 5 })).toBe("provider_full")
+    expect(currentQueueReason("worker_offline", 6, { reason: "provider_full", receivedAtMs: 5 })).toBe("worker_offline")
+    expect(currentQueueReason("worker_offline", undefined, { reason: "provider_full", receivedAtMs: 5 })).toBe(
+      "provider_full",
+    )
   })
 
   it("read as one sentence each, naming the provider", () => {

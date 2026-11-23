@@ -649,6 +649,14 @@ func testLeaseAcquire(t *testing.T, b Backend) {
 	l, err := s.GetLease(ctx, "s1")
 	must(t, err)
 	mustEqual(t, "extended", l.ExpiresAt, t0+20+3*ttl)
+	// An extension computed earlier that lands later never moves the
+	// expiry back; its key is not lost.
+	lost, err = s.ExtendLeases(ctx, keys[:1], t0+10+ttl, t0+20+2*ttl)
+	must(t, err)
+	mustEqual(t, "earlier extension: not lost", len(lost), 0)
+	l, err = s.GetLease(ctx, "s1")
+	must(t, err)
+	mustEqual(t, "never backwards", l.ExpiresAt, t0+20+3*ttl)
 	lost, err = s.ExtendLeases(ctx, keys[:1], t0+20+3*ttl, t0+20+4*ttl)
 	must(t, err)
 	mustEqual(t, "expired key is lost", lost, keys[:1])

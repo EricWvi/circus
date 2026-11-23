@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  replaceEqualDeep,
   useInfiniteQuery,
   useQueries,
   useMutation,
@@ -93,32 +94,40 @@ export function useSessionList(projectId?: string) {
   })
 }
 
-type SessionReadListener = (sentAtMs: number) => void
-const sessionReadListeners = new Map<string, Set<SessionReadListener>>()
+type LiveArrivals = () => readonly number[]
+const liveArrivals = new Map<string, Set<LiveArrivals>>()
 
 /**
- * Tells the session's watchers that a read of it, whose request was sent at
- * `sentAtMs` (this browser's clock), is about to land in the cache. Called
- * once the answer is there, so they hear it after the cache has it.
+ * Lets the session's reads know when its watch's live values (queue
+ * reason, worker disconnect time) arrived, this browser's clock: `arrivals`
+ * returns those times. Returns the unregister.
  */
-function announceSessionRead(sessionId: string, sentAtMs: number) {
-  setTimeout(() => {
-    for (const listener of sessionReadListeners.get(sessionId) ?? []) listener(sentAtMs)
-  }, 0)
+export function trackLiveArrivals(sessionId: string, arrivals: LiveArrivals): () => void {
+  const set = liveArrivals.get(sessionId) ?? new Set()
+  liveArrivals.set(sessionId, set)
+  set.add(arrivals)
+  return () => {
+    set.delete(arrivals)
+    if (set.size === 0) liveArrivals.delete(sessionId)
+  }
 }
 
 /**
- * Calls `listener` after each read of the session lands in the cache, with
- * when its request was sent. Returns the unsubscribe.
+ * Keeps the cached read when a new one changes nothing the view shows: the
+ * same session, and no live value that arrived between the two reads'
+ * requests (the view picks the live value or the read by comparing those
+ * times, see `SessionDetails.readSentAtMs`). The kept read's older send time
+ * then decides the same way the new one would.
  */
-export function onSessionRead(sessionId: string, listener: SessionReadListener): () => void {
-  const set = sessionReadListeners.get(sessionId) ?? new Set()
-  sessionReadListeners.set(sessionId, set)
-  set.add(listener)
-  return () => {
-    set.delete(listener)
-    if (set.size === 0) sessionReadListeners.delete(sessionId)
-  }
+function shareSessionRead(sessionId: string, old: unknown, next: unknown): unknown {
+  if (old === undefined) return next
+  const { readSentAtMs: oldSent = 0, ...oldRest } = old as SessionDetails
+  const { readSentAtMs: nextSent = 0, ...nextRest } = next as SessionDetails
+  const between = [...(liveArrivals.get(sessionId) ?? [])].some((arrivals) =>
+    arrivals().some((t) => t >= oldSent && t < nextSent),
+  )
+  if (!between && replaceEqualDeep(oldRest, nextRest) === oldRest) return old
+  return replaceEqualDeep(old, next)
 }
 
 /**
@@ -130,11 +139,11 @@ export function useSession(sessionId: string) {
   return useQuery({
     queryKey: queryKeys.session(sessionId),
     queryFn: async () => {
-      const sentAt = Date.now()
+      const readSentAtMs = Date.now()
       const session = await client.sessions.getSession({ sessionId })
-      announceSessionRead(sessionId, sentAt)
-      return session
+      return { ...session, readSentAtMs }
     },
+    structuralSharing: (old, next) => shareSessionRead(sessionId, old, next),
     refetchInterval: SESSIONS_LIVE_INTERVAL_MS,
   })
 }
@@ -328,10 +337,9 @@ export function useChangeSessionProvider() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (req: { sessionId: string; providerId: string }) => {
-      const sentAt = Date.now()
+      const readSentAtMs = Date.now()
       const session = await client.sessions.updateSession(req)
-      announceSessionRead(req.sessionId, sentAt)
-      return session
+      return { ...session, readSentAtMs }
     },
     onSuccess: (session) => queryClient.setQueryData(queryKeys.session(session.sessionId), session),
     onSettled: (_data, _error, { sessionId }) => {
@@ -573,12 +581,16 @@ export function useCreateSession() {
   const client = useClient()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (req: CreateSessionRequest) => client.sessions.createSession(req),
+    mutationFn: async (req: CreateSessionRequest) => {
+      const readSentAtMs = Date.now()
+      const session = await client.sessions.createSession(req)
+      return { ...session, readSentAtMs }
+    },
     onSuccess: (session: SessionDetails, req) => {
       // Put the session into the cache right away, so its page and the
       // lists show it before the refetch lands.
       queryClient.setQueryData(queryKeys.session(session.sessionId), session)
-      const { device: _, cwd: __, ...summary } = session
+      const { device: _, cwd: __, readSentAtMs: ___, ...summary } = session
       for (const key of [queryKeys.sessions(), queryKeys.sessions(session.projectId)]) {
         queryClient.setQueryData<SessionSummary[]>(key, (list) => list && [summary, ...list])
       }

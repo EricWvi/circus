@@ -1,8 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 
 import { useClient } from "@/api/context"
-import { invalidateSession, onSessionRead } from "@/api/hooks"
+import { invalidateSession, trackLiveArrivals } from "@/api/hooks"
 
 import { lostSince, LOST_NOTICE_MS } from "./connection"
 import { createSessionWatch, type SessionWatch, type SessionWatchState } from "./session-watch"
@@ -28,10 +28,18 @@ export function useSessionWatch(sessionId: string): SessionWatchState & {
       sessionId,
       online: browserOnline(),
       onBoundary: () => invalidateSession(queryClient, sessionId),
+      // Every stream after the first (not on mount, which fetches anyway),
+      // a loss's reconnect included: the session may have moved on
+      // meanwhile, live-only values too.
+      onReopen: () => invalidateSession(queryClient, sessionId),
     }),
   )
 
-  useEffect(() => onSessionRead(sessionId, watch.sessionRead), [sessionId, watch])
+  useEffect(
+    () =>
+      trackLiveArrivals(sessionId, () => watch.liveArrivals()),
+    [sessionId, watch],
+  )
 
   useEffect(() => {
     const online = () => watch.setOnline(true)
@@ -58,15 +66,6 @@ export function useSessionWatch(sessionId: string): SessionWatchState & {
     )
     return () => window.clearTimeout(timer)
   }, [lostAt])
-
-  // Back from a loss (not on mount, which fetches anyway): the session may
-  // have moved on meanwhile.
-  const connected = lostAt === null
-  const wasConnected = useRef(connected)
-  useEffect(() => {
-    if (connected && !wasConnected.current) invalidateSession(queryClient, sessionId)
-    wasConnected.current = connected
-  }, [connected, queryClient, sessionId])
 
   return {
     ...state,

@@ -319,8 +319,9 @@ func (Session_State) EnumDescriptor() ([]byte, []int) {
 }
 
 // Shared with worker-published events. TURN_STARTED payload includes origin.
-// Kinds 8, 9, 10, 15, 17, 18 and 19 are recorded by the control plane only: a
-// worker event batch containing one of them is dropped as INVALID.
+// Kinds 8, 9, 10, 15, 17, 18, 19, 20 and 21 are recorded by the control
+// plane only: a worker event batch containing one of them is dropped as
+// INVALID.
 type SessionEvent_Kind int32
 
 const (
@@ -377,6 +378,11 @@ const (
 	// {"queue_reason":"<lower-case name without prefix>"}, for example
 	// {"queue_reason":"provider_full"}; "unspecified" when it cleared.
 	SessionEvent_KIND_QUEUE SessionEvent_Kind = 20
+	// Recorded by the control plane only, always ephemeral (seq 0): the
+	// session's worker_disconnected_at_unix_ms changed. payload_json:
+	// {"disconnected_at_unix_ms":"<int64>"}, "0" when the holder reconnected
+	// or the lease ended.
+	SessionEvent_KIND_WORKER SessionEvent_Kind = 21
 )
 
 // Enum value maps for SessionEvent_Kind.
@@ -403,6 +409,7 @@ var (
 		18: "KIND_INPUT_ACCEPTED",
 		19: "KIND_WORKSPACE",
 		20: "KIND_QUEUE",
+		21: "KIND_WORKER",
 	}
 	SessionEvent_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED":             0,
@@ -426,6 +433,7 @@ var (
 		"KIND_INPUT_ACCEPTED":          18,
 		"KIND_WORKSPACE":               19,
 		"KIND_QUEUE":                   20,
+		"KIND_WORKER":                  21,
 	}
 )
 
@@ -591,9 +599,20 @@ type Session struct {
 	// control plane in memory, not stored: after a control-plane start it is
 	// UNSPECIFIED until the scheduler next evaluates the session. Changes
 	// are announced live with KIND_QUEUE events.
-	QueueReason   QueueReason `protobuf:"varint,16,opt,name=queue_reason,json=queueReason,proto3,enum=circus.v1.QueueReason" json:"queue_reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	QueueReason QueueReason `protobuf:"varint,16,opt,name=queue_reason,json=queueReason,proto3,enum=circus.v1.QueueReason" json:"queue_reason,omitempty"`
+	// Nonzero while the worker holding the session's lease is disconnected:
+	// the time the last connection of the boot that holds the lease closed,
+	// until that lease is bound to a live connection again (the worker
+	// reconnected and resumed it) or ends. The lease stays valid until it
+	// expires, 40 to 60 seconds after the disconnect, so the worker can
+	// reconnect and keep its turn; if it does not, the lease expires and a
+	// running turn is interrupted. Zero when the holder is connected, when no
+	// lease is held, and when unknown. Kept by the control plane in memory,
+	// not stored: after a control-plane start it is zero until a holder
+	// disconnects again. Changes are announced live with KIND_WORKER events.
+	WorkerDisconnectedAtUnixMs int64 `protobuf:"varint,17,opt,name=worker_disconnected_at_unix_ms,json=workerDisconnectedAtUnixMs,proto3" json:"worker_disconnected_at_unix_ms,omitempty"`
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *Session) Reset() {
@@ -736,6 +755,13 @@ func (x *Session) GetQueueReason() QueueReason {
 		return x.QueueReason
 	}
 	return QueueReason_QUEUE_REASON_UNSPECIFIED
+}
+
+func (x *Session) GetWorkerDisconnectedAtUnixMs() int64 {
+	if x != nil {
+		return x.WorkerDisconnectedAtUnixMs
+	}
+	return 0
 }
 
 // SessionEvent is the user-facing view, not the authoritative transcript.
@@ -2209,7 +2235,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x05local\x18\x05 \x01(\bR\x05local\x1a/\n" +
 	"\x03Cwd\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x10\n" +
-	"\x03cwd\x18\x02 \x01(\tR\x03cwd\"\xcb\x06\n" +
+	"\x03cwd\x18\x02 \x01(\tR\x03cwd\"\x8f\a\n" +
 	"\aSession\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12.\n" +
@@ -2231,7 +2257,8 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\tworkspace\x18\x0e \x01(\v2\x1a.circus.v1.WorkspaceStatusR\tworkspace\x12\x1f\n" +
 	"\vprovider_id\x18\x0f \x01(\tR\n" +
 	"providerId\x129\n" +
-	"\fqueue_reason\x18\x10 \x01(\x0e2\x16.circus.v1.QueueReasonR\vqueueReason\"x\n" +
+	"\fqueue_reason\x18\x10 \x01(\x0e2\x16.circus.v1.QueueReasonR\vqueueReason\x12B\n" +
+	"\x1eworker_disconnected_at_unix_ms\x18\x11 \x01(\x03R\x1aworkerDisconnectedAtUnixMs\"x\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -2239,7 +2266,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\fSTATE_QUEUED\x10\x02\x12\x11\n" +
 	"\rSTATE_RUNNING\x10\x03\x12\x11\n" +
 	"\rSTATE_STOPPED\x10\x04\x12\x10\n" +
-	"\fSTATE_BROKEN\x10\x05\"\xd0\x05\n" +
+	"\fSTATE_BROKEN\x10\x05\"\xe1\x05\n" +
 	"\fSessionEvent\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x1c\n" +
 	"\n" +
@@ -2247,7 +2274,7 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x04kind\x18\x03 \x01(\x0e2\x1c.circus.v1.SessionEvent.KindR\x04kind\x12!\n" +
 	"\fpayload_json\x18\x04 \x01(\tR\vpayloadJson\x12\x1c\n" +
 	"\tephemeral\x18\x05 \x01(\bR\tephemeral\x12\x1c\n" +
-	"\ttruncated\x18\x06 \x01(\bR\ttruncated\"\xfe\x03\n" +
+	"\ttruncated\x18\x06 \x01(\bR\ttruncated\"\x8f\x04\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11KIND_TURN_STARTED\x10\x01\x12\x12\n" +
@@ -2272,7 +2299,8 @@ const file_circus_v1_session_proto_rawDesc = "" +
 	"\x13KIND_INPUT_ACCEPTED\x10\x12\x12\x12\n" +
 	"\x0eKIND_WORKSPACE\x10\x13\x12\x0e\n" +
 	"\n" +
-	"KIND_QUEUE\x10\x14\"\xcc\x02\n" +
+	"KIND_QUEUE\x10\x14\x12\x0f\n" +
+	"\vKIND_WORKER\x10\x15\"\xcc\x02\n" +
 	"\x14CreateSessionRequest\x120\n" +
 	"\x06config\x18\x01 \x01(\v2\x18.circus.v1.SessionConfigR\x06config\x12-\n" +
 	"\x10pinned_worker_id\x18\x02 \x01(\tH\x00R\x0epinnedWorkerId\x88\x01\x01\x12\x1d\n" +

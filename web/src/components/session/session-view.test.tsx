@@ -5,7 +5,7 @@ import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError } from "@/api/errors"
-import { addQueueDemo, seedState, type MockState } from "@/api/mock/state"
+import { addQueueDemo, addWorkerDemo, seedState, type MockState } from "@/api/mock/state"
 import type { CircusClient, RawSessionEvent, SessionDetails, SessionService } from "@/api/types"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
@@ -51,6 +51,34 @@ const withSessions =
   (patch: (sessions: SessionService) => Partial<SessionService>) =>
   (client: CircusClient): CircusClient => ({ ...client, sessions: { ...client.sessions, ...patch(client.sessions) } })
 
+/**
+ * A stream the test writes: each connection starts with a keepalive and
+ * then gets what `push` sends; `drop` ends it as the server's hourly end does.
+ */
+function scriptedStream() {
+  const control = { push: (_e: RawSessionEvent) => {}, drop: () => {}, connections: 0 }
+  const watchSession: SessionService["watchSession"] = async function* () {
+    control.connections++
+    yield { seq: 0, tsUnixMs: Date.now(), kind: "unspecified", payloadJson: "", ephemeral: true, truncated: false }
+    const queue: (RawSessionEvent | "drop")[] = []
+    let wake = () => {}
+    control.push = (e) => {
+      queue.push(e)
+      wake()
+    }
+    control.drop = () => {
+      queue.push("drop")
+      wake()
+    }
+    for (;;) {
+      const next = queue.shift()
+      if (next === "drop") throw new ApiError("unavailable", "stream ended")
+      if (next) yield next
+      else await new Promise<void>((resolve) => (wake = resolve))
+    }
+  }
+  return { control, watchSession }
+}
 const composer = () => screen.getByRole<HTMLTextAreaElement>("textbox")
 async function type(text: string) {
   fireEvent.change(composer(), { target: { value: text } })
@@ -736,34 +764,6 @@ describe("a queued session", () => {
     expect(screen.getByText(/this is the mock backend/)).toBeTruthy()
   })
 
-  /**
-   * A stream the test writes: each connection starts with a keepalive and
-   * then gets what `push` sends; `drop` ends it as the server's hourly end does.
-   */
-  function scriptedStream() {
-    const control = { push: (_e: RawSessionEvent) => {}, drop: () => {}, connections: 0 }
-    const watchSession: SessionService["watchSession"] = async function* () {
-      control.connections++
-      yield { seq: 0, tsUnixMs: Date.now(), kind: "unspecified", payloadJson: "", ephemeral: true, truncated: false }
-      const queue: (RawSessionEvent | "drop")[] = []
-      let wake = () => {}
-      control.push = (e) => {
-        queue.push(e)
-        wake()
-      }
-      control.drop = () => {
-        queue.push("drop")
-        wake()
-      }
-      for (;;) {
-        const next = queue.shift()
-        if (next === "drop") throw new ApiError("unavailable", "stream ended")
-        if (next) yield next
-        else await new Promise<void>((resolve) => (wake = resolve))
-      }
-    }
-    return { control, watchSession }
-  }
   const queueEvent = (reason: string): RawSessionEvent => ({
     seq: 0,
     tsUnixMs: Date.now(),
@@ -838,18 +838,23 @@ describe("a queued session", () => {
     expect(reason()).toBe("no_assigned_worker")
   })
 
-  it("forgets the stream's reason when the stream opens again", async () => {
+  it("keeps the stream's reason when the stream opens again, until a later read lands", async () => {
     const state = seedState()
     addQueueDemo(state)
     const { control, watchSession } = scriptedStream()
-    // After the first reads, reads never come back: only the stream's
-    // reopening can retire the reason it brought.
-    let reads = 0
+    let hold: Promise<void> | null = null
+    let release = () => {}
+    const seen: (string | null | undefined)[] = []
     await renderSession("/p/circus/s/queue-full", {
       state,
+      onCommit: () => seen.push(reason()),
       wrapClient: withSessions((mock) => ({
         watchSession,
-        getSession: async (req) => (++reads > 3 ? new Promise<never>(() => {}) : mock.getSession(req)),
+        getSession: async (req) => {
+          const answer = await mock.getSession(req)
+          if (hold) await hold
+          return answer
+        },
       })),
     })
     // A stream that served a while reopens at once when it ends.
@@ -857,9 +862,324 @@ describe("a queued session", () => {
     act(() => control.push(queueEvent("worker_offline")))
     await advance(10)
     expect(reason()).toBe("worker_offline")
+    // Reads are slow now: the cached one, older than the event, must not show.
+    state.sessions.find((s) => s.sessionId === "queue-full")!.queueReason = "worker_offline"
+    hold = new Promise<void>((resolve) => (release = resolve))
+    seen.length = 0
     act(() => control.drop())
     await advance(100)
     expect(control.connections).toBe(2)
-    expect(reason()).toBe("provider_full")
+    act(() => release())
+    hold = null
+    await advance(100)
+    expect(reason()).toBe("worker_offline")
+    expect(seen.filter((r) => r !== "worker_offline")).toEqual([])
+  })
+})
+
+describe("a disconnected worker", () => {
+  const notice = () => document.querySelector("[data-worker-disconnected]")
+  const running =
+    "The worker disconnected just now. If it doesn't reconnect within a minute, this turn will be interrupted."
+  const idle = "The worker disconnected just now; waiting for it to reconnect."
+  const workerEvent = (at: number): RawSessionEvent => ({
+    seq: 0,
+    tsUnixMs: Date.now(),
+    kind: "worker",
+    payloadJson: JSON.stringify({ disconnected_at_unix_ms: String(at) }),
+    ephemeral: true,
+    truncated: false,
+  })
+
+  it("warns that a running turn will be interrupted, keeping Stop enabled", async () => {
+    const state = seedState()
+    addWorkerDemo(state)
+    await renderSession("/p/circus/s/worker-gone-running", { state })
+    expect(notice()?.textContent).toBe(running)
+    const stop = screen.getByRole<HTMLButtonElement>("button", { name: "Stop" })
+    expect(stop.disabled).toBe(false)
+  })
+
+  it("says so in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    const state = seedState()
+    addWorkerDemo(state)
+    await renderSession("/p/circus/s/worker-gone-running", { state })
+    expect(notice()?.textContent).toBe("worker 连接已断开（刚刚）。1 分钟内未重连，本轮将中断。")
+    cleanup()
+    await renderSession("/p/palace/s/worker-gone-idle", { state })
+    expect(notice()?.textContent).toBe("worker 连接已断开（刚刚），等待重连。")
+  })
+
+  it("waits for an idle session's worker to reconnect, the time moving on", async () => {
+    const state = seedState()
+    const { control, watchSession } = scriptedStream()
+    await renderSession("/p/toolbox/s/golangci-v2", { state, wrapClient: withSessions(() => ({ watchSession })) })
+    // The server's reads say it too from now on (the mock's lease doesn't run out here).
+    const at = Date.now() - 50_000
+    state.sessions.find((s) => s.sessionId === "golangci-v2")!.workerDisconnectedAtUnixMs = at
+    act(() => control.push(workerEvent(at)))
+    await advance(10)
+    expect(notice()?.textContent).toBe(idle)
+    await advance(15_000)
+    expect(notice()?.textContent).toBe("The worker disconnected 1m ago; waiting for it to reconnect.")
+  })
+
+  it("goes once the lease ends, the running turn interrupted", async () => {
+    const state = seedState()
+    addWorkerDemo(state)
+    await renderSession("/p/circus/s/worker-gone-running", { state })
+    expect(notice()).not.toBeNull()
+    await advance(60_000)
+    expect(notice()).toBeNull()
+    expect(screen.getByText("Turn interrupted")).toBeTruthy()
+  })
+
+  it("follows the stream's events, the clearing one too", async () => {
+    const { control, watchSession } = scriptedStream()
+    await renderSession("/p/toolbox/s/golangci-v2", { wrapClient: withSessions(() => ({ watchSession })) })
+    expect(notice()).toBeNull()
+    act(() => control.push(workerEvent(Date.now() - 2_000)))
+    await advance(10)
+    expect(notice()?.textContent).toBe(idle)
+    act(() => control.push(workerEvent(0)))
+    await advance(10)
+    expect(notice()).toBeNull()
+  })
+
+  it("is not shown in a stopped session", async () => {
+    const state = seedState()
+    addWorkerDemo(state)
+    state.sessions.find((s) => s.sessionId === "worker-gone-idle")!.state = "stopped"
+    await renderSession("/p/palace/s/worker-gone-idle", { state })
+    expect(screen.getByText("This session is stopped.")).toBeTruthy()
+    expect(notice()).toBeNull()
+  })
+
+  it("is not shown while a broken session's card is", async () => {
+    const state = seedState()
+    state.sessions.find((s) => s.sessionId === "libvips")!.workerDisconnectedAtUnixMs = Date.now()
+    await renderSession("/p/palace/s/libvips", { state })
+    expect(screen.getByText("Part of this session's history couldn't be saved")).toBeTruthy()
+    expect(notice()).toBeNull()
+  })
+
+  it("stops the demo's running turn, the worker still away", async () => {
+    const state = seedState()
+    addWorkerDemo(state)
+    await renderSession("/p/circus/s/worker-gone-running", { state })
+    expect(notice()?.textContent).toBe(running)
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }))
+    await advance(500)
+    expect(notice()?.textContent).toBe("The worker disconnected just now; waiting for it to reconnect.")
+    expect(state.sessions.find((s) => s.sessionId === "worker-gone-running")!.state).toBe("idle")
+  })
+
+  // Each commit of the view, and whether the notice was in it.
+  const sid = "golangci-v2"
+  const slowReads = () => {
+    const gate = { hold: null as Promise<void> | null, release: () => {} }
+    const slow = (mock: SessionService): Partial<SessionService> => ({
+      getSession: async (req) => {
+        const answer = await mock.getSession(req)
+        if (gate.hold) await gate.hold
+        return answer
+      },
+    })
+    const close = () => {
+      gate.hold = new Promise<void>((resolve) => (gate.release = resolve))
+    }
+    const open = () => {
+      act(() => gate.release())
+      gate.hold = null
+    }
+    return { slow, close, open }
+  }
+
+  it("never commits a frame without the notice after a live disconnect the next reads repeat", async () => {
+    const state = seedState()
+    const { control, watchSession } = scriptedStream()
+    const seen: boolean[] = []
+    await renderSession(`/p/toolbox/s/${sid}`, {
+      state,
+      wrapClient: withSessions(() => ({ watchSession })),
+      onCommit: () => seen.push(notice() !== null),
+    })
+    const at = Date.now() - 2_000
+    state.sessions.find((s) => s.sessionId === sid)!.workerDisconnectedAtUnixMs = at
+    act(() => control.push(workerEvent(at)))
+    await advance(10)
+    expect(notice()).not.toBeNull()
+    seen.length = 0
+    // Two polls land; neither may take the notice away, even for a frame.
+    await advance(12_000)
+    expect(seen).not.toContain(false)
+    expect(notice()).not.toBeNull()
+  })
+
+  it("lets a read sent after a live disconnect arrived, landing before it is applied, decide", async () => {
+    const { queryKeys } = await import("@/api/query-client")
+    const state = seedState()
+    const { control, watchSession } = scriptedStream()
+    let frozen: SessionDetails | null = null
+    const r = await renderSession(`/p/toolbox/s/${sid}`, {
+      state,
+      // Reads repeat the first one: the worker is connected again by then.
+      wrapClient: withSessions((mock) => ({ watchSession, getSession: async (req) => frozen ?? mock.getSession(req) })),
+    })
+    await advance(1_000)
+    frozen = r.queryClient.getQueryData(queryKeys.session(sid)) as SessionDetails
+    const oldSent = frozen.readSentAtMs
+    expect(notice()).toBeNull()
+    // The worker disconnects; the event arrives, its apply timer has not run.
+    await act(async () => control.push(workerEvent(Date.now() - 1_000)))
+    // 50 ms later, with no timer run, a read is sent and lands.
+    vi.setSystemTime(Date.now() + 50)
+    await act(async () => {
+      await r.queryClient.refetchQueries({ queryKey: queryKeys.session(sid) })
+    })
+    expect((r.queryClient.getQueryData(queryKeys.session(sid)) as SessionDetails).readSentAtMs).not.toBe(oldSent)
+    await advance(0)
+    expect(notice()).toBeNull()
+    await advance(3_000)
+    expect(notice()).toBeNull()
+  })
+
+  it("never commits a frame with a stale notice after a live clear the next reads repeat", async () => {
+    const state = seedState()
+    state.sessions.find((s) => s.sessionId === sid)!.workerDisconnectedAtUnixMs = Date.now() - 2_000
+    const { control, watchSession } = scriptedStream()
+    const seen: boolean[] = []
+    await renderSession(`/p/toolbox/s/${sid}`, {
+      state,
+      wrapClient: withSessions(() => ({ watchSession })),
+      onCommit: () => seen.push(notice() !== null),
+    })
+    expect(notice()).not.toBeNull()
+    state.sessions.find((s) => s.sessionId === sid)!.workerDisconnectedAtUnixMs = 0
+    act(() => control.push(workerEvent(0)))
+    await advance(10)
+    expect(notice()).toBeNull()
+    seen.length = 0
+    await advance(12_000)
+    expect(seen).not.toContain(true)
+  })
+
+  it("keeps a live disconnect through a stream reopen, until the read it asks for lands", async () => {
+    const state = seedState()
+    const { control, watchSession } = scriptedStream()
+    const reads = slowReads()
+    const seen: boolean[] = []
+    await renderSession(`/p/toolbox/s/${sid}`, {
+      state,
+      onCommit: () => seen.push(notice() !== null),
+      wrapClient: withSessions((mock) => ({ watchSession, ...reads.slow(mock) })),
+    })
+    await advance(HEALTHY_STREAM_MS)
+    const at = Date.now() - 2_000
+    state.sessions.find((s) => s.sessionId === sid)!.workerDisconnectedAtUnixMs = at
+    act(() => control.push(workerEvent(at)))
+    await advance(10)
+    expect(notice()).not.toBeNull()
+    seen.length = 0
+    reads.close()
+    act(() => control.drop())
+    await advance(100)
+    expect(control.connections).toBe(2)
+    reads.open()
+    await advance(100)
+    expect(notice()).not.toBeNull()
+    expect(seen).not.toContain(false)
+  })
+
+  it("keeps a live clear through a stream reopen, until the read it asks for lands", async () => {
+    const state = seedState()
+    state.sessions.find((s) => s.sessionId === sid)!.workerDisconnectedAtUnixMs = Date.now() - 2_000
+    const { control, watchSession } = scriptedStream()
+    const reads = slowReads()
+    const seen: boolean[] = []
+    await renderSession(`/p/toolbox/s/${sid}`, {
+      state,
+      onCommit: () => seen.push(notice() !== null),
+      wrapClient: withSessions((mock) => ({ watchSession, ...reads.slow(mock) })),
+    })
+    expect(notice()).not.toBeNull()
+    await advance(HEALTHY_STREAM_MS)
+    state.sessions.find((s) => s.sessionId === sid)!.workerDisconnectedAtUnixMs = 0
+    act(() => control.push(workerEvent(0)))
+    await advance(10)
+    expect(notice()).toBeNull()
+    seen.length = 0
+    reads.close()
+    act(() => control.drop())
+    await advance(100)
+    reads.open()
+    await advance(100)
+    expect(notice()).toBeNull()
+    expect(seen).not.toContain(true)
+  })
+
+  it("reads the session again as soon as the stream reopens, which settles what changed meanwhile", async () => {
+    const state = seedState()
+    const { control, watchSession } = scriptedStream()
+    await renderSession(`/p/toolbox/s/${sid}`, { state, wrapClient: withSessions(() => ({ watchSession })) })
+    await advance(HEALTHY_STREAM_MS)
+    const at = Date.now() - 2_000
+    act(() => control.push(workerEvent(at)))
+    await advance(10)
+    expect(notice()).not.toBeNull()
+    // The worker came back while the stream was closed: no event says so,
+    // only a read.
+    await advance(1_000)
+    act(() => control.drop())
+    await advance(100)
+    expect(control.connections).toBe(2)
+    // Well before the next poll (every five seconds).
+    expect(notice()).toBeNull()
+  })
+
+  describe("with this browser's clock ten minutes ahead of the server's", () => {
+    const skew = -10 * 60_000 // the server's time is this browser's plus skew
+
+    it("tells the time by a live event's clock", async () => {
+      const state = seedState()
+      const { control, watchSession } = scriptedStream()
+      await renderSession(`/p/toolbox/s/${sid}`, { state, wrapClient: withSessions(() => ({ watchSession })) })
+      const serverNow = Date.now() + skew
+      act(() => control.push({ ...workerEvent(serverNow - 5_000), tsUnixMs: serverNow }))
+      await advance(10)
+      expect(notice()?.textContent).toBe(idle)
+    })
+
+    it("says no time until the stream told the server's clock, then the right one", async () => {
+      const state = seedState()
+      const at = Date.now() + skew - 5_000
+      const watchSession: SessionService["watchSession"] = async function* () {
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        yield { seq: 0, tsUnixMs: Date.now() + skew, kind: "unspecified", payloadJson: "", ephemeral: true, truncated: false }
+        await new Promise<never>(() => {})
+      }
+      await renderSession(`/p/toolbox/s/${sid}`, {
+        state,
+        wrapClient: withSessions((mock) => ({
+          watchSession,
+          getSession: async (req) => ({ ...(await mock.getSession(req)), workerDisconnectedAtUnixMs: at }),
+        })),
+      })
+      expect(notice()?.textContent).toBe("The worker disconnected; waiting for it to reconnect.")
+      await advance(1_000)
+      expect(notice()?.textContent).toBe(idle)
+      await advance(15_000)
+      expect(notice()?.textContent).toBe(idle)
+    })
+  })
+
+  it("shows over device offline", async () => {
+    const state = seedState()
+    addWorkerDemo(state)
+    state.devices.find((d) => d.name === "palace-builder")!.online = false
+    await renderSession("/p/palace/s/worker-gone-idle", { state })
+    expect(notice()?.textContent).toBe(idle)
+    expect(screen.queryByText(/is offline \(last seen/)).toBeNull()
   })
 })

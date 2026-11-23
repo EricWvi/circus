@@ -152,6 +152,17 @@ message Session {
   // UNSPECIFIED until the scheduler next evaluates the session. Changes
   // are announced live with KIND_QUEUE events.
   QueueReason queue_reason = 16;
+  // Nonzero while the worker holding the session's lease is disconnected:
+  // the time the last connection of the boot that holds the lease closed,
+  // until that lease is bound to a live connection again (the worker
+  // reconnected and resumed it) or ends. The lease stays valid until it
+  // expires, 40 to 60 seconds after the disconnect, so the worker can
+  // reconnect and keep its turn; if it does not, the lease expires and a
+  // running turn is interrupted. Zero when the holder is connected, when no
+  // lease is held, and when unknown. Kept by the control plane in memory,
+  // not stored: after a control-plane start it is zero until a holder
+  // disconnects again. Changes are announced live with KIND_WORKER events.
+  int64 worker_disconnected_at_unix_ms = 17;
 }
 
 // QueueReason says why a queued session cannot be leased now.
@@ -177,8 +188,9 @@ message SessionEvent {
   uint64 seq = 1;
   int64 ts_unix_ms = 2;
   // Shared with worker-published events. TURN_STARTED payload includes origin.
-  // Kinds 8, 9, 10, 15, 17, 18 and 19 are recorded by the control plane only: a
-  // worker event batch containing one of them is dropped as INVALID.
+  // Kinds 8, 9, 10, 15, 17, 18, 19, 20 and 21 are recorded by the control
+  // plane only: a worker event batch containing one of them is dropped as
+  // INVALID.
   enum Kind {
     KIND_UNSPECIFIED = 0;
     KIND_TURN_STARTED = 1;
@@ -233,6 +245,11 @@ message SessionEvent {
     // {"queue_reason":"<lower-case name without prefix>"}, for example
     // {"queue_reason":"provider_full"}; "unspecified" when it cleared.
     KIND_QUEUE = 20;
+    // Recorded by the control plane only, always ephemeral (seq 0): the
+    // session's worker_disconnected_at_unix_ms changed. payload_json:
+    // {"disconnected_at_unix_ms":"<int64>"}, "0" when the holder reconnected
+    // or the lease ended.
+    KIND_WORKER = 21;
   }
   Kind kind = 3;
   // Opaque SDK message JSON; durable view payloads over 256 KiB are truncated.

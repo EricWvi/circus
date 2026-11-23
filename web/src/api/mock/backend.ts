@@ -96,6 +96,8 @@ export interface MockBackendOptions {
 /** Failed sign-ins per email within the window before further tries are refused. */
 export const MAX_LOGIN_FAILURES = 5
 export const LOGIN_FAILURE_WINDOW_MS = 60_000
+/** How long a lease outlives its worker's connection, as on the server. */
+export const MOCK_LEASE_MS = 60_000
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
@@ -291,6 +293,37 @@ export function createMockBackend({
     runtime.record(s, "queue", { queue_reason: reason }, false, now())
   }
 
+  /**
+   * The worker holding the session's lease is back or the lease ended:
+   * announced live as the server does, only when it was disconnected.
+   */
+  function clearWorkerDisconnect(s: MockSession) {
+    if (!s.workerDisconnectedAtUnixMs) return
+    s.workerDisconnectedAtUnixMs = 0
+    runtime.record(s, "worker", { disconnected_at_unix_ms: "0" }, false, now())
+  }
+
+  /**
+   * The disconnected worker doesn't come back (the mock has no worker to
+   * reconnect): the lease expires a minute after the disconnect. As on the
+   * server, the mark clears before the open turn ends interrupted, and
+   * messages that waited for the worker go to a new lease.
+   */
+  function expireLeaseOf(s: MockSession) {
+    const at = s.workerDisconnectedAtUnixMs
+    if (!at) return
+    setTimeout(
+      () => {
+        if (s.workerDisconnectedAtUnixMs !== at) return
+        clearWorkerDisconnect(s)
+        s.leased = false
+        runtime.leaseLost(s)
+        reschedule()
+      },
+      Math.max(0, at + MOCK_LEASE_MS - now()),
+    )
+  }
+
   const runtime = createMockSessionRuntime({
     sessions: () => state.sessions,
     own: ownSession,
@@ -298,6 +331,8 @@ export function createMockBackend({
     now,
     timing: sessionTiming,
     admit(s) {
+      // The lease's holder is away: nothing runs until it is back or the lease ends.
+      if (s.workerDisconnectedAtUnixMs) return false
       if (s.leased) return true
       const reason = providers.queueReasonOf(s)
       setQueueReason(s, reason)
@@ -311,17 +346,21 @@ export function createMockBackend({
       s.providerId = providerId
       // A new provider means a new lease, under its workers and limit.
       if (s.leased) {
+        clearWorkerDisconnect(s)
         s.leased = false
         reschedule()
       }
     },
     stopped(s) {
       setQueueReason(s, "unspecified")
+      clearWorkerDisconnect(s)
       if (!s.leased) return
       s.leased = false
       reschedule()
     },
   })
+
+  for (const s of state.sessions) expireLeaseOf(s)
 
   const workspaces = createMockWorkspaces({
     now,

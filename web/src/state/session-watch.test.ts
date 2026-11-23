@@ -248,4 +248,56 @@ describe("the session watch", () => {
     await tick()
     expect(s.streams).toHaveLength(2)
   })
+
+  describe("live-only session state", () => {
+    const worker = (at: string) => event(0, "worker", { disconnected_at_unix_ms: at })
+    const queue = (reason: string) => event(0, "queue", { queue_reason: reason })
+
+    it("keeps the latest worker disconnect time, stamped with when it arrived", async () => {
+      const s = server()
+      const { watch } = start(s)
+      s.streams[0].send(keepalive, worker("1763719190000"))
+      await tick()
+      const arrived = Date.now()
+      expect(watch.get().transcript.worker).toEqual({ disconnectedAtUnixMs: 1_763_719_190_000, receivedAtMs: arrived })
+      await vi.advanceTimersByTimeAsync(1_000)
+      s.streams[0].send(worker("0"))
+      await tick()
+      expect(watch.get().transcript.worker).toEqual({ disconnectedAtUnixMs: 0, receivedAtMs: arrived + 1_000 })
+    })
+
+    it("keeps the live values when the stream opens again, and asks for the session's read then", async () => {
+      const s = server()
+      const onReopen = vi.fn()
+      const watch = createSessionWatch({ sessions: s, sessionId: "s1", onReopen })
+      current = watch
+      watch.start()
+      s.streams[0].send(keepalive, worker("1763719190000"), queue("worker_offline"))
+      await tick()
+      const live = watch.get().transcript
+      expect(onReopen).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(HEALTHY_STREAM_MS)
+      s.streams[0].fail(new ApiError("unavailable", "lifetime"))
+      await vi.advanceTimersByTimeAsync(1)
+      s.streams[1].send(keepalive)
+      await tick()
+      // Whatever the cached read says is older than these.
+      expect(watch.get().transcript.worker).toBe(live.worker)
+      expect(watch.get().transcript.queue).toBe(live.queue)
+      expect(onReopen).toHaveBeenCalledTimes(1)
+      // What the new stream says counts too.
+      s.streams[1].send(worker("1763719200000"))
+      await tick()
+      expect(watch.get().transcript.worker?.disconnectedAtUnixMs).toBe(1_763_719_200_000)
+    })
+
+    it("knows the server's clock once a live event told it", async () => {
+      const s = server()
+      const { watch } = start(s)
+      expect(watch.get().clockKnown).toBe(false)
+      s.streams[0].send(keepalive)
+      await tick()
+      expect(watch.get().clockKnown).toBe(true)
+    })
+  })
 })
