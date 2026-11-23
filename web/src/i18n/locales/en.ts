@@ -605,6 +605,8 @@ export const en = {
       deny: "Deny",
       sessionStopped: "The session is stopped.",
       expired: "This approval request expired.",
+      // An approval whose denial gave no reason of its own.
+      modeDenied: "The permission mode denied {{tool}}",
     },
     reasoning: {
       thinking: "Thinking…",
@@ -618,14 +620,14 @@ export const en = {
       parameters: "Parameters",
       result: "Result",
       error: "Error",
-      approvedByYou: "Approved by you",
+      approvedRetried: "Approved by you for one retry",
       deniedByYou: "Denied by you",
       approvalExpired: "The approval request expired",
       interrupted: "Interrupted before the tool finished.",
       noResult: "The turn ended without a result for this call.",
       states: {
         approvalRequested: "Awaiting Approval",
-        approvalResponded: "Responded",
+        approvalResponded: "Approved",
         running: "Running",
         pending: "Pending",
         completed: "Completed",

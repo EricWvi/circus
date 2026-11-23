@@ -262,6 +262,9 @@ tool name. The match key is the SHA-256 of:
 | Agent (Task) | `subagent_type`, verbatim |
 | MCP tools (`mcp__*`) and every other tool | canonical JSON of the whole input (object keys sorted at every level), so only an identical input matches |
 
+The reason is the permission mode's own, clipped to 1 KiB, or empty when
+it gave none (a denial known only from `result.permission_denials`, or
+one without `decision_reason`); clients word an empty reason themselves.
 Denials by an explicit deny rule or a hook are not asked about. A grant is
 known to the worker only once the control plane has it (`Lease.state.grants`,
 or a GetSessionState refresh when an approval input arrives), never at

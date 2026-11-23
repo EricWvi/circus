@@ -150,12 +150,13 @@ func TestFakeWorkerSessions(t *testing.T) {
 		s.send(cmd, pb.InputPriority_INPUT_PRIORITY_NORMAL)
 		toolUse := watch.until(contains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
 		denial := watch.expect(pb.SessionEvent_KIND_PERMISSION_DENIED)
+		// As from the real worker: the approval request before the denial's tool_result.
+		pending := watch.expect(pb.SessionEvent_KIND_APPROVAL_PENDING)
 		denied := watch.expect(pb.SessionEvent_KIND_USER)
 		checkToolPair(t, toolUse, denied, "Bash", true, "denied by the Claude Code auto mode classifier")
 		if eventString(t, denial, "subtype") != "permission_denied" || eventString(t, denial, "tool_use_id") != toolUseID(t, toolUse) {
 			t.Fatalf("permission denial: %v", denial)
 		}
-		pending := watch.expect(pb.SessionEvent_KIND_APPROVAL_PENDING)
 		watch.expect(pb.SessionEvent_KIND_ASSISTANT)
 		watch.until(contains(pb.SessionEvent_KIND_RESULT, "I need approval"))
 		s.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED)

@@ -50,9 +50,9 @@ export function ApprovalCard({
             </span>
           </span>
           <CodeBlock code={command} language="bash" />
-          {event.approval?.reason && (
-            <span className="text-pretty text-muted-foreground">{event.approval.reason}</span>
-          )}
+          <span className="text-pretty text-muted-foreground">
+            {event.approval?.reason || t("session.approval.modeDenied", { tool: event.tool })}
+          </span>
         </ConfirmationTitle>
       </ConfirmationRequest>
       <ConfirmationActions>

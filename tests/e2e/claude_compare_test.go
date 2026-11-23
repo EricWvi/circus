@@ -35,25 +35,9 @@ var fakeWorkerFixture struct {
 	}
 }
 
-// deviation is a known difference in order from the fake worker: the
-// durable events of kinds fake, in that order, come from the real worker
-// in the order real (the same kinds, permuted).
-type deviation struct{ fake, real []string }
-
-// approvalBeforeDenial: the real worker publishes the approval card as soon
-// as the permission denial arrives, before Claude Code's tool_result that
-// carries the denial to the model; the fake worker publishes it after. The
-// Web shows both the same way (the denial marks the tool call, so its error
-// result is never shown).
-var approvalBeforeDenial = deviation{
-	fake: []string{"KIND_PERMISSION_DENIED", "KIND_USER", "KIND_APPROVAL_PENDING"},
-	real: []string{"KIND_PERMISSION_DENIED", "KIND_APPROVAL_PENDING", "KIND_USER"},
-}
-
 // compareWithFakeWorker compares a session's durable events, from its first,
-// with the fake worker's recording of scenario, after applying the known
-// deviations.
-func compareWithFakeWorker(t *testing.T, scenario string, got []*pb.SessionEvent, deviations ...deviation) {
+// with the fake worker's recording of scenario.
+func compareWithFakeWorker(t *testing.T, scenario string, got []*pb.SessionEvent) {
 	t.Helper()
 	fakeWorkerFixture.once.Do(func() {
 		var raw []byte
@@ -75,9 +59,6 @@ func compareWithFakeWorker(t *testing.T, scenario string, got []*pb.SessionEvent
 			wantPayloads = append(wantPayloads, e.Payload)
 		}
 	}
-	for _, d := range deviations {
-		wantKinds, wantPayloads = permute(wantKinds, wantPayloads, d)
-	}
 	var durable []*pb.SessionEvent
 	for _, e := range got {
 		if !e.GetEphemeral() {
@@ -97,32 +78,6 @@ func compareWithFakeWorker(t *testing.T, scenario string, got []*pb.SessionEvent
 			t.Errorf("scenario %s: event %d (%s) differs from the fake worker's in keys the Web reads:\n%s\nreal payload: %.2000s", scenario, i+1, e.GetKind(), d, e.GetPayloadJson())
 		}
 	}
-}
-
-// permute applies a deviation to every occurrence of its fake sequence.
-func permute(kinds []string, payloads []json.RawMessage, d deviation) ([]string, []json.RawMessage) {
-	kinds = append([]string(nil), kinds...)
-	payloads = append([]json.RawMessage(nil), payloads...)
-	for i := 0; i+len(d.fake) <= len(kinds); i++ {
-		if strings.Join(kinds[i:i+len(d.fake)], " ") != strings.Join(d.fake, " ") {
-			continue
-		}
-		used := make([]bool, len(d.fake))
-		moved := make([]json.RawMessage, 0, len(d.fake))
-		for _, k := range d.real {
-			for j, f := range d.fake {
-				if !used[j] && f == k {
-					used[j] = true
-					moved = append(moved, payloads[i+j])
-					break
-				}
-			}
-		}
-		copy(kinds[i:], d.real)
-		copy(payloads[i:], moved)
-		i += len(d.fake) - 1
-	}
-	return kinds, payloads
 }
 
 // checkStream checks a watch's streamed assistant messages against their
@@ -342,7 +297,8 @@ func webShape(kind pb.SessionEvent_Kind, p map[string]any) map[string]string {
 		typ("tool_use_id", p, "tool_use_id")
 		typ("reason", p, "reason")
 		typ("display", p, "display")
-		typ("tool", p, "tool")
+		// The tool names a call whose tool use the view lacks.
+		val("tool", p, "tool")
 	case pb.SessionEvent_KIND_APPROVAL_RESOLVED:
 		typ("approval_id", p, "approval_id")
 		val("state", p, "state")

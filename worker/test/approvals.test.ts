@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "vitest";
-import { approvalSubject, canonicalJson } from "../src/runner/approvals.js";
+import { approvalReason, approvalSubject, canonicalJson } from "../src/runner/approvals.js";
 
 const sha = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 const key = (tool: string, input: unknown) => approvalSubject(tool, input, "/work/project")?.matchKey;
@@ -53,4 +53,13 @@ describe("approval match keys", () => {
 test("Glob and Grep paths are keyed absolute", () => {
   expect(key("Glob", { pattern: "*.ts", path: "src" })).toBe(key("Glob", { pattern: "*.ts", path: "/work/project/src" }));
   expect(key("Grep", { pattern: "x", path: "./lib" })).toBe(sha(canonicalJson({ pattern: "x", path: "/work/project/lib" })));
+});
+
+test("a denial's reason is clipped to 1 KiB, and empty when the permission mode gave none", () => {
+  expect(approvalReason(undefined)).toBe("");
+  expect(approvalReason("")).toBe("");
+  expect(approvalReason("fake classifier: destructive command")).toBe("fake classifier: destructive command");
+  const long = approvalReason("é".repeat(1000));
+  expect(Buffer.byteLength(long)).toBeLessThanOrEqual(1024);
+  expect(long).toBe("é".repeat(512));
 });

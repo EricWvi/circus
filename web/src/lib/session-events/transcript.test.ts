@@ -103,13 +103,26 @@ describe("approvals", () => {
     expect(t.turnOpen).toBe(false)
   })
 
-  it("marks an approved call and shows the retry as a call of its own", () => {
+  it("keeps an approved call denied and shows the retry as a call of its own", () => {
     const t = run(raw("approve"))
     const [first, retry] = tools(t)
-    expect(first).toMatchObject({ status: "completed", approval: { decision: "approved" } })
+    // The denied call never ran: the agent ran the command again as the retry.
+    expect(first).toMatchObject({ status: "denied", approval: { decision: "approved" } })
+    expect(first.output).toBeUndefined()
+    expect(first.error).toBeUndefined()
     expect(retry).toMatchObject({ status: "completed", output: "approved", input: { command: "echo approved" } })
+    expect(retry.approval).toBeUndefined()
     // The approval input the server queued for the agent is not shown as the user's message.
     expect(ofKind(t, "user_message").map((m) => m.text)).toEqual(["/fake approve echo approved"])
+  })
+
+  it("keeps an approved call denied when the agent never retries it", () => {
+    const events = raw("approve")
+    const resolved = events.findIndex((e) => e.kind === "approval_resolved")
+    const t = run(events.slice(0, resolved + 1))
+    expect(tools(t)).toEqual([
+      expect.objectContaining({ status: "denied", approval: expect.objectContaining({ decision: "approved" }) }),
+    ])
   })
 
   it("marks a denied call", () => {

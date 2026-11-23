@@ -44,17 +44,34 @@ func (s *session) rememberApproval(command string) {
 func sdkPermissionDenied(sessionID, id, toolID string) sdkMessage {
 	return sdkMessage{pb.SessionEvent_KIND_PERMISSION_DENIED, object{
 		"type": "system", "subtype": "permission_denied", "uuid": id, "session_id": sessionID,
-		"tool_name": "Bash", "tool_use_id": toolID, "decision_reason_type": "classifier",
+		"tool_name": approvalTool, "tool_use_id": toolID, "decision_reason_type": "classifier",
 		"decision_reason": approvalReason, "message": denialText,
 	}}
 }
 
+// approvalTool is the tool name approvals carry: the SDK's, as the real
+// worker sends it.
+const approvalTool = "Bash"
+
+// sdkDenialResult is the tool_result Claude Code records for a call the
+// auto mode classifier blocked.
+func sdkDenialResult(sessionID, id, toolID string) sdkMessage {
+	m := sdkUser(sessionID, id, []object{toolResult(toolID, denialText, true)}, "")
+	m.payload["tool_use_result"] = "Error: " + denialText
+	m.payload["tool_result_meta"] = []object{{
+		"id": toolID, "non_execution_kind": "automode-blocked",
+		"permission_decision": object{"decision": "reject", "reason_type": "classifier", "source": "config"},
+	}}
+	return m
+}
+
+// denyApproval denies a tool use the way the real worker reports it: the
+// permission denial, then the approval request (published before Claude
+// Code's tool_result that carries the denial to the model), then that
+// tool_result.
 func (s *session) denyApproval(t *turn, toolID, command string, input object) error {
 	s.events = append(s.events, sdkPermissionDenied(s.sdkID, uuid.NewString(), toolID).event())
-	t.denials = append(t.denials, object{"tool_name": "Bash", "tool_use_id": toolID, "tool_input": input})
-	if err := s.recordToolResult(toolID, denialText, true); err != nil {
-		return err
-	}
+	t.denials = append(t.denials, object{"tool_name": approvalTool, "tool_use_id": toolID, "tool_input": input})
 	if err := s.flush(); err != nil {
 		return err
 	}
@@ -62,7 +79,7 @@ func (s *session) denyApproval(t *turn, toolID, command string, input object) er
 	s.rememberApproval(command)
 	display := approvalDisplay(command)
 	r, err := s.request(wc.Op(s.id, s.epoch, &pb.RequestApproval{
-		Tool: "bash", Device: s.device, ToolUseId: toolID, MatchKey: approvalKey(command), Display: display, Reason: approvalReason,
+		Tool: approvalTool, Device: s.device, ToolUseId: toolID, MatchKey: approvalKey(command), Display: display, Reason: approvalReason,
 	}))
 	if err != nil {
 		return err
@@ -71,12 +88,18 @@ func (s *session) denyApproval(t *turn, toolID, command string, input object) er
 		return fmt.Errorf("approval: %v", r)
 	}
 	s.queue(pb.SessionEvent_KIND_APPROVAL_PENDING, approvalPendingPayload(
-		r.GetApproval().GetApprovalId(), "bash", s.device, toolID, display, approvalReason))
+		r.GetApproval().GetApprovalId(), approvalTool, s.device, toolID, display, approvalReason))
+	if err := s.record(sdkDenialResult(s.sdkID, uuid.NewString(), toolID)); err != nil {
+		return err
+	}
+	if err := s.flush(); err != nil {
+		return err
+	}
 	return s.stream(t, "I need approval to run this Bash command.", s.w.opts.StreamDelay, false)
 }
 
 func (s *session) retryApproval(t *turn, text string) error {
-	prefix := fmt.Sprintf("The user approved this bash call on device %q once: ", s.device)
+	prefix := fmt.Sprintf("The user approved this %s call on device %q once: ", approvalTool, s.device)
 	display, ok := strings.CutPrefix(text, prefix)
 	if !ok {
 		return nil

@@ -13,7 +13,7 @@ import {
 import { INTERRUPTED_TOOL_ERROR, NO_RESULT_TOOL_ERROR } from "@/lib/settle"
 import type { ToolCallEvent } from "@/lib/types"
 
-import { toToolPartState } from "./tool-state"
+import { toolCallPartState } from "./tool-state"
 
 const languageByExtension: Record<string, BundledLanguage> = {
   go: "go",
@@ -125,7 +125,7 @@ function Body({ event }: { event: ToolCallEvent }) {
 }
 
 const decisionKeys = {
-  approved: "session.tool.approvedByYou",
+  approved: "session.tool.approvedRetried",
   denied: "session.tool.deniedByYou",
   expired: "session.tool.approvalExpired",
 } as const
@@ -140,7 +140,7 @@ export function ToolCall({ event }: { event: ToolCallEvent }) {
       <ToolHeader
         type="dynamic-tool"
         toolName={event.tool}
-        state={toToolPartState(event.status)}
+        state={toolCallPartState(event)}
         title={target ? `${event.tool}  ${target}` : event.tool}
         className="whitespace-pre"
       />

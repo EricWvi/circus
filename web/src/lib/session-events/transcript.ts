@@ -642,10 +642,8 @@ class Builder {
     if (event?.kind !== "tool_call" || !event.approval) return
     const state = p.state
     if (state !== "approved" && state !== "denied" && state !== "expired") return
-    this.put({
-      ...event,
-      status: state === "approved" ? "completed" : "denied",
-      approval: { ...event.approval, decision: state },
-    })
+    // An approved call still didn't run: the agent retries it as a call of
+    // its own, which shows on its own card.
+    this.put({ ...event, status: "denied", approval: { ...event.approval, decision: state } })
   }
 }

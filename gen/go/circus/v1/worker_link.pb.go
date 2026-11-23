@@ -2841,7 +2841,9 @@ type RequestApproval struct {
 	// part of it.
 	MatchKey string `protobuf:"bytes,5,opt,name=match_key,json=matchKey,proto3" json:"match_key,omitempty"`
 	// At most 1024 bytes each; truncate longer text at a UTF-8 boundary.
-	Display       string `protobuf:"bytes,6,opt,name=display,proto3" json:"display,omitempty"`
+	Display string `protobuf:"bytes,6,opt,name=display,proto3" json:"display,omitempty"`
+	// Empty when the permission mode gave no reason of its own; clients then
+	// say that the permission mode denied the tool.
 	Reason        string `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

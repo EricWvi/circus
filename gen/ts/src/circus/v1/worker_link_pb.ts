@@ -2066,6 +2066,9 @@ export type RequestApproval = Message<"circus.v1.RequestApproval"> & {
   display: string;
 
   /**
+   * Empty when the permission mode gave no reason of its own; clients then
+   * say that the permission mode denied the tool.
+   *
    * @generated from field: string reason = 7;
    */
   reason: string;

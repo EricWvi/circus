@@ -107,7 +107,7 @@ func (s *session) runTool(t *turn, command, arg string, u toolCall, closing bool
 	}
 	if command == "approved-bash" {
 		reply, err := s.request(wc.Op(s.id, s.epoch, &pb.ConsumeGrant{
-			Tool: "bash", Device: s.device, MatchKey: approvalKey(arg), ToolUseId: toolID,
+			Tool: approvalTool, Device: s.device, MatchKey: approvalKey(arg), ToolUseId: toolID,
 		}))
 		if err != nil {
 			return err

@@ -1453,8 +1453,8 @@ interrupted by NOW.
 | Field | Type and meaning |
 | --- | --- |
 | `approval_id` | String from RequestApproval |
-| `tool`, `device`, `tool_use_id` | Strings identifying the denied device tool use |
-| `display`, `reason` | Strings shown in the approval prompt |
+| `tool`, `device`, `tool_use_id` | Strings identifying the denied device tool use; `tool` is the SDK tool name |
+| `display`, `reason` | Strings shown in the approval prompt; `reason` is empty when the permission mode gave none, and clients then say that the permission mode denied the tool |
 
 **PERMISSION_DENIED**
 

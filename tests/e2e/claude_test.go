@@ -547,7 +547,7 @@ func TestClaudeApproval(t *testing.T) {
 	_, err = sess.api.ResolveApproval(sess.ctx, connect.NewRequest(&pb.ResolveApprovalRequest{ApprovalId: eventString(t, pending, "approval_id"), Approve: true}))
 	must(t, err)
 	durableUntil(t, w, func(e *pb.SessionEvent) bool { return e.GetKind() == pb.SessionEvent_KIND_RESULT })
-	compareWithFakeWorker(t, "approve", w.durable, approvalBeforeDenial)
+	compareWithFakeWorker(t, "approve", w.durable)
 	if state := sess.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED); state.GetTurnCount() != 2 || state.GetPendingApprovalCount() != 0 {
 		t.Fatalf("after approval: %v", state)
 	}
@@ -579,7 +579,7 @@ func TestClaudeApproval(t *testing.T) {
 	if eventString(t, resolved[len(resolved)-1], "state") != "denied" {
 		t.Fatalf("resolution %v", resolved)
 	}
-	compareWithFakeWorker(t, "deny", w.durable, approvalBeforeDenial)
+	compareWithFakeWorker(t, "deny", w.durable)
 	checkStream(t, w, true)
 	if state := sess.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED); state.GetTurnCount() != 1 || state.GetPendingApprovalCount() != 0 {
 		t.Fatalf("after the denial: %v", state)

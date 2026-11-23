@@ -1065,7 +1065,7 @@ export class SessionRunner {
       this.#log.warn("denied tool use without a known input; no approval requested", { session_id: this.sessionId, tool: tool.slice(0, 256) });
       return;
     }
-    const why = approvalReason(reason, tool);
+    const why = approvalReason(reason);
     try {
       const reply = await this.ops.call({
         case: "requestApproval",

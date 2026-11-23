@@ -658,6 +658,8 @@ message RequestApproval {
   string match_key = 5;
   // At most 1024 bytes each; truncate longer text at a UTF-8 boundary.
   string display = 6;
+  // Empty when the permission mode gave no reason of its own; clients then
+  // say that the permission mode denied the tool.
   string reason = 7;
 }
 

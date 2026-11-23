@@ -94,6 +94,20 @@
    },
    {
     "seq": 6,
+    "kind": "KIND_APPROVAL_PENDING",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000008",
+     "device": "box",
+     "display": "echo late",
+     "reason": "Scripted Bash approval required",
+     "tool": "Bash",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+    }
+   },
+   {
+    "seq": 7,
     "kind": "KIND_USER",
     "ephemeral": false,
     "truncated": false,
@@ -111,22 +125,20 @@
      },
      "parent_tool_use_id": null,
      "session_id": "00000000-0000-4000-8000-000000000003",
+     "tool_result_meta": [
+      {
+       "id": "toolu_00000000-0000-4000-8000-000000000004",
+       "non_execution_kind": "automode-blocked",
+       "permission_decision": {
+        "decision": "reject",
+        "reason_type": "classifier",
+        "source": "config"
+       }
+      }
+     ],
+     "tool_use_result": "Error: Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
      "type": "user",
-     "uuid": "00000000-0000-4000-8000-000000000008"
-    }
-   },
-   {
-    "seq": 7,
-    "kind": "KIND_APPROVAL_PENDING",
-    "ephemeral": false,
-    "truncated": false,
-    "payload": {
-     "approval_id": "00000000-0000-4000-8000-000000000009",
-     "device": "box",
-     "display": "echo late",
-     "reason": "Scripted Bash approval required",
-     "tool": "bash",
-     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+     "uuid": "00000000-0000-4000-8000-000000000009"
     }
    },
    {
@@ -365,7 +377,7 @@
     "ephemeral": false,
     "truncated": false,
     "payload": {
-     "approval_id": "00000000-0000-4000-8000-000000000009",
+     "approval_id": "00000000-0000-4000-8000-000000000008",
      "state": "expired"
     }
    }
@@ -466,6 +478,20 @@
    },
    {
     "seq": 6,
+    "kind": "KIND_APPROVAL_PENDING",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000008",
+     "device": "box",
+     "display": "echo approved",
+     "reason": "Scripted Bash approval required",
+     "tool": "Bash",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+    }
+   },
+   {
+    "seq": 7,
     "kind": "KIND_USER",
     "ephemeral": false,
     "truncated": false,
@@ -483,22 +509,20 @@
      },
      "parent_tool_use_id": null,
      "session_id": "00000000-0000-4000-8000-000000000003",
+     "tool_result_meta": [
+      {
+       "id": "toolu_00000000-0000-4000-8000-000000000004",
+       "non_execution_kind": "automode-blocked",
+       "permission_decision": {
+        "decision": "reject",
+        "reason_type": "classifier",
+        "source": "config"
+       }
+      }
+     ],
+     "tool_use_result": "Error: Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
      "type": "user",
-     "uuid": "00000000-0000-4000-8000-000000000008"
-    }
-   },
-   {
-    "seq": 7,
-    "kind": "KIND_APPROVAL_PENDING",
-    "ephemeral": false,
-    "truncated": false,
-    "payload": {
-     "approval_id": "00000000-0000-4000-8000-000000000009",
-     "device": "box",
-     "display": "echo approved",
-     "reason": "Scripted Bash approval required",
-     "tool": "bash",
-     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+     "uuid": "00000000-0000-4000-8000-000000000009"
     }
    },
    {
@@ -737,7 +761,7 @@
     "ephemeral": false,
     "truncated": false,
     "payload": {
-     "approval_id": "00000000-0000-4000-8000-000000000009",
+     "approval_id": "00000000-0000-4000-8000-000000000008",
      "state": "approved"
     }
    },
@@ -760,7 +784,7 @@
      "circus_note": "approval_retry",
      "isSynthetic": true,
      "message": {
-      "content": "The user approved this bash call on device \"box\" once: echo approved\nRetry it now.",
+      "content": "The user approved this Bash call on device \"box\" once: echo approved\nRetry it now.",
       "role": "user"
      },
      "parent_tool_use_id": null,
@@ -2159,6 +2183,20 @@
    },
    {
     "seq": 6,
+    "kind": "KIND_APPROVAL_PENDING",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000008",
+     "device": "box",
+     "display": "echo denied",
+     "reason": "Scripted Bash approval required",
+     "tool": "Bash",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+    }
+   },
+   {
+    "seq": 7,
     "kind": "KIND_USER",
     "ephemeral": false,
     "truncated": false,
@@ -2176,22 +2214,20 @@
      },
      "parent_tool_use_id": null,
      "session_id": "00000000-0000-4000-8000-000000000003",
+     "tool_result_meta": [
+      {
+       "id": "toolu_00000000-0000-4000-8000-000000000004",
+       "non_execution_kind": "automode-blocked",
+       "permission_decision": {
+        "decision": "reject",
+        "reason_type": "classifier",
+        "source": "config"
+       }
+      }
+     ],
+     "tool_use_result": "Error: Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
      "type": "user",
-     "uuid": "00000000-0000-4000-8000-000000000008"
-    }
-   },
-   {
-    "seq": 7,
-    "kind": "KIND_APPROVAL_PENDING",
-    "ephemeral": false,
-    "truncated": false,
-    "payload": {
-     "approval_id": "00000000-0000-4000-8000-000000000009",
-     "device": "box",
-     "display": "echo denied",
-     "reason": "Scripted Bash approval required",
-     "tool": "bash",
-     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000004"
+     "uuid": "00000000-0000-4000-8000-000000000009"
     }
    },
    {
@@ -2430,7 +2466,7 @@
     "ephemeral": false,
     "truncated": false,
     "payload": {
-     "approval_id": "00000000-0000-4000-8000-000000000009",
+     "approval_id": "00000000-0000-4000-8000-000000000008",
      "state": "denied"
     }
    }

@@ -101,8 +101,8 @@ export function approvalSubject(tool: string, input: unknown, cwd: string): Appr
   return { tool, matchKey, display: display(shown, matchKey) };
 }
 
-export const approvalReason = (reason: string | undefined, tool: string) =>
-  clipUtf8(reason || `${tool} was denied by the permission mode`, REASON_BYTES);
+/** Why the permission mode denied a call, clipped; empty when it gave no reason (clients word that themselves). */
+export const approvalReason = (reason: string | undefined) => clipUtf8(reason ?? "", REASON_BYTES);
 
 export interface ToolUse {
   tool: string;
