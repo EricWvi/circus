@@ -43,6 +43,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # The e2e harness builds the TypeScript worker, which needs the npm
+      # workspace (tsc and the SDK) installed.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
       - uses: go-task/setup-task@v1
         with:
           version: 3.x
