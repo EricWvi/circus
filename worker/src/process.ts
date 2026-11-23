@@ -189,7 +189,7 @@ export interface CliProcessesPort {
 }
 
 export class CliProcesses implements CliProcessesPort {
-  #live = new Map<string, { child: ChildProcess; exited: Promise<void> }>();
+  #live = new Map<string, { child: ChildProcess; exited: Promise<void>; stopped: { byWorker: boolean } }>();
   /** Exits whose stderr tail waits for stderr to end; flush() logs them at once. */
   #pendingReports = new Set<() => void>();
   readonly #boot: string;
@@ -231,6 +231,15 @@ export class CliProcesses implements CliProcessesPort {
       tail = (tail + chunk).slice(-STDERR_TAIL_BYTES);
     });
     child.on("error", () => {});
+    // Set when the worker signals the CLI: the SDK closing the query or
+    // tearing down at exit, the spawn's abort signal (Node kills through
+    // child.kill), or confirmExit's escalation. Its exit is then expected.
+    const stopped = { byWorker: false };
+    const kill = child.kill.bind(child);
+    child.kill = (signal?: NodeJS.Signals | number) => {
+      stopped.byWorker = true;
+      return kill(signal);
+    };
     // "exit" can come before the last stderr chunk is read: the tail is
     // complete once stderr ends, which a descendant holding it open can delay.
     const stderrEnded = new Promise<void>((done) => {
@@ -247,7 +256,10 @@ export class CliProcesses implements CliProcessesPort {
         logged = true;
         clearTimeout(timer);
         this.#pendingReports.delete(report);
-        if (code !== 0 && code !== null) {
+        if (code !== 0 && code !== null && stopped.byWorker) {
+          this.log.info("Claude Code exited", { session_id: sessionId, code, stopped_by_worker: true });
+          this.log.debug("Claude Code stderr tail", { session_id: sessionId, stderr: tail.slice(-2048) });
+        } else if (code !== 0 && code !== null) {
           this.log.warn("Claude Code exited", { session_id: sessionId, code, stderr: tail.slice(-2048) });
         } else {
           this.log.debug("Claude Code exited", { session_id: sessionId, signal: signal ?? "" });
@@ -273,7 +285,7 @@ export class CliProcesses implements CliProcessesPort {
           // The record stays without its exit time.
         }
       });
-      this.#live.set(sessionId, { child, exited });
+      this.#live.set(sessionId, { child, exited, stopped });
       void exited.then(() => {
         if (this.#live.get(sessionId)?.child === child) this.#live.delete(sessionId);
       });
@@ -305,6 +317,7 @@ export class CliProcesses implements CliProcessesPort {
     const fields = { session_id: sessionId, pid };
     if (this.guard) {
       this.log.warn("exec-guard did not exit; requesting process tree teardown", fields);
+      live.stopped.byWorker = true;
       killQuietly(pid, "SIGUSR1");
       if (await wait(GUARD_EXIT_WAIT_MS)) {
         this.log.info("exec-guard exited after SIGUSR1", fields);
@@ -313,6 +326,7 @@ export class CliProcesses implements CliProcessesPort {
     }
     this.log.warn(this.guard ? "exec-guard did not exit; killing its process group"
       : "Claude Code did not exit; killing its process group", fields);
+    live.stopped.byWorker = true;
     killQuietly(-pid, "SIGKILL");
     if (!(await wait(KILL_WAIT_MS))) {
       this.log.error(this.guard ? "exec-guard survived SIGKILL" : "Claude Code survived SIGKILL", { session_id: sessionId });

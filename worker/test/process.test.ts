@@ -143,6 +143,49 @@ describe.skipIf(!linux)("CLI processes", () => {
     }
   });
 
+  describe("a CLI that exits 143 on SIGTERM", () => {
+    const script = "process.on('SIGTERM', () => { console.error('terminated'); process.exit(143); }); " +
+      "process.stdout.write('ready'); setInterval(() => {}, 1000)";
+    const exitLine = async (stop: (child: ChildProcess, abort: AbortController) => void) => {
+      const dir = mkdtempSync(join(tmpdir(), "circus-cli-"));
+      const log = captureLogger();
+      const processes = new CliProcesses(dir, undefined, log);
+      const abort = new AbortController();
+      const child = processes.spawner("s1")({
+        command: process.execPath, args: ["-e", script], env: process.env, signal: abort.signal,
+      }) as unknown as ChildProcess;
+      try {
+        await once(child.stdout!, "data");
+        stop(child, abort);
+        await waitFor(() => log.lines.some((l) => l.message === "Claude Code exited"), "the exit logged", 3_000);
+        return { line: log.lines.find((l) => l.message === "Claude Code exited")!, lines: log.lines };
+      } finally {
+        if (child.exitCode === null && child.signalCode === null && child.pid !== undefined) killQuietly(-child.pid);
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+
+    test("is logged at info with its stderr tail at debug when the worker killed it", async () => {
+      const { line, lines } = await exitLine((child) => child.kill("SIGTERM"));
+      expect(line).toMatchObject({ level: "info", fields: { code: 143, stopped_by_worker: true } });
+      expect(line.fields).not.toHaveProperty("stderr");
+      const tail = lines.find((l) => l.message === "Claude Code stderr tail");
+      expect(tail?.level).toBe("debug");
+      expect(String(tail?.fields?.stderr)).toContain("terminated");
+    });
+
+    test("is logged at info when the spawn's abort signal killed it", async () => {
+      const { line } = await exitLine((_child, abort) => abort.abort());
+      expect(line).toMatchObject({ level: "info", fields: { code: 143, stopped_by_worker: true } });
+    });
+
+    test("is logged at warn with its stderr tail when something else killed it", async () => {
+      const { line } = await exitLine((child) => process.kill(child.pid!, "SIGTERM"));
+      expect(line).toMatchObject({ level: "warn", fields: { code: 143 } });
+      expect(String(line.fields?.stderr)).toContain("terminated");
+    });
+  });
+
   test("flush logs an exited CLI's tail while a descendant still holds its stderr, once", async () => {
     const dir = mkdtempSync(join(tmpdir(), "circus-cli-"));
     const log = captureLogger();
