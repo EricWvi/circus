@@ -8,6 +8,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/store"
 )
 
@@ -249,7 +250,7 @@ func (s *Service) unreserve(id string) {
 	}
 	e.reserved--
 	if e.reserved == 0 && e.deferred != 0 {
-		s.queueWake(id, e.deferred&allReasons)
+		s.requeue(id, e.deferred&allReasons, 0)
 		e.deferred = 0
 	}
 	s.forget(id, e)
@@ -567,7 +568,9 @@ func (s *Service) upkeep(ctx context.Context, now time.Time, alarm <-chan time.T
 				soonest = t
 			}
 		}
-		alarm = s.clk.After(soonest.Sub(now))
+		// Armed for the instant itself: the round's store work may have
+		// taken time (or a fake clock moved) since now was read.
+		alarm = clock.Until(s.clk, soonest)
 		s.rounds.Add(1)
 	}
 }
@@ -656,17 +659,18 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 	// for a lease that has ended (which a later close of its boot would
 	// mark disconnected). So the session is evaluated again instead, at
 	// once, when since the read began a newer epoch was bound, the entry
-	// was bound to a live connection or unbound, the entry was forgotten
-	// or replaced, or, with no entry before or now, any lease loss was
+	// was bound to a live connection or unbound, the entry was forgotten,
+	// replaced or created (an AcquireLease or ResumeLeases reserving it),
+	// or, with no entry before or now, any lease loss was
 	// applied (it may have been this session's); and when its reservation
 	// ends while an acquisition is in flight.
 	// Each session is read again at most MaxStaleRetries times in a row;
 	// past that it waits for the next fallback pass, so churn elsewhere
 	// cannot keep it re-reading, and a stale read is never acted on.
 	cur := s.entries[id]
-	if (cur != nil && (cur.holder.epoch > st.Lease.Epoch || cur.changedAt > gen)) || (prev != nil && cur != prev) ||
+	if (cur != nil && (cur.holder.epoch > st.Lease.Epoch || cur.changedAt > gen)) || cur != prev ||
 		(prev == nil && cur == nil && st.Lease.Live(now) && s.losses != losses) {
-		s.retryStale(id, rs)
+		s.retryStale(id, rs, st.Session.InterruptTurnNo)
 		return
 	}
 	delete(s.staleReads, id)
@@ -713,13 +717,13 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 // retryStale evaluates session id again after a stale read: at once up to
 // MaxStaleRetries times in a row, then at the next fallback pass (parked;
 // both maps hold at most MaxWakeQueue ids, past that the session goes
-// straight to the Wake queue or is dropped like a Wake past it); s.mu
-// held.
-func (s *Service) retryStale(id string, rs reasonSet) {
+// straight to the Wake queue, or past that to requeue's direct Nudge,
+// with interrupt, the interrupt level the stale read saw); s.mu held.
+func (s *Service) retryStale(id string, rs reasonSet, interrupt int64) {
 	n := s.staleReads[id] + 1
 	if n <= MaxStaleRetries && (s.staleReads[id] > 0 || len(s.staleReads) < MaxWakeQueue) {
 		s.staleReads[id] = n
-		s.queueWake(id, rs)
+		s.requeue(id, rs, interrupt)
 		return
 	}
 	delete(s.staleReads, id)
@@ -727,7 +731,27 @@ func (s *Service) retryStale(id string, rs reasonSet) {
 		s.parked[id] |= rs | reasonSet(1) // nonzero even without reasons
 		return
 	}
-	s.queueWake(id, rs)
+	s.requeue(id, rs, interrupt)
+}
+
+// requeue queues session id for evaluation again with Nudge reasons rs;
+// s.mu held. Past MaxWakeQueue, as in Wake, rs go to the session's current
+// entry at once and its bound holder is nudged, so no reason is dropped
+// (the fallback scan finds a session that still needs an Offer). The Nudge
+// carries the interrupt level an evaluation would send: the entry's, or
+// interrupt (the level a read of the store saw, 0 when none) if higher,
+// since a session's level only grows.
+func (s *Service) requeue(id string, rs reasonSet, interrupt int64) {
+	if s.queueWake(id, rs) {
+		return
+	}
+	if e := s.entries[id]; e != nil {
+		if e.holder != (holder{}) && interrupt > e.interrupt {
+			e.interrupt = interrupt
+		}
+		s.addReasons(e, rs&allReasons)
+		s.nudge(id, e)
+	}
 }
 
 // gate is what a queued session's provider allows, read from the store
@@ -1021,7 +1045,7 @@ func (s *Service) fallback(ctx context.Context) {
 			}
 		}
 		for id, rs := range s.parked {
-			s.queueWake(id, rs&allReasons)
+			s.requeue(id, rs&allReasons, 0)
 		}
 		clear(s.parked)
 		for _, c := range s.conns {

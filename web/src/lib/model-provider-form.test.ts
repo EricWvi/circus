@@ -85,14 +85,71 @@ describe("validating the provider form", () => {
         problem: "Enter an http or https URL, like https://api.example.com.",
       })
     }
-    for (const outside of ["https:\\\\example.com", "https://hé/", "https://h/a b", "https://h/é"]) {
+    for (const outside of ["https:\\\\example.com", "https://h/a b", "https://h/é"]) {
       expect({ outside, problem: problem(outside) }).toEqual({
         outside,
         problem: "URLs hold only printable ASCII without spaces or backslashes; percent-encode anything else.",
       })
     }
+    // An international domain name goes in its punycode form.
+    expect(problem("https://hé/")).toBe(
+      "Type an international domain name in its punycode form (xn--…); the host must be ASCII.",
+    )
+    expect(problem("https://xn--h-9fa/")).toBeUndefined()
     expect(problem("HTTPS://api.example.com:8443/v1/")).toBeUndefined()
     expect(problem(`https://example.com/${"a".repeat(2048)}`)).toBe("Base URLs are at most 2048 bytes.")
+  })
+
+  it("checks the base URL's host labels and path characters", () => {
+    const problem = (baseUrl: string) => check(valid({ baseUrl })).fields.baseUrl
+    for (const empty of ["https://.", "https://a..b", "https://api.example.com."]) {
+      expect({ empty, problem: problem(empty) }).toEqual({
+        empty,
+        problem: "The host can't have two dots in a row or a dot at either end.",
+      })
+    }
+    expect(problem(`https://${"l".repeat(64)}.example`)).toBe(
+      "Each part of the host between dots is at most 63 characters.",
+    )
+    expect(problem(`https://${"l".repeat(63)}.example`)).toBeUndefined()
+    for (const hyphen of ["https://-", "https://-a.example", "https://a-.example"]) {
+      expect({ hyphen, problem: problem(hyphen) }).toEqual({
+        hyphen,
+        problem: "No part of the host between dots can start or end with a hyphen (-).",
+      })
+    }
+    for (const numeric of ["https://999.999.999.999", "https://1", "https://a.1", "https://01.2.3.4"]) {
+      expect({ numeric, problem: problem(numeric) }).toEqual({
+        numeric,
+        problem: "A host ending in a number must be an IPv4 address, like 192.0.2.1.",
+      })
+    }
+    expect(problem("https://192.0.2.1:8443/v1")).toBeUndefined()
+    for (const ch of ['"', "<", ">", "[", "]", "^", "`", "{", "|", "}"]) {
+      expect({ ch, problem: problem(`https://h/a${ch}b`) }).toEqual({
+        ch,
+        problem: 'Percent-encode " < > [ ] ^ ` { | and } in the URL\'s path.',
+      })
+    }
+    expect(problem("https://h/%7Bid%7D%5B0%5D")).toBeUndefined()
+    expect(problem("https://h~x.localhost")).toBe("Enter an http or https URL, like https://api.example.com.")
+    const label = "l".repeat(63)
+    expect(problem(`https://${label}.${label}.${label}.${"l".repeat(61)}`)).toBeUndefined()
+    expect(problem(`https://${label}.${label}.${label}.${"l".repeat(62)}`)).toBe("The host is at most 253 characters.")
+  })
+
+  it("takes only printable ASCII in the key and trims spaces around it", () => {
+    const problem = (key: string) => check(valid({ key })).fields.key
+    for (const key of ["sk\u200bx", "sk\u2028x", "sk\u00adx", "sk\nx", "sk x", "sk-é", "sk-汉"]) {
+      expect({ key, problem: problem(key) }).toEqual({
+        key,
+        problem: "Keys hold only printable ASCII characters, without spaces.",
+      })
+    }
+    expect(problem("sk-ant-api03-AZaz09_-./+=~!")).toBeUndefined()
+    // The form sends the key trimmed, so spaces around it are no error.
+    expect(problem("  sk-key\n")).toBeUndefined()
+    expect(toProviderInput(valid({ key: "  sk-key\n" })).key).toBe("sk-key")
   })
 
   it("requires the key for a new provider and once the stored one can't be read, not otherwise", () => {

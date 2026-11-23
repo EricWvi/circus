@@ -105,15 +105,23 @@ func checkProviderName(raw string) (string, string) {
 
 // checkBaseURL returns why raw may not be an API base URL, or "": empty,
 // or, at most store.MaxProviderBaseURLBytes of printable ASCII (no space,
-// no control character, no backslash):
+// no control character, no backslash; an international domain name is
+// typed in its punycode form):
 //
 //   - the scheme http:// or https://, in any case;
-//   - an authority without user info ("@"): a host, either a name of
-//     letters, digits, ".", "-", "_" and "~" (so no "%") or an IPv6
-//     address in brackets, then optionally ":" and a port of one to five
-//     digits with a value of 1 to 65535;
+//   - an authority without user info ("@"): a host, either a name or an
+//     IPv6 address in brackets, then optionally ":" and a port of one to
+//     five digits with a value of 1 to 65535. A name is at most 253
+//     bytes of dot-separated labels of letters, digits, "-" and "_" (so
+//     no "%"), each of 1 to 63 bytes, neither starting nor ending with
+//     "-"; when its last
+//     label is a number (decimal digits, or "0x" and hexadecimal digits,
+//     which URL parsers read as part of an IPv4 address), the name must
+//     be an IPv4 address of four decimal numbers 0 to 255 without leading
+//     zeros;
 //   - then nothing, or a path starting with "/" in which every "%" is
-//     followed by two hexadecimal digits;
+//     followed by two hexadecimal digits and none of the characters
+//     " < > [ ] ^ ` { | } appears unescaped;
 //   - no query ("?") and no fragment ("#") anywhere.
 //
 // The Web client implements the same rule; the parity fixture holds both
@@ -127,6 +135,9 @@ func checkBaseURL(raw string) string {
 	}
 	for i := 0; i < len(raw); i++ {
 		if c := raw[i]; c <= ' ' || c >= 0x7f || c == '\\' {
+			if c >= 0x80 && inAuthority(raw, i) {
+				return "base URL host must be ASCII: type an international domain name in its punycode form (xn--)"
+			}
 			return "base URL may hold only printable ASCII, without spaces or backslashes"
 		}
 	}
@@ -177,11 +188,8 @@ func checkBaseURL(raw string) string {
 		return "base URL needs a host"
 	}
 	if !strings.HasPrefix(host, "[") {
-		for i := 0; i < len(host); i++ {
-			c := host[i]
-			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '-' || c == '_' || c == '~') {
-				return "base URL has an invalid host"
-			}
+		if problem := checkHostName(host); problem != "" {
+			return problem
 		}
 	}
 	if hasPort {
@@ -200,8 +208,76 @@ func checkBaseURL(raw string) string {
 		if path[i] == '%' && (i+2 >= len(path) || !isHex(path[i+1]) || !isHex(path[i+2])) {
 			return "base URL has a \"%\" not followed by two hexadecimal digits"
 		}
+		if strings.IndexByte(pathEscaped, path[i]) >= 0 {
+			return "base URL path must percent-encode the characters \" < > [ ] ^ ` { | }"
+		}
 	}
 	return ""
+}
+
+// pathEscaped are the printable ASCII characters (besides space, "\\",
+// "?" and "#", refused on their own) a base URL's path must
+// percent-encode.
+const pathEscaped = "\"<>[]^`{|}"
+
+// inAuthority reports whether byte i of raw lies in the authority of a URL
+// starting with a scheme and "//" (none when raw does not).
+func inAuthority(raw string, i int) bool {
+	start := strings.Index(raw, "://")
+	if start < 0 || i < start+3 {
+		return false
+	}
+	end := strings.IndexAny(raw[start+3:], "/?#")
+	return end < 0 || i < start+3+end
+}
+
+// checkHostName returns why host, a base URL's host other than a
+// bracketed IPv6 address, is refused, or "" (see checkBaseURL).
+func checkHostName(host string) string {
+	if len(host) > 253 {
+		return "base URL host is longer than 253 bytes"
+	}
+	labels := strings.Split(host, ".")
+	for _, l := range labels {
+		switch {
+		case l == "":
+			return "base URL host has an empty label (two dots in a row, or a dot at either end)"
+		case len(l) > 63:
+			return "base URL host has a label longer than 63 bytes"
+		case l[0] == '-' || l[len(l)-1] == '-':
+			return "base URL host has a label starting or ending with \"-\""
+		}
+		for i := 0; i < len(l); i++ {
+			if c := l[i]; !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+				return "base URL has an invalid host"
+			}
+		}
+	}
+	if numericLabel(labels[len(labels)-1]) {
+		if addr, err := netip.ParseAddr(host); err != nil || !addr.Is4() {
+			return "base URL host ends in a number but is not an IPv4 address"
+		}
+	}
+	return ""
+}
+
+// numericLabel reports whether URL parsers read host label l as a number
+// (an IPv4 part): decimal digits, or "0x" and hexadecimal digits.
+func numericLabel(l string) bool {
+	if len(l) >= 2 && l[0] == '0' && (l[1] == 'x' || l[1] == 'X') {
+		for i := 2; i < len(l); i++ {
+			if !isHex(l[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	for i := 0; i < len(l); i++ {
+		if l[i] < '0' || l[i] > '9' {
+			return false
+		}
+	}
+	return l != ""
 }
 
 func isHex(c byte) bool { return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F' }
@@ -217,13 +293,18 @@ func checkModel(m string) string {
 	return ""
 }
 
-// checkKey returns why a nonempty key is refused, or "".
+// checkKey returns why a nonempty key is refused, or "": longer than
+// store.MaxProviderKeyBytes, or holding anything but printable ASCII
+// (0x21 to 0x7E, so no space): the worker sends the key in an HTTP
+// header, which carries nothing else as typed.
 func checkKey(k string) string {
-	switch {
-	case len(k) > store.MaxProviderKeyBytes:
+	if len(k) > store.MaxProviderKeyBytes {
 		return "key is longer than 4096 bytes"
-	case strings.ContainsFunc(k, unicode.IsControl):
-		return "key has a control character (such as a line break)"
+	}
+	for i := 0; i < len(k); i++ {
+		if k[i] < 0x21 || k[i] > 0x7e {
+			return "key may hold only printable ASCII, without spaces"
+		}
 	}
 	return ""
 }

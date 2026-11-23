@@ -266,3 +266,60 @@ func TestMarkSkipsProbesPastEntryCap(t *testing.T) {
 		t.Fatalf("got %d entries, truncated=%v; want %d, true", len(result.Entries), result.Truncated, maxEntries)
 	}
 }
+
+// hangingFS blocks every Lstat until release is closed, after signalling
+// entered.
+type hangingFS struct {
+	OSFileSystem
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (f *hangingFS) Lstat(string) (fs.FileInfo, error) {
+	f.entered <- struct{}{}
+	<-f.release
+	return nil, fs.ErrNotExist
+}
+
+// racyClock is a fake clock that another goroutine advances by skew
+// whenever a timer is armed with After, just before it is armed: the
+// moment between reading Now and calling After.
+type racyClock struct {
+	*clock.Fake
+	skew time.Duration
+}
+
+func (c racyClock) After(d time.Duration) <-chan time.Time {
+	c.Advance(c.skew)
+	return c.Fake.After(d)
+}
+
+// TestMarkStopsAtDeadlineDespiteRacingAdvance: Mark gives up on a hung
+// probe once the clock reaches the deadline, even when the clock moved
+// between reading the time and arming the alarm.
+func TestMarkStopsAtDeadlineDespiteRacingAdvance(t *testing.T) {
+	files := &hangingFS{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	defer close(files.release)
+	clk := racyClock{Fake: clock.New(), skew: time.Second}
+	deadline := clk.Now().Add(2 * time.Second)
+	result := &circusv1.ListDirectoryResult{Path: "/x", Entries: []*circusv1.DirectoryEntry{{Name: "a"}}}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		New(files, slog.Default()).Mark(t.Context(), clk, deadline, result)
+	}()
+	select {
+	case <-files.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("probe never started")
+	}
+	clk.Advance(deadline.Sub(clk.Now()))
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Mark still waiting after the clock reached its deadline")
+	}
+	if len(result.Entries) != 1 || result.Entries[0].GitRepository {
+		t.Fatalf("entries %v", result.Entries)
+	}
+}

@@ -1,6 +1,9 @@
 package sessions
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Expire runs one lease expiry sweep now.
 func Expire(s *Service, ctx context.Context) { s.expire(ctx) }
@@ -157,4 +160,15 @@ func Parked(s *Service, id string) bool {
 	defer s.mu.Unlock()
 	_, ok := s.parked[id]
 	return ok
+}
+
+// FillWakes queues Wakes of n sessions that do not exist, without waking
+// the scheduler, so the next queueWake of another session finds the queue
+// full.
+func FillWakes(s *Service, n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range n {
+		s.wakes[fmt.Sprintf("filler-%d", i)] = 0
+	}
 }

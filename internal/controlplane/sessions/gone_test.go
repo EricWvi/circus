@@ -475,7 +475,7 @@ func TestGoneRaceReconnect(t *testing.T) {
 		wait.Recv(t, p.entered)
 		f.drop(c, 1)
 		f.wantGone("s1")
-		p.resume <- struct{}{}
+		p.txResume <- struct{}{}
 		if !wait.Recv(t, resumed) {
 			t.Fatal("resume")
 		}
@@ -621,6 +621,12 @@ func TestStaleEvaluationAfterReleaseKeptEntry(t *testing.T) {
 	f := newFixture(t, withPause(p))
 	sessions.DisableFallback(f.svc)
 	c, ev, epoch := held(t, f) // s1's input is still pending
+	// held may leave Nudges of INPUT sent before the release unread on ev.
+	// A Wake raising JOB, which nothing else here raises, is a marker: c's
+	// hints are sent in order, so once its Nudge arrives every earlier one
+	// has, and any later Nudge for s1 was built after it.
+	f.svc.Wake("s1", circusv1.WorkerEvent_Nudge_REASON_JOB)
+	nudge(t, ev, "s1", circusv1.WorkerEvent_Nudge_REASON_JOB)
 	f.settle()
 	p.pauseSettle("s1")
 	f.svc.Wake("s1", circusv1.WorkerEvent_Nudge_REASON_INPUT)

@@ -144,15 +144,17 @@
 // provider). Before acting it checks, under s.mu, that nothing changed the
 // lease in memory meanwhile (the entry's epoch is above the one read; the
 // entry was bound to a live connection or unbound after the read began,
-// since a resumption and a release keep the epoch; the entry was forgotten
-// or replaced; or, with no entry before or after, any lease loss was
+// since a resumption and a release keep the epoch; the entry was
+// forgotten, replaced or created (an AcquireLease or ResumeLeases reserves
+// one); or, with no entry before or after, any lease loss was
 // applied: the session is evaluated again, at once up to MaxStaleRetries
 // times in a row and then at the next fallback pass, so a read of a lease
 // that ended meanwhile never tracks a holder for it) and
 // that none is in flight (the entry is reserved: the evaluation is
 // deferred to the end of the reservation), so a stale read never revokes
-// or re-offers a lease just taken, nor unbinds one just resumed on a new
-// connection.
+// or re-offers a lease just taken, never binds again (and later revokes on
+// its holder) one just released, and never unbinds one just resumed on a
+// new connection.
 //
 // Wake-ups: a lease acquired under a provider that ends (release, revoke,
 // expiry, takeover) evaluates the sessions waiting as PROVIDER_FULL for

@@ -1071,6 +1071,20 @@ type Fence struct {
 	Now       int64
 }
 
+// RestartCursor is where the next page of ExtendLeasesAfterRestart
+// resumes. Until Providers is set, the unexpired leases and the expired
+// ones without a provider resume after SessionID; then the expired leases
+// under providers resume in provider order: within ProviderID after
+// (AcquiredAt, SessionID) when Within, else with the next provider after
+// ProviderID.
+type RestartCursor struct {
+	Providers  bool
+	SessionID  string
+	ProviderID string
+	Within     bool
+	AcquiredAt int64
+}
+
 // LeaseRequest asks AcquireLease for a session's lease.
 type LeaseRequest struct {
 	SessionID string

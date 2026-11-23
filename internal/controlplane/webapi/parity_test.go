@@ -500,14 +500,15 @@ func runWebParityCase(t *testing.T, fn string, args []string) webParityCase {
 // names. They go to their own section, "providerCases", because the Web's
 // parity test runs every entry of "cases" through a port it already has;
 // the Web wires these once its provider form ports the rules. Each base
-// URL case's expected outcome is also pinned in TestCheckBaseURL.
+// URL and key case's expected outcome is also pinned in TestCheckBaseURL
+// and TestCheckKey.
 var webProviderParityInputs = func() []webParityInput {
 	var out []webParityInput
 	for _, c := range baseURLCases {
 		out = append(out, webParityInput{"checkBaseURL", []string{c.raw}})
 	}
-	for _, k := range []string{"sk-fake", "with space inside", "\u00e9t\u00e9", "line\nbreak", "cr\r", "tab\t", "nul\x00", "del\x7f", "c1\u0085"} {
-		out = append(out, webParityInput{"checkProviderKey", []string{k}})
+	for _, c := range keyCases {
+		out = append(out, webParityInput{"checkProviderKey", []string{c.key}})
 	}
 	for _, n := range []string{"FOO", "_X1", "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CONFIG_DIR", "HOME", "PATH",
 		"CIRCUS_X", "CIRCUS", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "lower", "1A", ""} {

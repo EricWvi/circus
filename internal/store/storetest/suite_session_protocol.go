@@ -358,8 +358,7 @@ func testExtendLeasesAfterRestart(t *testing.T, b Backend) {
 	_, err = s.ReleaseLease(ctx, f3)
 	must(t, err)
 	restart := t0 + 10*ttl // down far longer than a lease lifetime
-	n, err := s.ExtendLeasesAfterRestart(ctx, restart, restart+ttl)
-	must(t, err)
+	n := extendAfterRestart(t, s, restart, restart+ttl, store.MaxPageSize)
 	mustEqual(t, "extended", n, 1)
 	losses, err := s.ExpireLeases(ctx, restart, 10)
 	must(t, err)

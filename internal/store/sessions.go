@@ -195,7 +195,7 @@ import "context"
 //	RequestApproval             RequestApproval
 //	ConsumeGrant                ConsumeGrant
 //	SubmitCall                  AdmitSessionCall, then CreateCall or TransitionCall, in one Tx
-//	(lease upkeep, no message)  ExtendLeases; ExtendLeasesAfterRestart once at start;
+//	(lease upkeep, no message)  ExtendLeases; ExtendLeasesAfterRestart, paged, at start;
 //	                            ExpireLeases; ReleaseWorkerLeases on a new boot
 //	CreateSession               CreateSession
 //	SendMessage                 SubmitInput, then for a new input AppendEvents (the
@@ -412,10 +412,14 @@ type SessionOps interface {
 	// Repeated set, on any connection. Once another epoch is acquired the
 	// resend is fenced.
 	ReleaseLease(ctx context.Context, f Fence) (LeaseLoss, error)
-	// ExtendLeasesAfterRestart extends every held lease to at least
-	// expiresAt (now + the lease lifetime), in one statement, and returns
-	// how many. The control plane calls it once at start, before any
-	// ExpireLeases, SettleSession or AcquireLease: a lease's expiry is the
+	// ExtendLeasesAfterRestart extends at most limit (1..MaxPageSize) held
+	// leases to at least expiresAt (now + the lease lifetime) and returns
+	// how many and where the next page resumes (nil when the run is done).
+	// A run starts with after nil and passes each page's cursor to the
+	// next, with the same now and expiresAt; its pages together extend
+	// exactly the leases described here, and each lease row is read a
+	// bounded number of times in the whole run. The control plane runs it at start, before
+	// any ExpireLeases, SettleSession or AcquireLease: a lease's expiry is the
 	// last extension of the previous process plus the lifetime, so after
 	// an outage longer than the lifetime the first sweep would otherwise
 	// reclaim every lease and interrupt running turns whose workers are
@@ -426,7 +430,7 @@ type SessionOps interface {
 	// never takes a provider past its cap, and is left to ExpireLeases. A
 	// released lease (no holder) is not touched, and no expiry is moved
 	// earlier. now < expiresAt.
-	ExtendLeasesAfterRestart(ctx context.Context, now, expiresAt int64) (int, error)
+	ExtendLeasesAfterRestart(ctx context.Context, now, expiresAt int64, after *RestartCursor, limit int) (int, *RestartCursor, error)
 	// ReleaseWorkerLeases releases at most limit (1..MaxPageSize) leases
 	// held by workerID under a boot other than keepBootID, applying the
 	// lease-loss rule to each, oldest acquisition first. It runs when the

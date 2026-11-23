@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,9 +24,75 @@ type preparingTool struct {
 
 func (f preparingTool) PreparationBudget() time.Duration { return f.budget }
 
+// stepOnArm is a fake clock that, when a timer is armed for the instant
+// set by stepAt (by After or Until), first advances by step: another
+// goroutine moving the clock between a reader's Now and its arming.
+type stepOnArm struct {
+	*clock.Fake
+	step time.Duration
+	mu   sync.Mutex
+	at   time.Time
+}
+
+func (c *stepOnArm) stepAt(at time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = at
+}
+
+func (c *stepOnArm) arming(at time.Time) {
+	c.mu.Lock()
+	hit := !c.at.IsZero() && at.Equal(c.at)
+	if hit {
+		c.at = time.Time{}
+	}
+	c.mu.Unlock()
+	if hit {
+		c.Advance(c.step)
+	}
+}
+
+func (c *stepOnArm) After(d time.Duration) <-chan time.Time {
+	c.arming(c.Now().Add(d))
+	return c.Fake.After(d)
+}
+
+func (c *stepOnArm) Until(at time.Time) <-chan time.Time {
+	c.arming(at)
+	return c.Fake.Until(at)
+}
+
+// TestDeadlineDespiteAdvanceWhileArming: a tool without preparation ends
+// at its deadline even when the clock reaches it while Submit arms the
+// deadline timer.
+func TestDeadlineDespiteAdvanceWhileArming(t *testing.T) {
+	t.Parallel()
+	clk := &stepOnArm{Fake: clock.New(), step: time.Second}
+	active := make(chan context.Context, 1)
+	tool := fakeTool{"read", func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+		active <- ctx
+		<-ctx.Done()
+		return output(ctx.Err().Error()), nil
+	}}
+	d := newDispatcher(t, daemon.Options{Clock: clk, DefaultTimeout: time.Second, Tools: []daemon.Tool{tool}})
+	end := clk.Now().Add(time.Second)
+	clk.stepAt(end)
+	if _, err := d.Submit(readCall("arming")); err != nil {
+		t.Fatal(err)
+	}
+	ctx := receive(t, active)
+	if got, _ := ctx.Deadline(); !got.Equal(end) || !clk.Now().Equal(end) {
+		t.Fatalf("deadline %s, clock %s, want both %s", got, clk.Now(), end)
+	}
+	receive(t, ctx.Done())
+	if r := completed(t, d, "arming"); resultText(r) != context.DeadlineExceeded.Error() {
+		t.Fatal(resultText(r))
+	}
+}
+
 func TestWrappedContextStartsExecutionTimeout(t *testing.T) {
 	t.Parallel()
-	clock := clock.New()
+	clock := &stepOnArm{Fake: clock.New(), step: time.Second}
 	preparing := make(chan struct{})
 	release := make(chan struct{})
 	started := make(chan time.Time, 1)
@@ -60,23 +127,19 @@ func TestWrappedContextStartsExecutionTimeout(t *testing.T) {
 	}
 	receive(t, preparing)
 	clock.Advance(10 * time.Minute)
+	// The clock reaches the execution deadline while execute arms its
+	// timer, between reading the time and arming: the call must still end.
+	end := clock.Now().Add(time.Second)
+	clock.stepAt(end)
 	close(release)
-	if end := receive(t, started); !end.Equal(clock.Now().Add(time.Second)) {
-		t.Fatal("wrong execution deadline", end)
+	if got := receive(t, started); !got.Equal(end) {
+		t.Fatal("wrong execution deadline", got)
 	}
-	// execute arms the deadline timer only after it observes the start, from
-	// a Now it may read before or after an Advance; advancing once can miss
-	// that timer under load. Keep advancing, staying below AbandonGrace.
-	var status *circusv1.CallStatus
-	for advanced := time.Duration(0); status == nil; {
-		if advanced >= 4*time.Second {
-			t.Fatal("call did not time out")
-		}
-		clock.Advance(time.Second)
-		advanced += time.Second
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		status, _ = d.Wait(ctx, "wrapped")
-		cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), wait.Timeout)
+	defer cancel()
+	status, err := d.Wait(ctx, "wrapped")
+	if err != nil {
+		t.Fatal("call did not time out:", err)
 	}
 	if status.State != circusv1.CallStatus_STATE_COMPLETED {
 		t.Fatal(status)
@@ -232,4 +295,39 @@ func TestNormalToolCannotRestartTimeout(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCancelFallbackDespiteAdvanceWhileArming: a cancelled tool that
+// ignores cancellation is abandoned once its grace period ends, even when
+// the clock reaches that instant while Cancel arms the timer.
+func TestCancelFallbackDespiteAdvanceWhileArming(t *testing.T) {
+	t.Parallel()
+	clk := &stepOnArm{Fake: clock.New(), step: daemon.AbandonGrace}
+	started := make(chan context.Context, 1)
+	release := make(chan struct{})
+	returned := make(chan struct{})
+	leakcheck.Allow(t, leakcheck.Calls, "this tool deliberately ignores cancellation to exercise abandonment")
+	d := newDispatcher(t, daemon.Options{Clock: clk, DefaultTimeout: 10 * time.Minute,
+		Tools: []daemon.Tool{fakeTool{"read", func(ctx context.Context, _ *circusv1.DeviceCall) (*circusv1.DeviceResult, error) {
+			started <- ctx
+			<-release
+			defer close(returned)
+			return output("late result"), nil
+		}}},
+	})
+	if _, err := d.Submit(readCall("cancel-arming")); err != nil {
+		t.Fatal(err)
+	}
+	ctx := receive(t, started)
+	clk.stepAt(clk.Now().Add(daemon.AbandonGrace))
+	if !d.Cancel("cancel-arming") {
+		t.Fatal("cancel returned false")
+	}
+	receive(t, ctx.Done())
+	r := completed(t, d, "cancel-arming")
+	if r.GetFault().GetCode() != circusv1.DaemonFault_CODE_ABANDONED_AFTER_CANCEL {
+		t.Fatalf("cancellation fallback: %v", r)
+	}
+	close(release)
+	receive(t, returned)
 }

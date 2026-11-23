@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/store"
@@ -560,4 +563,152 @@ func TestProviderChangeMovesOffer(t *testing.T) {
 	offerTo(t, ev1, "s")
 	wantRejected(t, call(t, c0, wc.Acquire("s", true)), circusv1.SessionReply_Rejected_CODE_NOT_OFFERED)
 	acquire(t, c1, "s")
+}
+
+// settleCounter counts the scheduler's SettleSession reads.
+type settleCounter struct {
+	store.Store
+	n atomic.Int64
+}
+
+func (c *settleCounter) SettleSession(ctx context.Context, id string, now int64) (store.SessionSettled, error) {
+	c.n.Add(1)
+	return c.Store.SettleSession(ctx, id, now)
+}
+
+// TestFallbackRecheckCap: one fallback pass evaluates at most
+// MaxReasonRechecks of the reasons due for a recheck; the next pass takes
+// the rest.
+func TestFallbackRecheckCap(t *testing.T) {
+	counter := &settleCounter{}
+	f := newFixture(t, func(c *sessions.Config) {
+		counter.Store = c.Store
+		c.Store = counter
+	})
+	sessions.DisableUpkeep(f.svc)
+	const extra = 10
+	n := sessions.MaxReasonRechecks + extra
+	for i := range n {
+		id := fmt.Sprintf("s%03d", i)
+		f.session(id, -1)
+		f.input(id, "1", store.InputNormal)
+	}
+	f.settle()
+	for i := range n {
+		if r := f.reason(fmt.Sprintf("s%03d", i)); r != circusv1.QueueReason_QUEUE_REASON_WORKER_OFFLINE {
+			t.Fatalf("reason %v", r)
+		}
+	}
+	f.clk.Advance(sessions.ReasonRecheck)
+	for _, want := range []int64{sessions.MaxReasonRechecks, extra, 0} {
+		counter.n.Store(0)
+		sessions.Fallback(f.svc, t.Context())
+		f.settle()
+		if got := counter.n.Load(); got != want {
+			t.Fatalf("fallback pass evaluated %d sessions, want %d", got, want)
+		}
+	}
+}
+
+// pagedRestart answers Start's first extension page with a cursor and
+// records what the next page is asked for.
+type pagedRestart struct {
+	store.Store
+	calls  []*store.RestartCursor
+	nows   []int64
+	cursor store.RestartCursor
+}
+
+func (p *pagedRestart) ExtendLeasesAfterRestart(_ context.Context, now, _ int64, after *store.RestartCursor, limit int) (int, *store.RestartCursor, error) {
+	p.calls = append(p.calls, after)
+	p.nows = append(p.nows, now)
+	if len(p.calls) == 1 {
+		return limit, &p.cursor, nil
+	}
+	return 0, nil, nil
+}
+
+// TestStartExtendsLeasesInPages: Start runs the restart extension page by
+// page, passing each page's cursor on with the same time, until the store
+// says the run is done.
+func TestStartExtendsLeasesInPages(t *testing.T) {
+	p := &pagedRestart{cursor: store.RestartCursor{Providers: true, ProviderID: "p", Within: true, AcquiredAt: 7, SessionID: "s"}}
+	newFixture(t, func(c *sessions.Config) { p.Store = c.Store; c.Store = p })
+	if len(p.calls) != 2 || p.calls[0] != nil || p.calls[1] == nil || *p.calls[1] != p.cursor || p.nows[0] != p.nows[1] {
+		t.Fatalf("pages asked for %v at %v", p.calls, p.nows)
+	}
+}
+
+// pauseSweep holds the next lease expiry sweep until resume is closed.
+type pauseSweep struct {
+	store.Store
+	next            atomic.Bool
+	entered, resume chan struct{}
+}
+
+func (p *pauseSweep) ExpireLeases(ctx context.Context, now int64, limit int) ([]store.LeaseLoss, error) {
+	if p.next.Swap(false) {
+		close(p.entered)
+		select {
+		case <-p.resume:
+		case <-ctx.Done():
+		}
+	}
+	return p.Store.ExpireLeases(ctx, now, limit)
+}
+
+// TestUpkeepRoundDueDuringRound: a round due while the previous round's
+// store work ran starts at once, not one interval after that work ends.
+func TestUpkeepRoundDueDuringRound(t *testing.T) {
+	p := &pauseSweep{entered: make(chan struct{}), resume: make(chan struct{})}
+	f := newFixture(t, func(c *sessions.Config) { p.Store = c.Store; c.Store = p })
+	p.next.Store(true)
+	f.clk.Advance(sessions.SweepInterval)
+	wait.Recv(t, p.entered)
+	// The next sweep falls due while this one waits on the store.
+	f.clk.Advance(sessions.SweepInterval)
+	close(p.resume)
+	wait.For(t, func() bool { return sessions.Rounds(f.svc) == 2 })
+}
+
+// stepOnArm is a fake clock that, when a timer is armed for the instant at
+// (by After or Until), first advances to it: another goroutine moving the
+// clock between a reader's Now and its arming.
+type stepOnArm struct {
+	*clock.Fake
+	mu sync.Mutex
+	at time.Time
+}
+
+func (c *stepOnArm) arming(at time.Time) {
+	c.mu.Lock()
+	hit := !c.at.IsZero() && at.Equal(c.at)
+	if hit {
+		c.at = time.Time{}
+	}
+	c.mu.Unlock()
+	if hit {
+		c.Advance(at.Sub(c.Now()))
+	}
+}
+
+func (c *stepOnArm) After(d time.Duration) <-chan time.Time {
+	c.arming(c.Now().Add(d))
+	return c.Fake.After(d)
+}
+
+func (c *stepOnArm) Until(at time.Time) <-chan time.Time {
+	c.arming(at)
+	return c.Fake.Until(at)
+}
+
+// TestFirstUpkeepDespiteAdvanceWhileArming: the first upkeep round runs
+// once the clock reaches its time, even when the clock gets there while
+// Start arms the alarm.
+func TestFirstUpkeepDespiteAdvanceWhileArming(t *testing.T) {
+	f := newFixture(t, func(c *sessions.Config) {
+		fake := c.Clock.(*clock.Fake)
+		c.Clock = &stepOnArm{Fake: fake, at: fake.Now().Add(sessions.SweepInterval)}
+	})
+	wait.For(t, func() bool { return sessions.Rounds(f.svc) == 1 })
 }

@@ -224,9 +224,12 @@ func (o *faultyOps) ConsumeGrant(ctx context.Context, f store.Fence, k store.Gra
 	return v, err
 }
 
-func (o *faultyOps) ExtendLeasesAfterRestart(ctx context.Context, now, expiresAt int64) (n int, err error) {
-	err = o.write(ctx, func(x store.Ops) error { n, err = x.ExtendLeasesAfterRestart(ctx, now, expiresAt); return err })
-	return n, err
+func (o *faultyOps) ExtendLeasesAfterRestart(ctx context.Context, now, expiresAt int64, after *store.RestartCursor, limit int) (n int, next *store.RestartCursor, err error) {
+	err = o.write(ctx, func(x store.Ops) error {
+		n, next, err = x.ExtendLeasesAfterRestart(ctx, now, expiresAt, after, limit)
+		return err
+	})
+	return n, next, err
 }
 
 func (o *faultyOps) RecoverSession(ctx context.Context, sessionID string, accept bool, at int64, maxViewBytes int64) (v store.SessionRecovered, err error) {

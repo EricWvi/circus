@@ -11,6 +11,7 @@ import (
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/daemon/toolcontext"
 	"github.com/EricWvi/circus/internal/identifier"
 	"github.com/EricWvi/circus/internal/textutil"
@@ -263,7 +264,7 @@ func (d *Dispatcher) SubmitDispatch(call *circusv1.DeviceCall, dispatchAge time.
 	if timeout > d.opts.MaxTimeout {
 		timeout = d.opts.MaxTimeout
 	}
-	ctx := &deadlineContext{deadline: d.opts.Clock.Now().Add(timeout), done: make(chan struct{}), timeout: timeout, clock: d.opts.Clock}
+	ctx := &deadlineContext{deadline: now.Add(timeout), done: make(chan struct{}), timeout: timeout, clock: d.opts.Clock}
 	preparation := time.Duration(0)
 	if tool, ok := d.tools[string(field.Name())].(PreparingTool); ok {
 		preparation = tool.PreparationBudget()
@@ -276,14 +277,15 @@ func (d *Dispatcher) SubmitDispatch(call *circusv1.DeviceCall, dispatchAge time.
 	d.calls[call.CallId] = r
 	var deadline, fallback <-chan time.Time
 	var fallbackAt time.Time
+	// Timers are armed for the instants themselves, measured from now, so a
+	// fake clock advanced meanwhile cannot postpone them.
 	if preparation > 0 {
-		fallback = d.opts.Clock.After(preparation)
 		fallbackAt = now.Add(preparation)
 	} else {
-		deadline = d.opts.Clock.After(timeout)
-		fallback = d.opts.Clock.After(timeout + AbandonGrace)
-		fallbackAt = now.Add(timeout + AbandonGrace)
+		deadline = clock.Until(d.opts.Clock, ctx.deadline)
+		fallbackAt = ctx.deadline.Add(AbandonGrace)
 	}
+	fallback = clock.Until(d.opts.Clock, fallbackAt)
 	d.wg.Add(1)
 	go d.execute(ctx, call, r, string(field.Name()), deadline, fallback, fallbackAt)
 	return d.status(call.CallId, r, now), nil
@@ -382,12 +384,12 @@ func (d *Dispatcher) execute(ctx *deadlineContext, call *circusv1.DeviceCall, r 
 		case <-start:
 			start = nil
 			if !cancelSeen {
+				// Armed for the instants themselves, so a fake clock
+				// advanced meanwhile cannot postpone them.
 				end, _ := ctx.Deadline()
-				now := d.opts.Clock.Now()
-				remaining := end.Sub(now)
-				deadline = d.opts.Clock.After(remaining)
-				fallback = d.opts.Clock.After(remaining + AbandonGrace)
-				fallbackAt = now.Add(remaining + AbandonGrace)
+				deadline = clock.Until(d.opts.Clock, end)
+				fallbackAt = end.Add(AbandonGrace)
+				fallback = clock.Until(d.opts.Clock, fallbackAt)
 			}
 		case result := <-returned:
 			d.complete(id, r, result)
@@ -517,7 +519,7 @@ func (d *Dispatcher) requestCancel(r *callRecord) {
 	r.cancel(context.Canceled)
 	r.cancelOnce.Do(func() {
 		at := d.opts.Clock.Now().Add(AbandonGrace)
-		r.cancelRequested <- cancelRequest{timer: d.opts.Clock.After(AbandonGrace), at: at}
+		r.cancelRequested <- cancelRequest{timer: clock.Until(d.opts.Clock, at), at: at}
 	})
 }
 

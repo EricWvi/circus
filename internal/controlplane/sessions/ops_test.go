@@ -13,7 +13,14 @@ import (
 	wc "github.com/EricWvi/circus/internal/testutil/workerclient"
 )
 
-// held returns a connection holding session s1 at the returned epoch.
+// held returns a connection holding session s1 at the returned epoch,
+// once the scheduler is done with what led there: the input's Wake may be
+// evaluated after the acquisition (the Offer came from a rescan, or the
+// Wake was deferred while the acquisition held the entry), and the Lease
+// reply's delivery may run after the reply reached c; both can nudge INPUT.
+// held returns after both, so a later TakeInputs clears INPUT for good and
+// nothing of the acquisition acts later (such Nudges may still be unread
+// on the returned events).
 func held(t *testing.T, f *fixture) (*wc.Client, wc.Events, uint64) {
 	t.Helper()
 	f.session("s1", -1)
@@ -21,7 +28,10 @@ func held(t *testing.T, f *fixture) (*wc.Client, wc.Events, uint64) {
 	ev := f.attach(c, 1)
 	f.input("s1", "go", store.InputNormal)
 	offerTo(t, ev, "s1")
-	return c, ev, acquire(t, c, "s1")
+	epoch := acquire(t, c, "s1")
+	wait.For(t, func() bool { return !sessions.Pending(f.svc, "s1") })
+	f.settle()
+	return c, ev, epoch
 }
 
 // TestApprovalsAndGrants: a pending approval is merged by key; resolving it

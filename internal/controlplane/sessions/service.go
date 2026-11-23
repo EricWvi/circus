@@ -247,12 +247,21 @@ func (s *Service) Start(ctx context.Context) error {
 	s.started = true
 	s.startedAt = s.nowMs()
 	s.mu.Unlock()
-	tctx, cancel := context.WithTimeout(ctx, StoreTimeout)
 	at := s.nowMs()
-	n, err := s.cfg.Store.ExtendLeasesAfterRestart(tctx, at, at+LeaseLifetime.Milliseconds())
-	cancel()
-	if err != nil {
-		return fmt.Errorf("sessions: extend leases after restart: %w", err)
+	n := 0
+	var cursor *store.RestartCursor
+	for {
+		tctx, cancel := context.WithTimeout(ctx, StoreTimeout)
+		page, next, err := s.cfg.Store.ExtendLeasesAfterRestart(tctx, at, at+LeaseLifetime.Milliseconds(), cursor, store.MaxPageSize)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("sessions: extend leases after restart: %w", err)
+		}
+		n += page
+		if next == nil {
+			break
+		}
+		cursor = next
 	}
 	if n > 0 {
 		s.log.InfoContext(ctx, "extended session leases after start", "count", n)
@@ -262,7 +271,7 @@ func (s *Service) Start(ctx context.Context) error {
 	s.stop = stop
 	s.mu.Unlock()
 	now := s.clk.Now()
-	alarm := s.clk.After(SweepInterval)
+	alarm := clock.Until(s.clk, now.Add(SweepInterval))
 	s.loops.Add(2)
 	go s.schedule(bg)
 	go s.upkeep(bg, now, alarm)

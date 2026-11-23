@@ -476,8 +476,7 @@ func testProviderRestartCap(t *testing.T, b Backend) {
 	acquire(t, s, "s2", "w2", "b2", t0+ttl+1)
 	must(t, s.DeleteProvider(ctx, "u1", "p3", t0+ttl+1)) // only an expired lease names it
 	restart := t0 + ttl + 2
-	n, err := s.ExtendLeasesAfterRestart(ctx, restart, restart+ttl)
-	must(t, err)
+	n := extendAfterRestart(t, s, restart, restart+ttl, store.MaxPageSize)
 	mustEqual(t, "extended", n, 3) // s2 (live), r1 (room), local (no provider)
 	for id, want := range map[string]int64{"s1": t0 + ttl, "g1": t0 + ttl, "s2": restart + ttl, "r1": restart + ttl, "local": restart + ttl} {
 		l, err := s.GetLease(ctx, id)
@@ -490,6 +489,89 @@ func testProviderRestartCap(t *testing.T, b Backend) {
 	n, err = s.CountProviderLeases(ctx, "p1", restart+1)
 	must(t, err)
 	mustEqual(t, "at the cap", n, 1)
+}
+
+// extendAfterRestart runs ExtendLeasesAfterRestart in pages of limit
+// until its cursor ends, checking each page's size, and returns how many
+// leases it extended.
+func extendAfterRestart(t *testing.T, s store.Store, now, expiresAt int64, limit int) int {
+	t.Helper()
+	total := 0
+	var cursor *store.RestartCursor
+	for pages := 1; ; pages++ {
+		n, next, err := s.ExtendLeasesAfterRestart(t.Context(), now, expiresAt, cursor, limit)
+		must(t, err)
+		if n > limit {
+			t.Fatalf("page of %d past limit %d", n, limit)
+		}
+		total += n
+		if next == nil {
+			return total
+		}
+		if pages > 1000 {
+			t.Fatalf("no end after %d pages", pages)
+		}
+		cursor = next
+	}
+}
+
+// testExtendLeasesAfterRestartPaged: run in pages of any size, the
+// extension after a restart extends exactly the leases one pass would:
+// unexpired ones, expired ones without a provider, and per provider the
+// oldest expired ones (by acquisition, then session id) that fit under its
+// cap next to its live leases. A page extends at most limit leases, and a
+// second run extends nothing.
+func testExtendLeasesAfterRestartPaged(t *testing.T, b Backend) {
+	for _, limit := range []int{1, 2, 3, 4, store.MaxPageSize} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			s, _ := open(t, b)
+			ctx := t.Context()
+			f := seed(t, s)
+			capped := newProvider("p1", "u1", "Capped", "w1")
+			capped.MaxSessions = 3
+			createProvider(t, s, capped)
+			createProvider(t, s, newProvider("p2", "u1", "Open", "w1"))
+			gone := newProvider("p3", "u1", "Gone", "w1")
+			createProvider(t, s, gone)
+			for id, p := range map[string]string{"e1": "p1", "e2": "p1", "e3": "p1", "live": "p1", "open1": "p2", "open2": "p2",
+				"g1": "p3", "x1": "", "x2": "", "released": ""} {
+				sessionWithProvider(t, s, f, id, p)
+			}
+			// e1, then e2 and e3 at the same time, run out; live is
+			// acquired after, so p1 has one live lease and room for two of
+			// the three: e1 and, by session id, e2.
+			acquire(t, s, "e3", "w1", "b1", t0+1)
+			acquire(t, s, "e1", "w1", "b1", t0)
+			acquire(t, s, "e2", "w1", "b1", t0+1)
+			acquire(t, s, "open2", "w1", "b1", t0)
+			acquire(t, s, "open1", "w1", "b1", t0)
+			acquire(t, s, "g1", "w1", "b1", t0)
+			acquire(t, s, "x1", "w1", "b1", t0)
+			released := acquire(t, s, "released", "w1", "b1", t0)
+			_, err := s.ReleaseLease(ctx, released)
+			must(t, err)
+			acquire(t, s, "live", "w1", "b1", t0+ttl+5)
+			acquire(t, s, "x2", "w1", "b1", t0+ttl+5)
+			must(t, s.DeleteProvider(ctx, "u1", "p3", t0+ttl+6))
+			restart := t0 + ttl + 10
+			mustEqual(t, "extended", extendAfterRestart(t, s, restart, restart+ttl, limit), 7) // e1, e2, live, open1, open2, x1, x2
+			for id, want := range map[string]int64{"e1": restart + ttl, "e2": restart + ttl, "e3": t0 + 1 + ttl, "live": restart + ttl,
+				"open1": restart + ttl, "open2": restart + ttl, "g1": t0 + ttl, "x1": restart + ttl, "x2": restart + ttl, "released": 0} {
+				l, err := s.GetLease(ctx, id)
+				must(t, err)
+				mustEqual(t, "expiry of "+id, l.ExpiresAt, want)
+			}
+			n, err := s.CountProviderLeases(ctx, "p1", restart+1)
+			must(t, err)
+			mustEqual(t, "at the cap", n, 3)
+			mustEqual(t, "second run", extendAfterRestart(t, s, restart, restart+ttl, limit), 0)
+		})
+	}
+	s, _ := open(t, b)
+	for _, limit := range []int{0, store.MaxPageSize + 1} {
+		_, _, err := s.ExtendLeasesAfterRestart(t.Context(), t0, t0+ttl, nil, limit)
+		mustIs(t, err, store.ErrInvalid)
+	}
 }
 
 // testProviderOwnLeaseAndExpired: the cap never counts the session's own

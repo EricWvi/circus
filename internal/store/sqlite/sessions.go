@@ -1,9 +1,12 @@
 package sqlite
 
 import (
+	"cmp"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -1041,56 +1044,132 @@ func (o *ops) loseMany(ctx context.Context, now int64, query string, args ...any
 	return out, err
 }
 
-func (o *ops) ExtendLeasesAfterRestart(ctx context.Context, now, expiresAt int64) (int, error) {
+func (o *ops) ExtendLeasesAfterRestart(ctx context.Context, now, expiresAt int64, after *store.RestartCursor, limit int) (int, *store.RestartCursor, error) {
+	if err := store.CheckLimit(limit); err != nil {
+		return 0, nil, err
+	}
 	if now == 0 || expiresAt <= now {
-		return 0, invalid("ExtendLeasesAfterRestart needs a time and a later expiry")
+		return 0, nil, invalid("ExtendLeasesAfterRestart needs a time and a later expiry")
 	}
 	var n int
+	var next *store.RestartCursor
 	err := o.unit(ctx, func(tx *ops) error {
-		// Unexpired leases and expired ones without a provider.
-		var err error
-		n, err = tx.exec(ctx, `UPDATE session_leases SET expires_at = ?1 WHERE holder_worker_id IS NOT NULL AND expires_at < ?1
-			AND (expires_at > ?2 OR provider_id IS NULL)`, expiresAt, now)
-		if err != nil {
-			return err
+		var c store.RestartCursor
+		if after != nil {
+			c = *after
 		}
-		// Expired leases under a provider, oldest first, while it has room.
-		rows, err := tx.q.QueryContext(ctx, `SELECT l.session_id, p.max_sessions FROM session_leases l
-			JOIN providers p ON p.id = l.provider_id
-			WHERE l.holder_worker_id IS NOT NULL AND l.expires_at <= ? ORDER BY l.acquired_at, l.session_id`, now)
-		if err != nil {
-			return mapErr(err)
+		n, next = 0, nil
+		if !c.Providers {
+			// Unexpired leases and expired ones without a provider, in
+			// session order from the cursor.
+			rows, err := tx.q.QueryContext(ctx, `UPDATE session_leases SET expires_at = ?1 WHERE session_id IN (
+				SELECT session_id FROM session_leases WHERE session_id > ?3 AND holder_worker_id IS NOT NULL
+					AND expires_at < ?1 AND (expires_at > ?2 OR provider_id IS NULL)
+				ORDER BY session_id LIMIT ?4) RETURNING session_id`, expiresAt, now, c.SessionID, limit)
+			if err != nil {
+				return mapErr(err)
+			}
+			ids, err := collect(rows, func(s scanner) (string, error) {
+				var id string
+				return id, mapErr(s.Scan(&id))
+			})
+			if err != nil {
+				return err
+			}
+			n = len(ids)
+			if n == limit {
+				c.SessionID = slices.Max(ids)
+				next = &c
+				return nil
+			}
+			c = store.RestartCursor{Providers: true}
 		}
-		type expired struct {
-			id  string
-			max int
-		}
-		leases, err := collect(rows, func(s scanner) (expired, error) {
-			var e expired
-			return e, mapErr(s.Scan(&e.id, &e.max))
-		})
-		if err != nil {
-			return err
-		}
-		for _, e := range leases {
-			if e.max > 0 {
-				live, err := tx.count(ctx, `SELECT COUNT(*) FROM session_leases WHERE provider_id =
-					(SELECT provider_id FROM session_leases WHERE session_id = ?) AND holder_worker_id IS NOT NULL AND expires_at > ?`, e.id, now)
+		// Expired leases under a provider that still exists: of each
+		// provider's, the oldest acquisitions that fit under its cap next
+		// to its live leases (all of them without a cap). A provider is
+		// taken up once its earlier ones are done; the leases a page
+		// extends count as live for the next, so pages extend the same
+		// leases as one pass. A full or deleted provider is passed over in
+		// one step.
+		for n < limit {
+			if !c.Within {
+				var p string
+				err := tx.q.QueryRow(ctx, `SELECT provider_id FROM session_leases WHERE provider_id > ?
+					AND holder_worker_id IS NOT NULL AND expires_at <= ? ORDER BY provider_id LIMIT 1`, c.ProviderID, now).Scan(&p)
+				if errors.Is(err, sql.ErrNoRows) {
+					return nil // the run is done
+				}
+				if err != nil {
+					return mapErr(err)
+				}
+				c = store.RestartCursor{Providers: true, ProviderID: p}
+			}
+			room := limit - n
+			var capacity int
+			err := tx.q.QueryRow(ctx, `SELECT max_sessions FROM providers WHERE id = ?`, c.ProviderID).Scan(&capacity)
+			if errors.Is(err, sql.ErrNoRows) {
+				c.Within = false // deleted: left to ExpireLeases
+				continue
+			}
+			if err != nil {
+				return mapErr(err)
+			}
+			if capacity > 0 {
+				live, err := tx.count(ctx, `SELECT COUNT(*) FROM session_leases WHERE provider_id = ?
+					AND holder_worker_id IS NOT NULL AND expires_at > ?`, c.ProviderID, now)
 				if err != nil {
 					return err
 				}
-				if live >= e.max {
+				if room = min(room, capacity-live); room <= 0 {
+					c.Within = false
 					continue
 				}
 			}
-			if _, err := tx.exec(ctx, `UPDATE session_leases SET expires_at = ? WHERE session_id = ?`, expiresAt, e.id); err != nil {
+			// Within a provider the page seeks past the leases it already
+			// passed, in the index's order, rather than reading them again.
+			from := ""
+			if c.Within {
+				from = "AND (acquired_at, session_id) > (?5, ?6)"
+			}
+			rows, err := tx.q.QueryContext(ctx, `UPDATE session_leases SET expires_at = ?1 WHERE session_id IN (
+				SELECT session_id FROM session_leases INDEXED BY session_leases_provider_age
+				WHERE provider_id = ?3 AND holder_worker_id IS NOT NULL AND expires_at <= ?2 `+from+`
+				ORDER BY acquired_at, session_id LIMIT ?4) RETURNING acquired_at, session_id`,
+				expiresAt, now, c.ProviderID, room, c.AcquiredAt, c.SessionID)
+			if err != nil {
+				return mapErr(err)
+			}
+			type key struct {
+				at int64
+				id string
+			}
+			keys, err := collect(rows, func(s scanner) (key, error) {
+				var k key
+				return k, mapErr(s.Scan(&k.at, &k.id))
+			})
+			if err != nil {
 				return err
 			}
-			n++
+			n += len(keys)
+			if len(keys) < room {
+				c.Within = false // the provider's expired leases are done
+				continue
+			}
+			last := slices.MaxFunc(keys, func(a, b key) int {
+				if a.at != b.at {
+					return cmp.Compare(a.at, b.at)
+				}
+				return strings.Compare(a.id, b.id)
+			})
+			c.Within, c.AcquiredAt, c.SessionID = true, last.at, last.id
 		}
+		next = &c
 		return nil
 	})
-	return n, err
+	if err != nil {
+		return 0, nil, err
+	}
+	return n, next, nil
 }
 
 func (o *ops) RecoverSession(ctx context.Context, sessionID string, accept bool, at int64, maxViewBytes int64) (store.SessionRecovered, error) {

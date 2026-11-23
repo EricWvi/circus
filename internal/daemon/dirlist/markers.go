@@ -18,7 +18,9 @@ func (l *Lister) Mark(ctx context.Context, clk clock.Clock, deadline time.Time, 
 	if len(entries) == 0 {
 		return
 	}
-	alarm := clk.After(deadline.Sub(clk.Now()))
+	// Armed for the deadline itself: After(deadline.Sub(Now())) would miss a
+	// fake clock advanced between the two calls.
+	alarm := clock.Until(clk, deadline)
 	check := func(probe func() bool) (value, checked bool) {
 		if ctx.Err() != nil || !clk.Now().Before(deadline) {
 			return false, false

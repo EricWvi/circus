@@ -67,6 +67,7 @@ func Run(t *testing.T, b Backend) {
 		{"ProjectDefaultProvider", testProjectDefaultProvider},
 		{"ProviderConcurrentAcquire", testProviderConcurrentAcquire},
 		{"ProviderRestartCap", testProviderRestartCap},
+		{"ExtendLeasesAfterRestartPaged", testExtendLeasesAfterRestartPaged},
 		{"ProviderOwnLeaseAndExpired", testProviderOwnLeaseAndExpired},
 		{"SessionProviderSameIsNoChange", testSessionProviderSameIsNoChange},
 		{"WorkspaceTransitions", testWorkspaceTransitions},

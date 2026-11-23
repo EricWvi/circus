@@ -446,13 +446,10 @@ func TestUnpersistedCallCap(t *testing.T) {
 // not re-send it.
 func TestEndedClearsInterrupt(t *testing.T) {
 	f := newFixture(t)
+	// held returns after its input Wake was evaluated, so TakeInputs clears
+	// INPUT for good and any Nudge after the resume below can only be a
+	// re-sent INTERRUPT.
 	c, ev, epoch := held(t, f)
-	// The INPUT Wake of held() may still be queued (deferred while the
-	// acquisition held the entry): evaluated after TakeInputs began, it
-	// raises INPUT again at a newer generation, which TakeInputs leaves
-	// pending and the resume below would re-send. Let it land first, so
-	// any Nudge after the resume can only be a re-sent INTERRUPT.
-	f.settle()
 	call(t, c, wc.TakeInputs("s1", epoch))
 	call(t, c, wc.Started("s1", epoch, 1, circusv1.TurnOrigin_TURN_ORIGIN_INPUT))
 	_, _, _, err := f.st.InterruptSession(t.Context(), "s1", ms(f))
