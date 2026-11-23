@@ -58,9 +58,11 @@ tasks:
       - go test -tags e2e ./tests/e2e/ -count=1
 
   e2e-race:
-    desc: Run the process end-to-end tests three times with the race detector
+    desc: Run the process end-to-end tests with the race detector, E2E_COUNT times (default 3)
+    vars:
+      E2E_COUNT: '{{.E2E_COUNT | default "3"}}'
     cmds:
-      - go test -race -tags e2e ./tests/e2e/ -count=3
+      - go test -race -tags e2e ./tests/e2e/ -count={{.E2E_COUNT}}
 
   check-gen:
     desc: Fail if generation changed tracked files or produced untracked ones

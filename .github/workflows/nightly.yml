@@ -35,9 +35,15 @@ jobs:
       - name: seeds from ${{ matrix.first-seed }}
         run: task seeds CIRCUS_ROUTER_SEEDS=100 CIRCUS_ROUTER_FIRST_SEED=${{ matrix.first-seed }}
 
+  # Three race runs of the e2e suite in parallel, one pass each: three
+  # passes in one process outgrow go test's 10-minute timeout.
   e2e-race:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -54,4 +60,5 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ github.token }}
-      - run: task e2e-race
+      - name: race pass ${{ matrix.run }}
+        run: task e2e-race E2E_COUNT=1
