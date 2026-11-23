@@ -26,12 +26,12 @@ import { cn } from "@/lib/utils"
 /** The signed-in user's devices (status, platform, and the projects on each), then their workers. */
 export function DevicesPage() {
   const { t } = useTranslation()
+  // Only the list itself (in DevicesSection) follows each status poll; the
+  // page renders again only when the devices change.
   const devices = useDevices({ live: true })
-  const projects = useProjects()
   const [adding, setAdding] = useState(false)
   const focus = useOverlayFocus()
-  // Stable, like `focus`: every status poll renders the page again, and the
-  // memoized dialog and workers must not follow.
+  // Stable, like `focus`, for the memoized sections and dialog.
   const { onOpenChange } = focus
   const setAddOpen = useCallback(
     (open: boolean) => {
@@ -40,38 +40,6 @@ export function DevicesPage() {
     },
     [onOpenChange],
   )
-
-  let body
-  // Only a failed first load shows the error; a failed refetch keeps the list.
-  if (devices.isError && !devices.data) {
-    body = (
-      <div className="flex flex-col items-center gap-4 py-12">
-        <p className="text-sm text-muted-foreground">{t("devices.loadFailed")}</p>
-        <Button variant="outline" onClick={() => void devices.refetch()}>
-          {t("common.tryAgain")}
-        </Button>
-      </div>
-    )
-  } else if (!devices.data) {
-    body = <LoadingList />
-  } else if (devices.data.length === 0) {
-    body = <NoDevices onAdd={() => setAddOpen(true)} />
-  } else {
-    body = (
-      <ul className="flex flex-col divide-y border">
-        {devices.data.map((device) => (
-          <DeviceRow
-            key={device.name}
-            device={device}
-            projects={projectsOn(device, projects.data)}
-            // Relative times count from the last fetch, so each refetch
-            // (every few seconds) also moves "last seen" along.
-            now={devices.dataUpdatedAt}
-          />
-        ))}
-      </ul>
-    )
-  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -90,12 +58,7 @@ export function DevicesPage() {
       </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-4 py-8">
-          <section className="flex flex-col gap-3" aria-labelledby="devices-heading">
-            <h2 id="devices-heading" className="text-sm font-medium">
-              {t("devices.devicesHeading")}
-            </h2>
-            {body}
-          </section>
+          <DevicesSection onAdd={setAddOpen} />
           <WorkersSection />
         </div>
       </div>
@@ -103,6 +66,58 @@ export function DevicesPage() {
     </div>
   )
 }
+
+/**
+ * The devices, kept fresh. Memoized, like WorkersSection: a status poll
+ * renders this section (its last seen times move) and not the page.
+ * `onAdd(true)` opens the add-device dialog.
+ */
+const DevicesSection = memo(function DevicesSection({ onAdd }: { onAdd: (open: boolean) => void }) {
+  const { t } = useTranslation()
+  const devices = useDevices({ live: true })
+  const projects = useProjects()
+
+  let body
+  // Only a failed first load shows the error; a failed refetch keeps the list.
+  if (devices.isError && !devices.data) {
+    body = (
+      <div className="flex flex-col items-center gap-4 py-12">
+        <p className="text-sm text-muted-foreground">{t("devices.loadFailed")}</p>
+        <Button variant="outline" onClick={() => void devices.refetch()}>
+          {t("common.tryAgain")}
+        </Button>
+      </div>
+    )
+  } else if (!devices.data) {
+    body = <LoadingList />
+  } else if (devices.data.length === 0) {
+    body = <NoDevices onAdd={() => onAdd(true)} />
+  } else {
+    body = (
+      <ul className="flex flex-col divide-y border">
+        {devices.data.map((device) => (
+          <DeviceRow
+            key={device.name}
+            device={device}
+            projects={projects.data}
+            // Relative times count from the last fetch, so each refetch
+            // (every few seconds) also moves "last seen" along.
+            lastSeen={lastSeenAgo(device, devices.dataUpdatedAt)}
+          />
+        ))}
+      </ul>
+    )
+  }
+
+  return (
+    <section className="flex flex-col gap-3" aria-labelledby="devices-heading">
+      <h2 id="devices-heading" className="text-sm font-medium">
+        {t("devices.devicesHeading")}
+      </h2>
+      {body}
+    </section>
+  )
+})
 
 /**
  * The projects with a location on the device, in the list's order (by
@@ -118,14 +133,38 @@ function projectsOn(device: Device, projects: Project[] | undefined): Project[] 
 /** "linux/amd64", or whichever half is known. */
 const platformOf = (device: Device) => [device.os, device.arch].filter(Boolean).join("/")
 
-function DeviceRow({ device, projects, now }: { device: Device; projects: Project[]; now: number }) {
+/**
+ * How long ago an offline device or worker was last seen, as of `now`; none
+ * when it is online or never connected.
+ */
+function lastSeenAgo(device: Pick<Device, "online" | "lastSeenUnixMs">, now: number): string | undefined {
+  return device.online || device.lastSeenUnixMs === 0 ? undefined : formatTimeAgo(device.lastSeenUnixMs, now)
+}
+
+/**
+ * Memoized, like WorkerRow: the list refetches every few seconds, mostly
+ * unchanged. The rows take the time since last seen as its text and the
+ * query's data as it is (both stay the same between refetches that change
+ * nothing), so such a refetch renders none of them.
+ */
+const DeviceRow = memo(function DeviceRow({
+  device,
+  projects: allProjects,
+  lastSeen,
+}: {
+  device: Device
+  /** All the user's projects; the row shows those on its device. */
+  projects: Project[] | undefined
+  lastSeen: string | undefined
+}) {
   const { t } = useTranslation()
   const platform = platformOf(device)
+  const projects = projectsOn(device, allProjects)
   return (
     <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
       <DeviceStatusDot online={device.online} />
       <span className="truncate text-sm font-medium">{device.name}</span>
-      <LinkState device={device} now={now} />
+      <LinkState device={device} lastSeen={lastSeen} />
       {(platform || device.version) && (
         <p className="col-span-2 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
           {platform && <span>{platform}</span>}
@@ -152,7 +191,7 @@ function DeviceRow({ device, projects, now }: { device: Device; projects: Projec
       )}
     </li>
   )
-}
+})
 
 /** The user's workers, read only: status, version, and the devices on the same machine. */
 const WorkersSection = memo(function WorkersSection() {
@@ -185,7 +224,7 @@ const WorkersSection = memo(function WorkersSection() {
     body = (
       <ul className="flex flex-col divide-y border">
         {workers.data.map((w) => (
-          <WorkerRow key={w.workerId} worker={w} now={workers.dataUpdatedAt} />
+          <WorkerRow key={w.workerId} worker={w} lastSeen={lastSeenAgo(w, workers.dataUpdatedAt)} />
         ))}
       </ul>
     )
@@ -203,14 +242,15 @@ const WorkersSection = memo(function WorkersSection() {
   )
 })
 
-function WorkerRow({ worker, now }: { worker: Worker; now: number }) {
+/** Memoized, like DeviceRow. */
+const WorkerRow = memo(function WorkerRow({ worker, lastSeen }: { worker: Worker; lastSeen: string | undefined }) {
   const { t } = useTranslation()
   const platform = [worker.os, worker.arch].filter(Boolean).join("/")
   return (
     <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
       <DeviceStatusDot online={worker.online} />
       <span className="truncate text-sm font-medium">{worker.name}</span>
-      <LinkState device={worker} now={now} />
+      <LinkState device={worker} lastSeen={lastSeen} />
       {(platform || worker.version) && (
         <p className="col-span-2 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
           {platform && <span>{platform}</span>}
@@ -234,14 +274,24 @@ function WorkerRow({ worker, now }: { worker: Worker; now: number }) {
       )}
     </li>
   )
-}
+})
 
-/** "Online", or when an offline device or worker was last seen (the date on hover). */
-function LinkState({ device, now }: { device: Pick<Device, "online" | "lastSeenUnixMs">; now: number }) {
+/**
+ * "Online", or when an offline device or worker was last seen (the date on
+ * hover). `lastSeen` is how long ago, from lastSeenAgo: none when online or
+ * never connected.
+ */
+function LinkState({
+  device,
+  lastSeen,
+}: {
+  device: Pick<Device, "online" | "lastSeenUnixMs">
+  lastSeen: string | undefined
+}) {
   const { t } = useTranslation()
   const className = "shrink-0 text-xs whitespace-nowrap text-muted-foreground"
   if (device.online) return <span className={cn(className, "text-foreground")}>{t("devices.online")}</span>
-  if (device.lastSeenUnixMs === 0) return <span className={className}>{t("devices.neverConnected")}</span>
+  if (lastSeen === undefined) return <span className={className}>{t("devices.neverConnected")}</span>
   return (
     <InfoTip content={formatDateTime(device.lastSeenUnixMs)} side="top" align="end">
       <time
@@ -249,7 +299,7 @@ function LinkState({ device, now }: { device: Pick<Device, "online" | "lastSeenU
         dateTime={new Date(device.lastSeenUnixMs).toISOString()}
         className={cn(className, "cursor-default rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50")}
       >
-        {t("devices.lastSeen", { ago: formatTimeAgo(device.lastSeenUnixMs, now) })}
+        {t("devices.lastSeen", { ago: lastSeen })}
       </time>
     </InfoTip>
   )

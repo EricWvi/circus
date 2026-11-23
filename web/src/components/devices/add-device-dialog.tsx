@@ -67,7 +67,11 @@ export const AddDeviceDialog = memo(function AddDeviceDialog({
   )
 })
 
-/** The dialog's contents. Mounted with the dialog, so every opening starts over. */
+/**
+ * The dialog's contents. Mounted with the dialog, so every opening starts
+ * over. It follows the devices, so every status poll renders it; its parts
+ * are memoized and render only when their own props change.
+ */
 function AddDevice() {
   const { t } = useTranslation()
   const devices = useDevices({ live: true })
@@ -238,6 +242,10 @@ function usePlatform(): [Platform, (p: Platform) => void] {
     detectPlatform(typeof navigator === "undefined" ? undefined : (navigator as Navigator & NavigatorHints)),
   )
   const chosen = useRef(false)
+  const choose = useCallback((p: Platform) => {
+    chosen.current = true
+    setPlatform(p)
+  }, [])
   useEffect(() => {
     let live = true
     void detectArchitecture(navigator as Navigator & HighEntropyHints).then((p) => {
@@ -247,16 +255,10 @@ function usePlatform(): [Platform, (p: Platform) => void] {
       live = false
     }
   }, [])
-  return [
-    platform,
-    (p) => {
-      chosen.current = true
-      setPlatform(p)
-    },
-  ]
+  return [platform, choose]
 }
 
-function RoleChoice({
+const RoleChoice = memo(function RoleChoice({
   value,
   onChange,
   disabled,
@@ -297,9 +299,15 @@ function RoleChoice({
       ))}
     </fieldset>
   )
-}
+})
 
-function PlatformChoice({ value, onChange }: { value: Platform; onChange: (p: Platform) => void }) {
+const PlatformChoice = memo(function PlatformChoice({
+  value,
+  onChange,
+}: {
+  value: Platform
+  onChange: (p: Platform) => void
+}) {
   const { t } = useTranslation()
   const { triggerRef, onOpenChange, onCloseAutoFocus } = useOverlayFocus<HTMLButtonElement>()
   return (
@@ -319,7 +327,7 @@ function PlatformChoice({ value, onChange }: { value: Platform; onChange: (p: Pl
       </Select>
     </Field>
   )
-}
+})
 
 const MINUTE = 60_000
 
@@ -363,7 +371,7 @@ function useKeyboardFocusOnMount<T extends HTMLElement>() {
   return ref
 }
 
-function LinkPanel({
+const LinkPanel = memo(function LinkPanel({
   link,
   deadlineUnixMs,
   role,
@@ -408,7 +416,7 @@ function LinkPanel({
       )}
     </section>
   )
-}
+})
 
 function Expired({ onGenerate, busy }: { onGenerate: () => void; busy: boolean }) {
   const { t } = useTranslation()

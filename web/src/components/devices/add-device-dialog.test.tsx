@@ -319,13 +319,15 @@ describe("the add device dialog", () => {
   })
 
   describe("keyboard focus", () => {
+    // Links that expire in a minute: an hour of the page's polls would take
+    // far longer to run, and the expiry is the same.
     it("moves to the copy button, then to Generate new link", async () => {
-      await renderPage({ issue: release() })
+      await renderPage({ issue: release("v0.3.0", MINUTE) })
       await openDialog()
       useKeyboard()
       await generate()
       expect(document.activeElement?.getAttribute("aria-label")).toBe("Copy command")
-      await advance(HOUR)
+      await advanceTo(MINUTE)
       expect(document.activeElement?.textContent).toBe("Generate new link")
     })
 
@@ -342,11 +344,12 @@ describe("the add device dialog", () => {
     })
 
     it("stays put after pointer use", async () => {
-      await renderPage({ issue: release() })
+      await renderPage({ issue: release("v0.3.0", MINUTE) })
       await openDialog()
       await generate()
       expect(document.activeElement?.getAttribute("aria-label")).not.toBe("Copy command")
-      await advance(HOUR)
+      await advanceTo(MINUTE)
+      expect(dialog().getByText("This link expired")).toBeTruthy()
       expect(document.activeElement?.textContent).not.toBe("Generate new link")
     })
   })

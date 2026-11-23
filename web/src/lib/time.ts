@@ -4,6 +4,23 @@ const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
+const relativeFormats = new Map<string, Intl.RelativeTimeFormat>()
+
+/**
+ * One formatter per language and style, made on first use: lists format
+ * their times on every refresh, and making a formatter costs far more than
+ * using one.
+ */
+function relativeFormat(language: string, options: Intl.RelativeTimeFormatOptions): Intl.RelativeTimeFormat {
+  const key = `${language} ${options.style ?? "long"} ${options.numeric ?? "always"}`
+  let format = relativeFormats.get(key)
+  if (!format) {
+    format = new Intl.RelativeTimeFormat(language, options)
+    relativeFormats.set(key, format)
+  }
+  return format
+}
+
 /**
  * Compact relative time in the active language: "now", "5m", "3h", "2d" (in
  * Chinese 刚刚, 5 分钟前, 3 小时前, 2 天前), and a short date after a week.
@@ -33,7 +50,7 @@ export function formatTimeAgo(
 ): string {
   const diff = Math.max(0, now - unixMs)
   if (diff < MINUTE) return i18n.t("time.justNow", { lng: language })
-  const format = new Intl.RelativeTimeFormat(language, { style: "narrow", numeric: "auto" })
+  const format = relativeFormat(language, { style: "narrow", numeric: "auto" })
   if (diff < HOUR) return spaceDigits(format.format(-Math.floor(diff / MINUTE), "minute"))
   if (diff < DAY) return spaceDigits(format.format(-Math.floor(diff / HOUR), "hour"))
   return spaceDigits(format.format(-Math.floor(diff / DAY), "day"))
@@ -55,7 +72,7 @@ export function formatTimeUntil(
   language: string = currentLanguage(),
 ): string {
   const minutes = Math.max(1, Math.ceil((unixMs - now) / MINUTE))
-  const format = new Intl.RelativeTimeFormat(language, { numeric: "always" })
+  const format = relativeFormat(language, { numeric: "always" })
   if (minutes < 60) return spaceDigits(format.format(minutes, "minute"))
   if (minutes < 24 * 60) return spaceDigits(format.format(Math.floor(minutes / 60), "hour"))
   return spaceDigits(format.format(Math.floor(minutes / (24 * 60)), "day"))
