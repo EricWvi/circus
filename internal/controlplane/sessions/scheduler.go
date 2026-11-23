@@ -643,7 +643,9 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 	}
 	// Re-raising rs here gives it a newer generation than the Wake's, so
 	// an operation that started between the Wake and now no longer clears
-	// it: at worst one spurious Nudge, never a lost one.
+	// it: at worst a spurious reason, re-sent with every Nudge, resume or
+	// lease reply until the holder's next TakeInputs (which finds nothing
+	// and clears it), never a lost one.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// The reads above ran without s.mu: an AcquireLease or ResumeLeases may
