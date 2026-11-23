@@ -15,6 +15,7 @@ import (
 	"github.com/EricWvi/circus/internal/store/sqlite"
 	"github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/go-git/go-git/v5/plumbing"
+	"golang.org/x/sys/unix"
 )
 
 func TestConcurrentCommitMainAcrossProcesses(t *testing.T) {
@@ -135,13 +136,13 @@ func testLedgerReplayStoreLatency(t *testing.T, decisions, commits int) {
 	}
 	publishFixture(t, r, second.Hash, head)
 	m.st = hideObjectOnReplace{LedgerOps: db, path: filepath.Join(r.dir, "objects", old[:2], old[2:])}
-	const maxLatency = 2 * time.Second
-	finish := sampleStoreLatency(t, db, maxLatency)
+	const maxHold = 2 * time.Second
+	finish := sampleStoreLatency(t, db, maxHold)
 	ds[0].Body = []byte("next")
 	committed, err := m.CommitMain(ctx, "project", ds, opts)
 	got := finish()
 	check(t, err)
-	t.Logf("%d decisions and %d commits: %d concurrent reads, max latency %s", decisions, commits+2, got.count, got.max)
+	t.Logf("%d decisions and %d commits: %d concurrent reads, max latency %s, max CPU time during a read %s", decisions, commits+2, got.count, got.max, got.busy)
 	indexed, err := db.GetLedgerHead(ctx, "project")
 	check(t, err)
 	if indexed != committed {
@@ -151,12 +152,19 @@ func testLedgerReplayStoreLatency(t *testing.T, decisions, commits int) {
 
 type latencySamples struct {
 	count int
-	max   time.Duration
+	max   time.Duration // longest call
+	busy  time.Duration // most CPU time the process used during one call
 	err   error
 }
 
 // sampleStoreLatency calls GetUser in a loop until the returned function
-// is called, and fails the test if any call took longer than limit.
+// is called, and fails the test if the process used more than limit of CPU
+// time during any call. The pool has a single connection, so a call waits
+// while another goroutine holds it in a transaction, and the CPU time the
+// process uses meanwhile is that transaction's work: a transaction sized
+// by the history uses the CPU time of the history. Wall time would also
+// count the process being descheduled or stalled on I/O by other load on
+// the machine, which says nothing about how long a transaction is.
 func sampleStoreLatency(t *testing.T, db store.Store, limit time.Duration) func() latencySamples {
 	t.Helper()
 	stop := make(chan struct{})
@@ -172,10 +180,11 @@ func sampleStoreLatency(t *testing.T, db store.Store, limit time.Duration) func(
 				return
 			default:
 			}
-			call, cancel := context.WithTimeout(t.Context(), limit)
-			now := time.Now()
+			call, cancel := context.WithTimeout(t.Context(), wait.Timeout)
+			now, cpu := time.Now(), processCPU(t)
 			_, s.err = db.GetUser(call, "owner")
 			cancel()
+			s.busy = max(s.busy, processCPU(t)-cpu)
 			s.max = max(s.max, time.Since(now))
 			s.count++
 			if s.err != nil {
@@ -189,11 +198,20 @@ func sampleStoreLatency(t *testing.T, db store.Store, limit time.Duration) func(
 		t.Helper()
 		close(stop)
 		got := <-result
-		if got.err != nil || got.max > limit || got.count < 2 {
+		if got.err != nil || got.busy > limit || got.count < 2 {
 			t.Fatalf("concurrent GetUser samples: %+v", got)
 		}
 		return got
 	}
+}
+
+// processCPU returns the user and system CPU time the process has used.
+func processCPU(t *testing.T) time.Duration {
+	var usage unix.Rusage
+	if err := unix.Getrusage(unix.RUSAGE_SELF, &usage); err != nil {
+		t.Error(err)
+	}
+	return time.Duration(usage.Utime.Nano() + usage.Stime.Nano())
 }
 
 // An index install of more than 10^5 version rows (2×10^4 under the race
@@ -241,13 +259,13 @@ func TestFullLedgerInstallLeavesStoreAvailable(t *testing.T) {
 	}
 	publishFixture(t, r, published, head)
 
-	const maxLatency = 500 * time.Millisecond
-	finish := sampleStoreLatency(t, db, maxLatency)
+	const maxHold = 500 * time.Millisecond
+	finish := sampleStoreLatency(t, db, maxHold)
 	start := time.Now()
 	err = m.Reconcile(ctx)
 	got := finish()
 	check(t, err)
-	t.Logf("installed %d versions in %s: %d concurrent reads, max latency %s", commits*len(ds), time.Since(start), got.count, got.max)
+	t.Logf("installed %d versions in %s: %d concurrent reads, max latency %s, max CPU time during a read %s", commits*len(ds), time.Since(start), got.count, got.max, got.busy)
 	index, err := db.GetLedgerIndex(ctx, "project")
 	check(t, err)
 	if index.Head != head.String() || len(index.Entries) != len(ds) {

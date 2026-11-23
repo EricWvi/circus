@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -687,7 +688,11 @@ func TestBrokenProjectChecksAreBounded(t *testing.T) {
 			release()
 		}
 	}()
-	base := runtime.NumGoroutine()
+	// Count only the goroutines the manager starts: the bound is on checks,
+	// and runtime.NumGoroutine also counts goroutines that end on their
+	// own, such as the commits' SQLite query watchers and the timer that
+	// cancels a reader's context, which may not have exited yet.
+	base := managerGoroutines()
 	read := func(id string) {
 		t.Helper()
 		m.mu.Lock()
@@ -713,8 +718,8 @@ func TestBrokenProjectChecksAreBounded(t *testing.T) {
 	if running := len(m.checkSlots); running != maxProjectChecks {
 		t.Fatalf("%d checks running, want %d", running, maxProjectChecks)
 	}
-	if extra := runtime.NumGoroutine() - base; extra > maxProjectChecks {
-		t.Fatalf("%d goroutines more than before the reads", extra)
+	if extra := managerGoroutines() - base; extra > maxProjectChecks {
+		t.Fatalf("%d manager goroutines more than before the reads", extra)
 	}
 	closing, cancel := context.WithTimeout(ctx, wait.Timeout)
 	defer cancel()
@@ -738,6 +743,21 @@ func TestBrokenProjectChecksAreBounded(t *testing.T) {
 	if after != delay {
 		t.Fatalf("a read after Close ran a check: delay %s, then %s", delay, after)
 	}
+}
+
+// managerGoroutines counts the goroutines that a Manager method started.
+func managerGoroutines() int {
+	buf := make([]byte, 64<<10)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	creator := "\ncreated by " + reflect.TypeFor[Manager]().PkgPath() + ".(*Manager)."
+	return strings.Count(string(buf), creator)
 }
 
 // An empty index for a repository with a main line, as left by a refused
