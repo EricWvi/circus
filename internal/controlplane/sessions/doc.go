@@ -180,6 +180,109 @@
 // not see survives the operation's clearing (each reason carries the Wake
 // generation that set it).
 //
+// # Logging
+//
+// The service logs through Config.Logger with log/slog: short fixed
+// English messages, snake_case keys (session_id, worker_id, boot_id,
+// conn_id, epoch, ...). At info, the low-frequency events an operator
+// follows a session by: "lease acquired" (with fresh, reattached and the
+// lease's provider_id); "lease ended"; "leases resumed" (one line per
+// ResumeLeases call, refused and failed ones included: result ok, rejected
+// or failed, and counts per outcome); "turn started" and "turn ended" (a
+// duplicate report logs nothing); "transcript repaired" (only when the
+// session was broken); "session stopped" (reason transcript_full); "queue
+// reason changed" (the KIND_QUEUE name); "worker disconnect marked" and
+// "worker disconnect cleared" (only on a change); "worker attached",
+// "worker connection closed" (last_of_boot, marked) and "old boot leases
+// released". "session broken" is a warning: an ENDED report with an
+// incomplete transcript that moved the session to broken. A queue reason
+// is logged on every change of its entry, so an entry dropped from a full
+// table (room) logs its reason again when an evaluation tracks it anew,
+// although the reason itself never went away.
+//
+// "lease ended" is written once per committed end of a lease, from the
+// loss the store returned (holder, epoch, interrupted), by lost (which
+// returns it for its caller to write) and by the web API's own
+// lease-ending transactions (LogLeaseEnded). Its reason comes from the operation that committed the
+// end: released (the holder's ReleaseLease; a repeated release ended
+// nothing and logs nothing), expired (the sweep, an evaluation's settle, or
+// an acquisition that replaced an expired lease), taken_over (the live
+// holder's own fresh acquisition took a new epoch), stopped and broken (a
+// fresh acquisition by the holder of a stopped or broken session released
+// it), boot_changed (a newer boot of the worker released it),
+// provider_changed (UpdateSession) and recovered (RecoverSession). A
+// binding the scheduler only infers is gone (an evaluation that finds no
+// live lease or another holder, a deleted session, an acquisition or
+// resumption replacing a different tracked holder) is a debug "lease
+// binding dropped" with a cause, never a second "lease ended". A lease row
+// deleted with its session (an expired, unswept lease of a stopped
+// session) is reported by no store call and logs no "lease ended".
+//
+// At debug, the high-frequency events: "offer queued" and "offer
+// withdrawn" (the scheduler's decision, with the connection's load and a
+// cause; an Offer queued may still never reach the worker, when its
+// connection closes or the Offer moves first), "lease binding dropped",
+// "lease extension round", "nudge sent" (after the send), "stale read
+// retried" and "stale read parked", "inputs taken", "transcript appended",
+// "events published", and the worker's account email ("worker account").
+// Whether the debug records collected under s.mu (Offers, dropped
+// bindings, stale reads) are built is decided once, by asking the logger
+// for debug with context.Background() in New (s.dbg; the server's level is
+// fixed at start), so no handler method is asked under s.mu. With a logger
+// whose level changes later, a debug level off at New builds none of them
+// ever, and one on at New builds their attributes even after debug was
+// turned off; the handler's own check when they are written, with the
+// context they are written with, still filters them. The debug sites
+// outside s.mu check the level, for the context they log with, before
+// building attributes.
+//
+// Records carry only ids (session, user, project, device, worker, boot,
+// connection, provider, input, approval), epochs, turn and batch numbers,
+// enum names (reasons, causes, outcomes, origins, priorities, decisions,
+// results), counts, byte sizes, flags, Unix millisecond times, the worker's
+// SDK and Claude versions and max_sessions, and, at debug only, the
+// worker's account email. Never logged, at any level: message and input
+// text, transcript entries or their JSON, tool inputs and outputs, approval
+// text, event payloads, usage JSON, provider secrets (key, OAuth token),
+// the provider's base URL, custom environment variables and their names,
+// the launch environment, and free-form session settings (model,
+// permission mode).
+//
+// No logger method runs while s.mu is held: code under s.mu collects its
+// records in s.pend (later), and unlock, which every critical section ends
+// with, detaches them, releases s.mu and then writes them, in the order
+// they were collected (unlockKeep hands them to the caller instead, which
+// writes them later). Records of concurrent critical sections may
+// interleave in another order than the sections ran.
+//
+// A committed state change is applied and announced before its record is
+// written: the binding forgotten, revocations queued, the Bus told, the
+// session woken or nudged, the operation's reservation ended. Every loss
+// of a committed page (the expiry sweep, a boot's release of other boots'
+// leases) is applied before any of the page's records is written, and a
+// successful Connect writes its boot's release only once it has registered
+// the connection and its boot and withdrawn the Offers of stale
+// connections. A Connect that returns an error (a later page's release
+// failed, or the service is closed) registers nothing and writes the
+// records of the losses it committed anyway. The web API writes its
+// records after its Bus calls, Wakes and job stops.
+//
+// That, and that no record is written under s.mu, is all the service
+// guarantees about a slow sink. A goroutine that writes a record waits for
+// the handler, so a handler that blocks delays that goroutine's own next
+// steps: a link's next request and its reply, the scheduler's next
+// evaluation, a hint sender's next hint, and whatever waits for that
+// goroutine (Close waits for its connection's sender before it records the
+// disconnect). A handler that panics loses the rest of the batch being
+// written and unwinds the writing goroutine; s.mu is released already, and
+// lost releases it in a deferred call should a callback panic. A panic in
+// a store call or a callback during an expiry sweep or a boot's release
+// also drops the records of the losses that sweep or release had already
+// applied and not yet written (the losses themselves stand: committed and
+// applied). A Connect whose release records panic after it registered the
+// connection closes that connection, as its link would, and panics on
+// with the same value.
+//
 // # Bounds and worst-case memory
 //
 // With C worker connections (workerlink.Config.MaxConnections, default 8)
@@ -227,13 +330,45 @@
 //     MaxTracked keys (about 4 MiB); each connection remembers 16 recent
 //     AcquireLeases (about 4 KiB); the current-boot map holds one entry per
 //     worker identity that connected since start;
+//   - log records: one critical section's batch (s.pend) holds at most one
+//     record per tracked entry for a pass over the table (a connection's
+//     close withdraws an Offer or marks a lease per entry; Connect and the
+//     fallback withdraw Offers) plus a few per session it acts on (at most
+//     64 in a ResumeLeases), about 8,700 records. A record is 48 bytes in
+//     the batch (up to about 1.15 times that with the slice's spare
+//     capacity) and its own attribute array of at most five 40-byte
+//     attributes (208 bytes allocated): about 264 bytes, 2.2 MiB a batch,
+//     plus the ids it keeps alive once their entry is gone (at most three
+//     of 128 bytes a record, 3.2 MiB). unlock detaches the batch and holds
+//     it while the handler writes it, and unlockKeep's caller holds it
+//     until its follow-ups are done (Close's sender stop and disconnect
+//     write). A goroutine can hold more than one meanwhile, the extra ones
+//     small: an evaluation holds its loss's records while it writes
+//     its own section's, an acquisition the loss's while it binds, the
+//     expiry sweep a page's (at most 256 losses) until all are applied,
+//     and Connect a boot release's, every page of it, until it has
+//     registered. A loss is at most two records (the lease end, a cleared
+//     disconnect mark), about 1.3 KiB with the ids they keep alive, so a
+//     page is about 0.33 MiB. The release goes on while pages come back
+//     full, and the code bounds their number only indirectly: the first
+//     pass releases what the old boots held, at most one lease per session
+//     of the worker's user (the store's per-user cap, 1000: four pages,
+//     1.3 MiB); a further full page needs 256 leases the old boot acquired
+//     again between two page transactions, each through an Offer, which
+//     an old connection gets only while its leases and Offers are below its
+//     max_sessions (at most 64), so only an old process with at least four
+//     full connections still taking Offers between pages, which a
+//     replaced worker does not do for long. The
+//     large batches come from the upkeep loop (fallback) and the
+//     connections' link goroutines (Connect, Close), others hold a few
+//     records (a sender's detach at most 64): (C + 1) · 5.4 MiB = 49 MiB;
 //   - goroutines: the scheduler and the upkeep loop, one hint sender per
 //     attached connection, at most 4 job-stop calls after a
 //     transcript-quota stop, and one per open read operation (at most 64
 //     per connection, all but ReadConcurrency waiting for a permit or a
 //     send).
 //
-// At the defaults that is about 1,039 MiB. Live-only events handed to the
+// At the defaults that is about 1,093 MiB. Live-only events handed to the
 // Bus (at most 128 per batch, each payload at most 256 KiB; KIND_QUEUE and
 // KIND_WORKER announcements under 64 bytes each) are charged to
 // each watcher's queue (bus.go) and counted with the watch streams; a

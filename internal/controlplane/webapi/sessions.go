@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -288,9 +289,12 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 	now := s.now().UnixMilli()
 	var out *circusv1.Session
 	var workspaceChange store.WorkspaceChange
+	// created is the session this call created; zero for a replay.
+	var created store.Session
 	const requestConflict = "this client request id was used for a different session"
 	attempt := func(ctx context.Context, tx store.Ops) error {
 		workspaceChange = store.WorkspaceChange{}
+		created = store.Session{}
 		p, err := tx.GetProject(ctx, u.ID, m.GetProjectId())
 		if errors.Is(err, store.ErrNotFound) {
 			return connect.NewError(connect.CodeNotFound, errProjectNotFound)
@@ -377,6 +381,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 			return err
 		}
 		if res.Created {
+			created = res.Session
 			if res.Session.Workspace {
 				workspaceChange, err = retryWorkspace(ctx, tx, workspace, now)
 				if err != nil {
@@ -417,6 +422,11 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		return nil, s.sessionError(ctx, "create session", err)
 	}
 	s.workspaceCommitted(workspaceChange)
+	if c := created; c.ID != "" {
+		s.logger.LogAttrs(ctx, slog.LevelInfo, "session created", slog.String("session_id", c.ID), slog.String("user_id", c.UserID),
+			slog.String("project_id", c.ProjectID), slog.String("device_id", c.DefaultDeviceID), slog.String("pinned_worker_id", c.PinnedWorkerID),
+			slog.Bool("local", c.Local), slog.String("provider_id", c.ProviderID))
+	}
 	return connect.NewResponse(&circusv1.CreateSessionResponse{Session: out}), nil
 }
 
@@ -547,6 +557,10 @@ func (s *Service) SendMessage(ctx context.Context, req *connect.Request[circusv1
 			reasons = append(reasons, circusv1.WorkerEvent_Nudge_REASON_INTERRUPT)
 		}
 		s.waker.Wake(m.GetSessionId(), reasons...)
+		if s.logger.Enabled(ctx, slog.LevelDebug) {
+			s.logger.LogAttrs(ctx, slog.LevelDebug, "message accepted", slog.String("session_id", m.GetSessionId()),
+				slog.String("input_id", res.Input.InputID), slog.String("priority", string(priority)), slog.Int("bytes", len(m.GetText())))
+		}
 	}
 	return connect.NewResponse(&circusv1.SendMessageResponse{InputId: res.Input.InputID, EventSeq: uint64(seq)}), nil
 }
@@ -691,6 +705,7 @@ func (s *Service) UpdateSession(ctx context.Context, req *connect.Request[circus
 	}
 	var out *circusv1.Session
 	var set store.SessionProviderSet
+	var oldProvider string
 	err = s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
 		now := s.now().UnixMilli()
 		set = store.SessionProviderSet{}
@@ -698,6 +713,7 @@ func (s *Service) UpdateSession(ctx context.Context, req *connect.Request[circus
 		if err != nil {
 			return err
 		}
+		oldProvider = cur.ProviderID
 		if m.Title != nil {
 			if err := tx.SetSessionTitle(ctx, m.GetSessionId(), title); err != nil {
 				return err
@@ -742,6 +758,11 @@ func (s *Service) UpdateSession(ctx context.Context, req *connect.Request[circus
 		// holder's connection and schedules the session under its new
 		// provider.
 		s.waker.Wake(m.GetSessionId())
+		s.logger.LogAttrs(ctx, slog.LevelInfo, "session provider changed", slog.String("session_id", m.GetSessionId()),
+			slog.String("old_provider_id", oldProvider), slog.String("provider_id", set.Session.ProviderID))
+		if l := set.Loss; l != nil {
+			sessions.LogLeaseEnded(ctx, s.logger, *l, sessions.LeaseEndProviderChanged)
+		}
 	}
 	return connect.NewResponse(out), nil
 }
@@ -866,6 +887,10 @@ func (s *Service) ResolveApproval(ctx context.Context, req *connect.Request[circ
 	if res.Changed && res.Approval.State == store.ApprovalApproved {
 		s.waker.Wake(res.Approval.SessionID, circusv1.WorkerEvent_Nudge_REASON_APPROVAL)
 	}
+	if res.Changed {
+		s.logger.LogAttrs(ctx, slog.LevelInfo, "approval resolved", slog.String("session_id", res.Approval.SessionID),
+			slog.String("approval_id", id), slog.String("decision", string(res.Approval.State)))
+	}
 	// An expired approval was not resolved by the user, so the idempotent
 	// answer of a resolved one does not apply: the call had no effect. The
 	// expiry it may have recorded is committed.
@@ -884,12 +909,15 @@ func (s *Service) Interrupt(ctx context.Context, req *connect.Request[circusv1.I
 		return nil, err
 	}
 	var changed bool
+	var level int64
 	err = s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
 		now := s.now().UnixMilli()
 		if _, err := ownSession(ctx, tx, u, req.Msg.GetSessionId(), now); err != nil {
 			return err
 		}
-		_, _, changed, err = tx.InterruptSession(ctx, req.Msg.GetSessionId(), now)
+		var sess store.Session
+		sess, _, changed, err = tx.InterruptSession(ctx, req.Msg.GetSessionId(), now)
+		level = sess.InterruptTurnNo
 		return err
 	})
 	if err != nil {
@@ -898,6 +926,8 @@ func (s *Service) Interrupt(ctx context.Context, req *connect.Request[circusv1.I
 	if changed {
 		s.waker.Wake(req.Msg.GetSessionId(), circusv1.WorkerEvent_Nudge_REASON_INTERRUPT)
 	}
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "interrupt requested", slog.String("session_id", req.Msg.GetSessionId()),
+		slog.Int64("level", level), slog.Bool("changed", changed))
 	return connect.NewResponse(&circusv1.InterruptResponse{}), nil
 }
 
@@ -936,8 +966,12 @@ func (s *Service) StopSession(ctx context.Context, req *connect.Request[circusv1
 	// was offline the first time.
 	jobsCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopJobsTimeout)
 	defer cancel()
-	if err := s.jobs.StopSessionJobs(jobsCtx, sess.UserID, id); err != nil {
-		s.logger.WarnContext(ctx, "stopping session jobs failed", "session_id", id, "error", err)
+	jobsErr := s.jobs.StopSessionJobs(jobsCtx, sess.UserID, id)
+	if changed {
+		s.logger.LogAttrs(ctx, slog.LevelInfo, "session stopped", slog.String("session_id", id), slog.String("reason", sessions.StopReasonUser))
+	}
+	if jobsErr != nil {
+		s.logger.WarnContext(ctx, "stopping session jobs failed", "session_id", id, "error", jobsErr)
 	}
 	return connect.NewResponse(&circusv1.StopSessionResponse{}), nil
 }
@@ -964,6 +998,7 @@ func (s *Service) DeleteSession(ctx context.Context, req *connect.Request[circus
 		return nil, s.sessionError(ctx, "delete session", err)
 	}
 	s.bus.Deleted(id)
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "session deleted", slog.String("session_id", id))
 	return connect.NewResponse(&circusv1.DeleteSessionResponse{}), nil
 }
 
@@ -998,5 +1033,9 @@ func (s *Service) RecoverSession(ctx context.Context, req *connect.Request[circu
 	// release may have recorded.
 	s.bus.Durable(id, uint64(max(res.Session.LastEventSeq, res.EventSeq)))
 	s.waker.Wake(id, circusv1.WorkerEvent_Nudge_REASON_INPUT)
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "session recovered", slog.String("session_id", id))
+	if res.Loss != nil {
+		sessions.LogLeaseEnded(ctx, s.logger, *res.Loss, sessions.LeaseEndRecovered)
+	}
 	return connect.NewResponse(&circusv1.RecoverSessionResponse{}), nil
 }

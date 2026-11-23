@@ -280,7 +280,7 @@ type fencedMethod struct {
 
 var fencedMethods = []fencedMethod{
 	{"TranscriptRepaired", func(ctx context.Context, ops store.Ops, f store.Fence) error {
-		_, err := ops.TranscriptRepaired(ctx, f)
+		_, _, err := ops.TranscriptRepaired(ctx, f)
 		return err
 	}},
 	{"GetRecovery", func(ctx context.Context, ops store.Ops, f store.Fence) error {

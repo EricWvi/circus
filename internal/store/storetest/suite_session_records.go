@@ -425,9 +425,10 @@ func testSessionAdmit(t *testing.T, b Backend) {
 	// Broken and stopped sessions admit nothing.
 	report(t, s, fence, store.TurnReport{LocalSeq: 1, Phase: store.TurnEnded, TranscriptIncomplete: true})
 	mustIs(t, s.AdmitSessionCall(ctx, fence, "new", 100), store.ErrBroken)
-	sess, err := s.TranscriptRepaired(ctx, fence)
+	sess, repaired, err := s.TranscriptRepaired(ctx, fence)
 	must(t, err)
 	mustEqual(t, "repaired", sess.State, store.SessionIdle)
+	mustEqual(t, "repaired reported", repaired, true)
 	must(t, s.AdmitSessionCall(ctx, fence, "new", 100))
 	_, _, _, err = s.StopSession(ctx, "s1", t0+3, "")
 	must(t, err)

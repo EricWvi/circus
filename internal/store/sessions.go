@@ -325,8 +325,9 @@ type SessionOps interface {
 	// holder re-imported the missing transcript batches. It never touches
 	// TranscriptGapTurnNo. Fenced.
 	// Idempotent: any other state is returned unchanged. (The holder's live
-	// lease rules out queued: pending work goes to the holder.)
-	TranscriptRepaired(ctx context.Context, f Fence) (Session, error)
+	// lease rules out queued: pending work goes to the holder.) repaired
+	// reports that this call moved the session from broken.
+	TranscriptRepaired(ctx context.Context, f Fence) (s Session, repaired bool, err error)
 	// RecoverSession accepts the gap in a broken session's transcript, the
 	// user's way out when the holder cannot repair it. accept must be true
 	// (ErrInvalid otherwise); the session must be broken (ErrNotBroken

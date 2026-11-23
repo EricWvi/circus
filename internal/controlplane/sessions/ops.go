@@ -3,8 +3,10 @@ package sessions
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -113,7 +115,7 @@ func (c *Conn) failed(ctx context.Context, f store.Fence, op string, err error) 
 		if e := s.entries[f.SessionID]; e != nil && e.holder.epoch == f.Epoch {
 			s.queueWake(f.SessionID, 0)
 		}
-		s.mu.Unlock()
+		s.unlock()
 	}
 	return c.s.failure(ctx, op, err)
 }
@@ -128,7 +130,7 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	e := s.entries[id]
 	if e == nil {
 		if !s.room(1) {
-			s.mu.Unlock()
+			s.unlock()
 			s.log.Warn("session table full; acquisition refused", "session_id", id)
 			return rejected(circusv1.SessionReply_Rejected_CODE_STORE_UNAVAILABLE, "session table full; retry"), nil
 		}
@@ -137,11 +139,15 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	}
 	e.reserved++
 	offered, localOnly := e.offered == c, c.localOnly
-	s.mu.Unlock()
+	s.unlock()
+	// out is written when the acquisition is done, its reservation ended
+	// included (deferred before it, so it runs after it).
+	var out []logRec
+	defer func() { s.write(ctx, out) }()
 	defer func() {
 		s.mu.Lock()
 		s.unreserve(id)
-		s.mu.Unlock()
+		s.unlock()
 	}()
 	now := s.nowMs()
 	var res store.LeaseAcquired
@@ -186,7 +192,23 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 		return err
 	})
 	if err == nil && res.Loss != nil {
-		s.lost(*res.Loss, c, false)
+		// Released: a fresh acquisition by the holder of a stopped or
+		// broken session gave its own lease up. Otherwise the loss is the
+		// lease this acquisition replaced: an expired one (any worker with
+		// an Offer may take it over), or the live holder's own (a fresh
+		// acquisition takes a new epoch).
+		var reason string
+		switch {
+		case res.Released && errors.Is(res.Refusal, store.ErrStopped):
+			reason = endStopped
+		case res.Released:
+			reason = endBroken
+		case res.Loss.Released.ExpiresAt <= now:
+			reason = endExpired
+		default:
+			reason = endTakenOver
+		}
+		out = append(out, s.lost(*res.Loss, c, false, reason)...)
 	}
 	providerRefused := unreadable || errors.Is(err, store.ErrProviderUnavailable) || errors.Is(err, store.ErrProviderFull)
 	if err != nil || notOffered || notLocal || unreadable || res.Released {
@@ -196,12 +218,12 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 		s.mu.Lock()
 		if e := s.entries[id]; e != nil {
 			if providerRefused && e.offered == c {
-				s.setOffer(e, nil)
+				s.setOffer(id, e, nil, "provider_refused")
 			}
 			s.forget(id, e)
 		}
 		s.queueWake(id, 0)
-		s.mu.Unlock()
+		out = append(out, s.unlockKeep()...)
 	}
 	switch {
 	case unreadable:
@@ -227,7 +249,7 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	}
 	s.mu.Lock()
 	e = s.track(id, res.Session.UserID) // reserved above, so present
-	s.bind(id, e, res.Lease, c, true)
+	s.bind(id, e, res.Lease, c, true, "acquired")
 	e.interrupt = res.Session.InterruptTurnNo
 	// Each acquisition has its own token, so the end of an earlier
 	// operation never touches a later one's state.
@@ -235,7 +257,10 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	tok := s.tokens
 	e.known, e.pending, e.abandoned, e.token = true, true, false, tok
 	c.remember(rid, id, tok)
-	s.mu.Unlock()
+	out = append(out, s.unlockKeep()...)
+	out = append(out, logRec{level: slog.LevelInfo, msg: "lease acquired", attrs: []slog.Attr{slog.String("session_id", id),
+		slog.String("worker_id", c.workerID), slog.String("boot_id", c.bootID), slog.String("conn_id", c.id), slog.Int64("epoch", res.Lease.Epoch),
+		slog.String("provider_id", res.Lease.ProviderID), slog.Bool("fresh", fresh), slog.Bool("reattached", res.Reattached)}})
 	epoch, reattached := res.Lease.Epoch, res.Reattached
 	// When the operation ends (reply sent, Unwatch, link closed), a reply
 	// that was not delivered abandons the lease: it is no longer extended.
@@ -279,7 +304,7 @@ func (c *Conn) Unwatched(rid uint64) {
 			id, tok = a.id, a.tok
 		}
 	}
-	s.mu.Unlock()
+	s.unlock()
 	if tok != 0 {
 		s.abandon(id, tok, true)
 	}
@@ -294,13 +319,13 @@ func (s *Service) delivered(id string, tok, g uint64) {
 	s.mu.Lock()
 	e := s.entries[id]
 	if e == nil || e.token != tok || e.bound == nil {
-		s.mu.Unlock()
+		s.unlock()
 		return
 	}
 	e.pending = false
 	if e.abandoned {
 		// Unwatched before the reply got out: the worker drops it.
-		s.mu.Unlock()
+		s.unlock()
 		return
 	}
 	for _, v := range []reasonSet{reasonJob, reasonInterrupt, reasonStop} {
@@ -310,7 +335,7 @@ func (s *Service) delivered(id string, tok, g uint64) {
 	}
 	s.nudge(id, e)
 	key := store.LeaseKey{SessionID: id, Epoch: e.holder.epoch, WorkerID: e.holder.worker, BootID: e.holder.boot, ConnID: e.holder.conn}
-	s.mu.Unlock()
+	s.unlock()
 	// Extend now: the lease may have skipped an extension round while its
 	// reply waited.
 	now := s.nowMs()
@@ -320,7 +345,7 @@ func (s *Service) delivered(id string, tok, g uint64) {
 	if err != nil || len(lost) > 0 {
 		s.mu.Lock()
 		s.queueWake(id, 0)
-		s.mu.Unlock()
+		s.unlock()
 	}
 }
 
@@ -331,7 +356,7 @@ func (s *Service) delivered(id string, tok, g uint64) {
 // the session starts over.
 func (s *Service) abandon(id string, tok uint64, unwatched bool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	if e := s.entries[id]; e != nil && e.token == tok && (unwatched || e.pending) {
 		e.abandoned = true
 	}
@@ -462,7 +487,7 @@ func (c *Conn) release(ctx context.Context, f store.Fence) *circusv1.SessionRepl
 	if err != nil {
 		return c.failed(ctx, f, "release", err)
 	}
-	c.s.lost(loss, c, true)
+	c.s.write(ctx, c.s.lost(loss, c, true, endReleased))
 	return ok(loss.Repeated)
 }
 
@@ -543,8 +568,19 @@ func (c *Conn) append(ctx context.Context, f store.Fence, r *circusv1.AppendTran
 				c.s.cfg.Bus.Durable(f.SessionID, uint64(seq))
 			}
 			c.s.stopped(f.SessionID, user)
+			c.s.log.LogAttrs(ctx, slog.LevelInfo, "session stopped", slog.String("session_id", f.SessionID),
+				slog.String("reason", StopReasonTranscriptFull))
 		}
 		return rejected(circusv1.SessionReply_Rejected_CODE_TRANSCRIPT_FULL, "transcript full; the session is stopped")
+	}
+	if c.s.debug(ctx) {
+		n := 0
+		for _, e := range b.Entries {
+			n += len(e.JSON)
+		}
+		c.s.log.LogAttrs(ctx, slog.LevelDebug, "transcript appended", slog.String("session_id", f.SessionID), slog.Int64("epoch", f.Epoch),
+			slog.Int64("batch_seq", b.BatchSeq), slog.Int("entries", len(b.Entries)), slog.Int("bytes", n),
+			slog.Bool("deduplicated", res.Deduplicated))
 	}
 	return ok(res.Deduplicated)
 }
@@ -558,24 +594,24 @@ func (s *Service) stopped(id, user string) {
 		s.addReasons(e, reasonStop)
 		s.nudge(id, e)
 	}
-	s.mu.Unlock()
+	s.unlock()
 	if s.cfg.StopJobs == nil || user == "" {
 		return
 	}
 	s.mu.Lock()
 	if s.closed {
-		s.mu.Unlock()
+		s.unlock()
 		return
 	}
 	select {
 	case s.jobStops <- struct{}{}:
 	default:
-		s.mu.Unlock()
+		s.unlock()
 		s.log.Warn("too many concurrent job stops; session jobs not stopped", "session_id", id)
 		return
 	}
 	s.jobs.Add(1)
-	s.mu.Unlock()
+	s.unlock()
 	go func() {
 		defer s.jobs.Done()
 		defer func() { <-s.jobStops }()
@@ -599,6 +635,10 @@ func (c *Conn) take(ctx context.Context, f store.Fence) *circusv1.SessionReply {
 		return c.failed(ctx, f, "take", err)
 	}
 	c.s.clearReasons(f.SessionID, f.Epoch, reasonInput|reasonApproval, g)
+	if c.s.debug(ctx) {
+		c.s.log.LogAttrs(ctx, slog.LevelDebug, "inputs taken", slog.String("session_id", f.SessionID), slog.Int64("epoch", f.Epoch),
+			slog.Int("count", len(inputs)), slog.String("kinds", inputKinds(inputs)))
+	}
 	out := &circusv1.SessionReply_Inputs{}
 	for _, in := range inputs {
 		kind := circusv1.SessionReply_Inputs_Input_KIND_USER
@@ -651,6 +691,7 @@ func (c *Conn) report(ctx context.Context, f store.Fence, r *circusv1.ReportTurn
 	if tr.Phase == store.TurnEnded {
 		c.s.clearReasons(f.SessionID, f.Epoch, reasonInterrupt, g)
 	}
+	c.s.turnLog(ctx, f, tr, rep, before.State)
 	return &circusv1.SessionReply{Result: &circusv1.SessionReply_Turn_{Turn: &circusv1.SessionReply_Turn{TurnNo: uint64(rep.Turn.TurnNo)}}}
 }
 
@@ -659,7 +700,7 @@ func (s *Service) updateInterrupt(id string, epoch, level int64) {
 	if e := s.entries[id]; e != nil && e.holder.epoch == epoch {
 		e.interrupt = level
 	}
-	s.mu.Unlock()
+	s.unlock()
 }
 
 func (c *Conn) patch(ctx context.Context, f store.Fence, r *circusv1.PatchSessionState) *circusv1.SessionReply {
@@ -802,6 +843,10 @@ func (c *Conn) publish(ctx context.Context, f store.Fence, r *circusv1.PublishEv
 		// every watcher's queue, which bounds what it retains (bus.go).
 		c.s.cfg.Bus.Ephemeral(f.SessionID, &circusv1.SessionEvent{TsUnixMs: f.Now, Kind: ev.GetKind(), PayloadJson: payload, Ephemeral: true, Truncated: truncated})
 	}
+	if c.s.debug(ctx) {
+		c.s.log.LogAttrs(ctx, slog.LevelDebug, "events published", slog.String("session_id", f.SessionID), slog.Int64("epoch", f.Epoch),
+			slog.Int("count", len(r.GetEvents())), slog.Int("durable", len(durable)))
+	}
 	return ok(false)
 }
 
@@ -869,8 +914,10 @@ func (c *Conn) consumeGrant(ctx context.Context, f store.Fence, r *circusv1.Cons
 }
 
 func (c *Conn) repaired(ctx context.Context, f store.Fence) *circusv1.SessionReply {
+	var repaired bool
 	err := c.tx(ctx, func(ctx context.Context, tx store.Ops) error {
-		_, err := tx.TranscriptRepaired(ctx, f)
+		var err error
+		_, repaired, err = tx.TranscriptRepaired(ctx, f)
 		return err
 	})
 	if err != nil {
@@ -883,7 +930,10 @@ func (c *Conn) repaired(ctx context.Context, f store.Fence) *circusv1.SessionRep
 		s.addReasons(e, reasonInput|reasonJob)
 		s.nudge(f.SessionID, e)
 	}
-	s.mu.Unlock()
+	s.unlock()
+	if repaired {
+		c.s.log.LogAttrs(ctx, slog.LevelInfo, "transcript repaired", slog.String("session_id", f.SessionID), slog.Int64("epoch", f.Epoch))
+	}
 	return ok(false)
 }
 
@@ -891,7 +941,33 @@ func (c *Conn) repaired(ctx context.Context, f store.Fence) *circusv1.SessionRep
 // worker and boot that has not expired is rebound to this connection and
 // extended; each resumed session's pending Nudge reasons are sent again.
 func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.SessionReply {
+	sum := resumeSummary{result: "ok"}
+	reply := c.resume(ctx, r, &sum)
+	// After resume returned: its bindings, Nudges and the end of its
+	// reservations are done.
+	c.s.write(ctx, sum.recs)
+	c.s.log.LogAttrs(ctx, slog.LevelInfo, "leases resumed", slog.String("worker_id", c.workerID), slog.String("boot_id", c.bootID),
+		slog.String("conn_id", c.id), slog.String("result", sum.result), slog.Int("requested", len(r.GetLeases())),
+		slog.Int("resumed", sum.resumed), slog.Int("stopped", sum.stopped), slog.Int("fenced", sum.fenced),
+		slog.Int("not_found", sum.notFound), slog.Int("invalid", sum.invalid))
+	return reply
+}
+
+// resumeSummary is what one ResumeLeases call did, for its log record:
+// result is ok, rejected (refused as a whole) or failed (the store
+// transaction failed); the counts are per outcome.
+type resumeSummary struct {
+	result                                      string
+	resumed, stopped, fenced, notFound, invalid int
+	// recs are the records of the critical section that binds the
+	// resumed leases.
+	recs []logRec
+}
+
+// resume is Resume without its log record, which sum describes.
+func (c *Conn) resume(ctx context.Context, r *circusv1.ResumeLeases, sum *resumeSummary) *circusv1.SessionReply {
 	if c.bootID == "" {
+		sum.result = "rejected"
 		return invalidReply("session operations need a connection with a boot id")
 	}
 	s := c.s
@@ -905,7 +981,9 @@ func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.S
 			at = append(at, i)
 		}
 	}
+	sum.invalid = len(r.GetLeases()) - len(keys)
 	if len(keys) > store.MaxResumeLeases {
+		sum.result = "rejected"
 		return invalidReply("at most 64 leases")
 	}
 	// Reserve an entry for every session that may resume, so a resumed
@@ -918,8 +996,9 @@ func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.S
 		}
 	}
 	if !s.room(missing) {
-		s.mu.Unlock()
+		s.unlock()
 		s.log.Warn("session table full; resume refused")
+		sum.result = "rejected"
 		return rejected(circusv1.SessionReply_Rejected_CODE_STORE_UNAVAILABLE, "session table full; retry")
 	}
 	for _, k := range keys {
@@ -930,17 +1009,17 @@ func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.S
 		}
 		e.reserved++
 	}
-	s.mu.Unlock()
+	s.unlock()
 	defer func() {
 		s.mu.Lock()
 		for _, k := range keys {
 			s.unreserve(k.SessionID)
 		}
-		s.mu.Unlock()
+		s.unlock()
 	}()
 	s.mu.Lock()
 	localOnly := c.localOnly
-	s.mu.Unlock()
+	s.unlock()
 	now := s.nowMs()
 	res := make([]store.LeaseResumed, len(keys))
 	sessions := make([]store.Session, len(keys))
@@ -995,11 +1074,12 @@ func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.S
 			return nil
 		})
 		if err != nil {
+			sum.result = "failed"
 			return s.failure(ctx, "resume", err)
 		}
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer func() { sum.recs = s.unlockKeep() }()
 	for j, lr := range res {
 		o := out.Leases[at[j]]
 		var fe *store.FencedError
@@ -1009,7 +1089,11 @@ func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.S
 			o.Ok, o.Epoch, o.Stopped = true, uint64(lr.Lease.Epoch), lr.Stopped
 			sess := sessions[j]
 			fresh := !e.known
-			s.bind(lr.SessionID, e, lr.Lease, c, true)
+			sum.resumed++
+			if lr.Stopped {
+				sum.stopped++
+			}
+			s.bind(lr.SessionID, e, lr.Lease, c, true, "resumed")
 			e.known, e.pending, e.abandoned, e.token = true, false, false, 0
 			e.interrupt = sess.InterruptTurnNo
 			if fresh {
@@ -1027,10 +1111,13 @@ func (c *Conn) Resume(ctx context.Context, r *circusv1.ResumeLeases) *circusv1.S
 			}
 			s.nudge(lr.SessionID, e)
 		case errors.As(lr.Err, &fe):
+			sum.fenced++
 			o.Epoch = uint64(max(fe.Epoch, 0))
 			if e != nil && e.holder.worker == c.workerID && e.holder.epoch == keys[j].Epoch {
 				s.queueWake(lr.SessionID, 0)
 			}
+		case lr.Err != nil:
+			sum.notFound++
 		}
 		if e != nil && !o.Ok {
 			s.forget(lr.SessionID, e)
@@ -1069,4 +1156,38 @@ func clip(s string) string {
 		return strings.ToValidUTF8(s[:maxAttachString], "")
 	}
 	return s
+}
+
+// turnLog logs a recorded turn boundary, and a session the report moved to
+// broken (from before, its state before the report). A duplicate report
+// logs nothing.
+func (s *Service) turnLog(ctx context.Context, f store.Fence, tr store.TurnReport, rep store.TurnReported, before store.SessionState) {
+	if rep.Duplicate {
+		return
+	}
+	attrs := []slog.Attr{slog.String("session_id", f.SessionID), slog.Int64("epoch", f.Epoch), slog.Int64("turn_no", rep.Turn.TurnNo),
+		slog.String("origin", string(rep.Turn.Origin))}
+	if tr.Phase != store.TurnEnded {
+		s.log.LogAttrs(ctx, slog.LevelInfo, "turn started", attrs...)
+		return
+	}
+	s.log.LogAttrs(ctx, slog.LevelInfo, "turn ended", append(attrs, slog.String("outcome", string(rep.Turn.Outcome)),
+		slog.Bool("transcript_incomplete", tr.TranscriptIncomplete))...)
+	if tr.TranscriptIncomplete && before != store.SessionBroken && rep.Session.State == store.SessionBroken {
+		s.log.LogAttrs(ctx, slog.LevelWarn, "session broken", slog.String("session_id", f.SessionID), slog.Int64("epoch", f.Epoch),
+			slog.Int64("turn_no", rep.Turn.TurnNo))
+	}
+}
+
+// inputKinds counts inputs per kind, as "user=2,approval=1".
+func inputKinds(inputs []store.Input) string {
+	var user, approval int
+	for _, in := range inputs {
+		if in.Kind == store.InputApproval {
+			approval++
+		} else {
+			user++
+		}
+	}
+	return "user=" + strconv.Itoa(user) + ",approval=" + strconv.Itoa(approval)
 }

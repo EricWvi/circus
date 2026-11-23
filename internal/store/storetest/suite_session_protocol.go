@@ -449,7 +449,7 @@ func testTranscriptGapMark(t *testing.T, b Backend) {
 	// Another break and its repair leave the mark alone.
 	incomplete(next, 2)
 	mustEqual(t, "break keeps the mark", gap(), broke)
-	_, err = s.TranscriptRepaired(ctx, next)
+	_, _, err = s.TranscriptRepaired(ctx, next)
 	must(t, err)
 	mustEqual(t, "repair keeps the mark", gap(), broke)
 	must(t, s.PatchSessionRecords(ctx, next, store.RecordsPatch{Persisted: store.TurnPersisted{GapNoticeTurnNo: broke}}))
@@ -594,9 +594,10 @@ func testRepairOutsideBroken(t *testing.T, b Backend) {
 		t.Helper()
 		before := getSession(t, s, "s1")
 		mustEqual(t, "state before", before.State, want)
-		after, err := s.TranscriptRepaired(ctx, at(fence, t0+50))
+		after, repaired, err := s.TranscriptRepaired(ctx, at(fence, t0+50))
 		must(t, err)
 		mustEqual(t, "unchanged by repair", after, before)
+		mustEqual(t, "no repair reported", repaired, false)
 	}
 	check(store.SessionIdle)
 	report(t, s, fence, store.TurnReport{LocalSeq: 1, Phase: store.TurnStarted})

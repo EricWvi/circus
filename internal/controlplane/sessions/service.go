@@ -133,7 +133,14 @@ type Service struct {
 	jobStops chan struct{}
 	jobs     sync.WaitGroup
 
-	mu      sync.Mutex
+	mu sync.Mutex
+	// pend holds the log records of the current s.mu critical section,
+	// written by unlock once s.mu is released (log.go).
+	pend []logRec
+	// dbg is whether the debug records collected under s.mu are wanted:
+	// the logger's level as of New (the server's level is fixed at start),
+	// so no handler method runs under s.mu.
+	dbg     bool
 	conns   map[string]*Conn
 	entries map[string]*entry
 	wakes   map[string]reasonSet
@@ -218,6 +225,7 @@ func New(cfg Config) (*Service, error) {
 	}
 	return &Service{
 		cfg: cfg, clk: cfg.Clock, log: cfg.Logger, quota: q,
+		dbg:        cfg.Logger.Enabled(context.Background(), slog.LevelDebug),
 		nonce:      uuid.NewString()[:8],
 		reads:      make(chan struct{}, ReadConcurrency),
 		jobStops:   make(chan struct{}, maxJobStopCalls),
@@ -241,12 +249,12 @@ func New(cfg Config) (*Service, error) {
 func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
 	if s.started || s.closed {
-		s.mu.Unlock()
+		s.unlock()
 		return errors.New("sessions: already started")
 	}
 	s.started = true
 	s.startedAt = s.nowMs()
-	s.mu.Unlock()
+	s.unlock()
 	at := s.nowMs()
 	n := 0
 	var cursor *store.RestartCursor
@@ -269,7 +277,7 @@ func (s *Service) Start(ctx context.Context) error {
 	bg, stop := context.WithCancel(context.WithoutCancel(ctx))
 	s.mu.Lock()
 	s.stop = stop
-	s.mu.Unlock()
+	s.unlock()
 	now := s.clk.Now()
 	alarm := clock.Until(s.clk, now.Add(SweepInterval))
 	s.loops.Add(2)
@@ -284,7 +292,7 @@ func (s *Service) Close(ctx context.Context) error {
 	s.mu.Lock()
 	s.closed = true
 	stop := s.stop
-	s.mu.Unlock()
+	s.unlock()
 	if stop == nil {
 		return nil
 	}
@@ -404,7 +412,7 @@ func (s *Service) checkOrder(ctx context.Context, ops store.Ops, workerID string
 			connected = true
 		}
 	}
-	s.mu.Unlock()
+	s.unlock()
 	if connected || now < max(ident.LastConnectedAt, ident.LastDisconnectedAt, startedAt)+LeaseLifetime.Milliseconds() {
 		return fmt.Errorf("%w: older than the worker's current, live boot", ErrBoot)
 	}
@@ -429,17 +437,45 @@ func (s *Service) Connect(ctx context.Context, info ConnInfo) (*Conn, error) {
 		queued: make(map[string]*hint), kick: make(chan struct{}, 1)}
 	c.seq = s.seq.Add(1)
 	c.id = s.cfg.InstanceID + "." + s.nonce + "." + strconv.FormatUint(c.seq, 10)
+	var recs []logRec
 	if info.BootID != "" {
-		if err := s.changeBoot(ctx, c); err != nil {
+		var err error
+		if recs, err = s.changeBoot(ctx, c); err != nil {
+			s.write(ctx, recs)
 			return nil, err
 		}
 	}
+	// The release's records are written once the connection and its boot
+	// are registered and stale Offers withdrawn (deferred before the
+	// unlock, so it runs after it): until then an Offer could still go to
+	// the old boot. A handler that panics, here or in the unlock's writes,
+	// would leave a registered connection nobody holds: it is closed, as
+	// its link would close it, and the panic goes on with its value.
+	registered := false
+	defer func() {
+		p := recover()
+		func() {
+			defer func() {
+				if q := recover(); q != nil && p == nil {
+					p = q
+				}
+			}()
+			s.write(ctx, recs)
+		}()
+		if p != nil {
+			if registered {
+				c.Close()
+			}
+			panic(p)
+		}
+	}()
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	if s.closed {
 		return nil, errors.New("sessions: closed")
 	}
 	s.conns[c.id] = c
+	registered = true
 	if c.bootID != "" {
 		// The current boot follows the store's order of boot transactions,
 		// not the order of registration: a connection whose transaction
@@ -450,7 +486,7 @@ func (s *Service) Connect(ctx context.Context, info ConnInfo) (*Conn, error) {
 		// Offers held by connections now stale go elsewhere.
 		for id, e := range s.entries {
 			if e.offered != nil && s.stale(e.offered) {
-				s.setOffer(e, nil)
+				s.setOffer(id, e, nil, "stale_boot")
 				s.queueWake(id, 0)
 			}
 		}
@@ -468,11 +504,13 @@ func (s *Service) stale(c *Conn) bool {
 
 // changeBoot records the connection's boot as the worker's current one,
 // unless checkOrder refuses it (ErrBoot, nothing written), and releases
-// every lease the worker holds under another boot.
-func (s *Service) changeBoot(ctx context.Context, c *Conn) error {
+// every lease the worker holds under another boot. It returns the
+// release's log records, for Connect to write once the connection is
+// registered; every loss is applied before.
+func (s *Service) changeBoot(ctx context.Context, c *Conn) ([]logRec, error) {
 	b, ok := parseBoot(c.bootID)
 	if !ok {
-		return fmt.Errorf("%w: not a UUIDv7", ErrBoot)
+		return nil, fmt.Errorf("%w: not a UUIDv7", ErrBoot)
 	}
 	now := s.nowMs()
 	tctx, cancel := storeCtx(ctx)
@@ -488,12 +526,12 @@ func (s *Service) changeBoot(ctx context.Context, c *Conn) error {
 		s.mu.Lock()
 		s.bootSeq++
 		c.bootSeq = s.bootSeq
-		s.mu.Unlock()
+		s.unlock()
 		return nil
 	})
 	cancel()
 	if err != nil {
-		return fmt.Errorf("sessions: record worker boot: %w", err)
+		return nil, fmt.Errorf("sessions: record worker boot: %w", err)
 	}
 	// Every connect of a boot releases what other boots still hold, not
 	// only a boot change: a release that failed on an earlier connect (the
@@ -503,6 +541,15 @@ func (s *Service) changeBoot(ctx context.Context, c *Conn) error {
 	// current one: a connection whose boot was superseded meanwhile (an old
 	// process registering after the new one) must not release the new
 	// boot's leases.
+	released := 0
+	var recs []logRec
+	done := func() []logRec {
+		if released > 0 {
+			recs = append(recs, logRec{level: slog.LevelInfo, msg: "old boot leases released", attrs: []slog.Attr{
+				slog.String("worker_id", c.workerID), slog.String("boot_id", c.bootID), slog.Int("count", released)}})
+		}
+		return recs
+	}
 	for {
 		var losses []store.LeaseLoss
 		tctx, cancel := storeCtx(ctx)
@@ -516,13 +563,16 @@ func (s *Service) changeBoot(ctx context.Context, c *Conn) error {
 		})
 		cancel()
 		if err != nil {
-			return fmt.Errorf("sessions: release previous boot's leases: %w", err)
+			return done(), fmt.Errorf("sessions: release previous boot's leases: %w", err)
 		}
 		for _, l := range losses {
-			s.lost(l, nil, true)
+			if !l.Repeated {
+				released++
+			}
+			recs = append(recs, s.lost(l, nil, true, endBootChanged)...)
 		}
 		if len(losses) < store.MaxPageSize {
-			return nil
+			return done(), nil
 		}
 	}
 }
@@ -585,7 +635,7 @@ func (c *Conn) Close() {
 	s := c.s
 	s.mu.Lock()
 	if c.closed {
-		s.mu.Unlock()
+		s.unlock()
 		return
 	}
 	c.closed = true
@@ -603,9 +653,10 @@ func (c *Conn) Close() {
 	// The last connection of the current boot records the disconnect: the
 	// boot counts as alive for LeaseLifetime more (checkOrder).
 	lastOfCurrent := lastOfBoot && s.boots[c.workerID].boot == c.bootID
+	marked := 0
 	for id, e := range s.entries {
 		if e.offered == c {
-			s.setOffer(e, nil)
+			s.setOffer(id, e, nil, "conn_closed")
 			s.queueWake(id, 0)
 		}
 		if e.bound == c {
@@ -616,23 +667,33 @@ func (c *Conn) Close() {
 		// boot now has no connection at all. A lease bound to a live
 		// connection cannot belong to this boot (none is left).
 		if lastOfBoot && e.bound == nil && e.holder.worker == c.workerID && e.holder.boot == c.bootID {
+			if e.gone != at {
+				marked++
+			}
 			s.setGone(id, e, at)
 		}
 	}
 	c.outbox, c.queued = nil, nil
 	stop, done := c.sending, c.senderDone
-	s.mu.Unlock()
+	// The records are written once the sender has stopped and the
+	// disconnect is recorded.
+	recs := s.unlockKeep()
 	if stop != nil {
 		stop()
 		<-done
 	}
 	if lastOfCurrent {
 		ctx, cancel := storeCtx(context.Background())
-		if err := s.cfg.Store.SetDisconnected(ctx, store.KindWorker, c.workerID, at); err != nil {
-			s.log.Warn("recording a worker disconnect failed", "worker_id", c.workerID, "error", err)
-		}
+		err := s.cfg.Store.SetDisconnected(ctx, store.KindWorker, c.workerID, at)
 		cancel()
+		if err != nil {
+			recs = append(recs, logRec{level: slog.LevelWarn, msg: "recording a worker disconnect failed",
+				attrs: []slog.Attr{slog.String("worker_id", c.workerID), slog.Any("error", err)}})
+		}
 	}
+	s.write(context.Background(), recs)
+	s.log.LogAttrs(context.Background(), slog.LevelInfo, "worker connection closed", slog.String("worker_id", c.workerID),
+		slog.String("boot_id", c.bootID), slog.String("conn_id", c.id), slog.Bool("last_of_boot", lastOfBoot), slog.Int("marked", marked))
 }
 
 // ErrAttach is an Attach the link must answer by closing: a second Attach,
@@ -661,7 +722,7 @@ func (c *Conn) Attach(ctx context.Context, a *circusv1.Attach, send func(context
 	sctx, stop := context.WithCancel(ctx)
 	s.mu.Lock()
 	if c.wasOnce || c.closed {
-		s.mu.Unlock()
+		s.unlock()
 		stop()
 		return fmt.Errorf("%w: at most one Attach per connection", ErrAttach)
 	}
@@ -674,17 +735,23 @@ func (c *Conn) Attach(ctx context.Context, a *circusv1.Attach, send func(context
 	// ignores its abandoned connection.
 	for id, e := range s.entries {
 		if o := e.offered; o != nil && o != c && o.workerID == c.workerID && o.bootID == c.bootID && c.leases+c.offers < c.max && c.runs(e.local, e.pin) {
-			s.setOffer(e, c)
+			s.setOffer(id, e, c, "moved")
 			c.queue(id, func(h *hint) { h.offer = true })
 		}
 	}
 	s.rescan[c.userID] = struct{}{}
 	s.signal()
-	s.mu.Unlock()
-	s.log.InfoContext(ctx, "worker attached", "worker_id", c.workerID, "max_sessions", c.max, "local_only", c.localOnly,
-		"sdk_version", a.GetSdkVersion(), "claude_version", a.GetClaudeVersion(),
-		"account_email", a.GetAccount().GetEmail(), "auto_mode_check", a.GetAutoModeCheck().String())
+	maxSessions, localOnly := c.max, c.localOnly
+	recs := s.unlockKeep()
 	go c.run(sctx)
+	s.write(ctx, recs)
+	s.log.InfoContext(ctx, "worker attached", "worker_id", c.workerID, "boot_id", c.bootID, "conn_id", c.id, "max_sessions", maxSessions,
+		"local_only", localOnly, "sdk_version", a.GetSdkVersion(), "claude_version", a.GetClaudeVersion(),
+		"auto_mode_check", a.GetAutoModeCheck().String())
+	if s.debug(ctx) {
+		s.log.LogAttrs(ctx, slog.LevelDebug, "worker account", slog.String("worker_id", c.workerID), slog.String("conn_id", c.id),
+			slog.String("account_email", a.GetAccount().GetEmail()))
+	}
 	return nil
 }
 
@@ -737,7 +804,7 @@ func (c *Conn) run(ctx context.Context) {
 			c.outbox = nil // let the backing array go
 		}
 		attached := c.attached
-		s.mu.Unlock()
+		s.unlock()
 		if !attached {
 			return
 		}
@@ -758,6 +825,10 @@ func (c *Conn) run(ctx context.Context) {
 				c.detach()
 				return
 			}
+			if n := ev.GetNudge(); n != nil && s.debug(ctx) {
+				s.log.LogAttrs(ctx, slog.LevelDebug, "nudge sent", slog.String("session_id", n.GetSessionId()), slog.String("conn_id", c.id),
+					slog.String("reasons", reasonNames(n.GetReasons())))
+			}
 		}
 	}
 }
@@ -767,11 +838,11 @@ func (c *Conn) run(ctx context.Context) {
 func (c *Conn) detach() {
 	s := c.s
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	c.attached = false
 	for id, e := range s.entries {
 		if e.offered == c {
-			s.setOffer(e, nil)
+			s.setOffer(id, e, nil, "detached")
 			s.queueWake(id, 0)
 		}
 	}

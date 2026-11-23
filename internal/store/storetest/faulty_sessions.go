@@ -52,9 +52,9 @@ func (o *faultyOps) DeleteSession(ctx context.Context, sessionID string, now int
 	return o.write(ctx, func(x store.Ops) error { return x.DeleteSession(ctx, sessionID, now) })
 }
 
-func (o *faultyOps) TranscriptRepaired(ctx context.Context, f store.Fence) (v store.Session, err error) {
-	err = o.write(ctx, func(x store.Ops) error { v, err = x.TranscriptRepaired(ctx, f); return err })
-	return v, err
+func (o *faultyOps) TranscriptRepaired(ctx context.Context, f store.Fence) (v store.Session, repaired bool, err error) {
+	err = o.write(ctx, func(x store.Ops) error { v, repaired, err = x.TranscriptRepaired(ctx, f); return err })
+	return v, repaired, err
 }
 
 func (o *faultyOps) InterruptSession(ctx context.Context, sessionID string, at int64) (s store.Session, l store.Lease, changed bool, err error) {

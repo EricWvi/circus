@@ -503,18 +503,20 @@ func (o *ops) chargeTranscript(ctx context.Context, sessionID, userID string, de
 	return err
 }
 
-func (o *ops) TranscriptRepaired(ctx context.Context, f store.Fence) (store.Session, error) {
+func (o *ops) TranscriptRepaired(ctx context.Context, f store.Fence) (store.Session, bool, error) {
 	var s store.Session
+	var repaired bool
 	err := o.fenced(ctx, f, func(tx *ops) error {
-		if _, err := tx.exec(ctx, `UPDATE sessions SET state = 'idle', broken_turn_no = 0, updated_at = ? WHERE session_id = ? AND state = 'broken'`,
-			f.Now, f.SessionID); err != nil {
+		n, err := tx.exec(ctx, `UPDATE sessions SET state = 'idle', broken_turn_no = 0, updated_at = ? WHERE session_id = ? AND state = 'broken'`,
+			f.Now, f.SessionID)
+		if err != nil {
 			return err
 		}
-		var err error
+		repaired = n > 0
 		s, err = tx.getSession(ctx, f.SessionID, f.Now)
 		return err
 	})
-	return s, err
+	return s, repaired, err
 }
 
 func (o *ops) SettleSession(ctx context.Context, sessionID string, now int64) (store.SessionSettled, error) {

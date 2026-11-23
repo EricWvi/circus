@@ -17,14 +17,14 @@ func Fallback(s *Service, ctx context.Context) { s.fallback(ctx) }
 // Idle reports whether no Wake or rescan waits for the scheduler.
 func Idle(s *Service) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	return len(s.wakes) == 0 && len(s.rescan) == 0 && len(s.provScans) == 0 && s.busy == 0
 }
 
 // Tracked returns the number of sessions in the in-memory table.
 func Tracked(s *Service) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	return len(s.entries)
 }
 
@@ -34,7 +34,7 @@ func Rounds(s *Service) uint64 { return s.rounds.Load() }
 // Attached returns the number of connections with an Attach stream.
 func Attached(s *Service) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	n := 0
 	for _, c := range s.conns {
 		if c.attached {
@@ -47,7 +47,7 @@ func Attached(s *Service) int {
 // AttachedConns returns the ids of the connections with an Attach stream.
 func AttachedConns(s *Service) map[string]bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	out := map[string]bool{}
 	for id, c := range s.conns {
 		if c.attached {
@@ -61,7 +61,7 @@ func AttachedConns(s *Service) map[string]bool {
 // other paths do alone.
 func DisableFallback(s *Service) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	s.noFallback = true
 }
 
@@ -77,7 +77,7 @@ func ClearInput(s *Service, id string, epoch int64, g uint64) {
 // HasInput reports whether INPUT is pending for session id.
 func HasInput(s *Service, id string) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	e := s.entries[id]
 	return e != nil && e.reasons&reasonInput != 0
 }
@@ -85,7 +85,7 @@ func HasInput(s *Service, id string) bool {
 // Pending reports whether session id's lease waits for its Lease reply.
 func Pending(s *Service, id string) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	e := s.entries[id]
 	return e != nil && e.pending
 }
@@ -94,14 +94,14 @@ func Pending(s *Service, id string) bool {
 // still runs), so a test can let a lease expire unswept.
 func DisableUpkeep(s *Service) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	s.noUpkeep = true
 }
 
 // SetMaxTracked lowers the session table's bound.
 func SetMaxTracked(s *Service, n int) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	s.maxTracked = n
 }
 
@@ -109,7 +109,7 @@ func SetMaxTracked(s *Service, n int) {
 // that found nothing to keep would.
 func Forget(s *Service, id string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	if e := s.entries[id]; e != nil {
 		s.forget(id, e)
 	}
@@ -118,14 +118,14 @@ func Forget(s *Service, id string) {
 // Has reports whether session id has an entry.
 func Has(s *Service, id string) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	return s.entries[id] != nil
 }
 
 // Connections returns the number of registered connections.
 func Connections(s *Service) int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	return len(s.conns)
 }
 
@@ -133,7 +133,7 @@ func Connections(s *Service) int {
 // AcquireLease.
 func Abandoned(s *Service, id string) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	e := s.entries[id]
 	return e != nil && e.abandoned
 }
@@ -141,7 +141,7 @@ func Abandoned(s *Service, id string) bool {
 // SetCurrentBoot records boot as the worker's current boot in memory.
 func SetCurrentBoot(s *Service, worker, boot string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	s.bootSeq++
 	s.boots[worker] = bootRec{boot: boot, seq: s.bootSeq}
 }
@@ -149,7 +149,7 @@ func SetCurrentBoot(s *Service, worker, boot string) {
 // Busy reports whether the scheduler is processing Wakes or rescans.
 func Busy(s *Service) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	return s.busy > 0
 }
 
@@ -157,7 +157,7 @@ func Busy(s *Service) bool {
 // stale reads in a row.
 func Parked(s *Service, id string) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	_, ok := s.parked[id]
 	return ok
 }
@@ -167,7 +167,7 @@ func Parked(s *Service, id string) bool {
 // full.
 func FillWakes(s *Service, n int) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.unlock()
 	for i := range n {
 		s.wakes[fmt.Sprintf("filler-%d", i)] = 0
 	}

@@ -429,10 +429,11 @@ func testBrokenRules(t *testing.T, b Backend) {
 	must(t, err)
 	mustEqual(t, "taken stay unpersisted", len(rec.Inputs), 2)
 	// Repair is idempotent; then the inputs flow again.
-	for range 2 {
-		sess, err := s.TranscriptRepaired(ctx, fence)
+	for i := range 2 {
+		sess, repaired, err := s.TranscriptRepaired(ctx, fence)
 		must(t, err)
 		mustEqual(t, "repaired", sess.State, store.SessionIdle)
+		mustEqual(t, "repaired reports only the change", repaired, i == 0)
 	}
 	taken, err = s.TakeInputs(ctx, fence)
 	must(t, err)
