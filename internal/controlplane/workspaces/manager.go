@@ -395,6 +395,12 @@ func (m *Manager) logError(w store.Workspace, err error) {
 // same transaction that writes the call ID and request snapshot.
 func (m *Manager) admit(ctx context.Context, w store.Workspace, slot bool) (store.Workspace, error) {
 	var change store.WorkspaceChange
+	// Read the clock before the device's connection. A clock read after it,
+	// for example once BEGIN IMMEDIATE has waited for the write lock, could
+	// find a backoff due and start an attempt on a connection that was gone
+	// before the retry fell due. That attempt only waits for the device and
+	// never records that it is offline.
+	now := m.now()
 	online, supported := m.cfg.Supports(w.DeviceID, wire.FeaturePrepareWorkspace)
 	err := m.cfg.Store.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
 		device, err := tx.GetIdentity(ctx, store.KindDevice, w.DeviceID)
@@ -402,7 +408,7 @@ func (m *Manager) admit(ctx context.Context, w store.Workspace, slot bool) (stor
 			return err
 		}
 		p := w.WorkspacePatch
-		p.UpdatedAt = m.now()
+		p.UpdatedAt = now
 		switch {
 		case err != nil || device.DeletedAt != 0:
 			p = failed(w, circusv1.WorkspaceError_WORKSPACE_ERROR_DEVICE_REVOKED, "", p.UpdatedAt)
