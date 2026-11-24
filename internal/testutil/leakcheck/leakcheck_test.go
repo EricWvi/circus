@@ -415,3 +415,39 @@ func TestAmbiguousProcessIsNotPinnedToAnotherTest(t *testing.T) {
 	}
 	want(t, ownTest.finish(), "processes", fmt.Sprintf("pid=%d", cmd.Process.Pid), "sleep 30")
 }
+
+// reexecHomeEnv marks the test binary that TestReexecutedBinarySharesHome
+// starts.
+const reexecHomeEnv = "LEAKCHECK_TEST_REEXEC_HOME"
+
+// A test binary re-executed by a test runs Run again: it must reuse the
+// parent's isolated HOME and leave it in place when it finishes.
+func TestReexecutedBinarySharesHome(t *testing.T) {
+	home := os.Getenv("HOME")
+	if os.Getenv(homeEnv) != home {
+		t.Fatalf("%s = %q, want the isolated HOME %q", homeEnv, os.Getenv(homeEnv), home)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(executable, "-test.run=^TestReexecutedBinaryHomeChild$", "-test.count=1")
+	cmd.Env = append(os.Environ(), reexecHomeEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("child: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "child home="+home+"\n") {
+		t.Fatalf("child did not report the parent's HOME %s:\n%s", home, out)
+	}
+	if info, err := os.Stat(home); err != nil || !info.IsDir() {
+		t.Fatalf("the child removed the parent's HOME: %v", err)
+	}
+}
+
+func TestReexecutedBinaryHomeChild(t *testing.T) {
+	if os.Getenv(reexecHomeEnv) == "" {
+		t.Skip("run by TestReexecutedBinarySharesHome")
+	}
+	fmt.Printf("child home=%s\n", os.Getenv("HOME"))
+}

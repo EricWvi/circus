@@ -565,6 +565,9 @@ func checkStateDir(dir string) []string {
 
 // Run executes the tests with a child subreaper and an isolated HOME, then
 // checks the package-wide invariants. TestMain passes its result to os.Exit.
+// A test binary re-executed by a test that runs under Run shares its parent's
+// isolated HOME and leaves its removal to the parent (see isolateHome), so a
+// child that exits early without returning from Run leaves nothing behind.
 func Run(m *testing.M, cfg Config) int {
 	if !supported {
 		return m.Run()
@@ -576,7 +579,7 @@ func Run(m *testing.M, cfg Config) int {
 		fmt.Fprintf(os.Stderr, "leakcheck: PR_SET_CHILD_SUBREAPER: %v\n", err)
 		return 1
 	}
-	home, err := isolateHome()
+	home, owned, err := isolateHome()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "leakcheck: isolate HOME: %v\n", err)
 		return 1
@@ -604,7 +607,9 @@ func Run(m *testing.M, cfg Config) int {
 	if testing.Verbose() {
 		fmt.Fprintf(os.Stderr, "leakcheck: final VmHWM %s (limit %s)\n", mib(peakRSS()), mib(cfg.MemoryLimit))
 	}
-	_ = os.RemoveAll(home)
+	if owned {
+		_ = os.RemoveAll(home)
+	}
 	if len(failures) > 0 {
 		fmt.Fprintf(os.Stderr, "leakcheck: package-end check failed:\n  %s\n", strings.Join(failures, "\n  "))
 		if code == 0 {
@@ -687,12 +692,25 @@ func runFinalizers() {
 	}
 }
 
+// homeEnv carries the isolated HOME to re-executed test binaries.
+const homeEnv = "CIRCUS_LEAKCHECK_HOME"
+
+// homePrefix names the isolated HOME directories below the base.
+const homePrefix = "leakcheck-home-"
+
 // isolateHome points the default daemon paths at a private directory below
-// the repository's .tmp, so no test can reach the real cache or state.
-func isolateHome() (string, error) {
+// the repository's .tmp, so no test can reach the real cache or state. It
+// exports the directory in homeEnv, which processes started by the tests
+// inherit. When homeEnv already names a directory directly below the same
+// base, this process is a test binary re-executed by a test of a package that
+// isolated HOME already: it reuses that directory, and owned is false so Run
+// leaves its removal to the parent, which owns it. Such a child may exit
+// without returning from Run, by design or by crashing; a directory of its
+// own would then remain.
+func isolateHome() (home string, owned bool, err error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
@@ -700,7 +718,7 @@ func isolateHome() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("no go.mod above the test directory")
+			return "", false, fmt.Errorf("no go.mod above the test directory")
 		}
 		dir = parent
 	}
@@ -708,23 +726,45 @@ func isolateHome() (string, error) {
 	if override := os.Getenv("CIRCUS_PARITY_TMPDIR"); override != "" {
 		base = override
 	}
-	if err := os.MkdirAll(base, 0o700); err != nil {
-		return "", err
-	}
-	home, err := os.MkdirTemp(base, "leakcheck-home-")
-	if err != nil {
-		return "", err
+	if inherited := inheritedHome(base); inherited != "" {
+		home = inherited
+	} else {
+		if err := os.MkdirAll(base, 0o700); err != nil {
+			return "", false, err
+		}
+		if home, err = os.MkdirTemp(base, homePrefix); err != nil {
+			return "", false, err
+		}
+		owned = true
 	}
 	// CIRCUS_HOME would take precedence over the XDG paths set here.
 	if err := os.Unsetenv("CIRCUS_HOME"); err != nil {
-		return "", err
+		return "", false, err
 	}
-	for key, value := range map[string]string{"HOME": home, "XDG_CACHE_HOME": filepath.Join(home, ".cache"), "XDG_STATE_HOME": filepath.Join(home, ".local", "state")} {
+	for key, value := range map[string]string{homeEnv: home, "HOME": home, "XDG_CACHE_HOME": filepath.Join(home, ".cache"), "XDG_STATE_HOME": filepath.Join(home, ".local", "state")} {
 		if err := os.Setenv(key, value); err != nil {
-			return "", err
+			return "", false, err
 		}
 	}
-	return home, nil
+	return home, owned, nil
+}
+
+// inheritedHome returns the isolated HOME named by homeEnv when it is an
+// existing directory directly below base, and "" otherwise.
+func inheritedHome(base string) string {
+	home := os.Getenv(homeEnv)
+	if home == "" || !filepath.IsAbs(home) {
+		return ""
+	}
+	home = filepath.Clean(home)
+	absBase, err := filepath.Abs(base)
+	if err != nil || filepath.Dir(home) != filepath.Clean(absBase) || !strings.HasPrefix(filepath.Base(home), homePrefix) {
+		return ""
+	}
+	if info, err := os.Stat(home); err != nil || !info.IsDir() {
+		return ""
+	}
+	return home
 }
 
 // warmUp creates the runtime's lazily opened descriptors (network poller,
