@@ -102,20 +102,48 @@ func (m *Manager) CommitMain(ctx context.Context, projectID string, decisions []
 			return "", err
 		}
 	}
-	if err := checkRetained(previous, prepared); err != nil {
-		return "", err
-	}
 	if parent.IsZero() && len(prepared) == 0 {
 		return "", &ValidationError{Problems: []Problem{{Path: ".", Message: "the first commit must add a decision"}}}
 	}
-	tree, current, err := r.putSnapshot(ctx, prepared, previous)
+	return m.publish(ctx, projectID, publication{r: r, staging: staging, dst: dst, parent: parent, indexed: indexed,
+		previous: previous, prepared: prepared, message: message, options: options})
+}
+
+// publication is a new main-line commit prepared under the project's lock
+// and main.lock: the complete set of decisions on top of parent, whose
+// snapshot is previous.
+type publication struct {
+	r *repository
+	// staging is the directory of a repository created for this commit,
+	// renamed to dst once main is published; empty for an existing one.
+	staging, dst string
+	parent       plumbing.Hash
+	indexed      string
+	previous     snapshot
+	prepared     []preparedDecision
+	message      string
+	options      CommitOptions
+	// beforePublish, when set, runs after the commit object is written
+	// and before main moves to it. An error stops the commit.
+	beforePublish func(commit plumbing.Hash) error
+}
+
+// publish writes the snapshot and the commit, moves main and updates the
+// index. If it returns a nonempty ID with an error, Git advanced but
+// durability or the index update failed.
+func (m *Manager) publish(ctx context.Context, projectID string, p publication) (string, error) {
+	r := p.r
+	if err := checkRetained(p.previous, p.prepared); err != nil {
+		return "", err
+	}
+	tree, current, err := r.putSnapshot(ctx, p.prepared, p.previous)
 	if err != nil {
 		return "", err
 	}
-	author := object.Signature{Name: options.Author, Email: "ledger@circus.invalid", When: m.now().UTC().Truncate(time.Second)}
-	commit := &object.Commit{Author: author, Committer: author, Message: message, TreeHash: tree}
-	if !parent.IsZero() {
-		commit.ParentHashes = []plumbing.Hash{parent}
+	author := object.Signature{Name: p.options.Author, Email: "ledger@circus.invalid", When: m.now().UTC().Truncate(time.Second)}
+	commit := &object.Commit{Author: author, Committer: author, Message: p.message, TreeHash: tree}
+	if !p.parent.IsZero() {
+		commit.ParentHashes = []plumbing.Hash{p.parent}
 	}
 	o := r.storage.NewEncodedObject()
 	if err := commit.Encode(o); err != nil {
@@ -128,6 +156,7 @@ func (m *Manager) CommitMain(ctx context.Context, projectID string, decisions []
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	staging, dst := p.staging, p.dst
 	if staging != "" {
 		for _, file := range []string{"HEAD", "config"} {
 			if err := syncPath(filepath.Join(staging, file)); err != nil {
@@ -135,7 +164,12 @@ func (m *Manager) CommitMain(ctx context.Context, projectID string, decisions []
 			}
 		}
 	}
-	published, err := r.setMain(parent, commit.Hash)
+	if p.beforePublish != nil {
+		if err := p.beforePublish(commit.Hash); err != nil {
+			return "", err
+		}
+	}
+	published, err := r.setMain(p.parent, commit.Hash)
 	if err != nil {
 		if published && staging == "" {
 			return commit.Hash.String(), fmt.Errorf("ledger: main published but durability check failed: %w", err)
@@ -159,7 +193,7 @@ func (m *Manager) CommitMain(ctx context.Context, projectID string, decisions []
 		return commit.Hash.String(), fmt.Errorf("ledger: main published but durability check failed: %w", err)
 	}
 
-	if indexed != commitID(parent) {
+	if p.indexed != commitID(p.parent) {
 		if staging != "" {
 			// The Git storage still refers to the staging path after rename.
 			r, err = m.open(dst)
@@ -171,9 +205,9 @@ func (m *Manager) CommitMain(ctx context.Context, projectID string, decisions []
 			}
 			defer r.storage.Close()
 		}
-		err = m.rebuild(ctx, r, projectID, indexed, commit.Hash)
+		err = m.rebuild(ctx, r, projectID, p.indexed, commit.Hash)
 	} else {
-		err = m.advance(ctx, projectID, indexed, previous, current, commit, options.CodeCommit)
+		err = m.advance(ctx, projectID, p.indexed, p.previous, current, commit, p.options.CodeCommit)
 	}
 	if err != nil {
 		return commit.Hash.String(), fmt.Errorf("ledger: main advanced but index update failed: %w", err)

@@ -21,6 +21,58 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type Changeset_State int32
+
+const (
+	Changeset_STATE_UNSPECIFIED Changeset_State = 0
+	Changeset_STATE_OPEN        Changeset_State = 1
+	Changeset_STATE_MERGED      Changeset_State = 2
+	Changeset_STATE_DISCARDED   Changeset_State = 3
+)
+
+// Enum value maps for Changeset_State.
+var (
+	Changeset_State_name = map[int32]string{
+		0: "STATE_UNSPECIFIED",
+		1: "STATE_OPEN",
+		2: "STATE_MERGED",
+		3: "STATE_DISCARDED",
+	}
+	Changeset_State_value = map[string]int32{
+		"STATE_UNSPECIFIED": 0,
+		"STATE_OPEN":        1,
+		"STATE_MERGED":      2,
+		"STATE_DISCARDED":   3,
+	}
+)
+
+func (x Changeset_State) Enum() *Changeset_State {
+	p := new(Changeset_State)
+	*p = x
+	return p
+}
+
+func (x Changeset_State) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Changeset_State) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_ledger_proto_enumTypes[0].Descriptor()
+}
+
+func (Changeset_State) Type() protoreflect.EnumType {
+	return &file_circus_v1_ledger_proto_enumTypes[0]
+}
+
+func (x Changeset_State) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Changeset_State.Descriptor instead.
+func (Changeset_State) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{9, 0}
+}
+
 type LedgerEntry struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The decision is referred to as D<number>. Numbers are unique within a
@@ -414,7 +466,8 @@ type DecisionVersion struct {
 	// Full hex id of the main-line commit that made this version.
 	Commit            string `protobuf:"bytes,1,opt,name=commit,proto3" json:"commit,omitempty"`
 	CommittedAtUnixMs int64  `protobuf:"varint,2,opt,name=committed_at_unix_ms,json=committedAtUnixMs,proto3" json:"committed_at_unix_ms,omitempty"`
-	// Commit author name: a session, an orchestrator, or "import".
+	// Commit author name: a session, a worker that merged a changeset, or
+	// "import".
 	Author string `protobuf:"bytes,3,opt,name=author,proto3" json:"author,omitempty"`
 	// First line of the commit message.
 	Summary string `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
@@ -664,6 +717,1326 @@ func (x *ListDecisionHistoryResponse) GetNextPageToken() string {
 	return ""
 }
 
+type Changeset struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ChangesetId string                 `protobuf:"bytes,1,opt,name=changeset_id,json=changesetId,proto3" json:"changeset_id,omitempty"`
+	ProjectId   string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	State       Changeset_State        `protobuf:"varint,3,opt,name=state,proto3,enum=circus.v1.Changeset_State" json:"state,omitempty"`
+	// Main-line commit the changeset started from.
+	BaseCommit string `protobuf:"bytes,4,opt,name=base_commit,json=baseCommit,proto3" json:"base_commit,omitempty"`
+	// The worker that opened it (empty for a session's changeset, later).
+	OpenerWorkerId  string `protobuf:"bytes,5,opt,name=opener_worker_id,json=openerWorkerId,proto3" json:"opener_worker_id,omitempty"`
+	CreatedAtUnixMs int64  `protobuf:"varint,6,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
+	UpdatedAtUnixMs int64  `protobuf:"varint,7,opt,name=updated_at_unix_ms,json=updatedAtUnixMs,proto3" json:"updated_at_unix_ms,omitempty"`
+	// When merged: the main-line commit and the code commit given to merge.
+	MergedCommit string `protobuf:"bytes,8,opt,name=merged_commit,json=mergedCommit,proto3" json:"merged_commit,omitempty"`
+	CodeCommit   string `protobuf:"bytes,9,opt,name=code_commit,json=codeCommit,proto3" json:"code_commit,omitempty"`
+	// When discarded.
+	DiscardReason string `protobuf:"bytes,10,opt,name=discard_reason,json=discardReason,proto3" json:"discard_reason,omitempty"`
+	// Set when an interrupted merge or archive of the changeset could not be
+	// repaired, as when one of its objects is damaged: why, briefly.
+	// GetChangeset and ListChangesets return such a changeset with the state
+	// recorded before that merge or discard (open for an interrupted merge,
+	// discarded for an archive not finished); its other operations are
+	// refused with FAILED_PRECONDITION, a google.rpc.PreconditionFailure of
+	// type "CHANGESET_REPAIR", until a repair succeeds.
+	RepairFailure string `protobuf:"bytes,11,opt,name=repair_failure,json=repairFailure,proto3" json:"repair_failure,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Changeset) Reset() {
+	*x = Changeset{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Changeset) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Changeset) ProtoMessage() {}
+
+func (x *Changeset) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Changeset.ProtoReflect.Descriptor instead.
+func (*Changeset) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Changeset) GetChangesetId() string {
+	if x != nil {
+		return x.ChangesetId
+	}
+	return ""
+}
+
+func (x *Changeset) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *Changeset) GetState() Changeset_State {
+	if x != nil {
+		return x.State
+	}
+	return Changeset_STATE_UNSPECIFIED
+}
+
+func (x *Changeset) GetBaseCommit() string {
+	if x != nil {
+		return x.BaseCommit
+	}
+	return ""
+}
+
+func (x *Changeset) GetOpenerWorkerId() string {
+	if x != nil {
+		return x.OpenerWorkerId
+	}
+	return ""
+}
+
+func (x *Changeset) GetCreatedAtUnixMs() int64 {
+	if x != nil {
+		return x.CreatedAtUnixMs
+	}
+	return 0
+}
+
+func (x *Changeset) GetUpdatedAtUnixMs() int64 {
+	if x != nil {
+		return x.UpdatedAtUnixMs
+	}
+	return 0
+}
+
+func (x *Changeset) GetMergedCommit() string {
+	if x != nil {
+		return x.MergedCommit
+	}
+	return ""
+}
+
+func (x *Changeset) GetCodeCommit() string {
+	if x != nil {
+		return x.CodeCommit
+	}
+	return ""
+}
+
+func (x *Changeset) GetDiscardReason() string {
+	if x != nil {
+		return x.DiscardReason
+	}
+	return ""
+}
+
+func (x *Changeset) GetRepairFailure() string {
+	if x != nil {
+		return x.RepairFailure
+	}
+	return ""
+}
+
+type LedgerFile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Complete file content (UTF-8).
+	Content       string `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LedgerFile) Reset() {
+	*x = LedgerFile{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LedgerFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LedgerFile) ProtoMessage() {}
+
+func (x *LedgerFile) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LedgerFile.ProtoReflect.Descriptor instead.
+func (*LedgerFile) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *LedgerFile) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *LedgerFile) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+type FileChange struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Types that are valid to be assigned to Change:
+	//
+	//	*FileChange_Content
+	//	*FileChange_Deleted
+	Change        isFileChange_Change `protobuf_oneof:"change"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FileChange) Reset() {
+	*x = FileChange{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FileChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FileChange) ProtoMessage() {}
+
+func (x *FileChange) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FileChange.ProtoReflect.Descriptor instead.
+func (*FileChange) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *FileChange) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *FileChange) GetChange() isFileChange_Change {
+	if x != nil {
+		return x.Change
+	}
+	return nil
+}
+
+func (x *FileChange) GetContent() string {
+	if x != nil {
+		if x, ok := x.Change.(*FileChange_Content); ok {
+			return x.Content
+		}
+	}
+	return ""
+}
+
+func (x *FileChange) GetDeleted() bool {
+	if x != nil {
+		if x, ok := x.Change.(*FileChange_Deleted); ok {
+			return x.Deleted
+		}
+	}
+	return false
+}
+
+type isFileChange_Change interface {
+	isFileChange_Change()
+}
+
+type FileChange_Content struct {
+	// New or changed file: its complete content.
+	Content string `protobuf:"bytes,2,opt,name=content,proto3,oneof"`
+}
+
+type FileChange_Deleted struct {
+	// The file of the base is removed (decisions cannot be removed; this
+	// is for moving or renaming one, together with its new path).
+	Deleted bool `protobuf:"varint,3,opt,name=deleted,proto3,oneof"`
+}
+
+func (*FileChange_Content) isFileChange_Change() {}
+
+func (*FileChange_Deleted) isFileChange_Change() {}
+
+type OpenChangesetRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A project id or the user's project name.
+	Project       string `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OpenChangesetRequest) Reset() {
+	*x = OpenChangesetRequest{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OpenChangesetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OpenChangesetRequest) ProtoMessage() {}
+
+func (x *OpenChangesetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OpenChangesetRequest.ProtoReflect.Descriptor instead.
+func (*OpenChangesetRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *OpenChangesetRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+type OpenChangesetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Changeset     *Changeset             `protobuf:"bytes,1,opt,name=changeset,proto3" json:"changeset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OpenChangesetResponse) Reset() {
+	*x = OpenChangesetResponse{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OpenChangesetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OpenChangesetResponse) ProtoMessage() {}
+
+func (x *OpenChangesetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OpenChangesetResponse.ProtoReflect.Descriptor instead.
+func (*OpenChangesetResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *OpenChangesetResponse) GetChangeset() *Changeset {
+	if x != nil {
+		return x.Changeset
+	}
+	return nil
+}
+
+type ReadChangesetBaseRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ChangesetId string                 `protobuf:"bytes,1,opt,name=changeset_id,json=changesetId,proto3" json:"changeset_id,omitempty"`
+	// next_page_token of the previous page; empty starts at the first file.
+	PageToken     string `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadChangesetBaseRequest) Reset() {
+	*x = ReadChangesetBaseRequest{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadChangesetBaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadChangesetBaseRequest) ProtoMessage() {}
+
+func (x *ReadChangesetBaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadChangesetBaseRequest.ProtoReflect.Descriptor instead.
+func (*ReadChangesetBaseRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ReadChangesetBaseRequest) GetChangesetId() string {
+	if x != nil {
+		return x.ChangesetId
+	}
+	return ""
+}
+
+func (x *ReadChangesetBaseRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ReadChangesetBaseResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Files of the base commit in path order, at most 8 MiB per page.
+	Files []*LedgerFile `protobuf:"bytes,1,rep,name=files,proto3" json:"files,omitempty"`
+	// Empty after the last file.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadChangesetBaseResponse) Reset() {
+	*x = ReadChangesetBaseResponse{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadChangesetBaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadChangesetBaseResponse) ProtoMessage() {}
+
+func (x *ReadChangesetBaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadChangesetBaseResponse.ProtoReflect.Descriptor instead.
+func (*ReadChangesetBaseResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ReadChangesetBaseResponse) GetFiles() []*LedgerFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *ReadChangesetBaseResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+type LedgerProblem struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// English description for the agent, e.g. "front matter must hold
+	// number and title".
+	Message       string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LedgerProblem) Reset() {
+	*x = LedgerProblem{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LedgerProblem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LedgerProblem) ProtoMessage() {}
+
+func (x *LedgerProblem) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LedgerProblem.ProtoReflect.Descriptor instead.
+func (*LedgerProblem) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *LedgerProblem) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *LedgerProblem) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type LedgerConflict struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// The file in the base, the changeset and the current main line; a side
+	// where it does not exist has exists false and empty content.
+	BaseExists      bool   `protobuf:"varint,2,opt,name=base_exists,json=baseExists,proto3" json:"base_exists,omitempty"`
+	Base            string `protobuf:"bytes,3,opt,name=base,proto3" json:"base,omitempty"`
+	ChangesetExists bool   `protobuf:"varint,4,opt,name=changeset_exists,json=changesetExists,proto3" json:"changeset_exists,omitempty"`
+	Changeset       string `protobuf:"bytes,5,opt,name=changeset,proto3" json:"changeset,omitempty"`
+	MainExists      bool   `protobuf:"varint,6,opt,name=main_exists,json=mainExists,proto3" json:"main_exists,omitempty"`
+	Main            string `protobuf:"bytes,7,opt,name=main,proto3" json:"main,omitempty"`
+	// The three contents are left out, because the conflicts' contents
+	// exceed what one response carries; the exists flags still hold.
+	ContentOmitted bool `protobuf:"varint,8,opt,name=content_omitted,json=contentOmitted,proto3" json:"content_omitted,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *LedgerConflict) Reset() {
+	*x = LedgerConflict{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LedgerConflict) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LedgerConflict) ProtoMessage() {}
+
+func (x *LedgerConflict) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LedgerConflict.ProtoReflect.Descriptor instead.
+func (*LedgerConflict) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *LedgerConflict) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *LedgerConflict) GetBaseExists() bool {
+	if x != nil {
+		return x.BaseExists
+	}
+	return false
+}
+
+func (x *LedgerConflict) GetBase() string {
+	if x != nil {
+		return x.Base
+	}
+	return ""
+}
+
+func (x *LedgerConflict) GetChangesetExists() bool {
+	if x != nil {
+		return x.ChangesetExists
+	}
+	return false
+}
+
+func (x *LedgerConflict) GetChangeset() string {
+	if x != nil {
+		return x.Changeset
+	}
+	return ""
+}
+
+func (x *LedgerConflict) GetMainExists() bool {
+	if x != nil {
+		return x.MainExists
+	}
+	return false
+}
+
+func (x *LedgerConflict) GetMain() string {
+	if x != nil {
+		return x.Main
+	}
+	return ""
+}
+
+func (x *LedgerConflict) GetContentOmitted() bool {
+	if x != nil {
+		return x.ContentOmitted
+	}
+	return false
+}
+
+type CheckChangesetRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ChangesetId string                 `protobuf:"bytes,1,opt,name=changeset_id,json=changesetId,proto3" json:"changeset_id,omitempty"`
+	// The complete set of changes relative to the base.
+	Changes       []*FileChange `protobuf:"bytes,2,rep,name=changes,proto3" json:"changes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckChangesetRequest) Reset() {
+	*x = CheckChangesetRequest{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckChangesetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckChangesetRequest) ProtoMessage() {}
+
+func (x *CheckChangesetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckChangesetRequest.ProtoReflect.Descriptor instead.
+func (*CheckChangesetRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CheckChangesetRequest) GetChangesetId() string {
+	if x != nil {
+		return x.ChangesetId
+	}
+	return ""
+}
+
+func (x *CheckChangesetRequest) GetChanges() []*FileChange {
+	if x != nil {
+		return x.Changes
+	}
+	return nil
+}
+
+type CheckChangesetResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Changeset *Changeset             `protobuf:"bytes,1,opt,name=changeset,proto3" json:"changeset,omitempty"`
+	Problems  []*LedgerProblem       `protobuf:"bytes,2,rep,name=problems,proto3" json:"problems,omitempty"`
+	// The base is the main line's head now: merging needs no integrator and
+	// has no conflicts (unless the main line moves first).
+	FastForward bool `protobuf:"varint,3,opt,name=fast_forward,json=fastForward,proto3" json:"fast_forward,omitempty"`
+	// Main-line head the comparison used.
+	MainCommit string            `protobuf:"bytes,4,opt,name=main_commit,json=mainCommit,proto3" json:"main_commit,omitempty"`
+	Conflicts  []*LedgerConflict `protobuf:"bytes,5,rep,name=conflicts,proto3" json:"conflicts,omitempty"`
+	// Findings that do not stop a merge, such as a reference to a temporary
+	// number that no new decision of the changeset has, which a merge keeps
+	// as it is.
+	Warnings      []*LedgerProblem `protobuf:"bytes,6,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckChangesetResponse) Reset() {
+	*x = CheckChangesetResponse{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckChangesetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckChangesetResponse) ProtoMessage() {}
+
+func (x *CheckChangesetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckChangesetResponse.ProtoReflect.Descriptor instead.
+func (*CheckChangesetResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CheckChangesetResponse) GetChangeset() *Changeset {
+	if x != nil {
+		return x.Changeset
+	}
+	return nil
+}
+
+func (x *CheckChangesetResponse) GetProblems() []*LedgerProblem {
+	if x != nil {
+		return x.Problems
+	}
+	return nil
+}
+
+func (x *CheckChangesetResponse) GetFastForward() bool {
+	if x != nil {
+		return x.FastForward
+	}
+	return false
+}
+
+func (x *CheckChangesetResponse) GetMainCommit() string {
+	if x != nil {
+		return x.MainCommit
+	}
+	return ""
+}
+
+func (x *CheckChangesetResponse) GetConflicts() []*LedgerConflict {
+	if x != nil {
+		return x.Conflicts
+	}
+	return nil
+}
+
+func (x *CheckChangesetResponse) GetWarnings() []*LedgerProblem {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
+type ReadChangesetConflictsRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ChangesetId string                 `protobuf:"bytes,1,opt,name=changeset_id,json=changesetId,proto3" json:"changeset_id,omitempty"`
+	// The main_commit a CheckChangeset of the changeset reported.
+	MainCommit string `protobuf:"bytes,2,opt,name=main_commit,json=mainCommit,proto3" json:"main_commit,omitempty"`
+	// next_page_token of the previous page; empty starts at the first
+	// conflict.
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadChangesetConflictsRequest) Reset() {
+	*x = ReadChangesetConflictsRequest{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadChangesetConflictsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadChangesetConflictsRequest) ProtoMessage() {}
+
+func (x *ReadChangesetConflictsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadChangesetConflictsRequest.ProtoReflect.Descriptor instead.
+func (*ReadChangesetConflictsRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ReadChangesetConflictsRequest) GetChangesetId() string {
+	if x != nil {
+		return x.ChangesetId
+	}
+	return ""
+}
+
+func (x *ReadChangesetConflictsRequest) GetMainCommit() string {
+	if x != nil {
+		return x.MainCommit
+	}
+	return ""
+}
+
+func (x *ReadChangesetConflictsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ReadChangesetConflictsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Conflicts in path order with their contents, about 8 MiB per page; a
+	// conflict whose contents alone exceed that comes alone in its page.
+	// content_omitted is never set here.
+	Conflicts []*LedgerConflict `protobuf:"bytes,1,rep,name=conflicts,proto3" json:"conflicts,omitempty"`
+	// Empty after the last conflict.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadChangesetConflictsResponse) Reset() {
+	*x = ReadChangesetConflictsResponse{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadChangesetConflictsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadChangesetConflictsResponse) ProtoMessage() {}
+
+func (x *ReadChangesetConflictsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadChangesetConflictsResponse.ProtoReflect.Descriptor instead.
+func (*ReadChangesetConflictsResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ReadChangesetConflictsResponse) GetConflicts() []*LedgerConflict {
+	if x != nil {
+		return x.Conflicts
+	}
+	return nil
+}
+
+func (x *ReadChangesetConflictsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+type MergeChangesetRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ChangesetId string                 `protobuf:"bytes,1,opt,name=changeset_id,json=changesetId,proto3" json:"changeset_id,omitempty"`
+	// Optional: the code commit merged together with this change (full hex).
+	CodeCommit string `protobuf:"bytes,2,opt,name=code_commit,json=codeCommit,proto3" json:"code_commit,omitempty"`
+	// Final content for conflicting files (a deleted change resolves to the
+	// file's absence). Ignored when the merge fast-forwards.
+	Resolved      []*FileChange `protobuf:"bytes,3,rep,name=resolved,proto3" json:"resolved,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MergeChangesetRequest) Reset() {
+	*x = MergeChangesetRequest{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MergeChangesetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MergeChangesetRequest) ProtoMessage() {}
+
+func (x *MergeChangesetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MergeChangesetRequest.ProtoReflect.Descriptor instead.
+func (*MergeChangesetRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *MergeChangesetRequest) GetChangesetId() string {
+	if x != nil {
+		return x.ChangesetId
+	}
+	return ""
+}
+
+func (x *MergeChangesetRequest) GetCodeCommit() string {
+	if x != nil {
+		return x.CodeCommit
+	}
+	return ""
+}
+
+func (x *MergeChangesetRequest) GetResolved() []*FileChange {
+	if x != nil {
+		return x.Resolved
+	}
+	return nil
+}
+
+type MergeChangesetResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Changeset *Changeset             `protobuf:"bytes,1,opt,name=changeset,proto3" json:"changeset,omitempty"`
+	// Temporary number ("D?a") to the assigned number, for new decisions.
+	Numbers       map[string]uint32 `protobuf:"bytes,2,rep,name=numbers,proto3" json:"numbers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MergeChangesetResponse) Reset() {
+	*x = MergeChangesetResponse{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MergeChangesetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MergeChangesetResponse) ProtoMessage() {}
+
+func (x *MergeChangesetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MergeChangesetResponse.ProtoReflect.Descriptor instead.
+func (*MergeChangesetResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *MergeChangesetResponse) GetChangeset() *Changeset {
+	if x != nil {
+		return x.Changeset
+	}
+	return nil
+}
+
+func (x *MergeChangesetResponse) GetNumbers() map[string]uint32 {
+	if x != nil {
+		return x.Numbers
+	}
+	return nil
+}
+
+type DiscardChangesetRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ChangesetId string                 `protobuf:"bytes,1,opt,name=changeset_id,json=changesetId,proto3" json:"changeset_id,omitempty"`
+	// Required, at most 1024 bytes.
+	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscardChangesetRequest) Reset() {
+	*x = DiscardChangesetRequest{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscardChangesetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscardChangesetRequest) ProtoMessage() {}
+
+func (x *DiscardChangesetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscardChangesetRequest.ProtoReflect.Descriptor instead.
+func (*DiscardChangesetRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *DiscardChangesetRequest) GetChangesetId() string {
+	if x != nil {
+		return x.ChangesetId
+	}
+	return ""
+}
+
+func (x *DiscardChangesetRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type DiscardChangesetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Changeset     *Changeset             `protobuf:"bytes,1,opt,name=changeset,proto3" json:"changeset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscardChangesetResponse) Reset() {
+	*x = DiscardChangesetResponse{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscardChangesetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscardChangesetResponse) ProtoMessage() {}
+
+func (x *DiscardChangesetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscardChangesetResponse.ProtoReflect.Descriptor instead.
+func (*DiscardChangesetResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *DiscardChangesetResponse) GetChangeset() *Changeset {
+	if x != nil {
+		return x.Changeset
+	}
+	return nil
+}
+
+type ListChangesetsRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Project string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	// Unspecified lists all states.
+	State Changeset_State `protobuf:"varint,2,opt,name=state,proto3,enum=circus.v1.Changeset_State" json:"state,omitempty"`
+	// 1 to 100; 0 selects 50.
+	PageSize      uint32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListChangesetsRequest) Reset() {
+	*x = ListChangesetsRequest{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListChangesetsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListChangesetsRequest) ProtoMessage() {}
+
+func (x *ListChangesetsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListChangesetsRequest.ProtoReflect.Descriptor instead.
+func (*ListChangesetsRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ListChangesetsRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ListChangesetsRequest) GetState() Changeset_State {
+	if x != nil {
+		return x.State
+	}
+	return Changeset_STATE_UNSPECIFIED
+}
+
+func (x *ListChangesetsRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListChangesetsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ListChangesetsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Changesets    []*Changeset           `protobuf:"bytes,1,rep,name=changesets,proto3" json:"changesets,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListChangesetsResponse) Reset() {
+	*x = ListChangesetsResponse{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListChangesetsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListChangesetsResponse) ProtoMessage() {}
+
+func (x *ListChangesetsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListChangesetsResponse.ProtoReflect.Descriptor instead.
+func (*ListChangesetsResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ListChangesetsResponse) GetChangesets() []*Changeset {
+	if x != nil {
+		return x.Changesets
+	}
+	return nil
+}
+
+func (x *ListChangesetsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+type GetChangesetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ChangesetId   string                 `protobuf:"bytes,1,opt,name=changeset_id,json=changesetId,proto3" json:"changeset_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetChangesetRequest) Reset() {
+	*x = GetChangesetRequest{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetChangesetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetChangesetRequest) ProtoMessage() {}
+
+func (x *GetChangesetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetChangesetRequest.ProtoReflect.Descriptor instead.
+func (*GetChangesetRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *GetChangesetRequest) GetChangesetId() string {
+	if x != nil {
+		return x.ChangesetId
+	}
+	return ""
+}
+
+type GetChangesetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Changeset     *Changeset             `protobuf:"bytes,1,opt,name=changeset,proto3" json:"changeset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetChangesetResponse) Reset() {
+	*x = GetChangesetResponse{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetChangesetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetChangesetResponse) ProtoMessage() {}
+
+func (x *GetChangesetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetChangesetResponse.ProtoReflect.Descriptor instead.
+func (*GetChangesetResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *GetChangesetResponse) GetChangeset() *Changeset {
+	if x != nil {
+		return x.Changeset
+	}
+	return nil
+}
+
 var File_circus_v1_ledger_proto protoreflect.FileDescriptor
 
 const file_circus_v1_ledger_proto_rawDesc = "" +
@@ -722,11 +2095,128 @@ const file_circus_v1_ledger_proto_rawDesc = "" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\"}\n" +
 	"\x1bListDecisionHistoryResponse\x126\n" +
 	"\bversions\x18\x01 \x03(\v2\x1a.circus.v1.DecisionVersionR\bversions\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\x8b\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8f\x04\n" +
+	"\tChangeset\x12!\n" +
+	"\fchangeset_id\x18\x01 \x01(\tR\vchangesetId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x120\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x1a.circus.v1.Changeset.StateR\x05state\x12\x1f\n" +
+	"\vbase_commit\x18\x04 \x01(\tR\n" +
+	"baseCommit\x12(\n" +
+	"\x10opener_worker_id\x18\x05 \x01(\tR\x0eopenerWorkerId\x12+\n" +
+	"\x12created_at_unix_ms\x18\x06 \x01(\x03R\x0fcreatedAtUnixMs\x12+\n" +
+	"\x12updated_at_unix_ms\x18\a \x01(\x03R\x0fupdatedAtUnixMs\x12#\n" +
+	"\rmerged_commit\x18\b \x01(\tR\fmergedCommit\x12\x1f\n" +
+	"\vcode_commit\x18\t \x01(\tR\n" +
+	"codeCommit\x12%\n" +
+	"\x0ediscard_reason\x18\n" +
+	" \x01(\tR\rdiscardReason\x12%\n" +
+	"\x0erepair_failure\x18\v \x01(\tR\rrepairFailure\"U\n" +
+	"\x05State\x12\x15\n" +
+	"\x11STATE_UNSPECIFIED\x10\x00\x12\x0e\n" +
+	"\n" +
+	"STATE_OPEN\x10\x01\x12\x10\n" +
+	"\fSTATE_MERGED\x10\x02\x12\x13\n" +
+	"\x0fSTATE_DISCARDED\x10\x03\":\n" +
+	"\n" +
+	"LedgerFile\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\tR\acontent\"b\n" +
+	"\n" +
+	"FileChange\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1a\n" +
+	"\acontent\x18\x02 \x01(\tH\x00R\acontent\x12\x1a\n" +
+	"\adeleted\x18\x03 \x01(\bH\x00R\adeletedB\b\n" +
+	"\x06change\"0\n" +
+	"\x14OpenChangesetRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\"K\n" +
+	"\x15OpenChangesetResponse\x122\n" +
+	"\tchangeset\x18\x01 \x01(\v2\x14.circus.v1.ChangesetR\tchangeset\"\\\n" +
+	"\x18ReadChangesetBaseRequest\x12!\n" +
+	"\fchangeset_id\x18\x01 \x01(\tR\vchangesetId\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\"p\n" +
+	"\x19ReadChangesetBaseResponse\x12+\n" +
+	"\x05files\x18\x01 \x03(\v2\x15.circus.v1.LedgerFileR\x05files\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"=\n" +
+	"\rLedgerProblem\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x80\x02\n" +
+	"\x0eLedgerConflict\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1f\n" +
+	"\vbase_exists\x18\x02 \x01(\bR\n" +
+	"baseExists\x12\x12\n" +
+	"\x04base\x18\x03 \x01(\tR\x04base\x12)\n" +
+	"\x10changeset_exists\x18\x04 \x01(\bR\x0fchangesetExists\x12\x1c\n" +
+	"\tchangeset\x18\x05 \x01(\tR\tchangeset\x12\x1f\n" +
+	"\vmain_exists\x18\x06 \x01(\bR\n" +
+	"mainExists\x12\x12\n" +
+	"\x04main\x18\a \x01(\tR\x04main\x12'\n" +
+	"\x0fcontent_omitted\x18\b \x01(\bR\x0econtentOmitted\"k\n" +
+	"\x15CheckChangesetRequest\x12!\n" +
+	"\fchangeset_id\x18\x01 \x01(\tR\vchangesetId\x12/\n" +
+	"\achanges\x18\x02 \x03(\v2\x15.circus.v1.FileChangeR\achanges\"\xb5\x02\n" +
+	"\x16CheckChangesetResponse\x122\n" +
+	"\tchangeset\x18\x01 \x01(\v2\x14.circus.v1.ChangesetR\tchangeset\x124\n" +
+	"\bproblems\x18\x02 \x03(\v2\x18.circus.v1.LedgerProblemR\bproblems\x12!\n" +
+	"\ffast_forward\x18\x03 \x01(\bR\vfastForward\x12\x1f\n" +
+	"\vmain_commit\x18\x04 \x01(\tR\n" +
+	"mainCommit\x127\n" +
+	"\tconflicts\x18\x05 \x03(\v2\x19.circus.v1.LedgerConflictR\tconflicts\x124\n" +
+	"\bwarnings\x18\x06 \x03(\v2\x18.circus.v1.LedgerProblemR\bwarnings\"\x82\x01\n" +
+	"\x1dReadChangesetConflictsRequest\x12!\n" +
+	"\fchangeset_id\x18\x01 \x01(\tR\vchangesetId\x12\x1f\n" +
+	"\vmain_commit\x18\x02 \x01(\tR\n" +
+	"mainCommit\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x81\x01\n" +
+	"\x1eReadChangesetConflictsResponse\x127\n" +
+	"\tconflicts\x18\x01 \x03(\v2\x19.circus.v1.LedgerConflictR\tconflicts\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8e\x01\n" +
+	"\x15MergeChangesetRequest\x12!\n" +
+	"\fchangeset_id\x18\x01 \x01(\tR\vchangesetId\x12\x1f\n" +
+	"\vcode_commit\x18\x02 \x01(\tR\n" +
+	"codeCommit\x121\n" +
+	"\bresolved\x18\x03 \x03(\v2\x15.circus.v1.FileChangeR\bresolved\"\xd2\x01\n" +
+	"\x16MergeChangesetResponse\x122\n" +
+	"\tchangeset\x18\x01 \x01(\v2\x14.circus.v1.ChangesetR\tchangeset\x12H\n" +
+	"\anumbers\x18\x02 \x03(\v2..circus.v1.MergeChangesetResponse.NumbersEntryR\anumbers\x1a:\n" +
+	"\fNumbersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\rR\x05value:\x028\x01\"T\n" +
+	"\x17DiscardChangesetRequest\x12!\n" +
+	"\fchangeset_id\x18\x01 \x01(\tR\vchangesetId\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"N\n" +
+	"\x18DiscardChangesetResponse\x122\n" +
+	"\tchangeset\x18\x01 \x01(\v2\x14.circus.v1.ChangesetR\tchangeset\"\x9f\x01\n" +
+	"\x15ListChangesetsRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x120\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x1a.circus.v1.Changeset.StateR\x05state\x12\x1b\n" +
+	"\tpage_size\x18\x03 \x01(\rR\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\"v\n" +
+	"\x16ListChangesetsResponse\x124\n" +
+	"\n" +
+	"changesets\x18\x01 \x03(\v2\x14.circus.v1.ChangesetR\n" +
+	"changesets\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"8\n" +
+	"\x13GetChangesetRequest\x12!\n" +
+	"\fchangeset_id\x18\x01 \x01(\tR\vchangesetId\"J\n" +
+	"\x14GetChangesetResponse\x122\n" +
+	"\tchangeset\x18\x01 \x01(\v2\x14.circus.v1.ChangesetR\tchangeset2\x8b\x02\n" +
 	"\rLedgerService\x12F\n" +
 	"\tGetLedger\x12\x1b.circus.v1.GetLedgerRequest\x1a\x1c.circus.v1.GetLedgerResponse\x12L\n" +
 	"\vGetDecision\x12\x1d.circus.v1.GetDecisionRequest\x1a\x1e.circus.v1.GetDecisionResponse\x12d\n" +
-	"\x13ListDecisionHistory\x12%.circus.v1.ListDecisionHistoryRequest\x1a&.circus.v1.ListDecisionHistoryResponseB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
+	"\x13ListDecisionHistory\x12%.circus.v1.ListDecisionHistoryRequest\x1a&.circus.v1.ListDecisionHistoryResponse2\xee\x05\n" +
+	"\x16LedgerChangesetService\x12R\n" +
+	"\rOpenChangeset\x12\x1f.circus.v1.OpenChangesetRequest\x1a .circus.v1.OpenChangesetResponse\x12^\n" +
+	"\x11ReadChangesetBase\x12#.circus.v1.ReadChangesetBaseRequest\x1a$.circus.v1.ReadChangesetBaseResponse\x12U\n" +
+	"\x0eCheckChangeset\x12 .circus.v1.CheckChangesetRequest\x1a!.circus.v1.CheckChangesetResponse\x12m\n" +
+	"\x16ReadChangesetConflicts\x12(.circus.v1.ReadChangesetConflictsRequest\x1a).circus.v1.ReadChangesetConflictsResponse\x12U\n" +
+	"\x0eMergeChangeset\x12 .circus.v1.MergeChangesetRequest\x1a!.circus.v1.MergeChangesetResponse\x12[\n" +
+	"\x10DiscardChangeset\x12\".circus.v1.DiscardChangesetRequest\x1a#.circus.v1.DiscardChangesetResponse\x12U\n" +
+	"\x0eListChangesets\x12 .circus.v1.ListChangesetsRequest\x1a!.circus.v1.ListChangesetsResponse\x12O\n" +
+	"\fGetChangeset\x12\x1e.circus.v1.GetChangesetRequest\x1a\x1f.circus.v1.GetChangesetResponseB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 
 var (
 	file_circus_v1_ledger_proto_rawDescOnce sync.Once
@@ -740,33 +2230,89 @@ func file_circus_v1_ledger_proto_rawDescGZIP() []byte {
 	return file_circus_v1_ledger_proto_rawDescData
 }
 
-var file_circus_v1_ledger_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_circus_v1_ledger_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_circus_v1_ledger_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_circus_v1_ledger_proto_goTypes = []any{
-	(*LedgerEntry)(nil),                 // 0: circus.v1.LedgerEntry
-	(*GetLedgerRequest)(nil),            // 1: circus.v1.GetLedgerRequest
-	(*GetLedgerResponse)(nil),           // 2: circus.v1.GetLedgerResponse
-	(*Decision)(nil),                    // 3: circus.v1.Decision
-	(*GetDecisionRequest)(nil),          // 4: circus.v1.GetDecisionRequest
-	(*GetDecisionResponse)(nil),         // 5: circus.v1.GetDecisionResponse
-	(*DecisionVersion)(nil),             // 6: circus.v1.DecisionVersion
-	(*ListDecisionHistoryRequest)(nil),  // 7: circus.v1.ListDecisionHistoryRequest
-	(*ListDecisionHistoryResponse)(nil), // 8: circus.v1.ListDecisionHistoryResponse
+	(Changeset_State)(0),                   // 0: circus.v1.Changeset.State
+	(*LedgerEntry)(nil),                    // 1: circus.v1.LedgerEntry
+	(*GetLedgerRequest)(nil),               // 2: circus.v1.GetLedgerRequest
+	(*GetLedgerResponse)(nil),              // 3: circus.v1.GetLedgerResponse
+	(*Decision)(nil),                       // 4: circus.v1.Decision
+	(*GetDecisionRequest)(nil),             // 5: circus.v1.GetDecisionRequest
+	(*GetDecisionResponse)(nil),            // 6: circus.v1.GetDecisionResponse
+	(*DecisionVersion)(nil),                // 7: circus.v1.DecisionVersion
+	(*ListDecisionHistoryRequest)(nil),     // 8: circus.v1.ListDecisionHistoryRequest
+	(*ListDecisionHistoryResponse)(nil),    // 9: circus.v1.ListDecisionHistoryResponse
+	(*Changeset)(nil),                      // 10: circus.v1.Changeset
+	(*LedgerFile)(nil),                     // 11: circus.v1.LedgerFile
+	(*FileChange)(nil),                     // 12: circus.v1.FileChange
+	(*OpenChangesetRequest)(nil),           // 13: circus.v1.OpenChangesetRequest
+	(*OpenChangesetResponse)(nil),          // 14: circus.v1.OpenChangesetResponse
+	(*ReadChangesetBaseRequest)(nil),       // 15: circus.v1.ReadChangesetBaseRequest
+	(*ReadChangesetBaseResponse)(nil),      // 16: circus.v1.ReadChangesetBaseResponse
+	(*LedgerProblem)(nil),                  // 17: circus.v1.LedgerProblem
+	(*LedgerConflict)(nil),                 // 18: circus.v1.LedgerConflict
+	(*CheckChangesetRequest)(nil),          // 19: circus.v1.CheckChangesetRequest
+	(*CheckChangesetResponse)(nil),         // 20: circus.v1.CheckChangesetResponse
+	(*ReadChangesetConflictsRequest)(nil),  // 21: circus.v1.ReadChangesetConflictsRequest
+	(*ReadChangesetConflictsResponse)(nil), // 22: circus.v1.ReadChangesetConflictsResponse
+	(*MergeChangesetRequest)(nil),          // 23: circus.v1.MergeChangesetRequest
+	(*MergeChangesetResponse)(nil),         // 24: circus.v1.MergeChangesetResponse
+	(*DiscardChangesetRequest)(nil),        // 25: circus.v1.DiscardChangesetRequest
+	(*DiscardChangesetResponse)(nil),       // 26: circus.v1.DiscardChangesetResponse
+	(*ListChangesetsRequest)(nil),          // 27: circus.v1.ListChangesetsRequest
+	(*ListChangesetsResponse)(nil),         // 28: circus.v1.ListChangesetsResponse
+	(*GetChangesetRequest)(nil),            // 29: circus.v1.GetChangesetRequest
+	(*GetChangesetResponse)(nil),           // 30: circus.v1.GetChangesetResponse
+	nil,                                    // 31: circus.v1.MergeChangesetResponse.NumbersEntry
 }
 var file_circus_v1_ledger_proto_depIdxs = []int32{
-	0, // 0: circus.v1.GetLedgerResponse.entries:type_name -> circus.v1.LedgerEntry
-	3, // 1: circus.v1.GetDecisionResponse.decision:type_name -> circus.v1.Decision
-	6, // 2: circus.v1.ListDecisionHistoryResponse.versions:type_name -> circus.v1.DecisionVersion
-	1, // 3: circus.v1.LedgerService.GetLedger:input_type -> circus.v1.GetLedgerRequest
-	4, // 4: circus.v1.LedgerService.GetDecision:input_type -> circus.v1.GetDecisionRequest
-	7, // 5: circus.v1.LedgerService.ListDecisionHistory:input_type -> circus.v1.ListDecisionHistoryRequest
-	2, // 6: circus.v1.LedgerService.GetLedger:output_type -> circus.v1.GetLedgerResponse
-	5, // 7: circus.v1.LedgerService.GetDecision:output_type -> circus.v1.GetDecisionResponse
-	8, // 8: circus.v1.LedgerService.ListDecisionHistory:output_type -> circus.v1.ListDecisionHistoryResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	1,  // 0: circus.v1.GetLedgerResponse.entries:type_name -> circus.v1.LedgerEntry
+	4,  // 1: circus.v1.GetDecisionResponse.decision:type_name -> circus.v1.Decision
+	7,  // 2: circus.v1.ListDecisionHistoryResponse.versions:type_name -> circus.v1.DecisionVersion
+	0,  // 3: circus.v1.Changeset.state:type_name -> circus.v1.Changeset.State
+	10, // 4: circus.v1.OpenChangesetResponse.changeset:type_name -> circus.v1.Changeset
+	11, // 5: circus.v1.ReadChangesetBaseResponse.files:type_name -> circus.v1.LedgerFile
+	12, // 6: circus.v1.CheckChangesetRequest.changes:type_name -> circus.v1.FileChange
+	10, // 7: circus.v1.CheckChangesetResponse.changeset:type_name -> circus.v1.Changeset
+	17, // 8: circus.v1.CheckChangesetResponse.problems:type_name -> circus.v1.LedgerProblem
+	18, // 9: circus.v1.CheckChangesetResponse.conflicts:type_name -> circus.v1.LedgerConflict
+	17, // 10: circus.v1.CheckChangesetResponse.warnings:type_name -> circus.v1.LedgerProblem
+	18, // 11: circus.v1.ReadChangesetConflictsResponse.conflicts:type_name -> circus.v1.LedgerConflict
+	12, // 12: circus.v1.MergeChangesetRequest.resolved:type_name -> circus.v1.FileChange
+	10, // 13: circus.v1.MergeChangesetResponse.changeset:type_name -> circus.v1.Changeset
+	31, // 14: circus.v1.MergeChangesetResponse.numbers:type_name -> circus.v1.MergeChangesetResponse.NumbersEntry
+	10, // 15: circus.v1.DiscardChangesetResponse.changeset:type_name -> circus.v1.Changeset
+	0,  // 16: circus.v1.ListChangesetsRequest.state:type_name -> circus.v1.Changeset.State
+	10, // 17: circus.v1.ListChangesetsResponse.changesets:type_name -> circus.v1.Changeset
+	10, // 18: circus.v1.GetChangesetResponse.changeset:type_name -> circus.v1.Changeset
+	2,  // 19: circus.v1.LedgerService.GetLedger:input_type -> circus.v1.GetLedgerRequest
+	5,  // 20: circus.v1.LedgerService.GetDecision:input_type -> circus.v1.GetDecisionRequest
+	8,  // 21: circus.v1.LedgerService.ListDecisionHistory:input_type -> circus.v1.ListDecisionHistoryRequest
+	13, // 22: circus.v1.LedgerChangesetService.OpenChangeset:input_type -> circus.v1.OpenChangesetRequest
+	15, // 23: circus.v1.LedgerChangesetService.ReadChangesetBase:input_type -> circus.v1.ReadChangesetBaseRequest
+	19, // 24: circus.v1.LedgerChangesetService.CheckChangeset:input_type -> circus.v1.CheckChangesetRequest
+	21, // 25: circus.v1.LedgerChangesetService.ReadChangesetConflicts:input_type -> circus.v1.ReadChangesetConflictsRequest
+	23, // 26: circus.v1.LedgerChangesetService.MergeChangeset:input_type -> circus.v1.MergeChangesetRequest
+	25, // 27: circus.v1.LedgerChangesetService.DiscardChangeset:input_type -> circus.v1.DiscardChangesetRequest
+	27, // 28: circus.v1.LedgerChangesetService.ListChangesets:input_type -> circus.v1.ListChangesetsRequest
+	29, // 29: circus.v1.LedgerChangesetService.GetChangeset:input_type -> circus.v1.GetChangesetRequest
+	3,  // 30: circus.v1.LedgerService.GetLedger:output_type -> circus.v1.GetLedgerResponse
+	6,  // 31: circus.v1.LedgerService.GetDecision:output_type -> circus.v1.GetDecisionResponse
+	9,  // 32: circus.v1.LedgerService.ListDecisionHistory:output_type -> circus.v1.ListDecisionHistoryResponse
+	14, // 33: circus.v1.LedgerChangesetService.OpenChangeset:output_type -> circus.v1.OpenChangesetResponse
+	16, // 34: circus.v1.LedgerChangesetService.ReadChangesetBase:output_type -> circus.v1.ReadChangesetBaseResponse
+	20, // 35: circus.v1.LedgerChangesetService.CheckChangeset:output_type -> circus.v1.CheckChangesetResponse
+	22, // 36: circus.v1.LedgerChangesetService.ReadChangesetConflicts:output_type -> circus.v1.ReadChangesetConflictsResponse
+	24, // 37: circus.v1.LedgerChangesetService.MergeChangeset:output_type -> circus.v1.MergeChangesetResponse
+	26, // 38: circus.v1.LedgerChangesetService.DiscardChangeset:output_type -> circus.v1.DiscardChangesetResponse
+	28, // 39: circus.v1.LedgerChangesetService.ListChangesets:output_type -> circus.v1.ListChangesetsResponse
+	30, // 40: circus.v1.LedgerChangesetService.GetChangeset:output_type -> circus.v1.GetChangesetResponse
+	30, // [30:41] is the sub-list for method output_type
+	19, // [19:30] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_ledger_proto_init() }
@@ -774,18 +2320,23 @@ func file_circus_v1_ledger_proto_init() {
 	if File_circus_v1_ledger_proto != nil {
 		return
 	}
+	file_circus_v1_ledger_proto_msgTypes[11].OneofWrappers = []any{
+		(*FileChange_Content)(nil),
+		(*FileChange_Deleted)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_ledger_proto_rawDesc), len(file_circus_v1_ledger_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   9,
+			NumEnums:      1,
+			NumMessages:   31,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_circus_v1_ledger_proto_goTypes,
 		DependencyIndexes: file_circus_v1_ledger_proto_depIdxs,
+		EnumInfos:         file_circus_v1_ledger_proto_enumTypes,
 		MessageInfos:      file_circus_v1_ledger_proto_msgTypes,
 	}.Build()
 	File_circus_v1_ledger_proto = out.File

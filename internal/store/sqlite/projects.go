@@ -374,7 +374,8 @@ const ledgerDeleteAttempts = 3
 
 // deleteWithLedgers deletes what final deletes, after the ledger rows of
 // the projects that deletable returns, so the final transaction cascades
-// over their head rows only. deletable checks the deletion's
+// over their head rows only. Their changesets, which do not cascade, are
+// deleted afterwards in bounded transactions. deletable checks the deletion's
 // preconditions in every transaction that changes something.
 //
 // The first transaction hides each index: the head is cleared and readers
@@ -417,11 +418,13 @@ func (o *ops) deleteWithLedgers(ctx context.Context, deletable func(context.Cont
 				return err
 			}
 		}
+		var deleted []string
 		err = o.unit(ctx, func(tx *ops) error {
 			projects, err := deletable(ctx, tx)
 			if err != nil {
 				return err
 			}
+			deleted = projects
 			for _, id := range projects {
 				var rows bool
 				if err := tx.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM ledger_versions WHERE project_id = ?1)
@@ -434,6 +437,16 @@ func (o *ops) deleteWithLedgers(ctx context.Context, deletable func(context.Cont
 			}
 			return final(ctx, tx)
 		})
+		if err == nil {
+			// The changesets of the deleted projects are invisible now. A
+			// failure leaves them to the startup purge of orphans.
+			for _, id := range deleted {
+				if o.purgeLedgerChangesets(ctx, id) != nil {
+					break
+				}
+			}
+			return nil
+		}
 		if !errors.Is(err, errLedgerRowsBack) {
 			return err
 		}

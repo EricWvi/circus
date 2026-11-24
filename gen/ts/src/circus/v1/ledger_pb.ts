@@ -2,15 +2,15 @@
 // @generated from file circus/v1/ledger.proto (package circus.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file circus/v1/ledger.proto.
  */
 export const file_circus_v1_ledger: GenFile = /*@__PURE__*/
-  fileDesc("ChZjaXJjdXMvdjEvbGVkZ2VyLnByb3RvEgljaXJjdXMudjEiYwoLTGVkZ2VyRW50cnkSDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgFIAEoAyImChBHZXRMZWRnZXJSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiZgoRR2V0TGVkZ2VyUmVzcG9uc2USEwoLaGVhZF9jb21taXQYASABKAkSJwoHZW50cmllcxgCIAMoCzIWLmNpcmN1cy52MS5MZWRnZXJFbnRyeRITCgtuZXh0X251bWJlchgDIAEoDSKAAQoIRGVjaXNpb24SDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEgwKBGJvZHkYBSABKAkSDgoGY29tbWl0GAYgASgJEhwKFGNvbW1pdHRlZF9hdF91bml4X21zGAcgASgDIkgKEkdldERlY2lzaW9uUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIOCgZjb21taXQYAyABKAkiPAoTR2V0RGVjaXNpb25SZXNwb25zZRIlCghkZWNpc2lvbhgBIAEoCzITLmNpcmN1cy52MS5EZWNpc2lvbiLbAQoPRGVjaXNpb25WZXJzaW9uEg4KBmNvbW1pdBgBIAEoCRIcChRjb21taXR0ZWRfYXRfdW5peF9tcxgCIAEoAxIOCgZhdXRob3IYAyABKAkSDwoHc3VtbWFyeRgEIAEoCRIMCgRwYXRoGAUgASgJEg0KBXRpdGxlGAYgASgJEg0KBWFkZGVkGAcgASgIEhcKD2NvbnRlbnRfY2hhbmdlZBgIIAEoCBINCgVtb3ZlZBgJIAEoCBIQCghyZXRpdGxlZBgKIAEoCBITCgtjb2RlX2NvbW1pdBgLIAEoCSJnChpMaXN0RGVjaXNpb25IaXN0b3J5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJkChtMaXN0RGVjaXNpb25IaXN0b3J5UmVzcG9uc2USLAoIdmVyc2lvbnMYASADKAsyGi5jaXJjdXMudjEuRGVjaXNpb25WZXJzaW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCTKLAgoNTGVkZ2VyU2VydmljZRJGCglHZXRMZWRnZXISGy5jaXJjdXMudjEuR2V0TGVkZ2VyUmVxdWVzdBocLmNpcmN1cy52MS5HZXRMZWRnZXJSZXNwb25zZRJMCgtHZXREZWNpc2lvbhIdLmNpcmN1cy52MS5HZXREZWNpc2lvblJlcXVlc3QaHi5jaXJjdXMudjEuR2V0RGVjaXNpb25SZXNwb25zZRJkChNMaXN0RGVjaXNpb25IaXN0b3J5EiUuY2lyY3VzLnYxLkxpc3REZWNpc2lvbkhpc3RvcnlSZXF1ZXN0GiYuY2lyY3VzLnYxLkxpc3REZWNpc2lvbkhpc3RvcnlSZXNwb25zZUI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw");
+  fileDesc("ChZjaXJjdXMvdjEvbGVkZ2VyLnByb3RvEgljaXJjdXMudjEiYwoLTGVkZ2VyRW50cnkSDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgFIAEoAyImChBHZXRMZWRnZXJSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiZgoRR2V0TGVkZ2VyUmVzcG9uc2USEwoLaGVhZF9jb21taXQYASABKAkSJwoHZW50cmllcxgCIAMoCzIWLmNpcmN1cy52MS5MZWRnZXJFbnRyeRITCgtuZXh0X251bWJlchgDIAEoDSKAAQoIRGVjaXNpb24SDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEgwKBGJvZHkYBSABKAkSDgoGY29tbWl0GAYgASgJEhwKFGNvbW1pdHRlZF9hdF91bml4X21zGAcgASgDIkgKEkdldERlY2lzaW9uUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIOCgZjb21taXQYAyABKAkiPAoTR2V0RGVjaXNpb25SZXNwb25zZRIlCghkZWNpc2lvbhgBIAEoCzITLmNpcmN1cy52MS5EZWNpc2lvbiLbAQoPRGVjaXNpb25WZXJzaW9uEg4KBmNvbW1pdBgBIAEoCRIcChRjb21taXR0ZWRfYXRfdW5peF9tcxgCIAEoAxIOCgZhdXRob3IYAyABKAkSDwoHc3VtbWFyeRgEIAEoCRIMCgRwYXRoGAUgASgJEg0KBXRpdGxlGAYgASgJEg0KBWFkZGVkGAcgASgIEhcKD2NvbnRlbnRfY2hhbmdlZBgIIAEoCBINCgVtb3ZlZBgJIAEoCBIQCghyZXRpdGxlZBgKIAEoCBITCgtjb2RlX2NvbW1pdBgLIAEoCSJnChpMaXN0RGVjaXNpb25IaXN0b3J5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJkChtMaXN0RGVjaXNpb25IaXN0b3J5UmVzcG9uc2USLAoIdmVyc2lvbnMYASADKAsyGi5jaXJjdXMudjEuRGVjaXNpb25WZXJzaW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSL6AgoJQ2hhbmdlc2V0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEikKBXN0YXRlGAMgASgOMhouY2lyY3VzLnYxLkNoYW5nZXNldC5TdGF0ZRITCgtiYXNlX2NvbW1pdBgEIAEoCRIYChBvcGVuZXJfd29ya2VyX2lkGAUgASgJEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgGIAEoAxIaChJ1cGRhdGVkX2F0X3VuaXhfbXMYByABKAMSFQoNbWVyZ2VkX2NvbW1pdBgIIAEoCRITCgtjb2RlX2NvbW1pdBgJIAEoCRIWCg5kaXNjYXJkX3JlYXNvbhgKIAEoCRIWCg5yZXBhaXJfZmFpbHVyZRgLIAEoCSJVCgVTdGF0ZRIVChFTVEFURV9VTlNQRUNJRklFRBAAEg4KClNUQVRFX09QRU4QARIQCgxTVEFURV9NRVJHRUQQAhITCg9TVEFURV9ESVNDQVJERUQQAyIrCgpMZWRnZXJGaWxlEgwKBHBhdGgYASABKAkSDwoHY29udGVudBgCIAEoCSJKCgpGaWxlQ2hhbmdlEgwKBHBhdGgYASABKAkSEQoHY29udGVudBgCIAEoCUgAEhEKB2RlbGV0ZWQYAyABKAhIAEIICgZjaGFuZ2UiJwoUT3BlbkNoYW5nZXNldFJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCSJAChVPcGVuQ2hhbmdlc2V0UmVzcG9uc2USJwoJY2hhbmdlc2V0GAEgASgLMhQuY2lyY3VzLnYxLkNoYW5nZXNldCJEChhSZWFkQ2hhbmdlc2V0QmFzZVJlcXVlc3QSFAoMY2hhbmdlc2V0X2lkGAEgASgJEhIKCnBhZ2VfdG9rZW4YAiABKAkiWgoZUmVhZENoYW5nZXNldEJhc2VSZXNwb25zZRIkCgVmaWxlcxgBIAMoCzIVLmNpcmN1cy52MS5MZWRnZXJGaWxlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIuCg1MZWRnZXJQcm9ibGVtEgwKBHBhdGgYASABKAkSDwoHbWVzc2FnZRgCIAEoCSKqAQoOTGVkZ2VyQ29uZmxpY3QSDAoEcGF0aBgBIAEoCRITCgtiYXNlX2V4aXN0cxgCIAEoCBIMCgRiYXNlGAMgASgJEhgKEGNoYW5nZXNldF9leGlzdHMYBCABKAgSEQoJY2hhbmdlc2V0GAUgASgJEhMKC21haW5fZXhpc3RzGAYgASgIEgwKBG1haW4YByABKAkSFwoPY29udGVudF9vbWl0dGVkGAggASgIIlUKFUNoZWNrQ2hhbmdlc2V0UmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSJgoHY2hhbmdlcxgCIAMoCzIVLmNpcmN1cy52MS5GaWxlQ2hhbmdlIvIBChZDaGVja0NoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSKgoIcHJvYmxlbXMYAiADKAsyGC5jaXJjdXMudjEuTGVkZ2VyUHJvYmxlbRIUCgxmYXN0X2ZvcndhcmQYAyABKAgSEwoLbWFpbl9jb21taXQYBCABKAkSLAoJY29uZmxpY3RzGAUgAygLMhkuY2lyY3VzLnYxLkxlZGdlckNvbmZsaWN0EioKCHdhcm5pbmdzGAYgAygLMhguY2lyY3VzLnYxLkxlZGdlclByb2JsZW0iXgodUmVhZENoYW5nZXNldENvbmZsaWN0c1JlcXVlc3QSFAoMY2hhbmdlc2V0X2lkGAEgASgJEhMKC21haW5fY29tbWl0GAIgASgJEhIKCnBhZ2VfdG9rZW4YAyABKAkiZwoeUmVhZENoYW5nZXNldENvbmZsaWN0c1Jlc3BvbnNlEiwKCWNvbmZsaWN0cxgBIAMoCzIZLmNpcmN1cy52MS5MZWRnZXJDb25mbGljdBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiawoVTWVyZ2VDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRITCgtjb2RlX2NvbW1pdBgCIAEoCRInCghyZXNvbHZlZBgDIAMoCzIVLmNpcmN1cy52MS5GaWxlQ2hhbmdlIrIBChZNZXJnZUNoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSPwoHbnVtYmVycxgCIAMoCzIuLmNpcmN1cy52MS5NZXJnZUNoYW5nZXNldFJlc3BvbnNlLk51bWJlcnNFbnRyeRouCgxOdW1iZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgNOgI4ASI/ChdEaXNjYXJkQ2hhbmdlc2V0UmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSDgoGcmVhc29uGAIgASgJIkMKGERpc2NhcmRDaGFuZ2VzZXRSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0InoKFUxpc3RDaGFuZ2VzZXRzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEikKBXN0YXRlGAIgASgOMhouY2lyY3VzLnYxLkNoYW5nZXNldC5TdGF0ZRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJbChZMaXN0Q2hhbmdlc2V0c1Jlc3BvbnNlEigKCmNoYW5nZXNldHMYASADKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIrChNHZXRDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCSI/ChRHZXRDaGFuZ2VzZXRSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0MosCCg1MZWRnZXJTZXJ2aWNlEkYKCUdldExlZGdlchIbLmNpcmN1cy52MS5HZXRMZWRnZXJSZXF1ZXN0GhwuY2lyY3VzLnYxLkdldExlZGdlclJlc3BvbnNlEkwKC0dldERlY2lzaW9uEh0uY2lyY3VzLnYxLkdldERlY2lzaW9uUmVxdWVzdBoeLmNpcmN1cy52MS5HZXREZWNpc2lvblJlc3BvbnNlEmQKE0xpc3REZWNpc2lvbkhpc3RvcnkSJS5jaXJjdXMudjEuTGlzdERlY2lzaW9uSGlzdG9yeVJlcXVlc3QaJi5jaXJjdXMudjEuTGlzdERlY2lzaW9uSGlzdG9yeVJlc3BvbnNlMu4FChZMZWRnZXJDaGFuZ2VzZXRTZXJ2aWNlElIKDU9wZW5DaGFuZ2VzZXQSHy5jaXJjdXMudjEuT3BlbkNoYW5nZXNldFJlcXVlc3QaIC5jaXJjdXMudjEuT3BlbkNoYW5nZXNldFJlc3BvbnNlEl4KEVJlYWRDaGFuZ2VzZXRCYXNlEiMuY2lyY3VzLnYxLlJlYWRDaGFuZ2VzZXRCYXNlUmVxdWVzdBokLmNpcmN1cy52MS5SZWFkQ2hhbmdlc2V0QmFzZVJlc3BvbnNlElUKDkNoZWNrQ2hhbmdlc2V0EiAuY2lyY3VzLnYxLkNoZWNrQ2hhbmdlc2V0UmVxdWVzdBohLmNpcmN1cy52MS5DaGVja0NoYW5nZXNldFJlc3BvbnNlEm0KFlJlYWRDaGFuZ2VzZXRDb25mbGljdHMSKC5jaXJjdXMudjEuUmVhZENoYW5nZXNldENvbmZsaWN0c1JlcXVlc3QaKS5jaXJjdXMudjEuUmVhZENoYW5nZXNldENvbmZsaWN0c1Jlc3BvbnNlElUKDk1lcmdlQ2hhbmdlc2V0EiAuY2lyY3VzLnYxLk1lcmdlQ2hhbmdlc2V0UmVxdWVzdBohLmNpcmN1cy52MS5NZXJnZUNoYW5nZXNldFJlc3BvbnNlElsKEERpc2NhcmRDaGFuZ2VzZXQSIi5jaXJjdXMudjEuRGlzY2FyZENoYW5nZXNldFJlcXVlc3QaIy5jaXJjdXMudjEuRGlzY2FyZENoYW5nZXNldFJlc3BvbnNlElUKDkxpc3RDaGFuZ2VzZXRzEiAuY2lyY3VzLnYxLkxpc3RDaGFuZ2VzZXRzUmVxdWVzdBohLmNpcmN1cy52MS5MaXN0Q2hhbmdlc2V0c1Jlc3BvbnNlEk8KDEdldENoYW5nZXNldBIeLmNpcmN1cy52MS5HZXRDaGFuZ2VzZXRSZXF1ZXN0Gh8uY2lyY3VzLnYxLkdldENoYW5nZXNldFJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z");
 
 /**
  * @generated from message circus.v1.LedgerEntry
@@ -222,7 +222,8 @@ export type DecisionVersion = Message<"circus.v1.DecisionVersion"> & {
   committedAtUnixMs: bigint;
 
   /**
-   * Commit author name: a session, an orchestrator, or "import".
+   * Commit author name: a session, a worker that merged a changeset, or
+   * "import".
    *
    * @generated from field: string author = 3;
    */
@@ -347,9 +348,679 @@ export const ListDecisionHistoryResponseSchema: GenMessage<ListDecisionHistoryRe
   messageDesc(file_circus_v1_ledger, 8);
 
 /**
+ * @generated from message circus.v1.Changeset
+ */
+export type Changeset = Message<"circus.v1.Changeset"> & {
+  /**
+   * @generated from field: string changeset_id = 1;
+   */
+  changesetId: string;
+
+  /**
+   * @generated from field: string project_id = 2;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: circus.v1.Changeset.State state = 3;
+   */
+  state: Changeset_State;
+
+  /**
+   * Main-line commit the changeset started from.
+   *
+   * @generated from field: string base_commit = 4;
+   */
+  baseCommit: string;
+
+  /**
+   * The worker that opened it (empty for a session's changeset, later).
+   *
+   * @generated from field: string opener_worker_id = 5;
+   */
+  openerWorkerId: string;
+
+  /**
+   * @generated from field: int64 created_at_unix_ms = 6;
+   */
+  createdAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 updated_at_unix_ms = 7;
+   */
+  updatedAtUnixMs: bigint;
+
+  /**
+   * When merged: the main-line commit and the code commit given to merge.
+   *
+   * @generated from field: string merged_commit = 8;
+   */
+  mergedCommit: string;
+
+  /**
+   * @generated from field: string code_commit = 9;
+   */
+  codeCommit: string;
+
+  /**
+   * When discarded.
+   *
+   * @generated from field: string discard_reason = 10;
+   */
+  discardReason: string;
+
+  /**
+   * Set when an interrupted merge or archive of the changeset could not be
+   * repaired, as when one of its objects is damaged: why, briefly.
+   * GetChangeset and ListChangesets return such a changeset with the state
+   * recorded before that merge or discard (open for an interrupted merge,
+   * discarded for an archive not finished); its other operations are
+   * refused with FAILED_PRECONDITION, a google.rpc.PreconditionFailure of
+   * type "CHANGESET_REPAIR", until a repair succeeds.
+   *
+   * @generated from field: string repair_failure = 11;
+   */
+  repairFailure: string;
+};
+
+/**
+ * Describes the message circus.v1.Changeset.
+ * Use `create(ChangesetSchema)` to create a new message.
+ */
+export const ChangesetSchema: GenMessage<Changeset> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 9);
+
+/**
+ * @generated from enum circus.v1.Changeset.State
+ */
+export enum Changeset_State {
+  /**
+   * @generated from enum value: STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: STATE_OPEN = 1;
+   */
+  OPEN = 1,
+
+  /**
+   * @generated from enum value: STATE_MERGED = 2;
+   */
+  MERGED = 2,
+
+  /**
+   * @generated from enum value: STATE_DISCARDED = 3;
+   */
+  DISCARDED = 3,
+}
+
+/**
+ * Describes the enum circus.v1.Changeset.State.
+ */
+export const Changeset_StateSchema: GenEnum<Changeset_State> = /*@__PURE__*/
+  enumDesc(file_circus_v1_ledger, 9, 0);
+
+/**
+ * @generated from message circus.v1.LedgerFile
+ */
+export type LedgerFile = Message<"circus.v1.LedgerFile"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * Complete file content (UTF-8).
+   *
+   * @generated from field: string content = 2;
+   */
+  content: string;
+};
+
+/**
+ * Describes the message circus.v1.LedgerFile.
+ * Use `create(LedgerFileSchema)` to create a new message.
+ */
+export const LedgerFileSchema: GenMessage<LedgerFile> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 10);
+
+/**
+ * @generated from message circus.v1.FileChange
+ */
+export type FileChange = Message<"circus.v1.FileChange"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from oneof circus.v1.FileChange.change
+   */
+  change: {
+    /**
+     * New or changed file: its complete content.
+     *
+     * @generated from field: string content = 2;
+     */
+    value: string;
+    case: "content";
+  } | {
+    /**
+     * The file of the base is removed (decisions cannot be removed; this
+     * is for moving or renaming one, together with its new path).
+     *
+     * @generated from field: bool deleted = 3;
+     */
+    value: boolean;
+    case: "deleted";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message circus.v1.FileChange.
+ * Use `create(FileChangeSchema)` to create a new message.
+ */
+export const FileChangeSchema: GenMessage<FileChange> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 11);
+
+/**
+ * @generated from message circus.v1.OpenChangesetRequest
+ */
+export type OpenChangesetRequest = Message<"circus.v1.OpenChangesetRequest"> & {
+  /**
+   * A project id or the user's project name.
+   *
+   * @generated from field: string project = 1;
+   */
+  project: string;
+};
+
+/**
+ * Describes the message circus.v1.OpenChangesetRequest.
+ * Use `create(OpenChangesetRequestSchema)` to create a new message.
+ */
+export const OpenChangesetRequestSchema: GenMessage<OpenChangesetRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 12);
+
+/**
+ * @generated from message circus.v1.OpenChangesetResponse
+ */
+export type OpenChangesetResponse = Message<"circus.v1.OpenChangesetResponse"> & {
+  /**
+   * @generated from field: circus.v1.Changeset changeset = 1;
+   */
+  changeset?: Changeset | undefined;
+};
+
+/**
+ * Describes the message circus.v1.OpenChangesetResponse.
+ * Use `create(OpenChangesetResponseSchema)` to create a new message.
+ */
+export const OpenChangesetResponseSchema: GenMessage<OpenChangesetResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 13);
+
+/**
+ * @generated from message circus.v1.ReadChangesetBaseRequest
+ */
+export type ReadChangesetBaseRequest = Message<"circus.v1.ReadChangesetBaseRequest"> & {
+  /**
+   * @generated from field: string changeset_id = 1;
+   */
+  changesetId: string;
+
+  /**
+   * next_page_token of the previous page; empty starts at the first file.
+   *
+   * @generated from field: string page_token = 2;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message circus.v1.ReadChangesetBaseRequest.
+ * Use `create(ReadChangesetBaseRequestSchema)` to create a new message.
+ */
+export const ReadChangesetBaseRequestSchema: GenMessage<ReadChangesetBaseRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 14);
+
+/**
+ * @generated from message circus.v1.ReadChangesetBaseResponse
+ */
+export type ReadChangesetBaseResponse = Message<"circus.v1.ReadChangesetBaseResponse"> & {
+  /**
+   * Files of the base commit in path order, at most 8 MiB per page.
+   *
+   * @generated from field: repeated circus.v1.LedgerFile files = 1;
+   */
+  files: LedgerFile[];
+
+  /**
+   * Empty after the last file.
+   *
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message circus.v1.ReadChangesetBaseResponse.
+ * Use `create(ReadChangesetBaseResponseSchema)` to create a new message.
+ */
+export const ReadChangesetBaseResponseSchema: GenMessage<ReadChangesetBaseResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 15);
+
+/**
+ * @generated from message circus.v1.LedgerProblem
+ */
+export type LedgerProblem = Message<"circus.v1.LedgerProblem"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * English description for the agent, e.g. "front matter must hold
+   * number and title".
+   *
+   * @generated from field: string message = 2;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message circus.v1.LedgerProblem.
+ * Use `create(LedgerProblemSchema)` to create a new message.
+ */
+export const LedgerProblemSchema: GenMessage<LedgerProblem> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 16);
+
+/**
+ * @generated from message circus.v1.LedgerConflict
+ */
+export type LedgerConflict = Message<"circus.v1.LedgerConflict"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * The file in the base, the changeset and the current main line; a side
+   * where it does not exist has exists false and empty content.
+   *
+   * @generated from field: bool base_exists = 2;
+   */
+  baseExists: boolean;
+
+  /**
+   * @generated from field: string base = 3;
+   */
+  base: string;
+
+  /**
+   * @generated from field: bool changeset_exists = 4;
+   */
+  changesetExists: boolean;
+
+  /**
+   * @generated from field: string changeset = 5;
+   */
+  changeset: string;
+
+  /**
+   * @generated from field: bool main_exists = 6;
+   */
+  mainExists: boolean;
+
+  /**
+   * @generated from field: string main = 7;
+   */
+  main: string;
+
+  /**
+   * The three contents are left out, because the conflicts' contents
+   * exceed what one response carries; the exists flags still hold.
+   *
+   * @generated from field: bool content_omitted = 8;
+   */
+  contentOmitted: boolean;
+};
+
+/**
+ * Describes the message circus.v1.LedgerConflict.
+ * Use `create(LedgerConflictSchema)` to create a new message.
+ */
+export const LedgerConflictSchema: GenMessage<LedgerConflict> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 17);
+
+/**
+ * @generated from message circus.v1.CheckChangesetRequest
+ */
+export type CheckChangesetRequest = Message<"circus.v1.CheckChangesetRequest"> & {
+  /**
+   * @generated from field: string changeset_id = 1;
+   */
+  changesetId: string;
+
+  /**
+   * The complete set of changes relative to the base.
+   *
+   * @generated from field: repeated circus.v1.FileChange changes = 2;
+   */
+  changes: FileChange[];
+};
+
+/**
+ * Describes the message circus.v1.CheckChangesetRequest.
+ * Use `create(CheckChangesetRequestSchema)` to create a new message.
+ */
+export const CheckChangesetRequestSchema: GenMessage<CheckChangesetRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 18);
+
+/**
+ * @generated from message circus.v1.CheckChangesetResponse
+ */
+export type CheckChangesetResponse = Message<"circus.v1.CheckChangesetResponse"> & {
+  /**
+   * @generated from field: circus.v1.Changeset changeset = 1;
+   */
+  changeset?: Changeset | undefined;
+
+  /**
+   * @generated from field: repeated circus.v1.LedgerProblem problems = 2;
+   */
+  problems: LedgerProblem[];
+
+  /**
+   * The base is the main line's head now: merging needs no integrator and
+   * has no conflicts (unless the main line moves first).
+   *
+   * @generated from field: bool fast_forward = 3;
+   */
+  fastForward: boolean;
+
+  /**
+   * Main-line head the comparison used.
+   *
+   * @generated from field: string main_commit = 4;
+   */
+  mainCommit: string;
+
+  /**
+   * @generated from field: repeated circus.v1.LedgerConflict conflicts = 5;
+   */
+  conflicts: LedgerConflict[];
+
+  /**
+   * Findings that do not stop a merge, such as a reference to a temporary
+   * number that no new decision of the changeset has, which a merge keeps
+   * as it is.
+   *
+   * @generated from field: repeated circus.v1.LedgerProblem warnings = 6;
+   */
+  warnings: LedgerProblem[];
+};
+
+/**
+ * Describes the message circus.v1.CheckChangesetResponse.
+ * Use `create(CheckChangesetResponseSchema)` to create a new message.
+ */
+export const CheckChangesetResponseSchema: GenMessage<CheckChangesetResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 19);
+
+/**
+ * @generated from message circus.v1.ReadChangesetConflictsRequest
+ */
+export type ReadChangesetConflictsRequest = Message<"circus.v1.ReadChangesetConflictsRequest"> & {
+  /**
+   * @generated from field: string changeset_id = 1;
+   */
+  changesetId: string;
+
+  /**
+   * The main_commit a CheckChangeset of the changeset reported.
+   *
+   * @generated from field: string main_commit = 2;
+   */
+  mainCommit: string;
+
+  /**
+   * next_page_token of the previous page; empty starts at the first
+   * conflict.
+   *
+   * @generated from field: string page_token = 3;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message circus.v1.ReadChangesetConflictsRequest.
+ * Use `create(ReadChangesetConflictsRequestSchema)` to create a new message.
+ */
+export const ReadChangesetConflictsRequestSchema: GenMessage<ReadChangesetConflictsRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 20);
+
+/**
+ * @generated from message circus.v1.ReadChangesetConflictsResponse
+ */
+export type ReadChangesetConflictsResponse = Message<"circus.v1.ReadChangesetConflictsResponse"> & {
+  /**
+   * Conflicts in path order with their contents, about 8 MiB per page; a
+   * conflict whose contents alone exceed that comes alone in its page.
+   * content_omitted is never set here.
+   *
+   * @generated from field: repeated circus.v1.LedgerConflict conflicts = 1;
+   */
+  conflicts: LedgerConflict[];
+
+  /**
+   * Empty after the last conflict.
+   *
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message circus.v1.ReadChangesetConflictsResponse.
+ * Use `create(ReadChangesetConflictsResponseSchema)` to create a new message.
+ */
+export const ReadChangesetConflictsResponseSchema: GenMessage<ReadChangesetConflictsResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 21);
+
+/**
+ * @generated from message circus.v1.MergeChangesetRequest
+ */
+export type MergeChangesetRequest = Message<"circus.v1.MergeChangesetRequest"> & {
+  /**
+   * @generated from field: string changeset_id = 1;
+   */
+  changesetId: string;
+
+  /**
+   * Optional: the code commit merged together with this change (full hex).
+   *
+   * @generated from field: string code_commit = 2;
+   */
+  codeCommit: string;
+
+  /**
+   * Final content for conflicting files (a deleted change resolves to the
+   * file's absence). Ignored when the merge fast-forwards.
+   *
+   * @generated from field: repeated circus.v1.FileChange resolved = 3;
+   */
+  resolved: FileChange[];
+};
+
+/**
+ * Describes the message circus.v1.MergeChangesetRequest.
+ * Use `create(MergeChangesetRequestSchema)` to create a new message.
+ */
+export const MergeChangesetRequestSchema: GenMessage<MergeChangesetRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 22);
+
+/**
+ * @generated from message circus.v1.MergeChangesetResponse
+ */
+export type MergeChangesetResponse = Message<"circus.v1.MergeChangesetResponse"> & {
+  /**
+   * @generated from field: circus.v1.Changeset changeset = 1;
+   */
+  changeset?: Changeset | undefined;
+
+  /**
+   * Temporary number ("D?a") to the assigned number, for new decisions.
+   *
+   * @generated from field: map<string, uint32> numbers = 2;
+   */
+  numbers: { [key: string]: number };
+};
+
+/**
+ * Describes the message circus.v1.MergeChangesetResponse.
+ * Use `create(MergeChangesetResponseSchema)` to create a new message.
+ */
+export const MergeChangesetResponseSchema: GenMessage<MergeChangesetResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 23);
+
+/**
+ * @generated from message circus.v1.DiscardChangesetRequest
+ */
+export type DiscardChangesetRequest = Message<"circus.v1.DiscardChangesetRequest"> & {
+  /**
+   * @generated from field: string changeset_id = 1;
+   */
+  changesetId: string;
+
+  /**
+   * Required, at most 1024 bytes.
+   *
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message circus.v1.DiscardChangesetRequest.
+ * Use `create(DiscardChangesetRequestSchema)` to create a new message.
+ */
+export const DiscardChangesetRequestSchema: GenMessage<DiscardChangesetRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 24);
+
+/**
+ * @generated from message circus.v1.DiscardChangesetResponse
+ */
+export type DiscardChangesetResponse = Message<"circus.v1.DiscardChangesetResponse"> & {
+  /**
+   * @generated from field: circus.v1.Changeset changeset = 1;
+   */
+  changeset?: Changeset | undefined;
+};
+
+/**
+ * Describes the message circus.v1.DiscardChangesetResponse.
+ * Use `create(DiscardChangesetResponseSchema)` to create a new message.
+ */
+export const DiscardChangesetResponseSchema: GenMessage<DiscardChangesetResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 25);
+
+/**
+ * @generated from message circus.v1.ListChangesetsRequest
+ */
+export type ListChangesetsRequest = Message<"circus.v1.ListChangesetsRequest"> & {
+  /**
+   * @generated from field: string project = 1;
+   */
+  project: string;
+
+  /**
+   * Unspecified lists all states.
+   *
+   * @generated from field: circus.v1.Changeset.State state = 2;
+   */
+  state: Changeset_State;
+
+  /**
+   * 1 to 100; 0 selects 50.
+   *
+   * @generated from field: uint32 page_size = 3;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 4;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message circus.v1.ListChangesetsRequest.
+ * Use `create(ListChangesetsRequestSchema)` to create a new message.
+ */
+export const ListChangesetsRequestSchema: GenMessage<ListChangesetsRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 26);
+
+/**
+ * @generated from message circus.v1.ListChangesetsResponse
+ */
+export type ListChangesetsResponse = Message<"circus.v1.ListChangesetsResponse"> & {
+  /**
+   * @generated from field: repeated circus.v1.Changeset changesets = 1;
+   */
+  changesets: Changeset[];
+
+  /**
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message circus.v1.ListChangesetsResponse.
+ * Use `create(ListChangesetsResponseSchema)` to create a new message.
+ */
+export const ListChangesetsResponseSchema: GenMessage<ListChangesetsResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 27);
+
+/**
+ * @generated from message circus.v1.GetChangesetRequest
+ */
+export type GetChangesetRequest = Message<"circus.v1.GetChangesetRequest"> & {
+  /**
+   * @generated from field: string changeset_id = 1;
+   */
+  changesetId: string;
+};
+
+/**
+ * Describes the message circus.v1.GetChangesetRequest.
+ * Use `create(GetChangesetRequestSchema)` to create a new message.
+ */
+export const GetChangesetRequestSchema: GenMessage<GetChangesetRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 28);
+
+/**
+ * @generated from message circus.v1.GetChangesetResponse
+ */
+export type GetChangesetResponse = Message<"circus.v1.GetChangesetResponse"> & {
+  /**
+   * @generated from field: circus.v1.Changeset changeset = 1;
+   */
+  changeset?: Changeset | undefined;
+};
+
+/**
+ * Describes the message circus.v1.GetChangesetResponse.
+ * Use `create(GetChangesetResponseSchema)` to create a new message.
+ */
+export const GetChangesetResponseSchema: GenMessage<GetChangesetResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 29);
+
+/**
  * LedgerService reads a project's ledger: its numbered decisions, filed in
  * directories. The ledger is read-only here; it changes only through
- * changesets merged by an orchestrator.
+ * changesets (LedgerChangesetService).
  *
  * Every call needs a browser session cookie (UNAUTHENTICATED without one)
  * and is refused with PERMISSION_DENIED when its Origin header differs from
@@ -404,4 +1075,158 @@ export const LedgerService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_circus_v1_ledger, 0);
+
+/**
+ * LedgerChangesetService changes a project's ledger through changesets: a
+ * changeset starts from a main-line commit (its base), carries the complete
+ * set of file changes relative to that base, and is either merged into the
+ * main line or discarded. The `circus ledger` command uses it.
+ *
+ * Every call needs "Authorization: Bearer <token>" with a worker
+ * credential (UNAUTHENTICATED otherwise, also for daemon credentials and
+ * browser cookies). The caller acts for the worker's user: a project of
+ * another user is NOT_FOUND, like an unknown one, and so is another user's
+ * changeset. Invalid input is INVALID_ARGUMENT with a google.rpc.BadRequest
+ * field violation.
+ *
+ * Who may do what:
+ *   - any worker of the user: OpenChangeset, ReadChangesetBase,
+ *     ListChangesets, GetChangeset;
+ *   - the worker that opened the changeset, or a worker with the integrator
+ *     grant (MachineService.SetWorkerGrant): CheckChangeset,
+ *     ReadChangesetConflicts, DiscardChangeset, and MergeChangeset when it
+ *     fast-forwards;
+ *   - only an integrator: MergeChangeset when it does not fast-forward.
+ * A refusal is PERMISSION_DENIED; when the integrator grant is what is
+ * missing, it carries google.rpc.ErrorInfo with reason
+ * "INTEGRATOR_REQUIRED".
+ *
+ * Files: paths are relative to the ledger root, '/'-separated, and name
+ * decision files "<dir>/D<n>-<name>.md" as on the main line. A new decision
+ * uses a temporary number "D?<letters>" (one to four lowercase ASCII
+ * letters, unique within the changeset) in its front matter, its file name
+ * and references in any changed file; merging assigns the next free
+ * numbers and rewrites them. The generated root INDEX.md is not a decision
+ * and is never part of a changeset.
+ *
+ * Bounds: as LedgerService, plus at most 8 MiB of changed file content per
+ * changeset and at most 64 open changesets per project
+ * (RESOURCE_EXHAUSTED beyond).
+ *
+ * @generated from service circus.v1.LedgerChangesetService
+ */
+export const LedgerChangesetService: GenService<{
+  /**
+   * OpenChangeset starts a changeset based on the current head of the main
+   * line, recording the calling worker as its opener.
+   *
+   * @generated from rpc circus.v1.LedgerChangesetService.OpenChangeset
+   */
+  openChangeset: {
+    methodKind: "unary";
+    input: typeof OpenChangesetRequestSchema;
+    output: typeof OpenChangesetResponseSchema;
+  },
+  /**
+   * ReadChangesetBase pages through the base commit's files, for writing
+   * the changeset's local copy.
+   *
+   * @generated from rpc circus.v1.LedgerChangesetService.ReadChangesetBase
+   */
+  readChangesetBase: {
+    methodKind: "unary";
+    input: typeof ReadChangesetBaseRequestSchema;
+    output: typeof ReadChangesetBaseResponseSchema;
+  },
+  /**
+   * CheckChangeset replaces the changeset's content with changes (the
+   * complete set relative to its base; calling it again with the same
+   * changes changes nothing), validates it and compares it with the
+   * current main line. Validation problems and conflicts are results, not
+   * RPC errors. FAILED_PRECONDITION when the changeset is not open.
+   *
+   * @generated from rpc circus.v1.LedgerChangesetService.CheckChangeset
+   */
+  checkChangeset: {
+    methodKind: "unary";
+    input: typeof CheckChangesetRequestSchema;
+    output: typeof CheckChangesetResponseSchema;
+  },
+  /**
+   * ReadChangesetConflicts pages through the conflicts of the changeset's
+   * last check with all their contents (base, changeset, main line), for
+   * conflicts a CheckChangeset reported with content_omitted. It changes
+   * nothing. main_commit is the CheckChangeset's main_commit: the
+   * conflicts are computed against it, and FAILED_PRECONDITION with a
+   * google.rpc.PreconditionFailure of type "MAIN_LINE_MOVED" says the main
+   * line moved since, so the caller checks again. A page token holds on
+   * only with the same main_commit and while the changeset is not checked
+   * again: otherwise FAILED_PRECONDITION with type "MAIN_LINE_MOVED" or
+   * "CHANGESET_CHANGED". Also FAILED_PRECONDITION when the changeset is not
+   * open.
+   *
+   * @generated from rpc circus.v1.LedgerChangesetService.ReadChangesetConflicts
+   */
+  readChangesetConflicts: {
+    methodKind: "unary";
+    input: typeof ReadChangesetConflictsRequestSchema;
+    output: typeof ReadChangesetConflictsResponseSchema;
+  },
+  /**
+   * MergeChangeset merges an open changeset into the main line, under the
+   * project's lock, re-checking everything there:
+   *   - it fast-forwards when its base is the main line's head at that
+   *     moment; the opener may then merge it;
+   *   - otherwise only an integrator may merge it, even when no file it
+   *     changes was changed on the main line after its base, and every
+   *     conflicting file must be given its final content in resolved.
+   * A conflicting file is one the changeset changed that the main line
+   * also changed after the base, even when the texts could be merged.
+   * Merging assigns numbers, renames new decisions' files and rewrites
+   * their temporary references, commits on the main line (one ordinary
+   * commit; the main line stays linear), rebuilds the index and records
+   * code_commit. It is idempotent: merging a merged changeset again
+   * returns the same result. FAILED_PRECONDITION, with the problems in
+   * google.rpc.PreconditionFailure, when validation fails, a conflict is
+   * unresolved, or the changeset was discarded.
+   *
+   * @generated from rpc circus.v1.LedgerChangesetService.MergeChangeset
+   */
+  mergeChangeset: {
+    methodKind: "unary";
+    input: typeof MergeChangesetRequestSchema;
+    output: typeof MergeChangesetResponseSchema;
+  },
+  /**
+   * DiscardChangeset archives an open changeset with a reason. Discarding
+   * a discarded changeset again is a no-op; a merged one is
+   * FAILED_PRECONDITION.
+   *
+   * @generated from rpc circus.v1.LedgerChangesetService.DiscardChangeset
+   */
+  discardChangeset: {
+    methodKind: "unary";
+    input: typeof DiscardChangesetRequestSchema;
+    output: typeof DiscardChangesetResponseSchema;
+  },
+  /**
+   * ListChangesets lists a project's changesets, newest first.
+   *
+   * @generated from rpc circus.v1.LedgerChangesetService.ListChangesets
+   */
+  listChangesets: {
+    methodKind: "unary";
+    input: typeof ListChangesetsRequestSchema;
+    output: typeof ListChangesetsResponseSchema;
+  },
+  /**
+   * @generated from rpc circus.v1.LedgerChangesetService.GetChangeset
+   */
+  getChangeset: {
+    methodKind: "unary";
+    input: typeof GetChangesetRequestSchema;
+    output: typeof GetChangesetResponseSchema;
+  },
+}> = /*@__PURE__*/
+  serviceDesc(file_circus_v1_ledger, 1);
 

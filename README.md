@@ -286,7 +286,9 @@ carries one token per role. Web issuance allows up to 16 unused, unexpired
 tokens per user. CLI-issued tokens count toward this allowance, and the CLI
 can issue tokens regardless of that count. A user can enroll up to 32 live
 devices and 4 live workers. `ListDevices` lists only the caller's devices,
-including when the caller is the super user.
+including when the caller is the super user. `SetWorkerGrant` turns the
+integrator grant of one of the caller's workers on or off (see Ledger
+below); `ListWorkers` shows it. The grant ends when the worker is revoked.
 
 Machines joined before this version must join again using a link issued for
 their Web account. Run `circus join --force` to replace the machine's old
@@ -375,17 +377,18 @@ The daemon-link pools are not the whole process budget. At the default
 | Daemon links, wire | about 1,286 MiB | pools 256 + 524 MiB (2·Smin, 2·Rmin) plus 100 sockets × (5 MiB + 64 KiB) = 506 MiB; one borrowed inbound message per socket comes on top |
 | Worker links (own fixed pools; scales with `worker_connections`, default 8) | about 2,557 MiB | pools 256 + 524 MiB; 8 sockets × (5 MiB + 64 KiB + one borrowed inbound message of 2·M + 6 MiB + 4 KiB) = 1,112 MiB; 4 push permits shared by all worker sockets, each one large outbound message (2·M + 6 MiB + 4 KiB) = 536 MiB; small outbound updates (≤ 256 KiB charged) sent without a permit, at most one per operation: 8 × 64 × 256 KiB = 128 MiB |
 | Call router | 512 MiB | pending requests 256 MiB plus distinct buffered updates 256 MiB (one global charge per shared immutable clone) |
-| Session service (worker-link side) | about 1,030 MiB | 2 read replies built at once, each ≤ 2·M = 128 MiB, so ≤ 256 MiB together; per worker socket one inline operation's converted request (≤ M) plus its queue of inline replies (≤ 16 MiB encoded, about 32 MiB decoded): 8 × 96 MiB = 768 MiB; session table, Wake queue, hint queues and extension keys ≤ about 11 MiB |
+| Session service (worker-link side) | about 1,093 MiB | 2 read replies built at once, each ≤ 2·M = 128 MiB, so ≤ 256 MiB together; per worker socket one inline operation's converted request (≤ M) plus its queue of inline replies (≤ 16 MiB encoded, about 32 MiB decoded): 8 × 96 MiB = 768 MiB; session table, Wake queue, provider scan, stale-read and fallback ids, hint queues and extension keys ≤ about 20 MiB; log record batches held at once: (8 + 1) × 5.4 MiB = 49 MiB; see `internal/controlplane/sessions/doc.go` |
 | Session watch streams | about 888 MiB | 256 streams × about 3.47 MiB each: the bus queue and the batch being delivered (2 × 272 KiB), one replay page (about 294 KiB), the stored event being converted (256 KiB, plus 512 KiB when its UTF-8 must be repaired) and its JSON encoding (up to 1.5 MiB, in a pooled buffer of up to about 1.9 MiB; SessionService does not compress responses); see `internal/controlplane/sessions/bus.go` |
+| Ledger | about 813 MiB | `LedgerService`: 4 requests of about 45 MiB = 180 MiB; `LedgerChangesetService`: 3 checks, merges or conflict reads of up to about 199 MiB each plus one base page of about 36 MiB = 633 MiB; see the Ledger section below |
 
-That is about 6.1 GiB (4,355 MiB for the links and the router, 1,030 MiB
-for the session service, 888 MiB for watch streams) before SQLite,
-TLS/kernel buffers, bounded operation scratch, the runtime and GC headroom;
-set `GOMEMLIMIT` above it, for example `GOMEMLIMIT=7GiB` with at least
-8 GiB of memory for the process. The daemon connection limit (100 sockets)
+That is about 7.0 GiB (4,355 MiB for the links and the router, 1,093 MiB
+for the session service, 888 MiB for watch streams, 813 MiB for the
+ledger: 7,149 MiB) before SQLite, TLS/kernel buffers, bounded operation scratch, the
+runtime and GC headroom; set `GOMEMLIMIT` above it, for example
+`GOMEMLIMIT=8GiB` with at least 9 GiB of memory for the process. The daemon connection limit (100 sockets)
 is fixed; worker sockets default to 8 (`worker_connections`, at most 4 per
-user and per credential), each adding about 139 MiB to the worker links and 96 MiB to the
-session service at the default message limit. Live-only session events
+user and per credential), each adding about 139 MiB to the worker links and 101 MiB to the
+session service (96 MiB of inline operations and 5.4 MiB of log records) at the default message limit. Live-only session events
 handed to the bus are charged to each watcher's queue (at most 256 KiB of
 payload each) and counted in the watch streams' figure. See
 `internal/controlplane/gateway`, `internal/controlplane/workerlink`,
@@ -463,8 +466,123 @@ and two in total run at a time, and the server stops them on shutdown. The delay
 second and doubles after each failed or timed-out check, up to one minute.
 
 The Web API serves up to four authenticated, decoded ledger requests at
-once, at most two for one user. Each response is bounded by its procedure,
-with a full listing capped at about 31 MiB of encoded data.
+once, at most two for one user: one user's clients that stop reading cannot
+keep others out, though two users' clients together can. Each response is
+bounded by its procedure, with a full listing capped at about 31 MiB of
+encoded data. A body over a procedure's limit is refused without reading
+the rest of it.
+
+#### Changesets
+
+The ledger changes only through changesets (`LedgerChangesetService` in
+`proto/circus/v1/ledger.proto`), which `circus ledger` drives with the
+worker credential from `circus join`:
+
+```sh
+circus ledger open <project>             # prints the changeset id and its directory
+# edit, add, move files in the directory with any tool
+circus ledger check <changeset>          # problems, fast-forward, conflicts
+circus ledger merge <changeset> [--commit <sha>] [--resolved <dir>]
+circus ledger discard <changeset> --reason <text>
+circus ledger list <project> [--state open|merged|discarded]
+```
+
+`open` writes the main line's files to
+`$XDG_STATE_HOME/circus/ledger/cli/<changeset>/` (under
+`$CIRCUS_HOME/state` when that is set), or `--dir`, and a manifest of their
+hashes beside it, so `check` and `merge` find the changes by the id alone.
+A new decision is `<dir>/D?<letters>-<title>.md` with `number: D?<letters>`
+(one to four lowercase letters, unique in the changeset), and other changed
+files may refer to it by that number. A merge gives new decisions the next
+numbers, in the order a, b, …, z, aa, …, renames their files, and replaces
+every reference `D?<letters>` without a letter, digit or underscore next to
+it in every changed file. References to letters no new decision has are
+kept, and `check` warns of them without stopping the merge. Merged files
+are written with the canonical front matter, and every changed file's name
+is derived again from its title: a title that refers to a new decision
+renames its file.
+
+Each check replaces the changeset's content on the `changesets/<id>`
+branch, committed with its opener as author on top of its base; a check
+without changes removes the branch. A discarded changeset's branch moves to
+`refs/discarded/<id>`, on a commit that records the reason. The worker
+that opened a changeset may check, discard and merge it while it
+fast-forwards (its base is the main line's head). Otherwise only a worker
+with the integrator grant, set on the Web devices page, may merge it, even
+when the main line changed other files only, and every file that both
+changed after the base must be resolved: `check` writes the versions that
+exist to `<changeset>.conflicts/<path>.base`, `.changeset` and `.main` in
+the state directory above, whatever `--dir` is, and `merge --resolved
+<dir>` sends `<dir>/<path>`, or removes the file for an empty
+`<dir>/<path>.deleted`. When the conflicts' contents exceed what one
+response carries (8 MiB), the check reports the rest without contents, and
+`check` reads them with `ReadChangesetConflicts`, in pages, from the
+changeset's branch and the main-line commit the check compared with. Each
+page after the first is bound to the branch commit the first was read
+from. When the main line moved meanwhile, or the changeset was checked
+again between pages, it writes nothing for them and says to check again.
+`merge --resolved` does not read them. A page reads the trees of the base,
+the main line and the branch to find the conflicts, about 3.5 MiB at most,
+and then the blobs of its own conflicts and at most one more, so a check
+reads each conflicting file's versions about once: at the bounds, about
+2 GiB of contents (a base and a main-line version of up to 256 KiB for each
+of 4097 files, and 8 MiB of the changeset's), and with a binary client about
+260 pages, about 0.9 GiB of trees. A JSON client, whose pages fill up to six
+times faster with control characters, reads trees for up to about 1,500
+pages, about 5 GiB. The merge validates the
+resolutions like any change, checks everything again under the project's
+lock and is one ordinary commit on the main line; a merge that would change
+nothing, as when every conflict is resolved to the main line's version, is
+refused like a changeset without changes. Merging a merged changeset again
+returns the same result, and `circus ledger merge` of a merged changeset
+prints its numbers again.
+
+A merge records the commit it is about to publish, with the numbers it
+assigned, before main moves. A merge interrupted after main moved is
+recorded as merged by the next operation on the project, by reading it or
+at startup, and one interrupted before is forgotten; an interrupted archive
+is finished the same way. A changeset whose repair fails, as when one of
+its objects is damaged, is logged and refuses its own operations until a
+repair succeeds; the project's other changesets stay usable, since the main
+line remains what later merges build on. Listing and getting it show the
+state as recorded, with the reason in `repair_failure`; this covers a
+discarded changeset whose archive cannot be finished too. Changeset rows are deleted with their project, after it and in
+transactions of 64 rows; rows of a deleted project are never read, and
+startup deletes any that a crash left.
+
+A project has at most 64 open changesets. A check carries at most 8 MiB of
+changed content in at most 8194 files, and a merge's resolutions as much
+again. `LedgerChangesetService` admits up to four requests at once, two per
+user, before reading their bodies, and of them at most three checks,
+merges or conflict reads, one per user. One user's clients that stop
+sending or reading hold only that user's share: keeping everyone else out
+takes the clients of two users together (every request slot), or of three
+(every check and merge slot). A refusal, of a credential or for want of a
+slot, is answered at once and closes the connection, without waiting for
+the request's body; after a request, the server waits at most a second
+for any of its body the handler left unread. A refusal for want of a slot
+carries the ErrorInfo reason `LEDGER_BUSY`; `circus ledger` then tries again
+with jittered exponential backoff, from a quarter of a second up to five
+seconds, for up to two minutes, and says once that it waits, so agents of
+one user that check or merge at the same time take turns. The worst cases
+at these bounds, in memory held at once:
+
+| Request | Memory |
+| --- | ---: |
+| Check: request buffer 32 MiB (it grows by doubling, so about 48 MiB while the last 24 MiB body is read), message 13 MiB, file copies 8 MiB, base and main snapshots 14 MiB with the index read once (up to 12 MiB), conflict contents 8 MiB and their copies 8 MiB, response 21 MiB, object cache 4 MiB | ≈ 120 MiB |
+| Merge: request buffer 32 MiB and message 13 MiB, resolutions 8 MiB, snapshots and index 26 MiB, changeset content 8 MiB, rewritten files 48 MiB (a reference of at least 4 bytes grows to at most 12), object cache 4 MiB | ≈ 140 MiB |
+| A conflicts page: contents 8 MiB, or a single conflict alone up to 30.5 MiB (two versions of the generated index and an 8 MiB changeset file), their copies 30.5 MiB, the encoded page up to 70 MiB (six bytes per control character), which JSON encoding grows by doubling, so about 126 MiB while the last copy is made, the three file lists about 8 MiB, object cache 4 MiB: 30.5 + 30.5 + 126 + 8 + 4 | ≈ 199 MiB |
+| A base page: files 8 MiB, or the generated index alone up to 12 MiB, their copies and the encoded page | ≈ 36 MiB |
+| Open, discard, list, get | < 1 MiB |
+
+The service therefore holds at most about 633 MiB: three conflict reads
+and a base page (3 × 199 + 36). With the four requests of `LedgerService`
+above (a full listing about 45 MiB each with its index rows and message),
+the ledger's requests hold at most about 813 MiB. These are live bytes:
+with the default `GOGC=100` and no `GOMEMLIMIT` the heap may grow to about
+twice the live data before a collection, about 1.6 GiB. With `GOMEMLIMIT`
+set as the process budget above recommends, that budget, which counts
+these 813 MiB, applies instead.
 
 ## Releases and deployment
 

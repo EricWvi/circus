@@ -105,6 +105,9 @@ type Config struct {
 	Jobs       JobStopper
 	Workspaces *workspaces.Manager
 	Ledger     *ledger.Manager
+	// Workers authenticates worker credentials for LedgerChangesetService,
+	// which is served only with it and Ledger.
+	Workers *auth.Authenticator
 	// WatchKeepalive is how long a WatchSession stream may stay silent
 	// before a keepalive; zero means DefaultWatchKeepalive.
 	WatchKeepalive time.Duration
@@ -119,7 +122,8 @@ type Config struct {
 	WatchWriteTimeout time.Duration
 }
 
-// Service implements ProjectService, MachineService, SessionService, ProviderService and LedgerService.
+// Service implements ProjectService, MachineService, SessionService,
+// ProviderService and LedgerService, and serves LedgerChangesetService.
 type Service struct {
 	st            store.Store
 	publicURL     string
@@ -136,6 +140,7 @@ type Service struct {
 	jobs          JobStopper
 	workspaces    *workspaces.Manager
 	ledger        *ledger.Manager
+	workers       *auth.Authenticator
 	removalMu     sync.Mutex
 	removals      map[[2]string]chan struct{}
 	keepalive     time.Duration
@@ -165,7 +170,7 @@ func New(cfg Config) (*Service, error) {
 		publicURL: strings.TrimRight(cfg.PublicURL, "/"), version: cfg.Version,
 		bus: cfg.Bus, waker: cfg.Waker, scheduler: cfg.Scheduler, onlineWorkers: cfg.OnlineWorkers, secrets: cfg.Secrets, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
 		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout,
-		query: cfg.Query, workspaces: cfg.Workspaces, ledger: cfg.Ledger, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
+		query: cfg.Query, workspaces: cfg.Workspaces, ledger: cfg.Ledger, workers: cfg.Workers, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
 	if s.query == nil {
 		s.query = func(context.Context, string, *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {
 			return nil, gateway.ErrDeviceOffline
@@ -220,6 +225,7 @@ func (s *Service) Register(mux *http.ServeMux) {
 		connect.WithCompression("gzip", nil, nil))
 	mux.Handle(path, withStreamWriter(h, s.writeTimeout))
 	s.registerLedger(mux)
+	s.registerChangesets(mux)
 }
 
 // user returns the signed-in Web user, or UNAUTHENTICATED.

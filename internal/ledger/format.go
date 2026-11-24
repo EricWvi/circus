@@ -19,6 +19,8 @@ import (
 )
 
 const (
+	// temporaryPrefix starts a new decision's number until it is merged.
+	temporaryPrefix      = "D?"
 	MaxDecisionFileBytes = 256 << 10
 	MaxNameRunes         = 60
 	indexName            = "INDEX.md"
@@ -40,6 +42,12 @@ func numberName(number uint32) string {
 
 // FileName derives the base name from the number and title.
 func FileName(number uint32, title string) string {
+	return fileName(numberName(number), title)
+}
+
+// fileName derives the base name from a number's spelling, such as "D12"
+// or the temporary "D?a", and the title.
+func fileName(number, title string) string {
 	var name [MaxNameRunes]rune
 	size, end := 0, 0
 	lastDash := false
@@ -63,7 +71,7 @@ func FileName(number uint32, title string) string {
 		}
 		lastDash = r == '-'
 	}
-	return numberName(number) + "-" + strings.TrimRight(string(name[:end]), "-.") + ".md"
+	return number + "-" + strings.TrimRight(string(name[:end]), "-.") + ".md"
 }
 
 func decisionPath(d Decision) string {
@@ -94,13 +102,19 @@ func Render(d Decision) ([]byte, error) {
 // Parse reads the two-line front matter without rewriting any byte of the
 // body. The returned body aliases data. A file's directory comes from its path.
 func Parse(data []byte) (Decision, error) {
-	var d Decision
+	d, _, err := parse(data, false)
+	return d, err
+}
+
+// parse is Parse that, when temporary is true, also accepts a temporary
+// number "D?<letters>" and returns its letters; Number is then 0.
+func parse(data []byte, temporary bool) (d Decision, letters string, _ error) {
 	if bytes.HasPrefix(data, []byte("\ufeff")) {
-		return d, errors.New("remove the byte order mark before the front matter")
+		return d, "", errors.New("remove the byte order mark before the front matter")
 	}
 	open, rest, _ := readLine(data)
 	if string(open) != "---" {
-		return d, errors.New("missing opening front matter delimiter")
+		return d, "", errors.New("missing opening front matter delimiter")
 	}
 	number, rest, _ := readLine(rest)
 	title, rest, _ := readLine(rest)
@@ -109,45 +123,45 @@ func Parse(data []byte) (Decision, error) {
 		line := bytes.TrimSpace(line)
 		switch {
 		case bytes.HasPrefix(line, []byte("...")):
-			return d, errors.New("remove the YAML document-end marker from front matter")
+			return d, "", errors.New("remove the YAML document-end marker from front matter")
 		case bytes.HasPrefix(line, []byte("#")):
-			return d, errors.New("remove comments from front matter")
+			return d, "", errors.New("remove comments from front matter")
 		case bytes.HasPrefix(line, []byte("{")) || bytes.HasPrefix(line, []byte("[")):
-			return d, errors.New("use two separate lines instead of a YAML flow mapping")
+			return d, "", errors.New("use two separate lines instead of a YAML flow mapping")
 		}
 	}
 	number, err := frontMatterValue("number", "first", number)
 	if err != nil {
-		return d, err
+		return d, "", err
 	}
 	title, err = frontMatterValue("title", "second", title)
 	if err != nil {
-		return d, err
+		return d, "", err
 	}
 	for _, raw := range [][]byte{number, title} {
 		switch {
 		case raw[0] == '!' || raw[0] == '&' || raw[0] == '*':
-			return d, errors.New("remove YAML tags, anchors and aliases from front matter")
+			return d, "", errors.New("remove YAML tags, anchors and aliases from front matter")
 		case raw[0] == '|' || raw[0] == '>':
-			return d, errors.New("replace the YAML block scalar with a single-line string")
+			return d, "", errors.New("replace the YAML block scalar with a single-line string")
 		}
 	}
 	if string(close) != "---" {
-		return d, errors.New("expected the closing front matter delimiter after exactly two keys")
+		return d, "", errors.New("expected the closing front matter delimiter after exactly two keys")
 	}
 	blank, body, ok := readLine(rest)
 	if !ok || len(blank) != 0 {
-		return d, errors.New("front matter must be followed by a blank line")
+		return d, "", errors.New("front matter must be followed by a blank line")
 	}
-	n, err := frontMatterNumber(number)
+	n, letters, err := frontMatterNumber(number, temporary)
 	if err != nil {
-		return d, err
+		return d, "", err
 	}
 	value, err := frontMatterString("title", title)
 	if err != nil {
-		return d, err
+		return d, "", err
 	}
-	return Decision{Number: n, Title: value, Body: body}, nil
+	return Decision{Number: n, Title: value, Body: body}, letters, nil
 }
 
 // frontMatterValue checks the "key: value" spelling the renderer writes
@@ -173,21 +187,30 @@ func frontMatterValue(key, ordinal string, line []byte) ([]byte, error) {
 	return value, nil
 }
 
-func frontMatterNumber(raw []byte) (uint32, error) {
+func frontMatterNumber(raw []byte, temporary bool) (uint32, string, error) {
 	value := string(raw)
 	// The renderer emits the decimal number directly.
 	if len(raw) < 2 || raw[0] != 'D' || bytes.IndexFunc(raw[1:], func(r rune) bool { return r < '0' || r > '9' }) != -1 {
 		var err error
 		value, err = frontMatterString("number", raw)
 		if err != nil {
-			return 0, err
+			return 0, "", err
 		}
+	}
+	if letters, ok := strings.CutPrefix(value, temporaryPrefix); ok && temporary {
+		if !store.ValidTemporaryLetters(letters) {
+			return 0, "", errors.New("a temporary number is D? followed by one to four lowercase letters")
+		}
+		return 0, letters, nil
 	}
 	n, err := strconv.ParseUint(strings.TrimPrefix(value, "D"), 10, 32)
 	if err != nil || value != numberName(uint32(n)) {
-		return 0, errors.New("number must be D followed by its decimal value")
+		if temporary {
+			return 0, "", errors.New("number must be D followed by its decimal value, or a temporary D? followed by one to four lowercase letters")
+		}
+		return 0, "", errors.New("number must be D followed by its decimal value")
 	}
-	return uint32(n), nil
+	return uint32(n), "", nil
 }
 
 func frontMatterString(key string, raw []byte) (string, error) {

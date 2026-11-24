@@ -41,7 +41,7 @@ type joinHarness struct {
 	config string
 }
 
-func newJoinHarness(t *testing.T) *joinHarness {
+func newJoinHarness(t *testing.T, options ...func(*joinHarness, *controlplane.Config)) *joinHarness {
 	t.Helper()
 	dir := t.TempDir()
 	h := &joinHarness{t: t, db: filepath.Join(dir, "circus.db"), cfgDir: filepath.Join(dir, "config")}
@@ -58,7 +58,11 @@ func newJoinHarness(t *testing.T) *joinHarness {
 		t.Fatal(err)
 	}
 	h.config = writeServerTestConfig(t, fmt.Sprintf("db: %q\n", h.db))
-	srv, err := controlplane.New(context.Background(), st, controlplane.Config{Listen: "127.0.0.1:0", DevInsecure: true, LogOutput: io.Discard})
+	cfg := controlplane.Config{Listen: "127.0.0.1:0", DevInsecure: true, LogOutput: io.Discard}
+	for _, option := range options {
+		option(h, &cfg)
+	}
+	srv, err := controlplane.New(context.Background(), st, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,6 +18,9 @@ service MachineService {
   // signed-in user may call it. Tokens are returned only here; the server
   // stores only their hashes.
   rpc CreateEnrollLink(CreateEnrollLinkRequest) returns (CreateEnrollLinkResponse);
+  // Turns a grant of one of the caller's workers on or off and returns the
+  // worker. NOT_FOUND for another user's or an unknown worker.
+  rpc SetWorkerGrant(SetWorkerGrantRequest) returns (SetWorkerGrantResponse);
   // Lists the subdirectories of a directory on one of the caller's devices,
   // asking its daemon live. Errors: NOT_FOUND for an unknown device;
   // FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
@@ -70,8 +73,21 @@ message Worker {
   // Names of the user's devices on the same machine: sessions in their
   // locations run in local mode on this worker.
   repeated string local_devices = 9;
+  // The integrator grant: the worker's credential may merge ledger
+  // changesets that do not fast-forward and discard changesets it did not
+  // open, for this user's projects (LedgerChangesetService). Off by
+  // default; it ends with the credential.
+  bool integrator = 10;
 }
 message ListWorkersRequest {}
+
+message SetWorkerGrantRequest {
+  string worker_id = 1;
+  bool integrator = 2;
+}
+message SetWorkerGrantResponse {
+  Worker worker = 1;
+}
 message ListWorkersResponse {
   repeated Worker workers = 1;
 }

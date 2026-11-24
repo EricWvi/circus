@@ -6,7 +6,7 @@ option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
 // LedgerService reads a project's ledger: its numbered decisions, filed in
 // directories. The ledger is read-only here; it changes only through
-// changesets merged by an orchestrator.
+// changesets (LedgerChangesetService).
 //
 // Every call needs a browser session cookie (UNAUTHENTICATED without one)
 // and is refused with PERMISSION_DENIED when its Origin header differs from
@@ -86,7 +86,8 @@ message DecisionVersion {
   // Full hex id of the main-line commit that made this version.
   string commit = 1;
   int64 committed_at_unix_ms = 2;
-  // Commit author name: a session, an orchestrator, or "import".
+  // Commit author name: a session, a worker that merged a changeset, or
+  // "import".
   string author = 3;
   // First line of the commit message.
   string summary = 4;
@@ -116,4 +117,260 @@ message ListDecisionHistoryResponse {
   repeated DecisionVersion versions = 1;
   // Empty when there are no more versions.
   string next_page_token = 2;
+}
+
+// LedgerChangesetService changes a project's ledger through changesets: a
+// changeset starts from a main-line commit (its base), carries the complete
+// set of file changes relative to that base, and is either merged into the
+// main line or discarded. The `circus ledger` command uses it.
+//
+// Every call needs "Authorization: Bearer <token>" with a worker
+// credential (UNAUTHENTICATED otherwise, also for daemon credentials and
+// browser cookies). The caller acts for the worker's user: a project of
+// another user is NOT_FOUND, like an unknown one, and so is another user's
+// changeset. Invalid input is INVALID_ARGUMENT with a google.rpc.BadRequest
+// field violation.
+//
+// Who may do what:
+//   - any worker of the user: OpenChangeset, ReadChangesetBase,
+//     ListChangesets, GetChangeset;
+//   - the worker that opened the changeset, or a worker with the integrator
+//     grant (MachineService.SetWorkerGrant): CheckChangeset,
+//     ReadChangesetConflicts, DiscardChangeset, and MergeChangeset when it
+//     fast-forwards;
+//   - only an integrator: MergeChangeset when it does not fast-forward.
+// A refusal is PERMISSION_DENIED; when the integrator grant is what is
+// missing, it carries google.rpc.ErrorInfo with reason
+// "INTEGRATOR_REQUIRED".
+//
+// Files: paths are relative to the ledger root, '/'-separated, and name
+// decision files "<dir>/D<n>-<name>.md" as on the main line. A new decision
+// uses a temporary number "D?<letters>" (one to four lowercase ASCII
+// letters, unique within the changeset) in its front matter, its file name
+// and references in any changed file; merging assigns the next free
+// numbers and rewrites them. The generated root INDEX.md is not a decision
+// and is never part of a changeset.
+//
+// Bounds: as LedgerService, plus at most 8 MiB of changed file content per
+// changeset and at most 64 open changesets per project
+// (RESOURCE_EXHAUSTED beyond).
+service LedgerChangesetService {
+  // OpenChangeset starts a changeset based on the current head of the main
+  // line, recording the calling worker as its opener.
+  rpc OpenChangeset(OpenChangesetRequest) returns (OpenChangesetResponse);
+  // ReadChangesetBase pages through the base commit's files, for writing
+  // the changeset's local copy.
+  rpc ReadChangesetBase(ReadChangesetBaseRequest) returns (ReadChangesetBaseResponse);
+  // CheckChangeset replaces the changeset's content with changes (the
+  // complete set relative to its base; calling it again with the same
+  // changes changes nothing), validates it and compares it with the
+  // current main line. Validation problems and conflicts are results, not
+  // RPC errors. FAILED_PRECONDITION when the changeset is not open.
+  rpc CheckChangeset(CheckChangesetRequest) returns (CheckChangesetResponse);
+  // ReadChangesetConflicts pages through the conflicts of the changeset's
+  // last check with all their contents (base, changeset, main line), for
+  // conflicts a CheckChangeset reported with content_omitted. It changes
+  // nothing. main_commit is the CheckChangeset's main_commit: the
+  // conflicts are computed against it, and FAILED_PRECONDITION with a
+  // google.rpc.PreconditionFailure of type "MAIN_LINE_MOVED" says the main
+  // line moved since, so the caller checks again. A page token holds on
+  // only with the same main_commit and while the changeset is not checked
+  // again: otherwise FAILED_PRECONDITION with type "MAIN_LINE_MOVED" or
+  // "CHANGESET_CHANGED". Also FAILED_PRECONDITION when the changeset is not
+  // open.
+  rpc ReadChangesetConflicts(ReadChangesetConflictsRequest) returns (ReadChangesetConflictsResponse);
+  // MergeChangeset merges an open changeset into the main line, under the
+  // project's lock, re-checking everything there:
+  //   - it fast-forwards when its base is the main line's head at that
+  //     moment; the opener may then merge it;
+  //   - otherwise only an integrator may merge it, even when no file it
+  //     changes was changed on the main line after its base, and every
+  //     conflicting file must be given its final content in resolved.
+  // A conflicting file is one the changeset changed that the main line
+  // also changed after the base, even when the texts could be merged.
+  // Merging assigns numbers, renames new decisions' files and rewrites
+  // their temporary references, commits on the main line (one ordinary
+  // commit; the main line stays linear), rebuilds the index and records
+  // code_commit. It is idempotent: merging a merged changeset again
+  // returns the same result. FAILED_PRECONDITION, with the problems in
+  // google.rpc.PreconditionFailure, when validation fails, a conflict is
+  // unresolved, or the changeset was discarded.
+  rpc MergeChangeset(MergeChangesetRequest) returns (MergeChangesetResponse);
+  // DiscardChangeset archives an open changeset with a reason. Discarding
+  // a discarded changeset again is a no-op; a merged one is
+  // FAILED_PRECONDITION.
+  rpc DiscardChangeset(DiscardChangesetRequest) returns (DiscardChangesetResponse);
+  // ListChangesets lists a project's changesets, newest first.
+  rpc ListChangesets(ListChangesetsRequest) returns (ListChangesetsResponse);
+  rpc GetChangeset(GetChangesetRequest) returns (GetChangesetResponse);
+}
+
+message Changeset {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_OPEN = 1;
+    STATE_MERGED = 2;
+    STATE_DISCARDED = 3;
+  }
+  string changeset_id = 1;
+  string project_id = 2;
+  State state = 3;
+  // Main-line commit the changeset started from.
+  string base_commit = 4;
+  // The worker that opened it (empty for a session's changeset, later).
+  string opener_worker_id = 5;
+  int64 created_at_unix_ms = 6;
+  int64 updated_at_unix_ms = 7;
+  // When merged: the main-line commit and the code commit given to merge.
+  string merged_commit = 8;
+  string code_commit = 9;
+  // When discarded.
+  string discard_reason = 10;
+  // Set when an interrupted merge or archive of the changeset could not be
+  // repaired, as when one of its objects is damaged: why, briefly.
+  // GetChangeset and ListChangesets return such a changeset with the state
+  // recorded before that merge or discard (open for an interrupted merge,
+  // discarded for an archive not finished); its other operations are
+  // refused with FAILED_PRECONDITION, a google.rpc.PreconditionFailure of
+  // type "CHANGESET_REPAIR", until a repair succeeds.
+  string repair_failure = 11;
+}
+
+message LedgerFile {
+  string path = 1;
+  // Complete file content (UTF-8).
+  string content = 2;
+}
+
+message FileChange {
+  string path = 1;
+  oneof change {
+    // New or changed file: its complete content.
+    string content = 2;
+    // The file of the base is removed (decisions cannot be removed; this
+    // is for moving or renaming one, together with its new path).
+    bool deleted = 3;
+  }
+}
+
+message OpenChangesetRequest {
+  // A project id or the user's project name.
+  string project = 1;
+}
+message OpenChangesetResponse {
+  Changeset changeset = 1;
+}
+
+message ReadChangesetBaseRequest {
+  string changeset_id = 1;
+  // next_page_token of the previous page; empty starts at the first file.
+  string page_token = 2;
+}
+message ReadChangesetBaseResponse {
+  // Files of the base commit in path order, at most 8 MiB per page.
+  repeated LedgerFile files = 1;
+  // Empty after the last file.
+  string next_page_token = 2;
+}
+
+message LedgerProblem {
+  string path = 1;
+  // English description for the agent, e.g. "front matter must hold
+  // number and title".
+  string message = 2;
+}
+
+message LedgerConflict {
+  string path = 1;
+  // The file in the base, the changeset and the current main line; a side
+  // where it does not exist has exists false and empty content.
+  bool base_exists = 2;
+  string base = 3;
+  bool changeset_exists = 4;
+  string changeset = 5;
+  bool main_exists = 6;
+  string main = 7;
+  // The three contents are left out, because the conflicts' contents
+  // exceed what one response carries; the exists flags still hold.
+  bool content_omitted = 8;
+}
+
+message CheckChangesetRequest {
+  string changeset_id = 1;
+  // The complete set of changes relative to the base.
+  repeated FileChange changes = 2;
+}
+message CheckChangesetResponse {
+  Changeset changeset = 1;
+  repeated LedgerProblem problems = 2;
+  // The base is the main line's head now: merging needs no integrator and
+  // has no conflicts (unless the main line moves first).
+  bool fast_forward = 3;
+  // Main-line head the comparison used.
+  string main_commit = 4;
+  repeated LedgerConflict conflicts = 5;
+  // Findings that do not stop a merge, such as a reference to a temporary
+  // number that no new decision of the changeset has, which a merge keeps
+  // as it is.
+  repeated LedgerProblem warnings = 6;
+}
+
+message ReadChangesetConflictsRequest {
+  string changeset_id = 1;
+  // The main_commit a CheckChangeset of the changeset reported.
+  string main_commit = 2;
+  // next_page_token of the previous page; empty starts at the first
+  // conflict.
+  string page_token = 3;
+}
+message ReadChangesetConflictsResponse {
+  // Conflicts in path order with their contents, about 8 MiB per page; a
+  // conflict whose contents alone exceed that comes alone in its page.
+  // content_omitted is never set here.
+  repeated LedgerConflict conflicts = 1;
+  // Empty after the last conflict.
+  string next_page_token = 2;
+}
+
+message MergeChangesetRequest {
+  string changeset_id = 1;
+  // Optional: the code commit merged together with this change (full hex).
+  string code_commit = 2;
+  // Final content for conflicting files (a deleted change resolves to the
+  // file's absence). Ignored when the merge fast-forwards.
+  repeated FileChange resolved = 3;
+}
+message MergeChangesetResponse {
+  Changeset changeset = 1;
+  // Temporary number ("D?a") to the assigned number, for new decisions.
+  map<string, uint32> numbers = 2;
+}
+
+message DiscardChangesetRequest {
+  string changeset_id = 1;
+  // Required, at most 1024 bytes.
+  string reason = 2;
+}
+message DiscardChangesetResponse {
+  Changeset changeset = 1;
+}
+
+message ListChangesetsRequest {
+  string project = 1;
+  // Unspecified lists all states.
+  Changeset.State state = 2;
+  // 1 to 100; 0 selects 50.
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ListChangesetsResponse {
+  repeated Changeset changesets = 1;
+  string next_page_token = 2;
+}
+
+message GetChangesetRequest {
+  string changeset_id = 1;
+}
+message GetChangesetResponse {
+  Changeset changeset = 1;
 }

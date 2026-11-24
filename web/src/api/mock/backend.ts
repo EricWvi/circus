@@ -13,6 +13,7 @@ import type {
   ProviderVersion,
   QueueReason,
   User,
+  Worker,
 } from "@/api/types"
 import {
   checkPath,
@@ -56,6 +57,7 @@ import {
   type MockProject,
   type MockState,
   type MockUser,
+  type MockWorker,
 } from "./state"
 
 export interface MockBackend {
@@ -167,6 +169,12 @@ export function createMockBackend({
       throw new ApiError("failed_precondition", "The device is offline.")
     }
     return device
+  }
+
+  /** A worker as its owner sees it: only their own devices share its machine. */
+  function publicWorker(owner: string, { owner: _, ...worker }: MockWorker): Worker {
+    const devices = new Set(state.devices.filter((d) => d.owner === owner).map((d) => d.name))
+    return { ...worker, localDevices: worker.localDevices.filter((d) => devices.has(d)) }
   }
 
   const hasSuper = () => state.users.some((u) => u.role === "super")
@@ -591,11 +599,18 @@ export function createMockBackend({
       }),
       listWorkers: call(() => {
         const owner = currentUser()
-        const devices = new Set(state.devices.filter((d) => d.owner === owner).map((d) => d.name))
         return state.workers
           .filter((w) => w.owner === owner)
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map(({ owner: _, ...worker }) => ({ ...worker, localDevices: worker.localDevices.filter((d) => devices.has(d)) }))
+          .map((w) => publicWorker(owner, w))
+      }),
+      setWorkerGrant: call(({ workerId, integrator }: { workerId: string; integrator: boolean }) => {
+        const owner = currentUser()
+        const worker = state.workers.find((w) => w.owner === owner && w.workerId === workerId)
+        if (!worker) throw new ApiError("not_found", "Worker not found.")
+        // Workers live in this tab's memory: nothing to save.
+        worker.integrator = integrator
+        return publicWorker(owner, worker)
       }),
       // A link that enrolls nothing: the mock has no enrollment endpoint.
       createEnrollLink: call(({ role }: { role: EnrollRole }) => {

@@ -212,12 +212,21 @@ func identityTable(kind store.PrincipalKind) (string, error) {
 const identityCols = `id, user_id, name, machine_id, os, arch, hostname, client_version,
 	current_boot_id, last_connected_at, last_disconnected_at, created_at, deleted_at`
 
+// selectIdentityCols reads identityCols and the integrator grant, which
+// only workers have.
+func selectIdentityCols(kind store.PrincipalKind) string {
+	if kind == store.KindWorker {
+		return identityCols + `, integrator`
+	}
+	return identityCols + `, 0`
+}
+
 func scanIdentity(s scanner, kind store.PrincipalKind) (store.Identity, error) {
 	id := store.Identity{Kind: kind}
 	err := s.Scan(&id.ID, &id.UserID, &id.Name, &id.MachineID,
 		nullStr{&id.OS}, nullStr{&id.Arch}, nullStr{&id.Hostname}, nullStr{&id.ClientVersion},
 		nullStr{&id.CurrentBootID}, nullInt{&id.LastConnectedAt}, nullInt{&id.LastDisconnectedAt},
-		&id.CreatedAt, nullInt{&id.DeletedAt})
+		&id.CreatedAt, nullInt{&id.DeletedAt}, &id.Integrator)
 	return id, mapErr(err)
 }
 
@@ -263,7 +272,7 @@ func (o *ops) GetIdentity(ctx context.Context, kind store.PrincipalKind, id stri
 	if err != nil {
 		return store.Identity{}, err
 	}
-	return scanIdentity(o.q.QueryRow(ctx, `SELECT `+identityCols+` FROM `+table+` WHERE id = ?`, id), kind)
+	return scanIdentity(o.q.QueryRow(ctx, `SELECT `+selectIdentityCols(kind)+` FROM `+table+` WHERE id = ?`, id), kind)
 }
 
 func (o *ops) GetIdentityByName(ctx context.Context, kind store.PrincipalKind, userID, name string) (store.Identity, error) {
@@ -271,7 +280,7 @@ func (o *ops) GetIdentityByName(ctx context.Context, kind store.PrincipalKind, u
 	if err != nil {
 		return store.Identity{}, err
 	}
-	return scanIdentity(o.q.QueryRow(ctx, `SELECT `+identityCols+` FROM `+table+`
+	return scanIdentity(o.q.QueryRow(ctx, `SELECT `+selectIdentityCols(kind)+` FROM `+table+`
 		WHERE user_id = ? AND name = ? AND deleted_at IS NULL`, userID, name), kind)
 }
 
@@ -280,7 +289,7 @@ func (o *ops) ListIdentities(ctx context.Context, kind store.PrincipalKind, user
 	if err != nil {
 		return nil, err
 	}
-	rows, err := o.q.QueryContext(ctx, `SELECT `+identityCols+` FROM `+table+`
+	rows, err := o.q.QueryContext(ctx, `SELECT `+selectIdentityCols(kind)+` FROM `+table+`
 		WHERE user_id = ? AND deleted_at IS NULL ORDER BY name`, userID)
 	if err != nil {
 		return nil, mapErr(err)
@@ -292,7 +301,7 @@ func (o *ops) MachineWorker(ctx context.Context, userID, machineID string) (stor
 	if userID == "" || machineID == "" {
 		return store.Identity{}, invalid("MachineWorker needs a user id and a machine id")
 	}
-	return scanIdentity(o.q.QueryRow(ctx, `SELECT `+identityCols+` FROM workers w
+	return scanIdentity(o.q.QueryRow(ctx, `SELECT `+selectIdentityCols(store.KindWorker)+` FROM workers w
 		WHERE user_id = ? AND machine_id = ? AND deleted_at IS NULL
 			AND EXISTS (SELECT 1 FROM credentials c WHERE c.principal_kind = 'worker'
 				AND c.principal_id = w.id AND c.revoked_at IS NULL)
@@ -384,6 +393,9 @@ func (o *ops) DeleteIdentity(ctx context.Context, kind store.PrincipalKind, id s
 			return err
 		}
 		if kind == store.KindWorker {
+			if _, err := tx.exec(ctx, `UPDATE workers SET integrator = 0 WHERE id = ?`, id); err != nil {
+				return err
+			}
 			// A deleted worker leaves every provider it was assigned to;
 			// their worker lists change, so their versions move.
 			if _, err := tx.exec(ctx, `UPDATE providers SET updated_at = MAX(?1, updated_at + 1)
@@ -398,6 +410,25 @@ func (o *ops) DeleteIdentity(ctx context.Context, kind store.PrincipalKind, id s
 		return nil
 	})
 	return deleted, err
+}
+
+func (o *ops) SetWorkerIntegrator(ctx context.Context, userID, workerID string, on bool) (store.Identity, error) {
+	if userID == "" || workerID == "" {
+		return store.Identity{}, invalid("SetWorkerIntegrator needs a user id and a worker id")
+	}
+	var out store.Identity
+	err := o.atomic(ctx, func(tx *ops) error {
+		n, err := tx.exec(ctx, `UPDATE workers SET integrator = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, on, workerID, userID)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return store.ErrNotFound
+		}
+		out, err = tx.GetIdentity(ctx, store.KindWorker, workerID)
+		return err
+	})
+	return out, err
 }
 
 // Credentials.
@@ -456,8 +487,18 @@ func (o *ops) RevokeCredentials(ctx context.Context, kind store.PrincipalKind, p
 	if !kind.Valid() || principalID == "" || at == 0 {
 		return 0, invalid("RevokeCredentials needs a kind, principal id and time")
 	}
-	return o.exec(ctx, `UPDATE credentials SET revoked_at = ?
-		WHERE principal_kind = ? AND principal_id = ? AND revoked_at IS NULL`, at, string(kind), principalID)
+	var n int
+	err := o.atomic(ctx, func(tx *ops) error {
+		var err error
+		n, err = tx.exec(ctx, `UPDATE credentials SET revoked_at = ?
+			WHERE principal_kind = ? AND principal_id = ? AND revoked_at IS NULL`, at, string(kind), principalID)
+		if err == nil && kind == store.KindWorker {
+			// The grant ends with the credential.
+			_, err = tx.exec(ctx, `UPDATE workers SET integrator = 0 WHERE id = ? AND integrator = 1`, principalID)
+		}
+		return err
+	})
+	return n, err
 }
 
 // Enroll tokens.

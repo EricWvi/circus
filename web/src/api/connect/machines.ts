@@ -6,9 +6,10 @@ import {
 import {
   EnrollRole as ProtoEnrollRole,
   MachineService as MachineServiceDesc,
+  type Worker as ProtoWorker,
 } from "@circus/proto/circus/v1/machine_pb"
 
-import type { DirectoryError, EnrollRole, GitRemoteError, MachineService } from "@/api/types"
+import type { DirectoryError, EnrollRole, GitRemoteError, MachineService, Worker } from "@/api/types"
 
 import { call, malformed } from "./call"
 
@@ -45,6 +46,19 @@ const gitRemoteErrors: Partial<Record<ProtoGitRemoteError, GitRemoteError>> = {
 const gitRemoteError = (error: ProtoGitRemoteError): GitRemoteError | undefined =>
   error === ProtoGitRemoteError.UNSPECIFIED ? undefined : (gitRemoteErrors[error] ?? "failed")
 
+const workerOf = (w: ProtoWorker): Worker => ({
+  workerId: w.workerId,
+  name: w.name,
+  online: w.online,
+  lastSeenUnixMs: Number(w.lastSeenUnixMs),
+  os: w.os,
+  arch: w.arch,
+  hostname: w.hostname,
+  version: w.version,
+  localDevices: [...w.localDevices],
+  integrator: w.integrator,
+})
+
 /** The machine service of a real control plane, over Connect. */
 export function createConnectMachines(transport: Transport): MachineService {
   const client = createClient(MachineServiceDesc, transport)
@@ -60,20 +74,13 @@ export function createConnectMachines(transport: Transport): MachineService {
           version: d.version,
         })),
       ),
-    listWorkers: () =>
-      call(async () =>
-        (await client.listWorkers({})).workers.map((w) => ({
-          workerId: w.workerId,
-          name: w.name,
-          online: w.online,
-          lastSeenUnixMs: Number(w.lastSeenUnixMs),
-          os: w.os,
-          arch: w.arch,
-          hostname: w.hostname,
-          version: w.version,
-          localDevices: [...w.localDevices],
-        })),
-      ),
+    listWorkers: () => call(async () => (await client.listWorkers({})).workers.map(workerOf)),
+    setWorkerGrant: ({ workerId, integrator }) =>
+      call(async () => {
+        const { worker } = await client.setWorkerGrant({ workerId, integrator })
+        if (!worker) throw malformed("worker")
+        return workerOf(worker)
+      }),
     createEnrollLink: ({ role }) =>
       call(async () => {
         const res = await client.createEnrollLink({ role: enrollRoles[role] })

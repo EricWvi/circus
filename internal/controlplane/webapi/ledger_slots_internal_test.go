@@ -3,7 +3,7 @@ package webapi
 import "testing"
 
 func TestLedgerSlotsPerUser(t *testing.T) {
-	slots := &ledgerSlots{byUser: make(map[string]int)}
+	slots := &ledgerSlots{byUser: make(map[string]int), limit: maxLedgerRequests, perUser: maxLedgerRequestsPerUser}
 	for i := range maxLedgerRequestsPerUser {
 		if !slots.take("a") {
 			t.Fatalf("slot %d refused", i)

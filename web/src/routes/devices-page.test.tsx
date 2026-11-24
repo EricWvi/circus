@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { ApiError } from "@/api/errors"
 import { DEVICES_LIVE_INTERVAL_MS } from "@/api/hooks"
 import { SEED_OWNER_ID, seedState, type MockState } from "@/api/mock/state"
 import { SidebarProvider } from "@/components/ui/sidebar"
@@ -224,7 +225,7 @@ describe("the worker list", () => {
   const workers = () => within(screen.getByRole("region", { name: "Workers" }))
   const workerRow = (name: string) => within(workers().getByText(name, { selector: "span.font-medium" }).closest("li")!)
 
-  it("lists workers read-only, with status, version and the devices on the same machine", async () => {
+  it("lists workers with status, version and the devices on the same machine", async () => {
     await renderDevices(seedState(NOW))
     expect(workers().getByText("Workers run Claude Code for your sessions.")).toBeTruthy()
     const names = workers()
@@ -254,5 +255,384 @@ describe("the worker list", () => {
     const section = within(screen.getByRole("region", { name: "Worker" }))
     expect(section.getByText("Worker 为你的会话运行 Claude Code。")).toBeTruthy()
     expect(section.getByRole("list", { name: "与 devbox 在同一台机器上的设备" })).toBeTruthy()
+    const toggle = within(section.getByText("devbox", { selector: "span.font-medium" }).closest("li")!).getByRole("switch", {
+      name: "合入者",
+    })
+    expect(document.getElementById(toggle.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "可以合入落后于 main 的 Ledger 改动集，并丢弃不是它开的改动集。",
+    )
+  })
+})
+
+/** A promise settled from outside. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+describe("the integrator switch", () => {
+  const workers = () => within(screen.getByRole("region", { name: "Workers" }))
+  const toggleOf = (name: string) =>
+    within(workers().getByText(name, { selector: "span.font-medium" }).closest("li")!).getByRole("switch", {
+      name: "Integrator",
+    })
+  const isOn = (name: string) => toggleOf(name).getAttribute("aria-checked") === "true"
+
+  type Grant = { workerId: string; integrator: boolean }
+
+  /**
+   * Renders the page with setWorkerGrant held until the test settles it:
+   * `calls` records each request, and `next` the latest pending one.
+   */
+  async function renderHeld(state: MockState = seedState(NOW)) {
+    const calls: Grant[] = []
+    let next: { req: Grant; settle: ReturnType<typeof deferred<void>> } | undefined
+    const result = await renderWithBackend(<RouterProvider router={devicesRouter()} />, {
+      state,
+      wrapClient: (client) => ({
+        ...client,
+        machines: {
+          ...client.machines,
+          setWorkerGrant: async (req) => {
+            calls.push(req)
+            const settle = deferred<void>()
+            next = { req, settle }
+            await settle.promise
+            return client.machines.setWorkerGrant(req)
+          },
+        },
+      }),
+    })
+    await advance(50)
+    return {
+      ...result,
+      calls,
+      /** Lets the held request through to the mock server. */
+      release: async () => {
+        next!.settle.resolve()
+        await advance(50)
+      },
+      fail: async (error: unknown) => {
+        next!.settle.reject(error)
+        await advance(50)
+      },
+    }
+  }
+
+  function devicesRouter() {
+    return createMemoryRouter(
+      [
+        {
+          path: "/devices",
+          element: (
+            <SidebarProvider>
+              <DevicesPage />
+            </SidebarProvider>
+          ),
+        },
+      ],
+      { initialEntries: ["/devices"] },
+    )
+  }
+
+  it("shows each worker's grant, explained", async () => {
+    await renderDevices(seedState(NOW))
+    expect(isOn("cloud-runner")).toBe(true)
+    expect(["devbox", "eric-mbp", "eric-win"].map(isOn)).toEqual([false, false, false])
+    const hint = document.getElementById(toggleOf("devbox").getAttribute("aria-describedby")!)
+    expect(hint?.textContent).toBe(
+      "Can merge ledger changesets that fall behind main, and discard changesets it did not open.",
+    )
+  })
+
+  it("turns the grant on with the worker's id, pending until the server answers", async () => {
+    const { calls, release, state } = await renderHeld()
+    fireEvent.click(toggleOf("devbox"))
+    await advance(0)
+    expect(calls).toEqual([{ workerId: "worker-devbox", integrator: true }])
+    // The requested state, marked busy, while the request is out.
+    expect(isOn("devbox")).toBe(true)
+    expect(toggleOf("devbox").getAttribute("aria-busy")).toBe("true")
+    expect(workers().getByRole("status", { name: "Saving" })).toBeTruthy()
+    // Pressed again meanwhile: ignored.
+    fireEvent.click(toggleOf("devbox"))
+    await advance(0)
+    expect(calls).toHaveLength(1)
+    expect(isOn("devbox")).toBe(true)
+
+    await release()
+    expect(isOn("devbox")).toBe(true)
+    expect(toggleOf("devbox").getAttribute("aria-busy")).toBe("false")
+    expect(workers().queryByRole("status")).toBeNull()
+    expect(state.workers.find((w) => w.workerId === "worker-devbox")?.integrator).toBe(true)
+  })
+
+  it("turns the grant off", async () => {
+    const { calls, release, state } = await renderHeld()
+    fireEvent.click(toggleOf("cloud-runner"))
+    await advance(0)
+    expect(calls).toEqual([{ workerId: "worker-cloud-runner", integrator: false }])
+    expect(isOn("cloud-runner")).toBe(false)
+    await release()
+    expect(isOn("cloud-runner")).toBe(false)
+    expect(state.workers.find((w) => w.workerId === "worker-cloud-runner")?.integrator).toBe(false)
+  })
+
+  it("shows the server's worker, not the request", async () => {
+    // A server that keeps the grant off whatever is asked.
+    await renderWithBackend(<RouterProvider router={devicesRouter()} />, {
+      state: seedState(NOW),
+      wrapClient: (client) => ({
+        ...client,
+        machines: {
+          ...client.machines,
+          setWorkerGrant: (req) => client.machines.setWorkerGrant({ ...req, integrator: false }),
+        },
+      }),
+    })
+    await advance(50)
+    fireEvent.click(toggleOf("devbox"))
+    await advance(50)
+    expect(isOn("devbox")).toBe(false)
+    expect(workers().queryByRole("alert")).toBeNull()
+  })
+
+  it("goes back and says so when the change fails, until the next try", async () => {
+    const { fail, release } = await renderHeld()
+    fireEvent.click(toggleOf("devbox"))
+    await advance(0)
+    await fail(new ApiError("unavailable", "down"))
+    expect(isOn("devbox")).toBe(false)
+    expect(toggleOf("devbox").getAttribute("aria-busy")).toBe("false")
+    expect(workers().getByRole("alert").textContent).toBe("Couldn't change Integrator. Try again.")
+
+    fireEvent.click(toggleOf("devbox"))
+    await advance(0)
+    expect(workers().queryByRole("alert")).toBeNull()
+    await release()
+    expect(isOn("devbox")).toBe(true)
+  })
+
+  it("says so in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    const { fail } = await renderHeld()
+    const section = within(screen.getByRole("region", { name: "Worker" }))
+    fireEvent.click(within(section.getByText("devbox", { selector: "span.font-medium" }).closest("li")!).getByRole("switch"))
+    await advance(0)
+    await fail(new ApiError("unavailable", "down"))
+    expect(section.getByRole("alert").textContent).toBe("无法更改合入者设置，请重试。")
+  })
+
+  it("drops a worker that is gone, with a notice that outlives its row", async () => {
+    const { state, release } = await renderHeld()
+    fireEvent.click(toggleOf("devbox"))
+    await advance(0)
+    state.workers = state.workers.filter((w) => w.workerId !== "worker-devbox")
+    await release()
+    expect(workers().queryByText("devbox", { selector: "span.font-medium" })).toBeNull()
+    expect(isOn("cloud-runner")).toBe(true)
+    expect(workers().queryByRole("alert")).toBeNull()
+    expect(screen.getByText("Worker devbox no longer exists")).toBeTruthy()
+    expect(screen.getByText("Its Integrator setting wasn't changed.")).toBeTruthy()
+  })
+
+  it("keeps a change in flight when the page is left and opened again", async () => {
+    // The server applies each change at once; only the first answer is held.
+    const held = deferred<void>()
+    const calls: Grant[] = []
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/devices",
+          element: (
+            <SidebarProvider>
+              <DevicesPage />
+            </SidebarProvider>
+          ),
+        },
+        { path: "/elsewhere", element: <h1>Elsewhere</h1> },
+      ],
+      { initialEntries: ["/devices"] },
+    )
+    const { state } = await renderWithBackend(<RouterProvider router={router} />, {
+      state: seedState(NOW),
+      wrapClient: (client) => ({
+        ...client,
+        machines: {
+          ...client.machines,
+          setWorkerGrant: async (req) => {
+            calls.push(req)
+            const worker = await client.machines.setWorkerGrant(req)
+            if (calls.length === 1) await held.promise
+            return worker
+          },
+        },
+      }),
+    })
+    await advance(50)
+    fireEvent.click(toggleOf("devbox"))
+    await advance(0)
+    await router.navigate("/elsewhere")
+    await advance(10)
+    await router.navigate("/devices")
+    await advance(50)
+    // Still the requested state, busy, though the cached list says off.
+    expect(isOn("devbox")).toBe(true)
+    expect(toggleOf("devbox").getAttribute("aria-busy")).toBe("true")
+    expect(workers().getByRole("status", { name: "Saving" })).toBeTruthy()
+    fireEvent.click(toggleOf("devbox"))
+    await advance(DEVICES_LIVE_INTERVAL_MS)
+    expect(calls).toHaveLength(1)
+    expect(isOn("devbox")).toBe(true)
+
+    held.resolve()
+    await advance(50)
+    expect(isOn("devbox")).toBe(true)
+    expect(toggleOf("devbox").getAttribute("aria-busy")).toBe("false")
+    fireEvent.click(toggleOf("devbox"))
+    await advance(50)
+    expect(calls).toEqual([
+      { workerId: "worker-devbox", integrator: true },
+      { workerId: "worker-devbox", integrator: false },
+    ])
+    expect(isOn("devbox")).toBe(false)
+    expect(state.workers.find((w) => w.workerId === "worker-devbox")?.integrator).toBe(false)
+    await advance(DEVICES_LIVE_INTERVAL_MS)
+    expect(isOn("devbox")).toBe(false)
+  })
+
+  it("drops the failure once a list shows the change applied after all", async () => {
+    // Applied, but the answer is lost on the way back.
+    await renderWithBackend(<RouterProvider router={devicesRouter()} />, {
+      state: seedState(NOW),
+      wrapClient: (client) => ({
+        ...client,
+        machines: {
+          ...client.machines,
+          setWorkerGrant: async (req) => {
+            await client.machines.setWorkerGrant(req)
+            throw new ApiError("unavailable", "connection reset")
+          },
+        },
+      }),
+    })
+    await advance(50)
+    fireEvent.click(toggleOf("devbox"))
+    await advance(50)
+    expect(isOn("devbox")).toBe(false)
+    expect(workers().getByRole("alert").textContent).toBe("Couldn't change Integrator. Try again.")
+    await advance(DEVICES_LIVE_INTERVAL_MS)
+    expect(isOn("devbox")).toBe(true)
+    expect(workers().queryByRole("alert")).toBeNull()
+  })
+
+  it("shows the answer at once, without waiting for a list", async () => {
+    let slowLists = false
+    await renderWithBackend(<RouterProvider router={devicesRouter()} />, {
+      state: seedState(NOW),
+      wrapClient: (client) => ({
+        ...client,
+        machines: {
+          ...client.machines,
+          listWorkers: async () => {
+            const list = await client.machines.listWorkers()
+            if (slowLists) await new Promise((resolve) => setTimeout(resolve, 2000))
+            return list
+          },
+        },
+      }),
+    })
+    await advance(50)
+    slowLists = true
+    fireEvent.click(toggleOf("devbox"))
+    await advance(50)
+    expect(isOn("devbox")).toBe(true)
+    expect(toggleOf("devbox").getAttribute("aria-busy")).toBe("false")
+  })
+
+  it("keeps the requested state when a list sees the change before its answer", async () => {
+    const held = deferred<void>()
+    await renderWithBackend(<RouterProvider router={devicesRouter()} />, {
+      state: seedState(NOW),
+      wrapClient: (client) => ({
+        ...client,
+        machines: {
+          ...client.machines,
+          setWorkerGrant: async (req) => {
+            const worker = await client.machines.setWorkerGrant(req)
+            await held.promise
+            return worker
+          },
+        },
+      }),
+    })
+    await advance(50)
+    fireEvent.click(toggleOf("devbox"))
+    await advance(DEVICES_LIVE_INTERVAL_MS)
+    expect(isOn("devbox")).toBe(true)
+    expect(toggleOf("devbox").getAttribute("aria-busy")).toBe("true")
+    held.resolve()
+    await advance(50)
+    expect(isOn("devbox")).toBe(true)
+  })
+
+  it("keeps the requested state through list refreshes while the change is out", async () => {
+    const { release } = await renderHeld()
+    fireEvent.click(toggleOf("devbox"))
+    await advance(0)
+    // The server hasn't applied it: every refresh still says off.
+    for (let i = 0; i < 3; i++) {
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(isOn("devbox")).toBe(true)
+    }
+    await release()
+    expect(isOn("devbox")).toBe(true)
+    await advance(DEVICES_LIVE_INTERVAL_MS)
+    expect(isOn("devbox")).toBe(true)
+  })
+
+  it("ignores a list fetched before the change that arrives after it", async () => {
+    // List requests read the server at once and answer when let go.
+    let holdLists = false
+    const heldLists: (() => void)[] = []
+    const grant = deferred<void>()
+    await renderWithBackend(<RouterProvider router={devicesRouter()} />, {
+      state: seedState(NOW),
+      wrapClient: (client) => ({
+        ...client,
+        machines: {
+          ...client.machines,
+          listWorkers: async () => {
+            const list = await client.machines.listWorkers()
+            if (holdLists) await new Promise<void>((resolve) => heldLists.push(resolve))
+            return list
+          },
+          setWorkerGrant: async (req) => {
+            await grant.promise
+            return client.machines.setWorkerGrant(req)
+          },
+        },
+      }),
+    })
+    await advance(50)
+    fireEvent.click(toggleOf("devbox"))
+    await advance(0)
+    holdLists = true
+    await advance(DEVICES_LIVE_INTERVAL_MS)
+    expect(heldLists.length).toBeGreaterThan(0)
+    // The change lands, then the older list (grant off) arrives.
+    holdLists = false
+    grant.resolve()
+    await advance(50)
+    for (const resolve of heldLists) resolve()
+    await advance(50)
+    expect(isOn("devbox")).toBe(true)
+    await advance(DEVICES_LIVE_INTERVAL_MS)
+    expect(isOn("devbox")).toBe(true)
   })
 })

@@ -4,12 +4,16 @@ import {
   useInfiniteQuery,
   useQueries,
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
+  type MutationState,
   type QueryClient,
 } from "@tanstack/react-query"
 import { useEffect } from "react"
 
+import { useShowNotice } from "@/components/notice-context"
+import { i18n } from "@/i18n/i18n"
 import { localDeadline } from "@/lib/enroll"
 
 import { useClient } from "./context"
@@ -29,6 +33,7 @@ import type {
   SessionDetails,
   SessionSummary,
   User,
+  Worker,
   WorkspaceStatus,
 } from "./types"
 
@@ -239,6 +244,64 @@ export function useWorkers({ live = false }: { live?: boolean } = {}) {
     queryFn: () => client.machines.listWorkers(),
     refetchInterval: live ? DEVICES_LIVE_INTERVAL_MS : false,
     refetchOnWindowFocus: live ? "always" : true,
+  })
+}
+
+/** The mutations that change one worker's grants. */
+export const workerGrantKey = (workerId: string) => ["workerGrant", workerId] as const
+
+/** What a grant change asks for: the worker is the hook's. */
+export interface WorkerGrantRequest {
+  integrator: boolean
+}
+
+/**
+ * The grant changes of one worker, oldest first, as kept in the mutation
+ * cache: they outlive the page that made them, so a page opened again sees
+ * a change still in flight.
+ */
+export function useWorkerGrantStates(workerId: string): MutationState<Worker, unknown, WorkerGrantRequest>[] {
+  return useMutationState({
+    filters: { mutationKey: workerGrantKey(workerId), exact: true },
+    select: (m) => m.state as MutationState<Worker, unknown, WorkerGrantRequest>,
+  })
+}
+
+/**
+ * Turns a worker's integrator grant on or off. The returned worker goes
+ * into the cached list, unless a newer change of the same worker was made
+ * meanwhile (its own answer is the newer truth). A list fetched while the
+ * change was in flight may predate it, so any such fetch is dropped. A
+ * worker that is gone is reported with a notice, which outlives its row.
+ */
+export function useSetWorkerGrant({ workerId, name }: Pick<Worker, "workerId" | "name">) {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  const showNotice = useShowNotice()
+  return useMutation({
+    mutationKey: workerGrantKey(workerId),
+    mutationFn: ({ integrator }: WorkerGrantRequest) => client.machines.setWorkerGrant({ workerId, integrator }),
+    onSuccess: async (worker, request) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.workers })
+      const changes = queryClient.getMutationCache().findAll({ mutationKey: workerGrantKey(workerId), exact: true })
+      const own = changes.findIndex((m) => m.state.variables === request)
+      if (changes.slice(own + 1).some((m) => m.state.status !== "error")) return
+      queryClient.setQueryData<Worker[]>(queryKeys.workers, (list) =>
+        list?.map((w) => (w.workerId === worker.workerId ? worker : w)),
+      )
+    },
+    onError: (error) => {
+      if (!isApiError(error, "not_found")) return
+      // The list catches up and the row goes; the notice says why.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workers })
+      showNotice({
+        content: () => ({
+          title: i18n.t("devices.integratorWorkerGone", { name }),
+          lines: [{ text: i18n.t("devices.integratorWorkerGoneHint") }],
+        }),
+        failure: true,
+      })
+    },
   })
 }
 

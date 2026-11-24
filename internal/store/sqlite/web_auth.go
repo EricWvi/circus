@@ -120,9 +120,11 @@ func (o *ops) DeleteUser(ctx context.Context, id string) error {
 			return nil, store.ErrHasSessions
 		}
 		// The user's projects, at most MaxProjectsPerUser, lose their
-		// ledger rows in bounded transactions before the cascade.
-		rows, err := tx.q.QueryContext(ctx, `SELECT h.project_id FROM ledger_heads h JOIN projects p ON p.id = h.project_id
-			WHERE p.user_id = ? ORDER BY h.project_id`, id)
+		// ledger rows in bounded transactions before the cascade, and their
+		// changesets after it.
+		rows, err := tx.q.QueryContext(ctx, `SELECT p.id FROM projects p WHERE p.user_id = ?
+			AND (EXISTS (SELECT 1 FROM ledger_heads h WHERE h.project_id = p.id)
+				OR EXISTS (SELECT 1 FROM ledger_changesets c WHERE c.project_id = p.id)) ORDER BY p.id`, id)
 		if err != nil {
 			return nil, mapErr(err)
 		}

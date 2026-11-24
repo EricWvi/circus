@@ -302,6 +302,17 @@ func (m *Manager) noticeClearedIndex(ctx context.Context, id string) error {
 	if err != nil || head != "" {
 		return err
 	}
+	// A repository may hold only changesets' branches, before the first
+	// merge.
+	if _, err := os.Lstat(filepath.Join(m.repoPath(id), mainRef.String())); errors.Is(err, os.ErrNotExist) {
+		if r, err := m.open(m.repoPath(id)); err == nil && r != nil {
+			main, err := r.head()
+			_ = r.storage.Close()
+			if err == nil && main.IsZero() {
+				return nil
+			}
+		}
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.broken == nil {
@@ -461,7 +472,13 @@ func initRepository(dir string) (*repository, error) {
 }
 
 func (r *repository) head() (plumbing.Hash, error) {
-	ref, err := r.Reference(mainRef, false)
+	return r.readRef(mainRef)
+}
+
+// readRef returns the commit a reference names directly, or zero when the
+// reference does not exist.
+func (r *repository) readRef(name plumbing.ReferenceName) (plumbing.Hash, error) {
+	ref, err := r.Reference(name, false)
 	if errors.Is(err, plumbing.ErrReferenceNotFound) {
 		return plumbing.ZeroHash, nil
 	}
@@ -469,7 +486,10 @@ func (r *repository) head() (plumbing.Hash, error) {
 		return plumbing.ZeroHash, err
 	}
 	if ref.Type() != plumbing.HashReference || ref.Hash().IsZero() {
-		return plumbing.ZeroHash, errors.New("ledger: main must be a direct commit reference")
+		if name == mainRef {
+			return plumbing.ZeroHash, errors.New("ledger: main must be a direct commit reference")
+		}
+		return plumbing.ZeroHash, fmt.Errorf("ledger: %s must be a direct commit reference", name)
 	}
 	return ref.Hash(), nil
 }

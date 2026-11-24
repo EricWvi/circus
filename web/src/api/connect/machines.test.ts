@@ -4,6 +4,7 @@ import {
   MachineService,
   type GetGitRemoteRequest,
   type ListDirectoryRequest,
+  type SetWorkerGrantRequest,
 } from "@circus/proto/circus/v1/machine_pb"
 import { describe, expect, it } from "vitest"
 
@@ -181,6 +182,7 @@ describe("listWorkers", () => {
             hostname: "devbox.lan",
             version: "0.2.0",
             localDevices: ["devbox"],
+            integrator: true,
           },
         ],
       }),
@@ -196,7 +198,36 @@ describe("listWorkers", () => {
         hostname: "devbox.lan",
         version: "0.2.0",
         localDevices: ["devbox"],
+        integrator: true,
       },
     ])
+  })
+})
+
+describe("setWorkerGrant", () => {
+  it("sends the grant and maps the returned worker", async () => {
+    let received: SetWorkerGrantRequest | undefined
+    const worker = await machines({
+      setWorkerGrant: (req) => {
+        received = req
+        return { worker: { workerId: req.workerId, name: "devbox", online: true, integrator: req.integrator } }
+      },
+    }).setWorkerGrant({ workerId: "w1", integrator: true })
+    expect([received?.workerId, received?.integrator]).toEqual(["w1", true])
+    expect(worker).toMatchObject({ workerId: "w1", name: "devbox", online: true, integrator: true, localDevices: [] })
+  })
+
+  it("maps NOT_FOUND", async () => {
+    const client = machines({
+      setWorkerGrant: () => {
+        throw new ConnectError("no such worker", Code.NotFound)
+      },
+    })
+    expect((await rejection(client.setWorkerGrant({ workerId: "w9", integrator: false }))).code).toBe("not_found")
+  })
+
+  it("rejects a response without a worker", async () => {
+    const client = machines({ setWorkerGrant: () => ({}) })
+    expect((await rejection(client.setWorkerGrant({ workerId: "w1", integrator: true }))).code).toBe("internal")
   })
 })

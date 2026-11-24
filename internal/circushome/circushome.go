@@ -42,11 +42,19 @@ func Dir(name string) (string, error) {
 // DaemonState returns the state directory shared by the daemon and its tools.
 // An empty home uses the current user's home when neither override is set.
 func DaemonState(home string) (string, error) {
+	return State(home, "daemon")
+}
+
+// State returns the state directory of one part of circus, name, such as
+// "daemon": <CIRCUS_HOME>/state/<name>, or $XDG_STATE_HOME/circus/<name>,
+// falling back to ~/.local/state/circus/<name>. An empty home uses the
+// current user's home when neither override is set.
+func State(home, name string) (string, error) {
 	if dir, err := Dir("state"); err != nil || dir != "" {
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(dir, "daemon"), nil
+		return filepath.Join(dir, name), nil
 	}
 	state := os.Getenv("XDG_STATE_HOME")
 	if !filepath.IsAbs(state) {
@@ -59,5 +67,5 @@ func DaemonState(home string) (string, error) {
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(state, "circus", "daemon"), nil
+	return filepath.Join(state, "circus", name), nil
 }

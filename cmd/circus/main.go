@@ -1,7 +1,8 @@
 // Command circus is the circus CLI: `circus server` runs the control plane
 // and its admin subcommands, `circus join` enrolls a machine, `circus daemon`
 // runs and manages the device daemon, `circus daemon call` is its local harness,
-// `circus call` is the worker-credential debug client, `circus doctor` checks the stored
+// `circus call` is the worker-credential debug client, `circus ledger` changes
+// a project's ledger through changesets, `circus doctor` checks the stored
 // credentials against the control plane, `circus update` installs the latest
 // CLI release, and `circus version` prints the build version.
 package main
@@ -18,7 +19,7 @@ import (
 
 var version = "dev"
 
-const usage = "usage: circus <version|update|daemon|server|join|doctor|call>"
+const usage = "usage: circus <version|update|daemon|server|join|doctor|call|ledger>"
 
 // init keeps the exec-guard's main goroutine on the main OS thread from the
 // start: on Linux the guard arms its death signal and forks the CLI on that
@@ -53,6 +54,8 @@ func main() {
 		}
 	case "call":
 		exitOn(callCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	case "ledger":
+		exitOn(ledgerCommand(os.Args[2:], os.Stdout, os.Stderr))
 	case "server":
 		exitOn(serverCommand(os.Args[2:], os.Stdout, os.Stderr))
 	case "join":

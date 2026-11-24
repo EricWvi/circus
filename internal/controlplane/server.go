@@ -322,7 +322,8 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	s.hooks = append(s.hooks, shutdownHook{"session watchers", func(context.Context) error { s.bus.Close(); return nil }})
 	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger,
 		Bus: s.bus, Waker: s.sessions, Scheduler: s.sessions, OnlineWorkers: s.sessions.OnlineWorkers, Secrets: s.secrets,
-		Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query, Workspaces: s.workspaces, Ledger: ledgerManager})
+		Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query, Workspaces: s.workspaces, Ledger: ledgerManager,
+		Workers: s.authn})
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()

@@ -577,3 +577,39 @@ describe("model providers", () => {
     expect(state.providers.some((p) => p.providerId === "provider-proxy")).toBe(false)
   })
 })
+
+describe("worker grants", () => {
+  it("seeds one integrator", async () => {
+    const client = await signedIn()
+    const workers = await client.machines.listWorkers()
+    expect(workers.filter((w) => w.integrator).map((w) => w.name)).toEqual(["cloud-runner"])
+    expect(workers.length).toBeGreaterThan(1)
+  })
+
+  it("turns the grant on and off and returns the worker as listed", async () => {
+    const client = await signedIn()
+    const on = await client.machines.setWorkerGrant({ workerId: "worker-devbox", integrator: true })
+    const listed = await client.machines.listWorkers()
+    expect(on).toEqual(listed.find((w) => w.workerId === "worker-devbox"))
+    expect(on.integrator).toBe(true)
+    const off = await client.machines.setWorkerGrant({ workerId: "worker-devbox", integrator: false })
+    expect(off.integrator).toBe(false)
+    expect((await client.machines.listWorkers()).find((w) => w.workerId === "worker-devbox")?.integrator).toBe(false)
+  })
+
+  it("rejects an unknown worker and another user's", async () => {
+    const { client } = backend()
+    await client.auth.login(dev)
+    await expectCode(client.machines.setWorkerGrant({ workerId: "worker-devbox", integrator: true }), "not_found")
+    await expectCode(client.machines.setWorkerGrant({ workerId: "nope", integrator: true }), "not_found")
+    await client.auth.logout()
+    await client.auth.login(eric)
+    const devbox = (await client.machines.listWorkers()).find((w) => w.workerId === "worker-devbox")
+    expect(devbox?.integrator).toBe(false)
+  })
+
+  it("needs a signed-in user", async () => {
+    const { client } = backend()
+    await expectCode(client.machines.setWorkerGrant({ workerId: "worker-devbox", integrator: true }), "unauthenticated")
+  })
+})

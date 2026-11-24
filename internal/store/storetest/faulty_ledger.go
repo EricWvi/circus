@@ -48,3 +48,61 @@ func (o *faultyOps) ListLedgerHistory(ctx context.Context, projectID string, num
 	})
 	return
 }
+
+func (o *faultyOps) GetLedgerNextNumber(ctx context.Context, projectID string) (v uint32, err error) {
+	err = o.read(ctx, func(x store.Ops) error { v, err = x.GetLedgerNextNumber(ctx, projectID); return err })
+	return
+}
+
+func (o *faultyOps) CreateLedgerChangeset(ctx context.Context, c store.LedgerChangeset) error {
+	return o.write(ctx, func(x store.Ops) error { return x.CreateLedgerChangeset(ctx, c) })
+}
+
+func (o *faultyOps) GetLedgerChangeset(ctx context.Context, id string) (v store.LedgerChangeset, err error) {
+	err = o.read(ctx, func(x store.Ops) error { v, err = x.GetLedgerChangeset(ctx, id); return err })
+	return
+}
+
+func (o *faultyOps) ListLedgerChangesets(ctx context.Context, f store.LedgerChangesetFilter) (v []store.LedgerChangeset, more bool, err error) {
+	err = o.read(ctx, func(x store.Ops) error { v, more, err = x.ListLedgerChangesets(ctx, f); return err })
+	return
+}
+
+func (o *faultyOps) ListLedgerRepairs(ctx context.Context, projectID string) (v []store.LedgerChangeset, err error) {
+	err = o.read(ctx, func(x store.Ops) error { v, err = x.ListLedgerRepairs(ctx, projectID); return err })
+	return
+}
+
+func (o *faultyOps) TouchLedgerChangeset(ctx context.Context, id string, at int64) (ok bool, err error) {
+	err = o.write(ctx, func(x store.Ops) error { ok, err = x.TouchLedgerChangeset(ctx, id, at); return err })
+	return
+}
+
+func (o *faultyOps) PrepareLedgerMerge(ctx context.Context, id string, m store.LedgerMerge, at int64) (ok bool, err error) {
+	err = o.write(ctx, func(x store.Ops) error { ok, err = x.PrepareLedgerMerge(ctx, id, m, at); return err })
+	return
+}
+
+func (o *faultyOps) ClearLedgerMerge(ctx context.Context, id, commit string) (ok bool, err error) {
+	err = o.write(ctx, func(x store.Ops) error { ok, err = x.ClearLedgerMerge(ctx, id, commit); return err })
+	return
+}
+
+func (o *faultyOps) FinishLedgerMerge(ctx context.Context, id, commit string, at int64) (ok bool, err error) {
+	err = o.write(ctx, func(x store.Ops) error { ok, err = x.FinishLedgerMerge(ctx, id, commit, at); return err })
+	return
+}
+
+func (o *faultyOps) DiscardLedgerChangeset(ctx context.Context, id, reason string, archived bool, at int64) (ok bool, err error) {
+	err = o.write(ctx, func(x store.Ops) error { ok, err = x.DiscardLedgerChangeset(ctx, id, reason, archived, at); return err })
+	return
+}
+
+func (o *faultyOps) ArchiveLedgerChangeset(ctx context.Context, id string) error {
+	return o.write(ctx, func(x store.Ops) error { return x.ArchiveLedgerChangeset(ctx, id) })
+}
+
+// PurgeOrphanLedgerChangesets is one write point, like ReplaceLedgerIndex.
+func (o *faultyOps) PurgeOrphanLedgerChangesets(ctx context.Context) error {
+	return o.write(ctx, func(x store.Ops) error { return x.PurgeOrphanLedgerChangesets(ctx) })
+}

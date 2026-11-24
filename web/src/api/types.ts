@@ -250,6 +250,12 @@ export interface Worker {
    * locations run in local mode on this worker.
    */
   localDevices: string[]
+  /**
+   * The integrator grant: the worker may merge ledger changesets that do
+   * not fast-forward and discard changesets it did not open, for the
+   * user's projects. Off by default.
+   */
+  integrator: boolean
 }
 
 /** Which identities an enrollment link enrolls: a device (daemon), a worker, or both. */
@@ -353,6 +359,12 @@ export interface MachineService {
    * The caller's workers that are not deleted, ordered by name.
    */
   listWorkers(): Promise<Worker[]>
+  /**
+   * Turns the integrator grant of one of the caller's workers on or off and
+   * returns the worker. Fails with `not_found` for an unknown worker or
+   * another user's.
+   */
+  setWorkerGrant(req: { workerId: string; integrator: boolean }): Promise<Worker>
   /**
    * Issues a one-time link that enrolls machines for the caller. Fails with
    * `resource_exhausted` while the caller has too many unused links, and

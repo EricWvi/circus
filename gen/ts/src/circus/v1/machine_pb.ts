@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/machine.proto.
  */
 export const file_circus_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UiqAEKBldvcmtlchIRCgl3b3JrZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZvbmxpbmUYAyABKAgSGQoRbGFzdF9zZWVuX3VuaXhfbXMYBCABKAMSCgoCb3MYBSABKAkSDAoEYXJjaBgGIAEoCRIQCghob3N0bmFtZRgHIAEoCRIPCgd2ZXJzaW9uGAggASgJEhUKDWxvY2FsX2RldmljZXMYCSADKAkiFAoSTGlzdFdvcmtlcnNSZXF1ZXN0IjkKE0xpc3RXb3JrZXJzUmVzcG9uc2USIgoHd29ya2VycxgBIAMoCzIRLmNpcmN1cy52MS5Xb3JrZXIiPgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlIlkKGENyZWF0ZUVucm9sbExpbmtSZXNwb25zZRIMCgRsaW5rGAEgASgJEhcKD2V4cGlyZXNfdW5peF9tcxgCIAEoAxIWCg5zZXJ2ZXJfdmVyc2lvbhgDIAEoCSJMChRMaXN0RGlyZWN0b3J5UmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCRIWCg5pbmNsdWRlX2hpZGRlbhgDIAEoCCJHChVMaXN0RGlyZWN0b3J5UmVzcG9uc2USLgoGcmVzdWx0GAEgASgLMh4uY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXN1bHQiMwoTR2V0R2l0UmVtb3RlUmVxdWVzdBIOCgZkZXZpY2UYASABKAkSDAoEcGF0aBgCIAEoCSJCChRHZXRHaXRSZW1vdGVSZXNwb25zZRIqCgZyZXN1bHQYASABKAsyGi5jaXJjdXMudjEuR2l0UmVtb3RlUmVzdWx0Km8KCkVucm9sbFJvbGUSGwoXRU5ST0xMX1JPTEVfVU5TUEVDSUZJRUQQABIWChJFTlJPTExfUk9MRV9EQUVNT04QARIWChJFTlJPTExfUk9MRV9XT1JLRVIQAhIUChBFTlJPTExfUk9MRV9CT1RIEAMyrgMKDk1hY2hpbmVTZXJ2aWNlEkwKC0xpc3REZXZpY2VzEh0uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVxdWVzdBoeLmNpcmN1cy52MS5MaXN0RGV2aWNlc1Jlc3BvbnNlEkwKC0xpc3RXb3JrZXJzEh0uY2lyY3VzLnYxLkxpc3RXb3JrZXJzUmVxdWVzdBoeLmNpcmN1cy52MS5MaXN0V29ya2Vyc1Jlc3BvbnNlElsKEENyZWF0ZUVucm9sbExpbmsSIi5jaXJjdXMudjEuQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QaIy5jaXJjdXMudjEuQ3JlYXRlRW5yb2xsTGlua1Jlc3BvbnNlElIKDUxpc3REaXJlY3RvcnkSHy5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlcXVlc3QaIC5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3BvbnNlEk8KDEdldEdpdFJlbW90ZRIeLmNpcmN1cy52MS5HZXRHaXRSZW1vdGVSZXF1ZXN0Gh8uY2lyY3VzLnYxLkdldEdpdFJlbW90ZVJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_daemon_link]);
+  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UivAEKBldvcmtlchIRCgl3b3JrZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZvbmxpbmUYAyABKAgSGQoRbGFzdF9zZWVuX3VuaXhfbXMYBCABKAMSCgoCb3MYBSABKAkSDAoEYXJjaBgGIAEoCRIQCghob3N0bmFtZRgHIAEoCRIPCgd2ZXJzaW9uGAggASgJEhUKDWxvY2FsX2RldmljZXMYCSADKAkSEgoKaW50ZWdyYXRvchgKIAEoCCIUChJMaXN0V29ya2Vyc1JlcXVlc3QiPgoVU2V0V29ya2VyR3JhbnRSZXF1ZXN0EhEKCXdvcmtlcl9pZBgBIAEoCRISCgppbnRlZ3JhdG9yGAIgASgIIjsKFlNldFdvcmtlckdyYW50UmVzcG9uc2USIQoGd29ya2VyGAEgASgLMhEuY2lyY3VzLnYxLldvcmtlciI5ChNMaXN0V29ya2Vyc1Jlc3BvbnNlEiIKB3dvcmtlcnMYASADKAsyES5jaXJjdXMudjEuV29ya2VyIj4KF0NyZWF0ZUVucm9sbExpbmtSZXF1ZXN0EiMKBHJvbGUYASABKA4yFS5jaXJjdXMudjEuRW5yb2xsUm9sZSJZChhDcmVhdGVFbnJvbGxMaW5rUmVzcG9uc2USDAoEbGluaxgBIAEoCRIXCg9leHBpcmVzX3VuaXhfbXMYAiABKAMSFgoOc2VydmVyX3ZlcnNpb24YAyABKAkiTAoUTGlzdERpcmVjdG9yeVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJEgwKBHBhdGgYAiABKAkSFgoOaW5jbHVkZV9oaWRkZW4YAyABKAgiRwoVTGlzdERpcmVjdG9yeVJlc3BvbnNlEi4KBnJlc3VsdBgBIAEoCzIeLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzdWx0IjMKE0dldEdpdFJlbW90ZVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJEgwKBHBhdGgYAiABKAkiQgoUR2V0R2l0UmVtb3RlUmVzcG9uc2USKgoGcmVzdWx0GAEgASgLMhouY2lyY3VzLnYxLkdpdFJlbW90ZVJlc3VsdCpvCgpFbnJvbGxSb2xlEhsKF0VOUk9MTF9ST0xFX1VOU1BFQ0lGSUVEEAASFgoSRU5ST0xMX1JPTEVfREFFTU9OEAESFgoSRU5ST0xMX1JPTEVfV09SS0VSEAISFAoQRU5ST0xMX1JPTEVfQk9USBADMoUECg5NYWNoaW5lU2VydmljZRJMCgtMaXN0RGV2aWNlcxIdLmNpcmN1cy52MS5MaXN0RGV2aWNlc1JlcXVlc3QaHi5jaXJjdXMudjEuTGlzdERldmljZXNSZXNwb25zZRJMCgtMaXN0V29ya2VycxIdLmNpcmN1cy52MS5MaXN0V29ya2Vyc1JlcXVlc3QaHi5jaXJjdXMudjEuTGlzdFdvcmtlcnNSZXNwb25zZRJbChBDcmVhdGVFbnJvbGxMaW5rEiIuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXF1ZXN0GiMuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXNwb25zZRJVCg5TZXRXb3JrZXJHcmFudBIgLmNpcmN1cy52MS5TZXRXb3JrZXJHcmFudFJlcXVlc3QaIS5jaXJjdXMudjEuU2V0V29ya2VyR3JhbnRSZXNwb25zZRJSCg1MaXN0RGlyZWN0b3J5Eh8uY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXF1ZXN0GiAuY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXNwb25zZRJPCgxHZXRHaXRSZW1vdGUSHi5jaXJjdXMudjEuR2V0R2l0UmVtb3RlUmVxdWVzdBofLmNpcmN1cy52MS5HZXRHaXRSZW1vdGVSZXNwb25zZUI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw", [file_circus_v1_daemon_link]);
 
 /**
  * @generated from message circus.v1.Device
@@ -155,6 +155,16 @@ export type Worker = Message<"circus.v1.Worker"> & {
    * @generated from field: repeated string local_devices = 9;
    */
   localDevices: string[];
+
+  /**
+   * The integrator grant: the worker's credential may merge ledger
+   * changesets that do not fast-forward and discard changesets it did not
+   * open, for this user's projects (LedgerChangesetService). Off by
+   * default; it ends with the credential.
+   *
+   * @generated from field: bool integrator = 10;
+   */
+  integrator: boolean;
 };
 
 /**
@@ -178,6 +188,45 @@ export const ListWorkersRequestSchema: GenMessage<ListWorkersRequest> = /*@__PUR
   messageDesc(file_circus_v1_machine, 4);
 
 /**
+ * @generated from message circus.v1.SetWorkerGrantRequest
+ */
+export type SetWorkerGrantRequest = Message<"circus.v1.SetWorkerGrantRequest"> & {
+  /**
+   * @generated from field: string worker_id = 1;
+   */
+  workerId: string;
+
+  /**
+   * @generated from field: bool integrator = 2;
+   */
+  integrator: boolean;
+};
+
+/**
+ * Describes the message circus.v1.SetWorkerGrantRequest.
+ * Use `create(SetWorkerGrantRequestSchema)` to create a new message.
+ */
+export const SetWorkerGrantRequestSchema: GenMessage<SetWorkerGrantRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 5);
+
+/**
+ * @generated from message circus.v1.SetWorkerGrantResponse
+ */
+export type SetWorkerGrantResponse = Message<"circus.v1.SetWorkerGrantResponse"> & {
+  /**
+   * @generated from field: circus.v1.Worker worker = 1;
+   */
+  worker?: Worker | undefined;
+};
+
+/**
+ * Describes the message circus.v1.SetWorkerGrantResponse.
+ * Use `create(SetWorkerGrantResponseSchema)` to create a new message.
+ */
+export const SetWorkerGrantResponseSchema: GenMessage<SetWorkerGrantResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 6);
+
+/**
  * @generated from message circus.v1.ListWorkersResponse
  */
 export type ListWorkersResponse = Message<"circus.v1.ListWorkersResponse"> & {
@@ -192,7 +241,7 @@ export type ListWorkersResponse = Message<"circus.v1.ListWorkersResponse"> & {
  * Use `create(ListWorkersResponseSchema)` to create a new message.
  */
 export const ListWorkersResponseSchema: GenMessage<ListWorkersResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 5);
+  messageDesc(file_circus_v1_machine, 7);
 
 /**
  * @generated from message circus.v1.CreateEnrollLinkRequest
@@ -211,7 +260,7 @@ export type CreateEnrollLinkRequest = Message<"circus.v1.CreateEnrollLinkRequest
  * Use `create(CreateEnrollLinkRequestSchema)` to create a new message.
  */
 export const CreateEnrollLinkRequestSchema: GenMessage<CreateEnrollLinkRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 6);
+  messageDesc(file_circus_v1_machine, 8);
 
 /**
  * @generated from message circus.v1.CreateEnrollLinkResponse
@@ -244,7 +293,7 @@ export type CreateEnrollLinkResponse = Message<"circus.v1.CreateEnrollLinkRespon
  * Use `create(CreateEnrollLinkResponseSchema)` to create a new message.
  */
 export const CreateEnrollLinkResponseSchema: GenMessage<CreateEnrollLinkResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 7);
+  messageDesc(file_circus_v1_machine, 9);
 
 /**
  * @generated from message circus.v1.ListDirectoryRequest
@@ -276,7 +325,7 @@ export type ListDirectoryRequest = Message<"circus.v1.ListDirectoryRequest"> & {
  * Use `create(ListDirectoryRequestSchema)` to create a new message.
  */
 export const ListDirectoryRequestSchema: GenMessage<ListDirectoryRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 8);
+  messageDesc(file_circus_v1_machine, 10);
 
 /**
  * @generated from message circus.v1.ListDirectoryResponse
@@ -295,7 +344,7 @@ export type ListDirectoryResponse = Message<"circus.v1.ListDirectoryResponse"> &
  * Use `create(ListDirectoryResponseSchema)` to create a new message.
  */
 export const ListDirectoryResponseSchema: GenMessage<ListDirectoryResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 9);
+  messageDesc(file_circus_v1_machine, 11);
 
 /**
  * @generated from message circus.v1.GetGitRemoteRequest
@@ -321,7 +370,7 @@ export type GetGitRemoteRequest = Message<"circus.v1.GetGitRemoteRequest"> & {
  * Use `create(GetGitRemoteRequestSchema)` to create a new message.
  */
 export const GetGitRemoteRequestSchema: GenMessage<GetGitRemoteRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 10);
+  messageDesc(file_circus_v1_machine, 12);
 
 /**
  * @generated from message circus.v1.GetGitRemoteResponse
@@ -340,7 +389,7 @@ export type GetGitRemoteResponse = Message<"circus.v1.GetGitRemoteResponse"> & {
  * Use `create(GetGitRemoteResponseSchema)` to create a new message.
  */
 export const GetGitRemoteResponseSchema: GenMessage<GetGitRemoteResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 11);
+  messageDesc(file_circus_v1_machine, 13);
 
 /**
  * @generated from enum circus.v1.EnrollRole
@@ -412,6 +461,17 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof CreateEnrollLinkRequestSchema;
     output: typeof CreateEnrollLinkResponseSchema;
+  },
+  /**
+   * Turns a grant of one of the caller's workers on or off and returns the
+   * worker. NOT_FOUND for another user's or an unknown worker.
+   *
+   * @generated from rpc circus.v1.MachineService.SetWorkerGrant
+   */
+  setWorkerGrant: {
+    methodKind: "unary";
+    input: typeof SetWorkerGrantRequestSchema;
+    output: typeof SetWorkerGrantResponseSchema;
   },
   /**
    * Lists the subdirectories of a directory on one of the caller's devices,

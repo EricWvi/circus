@@ -37,10 +37,13 @@ type fileObject struct {
 }
 
 func (r *repository) walkFiles(ctx context.Context, hash plumbing.Hash, dir string, visit func(fileObject) error) error {
-	return r.walkTree(ctx, hash, dir, nil, visit)
+	return r.walkTree(ctx, hash, dir, nil, false, visit)
 }
 
-func (r *repository) walkTree(ctx context.Context, hash plumbing.Hash, dir string, trees map[string]plumbing.Hash, visit func(fileObject) error) error {
+// walkTree visits the files below a tree in path order. Unless lenient,
+// as for a changeset's tree, it refuses directory names that the main
+// line cannot hold.
+func (r *repository) walkTree(ctx context.Context, hash plumbing.Hash, dir string, trees map[string]plumbing.Hash, lenient bool, visit func(fileObject) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -67,11 +70,13 @@ func (r *repository) walkTree(ctx context.Context, hash plumbing.Hash, dir strin
 		switch entry.Mode {
 		case filemode.Dir:
 			var v validation
-			v.checkDir(p, p)
+			if !lenient {
+				v.checkDir(p, p)
+			}
 			if len(v.problems) > 0 {
 				return &ValidationError{Problems: v.problems}
 			}
-			if err := r.walkTree(ctx, entry.Hash, p+"/", trees, visit); err != nil {
+			if err := r.walkTree(ctx, entry.Hash, p+"/", trees, lenient, visit); err != nil {
 				return err
 			}
 		case filemode.Regular:
@@ -96,7 +101,7 @@ func (r *repository) readSnapshot(ctx context.Context, tree plumbing.Hash, cache
 	var index, buffer []byte
 	var v validation
 	files := 0
-	err := r.walkTree(ctx, tree, "", out.trees, func(file fileObject) error {
+	err := r.walkTree(ctx, tree, "", out.trees, false, func(file fileObject) error {
 		files++
 		if files > store.MaxLedgerDecisions+1 {
 			return store.ErrLimit
@@ -210,21 +215,39 @@ type preparedDecision struct {
 	snapshotEntry
 	header []byte
 	body   []byte
+	// kept marks a decision of the parent that a merge keeps without its
+	// bytes, so its blob cannot be written again here.
+	kept bool
 }
 
 // Prepare and validate the entire input before touching the branch. A
 // complete input requires hashing its bytes once, with one reusable file
 // buffer. Keep only metadata and references to the caller's bodies.
 func prepareSnapshot(ctx context.Context, decisions []Decision) ([]preparedDecision, snapshot, error) {
-	v := validation{count: len(decisions)}
+	return prepareDecisions(ctx, nil, decisions)
+}
+
+// prepareDecisions is prepareSnapshot for a snapshot that keeps some
+// entries of the parent, already valid there, without their bytes.
+func prepareDecisions(ctx context.Context, kept []snapshotEntry, decisions []Decision) ([]preparedDecision, snapshot, error) {
+	total := len(kept) + len(decisions)
+	v := validation{count: total}
 	v.checkCount()
-	if len(decisions) > store.MaxLedgerDecisions {
+	if total > store.MaxLedgerDecisions {
 		return nil, snapshot{}, &ValidationError{Problems: v.problems}
 	}
-	prepared := make([]preparedDecision, 0, len(decisions))
+	prepared := make([]preparedDecision, 0, total)
 	out := snapshot{byBlob: make(map[plumbing.Hash]snapshotEntry, len(decisions))}
-	files := make(map[string]struct{}, len(decisions)+1)
+	files := make(map[string]struct{}, total+1)
 	files[indexName] = struct{}{}
+	for _, e := range kept {
+		v.checkIdentity(e.Path, Decision{Number: e.Number, Dir: e.Dir, Title: e.Title})
+		if _, exists := files[e.Path]; exists {
+			v.add(e.Path, "duplicate file path")
+		}
+		files[e.Path] = struct{}{}
+		prepared = append(prepared, preparedDecision{snapshotEntry: e, kept: true})
+	}
 	var scratch []byte
 	for _, d := range decisions {
 		if err := ctx.Err(); err != nil {
@@ -303,6 +326,9 @@ func (r *repository) putSnapshot(ctx context.Context, prepared []preparedDecisio
 		// A legacy blob was written from other bytes than the caller's, so
 		// only blobs rendered from the caller's bytes can be repaired here.
 		if _, reachable := previous.byBlob[e.blob]; !reachable || !legacy && r.suspectBlob(e.blob) {
+			if e.kept {
+				return plumbing.ZeroHash, snapshot{}, fmt.Errorf("ledger: blob %s of %q is damaged; commit its decision again in full", e.blob, e.Path)
+			}
 			if err := r.streamBlob(e.blob, e.header, e.body); err != nil {
 				return plumbing.ZeroHash, snapshot{}, err
 			}

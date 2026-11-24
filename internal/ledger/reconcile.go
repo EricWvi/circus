@@ -68,6 +68,9 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 		}
 		after = ids[len(ids)-1]
 	}
+	if err := m.st.PurgeOrphanLedgerChangesets(ctx); err != nil {
+		m.logger.ErrorContext(ctx, "ledger startup changeset purge failed", "error", err)
+	}
 	if exclusive {
 		trash := filepath.Join(m.root, trashName)
 		if _, err := os.Lstat(trash); err == nil {
@@ -180,14 +183,20 @@ func (m *Manager) reconcileProject(ctx context.Context, id string, exclusive boo
 		}
 	}
 	indexed, err := m.st.GetLedgerHead(ctx, id)
-	if err != nil || indexed == commitID(head) {
+	if err != nil {
 		return err
 	}
-	if err := m.rebuild(ctx, r, id, indexed, head); err != nil {
-		return err
+	if indexed != commitID(head) {
+		if err := m.rebuild(ctx, r, id, indexed, head); err != nil {
+			return err
+		}
+		m.logger.InfoContext(ctx, "rebuilt ledger index", "project_id", id, "head", commitID(head))
 	}
-	m.logger.InfoContext(ctx, "rebuilt ledger index", "project_id", id, "head", commitID(head))
-	return nil
+	// Merges interrupted after main moved are recorded, and discarded
+	// changesets' branches archived. A changeset that cannot be repaired
+	// is logged and refused by its own operations only.
+	_, err = m.repair(ctx, r, id)
+	return err
 }
 
 func scanDir(ctx context.Context, dir string, visit func(string) error) error {

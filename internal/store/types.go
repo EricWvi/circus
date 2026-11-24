@@ -117,7 +117,8 @@ type User struct {
 }
 
 // Identity is one machine × role: a device or a worker.
-// The devices and workers tables have exactly these columns.
+// The devices and workers tables have exactly these columns, except
+// Integrator, which only workers have.
 type Identity struct {
 	Kind          PrincipalKind
 	ID            string
@@ -135,6 +136,9 @@ type Identity struct {
 	LastDisconnectedAt int64
 	CreatedAt          int64
 	DeletedAt          int64
+	// Integrator is a worker's integrator grant (SetWorkerIntegrator);
+	// always false for a device. CreateIdentity ignores it.
+	Integrator bool
 }
 
 // HelloMetadata is the mutable identity metadata reported during link handshakes.

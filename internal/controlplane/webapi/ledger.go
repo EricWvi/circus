@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -31,8 +32,9 @@ const (
 	maxLedgerHistoryBytes  = store.MaxLedgerHistoryPage*(6*(store.MaxLedgerAuthorBytes+store.MaxLedgerSummaryBytes+
 		store.MaxLedgerPathBytes+store.MaxLedgerTitleBytes)+256) + 512
 	// Responses in flight, each held until it is written, bound memory.
-	// One user may hold only some of them, so a client that stops reading
-	// its responses cannot keep other users out.
+	// One user may hold only some of them, so one user's clients that stop
+	// reading their responses cannot keep other users out; it takes the
+	// clients of two users together.
 	maxLedgerRequests        = 4
 	maxLedgerRequestsPerUser = 2
 	ledgerRequestTimeout     = 30 * time.Second
@@ -40,17 +42,19 @@ const (
 
 type ledgerAdmissionKey struct{}
 
-// ledgerSlots counts the ledger requests in flight, in total and per user.
+// ledgerSlots counts the ledger requests in flight, in total and per user,
+// up to limit and perUser.
 type ledgerSlots struct {
-	mu     sync.Mutex
-	total  int
-	byUser map[string]int
+	mu             sync.Mutex
+	limit, perUser int
+	total          int
+	byUser         map[string]int
 }
 
 func (l *ledgerSlots) take(userID string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.total == maxLedgerRequests || l.byUser[userID] == maxLedgerRequestsPerUser {
+	if l.total == l.limit || l.byUser[userID] == l.perUser {
 		return false
 	}
 	l.total++
@@ -67,8 +71,57 @@ func (l *ledgerSlots) release(userID string) {
 	}
 }
 
+// unreadBodyGrace bounds how long the server waits, after the handler, for
+// the part of a request body the handler left unread.
+const unreadBodyGrace = time.Second
+
+// boundRequest bounds the request's reads and writes by ctx's deadline
+// and returns what to defer. After the handler the read deadline stays
+// near: net/http reads up to 256 KiB of a body the handler left unread
+// before it answers, and a client that stopped sending must not hold the
+// response and the connection for that. The next request on the
+// connection gets its own read deadline from the server.
+func boundRequest(ctx context.Context, w http.ResponseWriter) func() {
+	deadline, _ := ctx.Deadline()
+	controller := http.NewResponseController(w)
+	_ = controller.SetReadDeadline(deadline)
+	_ = controller.SetWriteDeadline(deadline)
+	return func() {
+		_ = controller.SetReadDeadline(time.Now().Add(unreadBodyGrace))
+		_ = controller.SetWriteDeadline(time.Time{})
+	}
+}
+
+// limitBody stops the request's body a little past limit, the largest
+// message the procedure reads (the rest covers a gRPC envelope). Connect
+// reads the rest of a body over its limit to keep the connection; a body
+// that keeps coming, or stops, would hold the request until its deadline.
+// Past this, reads fail at once and the connection closes after the
+// answer.
+//
+// Connect also closes the body in the handler, and closing a body not
+// read to its end reads up to 256 KiB more of it, under the request's
+// deadline. The server closes the body itself once the answer is sent,
+// under the short deadline boundRequest leaves, so the handler's close
+// does nothing.
+func limitBody(w http.ResponseWriter, r *http.Request, limit int) {
+	r.Body = serverClosedBody{http.MaxBytesReader(w, r.Body, int64(limit)+16)}
+}
+
+// serverClosedBody leaves closing a request body to the server.
+type serverClosedBody struct{ io.Reader }
+
+func (serverClosedBody) Close() error { return nil }
+
+// refuse answers a request before its body is read and closes the
+// connection afterwards, so the answer does not wait for the body.
+func refuse(errs *connect.ErrorWriter, w http.ResponseWriter, r *http.Request, err error) {
+	w.Header().Set("Connection", "close")
+	_ = errs.Write(w, r, err)
+}
+
 func (s *Service) registerLedger(mux *http.ServeMux) {
-	slots := &ledgerSlots{byUser: make(map[string]int)}
+	slots := &ledgerSlots{byUser: make(map[string]int), limit: maxLedgerRequests, perUser: maxLedgerRequestsPerUser}
 	admit := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			// Connect decodes the body before interceptors run. The browser
@@ -98,14 +151,8 @@ func (s *Service) registerLedger(mux *http.ServeMux) {
 		mux.Handle(procedure.path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithTimeout(r.Context(), ledgerRequestTimeout)
 			defer cancel()
-			deadline, _ := ctx.Deadline()
-			controller := http.NewResponseController(w)
-			_ = controller.SetReadDeadline(deadline)
-			_ = controller.SetWriteDeadline(deadline)
-			defer func() {
-				_ = controller.SetReadDeadline(time.Time{})
-				_ = controller.SetWriteDeadline(time.Time{})
-			}()
+			defer boundRequest(ctx, w)()
+			limitBody(w, r, maxLedgerRequestBytes)
 			// Release only after Connect has encoded and sent the response.
 			var admitted string
 			defer func() {

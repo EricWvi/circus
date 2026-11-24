@@ -170,14 +170,24 @@ export function seedState(now: number = Date.now()): MockState {
   return state
 }
 
-/** The demo owner's workers: one beside each of three devices, and one on a machine of its own. */
+/**
+ * The demo owner's workers: one beside each of three devices, and one on a
+ * machine of its own, the only integrator.
+ */
 export function seedWorkers(now: number = Date.now()): MockWorker[] {
   return [
-    { name: "cloud-runner", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: [] },
+    { name: "cloud-runner", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: [], integrator: true },
     { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: ["devbox"] },
     { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64", localDevices: ["eric-mbp"] },
     { name: "eric-win", online: false, lastSeenUnixMs: now - 2 * DAY, os: "windows", arch: "amd64", localDevices: ["eric-win"] },
-  ].map((w) => ({ ...w, owner: SEED_OWNER_ID, workerId: `worker-${w.name}`, hostname: w.name, version: "0.1.0" }))
+  ].map((w) => ({
+    integrator: false,
+    ...w,
+    owner: SEED_OWNER_ID,
+    workerId: `worker-${w.name}`,
+    hostname: w.name,
+    version: "0.1.0",
+  }))
 }
 
 /**

@@ -102,8 +102,13 @@ type Ops interface {
 	// which frees the name for a new identity of that kind, and returns
 	// true. It returns false with no change when the identity is already
 	// deleted; ErrNotFound if absent. Credentials are not touched; revoke
-	// them in the same Tx (RevokeCredentials).
+	// them in the same Tx (RevokeCredentials). Deleting a worker clears
+	// its integrator grant.
 	DeleteIdentity(ctx context.Context, kind PrincipalKind, id string, at int64) (bool, error)
+	// SetWorkerIntegrator turns the integrator grant of the user's live
+	// worker on or off and returns the worker. ErrNotFound for an unknown,
+	// deleted or another user's worker.
+	SetWorkerIntegrator(ctx context.Context, userID, workerID string, on bool) (Identity, error)
 
 	// CreateCredential inserts a credential. ErrNotFound if the identity it
 	// names does not exist; ErrExists if the id or token hash is taken.
@@ -117,7 +122,8 @@ type Ops interface {
 	TouchCredential(ctx context.Context, id string, at int64) error
 	// RevokeCredentials revokes every unrevoked credential of one identity
 	// at time at and returns how many it revoked. Revoking a device leaves
-	// the worker on the same machine untouched.
+	// the worker on the same machine untouched. Revoking a worker's
+	// credentials clears its integrator grant.
 	RevokeCredentials(ctx context.Context, kind PrincipalKind, principalID string, at int64) (int, error)
 
 	// CreateEnrollToken inserts a one-time token. ErrExists if the id or

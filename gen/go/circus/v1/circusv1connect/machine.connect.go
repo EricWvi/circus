@@ -42,6 +42,9 @@ const (
 	// MachineServiceCreateEnrollLinkProcedure is the fully-qualified name of the MachineService's
 	// CreateEnrollLink RPC.
 	MachineServiceCreateEnrollLinkProcedure = "/circus.v1.MachineService/CreateEnrollLink"
+	// MachineServiceSetWorkerGrantProcedure is the fully-qualified name of the MachineService's
+	// SetWorkerGrant RPC.
+	MachineServiceSetWorkerGrantProcedure = "/circus.v1.MachineService/SetWorkerGrant"
 	// MachineServiceListDirectoryProcedure is the fully-qualified name of the MachineService's
 	// ListDirectory RPC.
 	MachineServiceListDirectoryProcedure = "/circus.v1.MachineService/ListDirectory"
@@ -60,6 +63,9 @@ type MachineServiceClient interface {
 	// signed-in user may call it. Tokens are returned only here; the server
 	// stores only their hashes.
 	CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error)
+	// Turns a grant of one of the caller's workers on or off and returns the
+	// worker. NOT_FOUND for another user's or an unknown worker.
+	SetWorkerGrant(context.Context, *connect.Request[v1.SetWorkerGrantRequest]) (*connect.Response[v1.SetWorkerGrantResponse], error)
 	// Lists the subdirectories of a directory on one of the caller's devices,
 	// asking its daemon live. Errors: NOT_FOUND for an unknown device;
 	// FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
@@ -107,6 +113,12 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(machineServiceMethods.ByName("CreateEnrollLink")),
 			connect.WithClientOptions(opts...),
 		),
+		setWorkerGrant: connect.NewClient[v1.SetWorkerGrantRequest, v1.SetWorkerGrantResponse](
+			httpClient,
+			baseURL+MachineServiceSetWorkerGrantProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("SetWorkerGrant")),
+			connect.WithClientOptions(opts...),
+		),
 		listDirectory: connect.NewClient[v1.ListDirectoryRequest, v1.ListDirectoryResponse](
 			httpClient,
 			baseURL+MachineServiceListDirectoryProcedure,
@@ -127,6 +139,7 @@ type machineServiceClient struct {
 	listDevices      *connect.Client[v1.ListDevicesRequest, v1.ListDevicesResponse]
 	listWorkers      *connect.Client[v1.ListWorkersRequest, v1.ListWorkersResponse]
 	createEnrollLink *connect.Client[v1.CreateEnrollLinkRequest, v1.CreateEnrollLinkResponse]
+	setWorkerGrant   *connect.Client[v1.SetWorkerGrantRequest, v1.SetWorkerGrantResponse]
 	listDirectory    *connect.Client[v1.ListDirectoryRequest, v1.ListDirectoryResponse]
 	getGitRemote     *connect.Client[v1.GetGitRemoteRequest, v1.GetGitRemoteResponse]
 }
@@ -144,6 +157,11 @@ func (c *machineServiceClient) ListWorkers(ctx context.Context, req *connect.Req
 // CreateEnrollLink calls circus.v1.MachineService.CreateEnrollLink.
 func (c *machineServiceClient) CreateEnrollLink(ctx context.Context, req *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error) {
 	return c.createEnrollLink.CallUnary(ctx, req)
+}
+
+// SetWorkerGrant calls circus.v1.MachineService.SetWorkerGrant.
+func (c *machineServiceClient) SetWorkerGrant(ctx context.Context, req *connect.Request[v1.SetWorkerGrantRequest]) (*connect.Response[v1.SetWorkerGrantResponse], error) {
+	return c.setWorkerGrant.CallUnary(ctx, req)
 }
 
 // ListDirectory calls circus.v1.MachineService.ListDirectory.
@@ -166,6 +184,9 @@ type MachineServiceHandler interface {
 	// signed-in user may call it. Tokens are returned only here; the server
 	// stores only their hashes.
 	CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error)
+	// Turns a grant of one of the caller's workers on or off and returns the
+	// worker. NOT_FOUND for another user's or an unknown worker.
+	SetWorkerGrant(context.Context, *connect.Request[v1.SetWorkerGrantRequest]) (*connect.Response[v1.SetWorkerGrantResponse], error)
 	// Lists the subdirectories of a directory on one of the caller's devices,
 	// asking its daemon live. Errors: NOT_FOUND for an unknown device;
 	// FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
@@ -209,6 +230,12 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithSchema(machineServiceMethods.ByName("CreateEnrollLink")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceSetWorkerGrantHandler := connect.NewUnaryHandler(
+		MachineServiceSetWorkerGrantProcedure,
+		svc.SetWorkerGrant,
+		connect.WithSchema(machineServiceMethods.ByName("SetWorkerGrant")),
+		connect.WithHandlerOptions(opts...),
+	)
 	machineServiceListDirectoryHandler := connect.NewUnaryHandler(
 		MachineServiceListDirectoryProcedure,
 		svc.ListDirectory,
@@ -229,6 +256,8 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 			machineServiceListWorkersHandler.ServeHTTP(w, r)
 		case MachineServiceCreateEnrollLinkProcedure:
 			machineServiceCreateEnrollLinkHandler.ServeHTTP(w, r)
+		case MachineServiceSetWorkerGrantProcedure:
+			machineServiceSetWorkerGrantHandler.ServeHTTP(w, r)
 		case MachineServiceListDirectoryProcedure:
 			machineServiceListDirectoryHandler.ServeHTTP(w, r)
 		case MachineServiceGetGitRemoteProcedure:
@@ -252,6 +281,10 @@ func (UnimplementedMachineServiceHandler) ListWorkers(context.Context, *connect.
 
 func (UnimplementedMachineServiceHandler) CreateEnrollLink(context.Context, *connect.Request[v1.CreateEnrollLinkRequest]) (*connect.Response[v1.CreateEnrollLinkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.CreateEnrollLink is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) SetWorkerGrant(context.Context, *connect.Request[v1.SetWorkerGrantRequest]) (*connect.Response[v1.SetWorkerGrantResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.SetWorkerGrant is not implemented"))
 }
 
 func (UnimplementedMachineServiceHandler) ListDirectory(context.Context, *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error) {

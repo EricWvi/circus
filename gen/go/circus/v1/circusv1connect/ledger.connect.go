@@ -23,6 +23,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// LedgerServiceName is the fully-qualified name of the LedgerService service.
 	LedgerServiceName = "circus.v1.LedgerService"
+	// LedgerChangesetServiceName is the fully-qualified name of the LedgerChangesetService service.
+	LedgerChangesetServiceName = "circus.v1.LedgerChangesetService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -41,6 +43,30 @@ const (
 	// LedgerServiceListDecisionHistoryProcedure is the fully-qualified name of the LedgerService's
 	// ListDecisionHistory RPC.
 	LedgerServiceListDecisionHistoryProcedure = "/circus.v1.LedgerService/ListDecisionHistory"
+	// LedgerChangesetServiceOpenChangesetProcedure is the fully-qualified name of the
+	// LedgerChangesetService's OpenChangeset RPC.
+	LedgerChangesetServiceOpenChangesetProcedure = "/circus.v1.LedgerChangesetService/OpenChangeset"
+	// LedgerChangesetServiceReadChangesetBaseProcedure is the fully-qualified name of the
+	// LedgerChangesetService's ReadChangesetBase RPC.
+	LedgerChangesetServiceReadChangesetBaseProcedure = "/circus.v1.LedgerChangesetService/ReadChangesetBase"
+	// LedgerChangesetServiceCheckChangesetProcedure is the fully-qualified name of the
+	// LedgerChangesetService's CheckChangeset RPC.
+	LedgerChangesetServiceCheckChangesetProcedure = "/circus.v1.LedgerChangesetService/CheckChangeset"
+	// LedgerChangesetServiceReadChangesetConflictsProcedure is the fully-qualified name of the
+	// LedgerChangesetService's ReadChangesetConflicts RPC.
+	LedgerChangesetServiceReadChangesetConflictsProcedure = "/circus.v1.LedgerChangesetService/ReadChangesetConflicts"
+	// LedgerChangesetServiceMergeChangesetProcedure is the fully-qualified name of the
+	// LedgerChangesetService's MergeChangeset RPC.
+	LedgerChangesetServiceMergeChangesetProcedure = "/circus.v1.LedgerChangesetService/MergeChangeset"
+	// LedgerChangesetServiceDiscardChangesetProcedure is the fully-qualified name of the
+	// LedgerChangesetService's DiscardChangeset RPC.
+	LedgerChangesetServiceDiscardChangesetProcedure = "/circus.v1.LedgerChangesetService/DiscardChangeset"
+	// LedgerChangesetServiceListChangesetsProcedure is the fully-qualified name of the
+	// LedgerChangesetService's ListChangesets RPC.
+	LedgerChangesetServiceListChangesetsProcedure = "/circus.v1.LedgerChangesetService/ListChangesets"
+	// LedgerChangesetServiceGetChangesetProcedure is the fully-qualified name of the
+	// LedgerChangesetService's GetChangeset RPC.
+	LedgerChangesetServiceGetChangesetProcedure = "/circus.v1.LedgerChangesetService/GetChangeset"
 )
 
 // LedgerServiceClient is a client for the circus.v1.LedgerService service.
@@ -177,4 +203,339 @@ func (UnimplementedLedgerServiceHandler) GetDecision(context.Context, *connect.R
 
 func (UnimplementedLedgerServiceHandler) ListDecisionHistory(context.Context, *connect.Request[v1.ListDecisionHistoryRequest]) (*connect.Response[v1.ListDecisionHistoryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerService.ListDecisionHistory is not implemented"))
+}
+
+// LedgerChangesetServiceClient is a client for the circus.v1.LedgerChangesetService service.
+type LedgerChangesetServiceClient interface {
+	// OpenChangeset starts a changeset based on the current head of the main
+	// line, recording the calling worker as its opener.
+	OpenChangeset(context.Context, *connect.Request[v1.OpenChangesetRequest]) (*connect.Response[v1.OpenChangesetResponse], error)
+	// ReadChangesetBase pages through the base commit's files, for writing
+	// the changeset's local copy.
+	ReadChangesetBase(context.Context, *connect.Request[v1.ReadChangesetBaseRequest]) (*connect.Response[v1.ReadChangesetBaseResponse], error)
+	// CheckChangeset replaces the changeset's content with changes (the
+	// complete set relative to its base; calling it again with the same
+	// changes changes nothing), validates it and compares it with the
+	// current main line. Validation problems and conflicts are results, not
+	// RPC errors. FAILED_PRECONDITION when the changeset is not open.
+	CheckChangeset(context.Context, *connect.Request[v1.CheckChangesetRequest]) (*connect.Response[v1.CheckChangesetResponse], error)
+	// ReadChangesetConflicts pages through the conflicts of the changeset's
+	// last check with all their contents (base, changeset, main line), for
+	// conflicts a CheckChangeset reported with content_omitted. It changes
+	// nothing. main_commit is the CheckChangeset's main_commit: the
+	// conflicts are computed against it, and FAILED_PRECONDITION with a
+	// google.rpc.PreconditionFailure of type "MAIN_LINE_MOVED" says the main
+	// line moved since, so the caller checks again. A page token holds on
+	// only with the same main_commit and while the changeset is not checked
+	// again: otherwise FAILED_PRECONDITION with type "MAIN_LINE_MOVED" or
+	// "CHANGESET_CHANGED". Also FAILED_PRECONDITION when the changeset is not
+	// open.
+	ReadChangesetConflicts(context.Context, *connect.Request[v1.ReadChangesetConflictsRequest]) (*connect.Response[v1.ReadChangesetConflictsResponse], error)
+	// MergeChangeset merges an open changeset into the main line, under the
+	// project's lock, re-checking everything there:
+	//   - it fast-forwards when its base is the main line's head at that
+	//     moment; the opener may then merge it;
+	//   - otherwise only an integrator may merge it, even when no file it
+	//     changes was changed on the main line after its base, and every
+	//     conflicting file must be given its final content in resolved.
+	//
+	// A conflicting file is one the changeset changed that the main line
+	// also changed after the base, even when the texts could be merged.
+	// Merging assigns numbers, renames new decisions' files and rewrites
+	// their temporary references, commits on the main line (one ordinary
+	// commit; the main line stays linear), rebuilds the index and records
+	// code_commit. It is idempotent: merging a merged changeset again
+	// returns the same result. FAILED_PRECONDITION, with the problems in
+	// google.rpc.PreconditionFailure, when validation fails, a conflict is
+	// unresolved, or the changeset was discarded.
+	MergeChangeset(context.Context, *connect.Request[v1.MergeChangesetRequest]) (*connect.Response[v1.MergeChangesetResponse], error)
+	// DiscardChangeset archives an open changeset with a reason. Discarding
+	// a discarded changeset again is a no-op; a merged one is
+	// FAILED_PRECONDITION.
+	DiscardChangeset(context.Context, *connect.Request[v1.DiscardChangesetRequest]) (*connect.Response[v1.DiscardChangesetResponse], error)
+	// ListChangesets lists a project's changesets, newest first.
+	ListChangesets(context.Context, *connect.Request[v1.ListChangesetsRequest]) (*connect.Response[v1.ListChangesetsResponse], error)
+	GetChangeset(context.Context, *connect.Request[v1.GetChangesetRequest]) (*connect.Response[v1.GetChangesetResponse], error)
+}
+
+// NewLedgerChangesetServiceClient constructs a client for the circus.v1.LedgerChangesetService
+// service. By default, it uses the Connect protocol with the binary Protobuf Codec, asks for
+// gzipped responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply
+// the connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewLedgerChangesetServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) LedgerChangesetServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	ledgerChangesetServiceMethods := v1.File_circus_v1_ledger_proto.Services().ByName("LedgerChangesetService").Methods()
+	return &ledgerChangesetServiceClient{
+		openChangeset: connect.NewClient[v1.OpenChangesetRequest, v1.OpenChangesetResponse](
+			httpClient,
+			baseURL+LedgerChangesetServiceOpenChangesetProcedure,
+			connect.WithSchema(ledgerChangesetServiceMethods.ByName("OpenChangeset")),
+			connect.WithClientOptions(opts...),
+		),
+		readChangesetBase: connect.NewClient[v1.ReadChangesetBaseRequest, v1.ReadChangesetBaseResponse](
+			httpClient,
+			baseURL+LedgerChangesetServiceReadChangesetBaseProcedure,
+			connect.WithSchema(ledgerChangesetServiceMethods.ByName("ReadChangesetBase")),
+			connect.WithClientOptions(opts...),
+		),
+		checkChangeset: connect.NewClient[v1.CheckChangesetRequest, v1.CheckChangesetResponse](
+			httpClient,
+			baseURL+LedgerChangesetServiceCheckChangesetProcedure,
+			connect.WithSchema(ledgerChangesetServiceMethods.ByName("CheckChangeset")),
+			connect.WithClientOptions(opts...),
+		),
+		readChangesetConflicts: connect.NewClient[v1.ReadChangesetConflictsRequest, v1.ReadChangesetConflictsResponse](
+			httpClient,
+			baseURL+LedgerChangesetServiceReadChangesetConflictsProcedure,
+			connect.WithSchema(ledgerChangesetServiceMethods.ByName("ReadChangesetConflicts")),
+			connect.WithClientOptions(opts...),
+		),
+		mergeChangeset: connect.NewClient[v1.MergeChangesetRequest, v1.MergeChangesetResponse](
+			httpClient,
+			baseURL+LedgerChangesetServiceMergeChangesetProcedure,
+			connect.WithSchema(ledgerChangesetServiceMethods.ByName("MergeChangeset")),
+			connect.WithClientOptions(opts...),
+		),
+		discardChangeset: connect.NewClient[v1.DiscardChangesetRequest, v1.DiscardChangesetResponse](
+			httpClient,
+			baseURL+LedgerChangesetServiceDiscardChangesetProcedure,
+			connect.WithSchema(ledgerChangesetServiceMethods.ByName("DiscardChangeset")),
+			connect.WithClientOptions(opts...),
+		),
+		listChangesets: connect.NewClient[v1.ListChangesetsRequest, v1.ListChangesetsResponse](
+			httpClient,
+			baseURL+LedgerChangesetServiceListChangesetsProcedure,
+			connect.WithSchema(ledgerChangesetServiceMethods.ByName("ListChangesets")),
+			connect.WithClientOptions(opts...),
+		),
+		getChangeset: connect.NewClient[v1.GetChangesetRequest, v1.GetChangesetResponse](
+			httpClient,
+			baseURL+LedgerChangesetServiceGetChangesetProcedure,
+			connect.WithSchema(ledgerChangesetServiceMethods.ByName("GetChangeset")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// ledgerChangesetServiceClient implements LedgerChangesetServiceClient.
+type ledgerChangesetServiceClient struct {
+	openChangeset          *connect.Client[v1.OpenChangesetRequest, v1.OpenChangesetResponse]
+	readChangesetBase      *connect.Client[v1.ReadChangesetBaseRequest, v1.ReadChangesetBaseResponse]
+	checkChangeset         *connect.Client[v1.CheckChangesetRequest, v1.CheckChangesetResponse]
+	readChangesetConflicts *connect.Client[v1.ReadChangesetConflictsRequest, v1.ReadChangesetConflictsResponse]
+	mergeChangeset         *connect.Client[v1.MergeChangesetRequest, v1.MergeChangesetResponse]
+	discardChangeset       *connect.Client[v1.DiscardChangesetRequest, v1.DiscardChangesetResponse]
+	listChangesets         *connect.Client[v1.ListChangesetsRequest, v1.ListChangesetsResponse]
+	getChangeset           *connect.Client[v1.GetChangesetRequest, v1.GetChangesetResponse]
+}
+
+// OpenChangeset calls circus.v1.LedgerChangesetService.OpenChangeset.
+func (c *ledgerChangesetServiceClient) OpenChangeset(ctx context.Context, req *connect.Request[v1.OpenChangesetRequest]) (*connect.Response[v1.OpenChangesetResponse], error) {
+	return c.openChangeset.CallUnary(ctx, req)
+}
+
+// ReadChangesetBase calls circus.v1.LedgerChangesetService.ReadChangesetBase.
+func (c *ledgerChangesetServiceClient) ReadChangesetBase(ctx context.Context, req *connect.Request[v1.ReadChangesetBaseRequest]) (*connect.Response[v1.ReadChangesetBaseResponse], error) {
+	return c.readChangesetBase.CallUnary(ctx, req)
+}
+
+// CheckChangeset calls circus.v1.LedgerChangesetService.CheckChangeset.
+func (c *ledgerChangesetServiceClient) CheckChangeset(ctx context.Context, req *connect.Request[v1.CheckChangesetRequest]) (*connect.Response[v1.CheckChangesetResponse], error) {
+	return c.checkChangeset.CallUnary(ctx, req)
+}
+
+// ReadChangesetConflicts calls circus.v1.LedgerChangesetService.ReadChangesetConflicts.
+func (c *ledgerChangesetServiceClient) ReadChangesetConflicts(ctx context.Context, req *connect.Request[v1.ReadChangesetConflictsRequest]) (*connect.Response[v1.ReadChangesetConflictsResponse], error) {
+	return c.readChangesetConflicts.CallUnary(ctx, req)
+}
+
+// MergeChangeset calls circus.v1.LedgerChangesetService.MergeChangeset.
+func (c *ledgerChangesetServiceClient) MergeChangeset(ctx context.Context, req *connect.Request[v1.MergeChangesetRequest]) (*connect.Response[v1.MergeChangesetResponse], error) {
+	return c.mergeChangeset.CallUnary(ctx, req)
+}
+
+// DiscardChangeset calls circus.v1.LedgerChangesetService.DiscardChangeset.
+func (c *ledgerChangesetServiceClient) DiscardChangeset(ctx context.Context, req *connect.Request[v1.DiscardChangesetRequest]) (*connect.Response[v1.DiscardChangesetResponse], error) {
+	return c.discardChangeset.CallUnary(ctx, req)
+}
+
+// ListChangesets calls circus.v1.LedgerChangesetService.ListChangesets.
+func (c *ledgerChangesetServiceClient) ListChangesets(ctx context.Context, req *connect.Request[v1.ListChangesetsRequest]) (*connect.Response[v1.ListChangesetsResponse], error) {
+	return c.listChangesets.CallUnary(ctx, req)
+}
+
+// GetChangeset calls circus.v1.LedgerChangesetService.GetChangeset.
+func (c *ledgerChangesetServiceClient) GetChangeset(ctx context.Context, req *connect.Request[v1.GetChangesetRequest]) (*connect.Response[v1.GetChangesetResponse], error) {
+	return c.getChangeset.CallUnary(ctx, req)
+}
+
+// LedgerChangesetServiceHandler is an implementation of the circus.v1.LedgerChangesetService
+// service.
+type LedgerChangesetServiceHandler interface {
+	// OpenChangeset starts a changeset based on the current head of the main
+	// line, recording the calling worker as its opener.
+	OpenChangeset(context.Context, *connect.Request[v1.OpenChangesetRequest]) (*connect.Response[v1.OpenChangesetResponse], error)
+	// ReadChangesetBase pages through the base commit's files, for writing
+	// the changeset's local copy.
+	ReadChangesetBase(context.Context, *connect.Request[v1.ReadChangesetBaseRequest]) (*connect.Response[v1.ReadChangesetBaseResponse], error)
+	// CheckChangeset replaces the changeset's content with changes (the
+	// complete set relative to its base; calling it again with the same
+	// changes changes nothing), validates it and compares it with the
+	// current main line. Validation problems and conflicts are results, not
+	// RPC errors. FAILED_PRECONDITION when the changeset is not open.
+	CheckChangeset(context.Context, *connect.Request[v1.CheckChangesetRequest]) (*connect.Response[v1.CheckChangesetResponse], error)
+	// ReadChangesetConflicts pages through the conflicts of the changeset's
+	// last check with all their contents (base, changeset, main line), for
+	// conflicts a CheckChangeset reported with content_omitted. It changes
+	// nothing. main_commit is the CheckChangeset's main_commit: the
+	// conflicts are computed against it, and FAILED_PRECONDITION with a
+	// google.rpc.PreconditionFailure of type "MAIN_LINE_MOVED" says the main
+	// line moved since, so the caller checks again. A page token holds on
+	// only with the same main_commit and while the changeset is not checked
+	// again: otherwise FAILED_PRECONDITION with type "MAIN_LINE_MOVED" or
+	// "CHANGESET_CHANGED". Also FAILED_PRECONDITION when the changeset is not
+	// open.
+	ReadChangesetConflicts(context.Context, *connect.Request[v1.ReadChangesetConflictsRequest]) (*connect.Response[v1.ReadChangesetConflictsResponse], error)
+	// MergeChangeset merges an open changeset into the main line, under the
+	// project's lock, re-checking everything there:
+	//   - it fast-forwards when its base is the main line's head at that
+	//     moment; the opener may then merge it;
+	//   - otherwise only an integrator may merge it, even when no file it
+	//     changes was changed on the main line after its base, and every
+	//     conflicting file must be given its final content in resolved.
+	//
+	// A conflicting file is one the changeset changed that the main line
+	// also changed after the base, even when the texts could be merged.
+	// Merging assigns numbers, renames new decisions' files and rewrites
+	// their temporary references, commits on the main line (one ordinary
+	// commit; the main line stays linear), rebuilds the index and records
+	// code_commit. It is idempotent: merging a merged changeset again
+	// returns the same result. FAILED_PRECONDITION, with the problems in
+	// google.rpc.PreconditionFailure, when validation fails, a conflict is
+	// unresolved, or the changeset was discarded.
+	MergeChangeset(context.Context, *connect.Request[v1.MergeChangesetRequest]) (*connect.Response[v1.MergeChangesetResponse], error)
+	// DiscardChangeset archives an open changeset with a reason. Discarding
+	// a discarded changeset again is a no-op; a merged one is
+	// FAILED_PRECONDITION.
+	DiscardChangeset(context.Context, *connect.Request[v1.DiscardChangesetRequest]) (*connect.Response[v1.DiscardChangesetResponse], error)
+	// ListChangesets lists a project's changesets, newest first.
+	ListChangesets(context.Context, *connect.Request[v1.ListChangesetsRequest]) (*connect.Response[v1.ListChangesetsResponse], error)
+	GetChangeset(context.Context, *connect.Request[v1.GetChangesetRequest]) (*connect.Response[v1.GetChangesetResponse], error)
+}
+
+// NewLedgerChangesetServiceHandler builds an HTTP handler from the service implementation. It
+// returns the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewLedgerChangesetServiceHandler(svc LedgerChangesetServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	ledgerChangesetServiceMethods := v1.File_circus_v1_ledger_proto.Services().ByName("LedgerChangesetService").Methods()
+	ledgerChangesetServiceOpenChangesetHandler := connect.NewUnaryHandler(
+		LedgerChangesetServiceOpenChangesetProcedure,
+		svc.OpenChangeset,
+		connect.WithSchema(ledgerChangesetServiceMethods.ByName("OpenChangeset")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ledgerChangesetServiceReadChangesetBaseHandler := connect.NewUnaryHandler(
+		LedgerChangesetServiceReadChangesetBaseProcedure,
+		svc.ReadChangesetBase,
+		connect.WithSchema(ledgerChangesetServiceMethods.ByName("ReadChangesetBase")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ledgerChangesetServiceCheckChangesetHandler := connect.NewUnaryHandler(
+		LedgerChangesetServiceCheckChangesetProcedure,
+		svc.CheckChangeset,
+		connect.WithSchema(ledgerChangesetServiceMethods.ByName("CheckChangeset")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ledgerChangesetServiceReadChangesetConflictsHandler := connect.NewUnaryHandler(
+		LedgerChangesetServiceReadChangesetConflictsProcedure,
+		svc.ReadChangesetConflicts,
+		connect.WithSchema(ledgerChangesetServiceMethods.ByName("ReadChangesetConflicts")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ledgerChangesetServiceMergeChangesetHandler := connect.NewUnaryHandler(
+		LedgerChangesetServiceMergeChangesetProcedure,
+		svc.MergeChangeset,
+		connect.WithSchema(ledgerChangesetServiceMethods.ByName("MergeChangeset")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ledgerChangesetServiceDiscardChangesetHandler := connect.NewUnaryHandler(
+		LedgerChangesetServiceDiscardChangesetProcedure,
+		svc.DiscardChangeset,
+		connect.WithSchema(ledgerChangesetServiceMethods.ByName("DiscardChangeset")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ledgerChangesetServiceListChangesetsHandler := connect.NewUnaryHandler(
+		LedgerChangesetServiceListChangesetsProcedure,
+		svc.ListChangesets,
+		connect.WithSchema(ledgerChangesetServiceMethods.ByName("ListChangesets")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ledgerChangesetServiceGetChangesetHandler := connect.NewUnaryHandler(
+		LedgerChangesetServiceGetChangesetProcedure,
+		svc.GetChangeset,
+		connect.WithSchema(ledgerChangesetServiceMethods.ByName("GetChangeset")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/circus.v1.LedgerChangesetService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case LedgerChangesetServiceOpenChangesetProcedure:
+			ledgerChangesetServiceOpenChangesetHandler.ServeHTTP(w, r)
+		case LedgerChangesetServiceReadChangesetBaseProcedure:
+			ledgerChangesetServiceReadChangesetBaseHandler.ServeHTTP(w, r)
+		case LedgerChangesetServiceCheckChangesetProcedure:
+			ledgerChangesetServiceCheckChangesetHandler.ServeHTTP(w, r)
+		case LedgerChangesetServiceReadChangesetConflictsProcedure:
+			ledgerChangesetServiceReadChangesetConflictsHandler.ServeHTTP(w, r)
+		case LedgerChangesetServiceMergeChangesetProcedure:
+			ledgerChangesetServiceMergeChangesetHandler.ServeHTTP(w, r)
+		case LedgerChangesetServiceDiscardChangesetProcedure:
+			ledgerChangesetServiceDiscardChangesetHandler.ServeHTTP(w, r)
+		case LedgerChangesetServiceListChangesetsProcedure:
+			ledgerChangesetServiceListChangesetsHandler.ServeHTTP(w, r)
+		case LedgerChangesetServiceGetChangesetProcedure:
+			ledgerChangesetServiceGetChangesetHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedLedgerChangesetServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedLedgerChangesetServiceHandler struct{}
+
+func (UnimplementedLedgerChangesetServiceHandler) OpenChangeset(context.Context, *connect.Request[v1.OpenChangesetRequest]) (*connect.Response[v1.OpenChangesetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.OpenChangeset is not implemented"))
+}
+
+func (UnimplementedLedgerChangesetServiceHandler) ReadChangesetBase(context.Context, *connect.Request[v1.ReadChangesetBaseRequest]) (*connect.Response[v1.ReadChangesetBaseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.ReadChangesetBase is not implemented"))
+}
+
+func (UnimplementedLedgerChangesetServiceHandler) CheckChangeset(context.Context, *connect.Request[v1.CheckChangesetRequest]) (*connect.Response[v1.CheckChangesetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.CheckChangeset is not implemented"))
+}
+
+func (UnimplementedLedgerChangesetServiceHandler) ReadChangesetConflicts(context.Context, *connect.Request[v1.ReadChangesetConflictsRequest]) (*connect.Response[v1.ReadChangesetConflictsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.ReadChangesetConflicts is not implemented"))
+}
+
+func (UnimplementedLedgerChangesetServiceHandler) MergeChangeset(context.Context, *connect.Request[v1.MergeChangesetRequest]) (*connect.Response[v1.MergeChangesetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.MergeChangeset is not implemented"))
+}
+
+func (UnimplementedLedgerChangesetServiceHandler) DiscardChangeset(context.Context, *connect.Request[v1.DiscardChangesetRequest]) (*connect.Response[v1.DiscardChangesetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.DiscardChangeset is not implemented"))
+}
+
+func (UnimplementedLedgerChangesetServiceHandler) ListChangesets(context.Context, *connect.Request[v1.ListChangesetsRequest]) (*connect.Response[v1.ListChangesetsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.ListChangesets is not implemented"))
+}
+
+func (UnimplementedLedgerChangesetServiceHandler) GetChangeset(context.Context, *connect.Request[v1.GetChangesetRequest]) (*connect.Response[v1.GetChangesetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.GetChangeset is not implemented"))
 }

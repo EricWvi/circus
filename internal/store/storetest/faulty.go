@@ -297,6 +297,11 @@ func (o *faultyOps) DeleteIdentity(ctx context.Context, kind store.PrincipalKind
 	return ok, err
 }
 
+func (o *faultyOps) SetWorkerIntegrator(ctx context.Context, userID, workerID string, on bool) (v store.Identity, err error) {
+	err = o.write(ctx, func(s store.Ops) error { v, err = s.SetWorkerIntegrator(ctx, userID, workerID, on); return err })
+	return v, err
+}
+
 func (o *faultyOps) CreateCredential(ctx context.Context, c store.Credential) error {
 	return o.write(ctx, func(s store.Ops) error { return s.CreateCredential(ctx, c) })
 }

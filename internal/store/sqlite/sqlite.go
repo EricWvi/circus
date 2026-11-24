@@ -57,6 +57,9 @@ type DB struct {
 	// afterLedgerChunk, likewise, runs between the transactions that delete
 	// invisible ledger rows.
 	afterLedgerChunk func() error
+	// afterChangesetChunk, likewise, gets the rows each transaction that
+	// deletes a deleted project's changesets removed.
+	afterChangesetChunk func(rows int)
 }
 
 var _ store.Store = (*DB)(nil)

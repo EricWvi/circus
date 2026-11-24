@@ -1,9 +1,10 @@
-import { FolderIcon, MonitorSmartphoneIcon, MonitorIcon, PlusIcon } from "lucide-react"
-import { memo, useCallback, useState } from "react"
+import { FolderIcon, InfoIcon, MonitorSmartphoneIcon, MonitorIcon, PlusIcon } from "lucide-react"
+import { memo, useCallback, useId, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router"
 
-import { useDevices, useProjects, useWorkers } from "@/api/hooks"
+import { useDevices, useProjects, useSetWorkerGrant, useWorkerGrantStates, useWorkers } from "@/api/hooks"
+import { isApiError } from "@/api/errors"
 import type { Device, Project, Worker } from "@/api/types"
 import { AddDeviceDialog } from "@/components/devices/add-device-dialog"
 import { InfoTip } from "@/components/info-tip"
@@ -18,6 +19,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
+import { Switch } from "@/components/ui/switch"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { formatDateTime, formatTimeAgo } from "@/lib/time"
 import { projectPath } from "@/lib/tree"
@@ -193,7 +196,7 @@ const DeviceRow = memo(function DeviceRow({
   )
 })
 
-/** The user's workers, read only: status, version, and the devices on the same machine. */
+/** The user's workers: status, version, the devices on the same machine, and the integrator grant. */
 const WorkersSection = memo(function WorkersSection() {
   const { t } = useTranslation()
   // Here rather than in the page, so a refetch renders only this section.
@@ -272,9 +275,71 @@ const WorkerRow = memo(function WorkerRow({ worker, lastSeen }: { worker: Worker
           </ul>
         </div>
       )}
+      <IntegratorGrant worker={worker} />
     </li>
   )
 })
+
+/**
+ * The worker's integrator switch. While a change is in flight the switch
+ * shows the requested state, whatever list refetches say, and ignores
+ * further presses; then it shows the worker the server returned. Changes
+ * live in the mutation cache, so this holds when the page is left and
+ * opened again meanwhile. It stays enabled (only marked busy), so focus
+ * stays on it. A failure is shown until a list shows the requested state
+ * after all (the change was applied but its answer lost) or the next try.
+ */
+function IntegratorGrant({ worker }: { worker: Worker }) {
+  const { t } = useTranslation()
+  const id = useId()
+  const grant = useSetWorkerGrant(worker)
+  const changes = useWorkerGrantStates(worker.workerId)
+  const pending = changes.findLast((c) => c.status === "pending")
+  const latest = changes.at(-1)
+  const checked = pending ? pending.variables!.integrator : worker.integrator
+  // A worker that is gone is reported by a notice, as its row goes.
+  const failed =
+    latest?.status === "error" &&
+    !isApiError(latest.error, "not_found") &&
+    latest.variables!.integrator !== worker.integrator
+  return (
+    <div className="col-span-2 col-start-2 flex min-w-0 flex-col gap-1 pt-0.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <Switch
+          id={`${id}-switch`}
+          size="sm"
+          checked={checked}
+          aria-busy={pending !== undefined}
+          aria-describedby={`${id}-hint`}
+          className="aria-busy:cursor-progress aria-busy:opacity-70"
+          onCheckedChange={(integrator) => {
+            if (!pending) grant.mutate({ integrator })
+          }}
+        />
+        <label htmlFor={`${id}-switch`} className="cursor-default text-xs text-muted-foreground">
+          {t("devices.integrator")}
+        </label>
+        <InfoTip content={t("devices.integratorHint")} contentClassName="max-w-xs" side="top">
+          <span
+            tabIndex={0}
+            className="flex cursor-default items-center rounded-sm p-0.5 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <InfoIcon className="size-3" aria-hidden />
+            <span id={`${id}-hint`} className="sr-only">
+              {t("devices.integratorHint")}
+            </span>
+          </span>
+        </InfoTip>
+        {pending && <Spinner className="size-3 text-muted-foreground" aria-label={t("common.saving")} />}
+      </div>
+      {failed && (
+        <p role="alert" className="text-xs text-destructive">
+          {t("devices.integratorFailed")}
+        </p>
+      )}
+    </div>
+  )
+}
 
 /**
  * "Online", or when an offline device or worker was last seen (the date on

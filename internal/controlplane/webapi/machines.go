@@ -134,21 +134,61 @@ func (s *Service) ListWorkers(ctx context.Context, _ *connect.Request[circusv1.L
 			byMachine[d.MachineID] = append(byMachine[d.MachineID], d.Name)
 		}
 	}
-	now := s.now().UnixMilli()
 	out := &circusv1.ListWorkersResponse{Workers: make([]*circusv1.Worker, 0, len(workers))}
 	for _, w := range workers {
-		lastSeen := max(w.LastConnectedAt, w.LastDisconnectedAt)
-		if online[w.ID] {
-			lastSeen = now
-		}
-		var local []string
-		if w.MachineID != "" {
-			local = byMachine[w.MachineID]
-		}
-		out.Workers = append(out.Workers, &circusv1.Worker{
-			WorkerId: w.ID, Name: w.Name, Online: online[w.ID], LastSeenUnixMs: lastSeen,
-			Os: w.OS, Arch: w.Arch, Hostname: w.Hostname, Version: w.ClientVersion, LocalDevices: local,
-		})
+		out.Workers = append(out.Workers, s.workerMessage(w, online[w.ID], byMachine))
 	}
 	return connect.NewResponse(out), nil
+}
+
+func (s *Service) workerMessage(w store.Identity, online bool, byMachine map[string][]string) *circusv1.Worker {
+	lastSeen := max(w.LastConnectedAt, w.LastDisconnectedAt)
+	if online {
+		lastSeen = s.now().UnixMilli()
+	}
+	var local []string
+	if w.MachineID != "" {
+		local = byMachine[w.MachineID]
+	}
+	return &circusv1.Worker{
+		WorkerId: w.ID, Name: w.Name, Online: online, LastSeenUnixMs: lastSeen,
+		Os: w.OS, Arch: w.Arch, Hostname: w.Hostname, Version: w.ClientVersion, LocalDevices: local,
+		Integrator: w.Integrator,
+	}
+}
+
+// SetWorkerGrant turns the integrator grant of one of the caller's
+// workers on or off and returns the worker as ListWorkers shows it.
+func (s *Service) SetWorkerGrant(ctx context.Context, req *connect.Request[circusv1.SetWorkerGrantRequest]) (*connect.Response[circusv1.SetWorkerGrantResponse], error) {
+	u, err := user(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id := req.Msg.GetWorkerId()
+	if store.CheckID("worker id", id) != nil {
+		return nil, invalidField("worker_id", "invalid worker id")
+	}
+	w, err := s.st.SetWorkerIntegrator(ctx, u.ID, id, req.Msg.GetIntegrator())
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("worker not found"))
+	}
+	if err != nil {
+		return nil, s.internal(ctx, "set worker grant", err)
+	}
+	s.logger.InfoContext(ctx, "worker grant changed", "user_id", u.ID, "worker_id", w.ID, "integrator", w.Integrator)
+	devices, err := s.st.ListIdentities(ctx, store.KindDevice, u.ID)
+	if err != nil {
+		return nil, s.internal(ctx, "list devices", err)
+	}
+	online, err := s.onlineWorkers(ctx, u.ID)
+	if err != nil {
+		return nil, s.internal(ctx, "online workers", err)
+	}
+	byMachine := make(map[string][]string)
+	for _, d := range devices {
+		if d.MachineID != "" && d.MachineID == w.MachineID {
+			byMachine[d.MachineID] = append(byMachine[d.MachineID], d.Name)
+		}
+	}
+	return connect.NewResponse(&circusv1.SetWorkerGrantResponse{Worker: s.workerMessage(w, online[w.ID], byMachine)}), nil
 }

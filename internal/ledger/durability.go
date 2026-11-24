@@ -249,6 +249,15 @@ func (r *repository) syncObject(hash plumbing.Hash) error {
 // syncObject, a power loss between these fsyncs cannot be simulated without
 // fault injection, so tests do not cover them.
 func (r *repository) setMain(parent, hash plumbing.Hash) (bool, error) {
+	return r.setRef(mainRef, parent, hash)
+}
+
+// setRef moves a reference from old to hash, both zero for an absent
+// reference, after making the objects written so far durable. The caller
+// holds main.lock, which guards every reference of the repository. A zero
+// hash deletes the reference. The returned boolean reports whether the
+// change took effect.
+func (r *repository) setRef(name plumbing.ReferenceName, old, hash plumbing.Hash) (bool, error) {
 	objects := filepath.Join(r.dir, "objects")
 	for dir := range r.dirtyObjects {
 		if err := syncPath(filepath.Join(objects, dir)); err != nil {
@@ -260,14 +269,33 @@ func (r *repository) setMain(parent, hash plumbing.Hash) (bool, error) {
 			return false, err
 		}
 	}
-	old, err := r.head()
+	current, err := r.readRef(name)
 	if err != nil {
 		return false, err
 	}
-	if old != parent {
-		return false, fmt.Errorf("%w: ledger main changed since it was read", store.ErrBusy)
+	if current != old {
+		if name == mainRef {
+			return false, fmt.Errorf("%w: ledger main changed since it was read", store.ErrBusy)
+		}
+		return false, fmt.Errorf("%w: ledger reference %s changed since it was read", store.ErrBusy, name)
 	}
-	dst := filepath.Join(r.dir, mainRef.String())
+	dst := filepath.Join(r.dir, name.String())
+	if hash.IsZero() {
+		if current.IsZero() {
+			return false, nil
+		}
+		if err := os.Remove(dst); err != nil {
+			return false, err
+		}
+		if err := syncPath(filepath.Dir(dst)); err != nil {
+			return true, err
+		}
+		clear(r.dirtyObjects)
+		return true, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return false, err
+	}
 	f, err := os.CreateTemp(r.dir, refPrefix)
 	if err != nil {
 		return false, err
@@ -280,10 +308,14 @@ func (r *repository) setMain(parent, hash plumbing.Hash) (bool, error) {
 	if err := os.Rename(f.Name(), dst); err != nil {
 		return false, err
 	}
-	heads := filepath.Dir(dst)
-	for _, dir := range []string{heads, filepath.Dir(heads), r.dir} {
+	// Sync the reference's directory and every directory up to the
+	// repository, which also covers directories created just now.
+	for dir := filepath.Dir(dst); ; dir = filepath.Dir(dir) {
 		if err := syncPath(dir); err != nil {
 			return true, err
+		}
+		if dir == r.dir || len(dir) <= len(r.dir) {
+			break
 		}
 	}
 	clear(r.dirtyObjects)
