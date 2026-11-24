@@ -159,6 +159,16 @@ describe("mock sessions", () => {
     expect((await client.sessions.getSession({ sessionId: "web-vite" })).state).toBe("idle")
   })
 
+  it("seeds a session whose running Bash call the user stopped", async () => {
+    const { client } = mock()
+    const events = await watchUntil(client, "palace-new", has("turn_stopped"))
+    const t = view(events)
+    expect(t.events.filter((e) => e.kind === "tool_call")).toEqual([
+      expect.objectContaining({ input: { command: "go test ./..." }, status: "interrupted", interruption: "stopped_by_user" }),
+    ])
+    expect(t.events.at(-1)?.kind).toBe("turn_stopped")
+  })
+
   it("stops a session for good", async () => {
     const { client } = mock()
     await client.sessions.sendMessage({ sessionId: "web-vite", clientMsgId: "c", text: "hello" })

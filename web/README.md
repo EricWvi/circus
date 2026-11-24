@@ -59,7 +59,8 @@ the tab's memory only (`src/api/mock/sessions.ts`), and each page load
 starts with the demo sessions of the demo projects that still exist. One of
 them waits for an approval (`Fix flaky auth token refresh tests`), one was
 interrupted (`Rewrite the dotfiles installer in Go`), one is broken
-(`Migrate thumbnailer to libvips`) and one is stopped. Every message gets a
+(`Migrate thumbnailer to libvips`), one is stopped and in one the user
+stopped a running Bash call (`Add a health check endpoint`). Every message gets a
 short scripted reply: streamed text, a Bash call and more text. A message
 containing "approve" asks for approval to run its Bash call instead, and
 runs it once approved. Stopping the turn, stopping the session and

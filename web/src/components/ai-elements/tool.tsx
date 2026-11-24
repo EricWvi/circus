@@ -12,6 +12,7 @@ import {
   CheckCircleIcon,
   ChevronDownIcon,
   CircleIcon,
+  CircleStopIcon,
   ClockIcon,
   WrenchIcon,
   XCircleIcon,
@@ -34,14 +35,20 @@ export const Tool = ({ className, ...props }: ToolProps) => (
 
 export type ToolPart = ToolUIPart | DynamicToolUIPart;
 
+/**
+ * The states a tool header shows: the AI SDK's, plus `output-interrupted`
+ * for a call that was stopped or cut off before it finished.
+ */
+export type ToolState = ToolPart["state"] | "output-interrupted";
+
 export type ToolHeaderProps = {
   title?: string;
   className?: string;
 } & (
-  | { type: ToolUIPart["type"]; state: ToolUIPart["state"]; toolName?: never }
+  | { type: ToolUIPart["type"]; state: ToolState; toolName?: never }
   | {
       type: DynamicToolUIPart["type"];
-      state: DynamicToolUIPart["state"];
+      state: ToolState;
       toolName: string;
     }
 );
@@ -54,9 +61,10 @@ const statusLabels = {
   "output-available": "session.tool.states.completed",
   "output-denied": "session.tool.states.denied",
   "output-error": "session.tool.states.error",
-} as const satisfies Record<ToolPart["state"], string>;
+  "output-interrupted": "session.tool.states.interrupted",
+} as const satisfies Record<ToolState, string>;
 
-const statusIcons: Record<ToolPart["state"], ReactNode> = {
+const statusIcons: Record<ToolState, ReactNode> = {
   "approval-requested": <ClockIcon className="size-4 text-foreground" />,
   "approval-responded": <CheckCircleIcon className="size-4 text-muted-foreground" />,
   "input-available": <ClockIcon className="size-4 animate-pulse" />,
@@ -64,9 +72,10 @@ const statusIcons: Record<ToolPart["state"], ReactNode> = {
   "output-available": <CheckCircleIcon className="size-4 text-muted-foreground" />,
   "output-denied": <XCircleIcon className="size-4 text-muted-foreground" />,
   "output-error": <XCircleIcon className="size-4 text-destructive" />,
+  "output-interrupted": <CircleStopIcon className="size-4 text-muted-foreground" />,
 };
 
-export const getStatusBadge = (status: ToolPart["state"], t: TFunction) => (
+export const getStatusBadge = (status: ToolState, t: TFunction) => (
   <Badge className="shrink-0 gap-1.5 rounded-full text-xs" variant="secondary">
     {statusIcons[status]}
     {t(statusLabels[status])}

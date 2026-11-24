@@ -10,7 +10,7 @@ import { queueReasonFromPayload, type LiveQueueReason } from "@/lib/queue-reason
 import { workerDisconnectedAtFromPayload, type LiveWorkerLink } from "@/lib/worker-link"
 import { workspaceFromPayload, type LiveWorkspace } from "@/lib/workspace"
 
-import { NO_RESULT_TOOL_ERROR, settleEvents } from "../settle"
+import { settleEvents, type SettleReason } from "../settle"
 import type {
   AssistantTextEvent,
   NoteKind,
@@ -111,6 +111,19 @@ function parse(json: string): Json | null {
   } catch {
     return null
   }
+}
+
+/**
+ * The tool_use ids a user message's `tool_result_meta` marks as stopped by
+ * the user (`non_execution_kind: "user-rejected"`).
+ */
+function userRejected(meta: unknown): ReadonlySet<string> {
+  const ids = new Set<string>()
+  if (!Array.isArray(meta)) return ids
+  for (const entry of meta) {
+    if (isObject(entry) && entry.non_execution_kind === "user-rejected" && str(entry.id)) ids.add(str(entry.id))
+  }
+  return ids
 }
 
 /** The text of a tool result's or message's content: a string or blocks. */
@@ -307,8 +320,8 @@ class Builder {
     this.remove(ids)
   }
 
-  /** Ends what nothing will finish: running tool calls fail, streamed text stays unsaved. */
-  private settle(keepStreamedText: boolean, toolError?: string) {
+  /** Ends what nothing will finish: running tool calls end, streamed text stays unsaved. */
+  private settle(keepStreamedText: boolean, reason?: SettleReason) {
     if (!keepStreamedText) this.dropStreaming()
     const events = this.internal.order.map((id) => this.get(id)!)
     const marked = events.map((e): SessionEvent => {
@@ -316,7 +329,7 @@ class Builder {
       if (e.kind === "reasoning" && e.streaming) return { ...e, streaming: false }
       return e
     })
-    settleEvents(marked, toolError).forEach((e, i) => {
+    settleEvents(marked, reason).forEach((e, i) => {
       if (e !== events[i]) this.put(e)
     })
     this.internal.streaming = null
@@ -358,7 +371,7 @@ class Builder {
         // The turn is over: nothing answers a tool call still running in it
         // (its result may have been too large for the view).
         this.turnOpen = false
-        this.settle(false, NO_RESULT_TOOL_ERROR)
+        this.settle(false, "no_result")
         return
       case "turn_stopped":
         this.turnOpen = false
@@ -492,7 +505,8 @@ class Builder {
     const results = Array.isArray(content)
       ? content.filter((block): block is Json => isObject(block) && block.type === "tool_result")
       : []
-    for (const block of results) this.toolResult(block)
+    const stopped = userRejected(p.tool_result_meta)
+    for (const block of results) this.toolResult(block, stopped)
     if (results.length > 0) return
     // What the worker tells the agent (recovery, notices, gaps) is a note.
     // An unmarked message is neither: the user's own messages enter the
@@ -511,7 +525,8 @@ class Builder {
     })
   }
 
-  private toolResult(block: Json) {
+  /** `stopped`: the ids of the calls the user stopped, from the message's `tool_result_meta`. */
+  private toolResult(block: Json, stopped: ReadonlySet<string>) {
     const toolUseId = str(block.tool_use_id)
     const id = toolEventId(toolUseId)
     const event = this.get(id)
@@ -519,10 +534,14 @@ class Builder {
     // The permission system's rejection is for the agent; the approval says it.
     if (this.internal.denied.has(id)) return
     const text = contentText(block.content)
-    const next: ToolCallEvent =
-      block.is_error === true
-        ? { ...event, status: "error", error: text, output: undefined }
-        : { ...event, status: "completed", output: text }
+    const call: ToolCallEvent = { ...event, interruption: undefined, agentText: undefined }
+    let next: ToolCallEvent
+    if (block.is_error !== true) next = { ...call, status: "completed", output: text, error: undefined }
+    else if (stopped.has(toolUseId)) {
+      // The rejection text is for the agent; the card says it was stopped
+      // and keeps the text for anyone who wants to read what Claude was told.
+      next = { ...call, status: "interrupted", interruption: "stopped_by_user", agentText: text, error: undefined, output: undefined }
+    } else next = { ...call, status: "error", error: text, output: undefined }
     this.put(next)
   }
 

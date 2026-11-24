@@ -638,7 +638,9 @@ export const en = {
       approvedRetried: "Approved by you for one retry",
       deniedByYou: "Denied by you",
       approvalExpired: "The approval request expired",
-      interrupted: "Interrupted before the tool finished.",
+      stoppedByUser: "You stopped this call. It may have run in part.",
+      cutOff: "Interrupted before the tool finished. It may have run in part.",
+      toldClaude: "Told Claude: the call was stopped",
       noResult: "The turn ended without a result for this call.",
       states: {
         approvalRequested: "Awaiting Approval",
@@ -648,6 +650,7 @@ export const en = {
         completed: "Completed",
         denied: "Denied",
         error: "Error",
+        interrupted: "Interrupted",
       },
     },
   },

@@ -15,10 +15,19 @@ export interface SeedProject {
  * - `interrupted`: the worker was lost in the second turn.
  * - `broken`: the second turn's transcript couldn't be saved.
  * - `stopped`: the user stopped the session.
+ * - `stopped_tool`: the user stopped the second turn while its Bash call ran.
  * - `queued`: the second message waits for a worker to take the session.
  * - `running`: the second turn is still running.
  */
-export type SeedEnding = "idle" | "approval" | "interrupted" | "broken" | "stopped" | "queued" | "running"
+export type SeedEnding =
+  | "idle"
+  | "approval"
+  | "interrupted"
+  | "broken"
+  | "stopped"
+  | "stopped_tool"
+  | "queued"
+  | "running"
 
 export interface SeedSession {
   id: string
@@ -31,7 +40,7 @@ export interface SeedSession {
   ending: SeedEnding
   /** The second message, for endings that have a second turn. */
   followUp?: string
-  /** The command waiting for approval (`approval`). */
+  /** The command waiting for approval (`approval`) or stopped while running (`stopped_tool`). */
   command?: string
   /** The model provider's id; local login when missing. */
   provider?: string
@@ -113,7 +122,9 @@ export const sessions: SeedSession[] = [
     title: "Add a health check endpoint",
     minutesAgo: 30,
     device: "eric-mbp",
-    ending: "idle",
+    ending: "stopped_tool",
+    followUp: "Run the server's tests",
+    command: "go test ./...",
   },
   {
     id: "dotfiles-go",

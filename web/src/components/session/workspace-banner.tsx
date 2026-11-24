@@ -21,7 +21,7 @@ import {
   workspaceReason,
 } from "@/lib/workspace"
 
-import { NoteText } from "./event-list"
+import { NoteText } from "./note-disclosure"
 
 const localClock = () => Date.now()
 

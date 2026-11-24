@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { RawSessionEvent, SessionEventKind } from "@/api/types"
-import { INTERRUPTED_TOOL_ERROR, NO_RESULT_TOOL_ERROR } from "@/lib/settle"
+import { NO_RESULT_TOOL_ERROR } from "@/lib/settle"
 import { interruptedTurnInput } from "@/lib/turns"
 import type { SessionEvent, ToolCallEvent } from "@/lib/types"
 
@@ -77,11 +77,14 @@ describe("tool calls", () => {
     expect(tools(done)[0]).toMatchObject({ status: "completed", output: "hi" })
   })
 
-  it("fails a tool the user interrupted, and marks the stop", () => {
+  it("marks a tool the user stopped as interrupted, keeps what Claude was told, and marks the stop", () => {
     const t = run(raw("interrupt_tool"))
     expect(kinds(t)).toEqual(["user_message", "tool_call", "turn_stopped"])
-    expect(tools(t)[0].status).toBe("error")
-    expect(tools(t)[0].error).toMatch(/^The user doesn't want to proceed with this tool use\./)
+    const [tool] = tools(t)
+    expect(tool).toMatchObject({ status: "interrupted", interruption: "stopped_by_user" })
+    expect(tool.error).toBeUndefined()
+    expect(tool.agentText).toMatch(/^The user doesn't want to proceed with this tool use\./)
+    expect(tool.agentText).toContain("this call was stopped while running")
     // The "[Request interrupted by user for tool use]" annotation is not a message.
     expect(ofKind(t, "user_message")).toHaveLength(1)
   })
@@ -266,17 +269,102 @@ describe("odd input", () => {
     expect(kinds(t)).toEqual(["truncated", "turn_interrupted"])
   })
 
-  it("settles a running tool when the turn ends without its result", () => {
+  it.each([
+    ["turn_stopped", '{"turn_no":"1","outcome":"stopped"}'],
+    ["turn_interrupted", '{"turn_no":"1"}'],
+    ["session_state", '{"state":"stopped"}'],
+  ] as const)("settles a running tool as cut off on %s", (kind, payloadJson) => {
     const events = raw("tool")
     const running = until(events, (e) => e.kind === "user" && e.payloadJson.includes("tool_result"))
-    const stopped: RawSessionEvent = {
-      ...base,
-      seq: 9,
-      kind: "turn_stopped",
-      payloadJson: '{"turn_no":"1","outcome":"stopped"}',
+    const end: RawSessionEvent = { ...base, seq: 9, kind, payloadJson }
+    const [tool] = tools(run([...running, end])) as ToolCallEvent[]
+    expect(tool).toMatchObject({ status: "interrupted", interruption: "cut_off" })
+    expect(tool.error).toBeUndefined()
+  })
+
+  /** The scenario's events with the payload of its first tool result message changed by `edit`. */
+  const withResult = (scenario: Scenario, edit: (payload: ReturnType<typeof JSON.parse>) => void) => {
+    const events = raw(scenario)
+    const i = events.findIndex((e) => e.kind === "user" && e.payloadJson.includes("tool_result_meta"))
+    const payload = JSON.parse(events[i].payloadJson)
+    edit(payload)
+    return [...events.slice(0, i), { ...events[i], payloadJson: JSON.stringify(payload) }, ...events.slice(i + 1)]
+  }
+
+  it("fails a tool whose result is an error the user did not cause", () => {
+    // The call ran as usual (Claude Code's ordinary accept meta) and failed.
+    const failed = withResult("tool", (payload) => {
+      expect(payload.tool_result_meta).toEqual([
+        expect.objectContaining({ permission_decision: expect.objectContaining({ decision: "accept" }) }),
+      ])
+      payload.message.content[0].is_error = true
+      payload.message.content[0].content = "Exit code 1"
+    })
+    const [tool] = tools(run(failed))
+    expect(tool).toMatchObject({ status: "error", error: "Exit code 1" })
+    expect(tool.interruption).toBeUndefined()
+    expect(tool.agentText).toBeUndefined()
+  })
+
+  it("fails a call that did not run for another reason than the user's stop", () => {
+    const blocked = withResult("interrupt_tool", (payload) => {
+      payload.tool_result_meta[0].non_execution_kind = "hook-blocked"
+    })
+    expect(tools(run(blocked))[0].status).toBe("error")
+  })
+
+  it("tells a failed call from a stopped one in the same message", () => {
+    const events = raw("parallel_tools")
+    const results = events.filter((e) => e.kind === "user" && e.payloadJson.includes("tool_result_meta"))
+    const [first, second] = results.map((e) => JSON.parse(e.payloadJson))
+    const failedId: string = first.message.content[0].tool_use_id
+    const stoppedId: string = second.message.content[0].tool_use_id
+    const both = {
+      ...first,
+      message: {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: failedId, content: "Exit code 1", is_error: true },
+          { type: "tool_result", tool_use_id: stoppedId, content: "The user doesn't want to proceed", is_error: true },
+        ],
+      },
+      tool_result_meta: [first.tool_result_meta[0], { id: stoppedId, non_execution_kind: "user-rejected" }],
     }
-    const [tool] = tools(run([...running, stopped])) as ToolCallEvent[]
-    expect(tool).toMatchObject({ status: "error", error: INTERRUPTED_TOOL_ERROR })
+    const i = events.indexOf(results[0])
+    const t = run([...events.slice(0, i), { ...results[0], payloadJson: JSON.stringify(both) }])
+    const byId = (id: string) => tools(t).find((c) => c.id === `tool:${id}`)
+    expect(byId(failedId)).toMatchObject({ status: "error", error: "Exit code 1" })
+    expect(byId(stoppedId)).toMatchObject({ status: "interrupted", interruption: "stopped_by_user" })
+  })
+
+  it("completes a stopped call whose result comes later, forgetting the stop", () => {
+    const events = raw("interrupt_tool")
+    const stopped = events.find((e) => e.kind === "user" && e.payloadJson.includes("tool_result_meta"))!
+    const payload = JSON.parse(stopped.payloadJson)
+    const id: string = payload.message.content[0].tool_use_id
+    const later: RawSessionEvent = {
+      ...stopped,
+      seq: events.at(-1)!.seq + 1,
+      payloadJson: JSON.stringify({
+        ...payload,
+        uuid: "later",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "done", is_error: false }] },
+        tool_result_meta: [{ id, permission_decision: { decision: "accept", reason_type: "classifier", source: "config" } }],
+      }),
+    }
+    const [tool] = tools(run([...events, later]))
+    expect(tool).toMatchObject({ status: "completed", output: "done" })
+    expect(tool.interruption).toBeUndefined()
+    expect(tool.agentText).toBeUndefined()
+  })
+
+  it("keys the user's stop on the result's own id, not on another call's", () => {
+    const events = raw("interrupt_tool")
+    const i = events.findIndex((e) => e.kind === "user" && e.payloadJson.includes("tool_result_meta"))
+    const payload = JSON.parse(events[i].payloadJson)
+    payload.tool_result_meta[0].id = "toolu_other"
+    const [tool] = tools(run([...events.slice(0, i), { ...events[i], payloadJson: JSON.stringify(payload) }]))
+    expect(tool.status).toBe("error")
   })
 })
 

@@ -19,6 +19,14 @@ export type ToolCallStatus =
   | "error"
   | "awaiting_approval"
   | "denied"
+  | "interrupted"
+
+/**
+ * How an `interrupted` tool call stopped: the user stopped it while it ran
+ * (`stopped_by_user`), or the turn ended under it before its result came,
+ * because the session was stopped or the worker was lost (`cut_off`).
+ */
+export type ToolInterruption = "stopped_by_user" | "cut_off"
 
 export interface ApprovalRequest {
   /** The control plane's approval id, for ResolveApproval. */
@@ -97,6 +105,10 @@ export interface ToolCallEvent extends EventBase {
   status: ToolCallStatus
   output?: string
   error?: string
+  /** Set while `status` is `interrupted`. */
+  interruption?: ToolInterruption
+  /** The tool result text Claude received for an interrupted call, when there was one. */
+  agentText?: string
   approval?: ApprovalRequest
 }
 

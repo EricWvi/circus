@@ -626,7 +626,9 @@ export const zhCN = {
       approvedRetried: "已由你批准重试一次",
       deniedByYou: "已由你拒绝",
       approvalExpired: "批准请求已过期",
-      interrupted: "工具在完成前被中断。",
+      stoppedByUser: "你停止了这次调用，可能已部分执行。",
+      cutOff: "工具结束前被中断，可能已部分执行。",
+      toldClaude: "已告知 Claude：调用已被停止",
       noResult: "这一轮结束时没有收到这次调用的结果。",
       states: {
         approvalRequested: "等待批准",
@@ -636,6 +638,7 @@ export const zhCN = {
         completed: "已完成",
         denied: "已拒绝",
         error: "出错",
+        interrupted: "已中断",
       },
     },
   },

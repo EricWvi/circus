@@ -10,9 +10,10 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool"
-import { INTERRUPTED_TOOL_ERROR, NO_RESULT_TOOL_ERROR } from "@/lib/settle"
+import { NO_RESULT_TOOL_ERROR } from "@/lib/settle"
 import type { ToolCallEvent } from "@/lib/types"
 
+import { NoteDisclosure } from "./note-disclosure"
 import { toolCallPartState } from "./tool-state"
 
 const languageByExtension: Record<string, BundledLanguage> = {
@@ -124,6 +125,11 @@ function Body({ event }: { event: ToolCallEvent }) {
   }
 }
 
+const interruptionKeys = {
+  stopped_by_user: "session.tool.stoppedByUser",
+  cut_off: "session.tool.cutOff",
+} as const satisfies Record<NonNullable<ToolCallEvent["interruption"]>, string>
+
 const decisionKeys = {
   approved: "session.tool.approvedRetried",
   denied: "session.tool.deniedByYou",
@@ -134,6 +140,7 @@ export function ToolCall({ event }: { event: ToolCallEvent }) {
   const { t } = useTranslation()
   const target = summary(event)
   const decision = event.approval?.decision
+  const interruption = event.status === "interrupted" ? (event.interruption ?? "cut_off") : undefined
 
   return (
     <Tool className="mb-0" defaultOpen={event.status === "error" || event.status === "running"}>
@@ -146,17 +153,17 @@ export function ToolCall({ event }: { event: ToolCallEvent }) {
       />
       <ToolContent className="space-y-3 border-t p-3">
         {decision && <p className="text-xs text-muted-foreground">{t(decisionKeys[decision])}</p>}
+        {interruption && <p className="text-xs text-muted-foreground">{t(interruptionKeys[interruption])}</p>}
         <Body
           event={
-            // The client's own note for a tool call it gave up on; any other
-            // error text comes from the agent and is shown as it is.
-            event.error === INTERRUPTED_TOOL_ERROR
-              ? { ...event, error: t("session.tool.interrupted") }
-              : event.error === NO_RESULT_TOOL_ERROR
-                ? { ...event, error: t("session.tool.noResult") }
-                : event
+            // The client's own note for a call whose result never came; any
+            // other error text comes from the agent and is shown as it is.
+            event.error === NO_RESULT_TOOL_ERROR ? { ...event, error: t("session.tool.noResult") } : event
           }
         />
+        {interruption === "stopped_by_user" && event.agentText && (
+          <NoteDisclosure label={t("session.tool.toldClaude")} text={event.agentText} />
+        )}
       </ToolContent>
     </Tool>
   )

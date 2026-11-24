@@ -372,6 +372,21 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
       session.lastTurnOutcome = "interrupted"
       break
     }
+    case "stopped_tool": {
+      // As abortTurn records a stop while a tool runs.
+      const inputId = r.input(seed.followUp ?? "Go on")
+      r.turnStarted()
+      r.durable("user", userMessage(inputId, seed.followUp ?? "Go on"))
+      const toolId = `toolu_${nanoid()}`
+      r.response({ toolId, command: seed.command ?? "sleep 20" }, inputId)
+      r.durable("user", interruptedResult(toolId))
+      r.durable("user", userMessage(nanoid(), [textBlock("[Request interrupted by user for tool use]")], "user_interrupt"))
+      r.durable("result", result("", inputId, abortFailure("aborted_tools"), "aborted_tools"))
+      r.durable("turn_stopped", { turn_no: String(session.turns), outcome: "stopped" })
+      session.state = "idle"
+      session.lastTurnOutcome = "stopped"
+      break
+    }
     case "broken": {
       const inputId = r.input(seed.followUp ?? "Go on")
       r.turnStarted()
