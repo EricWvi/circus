@@ -474,7 +474,7 @@ describe("recorded fake worker sessions", () => {
 
 describe("notes to Claude", () => {
   const label = "Told Claude: the previous turn was interrupted"
-  const sent = "The previous turn was interrupted."
+  const sent = /^The previous turn was interrupted before it finished: /
 
   it("shows a collapsed row that opens to the exact text Claude was sent", async () => {
     await renderRecorded("crash_recover")

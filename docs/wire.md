@@ -1440,8 +1440,14 @@ marked optional. The worker publishes `TURN_STARTED` with
 `{"turn_no":"<decimal uint64>","origin":"input"|"notification"|"cli"}`.
 `ASSISTANT`, `USER` and `RESULT` carry Claude Agent SDK message JSON.
 An ephemeral `ASSISTANT` carries an SDK `stream_event`. A completed block
-is published as a durable SDK assistant message. Blocks from the same
-response share the API `message.id`.
+is published as a durable SDK assistant message, one per block, after the
+block's last `content_block_delta` and before its `content_block_stop`.
+Blocks from the same response share the API `message.id`, which every
+`stream_event` of the response also carries as `api_message_id`. Text,
+thinking and `tool_use` blocks all stream: a `tool_use` block starts with
+`input: {}` and its input arrives as `input_json_delta` deltas
+(`partial_json`); the response then ends with `message_delta`
+(`stop_reason: "tool_use"`) and `message_stop`.
 
 A `USER` event for a message the worker wrote for the model, rather than
 the user's input or a tool result, adds a top-level `circus_note` string
@@ -1459,16 +1465,19 @@ For a text-stream abort, the measured SDK emits the partial assistant block
 with `aborted: true` before RESULT. Interrupt produces
 `error_during_execution`. NOW produces `success` with the partial text as
 its result. Both have `terminal_reason: "aborted_streaming"`. Interrupt
-also writes `[Request interrupted by user]` to the transcript. The fake
-worker publishes that annotation as a synthetic USER event. Its presence
-and `isSynthetic` flag in the SDK stream are unverified.
+also writes `[Request interrupted by user]` to the transcript, published as
+the `user_interrupt` note before the aborted response's stream ends
+(`content_block_stop`, `message_delta`, `message_stop`).
 
-A NOW tool-call probe observed an empty result and interruption text in the
-next model request's `tool_result`. The fake worker infers the SDK
-`tool_result` event and reuses that wording for Interrupt and NOW. It also
-infers the transcript annotation for a tool interrupted explicitly, and
-`subtype: "success"` with `terminal_reason: "aborted_tools"` for a tool
-interrupted by NOW.
+Interrupt during a tool call produces the tool's `tool_result` (Claude
+Code's rejection text with a correction that the call was stopped while
+running, `tool_result_meta` with `non_execution_kind: "user-rejected"`),
+then the `[Request interrupted by user for tool use]` note, and a RESULT
+with `terminal_reason: "aborted_tools"` and `stop_reason: "tool_use"`. The
+Go fake worker publishes these shapes as the e2e tests captured them from
+the real worker; for a tool interrupted by NOW it infers the same
+`tool_result` and `subtype: "success"` with `terminal_reason:
+"aborted_tools"`.
 
 **APPROVAL_PENDING**
 

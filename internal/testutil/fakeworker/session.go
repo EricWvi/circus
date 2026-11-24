@@ -44,6 +44,8 @@ type session struct {
 
 	totalUsage    usageTotals
 	usageBatchSeq uint64
+	// results counts the results published in this lease, for result_index.
+	results int
 
 	longApprovals map[string]string
 	seen          map[string]bool
@@ -66,6 +68,14 @@ type turn struct {
 	abortText, abortReason                                         string
 	inputTokens, usedInput, outputTokens, thinkingTokens, requests int
 	denials                                                        []object
+
+	// userMessageID is the input that started the turn, messageIDs the
+	// API messages it began and firstInput its first request's input tokens.
+	userMessageID string
+	messageIDs    []string
+	firstInput    int
+	// tail ends the stream of a response the user aborted.
+	tail []*pb.PublishEvents_Event
 }
 
 func (s *session) signal() {
@@ -333,7 +343,7 @@ func (s *session) runTurn() error {
 
 func (s *session) workTurn(t *turn, in *input) error {
 	if s.gap != 0 {
-		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), "Part of the conversation history is missing.", noteHistoryMissing)); err != nil {
+		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), historyMissingText, noteHistoryMissing)); err != nil {
 			return err
 		}
 		t.marks.GapNoticeTurnNo = s.gap
@@ -381,6 +391,9 @@ func (s *session) deliverInput(t *turn, in *input) error {
 	if err := s.record(sdkUser(s.sdkID, in.GetInputId(), in.GetText(), note)); err != nil {
 		return err
 	}
+	if t.userMessageID == "" {
+		t.userMessageID = in.GetInputId()
+	}
 	t.inputTokens += tokens(in.GetText())
 	t.marks.InputIds = append(t.marks.InputIds, in.GetInputId())
 	return s.flush()
@@ -404,12 +417,13 @@ func (s *session) finishTurn(t *turn, workErr error) error {
 	case isAbort(workErr):
 		outcome = pb.TurnOutcome_TURN_OUTCOME_STOPPED
 		if errors.Is(workErr, errAbort) {
-			failure = "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"
+			failure = abortFailure(t.abortReason)
 			if !incomplete {
-				// Text-stream Interrupt was measured to save the annotation in
-				// the transcript. Its use for a tool Interrupt and publication
-				// as an SDK USER frame with isSynthetic are inferred.
-				annotation := []object{{"type": "text", "text": "[Request interrupted by user]"}}
+				text := "[Request interrupted by user]"
+				if t.abortReason == abortedTools {
+					text = "[Request interrupted by user for tool use]"
+				}
+				annotation := []object{{"type": "text", "text": text}}
 				if err := s.record(sdkUser(s.sdkID, uuid.NewString(), annotation, noteUserInterrupt)); err != nil {
 					if !errors.Is(err, errMirror) {
 						return err
@@ -418,6 +432,7 @@ func (s *session) finishTurn(t *turn, workErr error) error {
 				}
 			}
 		}
+		s.events = append(s.events, t.tail...)
 	default:
 		outcome = pb.TurnOutcome_TURN_OUTCOME_ERROR
 		failure = workErr.Error()
@@ -431,6 +446,7 @@ func (s *session) finishTurn(t *turn, workErr error) error {
 	if isAbort(workErr) {
 		applyAbortResult(result, t.abortReason, t.abortText)
 	}
+	s.describeResult(result, t)
 	total := s.totalUsage
 	usage := resultUsage(result, s.model, t, &total, duration)
 	if err := s.saveUsage(total); err != nil {

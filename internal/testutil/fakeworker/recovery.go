@@ -18,7 +18,7 @@ func (s *session) recoverCalls(t *turn) error {
 	}
 	r := s.recovery
 	if r.GetPreviousTurnInterrupted() {
-		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), "The previous turn was interrupted.", notePreviousTurnInterrupted)); err != nil {
+		if err := s.record(sdkUser(s.sdkID, uuid.NewString(), previousTurnInterruptedText, notePreviousTurnInterrupted)); err != nil {
 			return err
 		}
 	}

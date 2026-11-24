@@ -164,6 +164,8 @@ describe("the fake worker's SDK shapes are a subset of the real SDK's", () => {
     "system/task_notification": ["reason"],
     // SDKUserMessage.timestamp; the fake stamps every user message it records.
     "user/text": ["timestamp"], "user/tool_result": ["timestamp"],
+    // On a thinking block's events and durable message (the recordings have no thinking block).
+    "stream_event/content_block_start": ["thinking_display"], assistant: ["thinking_display", "thinking_duration_ms"],
   };
   const fake = [...golden("sdk_messages.json"), ...golden("worker_events.json").filter((g) => g.name?.startsWith("lost_task"))];
 

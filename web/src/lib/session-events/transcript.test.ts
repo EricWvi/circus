@@ -81,8 +81,8 @@ describe("tool calls", () => {
     const t = run(raw("interrupt_tool"))
     expect(kinds(t)).toEqual(["user_message", "tool_call", "turn_stopped"])
     expect(tools(t)[0].status).toBe("error")
-    expect(tools(t)[0].error).toMatch(/^The tool call was interrupted/)
-    // The worker's "[Request interrupted by user]" annotation is not a message.
+    expect(tools(t)[0].error).toMatch(/^The user doesn't want to proceed with this tool use\./)
+    // The "[Request interrupted by user for tool use]" annotation is not a message.
     expect(ofKind(t, "user_message")).toHaveLength(1)
   })
 })
@@ -149,7 +149,9 @@ describe("turns that end early", () => {
 
   it("marks a turn the worker lost, which can be retried", () => {
     const t = run(raw("crash"))
-    expect(kinds(t)).toEqual(["user_message", "turn_interrupted"])
+    // The worker died while the answer streamed: what streamed stays, unsaved.
+    expect(kinds(t)).toEqual(["user_message", "assistant_text", "turn_interrupted"])
+    expect(t.events[1]).toMatchObject({ streaming: false, unsaved: true })
     expect(t.turnOpen).toBe(false)
     expect(interruptedTurnInput(t.events)).toBe("/fake crash")
   })
@@ -189,7 +191,7 @@ describe("turns that end early", () => {
     ])
     expect(ofKind(t, "user_message").every((m) => m.delivery === "delivered")).toBe(true)
     expect(ofKind(t, "note")).toEqual([
-      expect.objectContaining({ noteKind: "history_missing", text: "Part of the conversation history is missing." }),
+      expect.objectContaining({ noteKind: "history_missing", text: expect.stringMatching(/^Part of the conversation history is missing: /) }),
     ])
   })
 })
@@ -206,16 +208,22 @@ describe("reconnecting", () => {
   it.each(Object.keys(fixture) as Scenario[])("ends with the same events and ids when %s breaks anywhere", (scenario) => {
     const events = raw(scenario)
     const once = run(events)
+    // Text that only streamed before its worker was lost is known only to
+    // a view that saw it stream: a view resumed in the middle lacks it.
+    const recorded = new Set(run(events.filter((e) => e.seq > 0)).events.map((e) => e.id))
+    const streamedOnly = new Set(once.events.filter((e) => e.kind === "assistant_text" && e.unsaved && !recorded.has(e.id)).map((e) => e.id))
     for (let cut = 1; cut < events.length; cut++) {
       const before = run(events.slice(0, cut))
       // The new stream starts after the last durable event; ephemeral ones before the cut are gone.
       const after = events.slice(cut).filter((e) => e.seq === 0 || e.seq > before.lastSeq)
       const resumed = run(after, withoutStreaming(before))
-      expect(resumed.events.map((e) => e.id)).toEqual(once.events.map((e) => e.id))
+      const comparable = (list: readonly SessionEvent[]) =>
+        resumed.events.some((e) => streamedOnly.has(e.id)) ? list : list.filter((e) => !streamedOnly.has(e.id))
+      expect(resumed.events.map((e) => e.id)).toEqual(comparable(once.events).map((e) => e.id))
       // Thinking time is known only for thinking seen streaming.
       const timeless = (list: readonly SessionEvent[]) =>
         list.map((e) => (e.kind === "reasoning" ? { ...e, durationSeconds: undefined } : e))
-      expect(timeless(resumed.events)).toEqual(timeless(once.events))
+      expect(timeless(resumed.events)).toEqual(timeless(comparable(once.events)))
     }
   })
 
@@ -465,8 +473,8 @@ describe("notes to Claude", () => {
 
   it("tells that the previous turn was interrupted, after a crash", () => {
     const t = run(raw("crash_recover"))
-    expect(kinds(t)).toEqual(["user_message", "turn_interrupted", "user_message", "note", "assistant_text"])
-    expect(notes(t)).toEqual([["previous_turn_interrupted", "The previous turn was interrupted."]])
+    expect(kinds(t)).toEqual(["user_message", "assistant_text", "turn_interrupted", "user_message", "note", "assistant_text"])
+    expect(notes(t)).toEqual([["previous_turn_interrupted", expect.stringMatching(/^The previous turn was interrupted before it finished: /)]])
     const id = ofKind(t, "note")[0].id
     expect(id).toMatch(/^note:00000000-/)
     // The same id on replay.

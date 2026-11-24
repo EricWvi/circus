@@ -142,16 +142,52 @@ on disk where tools ran, the requests the fake model received and, where
 it matters, the stored transcript (no duplicated input, answer or tool
 result). Sessions of scenarios the Go fake worker also has are compared
 with its recording (`web/src/lib/session-events/fake-worker.fixture.json`,
-what the Web reducer is tested against): the same durable event kinds in
-the same order, and the payload keys the reducer reads present with the
-same JSON type (equal values where it branches on them). The streamed
-copies are checked against the durable events the way the reducer joins
-them: a stream's `message_start` id is the durable `message.id`, its
-`content_block_start` indexes count from 0, and the n-th durable assistant
-event of a message carries block n of the same type. One known
-difference is spelled out: the real worker publishes the approval card
-right after the permission denial, before the tool result carrying the
-denial.
+what the Web reducer is tested against; `compareEvents` in
+`claude_compare_test.go`) when the test ends:
+
+- Scope: from the session's first durable event to the next durable event
+  after the scenario's last one, so the scenario's trailing ephemeral
+  events are in. Without such an event the session is stopped at the end
+  of the test and its SESSION_STATE ends the scope (every event published
+  before it comes before it on the stream); for a session already
+  stopped, what the watch received.
+- The same durable event kinds and streamed SDK events in the same order
+  (a run of deltas of one type counts as one; `KIND_QUEUE` events, which
+  the control plane publishes on its own timing, are left out).
+- Each event with the same key paths and JSON types as the fake's.
+  Enumeration-like values (types, subtypes, stop and terminal reasons,
+  notes, tool names, permission decisions, ...) must be equal; ids,
+  texts the scripts write, counts, timings, tool inputs and the metric
+  objects (`usage`, `modelUsage`, `safeguard_results`, ...) only need the
+  same type. The fixture keeps the values that vary from run to run
+  (`timestamp`, `usage`, durations, ...) as type markers
+  (`fakeworker.MaskUnstable`); the real events are masked the same way.
+- The fixed texts the Web shows are equal: the notes the worker writes for
+  the model (except the interrupt note, which the Web hides) and the
+  `tool_result` of a call that did not run to completion, with the
+  scenario's approval device, command and reason replaced by placeholders.
+- On each side, the ids the reducer joins on point where they should: a
+  permission denial, an approval request and a `tool_result` name an
+  earlier `tool_use`; `api_message_id`, the durable `message.id` and
+  `abandoned_blocks.api_message_id` name the message being streamed.
+
+The streamed copies are also checked against the durable events the way
+the reducer joins them: a stream's `message_start` id is the durable
+`message.id`, its `content_block_start` indexes count from 0, and the
+n-th durable assistant event of a message carries block n of the same
+type.
+
+To re-capture what the real worker publishes (after an Agent SDK or
+Claude Code upgrade), set `CIRCUS_E2E_RECORD_REAL` to a file (relative to
+the repository root, e.g. `.tmp/real-events.json`): every compared
+scenario then also writes the events it compared, ephemeral ones included
+and payloads as received, under its name in the fixture's format. The
+test process truncates the file at its first write, so it holds only the
+scenarios of that run.
+
+```sh
+CIRCUS_E2E_RECORD_REAL=.tmp/real-events.json go test -tags e2e ./tests/e2e/ -run 'TestClaude' -count=1
+```
 
 - TestClaudeTextAndTools: a text turn, a thinking turn, one Bash, two
   parallel Bash calls, and Write, Read, Edit and Bash changing a file in

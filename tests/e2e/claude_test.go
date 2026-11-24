@@ -190,7 +190,7 @@ func TestClaudeTextAndTools(t *testing.T) {
 			t.Fatalf("delivered input %v, sent %s", user, sent.GetInputId())
 		}
 		if scenario != "" {
-			compareWithFakeWorker(t, scenario, events)
+			compareWithFakeWorker(t, scenario, w)
 		}
 		checkStream(t, w, true)
 		return events
@@ -327,7 +327,7 @@ func TestClaudeMergeAndNow(t *testing.T) {
 		}
 		return results == 2
 	})
-	compareWithFakeWorker(t, "now", w.durable)
+	compareBeforeNext(t, "now", w)
 	checkAbortedResult(t, w.durable[5], "success", "aborted_streaming", false)
 	if eventString(t, w.durable[8], "uuid") != now.GetInputId() || eventString(t, w.durable[10], "result") != "Handled right now." {
 		t.Fatalf("NOW turn: %v / %v", w.durable[8], w.durable[10])
@@ -414,7 +414,7 @@ func TestClaudeInterruptAndStop(t *testing.T) {
 	interrupt(sess)
 	until(w, pb.SessionEvent_KIND_TURN_STOPPED)
 	events := w.durable
-	compareWithFakeWorker(t, "interrupt", events)
+	compareBeforeNext(t, "interrupt", w)
 	checkAbortedResult(t, events[5], "error_during_execution", "aborted_streaming", true)
 	if !strings.Contains(events[4].GetPayloadJson(), "[Request interrupted by user]") {
 		t.Fatalf("interrupt note %v", events[4])
@@ -441,10 +441,8 @@ func TestClaudeInterruptAndStop(t *testing.T) {
 	interrupt(sess)
 	until(w, pb.SessionEvent_KIND_TURN_STOPPED)
 	events = w.durable
-	compareWithFakeWorker(t, "interrupt_tool", events)
+	compareBeforeNext(t, "interrupt_tool", w)
 	checkToolPair(t, events[3], events[4], "Bash", true)
-	// Claude Code keeps stop_reason "tool_use" here, where the fake worker
-	// says null; the Web reads neither.
 	checkResult(t, events[6], "error_during_execution", "aborted_tools", true)
 	sess.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_STOPPED)
 	wait(t, 10*time.Second, func() bool { return !processAlive(pid, "") })
@@ -460,7 +458,7 @@ func TestClaudeInterruptAndStop(t *testing.T) {
 	_, err = sess.api.StopSession(sess.ctx, connect.NewRequest(&pb.StopSessionRequest{SessionId: sess.id}))
 	must(t, err)
 	until(w, pb.SessionEvent_KIND_TURN_INTERRUPTED)
-	compareWithFakeWorker(t, "stop", w.durable)
+	compareWithFakeWorker(t, "stop", w)
 	checkStream(t, w, false)
 	sess.state(pb.Session_STATE_STOPPED, pb.TurnOutcome_TURN_OUTCOME_INTERRUPTED)
 	wait(t, 10*time.Second, func() bool {
@@ -547,7 +545,6 @@ func TestClaudeApproval(t *testing.T) {
 	_, err = sess.api.ResolveApproval(sess.ctx, connect.NewRequest(&pb.ResolveApprovalRequest{ApprovalId: eventString(t, pending, "approval_id"), Approve: true}))
 	must(t, err)
 	durableUntil(t, w, func(e *pb.SessionEvent) bool { return e.GetKind() == pb.SessionEvent_KIND_RESULT })
-	compareWithFakeWorker(t, "approve", w.durable)
 	if state := sess.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED); state.GetTurnCount() != 2 || state.GetPendingApprovalCount() != 0 {
 		t.Fatalf("after approval: %v", state)
 	}
@@ -555,6 +552,7 @@ func TestClaudeApproval(t *testing.T) {
 		t.Fatalf("the approved command ran %q", got)
 	}
 	checkStream(t, w, true)
+	compareWithFakeWorker(t, "approve", w)
 
 	// A denied approval: no retry, the session takes the next input.
 	sess = s.open("")
@@ -579,7 +577,7 @@ func TestClaudeApproval(t *testing.T) {
 	if eventString(t, resolved[len(resolved)-1], "state") != "denied" {
 		t.Fatalf("resolution %v", resolved)
 	}
-	compareWithFakeWorker(t, "deny", w.durable)
+	compareBeforeNext(t, "deny", w)
 	checkStream(t, w, true)
 	if state := sess.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED); state.GetTurnCount() != 1 || state.GetPendingApprovalCount() != 0 {
 		t.Fatalf("after the denial: %v", state)
@@ -695,7 +693,6 @@ func TestClaudeWorkerKilled(t *testing.T) {
 	}
 	sess.send("after the crash", pb.InputPriority_INPUT_PRIORITY_NORMAL)
 	durableUntil(t, w, func(e *pb.SessionEvent) bool { return e.GetKind() == pb.SessionEvent_KIND_RESULT })
-	compareWithFakeWorker(t, "crash_recover", w.durable)
 	if note := w.durable[6]; eventString(t, note, "circus_note") != "previous_turn_interrupted" {
 		t.Fatalf("previous-turn note %v", note)
 	}
@@ -706,6 +703,7 @@ func TestClaudeWorkerKilled(t *testing.T) {
 		t.Fatalf("lease before the kill %+v, after %+v", before, after)
 	}
 	s.checkTranscript(sess.id)
+	compareWithFakeWorker(t, "crash_recover", w)
 
 	idle.send("idle session, again", pb.InputPriority_INPUT_PRIORITY_NORMAL)
 	events := durableUntil(t, idleWatch, func(e *pb.SessionEvent) bool { return e.GetKind() == pb.SessionEvent_KIND_RESULT })

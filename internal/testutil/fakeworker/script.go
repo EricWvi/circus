@@ -41,15 +41,16 @@ func (s *session) script(t *turn, in *input) error {
 			if err != nil || duration < 0 {
 				return errors.New("/fake slow requires a nonnegative number of seconds")
 			}
-			return s.stream(t, quote(text), duration/4, false)
+			return s.stream(t, quote(text), duration/4, plainText)
 		case "think":
-			return s.stream(t, quote(text), s.w.opts.StreamDelay, true)
+			return s.stream(t, quote(text), s.w.opts.StreamDelay, thinkFirst)
 		case "break":
 			return errMirror
 		case "error":
 			return errScript
 		case "crash":
-			return s.disconnect(crash)
+			// The process dies while the model's answer streams.
+			return s.stream(t, quote(text), s.w.opts.StreamDelay, crashMidStream)
 		case "blip":
 			if err := s.disconnect(blip); err != nil {
 				return err
@@ -59,7 +60,7 @@ func (s *session) script(t *turn, in *input) error {
 			}
 		}
 	}
-	return s.stream(t, quote(text), s.w.opts.StreamDelay, false)
+	return s.stream(t, quote(text), s.w.opts.StreamDelay, plainText)
 }
 
 func quote(text string) string {
@@ -83,97 +84,149 @@ func (s *session) disconnect(mode outage) error {
 	return err
 }
 
-func (s *session) assistant(id string, block object, inputTokens, outputTokens int, aborted bool) error {
-	message := sdkAssistant(s.sdkID, uuid.NewString(), id, s.model, block)
-	message.payload["message"].(object)["usage"] = sdkUsage(inputTokens, outputTokens)
+// apiRequest is one model response the script streams. Claude Code
+// publishes a response's stream events and, after each content block's
+// last delta, the block as a durable assistant message.
+type apiRequest struct {
+	id     string
+	first  bool
+	input  int
+	blocks int
+}
+
+// begin starts the turn's next response with its message_start. The turn's
+// first response, and its first block, name the user message that started
+// the turn.
+func (s *session) begin(t *turn) *apiRequest {
+	r := &apiRequest{id: "msg_" + uuid.NewString(), first: t.requests == 0, input: 24 + t.inputTokens}
+	if r.first {
+		t.firstInput = r.input
+	}
+	t.requests++
+	t.usedInput += r.input
+	t.messageIDs = append(t.messageIDs, r.id)
+	m := sdkMessageStart(s.sdkID, uuid.NewString(), r.id, s.model, r.input)
+	if r.first {
+		m.payload["owed_rows"] = []any{}
+		nameUserMessage(m.payload, t.userMessageID)
+	}
+	s.events = append(s.events, m.event())
+	return r
+}
+
+// streamEvent is a stream_event of r; thinking marks the events of a
+// thinking block that carry the thinking display mode.
+func (s *session) streamEvent(r *apiRequest, event object, thinking bool) *pb.PublishEvents_Event {
+	m := sdkPartial(s.sdkID, uuid.NewString(), r.id, event)
+	if thinking {
+		m.payload["thinking_display"] = thinkingDisplay
+	}
+	return m.event()
+}
+
+func (s *session) partial(r *apiRequest, event object, thinking bool) {
+	s.events = append(s.events, s.streamEvent(r, event, thinking))
+}
+
+// assistant records block as r's next durable assistant message.
+func (s *session) assistant(t *turn, r *apiRequest, block object, outputTokens int, aborted bool) error {
+	message := sdkAssistant(s.sdkID, uuid.NewString(), r.id, s.model, block)
+	message.payload["message"].(object)["usage"] = messageUsage(r.input, outputTokens)
+	if r.first && r.blocks == 0 {
+		nameUserMessage(message.payload, t.userMessageID)
+	}
+	r.blocks++
 	if aborted {
 		message.payload["aborted"] = true
 	}
 	return s.record(message)
 }
 
-func (s *session) partial(event object) {
-	message := sdkPartial(s.sdkID, uuid.NewString(), event)
-	s.events = append(s.events, message.event())
-}
+func blockStop(index int) object { return object{"type": "content_block_stop", "index": index} }
 
-func (s *session) stream(t *turn, text string, delay time.Duration, think bool) error {
-	messageID := "msg_" + uuid.NewString()
-	inputTokens := 24 + t.inputTokens
-	t.requests++
-	t.usedInput += inputTokens
-	start := apiMessage(messageID, s.model, []object{})
-	start["usage"] = sdkUsage(inputTokens, 1)
-	s.partial(object{"type": "message_start", "message": start})
+type streamMode int
+
+const (
+	plainText streamMode = iota
+	// thinkFirst streams a thinking block before the text.
+	thinkFirst
+	// crashMidStream crashes the worker after the text's first chunk.
+	crashMidStream
+)
+
+func (s *session) stream(t *turn, text string, delay time.Duration, mode streamMode) error {
+	r := s.begin(t)
 	index, thinkingTokens := 0, 0
-	if think {
+	if mode == thinkFirst {
 		block := thinkingBlock()
-		s.partial(object{"type": "content_block_start", "index": index, "content_block": object{"type": "thinking", "thinking": "", "signature": ""}})
-		s.partial(object{"type": "content_block_delta", "index": index, "delta": object{"type": "thinking_delta", "thinking": block["thinking"]}})
-		s.partial(object{"type": "content_block_delta", "index": index, "delta": object{"type": "signature_delta", "signature": block["signature"]}})
-		s.partial(object{"type": "content_block_stop", "index": index})
-		if err := s.assistant(messageID, block, inputTokens, 1, false); err != nil {
+		s.partial(r, object{"type": "content_block_start", "index": index, "content_block": object{"type": "thinking", "thinking": "", "signature": ""}}, true)
+		s.partial(r, object{"type": "content_block_delta", "index": index, "delta": object{"type": "thinking_delta", "thinking": block["thinking"]}}, true)
+		s.partial(r, object{"type": "content_block_delta", "index": index, "delta": object{"type": "signature_delta", "signature": block["signature"]}}, false)
+		if err := s.assistant(t, r, block, 1, false); err != nil {
 			return err
 		}
+		s.partial(r, blockStop(index), false)
 		thinkingTokens = tokens(block["thinking"].(string))
 		index++
 	}
-	s.partial(object{"type": "content_block_start", "index": index, "content_block": textBlock("")})
+	s.partial(r, object{"type": "content_block_start", "index": index, "content_block": textBlock("")}, false)
 	runes := []rune(text)
 	for i := range 4 {
 		end := (i + 1) * len(runes) / 4
 		if piece := string(runes[i*len(runes)/4 : end]); piece != "" {
-			s.partial(textDelta(index, piece))
+			s.partial(r, textDelta(index, piece), false)
 		}
 		if err := s.flush(); err != nil {
 			return err
 		}
+		if mode == crashMidStream {
+			return s.disconnect(crash)
+		}
 		if err := s.wait(t, delay); err != nil {
 			if isAbort(err) {
-				if saveErr := s.finishStream(t, messageID, index, inputTokens, thinkingTokens, string(runes[:end]), true); saveErr != nil {
+				if saveErr := s.finishStream(t, r, index, thinkingTokens, string(runes[:end]), true); saveErr != nil {
 					return errors.Join(err, saveErr)
 				}
 			}
 			return err
 		}
 	}
-	return s.finishStream(t, messageID, index, inputTokens, thinkingTokens, text, false)
+	return s.finishStream(t, r, index, thinkingTokens, text, false)
 }
 
-func (s *session) finishStream(t *turn, id string, index, inputTokens, thinkingTokens int, text string, aborted bool) error {
-	s.partial(object{"type": "content_block_stop", "index": index})
-	var stopReason any = "end_turn"
-	if aborted {
-		stopReason = nil
-	}
+// finishStream records the text block and ends the response's stream. An
+// aborted response's stream ends after the turn's interrupt annotation
+// (finishTurn publishes t.tail), as Claude Code's does.
+func (s *session) finishStream(t *turn, r *apiRequest, index, thinkingTokens int, text string, aborted bool) error {
 	outputTokens := tokens(text) + thinkingTokens
-	s.partial(object{
-		"type": "message_delta", "context_management": nil,
-		"delta": object{"stop_reason": stopReason, "stop_sequence": nil, "stop_details": nil, "container": nil},
-		"usage": object{
-			"input_tokens": inputTokens, "output_tokens": outputTokens,
-			"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "server_tool_use": nil,
-			"iterations": nil, "output_tokens_details": object{"thinking_tokens": thinkingTokens},
-		},
-	})
-	end := sdkPartial(s.sdkID, uuid.NewString(), object{"type": "message_stop"})
-	if aborted {
-		end.payload["abandoned_blocks"] = object{"api_message_id": id, "from_block_index": index + 1}
-		t.abortText = text
-	}
-	s.events = append(s.events, end.event())
-	if err := s.flush(); err != nil {
-		return err
-	}
 	if text != "" {
-		if err := s.assistant(id, textBlock(text), inputTokens, max(1, outputTokens), aborted); err != nil {
+		if err := s.assistant(t, r, textBlock(text), max(1, outputTokens), aborted); err != nil {
 			return err
 		}
 	}
 	t.outputTokens += outputTokens
 	t.thinkingTokens += thinkingTokens
 	t.text = text
-	return nil
+	var stopReason any = "end_turn"
+	if aborted {
+		stopReason = nil
+		t.abortText = text
+	}
+	tail := []*pb.PublishEvents_Event{
+		s.streamEvent(r, blockStop(index), false),
+		s.streamEvent(r, messageDelta(stopReason, r.input, outputTokens, thinkingTokens), false),
+	}
+	end := sdkPartial(s.sdkID, uuid.NewString(), r.id, object{"type": "message_stop"})
+	if aborted {
+		end.payload["abandoned_blocks"] = object{"api_message_id": r.id, "from_block_index": index + 1}
+	}
+	tail = append(tail, end.event())
+	if aborted {
+		t.tail = tail
+		return nil
+	}
+	s.events = append(s.events, tail...)
+	return s.flush()
 }
 
 func tokens(text string) int { return (len(text) + 3) / 4 }

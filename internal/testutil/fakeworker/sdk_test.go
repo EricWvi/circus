@@ -20,30 +20,60 @@ func TestSDKMessages(t *testing.T) {
 		toolID    = "toolu_fake"
 		model     = "claude-sonnet-4-6"
 	)
+	partial := func(event object) sdkMessage { return sdkPartial(sessionID, eventID, "msg_fake", event) }
+	first := sdkMessageStart(sessionID, eventID, "msg_fake", model, 25)
+	first.payload["owed_rows"] = []any{}
+	nameUserMessage(first.payload, inputID)
+	text := sdkAssistant(sessionID, eventID, "msg_fake", model, textBlock("You said:\n\n> hello"))
+	nameUserMessage(text.payload, inputID)
+	thinkingStart := partial(object{"type": "content_block_start", "index": 0, "content_block": object{"type": "thinking", "thinking": "", "signature": ""}})
+	thinkingStart.payload["thinking_display"] = thinkingDisplay
 	messages := []sdkMessage{
 		sdkUser(sessionID, inputID, "hello", ""),
-		sdkPartial(sessionID, eventID, textDelta(0, "You said:")),
-		sdkAssistant(sessionID, eventID, "msg_fake", model, textBlock("You said:\n\n> hello")),
+		first,
+		sdkMessageStart(sessionID, eventID, "msg_fake", model, 25),
+		thinkingStart,
+		partial(object{"type": "content_block_start", "index": 0, "content_block": textBlock("")}),
+		partial(textDelta(0, "You said:")),
+		partial(object{"type": "content_block_start", "index": 0, "content_block": object{"type": "tool_use", "id": toolID, "name": "Bash", "input": object{}}}),
+		partial(inputDelta(0, `{"command":"echo hi"}`)),
+		partial(blockStop(0)),
+		partial(messageDelta("end_turn", 25, 3, 0)),
+		partial(messageDelta(nil, 25, 3, 0)),
+		partial(object{"type": "message_stop"}),
+		text,
 		sdkAssistant(sessionID, eventID, "msg_fake", model, thinkingBlock()),
 		sdkAssistant(sessionID, eventID, "msg_fake", model, toolUse(toolID, "Bash", object{"command": "echo hi"})),
-		sdkUser(sessionID, eventID, []object{toolResult(toolID, []object{{"type": "text", "text": "hi\n"}}, false)}, ""),
+		sdkToolResult(sessionID, eventID, toolID, "hi", false, toolUseResult("Bash", "", "hi", false), allowedMeta(toolID, false)),
+		sdkToolResult(sessionID, eventID, toolID, "hi", false, toolUseResult("Bash", "", "hi", false), allowedMeta(toolID, true)),
+		sdkToolResult(sessionID, eventID, toolID, "a\nb\n", false, toolUseResult("Read", "/w/notes.txt", "a\nb\n", false), allowedMeta(toolID, false)),
+		sdkToolResult(sessionID, eventID, toolID, "exit 1", true, toolUseResult("Bash", "", "exit 1", true), allowedMeta(toolID, false)),
+		sdkInterruptedTool(sessionID, eventID, toolID),
 		sdkResult(sessionID, eventID, "Bash finished.", "", 20),
 		sdkResult(sessionID, eventID, "", "scripted worker error", 20),
 	}
-	partial := sdkAssistant(sessionID, eventID, "msg_aborted", model, textBlock("You said:"))
-	partial.payload["aborted"] = true
-	if bytes.Contains([]byte(partial.transcript("").GetJson()), []byte(`"aborted":`)) {
+	aborted := sdkAssistant(sessionID, eventID, "msg_aborted", model, textBlock("You said:"))
+	aborted.payload["aborted"] = true
+	if bytes.Contains([]byte(aborted.transcript("").GetJson()), []byte(`"aborted":`)) {
 		t.Fatal("the SDK aborted flag belongs to the event envelope")
 	}
-	interrupt := sdkResult(sessionID, eventID, "", "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null", 20)
+	abandoned := sdkPartial(sessionID, eventID, "msg_aborted", object{"type": "message_stop"})
+	abandoned.payload["abandoned_blocks"] = object{"api_message_id": "msg_aborted", "from_block_index": 1}
+	interrupt := sdkResult(sessionID, eventID, "", abortFailure(abortedStreaming), 20)
+	interruptTool := sdkResult(sessionID, eventID, "", abortFailure(abortedTools), 20)
 	now := sdkResult(sessionID, eventID, "", "", 20)
 	applyAbortResult(interrupt, "", "")
+	applyAbortResult(interruptTool, abortedTools, "")
 	applyAbortResult(now, "", "You said:")
-	resultUsage(now, model, &turn{usedInput: 25, outputTokens: 3, requests: 1}, &usageTotals{}, 20)
-	messages = append(messages, partial,
+	s := &session{}
+	tr := &turn{usedInput: 25, outputTokens: 3, requests: 1, userMessageID: inputID, messageIDs: []string{"msg_aborted"}, firstInput: 25}
+	s.describeResult(now, tr)
+	resultUsage(now, model, tr, &usageTotals{}, 20)
+	messages = append(messages, aborted, abandoned,
 		sdkUser(sessionID, eventID, []object{{"type": "text", "text": "[Request interrupted by user]"}}, noteUserInterrupt),
-		interrupt, now, sdkPermissionDenied(sessionID, eventID, toolID),
-		sdkUser(sessionID, eventID, []object{toolResult(toolID, denialText, true)}, ""),
+		sdkUser(sessionID, eventID, []object{{"type": "text", "text": "[Request interrupted by user for tool use]"}}, noteUserInterrupt),
+		interrupt, interruptTool, now, sdkPermissionDenied(sessionID, eventID, toolID),
+		sdkDenialResult(sessionID, eventID, toolID),
 		sdkTaskStarted(sessionID, eventID, "task-1", toolID, "Background", "local_bash"),
 		sdkTaskNotification(sessionID, eventID, "task-1", toolID, "completed", "Background finished", "/tmp/task-1.output"),
 	)

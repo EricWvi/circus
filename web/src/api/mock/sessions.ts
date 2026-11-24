@@ -78,10 +78,17 @@ export interface MockSessionTiming {
 export const defaultSessionTiming: MockSessionTiming = { stepMs: 400, chunkMs: 120 }
 
 const APPROVAL_REASON = "Pushing to a remote needs your approval"
+const DENIAL = `Permission for this action was denied by the Claude Code auto mode classifier. Reason: ${APPROVAL_REASON}.`
 const INTERRUPTED_TOOL =
-  "The tool call was interrupted before a result was received. It may or may not have completed on the server — verify before assuming it succeeded, and retry if needed."
+  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). " +
+  "STOP what you are doing and wait for the user to tell you how to proceed. Correction to the text above: this call was stopped while running, not refused before it ran. " +
+  "It may have run in part or in full, and its changes may have been written. No permission prompt was involved. " +
+  "Work it started elsewhere (a remote command, a background process) may still be running, so check before starting the same work again. " +
+  "The instruction to stop and wait still stands."
 
 // --- SDK message shapes -------------------------------------------------
+// As the real worker publishes them (Claude Code's stream-json messages).
+// Usage, costs and timings are placeholders.
 
 const envelope = (type: string, uuid: string) => ({ type, uuid, session_id: "mock", parent_tool_use_id: null })
 /** A user message; `note` names the kind of one the worker wrote for the model (docs/wire.md). */
@@ -90,23 +97,154 @@ const userMessage = (uuid: string, content: unknown, note?: "approval_retry" | "
   message: { role: "user", content },
   ...(note ? { isSynthetic: true, circus_note: note } : {}),
 })
-const assistantMessage = (messageId: string, block: object, aborted = false) => ({
+const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+/** The user message that started a turn, named by its first response and first block. */
+const namingInput = (userMessageId?: string) =>
+  userMessageId ? { user_message_uuid: userMessageId, user_message_uuids: [userMessageId] } : {}
+const assistantMessage = (messageId: string, block: object, aborted = false, userMessageId?: string) => ({
   ...envelope("assistant", nanoid()),
-  message: { id: messageId, type: "message", role: "assistant", model: "claude-mock", content: [block] },
+  message: {
+    id: messageId,
+    type: "message",
+    role: "assistant",
+    model: "claude-mock",
+    content: [block],
+    stop_reason: null,
+    stop_sequence: null,
+    context_management: null,
+    usage,
+  },
+  ...namingInput(userMessageId),
   ...(aborted ? { aborted: true } : {}),
 })
-const streamEvent = (event: object) => ({ ...envelope("stream_event", nanoid()), event })
-const textBlock = (text: string) => ({ type: "text", text, citations: null })
+const streamEvent = (messageId: string, event: object, extra: object = {}) => ({
+  ...envelope("stream_event", nanoid()),
+  api_message_id: messageId,
+  event,
+  ...extra,
+})
+const messageStart = (messageId: string, userMessageId?: string) =>
+  streamEvent(
+    messageId,
+    {
+      type: "message_start",
+      message: { id: messageId, type: "message", role: "assistant", model: "claude-mock", content: [], stop_reason: null, stop_sequence: null, usage },
+    },
+    { thinking_display: "updates", ttft_ms: 0, ...(userMessageId ? { owed_rows: [], ...namingInput(userMessageId) } : {}) },
+  )
+const messageDelta = (messageId: string, stopReason: "end_turn" | "tool_use" | null) =>
+  streamEvent(
+    messageId,
+    stopReason === null
+      ? {
+          type: "message_delta",
+          context_management: null,
+          delta: { stop_reason: null, stop_sequence: null, stop_details: null, container: null },
+          usage: { ...usage, fallback_credit: null, iterations: [], output_tokens_details: { thinking_tokens: 0 }, server_tool_use: { web_fetch_requests: 0, web_search_requests: 0 } },
+        }
+      : {
+          type: "message_delta",
+          delta: { stop_reason: stopReason, stop_sequence: null, safeguard_results: [{ type: "dangerous_tool_use", status: { type: "available", tool_uses: {} } }] },
+          usage: { output_tokens: 0 },
+        },
+  )
+const textBlock = (text: string) => ({ type: "text", text })
 const toolUse = (id: string, command: string) => ({ type: "tool_use", id, name: "Bash", input: { command } })
-const toolResult = (id: string, content: unknown, isError: boolean) => [
-  { type: "tool_result", tool_use_id: id, content, is_error: isError },
-]
-const result = (text: string, failure?: string) => ({
-  ...envelope("result", nanoid()),
+/** A tool's result: its text, Claude Code's own record of it and how the call was let run (or why not). */
+const toolResult = (uuid: string, id: string, content: string, isError: boolean, useResult: unknown, meta: object) => ({
+  ...userMessage(uuid, [{ type: "tool_result", tool_use_id: id, content, is_error: isError }]),
+  tool_use_result: useResult,
+  tool_result_meta: [{ id, ...meta }],
+})
+const bashResult = (id: string, output: string, approved: boolean) =>
+  toolResult(nanoid(), id, output, false, { stdout: output, stderr: "", interrupted: false, isImage: false, noOutputExpected: false }, {
+    permission_decision: approved
+      ? { decision: "accept", reason_type: "hook", source: "hook" }
+      : { decision: "accept", reason_type: "classifier", source: "config" },
+  })
+const denialResult = (id: string) =>
+  toolResult(nanoid(), id, DENIAL, true, `Error: ${DENIAL}`, {
+    non_execution_kind: "automode-blocked",
+    permission_decision: { decision: "reject", reason_type: "classifier", source: "config" },
+  })
+const interruptedResult = (id: string) =>
+  toolResult(nanoid(), id, INTERRUPTED_TOOL, true, "User rejected tool use", { non_execution_kind: "user-rejected" })
+const permissionDenied = (id: string) => ({
+  type: "system",
+  subtype: "permission_denied",
+  uuid: nanoid(),
+  session_id: "mock",
+  tool_name: "Bash",
+  tool_use_id: id,
+  decision_reason_type: "classifier",
+  decision_reason: APPROVAL_REASON,
+  message: DENIAL,
+})
+/** The placeholder subagent statistics of a result. */
+const subagentStats = {
+  by_type: {},
+  completed: 0,
+  failed: 0,
+  killed: { parent: 0, system: 0, user: 0 },
+  max_depth: 0,
+  refused: { budget: 0, concurrency_limit: 0, depth_limit: 0 },
+  requested: { background: 0, foreground: 0, unset: 0 },
+  spawned: 0,
+  spawned_by_subagents: 0,
+  started_in_background: 0,
+}
+/** What any result says of its turn; placeholders. */
+const resultCommon = {
+  usage: { ...usage, cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 } },
+  modelUsage: {},
+  model_usage_since_last_result: {},
+  total_cost_usd: 0,
+  duration_ms: 0,
+  duration_api_ms: 0,
+  num_turns: 1,
+  permission_denials: [],
+  begun_message_ids: [],
+  result_index: 0,
+  fast_mode_state: "off",
+  fast_mode_disabled_reason: "sdk_opt_in_required",
+  queued_turn_count: 0,
+  safety_stops: 0,
+  subagent_stats: subagentStats,
+}
+/** What a successful result adds: the first request's figures; placeholders. */
+const firstRequest = {
+  api_error_status: null,
+  first_request_input_tokens: 0,
+  first_request_cache_read_input_tokens: 0,
+  first_content_frame_ms: 0,
+  request_sent_wall_ms: 0,
+  time_to_request_ms: 0,
+  ttft_ms: 0,
+  ttft_stream_ms: 0,
+}
+/**
+ * A turn's result, with the key set of the fake worker's: `aborted` says
+ * what the user interrupted, `userMessageId` is the input that started the turn.
+ */
+const result = (
+  text: string,
+  userMessageId: string | undefined,
+  failure?: string,
+  aborted?: "aborted_streaming" | "aborted_tools",
+) => ({
+  type: "result",
+  uuid: nanoid(),
+  session_id: "mock",
+  ...resultCommon,
+  ...namingInput(userMessageId),
   subtype: failure ? "error_during_execution" : "success",
   is_error: failure !== undefined,
-  ...(failure ? { errors: [failure], terminal_reason: "aborted_streaming" } : { result: text }),
+  stop_reason: aborted === "aborted_tools" ? "tool_use" : failure ? null : "end_turn",
+  ...(failure ? { errors: [failure] } : { ...firstRequest, result: text, terminal_reason: "completed" }),
+  ...(aborted ? { terminal_reason: aborted } : {}),
 })
+const abortFailure = (reason: "aborted_streaming" | "aborted_tools") =>
+  `[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=${reason === "aborted_tools" ? "tool_use" : "null"}`
 
 /** Appends events to a session as the control plane records them. */
 export class Recorder {
@@ -119,6 +257,9 @@ export class Recorder {
   /** `tsUnixMs`: the event's time when the change has one of its own (a workspace's `updatedAt`). */
   durable(kind: SessionEventKind, payload: object | null, tsUnixMs = this.now()) {
     const s = this.session
+    // Claude Code stamps the user and assistant messages it records.
+    const type = (payload as { type?: unknown } | null)?.type
+    if (type === "user" || type === "assistant") payload = { ...payload, timestamp: new Date(tsUnixMs).toISOString() }
     const event: RawSessionEvent = {
       seq: (s.events.at(-1)?.seq ?? 0) + 1,
       tsUnixMs,
@@ -150,8 +291,15 @@ export class Recorder {
     this.durable("turn_started", { turn_no: String(this.session.turns), origin: "input" })
   }
 
-  text(text: string, messageId = `msg_${nanoid()}`, aborted = false) {
-    this.durable("assistant", assistantMessage(messageId, textBlock(text), aborted))
+  text(text: string, messageId = `msg_${nanoid()}`, aborted = false, userMessageId?: string) {
+    this.durable("assistant", assistantMessage(messageId, textBlock(text), aborted, userMessageId))
+  }
+
+  /** A whole recorded response: a text block, or a Bash call. */
+  response(block: { text: string } | { toolId: string; command: string }, userMessageId?: string) {
+    const messageId = `msg_${nanoid()}`
+    if ("text" in block) this.text(block.text, messageId, false, userMessageId)
+    else this.durable("assistant", assistantMessage(messageId, toolUse(block.toolId, block.command), false, userMessageId))
   }
 }
 
@@ -188,8 +336,8 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
     const inputId = r.input(text)
     r.turnStarted()
     r.durable("user", userMessage(inputId, text))
-    r.text(reply)
-    r.durable("result", result(reply))
+    r.response({ text: reply }, inputId)
+    r.durable("result", result(reply, inputId))
     session.state = "idle"
     session.lastTurnOutcome = "completed"
   }
@@ -204,14 +352,14 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
       r.durable("user", userMessage(inputId, seed.followUp ?? "Go on"))
       const toolId = `toolu_${nanoid()}`
       const command = seed.command ?? "git push"
-      r.durable("assistant", assistantMessage(`msg_${nanoid()}`, toolUse(toolId, command)))
-      r.durable("permission_denied", { type: "system", subtype: "permission_denied", tool_name: "Bash", tool_use_id: toolId, message: "Denied." })
-      r.durable("user", userMessage(nanoid(), toolResult(toolId, "Denied.", true)))
+      r.response({ toolId, command }, inputId)
+      r.durable("permission_denied", permissionDenied(toolId))
       const approvalId = nanoid()
       session.approvals.push({ approvalId, toolUseId: toolId, command, state: "pending", createdAtUnixMs: clock })
-      r.durable("approval_pending", { approval_id: approvalId, tool: "bash", device: seed.device, tool_use_id: toolId, display: command, reason: APPROVAL_REASON })
+      r.durable("approval_pending", { approval_id: approvalId, tool: "Bash", device: seed.device, tool_use_id: toolId, display: command, reason: APPROVAL_REASON })
+      r.durable("user", denialResult(toolId))
       r.text("I need your approval to push the branch.")
-      r.durable("result", result(""))
+      r.durable("result", result("I need your approval to push the branch.", inputId))
       session.state = "idle"
       break
     }
@@ -229,7 +377,7 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
       r.turnStarted()
       r.durable("user", userMessage(inputId, seed.followUp ?? "Go on"))
       r.durable("error", { message: "transcript mirror failure" })
-      r.durable("result", result("", "transcript mirror failure"))
+      r.durable("result", result("", inputId, "transcript mirror failure"))
       session.state = "broken"
       session.lastTurnOutcome = "error"
       break
@@ -249,7 +397,7 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
       const inputId = r.input(text)
       r.turnStarted()
       r.durable("user", userMessage(inputId, text))
-      r.text("Starting the suite; it takes a few minutes.")
+      r.response({ text: "Starting the suite; it takes a few minutes." }, inputId)
       break
     }
   }
@@ -325,10 +473,14 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
 
   interface Turn {
     timers: ReturnType<typeof setTimeout>[]
-    /** Text streamed so far in the current block, with its message id. */
-    streaming: { messageId: string; text: string } | null
+    /** Text streamed so far in the current block, with its message id and the input its message names. */
+    streaming: { messageId: string; text: string; startedBy?: string } | null
     /** A Bash call waiting for its result. */
     tool: string | null
+    /** The input that started the turn, until its first response names it. */
+    startedBy?: string
+    /** The input that started the turn. */
+    inputId?: string
   }
 
   const recorder = (s: MockSession) =>
@@ -337,8 +489,8 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
     })
 
   /** Runs the steps one after another, `stepMs` apart (a step may ask for longer). */
-  function schedule(s: MockSession, steps: (() => number | void)[]) {
-    const turn: Turn = { timers: [], streaming: null, tool: null }
+  function schedule(s: MockSession, steps: (() => number | void)[], startedBy?: string) {
+    const turn: Turn = { timers: [], streaming: null, tool: null, startedBy, inputId: startedBy }
     turns.set(s.sessionId, turn)
     let i = 0
     const next = (wait: number) => {
@@ -359,45 +511,74 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
     return turn
   }
 
-  /** Streamed text: live chunks, then the durable block. Returns the step and its duration. */
+  /** Starts a response's stream; the turn's first one names the input that started it. */
+  function begin(r: Recorder, turn: Turn, messageId: string) {
+    const startedBy = turn.startedBy
+    turn.startedBy = undefined
+    r.ephemeral("assistant", messageStart(messageId, startedBy))
+    return startedBy
+  }
+
+  /**
+   * Streamed text: live chunks, then the durable block (before the block's
+   * content_block_stop, as Claude Code publishes it).
+   */
   function streamSteps(s: MockSession, turn: () => Turn | undefined, text: string): (() => number | void)[] {
     const r = recorder(s)
     const messageId = `msg_${nanoid()}`
     const words = text.split(/(?<=\s)/)
     const chunks: string[] = []
     for (let i = 0; i < words.length; i += 3) chunks.push(words.slice(i, i + 3).join(""))
+    let startedBy: string | undefined
     return [
       () => {
-        r.ephemeral("assistant", streamEvent({ type: "message_start", message: { id: messageId, content: [] } }))
-        r.ephemeral("assistant", streamEvent({ type: "content_block_start", index: 0, content_block: textBlock("") }))
-        turn()!.streaming = { messageId, text: "" }
+        startedBy = begin(r, turn()!, messageId)
+        r.ephemeral("assistant", streamEvent(messageId, { type: "content_block_start", index: 0, content_block: textBlock("") }))
+        turn()!.streaming = { messageId, text: "", startedBy }
         return host.timing.chunkMs
       },
       ...chunks.map((chunk) => () => {
-        r.ephemeral("assistant", streamEvent({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: chunk } }))
+        r.ephemeral("assistant", streamEvent(messageId, { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: chunk } }))
         turn()!.streaming!.text += chunk
         return host.timing.chunkMs
       }),
       () => {
-        r.ephemeral("assistant", streamEvent({ type: "content_block_stop", index: 0 }))
-        r.ephemeral("assistant", streamEvent({ type: "message_stop" }))
-        r.text(text, messageId)
+        r.text(text, messageId, false, startedBy)
+        r.ephemeral("assistant", streamEvent(messageId, { type: "content_block_stop", index: 0 }))
+        r.ephemeral("assistant", messageDelta(messageId, "end_turn"))
+        r.ephemeral("assistant", streamEvent(messageId, { type: "message_stop" }))
         turn()!.streaming = null
       },
     ]
   }
 
-  function toolSteps(s: MockSession, turn: () => Turn | undefined, command: string, output: string) {
+  /** A streamed Bash tool use, whose durable block comes before its content_block_stop. */
+  function streamToolUse(r: Recorder, turn: Turn, toolId: string, command: string) {
+    const messageId = `msg_${nanoid()}`
+    const startedBy = begin(r, turn, messageId)
+    const input = JSON.stringify({ command })
+    const half = Math.floor(input.length / 2)
+    r.ephemeral("assistant", streamEvent(messageId, { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: toolId, name: "Bash", input: {} } }))
+    for (const partial of [input.slice(0, half), input.slice(half)]) {
+      r.ephemeral("assistant", streamEvent(messageId, { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: partial } }))
+    }
+    r.durable("assistant", assistantMessage(messageId, toolUse(toolId, command), false, startedBy))
+    r.ephemeral("assistant", streamEvent(messageId, { type: "content_block_stop", index: 0 }))
+    r.ephemeral("assistant", messageDelta(messageId, "tool_use"))
+    r.ephemeral("assistant", streamEvent(messageId, { type: "message_stop" }))
+  }
+
+  function toolSteps(s: MockSession, turn: () => Turn | undefined, command: string, output: string, approved: boolean) {
     const r = recorder(s)
     const toolId = `toolu_${nanoid()}`
     return [
       () => {
-        r.durable("assistant", assistantMessage(`msg_${nanoid()}`, toolUse(toolId, command)))
+        streamToolUse(r, turn()!, toolId, command)
         turn()!.tool = toolId
         return host.timing.stepMs * 2
       },
       () => {
-        r.durable("user", userMessage(nanoid(), toolResult(toolId, [{ type: "text", text: output }], false)))
+        r.durable("user", bashResult(toolId, output, approved))
         turn()!.tool = null
       },
     ]
@@ -420,7 +601,7 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
     let turn: Turn | undefined
     const current = () => turn
     const finish = (text: string) => () => {
-      r.durable("result", result(text))
+      r.durable("result", result(text, input.inputId))
       s.state = "idle"
       s.lastTurnOutcome = "completed"
     }
@@ -433,7 +614,7 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       const command = input.text
       steps = [
         start,
-        ...toolSteps(s, current, command, "branch 'fix' set up to track 'origin/fix'."),
+        ...toolSteps(s, current, command, "branch 'fix' set up to track 'origin/fix'.", true),
         ...streamSteps(s, current, "Pushed. The branch is on the remote now."),
         finish("Pushed."),
       ]
@@ -443,14 +624,15 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       steps = [
         start,
         () => {
-          r.durable("assistant", assistantMessage(`msg_${nanoid()}`, toolUse(toolId, command)))
+          streamToolUse(r, current()!, toolId, command)
         },
         () => {
-          r.durable("permission_denied", { type: "system", subtype: "permission_denied", tool_name: "Bash", tool_use_id: toolId, message: "Denied." })
-          r.durable("user", userMessage(nanoid(), toolResult(toolId, "Denied.", true)))
+          // The denial, the approval card, then the tool result that tells the model.
+          r.durable("permission_denied", permissionDenied(toolId))
           const approvalId = nanoid()
           s.approvals.push({ approvalId, toolUseId: toolId, command, state: "pending", createdAtUnixMs: host.now() })
-          r.durable("approval_pending", { approval_id: approvalId, tool: "bash", device: s.device, tool_use_id: toolId, display: command, reason: APPROVAL_REASON })
+          r.durable("approval_pending", { approval_id: approvalId, tool: "Bash", device: s.device, tool_use_id: toolId, display: command, reason: APPROVAL_REASON })
+          r.durable("user", denialResult(toolId))
         },
         ...streamSteps(s, current, "I need your approval to push this branch."),
         finish("I need your approval to push this branch."),
@@ -459,7 +641,7 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       steps = [
         start,
         ...streamSteps(s, current, "Let me look at the working tree first."),
-        ...toolSteps(s, current, "git status --short", " M web/src/App.tsx\n?? notes.md"),
+        ...toolSteps(s, current, "git status --short", " M web/src/App.tsx\n?? notes.md", false),
         ...streamSteps(
           s,
           current,
@@ -468,7 +650,7 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
         finish("Done."),
       ]
     }
-    turn = schedule(s, steps)
+    turn = schedule(s, steps, input.inputId)
   }
 
   /** Ends the running turn early: what streamed so far stays, unsaved; a running tool fails. */
@@ -479,10 +661,21 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
     for (const timer of turn.timers) clearTimeout(timer)
     const r = recorder(s)
     if (outcome === "stopped") {
-      if (turn.streaming && turn.streaming.text !== "") r.text(turn.streaming.text, turn.streaming.messageId, true)
-      if (turn.tool) r.durable("user", userMessage(nanoid(), toolResult(turn.tool, INTERRUPTED_TOOL, true)))
-      r.durable("user", userMessage(nanoid(), [textBlock("[Request interrupted by user]")], "user_interrupt"))
-      r.durable("result", result("", "aborted"))
+      const streaming = turn.streaming
+      if (streaming && streaming.text !== "") r.text(streaming.text, streaming.messageId, true, streaming.startedBy)
+      if (turn.tool) r.durable("user", interruptedResult(turn.tool))
+      const note = turn.tool ? "[Request interrupted by user for tool use]" : "[Request interrupted by user]"
+      r.durable("user", userMessage(nanoid(), [textBlock(note)], "user_interrupt"))
+      if (streaming) {
+        // The aborted response's stream ends after the note.
+        r.ephemeral("assistant", streamEvent(streaming.messageId, { type: "content_block_stop", index: 0 }))
+        r.ephemeral("assistant", messageDelta(streaming.messageId, null))
+        r.ephemeral("assistant", streamEvent(streaming.messageId, { type: "message_stop" }, {
+          abandoned_blocks: { api_message_id: streaming.messageId, from_block_index: 1 },
+        }))
+      }
+      const reason = turn.tool ? "aborted_tools" : "aborted_streaming"
+      r.durable("result", result("", turn.inputId, abortFailure(reason), reason))
       r.durable("turn_stopped", { turn_no: String(s.turns), outcome: "stopped" })
     } else {
       r.durable("turn_interrupted", { turn_no: String(s.turns), outcome: "interrupted" })
@@ -594,7 +787,7 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
             approvalId: a.approvalId,
             sessionId,
             toolUseId: a.toolUseId,
-            tool: "bash",
+            tool: "Bash",
             device: s.device,
             display: a.command,
             reason: APPROVAL_REASON,

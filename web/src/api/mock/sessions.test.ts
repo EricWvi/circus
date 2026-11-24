@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { ApiError } from "@/api/errors"
 import type { CircusClient, RawSessionEvent } from "@/api/types"
 import { applyEvents, emptyTranscript } from "@/lib/session-events/transcript"
+import { fakeWorkerEvents, type Scenario } from "@/test/fake-worker-events"
 
 import { createMockBackend } from "./backend"
 import { addWorkerDemo, SEED_OWNER_ID, seedState, type MockState } from "./state"
@@ -38,6 +39,11 @@ const has = (kind: RawSessionEvent["kind"], n = 1) => (events: RawSessionEvent[]
   events.filter((e) => e.kind === kind).length >= n
 
 const view = (events: RawSessionEvent[]) => applyEvents(emptyTranscript, events)
+
+/** The keys of the Go fake worker's last RESULT in a scenario. */
+const fakeResultKeys = (scenario: Scenario) =>
+  Object.keys(JSON.parse(fakeWorkerEvents(scenario).findLast((e) => e.kind === "result")!.payloadJson)).sort()
+const keysOf = (e: RawSessionEvent) => Object.keys(JSON.parse(e.payloadJson)).sort()
 
 describe("mock sessions", () => {
   it("lists the demo sessions with the state the UI shows", async () => {
@@ -87,7 +93,7 @@ describe("mock sessions", () => {
     await client.sessions.sendMessage({ sessionId: "web-vite", clientMsgId: "c", text: "please approve this" })
     const pending = await watchUntil(client, "web-vite", has("approval_pending"))
     const [approval] = await client.sessions.listApprovals({ sessionId: "web-vite" })
-    expect(approval).toMatchObject({ tool: "bash", display: "git push -u origin HEAD" })
+    expect(approval).toMatchObject({ tool: "Bash", display: "git push -u origin HEAD" })
     expect(view(pending).events.at(-1)).toMatchObject({ status: "awaiting_approval" })
     await watchUntil(client, "web-vite", has("result", 2))
     expect((await client.sessions.getSession({ sessionId: "web-vite" })).state).toBe("awaiting_approval")
@@ -100,13 +106,55 @@ describe("mock sessions", () => {
     expect((await client.sessions.getSession({ sessionId: "web-vite" })).state).toBe("idle")
   })
 
+  it("publishes the real worker's event order and shapes", async () => {
+    const { client } = mock()
+    const sent = await client.sessions.sendMessage({ sessionId: "web-vite", clientMsgId: "c", text: "please approve this" })
+    const all = await watchUntil(client, "web-vite", has("result"), sent.eventSeq - 1)
+    const events = all.filter((e) => e.kind !== "unspecified")
+    const label = (e: RawSessionEvent) => {
+      const p = JSON.parse(e.payloadJson || "null")
+      return e.ephemeral ? `${e.kind}:${p.event.type}` : e.kind
+    }
+    // The tool use streams, its durable block before its content_block_stop;
+    // then the denial, the approval card and the tool result telling the model.
+    const labels = events.map(label)
+    const tool = labels.indexOf("assistant")
+    expect(labels.slice(tool - 3, tool + 7)).toEqual([
+      "assistant:content_block_start",
+      "assistant:content_block_delta",
+      "assistant:content_block_delta",
+      "assistant",
+      "assistant:content_block_stop",
+      "assistant:message_delta",
+      "assistant:message_stop",
+      "permission_denied",
+      "approval_pending",
+      "user",
+    ])
+    const payload = (e: RawSessionEvent) => JSON.parse(e.payloadJson)
+    expect(payload(events[tool + 5])).toMatchObject({ tool: "Bash" })
+    expect(payload(events[tool + 6])).toMatchObject({
+      message: { content: [{ type: "tool_result", is_error: true, content: expect.any(String) }] },
+      tool_use_result: expect.stringMatching(/^Error: /),
+      tool_result_meta: [{ non_execution_kind: "automode-blocked", permission_decision: { decision: "reject" } }],
+      timestamp: expect.any(String),
+    })
+    const text = events.findLast((e) => e.kind === "assistant" && !e.ephemeral)!
+    expect(payload(text).message.content).toEqual([{ type: "text", text: "I need your approval to push this branch." }])
+    expect(label(events[events.indexOf(text) + 1])).toBe("assistant:content_block_stop")
+    expect(payload(events.at(-1)!)).toMatchObject({ subtype: "success", terminal_reason: "completed", stop_reason: "end_turn" })
+    expect(keysOf(events.at(-1)!)).toEqual(fakeResultKeys("text"))
+  })
+
   it("stops a turn, keeping what streamed as unsaved", async () => {
     const { client } = mock()
     await client.sessions.sendMessage({ sessionId: "web-vite", clientMsgId: "c", text: "hello" })
     await watchUntil(client, "web-vite", (events) => events.some((e) => e.payloadJson.includes("text_delta")))
     await client.sessions.interrupt({ sessionId: "web-vite" })
-    const t = view(await watchUntil(client, "web-vite", has("turn_stopped")))
+    const events = await watchUntil(client, "web-vite", has("turn_stopped"))
+    const t = view(events)
     expect(t.events.at(-1)?.kind).toBe("turn_stopped")
+    expect(keysOf(events.findLast((e) => e.kind === "result")!)).toEqual(fakeResultKeys("interrupt"))
     expect(t.turnOpen).toBe(false)
     expect((await client.sessions.getSession({ sessionId: "web-vite" })).state).toBe("idle")
   })

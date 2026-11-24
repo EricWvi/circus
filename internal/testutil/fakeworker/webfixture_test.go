@@ -50,8 +50,8 @@ const webFixture = "../../../web/src/lib/session-events/fake-worker.fixture.json
 // UI's fixture: a change of the event shapes fails here until the fixture
 // is regenerated with -update (and the Web tests run against it).
 //
-// Ids, timestamps, durations and usage are normalized away; keepalives are
-// left out. Each scenario runs in a session of its own.
+// Ids are numbered; timestamps, durations and usage keep only their JSON
+// type; keepalives are left out. Each scenario runs in a session of its own.
 func TestWebEventFixture(t *testing.T) {
 	if testing.Short() {
 		t.Skip("records live sessions for about a minute")
@@ -585,14 +585,9 @@ func (s *liveSession) await(done func([]*pb.SessionEvent) bool) {
 
 var uuidPattern = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
-// Fields whose values change from run to run, or are too bulky to be worth keeping.
-var unstableFields = map[string]bool{
-	"timestamp": true, "duration_ms": true, "duration_api_ms": true, "total_cost_usd": true,
-	"usage": true, "modelUsage": true, "diagnostics": true, "context_management": true, "container": true,
-}
-
-// normalize drops keepalives, numbers ids by first use, drops unstable
-// fields and replaces a nonzero worker disconnect time with "1".
+// normalize drops keepalives, numbers ids by first use, replaces the values
+// of unstable fields by type markers (fakeworker.MaskUnstable) and a
+// nonzero worker disconnect time by "1".
 func normalize(t *testing.T, events []*pb.SessionEvent) []fixtureEvent {
 	ids := map[string]string{}
 	out := []fixtureEvent{}
@@ -616,29 +611,11 @@ func normalize(t *testing.T, events []*pb.SessionEvent) []fixtureEvent {
 			if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 				t.Fatalf("payload of %v: %v", e, err)
 			}
-			payload = stable(payload)
+			payload = fakeworker.MaskUnstable(payload)
 		}
 		out = append(out, fixtureEvent{
 			Seq: e.GetSeq(), Kind: e.GetKind().String(), Ephemeral: e.GetEphemeral(), Truncated: e.GetTruncated(), Payload: payload,
 		})
 	}
 	return out
-}
-
-func stable(v any) any {
-	switch v := v.(type) {
-	case map[string]any:
-		for k, child := range v {
-			if unstableFields[k] {
-				delete(v, k)
-				continue
-			}
-			v[k] = stable(child)
-		}
-	case []any:
-		for i, child := range v {
-			v[i] = stable(child)
-		}
-	}
-	return v
 }

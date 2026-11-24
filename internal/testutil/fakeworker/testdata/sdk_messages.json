@@ -17,6 +17,114 @@
     "kind": "KIND_ASSISTANT",
     "ephemeral": true,
     "payload": {
+      "api_message_id": "msg_fake",
+      "event": {
+        "message": {
+          "content": [],
+          "id": "msg_fake",
+          "model": "claude-sonnet-4-6",
+          "role": "assistant",
+          "stop_reason": null,
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "input_tokens": 25,
+            "output_tokens": 1
+          }
+        },
+        "type": "message_start"
+      },
+      "owed_rows": [],
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "thinking_display": "updates",
+      "ttft_ms": 0,
+      "type": "stream_event",
+      "user_message_uuid": "018f0000-0000-7000-8000-000000000002",
+      "user_message_uuids": [
+        "018f0000-0000-7000-8000-000000000002"
+      ],
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "api_message_id": "msg_fake",
+      "event": {
+        "message": {
+          "content": [],
+          "id": "msg_fake",
+          "model": "claude-sonnet-4-6",
+          "role": "assistant",
+          "stop_reason": null,
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "input_tokens": 25,
+            "output_tokens": 1
+          }
+        },
+        "type": "message_start"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "thinking_display": "updates",
+      "ttft_ms": 0,
+      "type": "stream_event",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "api_message_id": "msg_fake",
+      "event": {
+        "content_block": {
+          "signature": "",
+          "thinking": "",
+          "type": "thinking"
+        },
+        "index": 0,
+        "type": "content_block_start"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "thinking_display": "updates",
+      "type": "stream_event",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "api_message_id": "msg_fake",
+      "event": {
+        "content_block": {
+          "text": "",
+          "type": "text"
+        },
+        "index": 0,
+        "type": "content_block_start"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "type": "stream_event",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "api_message_id": "msg_fake",
       "event": {
         "delta": {
           "text": "You said:",
@@ -33,51 +141,136 @@
   },
   {
     "kind": "KIND_ASSISTANT",
-    "ephemeral": false,
+    "ephemeral": true,
     "payload": {
-      "message": {
-        "container": null,
-        "content": [
-          {
-            "citations": null,
-            "text": "You said:\n\n\u003e hello",
-            "type": "text"
-          }
-        ],
-        "context_management": null,
-        "diagnostics": null,
-        "id": "msg_fake",
-        "model": "claude-sonnet-4-6",
-        "role": "assistant",
-        "stop_details": null,
-        "stop_reason": null,
-        "stop_sequence": null,
-        "type": "message",
+      "api_message_id": "msg_fake",
+      "event": {
+        "content_block": {
+          "id": "toolu_fake",
+          "input": {},
+          "name": "Bash",
+          "type": "tool_use"
+        },
+        "index": 0,
+        "type": "content_block_start"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "type": "stream_event",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "api_message_id": "msg_fake",
+      "event": {
+        "delta": {
+          "partial_json": "{\"command\":\"echo hi\"}",
+          "type": "input_json_delta"
+        },
+        "index": 0,
+        "type": "content_block_delta"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "type": "stream_event",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "api_message_id": "msg_fake",
+      "event": {
+        "index": 0,
+        "type": "content_block_stop"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "type": "stream_event",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "api_message_id": "msg_fake",
+      "event": {
+        "delta": {
+          "safeguard_results": [
+            {
+              "status": {
+                "tool_uses": {},
+                "type": "available"
+              },
+              "type": "dangerous_tool_use"
+            }
+          ],
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "type": "message_delta",
         "usage": {
-          "cache_creation": {
-            "ephemeral_1h_input_tokens": 0,
-            "ephemeral_5m_input_tokens": 0
-          },
+          "output_tokens": 3
+        }
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "type": "stream_event",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "api_message_id": "msg_fake",
+      "event": {
+        "context_management": null,
+        "delta": {
+          "container": null,
+          "stop_details": null,
+          "stop_reason": null,
+          "stop_sequence": null
+        },
+        "type": "message_delta",
+        "usage": {
           "cache_creation_input_tokens": 0,
           "cache_read_input_tokens": 0,
-          "inference_geo": "",
-          "input_tokens": 0,
+          "fallback_credit": null,
+          "input_tokens": 25,
           "iterations": [],
-          "output_tokens": 0,
+          "output_tokens": 3,
           "output_tokens_details": {
             "thinking_tokens": 0
           },
           "server_tool_use": {
             "web_fetch_requests": 0,
             "web_search_requests": 0
-          },
-          "service_tier": "standard",
-          "speed": "standard"
+          }
         }
       },
       "parent_tool_use_id": null,
       "session_id": "018f0000-0000-7000-8000-000000000001",
-      "type": "assistant",
+      "type": "stream_event",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "api_message_id": "msg_fake",
+      "event": {
+        "type": "message_stop"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "type": "stream_event",
       "uuid": "018f0000-0000-7000-8000-000000000003"
     }
   },
@@ -86,7 +279,41 @@
     "ephemeral": false,
     "payload": {
       "message": {
-        "container": null,
+        "content": [
+          {
+            "text": "You said:\n\n\u003e hello",
+            "type": "text"
+          }
+        ],
+        "context_management": null,
+        "id": "msg_fake",
+        "model": "claude-sonnet-4-6",
+        "role": "assistant",
+        "stop_reason": null,
+        "stop_sequence": null,
+        "type": "message",
+        "usage": {
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "type": "assistant",
+      "user_message_uuid": "018f0000-0000-7000-8000-000000000002",
+      "user_message_uuids": [
+        "018f0000-0000-7000-8000-000000000002"
+      ],
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "payload": {
+      "message": {
         "content": [
           {
             "signature": "fake-signature",
@@ -95,38 +322,23 @@
           }
         ],
         "context_management": null,
-        "diagnostics": null,
         "id": "msg_fake",
         "model": "claude-sonnet-4-6",
         "role": "assistant",
-        "stop_details": null,
         "stop_reason": null,
         "stop_sequence": null,
         "type": "message",
         "usage": {
-          "cache_creation": {
-            "ephemeral_1h_input_tokens": 0,
-            "ephemeral_5m_input_tokens": 0
-          },
           "cache_creation_input_tokens": 0,
           "cache_read_input_tokens": 0,
-          "inference_geo": "",
           "input_tokens": 0,
-          "iterations": [],
-          "output_tokens": 0,
-          "output_tokens_details": {
-            "thinking_tokens": 0
-          },
-          "server_tool_use": {
-            "web_fetch_requests": 0,
-            "web_search_requests": 0
-          },
-          "service_tier": "standard",
-          "speed": "standard"
+          "output_tokens": 0
         }
       },
       "parent_tool_use_id": null,
       "session_id": "018f0000-0000-7000-8000-000000000001",
+      "thinking_display": "updates",
+      "thinking_duration_ms": 0,
       "type": "assistant",
       "uuid": "018f0000-0000-7000-8000-000000000003"
     }
@@ -136,7 +348,6 @@
     "ephemeral": false,
     "payload": {
       "message": {
-        "container": null,
         "content": [
           {
             "id": "toolu_fake",
@@ -148,34 +359,17 @@
           }
         ],
         "context_management": null,
-        "diagnostics": null,
         "id": "msg_fake",
         "model": "claude-sonnet-4-6",
         "role": "assistant",
-        "stop_details": null,
         "stop_reason": null,
         "stop_sequence": null,
         "type": "message",
         "usage": {
-          "cache_creation": {
-            "ephemeral_1h_input_tokens": 0,
-            "ephemeral_5m_input_tokens": 0
-          },
           "cache_creation_input_tokens": 0,
           "cache_read_input_tokens": 0,
-          "inference_geo": "",
           "input_tokens": 0,
-          "iterations": [],
-          "output_tokens": 0,
-          "output_tokens_details": {
-            "thinking_tokens": 0
-          },
-          "server_tool_use": {
-            "web_fetch_requests": 0,
-            "web_search_requests": 0
-          },
-          "service_tier": "standard",
-          "speed": "standard"
+          "output_tokens": 0
         }
       },
       "parent_tool_use_id": null,
@@ -191,12 +385,7 @@
       "message": {
         "content": [
           {
-            "content": [
-              {
-                "text": "hi\n",
-                "type": "text"
-              }
-            ],
+            "content": "hi",
             "is_error": false,
             "tool_use_id": "toolu_fake",
             "type": "tool_result"
@@ -206,6 +395,162 @@
       },
       "parent_tool_use_id": null,
       "session_id": "018f0000-0000-7000-8000-000000000001",
+      "tool_result_meta": [
+        {
+          "id": "toolu_fake",
+          "permission_decision": {
+            "decision": "accept",
+            "reason_type": "classifier",
+            "source": "config"
+          }
+        }
+      ],
+      "tool_use_result": {
+        "interrupted": false,
+        "isImage": false,
+        "noOutputExpected": false,
+        "stderr": "",
+        "stdout": "hi"
+      },
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "message": {
+        "content": [
+          {
+            "content": "hi",
+            "is_error": false,
+            "tool_use_id": "toolu_fake",
+            "type": "tool_result"
+          }
+        ],
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "tool_result_meta": [
+        {
+          "id": "toolu_fake",
+          "permission_decision": {
+            "decision": "accept",
+            "reason_type": "hook",
+            "source": "hook"
+          }
+        }
+      ],
+      "tool_use_result": {
+        "interrupted": false,
+        "isImage": false,
+        "noOutputExpected": false,
+        "stderr": "",
+        "stdout": "hi"
+      },
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "message": {
+        "content": [
+          {
+            "content": "a\nb\n",
+            "is_error": false,
+            "tool_use_id": "toolu_fake",
+            "type": "tool_result"
+          }
+        ],
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "tool_result_meta": [
+        {
+          "id": "toolu_fake",
+          "permission_decision": {
+            "decision": "accept",
+            "reason_type": "classifier",
+            "source": "config"
+          }
+        }
+      ],
+      "tool_use_result": {
+        "file": {
+          "content": "a\nb\n",
+          "filePath": "/w/notes.txt",
+          "numLines": 2,
+          "startLine": 1,
+          "totalLines": 2
+        },
+        "type": "text"
+      },
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "message": {
+        "content": [
+          {
+            "content": "exit 1",
+            "is_error": true,
+            "tool_use_id": "toolu_fake",
+            "type": "tool_result"
+          }
+        ],
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "tool_result_meta": [
+        {
+          "id": "toolu_fake",
+          "permission_decision": {
+            "decision": "accept",
+            "reason_type": "classifier",
+            "source": "config"
+          }
+        }
+      ],
+      "tool_use_result": "Error: exit 1",
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "message": {
+        "content": [
+          {
+            "content": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed. Correction to the text above: this call was stopped while running, not refused before it ran. It may have run in part or in full, and its changes may have been written. No permission prompt was involved. Work it started elsewhere (a remote command, a background process) may still be running, so check before starting the same work again. The instruction to stop and wait still stands.",
+            "is_error": true,
+            "tool_use_id": "toolu_fake",
+            "type": "tool_result"
+          }
+        ],
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "tool_result_meta": [
+        {
+          "id": "toolu_fake",
+          "non_execution_kind": "user-rejected"
+        }
+      ],
+      "tool_use_result": "User rejected tool use",
       "type": "user",
       "uuid": "018f0000-0000-7000-8000-000000000003"
     }
@@ -214,17 +559,57 @@
     "kind": "KIND_RESULT",
     "ephemeral": false,
     "payload": {
+      "api_error_status": null,
+      "begun_message_ids": [],
       "duration_api_ms": 0,
       "duration_ms": 20,
+      "fast_mode_disabled_reason": "sdk_opt_in_required",
+      "fast_mode_state": "off",
+      "first_content_frame_ms": 0,
+      "first_request_cache_read_input_tokens": 0,
+      "first_request_input_tokens": 0,
       "is_error": false,
       "modelUsage": {},
+      "model_usage_since_last_result": {},
       "num_turns": 1,
       "permission_denials": [],
+      "queued_turn_count": 0,
+      "request_sent_wall_ms": 0,
       "result": "Bash finished.",
+      "result_index": 0,
+      "safety_stops": 0,
       "session_id": "018f0000-0000-7000-8000-000000000001",
       "stop_reason": "end_turn",
+      "subagent_stats": {
+        "by_type": {},
+        "completed": 0,
+        "failed": 0,
+        "killed": {
+          "parent": 0,
+          "system": 0,
+          "user": 0
+        },
+        "max_depth": 0,
+        "refused": {
+          "budget": 0,
+          "concurrency_limit": 0,
+          "depth_limit": 0
+        },
+        "requested": {
+          "background": 0,
+          "foreground": 0,
+          "unset": 0
+        },
+        "spawned": 0,
+        "spawned_by_subagents": 0,
+        "started_in_background": 0
+      },
       "subtype": "success",
+      "terminal_reason": "completed",
+      "time_to_request_ms": 0,
       "total_cost_usd": 0,
+      "ttft_ms": 0,
+      "ttft_stream_ms": 0,
       "type": "result",
       "usage": {
         "cache_creation": {
@@ -233,6 +618,7 @@
         },
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": 0,
+        "fallback_credit": null,
         "inference_geo": "",
         "input_tokens": 0,
         "iterations": [],
@@ -254,17 +640,48 @@
     "kind": "KIND_RESULT",
     "ephemeral": false,
     "payload": {
+      "begun_message_ids": [],
       "duration_api_ms": 0,
       "duration_ms": 20,
       "errors": [
         "scripted worker error"
       ],
+      "fast_mode_disabled_reason": "sdk_opt_in_required",
+      "fast_mode_state": "off",
       "is_error": true,
       "modelUsage": {},
+      "model_usage_since_last_result": {},
       "num_turns": 1,
       "permission_denials": [],
+      "queued_turn_count": 0,
+      "result_index": 0,
+      "safety_stops": 0,
       "session_id": "018f0000-0000-7000-8000-000000000001",
       "stop_reason": null,
+      "subagent_stats": {
+        "by_type": {},
+        "completed": 0,
+        "failed": 0,
+        "killed": {
+          "parent": 0,
+          "system": 0,
+          "user": 0
+        },
+        "max_depth": 0,
+        "refused": {
+          "budget": 0,
+          "concurrency_limit": 0,
+          "depth_limit": 0
+        },
+        "requested": {
+          "background": 0,
+          "foreground": 0,
+          "unset": 0
+        },
+        "spawned": 0,
+        "spawned_by_subagents": 0,
+        "started_in_background": 0
+      },
       "subtype": "error_during_execution",
       "total_cost_usd": 0,
       "type": "result",
@@ -275,6 +692,7 @@
         },
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": 0,
+        "fallback_credit": null,
         "inference_geo": "",
         "input_tokens": 0,
         "iterations": [],
@@ -298,48 +716,47 @@
     "payload": {
       "aborted": true,
       "message": {
-        "container": null,
         "content": [
           {
-            "citations": null,
             "text": "You said:",
             "type": "text"
           }
         ],
         "context_management": null,
-        "diagnostics": null,
         "id": "msg_aborted",
         "model": "claude-sonnet-4-6",
         "role": "assistant",
-        "stop_details": null,
         "stop_reason": null,
         "stop_sequence": null,
         "type": "message",
         "usage": {
-          "cache_creation": {
-            "ephemeral_1h_input_tokens": 0,
-            "ephemeral_5m_input_tokens": 0
-          },
           "cache_creation_input_tokens": 0,
           "cache_read_input_tokens": 0,
-          "inference_geo": "",
           "input_tokens": 0,
-          "iterations": [],
-          "output_tokens": 0,
-          "output_tokens_details": {
-            "thinking_tokens": 0
-          },
-          "server_tool_use": {
-            "web_fetch_requests": 0,
-            "web_search_requests": 0
-          },
-          "service_tier": "standard",
-          "speed": "standard"
+          "output_tokens": 0
         }
       },
       "parent_tool_use_id": null,
       "session_id": "018f0000-0000-7000-8000-000000000001",
       "type": "assistant",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "payload": {
+      "abandoned_blocks": {
+        "api_message_id": "msg_aborted",
+        "from_block_index": 1
+      },
+      "api_message_id": "msg_aborted",
+      "event": {
+        "type": "message_stop"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "type": "stream_event",
       "uuid": "018f0000-0000-7000-8000-000000000003"
     }
   },
@@ -365,20 +782,72 @@
     }
   },
   {
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "circus_note": "user_interrupt",
+      "isSynthetic": true,
+      "message": {
+        "content": [
+          {
+            "text": "[Request interrupted by user for tool use]",
+            "type": "text"
+          }
+        ],
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
     "kind": "KIND_RESULT",
     "ephemeral": false,
     "payload": {
+      "begun_message_ids": [],
       "duration_api_ms": 0,
       "duration_ms": 20,
       "errors": [
         "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"
       ],
+      "fast_mode_disabled_reason": "sdk_opt_in_required",
+      "fast_mode_state": "off",
       "is_error": true,
       "modelUsage": {},
+      "model_usage_since_last_result": {},
       "num_turns": 1,
       "permission_denials": [],
+      "queued_turn_count": 0,
+      "result_index": 0,
+      "safety_stops": 0,
       "session_id": "018f0000-0000-7000-8000-000000000001",
       "stop_reason": null,
+      "subagent_stats": {
+        "by_type": {},
+        "completed": 0,
+        "failed": 0,
+        "killed": {
+          "parent": 0,
+          "system": 0,
+          "user": 0
+        },
+        "max_depth": 0,
+        "refused": {
+          "budget": 0,
+          "concurrency_limit": 0,
+          "depth_limit": 0
+        },
+        "requested": {
+          "background": 0,
+          "foreground": 0,
+          "unset": 0
+        },
+        "spawned": 0,
+        "spawned_by_subagents": 0,
+        "started_in_background": 0
+      },
       "subtype": "error_during_execution",
       "terminal_reason": "aborted_streaming",
       "total_cost_usd": 0,
@@ -390,6 +859,7 @@
         },
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": 0,
+        "fallback_credit": null,
         "inference_geo": "",
         "input_tokens": 0,
         "iterations": [],
@@ -411,30 +881,51 @@
     "kind": "KIND_RESULT",
     "ephemeral": false,
     "payload": {
-      "duration_api_ms": 20,
+      "begun_message_ids": [],
+      "duration_api_ms": 0,
       "duration_ms": 20,
-      "is_error": false,
-      "modelUsage": {
-        "claude-sonnet-4-6": {
-          "cacheCreationInputTokens": 0,
-          "cacheReadInputTokens": 0,
-          "contextWindow": 200000,
-          "costUSD": 0.00012,
-          "inputTokens": 25,
-          "maxOutputTokens": 64000,
-          "outputTokens": 3,
-          "thinkingTokens": 0,
-          "webSearchRequests": 0
-        }
-      },
+      "errors": [
+        "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use"
+      ],
+      "fast_mode_disabled_reason": "sdk_opt_in_required",
+      "fast_mode_state": "off",
+      "is_error": true,
+      "modelUsage": {},
+      "model_usage_since_last_result": {},
       "num_turns": 1,
       "permission_denials": [],
-      "result": "You said:",
+      "queued_turn_count": 0,
+      "result_index": 0,
+      "safety_stops": 0,
       "session_id": "018f0000-0000-7000-8000-000000000001",
-      "stop_reason": null,
-      "subtype": "success",
-      "terminal_reason": "aborted_streaming",
-      "total_cost_usd": 0.00012,
+      "stop_reason": "tool_use",
+      "subagent_stats": {
+        "by_type": {},
+        "completed": 0,
+        "failed": 0,
+        "killed": {
+          "parent": 0,
+          "system": 0,
+          "user": 0
+        },
+        "max_depth": 0,
+        "refused": {
+          "budget": 0,
+          "concurrency_limit": 0,
+          "depth_limit": 0
+        },
+        "requested": {
+          "background": 0,
+          "foreground": 0,
+          "unset": 0
+        },
+        "spawned": 0,
+        "spawned_by_subagents": 0,
+        "started_in_background": 0
+      },
+      "subtype": "error_during_execution",
+      "terminal_reason": "aborted_tools",
+      "total_cost_usd": 0,
       "type": "result",
       "usage": {
         "cache_creation": {
@@ -443,6 +934,124 @@
         },
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": 0,
+        "fallback_credit": null,
+        "inference_geo": "",
+        "input_tokens": 0,
+        "iterations": [],
+        "output_tokens": 0,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_fetch_requests": 0,
+          "web_search_requests": 0
+        },
+        "service_tier": "standard",
+        "speed": "standard"
+      },
+      "uuid": "018f0000-0000-7000-8000-000000000003"
+    }
+  },
+  {
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "payload": {
+      "api_error_status": null,
+      "begun_message_ids": [
+        "msg_aborted"
+      ],
+      "duration_api_ms": 20,
+      "duration_ms": 20,
+      "fast_mode_disabled_reason": "sdk_opt_in_required",
+      "fast_mode_state": "off",
+      "first_content_frame_ms": 0,
+      "first_request_cache_read_input_tokens": 0,
+      "first_request_input_tokens": 25,
+      "is_error": false,
+      "modelUsage": {
+        "claude-sonnet-4-6": {
+          "cacheCreationEphemeral1hInputTokens": 0,
+          "cacheCreationEphemeral5mInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "canonicalModel": "claude-sonnet-4-6",
+          "contextWindow": 200000,
+          "costBasis": "list",
+          "costUSD": 0.00012,
+          "inputTokens": 25,
+          "maxOutputTokens": 64000,
+          "outputTokens": 3,
+          "provider": "firstParty",
+          "thinkingTokens": 0,
+          "webSearchRequests": 0
+        }
+      },
+      "model_usage_since_last_result": {
+        "claude-sonnet-4-6": {
+          "cacheCreationEphemeral1hInputTokens": 0,
+          "cacheCreationEphemeral5mInputTokens": 0,
+          "cacheCreationInputTokens": 0,
+          "cacheReadInputTokens": 0,
+          "canonicalModel": "claude-sonnet-4-6",
+          "contextWindow": 200000,
+          "costBasis": "list",
+          "costUSD": 0,
+          "inputTokens": 0,
+          "maxOutputTokens": 64000,
+          "outputTokens": 0,
+          "provider": "firstParty",
+          "thinkingTokens": 0,
+          "webSearchRequests": 0
+        }
+      },
+      "num_turns": 1,
+      "permission_denials": [],
+      "queued_turn_count": 0,
+      "request_sent_wall_ms": 0,
+      "result": "You said:",
+      "result_index": 0,
+      "safety_stops": 0,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "stop_reason": null,
+      "subagent_stats": {
+        "by_type": {},
+        "completed": 0,
+        "failed": 0,
+        "killed": {
+          "parent": 0,
+          "system": 0,
+          "user": 0
+        },
+        "max_depth": 0,
+        "refused": {
+          "budget": 0,
+          "concurrency_limit": 0,
+          "depth_limit": 0
+        },
+        "requested": {
+          "background": 0,
+          "foreground": 0,
+          "unset": 0
+        },
+        "spawned": 0,
+        "spawned_by_subagents": 0,
+        "started_in_background": 0
+      },
+      "subtype": "success",
+      "terminal_reason": "aborted_streaming",
+      "time_to_request_ms": 0,
+      "total_cost_usd": 0.00012,
+      "ttft_ms": 0,
+      "ttft_stream_ms": 0,
+      "type": "result",
+      "usage": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "fallback_credit": null,
         "inference_geo": "",
         "input_tokens": 25,
         "iterations": [],
@@ -457,6 +1066,10 @@
         "service_tier": "standard",
         "speed": "standard"
       },
+      "user_message_uuid": "018f0000-0000-7000-8000-000000000002",
+      "user_message_uuids": [
+        "018f0000-0000-7000-8000-000000000002"
+      ],
       "uuid": "018f0000-0000-7000-8000-000000000003"
     }
   },
@@ -492,6 +1105,18 @@
       },
       "parent_tool_use_id": null,
       "session_id": "018f0000-0000-7000-8000-000000000001",
+      "tool_result_meta": [
+        {
+          "id": "toolu_fake",
+          "non_execution_kind": "automode-blocked",
+          "permission_decision": {
+            "decision": "reject",
+            "reason_type": "classifier",
+            "source": "config"
+          }
+        }
+      ],
+      "tool_use_result": "Error: Permission for this action was denied by the Claude Code auto mode classifier. Reason: Scripted Bash approval required. If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to accomplish this action using other tools that might naturally be used to accomplish this goal, e.g. using head instead of cat. But you *should not* attempt to work around this denial in malicious ways, e.g. do not use your ability to run tests to execute non-test actions. You should only try to work around this restriction in reasonable ways that do not attempt to bypass the intent behind this denial. If you believe this capability is essential to complete the user's request, first try a safer method. Get as much of the rest of the task done as you can, then STOP and explain to the user what you were trying to do and why you need this permission. Let the user decide how to proceed. To allow this type of action in the future, the user can add a permission rule for Bash to their settings.",
       "type": "user",
       "uuid": "018f0000-0000-7000-8000-000000000003"
     }

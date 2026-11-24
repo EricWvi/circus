@@ -43,19 +43,25 @@ func (s *session) newToolCall(command, arg string) toolCall {
 	return toolCall{call: call, id: "toolu_" + uuid.NewString(), name: name, input: input}
 }
 
-// announce records the tool uses as blocks of one API message.
+// announce streams the tool uses as the blocks of one API message.
 func (s *session) announce(t *turn, uses ...toolCall) error {
-	messageID := "msg_" + uuid.NewString()
-	inputTokens := 24 + t.inputTokens
-	t.requests++
-	t.usedInput += inputTokens
-	for _, u := range uses {
-		outputTokens := tokens(jsonString(u.input))
-		t.outputTokens += outputTokens
-		if err := s.assistant(messageID, toolUse(u.id, u.name, u.input), inputTokens, outputTokens, false); err != nil {
+	r := s.begin(t)
+	output := 0
+	for i, u := range uses {
+		input := []rune(jsonString(u.input))
+		outputTokens := tokens(string(input))
+		output += outputTokens
+		s.partial(r, object{"type": "content_block_start", "index": i, "content_block": object{"type": "tool_use", "id": u.id, "name": u.name, "input": object{}}}, false)
+		s.partial(r, inputDelta(i, string(input[:len(input)/2])), false)
+		s.partial(r, inputDelta(i, string(input[len(input)/2:])), false)
+		if err := s.assistant(t, r, toolUse(u.id, u.name, u.input), outputTokens, false); err != nil {
 			return err
 		}
+		s.partial(r, blockStop(i), false)
 	}
+	t.outputTokens += output
+	s.partial(r, messageDelta("tool_use", r.input, output, 0), false)
+	s.partial(r, object{"type": "message_stop"}, false)
 	return s.flush()
 }
 
@@ -78,7 +84,7 @@ func (s *session) parallel(t *turn, arg string) error {
 			return err
 		}
 	}
-	return s.stream(t, "Both Bash calls finished.", s.w.opts.StreamDelay, false)
+	return s.stream(t, "Both Bash calls finished.", s.w.opts.StreamDelay, plainText)
 }
 
 // largeResult answers a Bash use with n bytes of output without running it,
@@ -89,13 +95,14 @@ func (s *session) largeResult(t *turn, n int) error {
 		return err
 	}
 	output := strings.Repeat("y\n", n/2)
-	if err := s.recordToolResult(u.id, []object{{"type": "text", "text": output}}, false); err != nil {
+	if err := s.record(sdkToolResult(s.sdkID, uuid.NewString(), u.id, output, false,
+		toolUseResult(u.name, "", output, false), allowedMeta(u.id, false))); err != nil {
 		return err
 	}
 	if err := s.flush(); err != nil {
 		return err
 	}
-	return s.stream(t, "Bash finished.", s.w.opts.StreamDelay, false)
+	return s.stream(t, "Bash finished.", s.w.opts.StreamDelay, plainText)
 }
 
 // runTool runs an announced tool use and records its result; closing streams
@@ -121,14 +128,14 @@ func (s *session) runTool(t *turn, command, arg string, u toolCall, closing bool
 	update, submitted, err := s.submit(t, req)
 	if err != nil {
 		if isAbort(err) {
-			t.abortReason = "aborted_tools"
+			t.abortReason = abortedTools
 			if submitted {
 				if _, patchErr := s.request(wc.Patch(s.id, s.epoch, &pb.PatchSessionState{ReturnedCallIds: []string{call.GetCallId()}})); patchErr != nil {
 					return errors.Join(err, patchErr)
 				}
 				t.marks.CallIds = append(t.marks.CallIds, call.GetCallId())
 			}
-			if saveErr := s.recordToolResult(toolID, interruptedTool, true); saveErr != nil {
+			if saveErr := s.record(sdkInterruptedTool(s.sdkID, uuid.NewString(), toolID)); saveErr != nil {
 				return errors.Join(err, saveErr)
 			}
 		}
@@ -169,7 +176,11 @@ func (s *session) runTool(t *turn, command, arg string, u toolCall, closing bool
 		return err
 	}
 	blocks, failed := callOutput(update)
-	if err := s.recordToolResult(toolID, blocks, failed); err != nil {
+	content := resultContent(blocks)
+	output, _ := content.(string)
+	message := sdkToolResult(s.sdkID, uuid.NewString(), toolID, content, failed,
+		toolUseResult(name, arg, output, failed), allowedMeta(toolID, command == "approved-bash"))
+	if err := s.record(message); err != nil {
 		return err
 	}
 	t.marks.CallIds = append(t.marks.CallIds, call.GetCallId())
@@ -182,15 +193,7 @@ func (s *session) runTool(t *turn, command, arg string, u toolCall, closing bool
 	} else if result.GetBash().GetJobId() != "" {
 		text = "Bash started a background job."
 	}
-	return s.stream(t, text, s.w.opts.StreamDelay, false)
-}
-
-// This text was observed in the next API request after NOW interrupted a tool.
-// Its use as an SDK tool_result event for either Interrupt or NOW is inferred.
-const interruptedTool = "The tool call was interrupted before a result was received. It may or may not have completed on the server — verify before assuming it succeeded, and retry if needed."
-
-func (s *session) recordToolResult(toolID string, content any, isError bool) error {
-	return s.record(sdkUser(s.sdkID, uuid.NewString(), []object{toolResult(toolID, content, isError)}, ""))
+	return s.stream(t, text, s.w.opts.StreamDelay, plainText)
 }
 
 func callOutput(u *pb.CallUpdate) ([]object, bool) {

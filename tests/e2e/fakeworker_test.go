@@ -125,7 +125,7 @@ func TestFakeWorkerSessions(t *testing.T) {
 		watch := s.watch(0)
 		watch.expect(pb.SessionEvent_KIND_UNSPECIFIED)
 		s.send("/fake bash printf 'fake-bash\n'; pwd", pb.InputPriority_INPUT_PRIORITY_NORMAL)
-		toolUse := watch.until(contains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
+		toolUse := watch.until(durableContains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
 		result := watch.until(contains(pb.SessionEvent_KIND_USER, `"type":"tool_result"`))
 		checkToolPair(t, toolUse, result, "Bash", false, "fake-bash", h.dir)
 		watch.expect(pb.SessionEvent_KIND_ASSISTANT)
@@ -134,7 +134,7 @@ func TestFakeWorkerSessions(t *testing.T) {
 
 		must(t, os.WriteFile(filepath.Join(h.dir, "read.txt"), []byte("from a real file\n"), 0o600))
 		s.send("/fake read read.txt", pb.InputPriority_INPUT_PRIORITY_NORMAL)
-		toolUse = watch.until(contains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
+		toolUse = watch.until(durableContains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
 		result = watch.until(contains(pb.SessionEvent_KIND_USER, `"type":"tool_result"`))
 		checkToolPair(t, toolUse, result, "Read", false, "from a real file")
 		watch.expect(pb.SessionEvent_KIND_ASSISTANT)
@@ -148,7 +148,7 @@ func TestFakeWorkerSessions(t *testing.T) {
 		watch.expect(pb.SessionEvent_KIND_UNSPECIFIED)
 		cmd := "/fake approve printf approved-bash > approval.txt; cat approval.txt"
 		s.send(cmd, pb.InputPriority_INPUT_PRIORITY_NORMAL)
-		toolUse := watch.until(contains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
+		toolUse := watch.until(durableContains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
 		denial := watch.expect(pb.SessionEvent_KIND_PERMISSION_DENIED)
 		// As from the real worker: the approval request before the denial's tool_result.
 		pending := watch.expect(pb.SessionEvent_KIND_APPROVAL_PENDING)
@@ -200,7 +200,7 @@ func TestFakeWorkerSessions(t *testing.T) {
 		watch := s.watch(0)
 		watch.expect(pb.SessionEvent_KIND_UNSPECIFIED)
 		s.send("/fake approve printf merged-approval", pb.InputPriority_INPUT_PRIORITY_NORMAL)
-		original := watch.until(contains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
+		original := watch.until(durableContains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
 		pending := watch.until(contains(pb.SessionEvent_KIND_APPROVAL_PENDING, "merged-approval"))
 		watch.until(contains(pb.SessionEvent_KIND_RESULT, "I need approval"))
 		s.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED)
@@ -315,7 +315,7 @@ func TestFakeWorkerSessions(t *testing.T) {
 		watch := s.watch(0)
 		watch.expect(pb.SessionEvent_KIND_UNSPECIFIED)
 		s.send("/fake bash sleep 12", pb.InputPriority_INPUT_PRIORITY_NORMAL)
-		use := watch.until(contains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
+		use := watch.until(durableContains(pb.SessionEvent_KIND_ASSISTANT, `"type":"tool_use"`))
 		var id string
 		// The call is in flight once dispatched; the daemon's ack moves it to
 		// running at any moment, so a poll after the ack must match too.
@@ -330,8 +330,8 @@ func TestFakeWorkerSessions(t *testing.T) {
 		})
 		_, err := api.Interrupt(s.ctx, connect.NewRequest(&pb.InterruptRequest{SessionId: s.id}))
 		must(t, err)
-		checkToolPair(t, use, watch.expect(pb.SessionEvent_KIND_USER), "Bash", true, "The tool call was interrupted")
-		watch.until(contains(pb.SessionEvent_KIND_USER, "[Request interrupted by user]"))
+		checkToolPair(t, use, watch.expect(pb.SessionEvent_KIND_USER), "Bash", true, "this call was stopped while running")
+		watch.until(contains(pb.SessionEvent_KIND_USER, "[Request interrupted by user for tool use]"))
 		checkAbortedResult(t, watch.expect(pb.SessionEvent_KIND_RESULT), "error_during_execution", "aborted_tools", true)
 		watch.expect(pb.SessionEvent_KIND_TURN_STOPPED)
 		row, err := h.st.GetCall(s.ctx, id)
@@ -518,11 +518,12 @@ func TestFakeWorkerSessions(t *testing.T) {
 		if !strings.Contains(thinking.GetPayloadJson(), `"type":"thinking"`) {
 			t.Fatalf("thinking block: %v", thinking)
 		}
-		watch.until(contains(pb.SessionEvent_KIND_ASSISTANT, `"type":"message_delta"`))
 		text := watch.expect(pb.SessionEvent_KIND_ASSISTANT)
 		if assistantID(t, thinking) != assistantID(t, text) {
 			t.Fatalf("thinking and text used different API message IDs")
 		}
+		// The text block is durable before its stream ends.
+		watch.until(contains(pb.SessionEvent_KIND_ASSISTANT, `"type":"message_delta"`))
 		watch.until(contains(pb.SessionEvent_KIND_RESULT, "/fake think"))
 		s.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED)
 		s.send("/fake error", pb.InputPriority_INPUT_PRIORITY_NORMAL)
@@ -622,6 +623,10 @@ func (s *sessionBrowser) state(want pb.Session_State, outcome pb.TurnOutcome) *p
 
 type sessionWatch struct {
 	t       *testing.T
+	session *sessionBrowser
+	// atNextDurable runs, and is cleared, when the next durable event
+	// arrives, with that event's index in all.
+	atNextDurable []func(end int)
 	stream  *connect.ServerStreamForClient[pb.SessionEvent]
 	seq     uint64
 	durable []*pb.SessionEvent
@@ -649,7 +654,7 @@ func (s *sessionBrowser) watch(after uint64) *sessionWatch {
 	stream, err := s.api.WatchSession(s.ctx, connect.NewRequest(&pb.WatchSessionRequest{SessionId: s.id, AfterSeq: after}))
 	must(s.t, err)
 	s.t.Cleanup(func() { _ = stream.Close() })
-	return &sessionWatch{t: s.t, stream: stream, seq: after}
+	return &sessionWatch{t: s.t, session: s, stream: stream, seq: after}
 }
 
 func (w *sessionWatch) next() *pb.SessionEvent {
@@ -673,6 +678,11 @@ func (w *sessionWatch) next() *pb.SessionEvent {
 	}
 	w.seq = e.GetSeq()
 	w.durable = append(w.durable, e)
+	pending := w.atNextDurable
+	w.atNextDurable = nil
+	for _, f := range pending {
+		f(len(w.all) - 1)
+	}
 	return e
 }
 
@@ -702,6 +712,13 @@ func contains(kind pb.SessionEvent_Kind, text string) func(*pb.SessionEvent) boo
 	return func(e *pb.SessionEvent) bool {
 		return e.GetKind() == kind && strings.Contains(e.GetPayloadJson(), text)
 	}
+}
+
+// durableContains is contains for durable events only: a tool use's
+// streamed content_block_start also names its type.
+func durableContains(kind pb.SessionEvent_Kind, text string) func(*pb.SessionEvent) bool {
+	match := contains(kind, text)
+	return func(e *pb.SessionEvent) bool { return !e.GetEphemeral() && match(e) }
 }
 
 func eventString(t *testing.T, e *pb.SessionEvent, field string) string {
@@ -767,7 +784,16 @@ func checkAbortedResult(t *testing.T, event *pb.SessionEvent, subtype, reason st
 		IsError        bool    `json:"is_error"`
 	}
 	must(t, json.Unmarshal([]byte(event.GetPayloadJson()), &result))
-	if result.Subtype != subtype || result.TerminalReason != reason || result.IsError != isError || result.StopReason != nil {
+	// The aborted response's stop reason: "tool_use" when a tool was running.
+	stop := "<nil>"
+	if result.StopReason != nil {
+		stop = *result.StopReason
+	}
+	want := "<nil>"
+	if reason == "aborted_tools" {
+		want = "tool_use"
+	}
+	if result.Subtype != subtype || result.TerminalReason != reason || result.IsError != isError || stop != want {
 		t.Fatalf("aborted result: %v", event)
 	}
 }

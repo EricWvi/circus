@@ -2,7 +2,7 @@
 // as the client receives them. The fixture is written and checked for drift
 // by TestWebEventFixture (internal/testutil/fakeworker/webfixture_test.go):
 // what WatchSession streamed from a real control plane, with ids numbered,
-// and timestamps, durations and usage removed.
+// and timestamps, durations and usage kept as type markers.
 
 import type { RawSessionEvent, SessionEventKind } from "@/api/types"
 import fixture from "@/lib/session-events/fake-worker.fixture.json"

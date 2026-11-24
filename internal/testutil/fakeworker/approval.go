@@ -56,13 +56,10 @@ const approvalTool = "Bash"
 // sdkDenialResult is the tool_result Claude Code records for a call the
 // auto mode classifier blocked.
 func sdkDenialResult(sessionID, id, toolID string) sdkMessage {
-	m := sdkUser(sessionID, id, []object{toolResult(toolID, denialText, true)}, "")
-	m.payload["tool_use_result"] = "Error: " + denialText
-	m.payload["tool_result_meta"] = []object{{
+	return sdkToolResult(sessionID, id, toolID, denialText, true, "Error: "+denialText, object{
 		"id": toolID, "non_execution_kind": "automode-blocked",
 		"permission_decision": object{"decision": "reject", "reason_type": "classifier", "source": "config"},
-	}}
-	return m
+	})
 }
 
 // denyApproval denies a tool use the way the real worker reports it: the
@@ -95,7 +92,7 @@ func (s *session) denyApproval(t *turn, toolID, command string, input object) er
 	if err := s.flush(); err != nil {
 		return err
 	}
-	return s.stream(t, "I need approval to run this Bash command.", s.w.opts.StreamDelay, false)
+	return s.stream(t, "I need approval to run this Bash command.", s.w.opts.StreamDelay, plainText)
 }
 
 func (s *session) retryApproval(t *turn, text string) error {
