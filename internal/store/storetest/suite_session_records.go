@@ -108,6 +108,28 @@ func testSessionRecords(t *testing.T, b Backend) {
 	must(t, err)
 	mustEqual(t, "purged (c1's job never ended)", n, 1)
 
+	// Background tasks of every kind the SDK reports are recorded with
+	// their kind; an empty kind is refused.
+	kinds := []string{"local_agent", "local_bash", "local_workflow", "local_script", "local_command", "mcp_task",
+		"remote_agent", "in_process_teammate", "dream", "monitor_mcp", "unknown"}
+	var kindTasks []store.BgTask
+	var kindIDs []string
+	for _, kind := range kinds {
+		kindTasks = append(kindTasks, store.BgTask{TaskID: "kind-" + kind, ToolUseID: "tu-" + kind, Kind: kind, Description: kind})
+		kindIDs = append(kindIDs, "kind-"+kind)
+	}
+	must(t, s.PatchSessionRecords(ctx, fence, store.RecordsPatch{BgTasksStarted: kindTasks}))
+	recorded := map[string]string{}
+	for _, task := range get(store.RecordBgTasks).BgTasks {
+		recorded[task.TaskID] = task.Kind
+	}
+	for _, kind := range kinds {
+		mustEqual(t, "recorded kind "+kind, recorded["kind-"+kind], kind)
+	}
+	mustIs(t, s.PatchSessionRecords(ctx, fence, store.RecordsPatch{BgTasksStarted: []store.BgTask{{TaskID: "no-kind"}}}), store.ErrInvalid)
+	must(t, s.PatchSessionRecords(ctx, fence, store.RecordsPatch{BgTasksEnded: kindIDs}))
+	mustEqual(t, "kinds ended", len(get(store.RecordBgTasks).BgTasks), 0)
+
 	// Background tasks: exactly the cap, then one more; repeats are
 	// harmless and ended tasks free room.
 	var tasks []store.BgTask

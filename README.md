@@ -645,8 +645,11 @@ between them, new problems are told only after the user's next input: an
 agent that cannot fix its snapshot does not run on forever. The notes of a
 merge and a discard (below) start no turn: they wait, pending, for the
 next input that starts one (the user's message, an approval's retry or a
-problems note) and reach the agent in that turn, before it; they do not
-count towards the three. A turn the CLI starts by itself (a background task
+problems note) and reach the agent in that turn, before it: the worker
+hands them to Claude Code to record without a model call of their own, so
+the agent reads them with that input and answers both in one turn, and the
+session view shows them right before that message. They do not count
+towards the three. A turn the CLI starts by itself (a background task
 ending) takes no input and so carries none of them. Held notes count towards
 no bound of the session's open inputs, so they never keep the user's
 messages or an approval's retry out; at most eight are held per session,

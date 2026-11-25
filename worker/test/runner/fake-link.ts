@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { SessionConfigSchema } from "@circus/proto/circus/v1/session_pb";
 import {
-  RecoverySchema, ReportTurn_Phase, SessionReplySchema, SessionReply_Inputs_InputSchema, SessionReply_LeaseSchema,
+  RecoverySchema, ReportTurn_Phase, SessionReplySchema, SessionReply_Inputs_InputSchema, SessionReply_Inputs_Input_Kind, SessionReply_LeaseSchema,
   SessionReply_Rejected_Code as Code, SessionStateSchema, SessionState_GrantSchema, WorkerEventSchema,
   type PublishEvents_Event, type ReportTurn, type SessionReply, type SessionReply_Inputs_Input,
   type SessionReply_Lease, type TranscriptEntry, type WorkerEvent,
@@ -203,7 +203,10 @@ export class FakeLink implements LinkPort {
       case "takeInputs": {
         if (this.stopped) return rejected(Code.STOPPED);
         this.taken.push(...this.pending.splice(0));
-        return reply({ case: "inputs", value: { inputs: this.taken.filter((i) => !this.persistedInputs.has(i.inputId)) } });
+        // As the control plane returns them: notes first, then in arrival order.
+        const open = this.taken.filter((i) => !this.persistedInputs.has(i.inputId));
+        const isNote = (i: SessionReply_Inputs_Input) => i.kind === SessionReply_Inputs_Input_Kind.NOTE;
+        return reply({ case: "inputs", value: { inputs: [...open.filter(isNote), ...open.filter((i) => !isNote(i))] } });
       }
       case "reportTurn": {
         const { localSeq, phase } = op.value;

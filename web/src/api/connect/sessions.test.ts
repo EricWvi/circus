@@ -240,9 +240,9 @@ describe("the Connect session client", () => {
       },
     })
     expect((await client.createSession({ projectId: "p1", locationIndex: 0, clientRequestId: "k1" })).permissionMode).toBe("auto")
-    const plan = await client.createSession({ projectId: "p1", locationIndex: 0, clientRequestId: "k2", permissionMode: "plan" })
-    expect(plan.permissionMode).toBe("plan")
-    expect(modes).toEqual([undefined, "plan"])
+    const edits = await client.createSession({ projectId: "p1", locationIndex: 0, clientRequestId: "k2", permissionMode: "acceptEdits" })
+    expect(edits.permissionMode).toBe("acceptEdits")
+    expect(modes).toEqual([undefined, "acceptEdits"])
   })
 
   it("follows list pages to the end", async () => {

@@ -56,8 +56,11 @@ func checkRecordsPatch(p store.RecordsPatch) error {
 		if err := store.CheckOptionalID("tool use id", b.ToolUseID); err != nil {
 			return err
 		}
-		if b.Kind != "agent" {
-			return invalid("background task kind %q, want agent", b.Kind)
+		// The SDK's task_type, as the CLI reports it (local_agent,
+		// local_bash, local_workflow, mcp_task, remote_agent, ...): an
+		// open set, so any kind within the id bound is accepted.
+		if err := store.CheckID("background task kind", b.Kind); err != nil {
+			return err
 		}
 		if err := store.CheckText("task description", b.Description, store.MaxDescriptionBytes, true); err != nil {
 			return err

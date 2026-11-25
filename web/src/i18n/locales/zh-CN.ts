@@ -338,6 +338,7 @@ export const zhCN = {
     devicesNotReady: "设备列表尚未加载，请稍后再试。",
     newSession: "新会话",
     startPlaceholder: "开始会话…（Shift+Enter 换行）",
+    creatingSession: "正在创建会话…",
     location: "位置",
     startConflict: "无法开始会话：请求与之前的一次请求冲突。再次发送即可开始。",
     locationGone: "请选择项目中的一个位置。",
@@ -505,7 +506,7 @@ export const zhCN = {
     choose: "新会话的权限模式",
     startMode: "起始模式：{{mode}}",
     startModeLabel: "会话开始时的权限模式：{{mode}}",
-    startModeNote: "Claude 可能在会话中切换模式，例如你批准它的计划之后；这里显示的是会话开始时的模式。",
+    startModeNote: "Claude 可能在会话中切换模式；这里显示的是会话开始时的模式。",
     modes: {
       auto: {
         name: "自动",
@@ -517,11 +518,7 @@ export const zhCN = {
       },
       acceptEdits: {
         name: "接受修改",
-        description: "工作目录内的文件修改无需询问，执行命令需要你批准。",
-      },
-      plan: {
-        name: "计划",
-        description: "Claude 先查看并提出计划；它要修改或执行的操作需要你批准。",
+        description: "工作目录内的文件修改和常见的文件系统命令（包括删除和重定向，如 mkdir、touch、mv、cp、rm 和 >）无需询问，其他命令需要你批准。",
       },
       dontAsk: {
         name: "不询问",

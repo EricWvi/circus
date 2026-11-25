@@ -162,7 +162,10 @@ func (s *sessionLedgerHarness) notes(category string) []store.SessionEvent {
 // heldNote waits until a merge or a discard is applied, sends text, and
 // checks that its one turn delivered the note, the count-th of category,
 // right before the message: the database shows that one TakeInputs took
-// both, so the note never started a turn of its own. It returns the note.
+// both, so the note never started a turn of its own, and the transcript
+// holds the note as an entry of its own, under its id and recorded
+// without a query (the worker pushes it with shouldQuery false), before
+// the message's. It returns the note.
 func (s *sessionLedgerHarness) heldNote(category string, count int, text string) store.SessionEvent {
 	s.t.Helper()
 	s.waitLedger(category+" applied", func(r *pb.GetSessionLedgerResponse) bool {
@@ -217,6 +220,20 @@ func (s *sessionLedgerHarness) heldNote(category string, count int, text string)
 		s.id, noteID.UUID, userID).Scan(&rows))
 	if rows != 2 || takes != 1 {
 		s.t.Fatalf("the %s note and the message: %d inputs taken in %d takes, want 2 in 1", category, rows, takes)
+	}
+	var noteSeq, userSeq int64
+	var noteEntry []byte
+	must(s.t, db.QueryRowContext(s.ctx, `SELECT seq, entry FROM transcript_entries WHERE session_id = ? AND subpath = '' AND uuid = ?`,
+		s.id, noteID.UUID).Scan(&noteSeq, &noteEntry))
+	must(s.t, db.QueryRowContext(s.ctx, `SELECT seq FROM transcript_entries WHERE session_id = ? AND subpath = '' AND uuid = ?`,
+		s.id, userID).Scan(&userSeq))
+	var recorded struct {
+		Type                string `json:"type"`
+		QueueTranscriptOnly bool   `json:"queueTranscriptOnly"`
+	}
+	must(s.t, json.Unmarshal(noteEntry, &recorded))
+	if recorded.Type != "user" || !recorded.QueueTranscriptOnly || noteSeq >= userSeq {
+		s.t.Fatalf("the %s note's transcript entry (seq %d, message's %d): %s", category, noteSeq, userSeq, noteEntry)
 	}
 	return note
 }

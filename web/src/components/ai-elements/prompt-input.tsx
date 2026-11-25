@@ -1217,6 +1217,8 @@ export const PromptInputActionMenuItem = ({
 export type PromptInputSubmitProps = ComponentProps<typeof InputGroupButton> & {
   status?: ChatStatus;
   onStop?: () => void;
+  /** The label while submitted with nothing to stop; "Sending…" by default. */
+  submittedLabel?: string;
 };
 
 export const PromptInputSubmit = ({
@@ -1225,6 +1227,7 @@ export const PromptInputSubmit = ({
   size = "icon-sm",
   status,
   onStop,
+  submittedLabel,
   onClick,
   children,
   ...props
@@ -1256,7 +1259,13 @@ export const PromptInputSubmit = ({
 
   return (
     <InputGroupButton
-      aria-label={isGenerating ? t("session.stop") : t("session.send")}
+      aria-label={
+        isGenerating && onStop
+          ? t("session.stop")
+          : isGenerating
+            ? (submittedLabel ?? t("session.delivery.sending"))
+            : t("session.send")
+      }
       className={cn(className)}
       onClick={handleClick}
       size={size}

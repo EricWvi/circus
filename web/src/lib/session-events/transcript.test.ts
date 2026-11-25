@@ -204,9 +204,10 @@ describe("turns that end early", () => {
       "assistant_text",
       "user_message",
       "turn_error",
+      // The note went to Claude in the waiting message, ahead of it.
+      "note",
       "user_message",
       "history_gap",
-      "note",
       "assistant_text",
     ])
     expect(ofKind(t, "user_message").every((m) => m.delivery === "delivered")).toBe(true)
@@ -578,7 +579,8 @@ describe("notes to Claude", () => {
 
   it("tells that the previous turn was interrupted, after a crash", () => {
     const t = run(raw("crash_recover"))
-    expect(kinds(t)).toEqual(["user_message", "assistant_text", "turn_interrupted", "user_message", "note", "assistant_text"])
+    // The note went to Claude with the next message, ahead of it.
+    expect(kinds(t)).toEqual(["user_message", "assistant_text", "turn_interrupted", "note", "user_message", "assistant_text"])
     expect(notes(t)).toEqual([["previous_turn_interrupted", expect.stringMatching(/^The previous turn was interrupted before it finished: /)]])
     const id = ofKind(t, "note")[0].id
     expect(id).toMatch(/^note:00000000-/)
@@ -674,6 +676,108 @@ describe("notes to Claude", () => {
     ])
     expect(kinds(t)).toEqual(["user_message"])
     expect(t.events[0]).toMatchObject({ delivery: "delivered" })
+  })
+
+  it("puts the notes delivered with the user's message right before it", () => {
+    const accepted = (seq: number, id: string, text: string): RawSessionEvent => ({
+      ...base,
+      seq,
+      kind: "input_accepted",
+      payloadJson: JSON.stringify({ input_id: id, client_msg_id: `c-${id}`, text }),
+    })
+    const ledger = (seq: number, uuid: string, kind: string, text: string) =>
+      user(seq, { uuid, circus_note: kind, message: { role: "user", content: text } })
+    const delivered = (seq: number, id: string, text: string) => user(seq, { uuid: id, message: { role: "user", content: text } })
+    const turn = (seq: number): RawSessionEvent => ({ ...base, seq, kind: "turn_started", payloadJson: '{"turn_no":"2"}' })
+    const events = [
+      accepted(1, "in-1", "What number did it get?"),
+      turn(2),
+      // One message: the held notes, then the user's input that carried them.
+      ledger(3, "n-1", "ledger_merged", "[circus ledger] Your ledger changes were merged."),
+      ledger(4, "n-2", "ledger_discarded", "[circus ledger] Your ledger changes were discarded."),
+      delivered(5, "in-1", "What number did it get?"),
+    ]
+    const t = run(events)
+    expect(t.events.map((e) => e.id)).toEqual(["note:n-1", "note:n-2", "msg:c-in-1"])
+    expect(t.events[2]).toMatchObject({ delivery: "delivered" })
+    // The same in any batches, as a reload replays them.
+    let split = emptyTranscript
+    for (const event of events) split = run([event], split)
+    expect(split.events.map((e) => e.id)).toEqual(t.events.map((e) => e.id))
+
+    // A note delivered on its own (its own turn) stays where it is.
+    const alone = run([
+      accepted(1, "in-1", "next"),
+      ledger(2, "p-1", "ledger_problems", "[circus ledger] Problems."),
+      { ...base, seq: 3, kind: "result", payloadJson: JSON.stringify({ type: "result", subtype: "success" }) },
+      delivered(4, "in-1", "next"),
+    ])
+    expect(alone.events.map((e) => e.id).slice(0, 2)).toEqual(["msg:c-in-1", "note:p-1"])
+  })
+
+  it("never moves a note above an earlier turn: a message accepted during it keeps the note after it", () => {
+    // The second message is sent while turn 1 runs; the worker dies before
+    // the CLI takes it, and the next worker delivers it with the
+    // "previous turn was interrupted" note.
+    const events = raw("crash_recover")
+    const accepted = events.map((e, i) => [e, i] as const).filter(([e]) => e.kind === "input_accepted")
+    expect(accepted).toHaveLength(2)
+    const second = accepted[1][1]
+    const firstUser = events.findIndex((e) => e.kind === "user")
+    let seq = 0
+    const during = [...events.slice(0, firstUser + 1), events[second], ...events.slice(firstUser + 1, second), ...events.slice(second + 1)]
+      .map((e) => (e.ephemeral ? e : { ...e, seq: ++seq }))
+    const t = run(during)
+    expect(kinds(t)).toEqual(["user_message", "user_message", "assistant_text", "turn_interrupted", "note", "assistant_text"])
+    expect(ofKind(t, "note")[0]).toMatchObject({ noteKind: "previous_turn_interrupted" })
+    // Reload (one batch) and live (one event at a time) agree.
+    let live = emptyTranscript
+    for (const event of during) live = run([event], live)
+    expect(live.events.map((e) => e.id)).toEqual(t.events.map((e) => e.id))
+  })
+
+  it("moves a lost task's note, delivered with its BGTASK_ENDED, like the other recovery notes", () => {
+    const accepted: RawSessionEvent = {
+      ...base,
+      seq: 1,
+      kind: "input_accepted",
+      payloadJson: JSON.stringify({ input_id: "in-1", client_msg_id: "c1", text: "go on" }),
+    }
+    const ended = (seq: number): RawSessionEvent => ({
+      ...base,
+      seq,
+      kind: "bgtask_ended",
+      payloadJson: JSON.stringify({ type: "system", subtype: "task_notification", task_id: "t1", status: "failed" }),
+    })
+    const t = run([
+      accepted,
+      { ...base, seq: 2, kind: "turn_started", payloadJson: '{"turn_no":"2"}' },
+      note(3, "previous_turn_interrupted", "The previous turn was interrupted."),
+      note(4, "lost_bgtask", "Background task t1 was lost."),
+      ended(5),
+      user(6, { uuid: "in-1", message: { role: "user", content: "go on" } }),
+    ])
+    expect(t.events.map((e) => e.id)).toEqual(["note:u3", "note:u4", "msg:c1"])
+  })
+
+  it("lets a live-only event between the notes and their message change nothing, as on reload", () => {
+    const accepted: RawSessionEvent = {
+      ...base,
+      seq: 1,
+      kind: "input_accepted",
+      payloadJson: JSON.stringify({ input_id: "in-1", client_msg_id: "c1", text: "next" }),
+    }
+    const durable = [
+      accepted,
+      { ...base, seq: 2, kind: "turn_started" as const, payloadJson: '{"turn_no":"2"}' },
+      user(3, { uuid: "n-1", circus_note: "ledger_merged", message: { role: "user", content: "[circus ledger] Merged." } }),
+      user(4, { uuid: "in-1", message: { role: "user", content: "next" } }),
+    ]
+    const queue: RawSessionEvent = { ...base, seq: 0, ephemeral: true, kind: "queue", payloadJson: '{"reason":"provider_full"}' }
+    const live = run([...durable.slice(0, 3), queue, durable[3]])
+    const reload = run(durable)
+    expect(live.events.map((e) => e.id)).toEqual(["note:n-1", "msg:c1"])
+    expect(reload.events.map((e) => e.id)).toEqual(live.events.map((e) => e.id))
   })
 
   it("names a note without a uuid by its seq", () => {

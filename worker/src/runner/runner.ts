@@ -115,6 +115,10 @@ interface Delivery {
   unnamed?: boolean;
   /** Two turns have started since it was pushed without naming it: logged. */
   warned?: boolean;
+  /** A silent note the CLI has recorded (its own result came): in the transcript, waiting for the next turn. */
+  recorded?: boolean;
+  /** What was pushed (a silent note is pushed again when the CLI failed to record it). */
+  message: SDKUserMessage;
 }
 
 class Turn {
@@ -212,6 +216,18 @@ export class SessionRunner {
   #interruptLevel = 0n;
   #gapMark = 0n;
   #pushed = new Set<string>();
+  /**
+   * Notes pushed with shouldQuery false, until persisted: idle, the CLI
+   * records each with a system/init and a result of its own but no model
+   * call (no turn); the input after them runs the turn that reads them.
+   */
+  #silent = new Set<string>();
+  /** The CLI is recording silent notes (their system/init came): no turn runs. */
+  #quiet = false;
+  /** Bounds the wait for the turn after recorded silent notes (#settleRecorded). */
+  #silentTimer?: ReturnType<typeof setTimeout>;
+  /** Pushed inputs the CLI has announced (command_lifecycle queued or started), until persisted. */
+  #announced = new Set<string>();
   #deliveries = new Map<string, Delivery>();
   #nextTurn: Delivery[] = [];
   #notes: Note[] = [];
@@ -672,6 +688,8 @@ export class SessionRunner {
     this.#exited = exited;
     await exited;
     if (waitLoop) await gen.done;
+    // Silent notes the CLI recorded are in its transcript: never pushed again.
+    await this.#settleRecorded();
     // Inputs pushed and never taken by a turn go to the next query.
     for (const delivery of [...this.#nextTurn, ...this.#deliveries.values()]) {
       this.#pushed.delete(delivery.inputId);
@@ -679,6 +697,9 @@ export class SessionRunner {
     }
     this.#nextTurn = [];
     this.#deliveries.clear();
+    this.#silent.clear();
+    this.#announced.clear();
+    this.#quiet = false;
   }
 
   async #consume(gen: Generation): Promise<void> {
@@ -720,13 +741,29 @@ export class SessionRunner {
   async #onMessage(message: SDKMessage & Record<string, unknown>): Promise<void> {
     const subtype = message.type === "system" ? message.subtype as string : "";
     if (message.type === "system" && subtype === "init") {
-      if (!this.#turn) await this.#startTurn();
+      if (!this.#turn && !this.#silentInit(message)) await this.#startTurn(resultUuids(message));
       return;
     }
     if ((message.type as string) === "command_lifecycle") {
       const uuid = (message.command_uuid ?? message.uuid) as string | undefined;
+      if (uuid && this.#pushed.has(uuid) && (message.state === "queued" || message.state === "started")) this.#announced.add(uuid);
+      // A cancelled input runs no turn: it no longer holds off the bound,
+      // which starts again for recorded notes still waiting.
+      if (uuid && message.state === "cancelled" && this.#announced.delete(uuid) && !this.#silent.has(uuid) &&
+        !this.#turn && this.#nextTurn.some((d) => d.recorded)) this.#boundSilent();
       if (message.state === "started" && uuid) this.#attribute(uuid);
       return;
+    }
+    if (this.#quiet) {
+      // The silent notes' own result: no model call, no turn, nothing to show.
+      if (message.type === "result") {
+        this.#quiet = false;
+        this.#silentResult(message);
+        return;
+      }
+      // A model call after all: a real turn starts. Other system messages
+      // (status, task events) leave the notes silent.
+      if (["assistant", "stream_event", "user"].includes(message.type)) this.#quiet = false;
     }
     if (!this.#turn && ["assistant", "stream_event", "user", "result"].includes(message.type)) await this.#startTurn();
     // Task events are published by #task, for background tasks only.
@@ -771,17 +808,137 @@ export class SessionRunner {
 
   // ---- Turns ----
 
-  async #startTurn(): Promise<void> {
+  /**
+   * The silent notes' result. A success records them: they are in the
+   * transcript and wait for the next turn, for at most the abort grace;
+   * then (the input after them never started a turn) they are marked
+   * persisted and shown by themselves, and the inputs pushed with them no
+   * longer keep the session busy (as an input a turn did not name). A
+   * failed one proves nothing: its notes are taken again and pushed anew.
+   */
+  #silentResult(result: Record<string, unknown>): void {
+    const ids = resultUuids(result);
+    for (const uuid of ids) this.#attribute(uuid);
+    const named = this.#nextTurn.filter((d) => ids.includes(d.inputId) && this.#silent.has(d.inputId));
+    if (result.subtype === "success" && result.is_error !== true) {
+      for (const delivery of named) delivery.recorded = true;
+      this.#boundSilent();
+      return;
+    }
+    this.#log.warn("Claude Code failed to record silent notes; pushing them again", {
+      session_id: this.sessionId, error: String(result.subtype ?? "").slice(0, 128),
+    });
+    // Again, silent and at the priority they had: never NOW, which would
+    // stop the turn of the input they go with if it already started. A
+    // running turn absorbs them; otherwise they are recorded after it.
+    this.#nextTurn = this.#nextTurn.filter((d) => !named.includes(d));
+    const gen = this.#gen;
+    for (const delivery of named) {
+      this.#announced.delete(delivery.inputId);
+      if (gen) {
+        this.#deliveries.set(delivery.inputId, delivery);
+        const { priority: _promoted, ...again } = delivery.message;
+        gen.prompt.push(again);
+      } else {
+        this.#pushed.delete(delivery.inputId);
+        this.#silent.delete(delivery.inputId);
+        this.#notes.unshift(...delivery.notes);
+      }
+    }
+  }
+
+  /**
+   * Bounds the wait for the turn that is to read recorded silent notes.
+   * Not while an input pushed with them is announced by the CLI: its turn
+   * is coming, however long its UserPromptSubmit hooks take. Otherwise
+   * (the input never reached the CLI), after the abort grace the notes are
+   * marked persisted and shown by themselves, and the inputs pushed with
+   * them no longer keep the session busy (as an input a turn did not name).
+   */
+  #boundSilent(): void {
+    if (this.#silentTimer) clearTimeout(this.#silentTimer);
+    this.#silentTimer = undefined;
+    // Checked when the bound runs out, so an input announced meanwhile counts too.
+    const coming = () => [...this.#nextTurn, ...this.#deliveries.values()]
+      .some((d) => !this.#silent.has(d.inputId) && this.#announced.has(d.inputId));
+    this.#silentTimer = setTimeout(() => {
+      this.#silentTimer = undefined;
+      if (this.#turn || this.#ending || coming() || !this.#nextTurn.some((d) => d.recorded)) return;
+      this.#log.warn("no turn followed silent notes; marking them delivered", { session_id: this.sessionId });
+      for (const delivery of this.#nextTurn.filter((d) => !d.recorded)) this.#deliveries.set(delivery.inputId, delivery);
+      this.#nextTurn = this.#nextTurn.filter((d) => d.recorded);
+      for (const delivery of this.#deliveries.values()) delivery.unnamed = true;
+      void this.#settleRecorded().then(() => this.#armIdle(), (error: unknown) => this.#fatal(error));
+    }, this.#abortGraceMs);
+    this.#silentTimer.unref?.();
+  }
+
+  /**
+   * Marks the silent notes the CLI recorded persisted and publishes their
+   * view events, outside a turn: no turn will take them (the one after
+   * them never came, or the query is closing). Not while the transcript
+   * is broken: a repair marks them (#mirrorError).
+   */
+  async #settleRecorded(): Promise<void> {
+    if (this.#silentTimer) clearTimeout(this.#silentTimer);
+    this.#silentTimer = undefined;
+    const recorded = this.#nextTurn.filter((d) => d.recorded);
+    if (!recorded.length || this.#broken || this.#abort.signal.aborted) return;
+    this.#nextTurn = this.#nextTurn.filter((d) => !d.recorded);
+    const marks = create(ReportTurn_PersistedSchema);
+    const lostTasks: string[] = [];
+    for (const delivery of recorded) {
+      this.#markDelivered(delivery, marks, lostTasks);
+      for (const event of delivery.events) this.#publisher.add(event.kind, event.payload);
+    }
+    try {
+      await this.ops.call({ case: "patchState", value: create(PatchSessionStateSchema, { persisted: marks }) });
+      await this.#persisted(marks, lostTasks);
+    } catch (error) {
+      // A lost lease: the transcript holds them, which the lease-loss rule reads.
+      if (!isLeaseAbort(error) && !(error instanceof FencedError)) throw error;
+    }
+  }
+
+  /** Adds what delivery carried to a persisted set. */
+  #markDelivered(delivery: Delivery, marks: ReportTurn_Persisted, lostTasks: string[]): void {
+    marks.inputIds.push(delivery.inputId);
+    for (const note of delivery.notes) {
+      if (note.gap) marks.gapNoticeTurnNo = note.gap;
+      if (note.task) lostTasks.push(note.task.taskId);
+    }
+  }
+
+  /**
+   * A system/init that only records silent notes (every input it names was
+   * pushed with shouldQuery false): no turn starts; its result is dropped.
+   * The notes wait in #nextTurn for the turn of the input pushed after
+   * them, which credits them and publishes their view events first.
+   */
+  #silentInit(message: Record<string, unknown>): boolean {
+    const uuids = Array.isArray(message.user_message_uuids) ? message.user_message_uuids : [];
+    if (!uuids.length || !uuids.every((uuid) => typeof uuid === "string" && this.#silent.has(uuid))) return false;
+    this.#quiet = true;
+    return true;
+  }
+
+  async #startTurn(claimed: readonly string[] = []): Promise<void> {
     // A graceful end: the CLI started a turn after all; leaving the loop
     // ends the wait, and the query is closed at once.
     if (this.#exiting) throw new LeaseLost("the CLI is ending; no turn starts");
     // The SDK announces each input it takes (command_lifecycle "started")
     // before the system/init of the turn that takes it.
+    // The init names the inputs it starts with: they are this turn's even
+    // when their announcement was missed.
+    for (const uuid of claimed) this.#attribute(uuid);
     const origin: TurnOriginName = this.#nextTurn.length ? "input" : "cli";
     // A CLI turn delivers the notices of tasks that ended while idle.
     this.#undelivered.clear();
     const turn = new Turn(++this.#localSeq, origin);
     this.#turn = turn;
+    this.#quiet = false;
+    if (this.#silentTimer) clearTimeout(this.#silentTimer);
+    this.#silentTimer = undefined;
     this.#releaseWantedAt = 0;
     this.#clearIdle();
     try {
@@ -832,8 +989,7 @@ export class SessionRunner {
     const turn = this.#turn;
     if (!turn) return;
     // The result names the inputs the turn answered.
-    const answered = [result.user_message_uuid, ...(Array.isArray(result.user_message_uuids) ? result.user_message_uuids : [])];
-    for (const uuid of answered) if (typeof uuid === "string") this.#attribute(uuid);
+    for (const uuid of resultUuids(result)) this.#attribute(uuid);
     // An input pushed before this turn started and not named by it no longer
     // keeps the session busy: if it is ever named, its own turn starts at once
     // (it may have raced a turn the CLI started itself). It stays unmarked
@@ -915,7 +1071,11 @@ export class SessionRunner {
 
   /** After the control plane recorded the marks: forget them locally. */
   async #persisted(marks: ReportTurn_Persisted, lostTasks: string[]): Promise<void> {
-    for (const id of marks.inputIds) this.#pushed.delete(id);
+    for (const id of marks.inputIds) {
+      this.#pushed.delete(id);
+      this.#silent.delete(id);
+      this.#announced.delete(id);
+    }
     if (marks.gapNoticeTurnNo && marks.gapNoticeTurnNo === this.#gapMark) this.#gapMark = 0n;
     if (lostTasks.length) {
       await this.ops.call({ case: "patchState", value: create(PatchSessionStateSchema, { bgtasksEnded: lostTasks }) });
@@ -979,7 +1139,10 @@ export class SessionRunner {
     if (this.#repair) return;
     this.#repair = true;
     const turn = this.#turn;
-    if (!turn) return;
+    if (!turn) {
+      this.#keepSilentForRepair();
+      return;
+    }
     turn.incomplete = true;
     turn.workerAbort = true;
     // Stop the turn: its result ends the loop; a CLI that does not answer is closed.
@@ -991,6 +1154,26 @@ export class SessionRunner {
         void this.#repairAfterTimeout(gen);
       }
     }, this.#abortGraceMs).unref?.();
+  }
+
+  /**
+   * mirror_error between turns: silent notes the CLI recorded (their
+   * silent result came) were written to the transcript, whose batches the
+   * repair resends. They are not pushed again: like a broken turn's items,
+   * they are marked persisted once the repair succeeded, and shown now.
+   */
+  #keepSilentForRepair(): void {
+    // Only those whose silent result confirmed them: an announced one may
+    // not have been written, so it is pushed again (a duplicate uuid is
+    // skipped by the store; a lost note would not be).
+    const taken = this.#nextTurn.filter((d) => d.recorded);
+    if (!taken.length) return;
+    this.#nextTurn = this.#nextTurn.filter((d) => !taken.includes(d));
+    this.#brokenItems ??= create(ReportTurn_PersistedSchema);
+    for (const delivery of taken) {
+      this.#markDelivered(delivery, this.#brokenItems, this.#brokenLostTasks);
+      for (const event of delivery.events) this.#publisher.add(event.kind, event.payload);
+    }
   }
 
   async #repairAfterTimeout(gen: Generation): Promise<void> {
@@ -1131,10 +1314,20 @@ export class SessionRunner {
     if (this.#ending) return;
     const gen = await this.#ensureQuery();
     if (!gen || this.#ending) return;
-    for (const input of inputs) this.#push(gen, input);
+    // A note followed by another input of the batch goes to the CLI with
+    // shouldQuery false: it is recorded in the conversation, under its own
+    // id, and read with the next input that queries (the CLI merges them
+    // into one user message for the model, the note first), so the note
+    // and that input run one turn. The control plane returns notes first.
+    // A note keeps its place before a NOW input by taking its priority.
+    const now = inputs.map((input) => input.priority === InputPriority.NOW);
+    inputs.forEach((input, i) => {
+      const silent = input.kind === InputKind.NOTE && i < inputs.length - 1;
+      this.#push(gen, input, silent, silent && now.slice(i + 1).some(Boolean));
+    });
   }
 
-  #push(gen: Generation, input: SessionReply_Inputs_Input): void {
+  #push(gen: Generation, input: SessionReply_Inputs_Input, silent = false, nowAfter = false): void {
     const timestamp = new Date().toISOString();
     const notes = this.#notes.splice(0);
     const events: Delivery["events"] = [];
@@ -1161,15 +1354,17 @@ export class SessionRunner {
     const content = notes.length
       ? [...notes.map((n) => ({ type: "text" as const, text: systemReminder(n.text) })), { type: "text" as const, text: input.text }]
       : input.text;
-    const now = input.priority === InputPriority.NOW;
+    const now = input.priority === InputPriority.NOW || nowAfter;
     const message: SDKUserMessage = {
       type: "user", message: { role: "user", content }, parent_tool_use_id: null,
       uuid: input.inputId as SDKUserMessage["uuid"],
       ...(synthetic ? { isSynthetic: true } : {}),
       ...(now ? { priority: "now" as const } : {}),
+      ...(silent ? { shouldQuery: false } : {}),
     };
     this.#pushed.add(input.inputId);
-    this.#deliveries.set(input.inputId, { inputId: input.inputId, notes, events, pushedAtSeq: this.#localSeq });
+    if (silent) this.#silent.add(input.inputId);
+    this.#deliveries.set(input.inputId, { inputId: input.inputId, notes, events, pushedAtSeq: this.#localSeq, message });
     // A NOW input aborts the turn running at its delivery, not its replacement.
     if (now && this.#turn) this.#turn.userAbort = true;
     gen.prompt.push(message);
@@ -1300,7 +1495,8 @@ export class SessionRunner {
       task = {
         startedAt: performance.now(), toolUseId: typeof message.tool_use_id === "string" ? message.tool_use_id : "",
         description: clipUtf8(typeof message.description === "string" ? message.description : "", 1024),
-        kind: clipUtf8(typeof message.task_type === "string" ? message.task_type : "", 128),
+        // The SDK's task_type (local_agent, local_bash, ...); the CLI's own name for a task without one.
+        kind: clipUtf8(typeof message.task_type === "string" && message.task_type ? message.task_type : "unknown", 128),
         backgrounded: message.is_backgrounded === true, patched: false, published: false,
         held: message.is_backgrounded === true || json.length > MAX_HELD_TASK_EVENT ? undefined : json,
       };
@@ -1389,6 +1585,12 @@ export class SessionRunner {
     this.#log.info("session idle; releasing", { session_id: this.sessionId, requested });
     this.#finish({ release: ReleaseLease_Reason.IDLE });
   }
+}
+
+/** The inputs a result names. */
+function resultUuids(result: Record<string, unknown>): string[] {
+  const all = [result.user_message_uuid, ...(Array.isArray(result.user_message_uuids) ? result.user_message_uuids : [])];
+  return all.filter((uuid): uuid is string => typeof uuid === "string");
 }
 
 function usageJson(result: Record<string, unknown>): string {

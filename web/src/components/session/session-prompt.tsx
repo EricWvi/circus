@@ -16,6 +16,7 @@ const textOnlyPaste = () => {}
 export function SessionPrompt({
   busy = false,
   pending = false,
+  pendingLabel,
   placeholder,
   sendDisabledReason = null,
   disabledReason = null,
@@ -26,6 +27,8 @@ export function SessionPrompt({
   busy?: boolean
   /** The message is being sent; the input keeps its text until it succeeds. */
   pending?: boolean
+  /** The submit button's label while pending; "Sending…" by default. */
+  pendingLabel?: string
   placeholder?: string
   /**
    * Why nothing can be sent or stopped right now (e.g. disconnected); typing
@@ -63,7 +66,12 @@ export function SessionPrompt({
         <PromptInputFooter>
           <PromptInputTools />
           <DisabledReason reason={blocked}>
-            <PromptInputSubmit status={status} onStop={onStop} disabled={pending || blocked !== null} />
+            <PromptInputSubmit
+              status={status}
+              onStop={onStop}
+              submittedLabel={pendingLabel}
+              disabled={pending || blocked !== null}
+            />
           </DisabledReason>
         </PromptInputFooter>
       </PromptInput>

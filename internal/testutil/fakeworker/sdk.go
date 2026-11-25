@@ -27,9 +27,16 @@ func (m sdkMessage) event() *pb.PublishEvents_Event {
 }
 
 func (m sdkMessage) transcript(parent string) *pb.TranscriptEntry {
+	return m.transcriptWith(parent, nil)
+}
+
+// transcriptWith is transcript with fields the CLI writes to the entry
+// only, never to the view event.
+func (m sdkMessage) transcriptWith(parent string, only object) *pb.TranscriptEntry {
 	payload := maps.Clone(m.payload)
 	delete(payload, "aborted")
 	delete(payload, "circus_note")
+	maps.Copy(payload, only)
 	payload["parentUuid"] = nil
 	if parent != "" {
 		payload["parentUuid"] = parent

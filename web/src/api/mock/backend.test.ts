@@ -461,11 +461,11 @@ describe("sessions", () => {
     expect(plain.permissionMode).toBe("auto")
     // Empty and auto are the same request.
     expect((await client.sessions.createSession({ ...req, permissionMode: "auto" })).sessionId).toBe(plain.sessionId)
-    await expectCode(client.sessions.createSession({ ...req, permissionMode: "plan" }), "already_exists")
+    await expectCode(client.sessions.createSession({ ...req, permissionMode: "acceptEdits" }), "already_exists")
 
-    const plan = await client.sessions.createSession({ ...req, clientRequestId: crypto.randomUUID(), permissionMode: "plan" })
-    expect(plan.permissionMode).toBe("plan")
-    expect((await client.sessions.getSession({ sessionId: plan.sessionId })).permissionMode).toBe("plan")
+    const edits = await client.sessions.createSession({ ...req, clientRequestId: crypto.randomUUID(), permissionMode: "acceptEdits" })
+    expect(edits.permissionMode).toBe("acceptEdits")
+    expect((await client.sessions.getSession({ sessionId: edits.sessionId })).permissionMode).toBe("acceptEdits")
     await expectCode(
       client.sessions.createSession({ ...req, clientRequestId: crypto.randomUUID(), permissionMode: "x".repeat(129) }),
       "invalid_argument",

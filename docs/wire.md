@@ -1591,6 +1591,37 @@ within the epoch. NORMAL (and unspecified priority) merges into a running
 turn or starts one when idle; NOW interrupts the current turn first.
 Approval inputs use NORMAL.
 
+A note (`KIND_NOTE`) followed by another input of the same TakeInputs reply
+(which lists notes first) is pushed with `shouldQuery: false`, and with
+NOW priority when an input after it in the reply has it, so it keeps its
+place. Claude Code records such a message as a transcript entry of its own
+(its uuid, `queueTranscriptOnly`) without a model call and merges it into
+the next message that queries, the note first: the note and that input
+run one turn. While idle the CLI still wraps each such note in a
+`system/init` and a `result` (no model call, `num_turns` 0) that name only
+it: the worker reports no turn for them and publishes nothing of them; the
+note is credited to the next turn, which publishes its view event before
+the input's; a turn's `system/init` also claims the inputs its
+`user_message_uuids` name. A model call between such an init and its
+result starts a real turn after all; another system message does not. A
+failed result of such a note credits nothing: the note is pushed again,
+silent and at normal priority (never NOW, which would stop the turn of the
+input it goes with if that turn already started): a running turn absorbs
+it, else it is recorded before or after that input, whichever the CLI
+reaches first. When recorded notes are not followed by a turn within the
+worker's abort grace (10 s) and no input pushed with them has been
+announced by the CLI (`command_lifecycle` queued or started, and not
+cancelled since: a turn for it is coming, however long its
+UserPromptSubmit hooks take; a cancel starts the bound again), or when the query closes
+first, they are marked persisted (PatchSessionState) and their view events
+published by themselves, and the inputs pushed with them no longer keep
+the session busy. A `mirror_error` between turns keeps the recorded notes
+as a broken turn's items, marked after the repair and never pushed again;
+notes announced but not yet recorded are pushed again.
+Mid-turn the note is absorbed like any message (a `queued_command`
+attachment naming it). A lost lease finds each note by its own id, like
+any input. The last input of a reply always queries.
+
 ReportTurn is idempotent by (epoch, local_seq, phase). Repeats retain the
 turn_no, do not increment turn_count twice and do not duplicate persistence
 marks. STARTED is the first SDK message belonging to a new turn and must use
@@ -1724,7 +1755,8 @@ view events carry `circus_note` without `isSynthetic`; any other note is
 synthetic. The control plane holds `ledger_merged` and `ledger_discarded`
 back (deferred inputs): `TakeInputs` returns them only with an input that
 starts a turn, before it, so they never start one themselves (a turn the
-CLI starts by itself takes no input and does not carry them). Held notes do
+CLI starts by itself takes no input and does not carry them); they reach
+the agent in that input's turn (see "Inputs and turns"). Held notes do
 not count towards the 32 open inputs; at most 8 are held, and one more
 replaces them with a single `ledger_merged` note that tells the agent to
 re-read `INDEX.md`.

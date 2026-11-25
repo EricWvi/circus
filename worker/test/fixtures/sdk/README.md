@@ -26,5 +26,7 @@ because `test/runner/replay.ts` performs them itself.
 | `denied.json` | Auto mode denies a Bash call (`system/permission_denied`, `result.permission_denials`). |
 | `mirror.json` | Every attempt of one append fails: `system/mirror_error` before `result`. |
 | `held.json` | A slow append holds back `result`. |
+| `silent.json` | Idle: two notes pushed with `shouldQuery: false`, then a message. Each note gets a `system/init` and an empty `result` without a model call; the message runs the turn (its one model request holds the notes first). |
+| `silent-busy.json` | Mid-turn (Bash call): a note with `shouldQuery: false` and a message are absorbed into the running turn (`queued_command` attachments). |
 
 Re-record them when the SDK version changes.

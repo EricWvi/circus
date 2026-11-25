@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -13,6 +14,7 @@ import (
 	wc "github.com/EricWvi/circus/internal/testutil/workerclient"
 	"github.com/EricWvi/circus/internal/wire"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 type input = pb.SessionReply_Inputs_Input
@@ -58,9 +60,14 @@ type session struct {
 
 	longApprovals map[string]string
 	seen          map[string]bool
-	inputs        []*input
-	jobs          []*pb.SessionState_Job
-	events        []*pb.PublishEvents_Event
+	// silent maps each note pushed with shouldQuery false (as the real
+	// worker pushes a note followed by another input of the same
+	// TakeInputs reply) to the input after it: the CLI records the note
+	// without a model call, and that input runs the turn that reads it.
+	silent map[string]string
+	inputs []*input
+	jobs   []*pb.SessionState_Job
+	events []*pb.PublishEvents_Event
 
 	recovery *pb.Recovery
 	owed     map[string]*pb.SessionState_Call
@@ -258,12 +265,29 @@ func (s *session) takeInputs() error {
 	if err != nil {
 		return err
 	}
+	var batch []*input
 	for _, in := range r.GetInputs().GetInputs() {
 		if !s.seen[in.GetInputId()] {
 			s.seen[in.GetInputId()] = true
-			s.inputs = append(s.inputs, in)
+			batch = append(batch, in)
 		}
 	}
+	for i, in := range batch {
+		if in.GetKind() != pb.SessionReply_Inputs_Input_KIND_NOTE || i == len(batch)-1 {
+			continue
+		}
+		s.silent[in.GetInputId()] = batch[i+1].GetInputId()
+		// A note keeps its place before a NOW input: it takes its priority.
+		for _, later := range batch[i+1:] {
+			if later.GetPriority() == pb.InputPriority_INPUT_PRIORITY_NOW {
+				in = proto.CloneOf(in)
+				in.Priority = pb.InputPriority_INPUT_PRIORITY_NOW
+				batch[i] = in
+				break
+			}
+		}
+	}
+	s.inputs = append(s.inputs, batch...)
 	return nil
 }
 
@@ -396,11 +420,23 @@ func (s *session) workTurn(t *turn, in *input) error {
 		if err := s.deliverInput(t, in); err != nil {
 			return err
 		}
+		// A silent note is read with the input after it, in this turn,
+		// whatever that input's priority: the CLI records the note without
+		// a model call and runs the turn for that input (a NOW one included,
+		// which the note's own promotion to NOW kept behind it).
+		if next, ok := s.silent[in.GetInputId()]; ok {
+			if i := slices.IndexFunc(s.inputs, func(in *input) bool { return in.GetInputId() == next }); i >= 0 {
+				in = s.popInput(i)
+				continue
+			}
+		}
 		if err := s.serviceHints(t); err != nil {
 			return err
 		}
-		if err := s.script(t, in); err != nil {
-			return err
+		if _, silent := s.silent[in.GetInputId()]; !silent {
+			if err := s.script(t, in); err != nil {
+				return err
+			}
 		}
 		in = nil
 	}
@@ -427,7 +463,13 @@ func inputNote(in *input) (string, bool) {
 
 func (s *session) deliverInput(t *turn, in *input) error {
 	note, synthetic := inputNote(in)
-	if err := s.record(sdkUserMessage(s.sdkID, in.GetInputId(), in.GetText(), note, synthetic)); err != nil {
+	message := sdkUserMessage(s.sdkID, in.GetInputId(), in.GetText(), note, synthetic)
+	var only object
+	if _, silent := s.silent[in.GetInputId()]; silent {
+		// As the CLI records a message pushed with shouldQuery false.
+		only = object{"queueTranscriptOnly": true}
+	}
+	if err := s.recordWith(message, only); err != nil {
 		return err
 	}
 	if t.userMessageID == "" {
@@ -516,6 +558,7 @@ func (s *session) finishTurn(t *turn, workErr error) error {
 	if persisted != nil {
 		for _, id := range persisted.GetInputIds() {
 			delete(s.seen, id)
+			delete(s.silent, id)
 		}
 		if persisted.GetGapNoticeTurnNo() == s.gap {
 			s.gap = 0
@@ -544,8 +587,13 @@ func (s *session) queue(kind pb.SessionEvent_Kind, payload object) {
 }
 
 func (s *session) record(message sdkMessage) error {
+	return s.recordWith(message, nil)
+}
+
+// recordWith is record with fields for the transcript entry only.
+func (s *session) recordWith(message sdkMessage, only object) error {
 	message = s.stamp(message)
-	entry := message.transcript(s.parent)
+	entry := message.transcriptWith(s.parent, only)
 	r, err := s.request(wc.Append(s.id, s.epoch, "", s.appendSeq+1, entry))
 	if rejected(err, pb.SessionReply_Rejected_CODE_INVALID) || rejected(err, pb.SessionReply_Rejected_CODE_LIMIT) || errors.Is(err, wire.ErrTooLarge) {
 		return fmt.Errorf("%w: %v", errMirror, err)

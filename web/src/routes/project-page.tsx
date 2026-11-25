@@ -168,6 +168,7 @@ function ProjectHome({ project }: { project: Project }) {
             <SessionPrompt
               placeholder={t("projects.startPlaceholder")}
               pending={starting}
+              pendingLabel={t("projects.creatingSession")}
               disabledReason={noLocation && t("projects.noUsableLocation")}
               onSend={start}
             />

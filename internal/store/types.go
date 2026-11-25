@@ -1552,13 +1552,13 @@ func (j SessionJob) Size() int64 {
 		len(j.Description) + len(j.OutputPath) + rowOverhead)
 }
 
-// BgTask is one background task of the CLI itself (in M3, an asynchronous
-// subagent). Epoch is the lease epoch it started under: a task of an
+// BgTask is one background task of the CLI itself: a subagent, a shell
+// command, a workflow or another task the SDK reports. Epoch is the lease epoch it started under: a task of an
 // older epoch than the current one died with its CLI.
 type BgTask struct {
 	TaskID      string
 	ToolUseID   string
-	Kind        string // "agent"
+	Kind        string // the SDK's task_type, such as "local_agent" or "local_bash"; at most MaxIDBytes
 	Description string // at most MaxDescriptionBytes
 	Epoch       int64
 	StartedAt   int64

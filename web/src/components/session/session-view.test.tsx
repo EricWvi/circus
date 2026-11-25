@@ -556,11 +556,13 @@ describe("the session's permission mode", () => {
     const mode = document.querySelector<HTMLElement>("[data-session-permission-mode]")!
     expect(mode.dataset.sessionPermissionMode).toBe("acceptEdits")
     expect(mode.querySelector("span[aria-hidden]")?.textContent).toBe("Start mode: Accept edits")
-    // It is the mode the session started in: Claude may leave it (after a plan is approved, say).
+    // It is the mode the session started in: Claude may leave it.
     expect(mode.getAttribute("title")).toBe(
       "Permission mode the session started with: Accept edits\n" +
-        "File edits in the working folder run without asking; commands come to you for approval.\n" +
-        "Claude can switch modes during the session, for example when you approve its plan; this shows the mode it started with.",
+        "File edits in the working folder and common file-system commands, including deletions and redirections " +
+        "(such as mkdir, touch, mv, cp, rm and >), run without asking; " +
+        "other commands come to you for approval.\n" +
+        "Claude can switch modes during the session; this shows the mode it started with.",
     )
     expect(mode.querySelector(".sr-only")?.textContent).toMatch(/^Permission mode the session started with: Accept edits File edits/)
   })

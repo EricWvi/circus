@@ -1,8 +1,9 @@
-// The Claude Code permission modes a session can run in
-// (`SessionConfig.permission_mode`, the modes the worker accepts). An
-// empty mode on the wire is the default, `auto`.
+// The Claude Code permission modes a new session can start in
+// (`SessionConfig.permission_mode`). An empty mode on the wire is the
+// default, `auto`. Plan mode is not offered: a session has no way to
+// leave it yet (no `ExitPlanMode`), so it could never change anything.
 
-export const PERMISSION_MODES = ["auto", "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"] as const
+export const PERMISSION_MODES = ["auto", "default", "acceptEdits", "dontAsk", "bypassPermissions"] as const
 
 export type PermissionMode = (typeof PERMISSION_MODES)[number]
 

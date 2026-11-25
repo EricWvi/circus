@@ -49,6 +49,15 @@ interface Internal {
   byId: Map<string, SessionEvent>
   /** Input id → the user message's event id. */
   inputs: Map<string, string>
+  /**
+   * The notes the durable events right before this one told the agent:
+   * the worker publishes the notes delivered with an input just before
+   * that input's own event (a lost task's note followed by its
+   * BGTASK_ENDED), so when the input is the user's message they are shown
+   * right before it (see Builder.moveBefore). Only another durable event
+   * ends the run; a live-only one, which a reload does not replay, does not.
+   */
+  notesBefore: string[]
   /** Approval id → the tool call's event id. */
   approvals: Map<string, string>
   /**
@@ -99,6 +108,7 @@ export const emptyTranscript: Transcript = {
     order: [],
     byId: new Map(),
     inputs: new Map(),
+    notesBefore: [],
     approvals: new Map(),
     blocks: new Map(),
     skipped: new Map(),
@@ -272,6 +282,7 @@ class Builder {
       order: [...i.order],
       byId: new Map(i.byId),
       inputs: new Map(i.inputs),
+      notesBefore: i.notesBefore,
       approvals: new Map(i.approvals),
       blocks: new Map(i.blocks),
       skipped: new Map(i.skipped),
@@ -392,6 +403,10 @@ class Builder {
       this.lastSeq = raw.seq
     }
     if (raw.kind === "unspecified") return
+    // Only a run of notes delivered together is moved: any other durable
+    // event ends it, except a lost task's BGTASK_ENDED, which follows its note.
+    const notesBefore = this.internal.notesBefore
+    if (raw.seq > 0 && raw.kind !== "bgtask_ended") this.internal.notesBefore = []
     const at = isoTime(raw.tsUnixMs)
     if (raw.truncated && contentKinds.has(raw.kind)) {
       if (raw.seq > 0) {
@@ -413,7 +428,7 @@ class Builder {
         return
       }
       case "user":
-        return this.user(p, raw.seq, at)
+        return this.user(p, raw.seq, at, notesBefore)
       case "assistant":
         if (raw.ephemeral) return this.partial(p, at, raw.tsUnixMs)
         return this.assistant(p, at, raw.tsUnixMs)
@@ -619,7 +634,7 @@ class Builder {
     this.add({ kind: "user_message", id, at, text: str(p.text), clientMsgId, delivery: "accepted" })
   }
 
-  private user(p: Json, seq: number, at: string) {
+  private user(p: Json, seq: number, at: string, notesBefore: string[]) {
     const message = isObject(p.message) ? p.message : {}
     const content = message.content
     const input = this.internal.inputs.get(str(p.uuid))
@@ -629,6 +644,8 @@ class Builder {
       if (event?.kind === "user_message" && event.delivery !== "delivered") {
         this.put({ ...event, delivery: "delivered" })
       }
+      // The notes it carried were read first: they go right before it.
+      if (event) this.moveBefore(notesBefore, input)
       return
     }
     // A subagent's prompt and tool results stay inside its Task call.
@@ -647,13 +664,44 @@ class Builder {
     if (hiddenNotes.has(note)) return
     const uuid = str(p.uuid)
     if (!uuid && seq <= 0) return
+    const id = uuid ? `note:${uuid}` : `note:${seq}`
     this.add({
       kind: "note",
-      id: uuid ? `note:${uuid}` : `note:${seq}`,
+      id,
       at,
       noteKind: shownNotes.has(note) ? (note as NoteKind) : "other",
       text: ledgerNotes.has(note) ? withoutLedgerMarker(noteText(content)) : noteText(content),
     })
+    this.internal.notesBefore = [...notesBefore, id]
+  }
+
+  /**
+   * Shows the notes `ids`, delivered with the user's message `target`, right
+   * before it. The message keeps the place it got when it was accepted, so
+   * the notes move up to it, but only past events that belong to no turn:
+   * the user's messages not delivered yet, ledger and workspace changes and
+   * history gaps. When anything else lies between them (an earlier turn's
+   * output or end, a message or note delivered before), nothing moves: a
+   * note never goes above an earlier turn, and stays after the message.
+   */
+  private moveBefore(ids: readonly string[], target: string) {
+    const { order, byId } = this.internal
+    const at = order.indexOf(target)
+    const moved = new Set(ids.filter((id) => order.indexOf(id) > at))
+    if (at < 0 || moved.size === 0) return
+    const last = Math.max(...[...moved].map((id) => order.indexOf(id)))
+    const crossable = (e: SessionEvent) =>
+      (e.kind === "user_message" && e.delivery !== "delivered") ||
+      e.kind === "ledger" ||
+      e.kind === "workspace" ||
+      e.kind === "history_gap"
+    for (const id of order.slice(at + 1, last)) {
+      if (!moved.has(id) && !crossable(byId.get(id)!)) return
+    }
+    const rest = order.filter((id) => !moved.has(id))
+    rest.splice(rest.indexOf(target), 0, ...order.filter((id) => moved.has(id)))
+    this.internal.order = rest
+    this.changed = true
   }
 
   /** `stopped`: the ids of the calls the user stopped, from the message's `tool_result_meta`. */

@@ -1,0 +1,1193 @@
+{
+ "scenario": "silent-busy",
+ "sdk": "0.3.330",
+ "cli": "2.1.330",
+ "steps": [
+  {
+   "t": "push",
+   "i": 0
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH0",
+    "state": "queued",
+    "uuid": "de9389ab-055f-42ad-8aa5-91dcc5393ce0",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH0",
+    "state": "started",
+    "uuid": "60ef6df4-5c55-47a7-8486-d3e0a5c84b8b",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "$SESSION",
+    "uuid": "1479c06a-5cd0-4b7e-998e-5b2574450b58",
+    "cwd": "/work/project",
+    "model": "claude-opus-5-5",
+    "permissionMode": "bypassPermissions",
+    "claude_code_version": "2.1.330",
+    "apiKeySource": "ANTHROPIC_API_KEY",
+    "output_style": "default",
+    "user_message_uuids": [
+     "$PUSH0"
+    ]
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "system",
+    "subtype": "status",
+    "status": "requesting",
+    "session_id": "$SESSION",
+    "uuid": "029ed9a0-62c9-44c6-a487-008c2b5a7d0d",
+    "user_message_uuids": [
+     "$PUSH0"
+    ]
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "message": {
+      "content": [],
+      "id": "msg_fake_2",
+      "model": "claude-opus-5-5",
+      "role": "assistant",
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "input_tokens": 25,
+       "output_tokens": 1
+      }
+     },
+     "type": "message_start"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "3d4e456b-3189-45a6-8b74-73ab76fb9e1c",
+    "ttft_ms": 9,
+    "thinking_display": "updates",
+    "api_message_id": "msg_fake_2",
+    "user_message_uuid": "$PUSH0",
+    "user_message_uuids": [
+     "$PUSH0"
+    ],
+    "owed_rows": []
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "content_block": {
+      "id": "toolu_fake_2_0",
+      "input": {},
+      "name": "Bash",
+      "type": "tool_use"
+     },
+     "index": 0,
+     "type": "content_block_start"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "338ed549-2547-4e7c-aa9c-944ddeb802f3",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "delta": {
+      "partial_json": "{\"command\":\"sleep 3\",",
+      "type": "input_json_delta"
+     },
+     "index": 0,
+     "type": "content_block_delta"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "6e7c8fbc-0fc9-41bc-affe-6d5fcca40773",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "delta": {
+      "partial_json": "\"description\":\"wait\"}",
+      "type": "input_json_delta"
+     },
+     "index": 0,
+     "type": "content_block_delta"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "6604eb81-bcff-4a99-a2f4-6f63cbeedd1a",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "assistant",
+    "message": {
+     "content": [
+      {
+       "id": "toolu_fake_2_0",
+       "input": {
+        "command": "sleep 3",
+        "description": "wait"
+       },
+       "name": "Bash",
+       "type": "tool_use"
+      }
+     ],
+     "id": "msg_fake_2",
+     "model": "claude-opus-5-5",
+     "role": "assistant",
+     "stop_reason": null,
+     "stop_sequence": null,
+     "type": "message",
+     "usage": {
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "input_tokens": 25,
+      "output_tokens": 1
+     },
+     "context_management": null
+    },
+    "parent_tool_use_id": null,
+    "session_id": "$SESSION",
+    "uuid": "e7cadec0-80fd-4a50-a528-9cde3dd25413",
+    "timestamp": "2026-11-25T08:37:41.651Z",
+    "user_message_uuid": "$PUSH0",
+    "user_message_uuids": [
+     "$PUSH0"
+    ]
+   }
+  },
+  {
+   "t": "push",
+   "i": 1
+  },
+  {
+   "t": "push",
+   "i": 2
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "index": 0,
+     "type": "content_block_stop"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "5bdee5bf-bd8a-40cb-9888-60477d0a296b",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "delta": {
+      "stop_reason": "tool_use",
+      "stop_sequence": null
+     },
+     "type": "message_delta",
+     "usage": {
+      "output_tokens": 10
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "319762cc-ae21-4386-af33-11cd8110403a",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "message_stop"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "897da25d-c6fc-43f9-9d6b-9c9b90738463",
+    "api_message_id": "msg_fake_2"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH1",
+    "state": "queued",
+    "uuid": "ebd2c147-0b02-432a-b2cf-d53058bfa955",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH2",
+    "state": "queued",
+    "uuid": "a30ee3b8-0c44-4a31-96f1-31dcd194dcca",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "queue-operation",
+     "operation": "enqueue",
+     "timestamp": "2026-11-25T08:37:41.602Z",
+     "sessionId": "$SESSION",
+     "content": "RUN_TOOL please"
+    },
+    {
+     "type": "queue-operation",
+     "operation": "dequeue",
+     "timestamp": "2026-11-25T08:37:41.603Z",
+     "sessionId": "$SESSION"
+    },
+    {
+     "parentUuid": null,
+     "isSidechain": false,
+     "promptId": "b8a59341-20f5-4b9c-9c7d-7aa0f165e4b4",
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": "RUN_TOOL please"
+     },
+     "uuid": "$PUSH0",
+     "timestamp": "2026-11-25T08:37:41.615Z",
+     "permissionMode": "bypassPermissions",
+     "promptSource": "sdk",
+     "turnOrigin": "sdk",
+     "turnPosition": {
+      "promptIndex": 0,
+      "turnIndex": 1
+     },
+     "turnAttributionKey": "$PUSH0",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "b40be4df-b66f-4646-99f7-df653df0021d",
+     "isSidechain": false,
+     "attachment": {
+      "type": "model",
+      "identity": {
+       "modelId": "claude-opus-5-5",
+       "marketingName": "Opus 5.5",
+       "knowledgeCutoff": "June 2026"
+      },
+      "text": "You are powered by the model named Opus 5.5. The exact model ID is claude-opus-5-5. Assistant knowledge cutoff is June 2026."
+     },
+     "type": "attachment",
+     "uuid": "1cc06cce-47fb-4cd9-8c69-e70f6644ab15",
+     "timestamp": "2026-11-25T08:37:41.614Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nYou are powered by the model named Opus 5.5. The exact model ID is claude-opus-5-5. Assistant knowledge cutoff is June 2026.\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "8af3724b-b192-49fb-9583-c882e756c9e2",
+     "isSidechain": false,
+     "attachment": {
+      "type": "auto_mode",
+      "autoModeConsentFlow": false,
+      "finishExposedWork": false,
+      "bashFirst": true,
+      "bashFirstSteer": "relaxed",
+      "steerOnly": true,
+      "bypass": true
+     },
+     "type": "attachment",
+     "uuid": "f622d080-cca2-45ab-b0d5-2199bbcc4e13",
+     "timestamp": "2026-11-25T08:37:41.614Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nWhile bypass permissions mode is active:\n\nYou can do much of your work through the Bash tool when it is the simpler route: read files with cat, head, or sed -n, search with grep and find, and make small, mechanical file changes with sed, heredocs, or short scripts instead of the dedicated Read, Edit, or Write tools. The choice is yours: prefer Edit or Write when a shell edit would be fragile, such as exact or multi-line replacements, or sed/awk flags that differ between GNU and BSD/macOS.\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "type": "atis-latch",
+     "atis": "",
+     "sessionId": "$SESSION"
+    },
+    {
+     "parentUuid": "3cab3524-865f-4cab-baac-0bc1febfdf02",
+     "isSidechain": false,
+     "attachment": {
+      "type": "date",
+      "date": "2026-11-25"
+     },
+     "type": "attachment",
+     "uuid": "ab52d111-766d-41ed-a426-cb1c7bdb7197",
+     "timestamp": "2026-11-25T08:37:41.626Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nToday's date is 2026-11-25.\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "ab52d111-766d-41ed-a426-cb1c7bdb7197",
+     "isSidechain": false,
+     "attachment": {
+      "type": "remote_session_change",
+      "url": null,
+      "commit": "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+      "pr": "\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)",
+      "sendUserFileHint": false,
+      "managedCommit": false,
+      "managedPr": false
+     },
+     "type": "attachment",
+     "uuid": "16ac9055-fc2a-461b-b89b-492ddbf2fa2f",
+     "timestamp": "2026-11-25T08:37:41.627Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nAttribution for git commits and pull requests you create from here on (this replaces Claude Code's own earlier attribution guidance, such as a previous copy of this reminder; the user's own instructions about these lines, such as a CLAUDE.md or memory rule, take precedence over this reminder, but do not add attribution lines this reminder leaves out):\n- End git commit messages with:\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n- End pull request descriptions with:\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "user",
+     "renderedBesideToolResult": true,
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    }
+   ]
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "tools-used",
+     "tools": [
+      "Bash"
+     ],
+     "sessionId": "$SESSION"
+    },
+    {
+     "parentUuid": "7f380190-48eb-496a-ae62-8d4e33bbfe81",
+     "isSidechain": false,
+     "message": {
+      "content": [
+       {
+        "id": "toolu_fake_2_0",
+        "input": {
+         "command": "sleep 3",
+         "description": "wait"
+        },
+        "name": "Bash",
+        "type": "tool_use"
+       }
+      ],
+      "id": "msg_fake_2",
+      "model": "claude-opus-5-5",
+      "role": "assistant",
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+       "input_tokens": 25,
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "output_tokens": 10,
+       "output_tokens_details": {
+        "thinking_tokens": 0
+       },
+       "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+       },
+       "service_tier": "standard",
+       "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+       },
+       "inference_geo": "",
+       "iterations": [],
+       "speed": "standard",
+       "fallback_credit": null
+      },
+      "stop_details": null
+     },
+     "toolInputStreamMs": 1,
+     "apiBlockIndex": 0,
+     "requestRef": "3cbfc553-0a5c-4abf-b6d4-158b777e292a",
+     "requestedModel": "claude-opus-5-5",
+     "promptCacheRequested": "5m",
+     "type": "assistant",
+     "uuid": "e7cadec0-80fd-4a50-a528-9cde3dd25413",
+     "timestamp": "2026-11-25T08:37:41.651Z",
+     "effort": "medium",
+     "perTurnEffort": "medium",
+     "madeBy": "model",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "type": "queue-operation",
+     "operation": "enqueue",
+     "timestamp": "2026-11-25T08:37:41.669Z",
+     "sessionId": "$SESSION",
+     "content": "[circus ledger] Your ledger changes were merged: D?a is now D0."
+    },
+    {
+     "type": "queue-operation",
+     "operation": "enqueue",
+     "timestamp": "2026-11-25T08:37:41.669Z",
+     "sessionId": "$SESSION",
+     "content": "Also: what number?"
+    }
+   ]
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "last-prompt",
+     "lastPrompt": "RUN_TOOL please",
+     "leafUuid": "e7cadec0-80fd-4a50-a528-9cde3dd25413",
+     "sessionId": "$SESSION"
+    },
+    {
+     "type": "atis-latch",
+     "atis": "",
+     "sessionId": "$SESSION"
+    }
+   ]
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "system",
+    "subtype": "task_started",
+    "task_id": "bfehpmas0",
+    "run_id": "0mwvvf0c2-a1b986ff",
+    "tool_use_id": "toolu_fake_2_0",
+    "description": "wait",
+    "is_backgrounded": false,
+    "task_type": "local_bash",
+    "uuid": "239ba946-1ef9-4214-b85b-f415a444d238",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "system",
+    "subtype": "task_notification",
+    "task_id": "bfehpmas0",
+    "run_id": "0mwvvf0c2-a1b986ff",
+    "tool_use_id": "toolu_fake_2_0",
+    "status": "completed",
+    "output_file": "",
+    "summary": "wait",
+    "uuid": "450cc4a6-4475-4ff9-a459-44e1e83bb10c",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "user",
+    "message": {
+     "role": "user",
+     "content": [
+      {
+       "tool_use_id": "toolu_fake_2_0",
+       "type": "tool_result",
+       "content": "(Bash completed with no output)",
+       "is_error": false
+      }
+     ]
+    },
+    "parent_tool_use_id": null,
+    "session_id": "$SESSION",
+    "uuid": "b63a96f7-aae4-4ab2-ad4f-8ced3dc64745",
+    "timestamp": "2026-11-25T08:37:44.697Z",
+    "tool_use_result": {
+     "stdout": "",
+     "stderr": "",
+     "interrupted": false,
+     "isImage": false,
+     "noOutputExpected": false
+    },
+    "tool_result_meta": [
+     {
+      "id": "toolu_fake_2_0",
+      "permission_decision": {
+       "decision": "accept",
+       "source": "config",
+       "reason_type": "mode"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH1",
+    "state": "started",
+    "uuid": "cba2732e-8894-4a2d-88da-07a66f46a348",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH2",
+    "state": "started",
+    "uuid": "4f51b2ba-bbc1-4f09-8ed2-a27c59968ebd",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "system",
+    "subtype": "status",
+    "status": "requesting",
+    "session_id": "$SESSION",
+    "uuid": "64f07c97-d10b-49fe-8b43-4e840b0517bd",
+    "user_message_uuids": [
+     "$PUSH0",
+     "$PUSH1",
+     "$PUSH2"
+    ]
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "message": {
+      "content": [],
+      "id": "msg_fake_3",
+      "model": "claude-opus-5-5",
+      "role": "assistant",
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "input_tokens": 25,
+       "output_tokens": 1
+      }
+     },
+     "type": "message_start"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "e37a0dc7-1e71-4924-b150-5efca76a9e7b",
+    "ttft_ms": 3,
+    "thinking_display": "updates",
+    "api_message_id": "msg_fake_3"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "content_block": {
+      "text": "",
+      "type": "text"
+     },
+     "index": 0,
+     "type": "content_block_start"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "a63cc12d-b879-4f93-a56e-b03d56a01707",
+    "api_message_id": "msg_fake_3"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "delta": {
+      "text": "done afte",
+      "type": "text_delta"
+     },
+     "index": 0,
+     "type": "content_block_delta"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "70491677-7914-4174-80ef-f9747bfc3f4a",
+    "api_message_id": "msg_fake_3"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "delta": {
+      "text": "r tool (r",
+      "type": "text_delta"
+     },
+     "index": 0,
+     "type": "content_block_delta"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "0393db80-aedf-4738-8949-260075630fc7",
+    "api_message_id": "msg_fake_3"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "delta": {
+      "text": "equest 3)",
+      "type": "text_delta"
+     },
+     "index": 0,
+     "type": "content_block_delta"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "77470921-a443-46a4-b051-f37e635bca42",
+    "api_message_id": "msg_fake_3"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "assistant",
+    "message": {
+     "content": [
+      {
+       "text": "done after tool (request 3)",
+       "type": "text"
+      }
+     ],
+     "id": "msg_fake_3",
+     "model": "claude-opus-5-5",
+     "role": "assistant",
+     "stop_reason": null,
+     "stop_sequence": null,
+     "type": "message",
+     "usage": {
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "input_tokens": 25,
+      "output_tokens": 1
+     },
+     "context_management": null
+    },
+    "parent_tool_use_id": null,
+    "session_id": "$SESSION",
+    "uuid": "79ad4486-4f1f-4c50-8a0f-01ebd7b6d85d",
+    "timestamp": "2026-11-25T08:37:44.711Z"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "index": 0,
+     "type": "content_block_stop"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "9a85c52e-0ebd-42c6-832f-6f62024a432f",
+    "api_message_id": "msg_fake_3"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "delta": {
+      "stop_reason": "end_turn",
+      "stop_sequence": null
+     },
+     "type": "message_delta",
+     "usage": {
+      "output_tokens": 10
+     }
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "3ee382d8-4cb7-4a7b-aeb2-f71a3d8c9d06",
+    "api_message_id": "msg_fake_3"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "stream_event",
+    "event": {
+     "type": "message_stop"
+    },
+    "session_id": "$SESSION",
+    "parent_tool_use_id": null,
+    "uuid": "001292c0-2dbb-45aa-8d96-09533e6b5630",
+    "api_message_id": "msg_fake_3"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH1",
+    "state": "completed",
+    "uuid": "7f174df8-d256-4a01-bb23-c5d82a323020",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH2",
+    "state": "completed",
+    "uuid": "4afb9533-784d-4932-9141-a8889f01aee6",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "parentUuid": "e7cadec0-80fd-4a50-a528-9cde3dd25413",
+     "isSidechain": false,
+     "promptId": "b8a59341-20f5-4b9c-9c7d-7aa0f165e4b4",
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": [
+       {
+        "tool_use_id": "toolu_fake_2_0",
+        "type": "tool_result",
+        "content": "(Bash completed with no output)",
+        "is_error": false
+       }
+      ]
+     },
+     "uuid": "b63a96f7-aae4-4ab2-ad4f-8ced3dc64745",
+     "timestamp": "2026-11-25T08:37:44.697Z",
+     "toolUseResult": {
+      "stdout": "",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false
+     },
+     "sandboxed": false,
+     "sourceToolAssistantUUID": "e7cadec0-80fd-4a50-a528-9cde3dd25413",
+     "permissionDecision": {
+      "decision": "accept",
+      "source": "config",
+      "reasonType": "mode"
+     },
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "parentUuid": "e69a23c0-fd95-4940-aecf-ec40b92304bf",
+     "isSidechain": false,
+     "attachment": {
+      "type": "queued_command",
+      "prompt": "[circus ledger] Your ledger changes were merged: D?a is now D0.",
+      "source_uuid": "$PUSH1",
+      "delivery_id": "257419ea-d713-4fc8-a573-dbd0d4ab80b5",
+      "commandMode": "prompt",
+      "timestamp": "2026-11-25T08:37:41.669Z"
+     },
+     "type": "attachment",
+     "uuid": "5db7ebb5-7bf8-49d5-8282-cdecf9ca94b0",
+     "timestamp": "2026-11-25T08:37:41.669Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nThe user sent a new message while you were working:\n[circus ledger] Your ledger changes were merged: D?a is now D0.\n\nThis is how Claude Code surfaces messages the user sends mid-turn \u2014 within the running turn, often alongside the next tool result, rather than as a separate conversation turn. Address the message above as you continue this turn.\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    },
+    {
+     "type": "queue-operation",
+     "operation": "remove",
+     "timestamp": "2026-11-25T08:37:44.703Z",
+     "sessionId": "$SESSION",
+     "content": "[circus ledger] Your ledger changes were merged: D?a is now D0.",
+     "reason": "absorbed_mid_turn",
+     "commandUuid": "$PUSH1",
+     "deliveryId": "257419ea-d713-4fc8-a573-dbd0d4ab80b5"
+    },
+    {
+     "type": "queue-operation",
+     "operation": "remove",
+     "timestamp": "2026-11-25T08:37:44.703Z",
+     "sessionId": "$SESSION",
+     "content": "Also: what number?",
+     "reason": "absorbed_mid_turn",
+     "commandUuid": "$PUSH2",
+     "deliveryId": "8b5c6fdc-22d1-43b4-ab63-3b3c243e0ccc"
+    },
+    {
+     "parentUuid": "5db7ebb5-7bf8-49d5-8282-cdecf9ca94b0",
+     "isSidechain": false,
+     "attachment": {
+      "type": "queued_command",
+      "prompt": "Also: what number?",
+      "source_uuid": "$PUSH2",
+      "delivery_id": "8b5c6fdc-22d1-43b4-ab63-3b3c243e0ccc",
+      "commandMode": "prompt",
+      "timestamp": "2026-11-25T08:37:41.669Z"
+     },
+     "type": "attachment",
+     "uuid": "fa387798-bb78-46f9-a31d-e813186b8aae",
+     "timestamp": "2026-11-25T08:37:41.669Z",
+     "rendered": [
+      {
+       "content": "<system-reminder>\nThe user sent a new message while you were working:\nAlso: what number?\n\nThis is how Claude Code surfaces messages the user sends mid-turn \u2014 within the running turn, often alongside the next tool result, rather than as a separate conversation turn. Address the message above as you continue this turn.\n</system-reminder>"
+      }
+     ],
+     "renderedRole": "system",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    }
+   ]
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "parentUuid": "fa387798-bb78-46f9-a31d-e813186b8aae",
+     "isSidechain": false,
+     "message": {
+      "content": [
+       {
+        "text": "done after tool (request 3)",
+        "type": "text"
+       }
+      ],
+      "id": "msg_fake_3",
+      "model": "claude-opus-5-5",
+      "role": "assistant",
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+       "input_tokens": 25,
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "output_tokens": 10,
+       "output_tokens_details": {
+        "thinking_tokens": 0
+       },
+       "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+       },
+       "service_tier": "standard",
+       "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+       },
+       "inference_geo": "",
+       "iterations": [],
+       "speed": "standard",
+       "fallback_credit": null
+      },
+      "stop_details": null
+     },
+     "apiBlockIndex": 0,
+     "requestRef": "de3fc824-0897-42b8-8050-684f9b584e5d",
+     "requestedModel": "claude-opus-5-5",
+     "promptCacheRequested": "5m",
+     "type": "assistant",
+     "uuid": "79ad4486-4f1f-4c50-8a0f-01ebd7b6d85d",
+     "timestamp": "2026-11-25T08:37:44.711Z",
+     "effort": "medium",
+     "perTurnEffort": "medium",
+     "madeBy": "model",
+     "userType": "external",
+     "entrypoint": "sdk-ts",
+     "cwd": "/work/project",
+     "sessionId": "$SESSION",
+     "version": "2.1.330",
+     "gitBranch": "main"
+    }
+   ]
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "last-prompt",
+     "lastPrompt": "RUN_TOOL please",
+     "leafUuid": "79ad4486-4f1f-4c50-8a0f-01ebd7b6d85d",
+     "sessionId": "$SESSION"
+    },
+    {
+     "type": "atis-latch",
+     "atis": "",
+     "sessionId": "$SESSION"
+    }
+   ]
+  },
+  {
+   "t": "msg",
+   "m": {
+    "duration_api_ms": 33,
+    "stop_reason": "end_turn",
+    "session_id": "$SESSION",
+    "total_cost_usd": 0.0006000000000000001,
+    "usage": {
+     "input_tokens": 50,
+     "cache_creation_input_tokens": 0,
+     "cache_read_input_tokens": 0,
+     "output_tokens": 20,
+     "output_tokens_details": {
+      "thinking_tokens": 0
+     },
+     "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+     },
+     "service_tier": "standard",
+     "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+     },
+     "inference_geo": "",
+     "iterations": [],
+     "speed": "standard",
+     "fallback_credit": null
+    },
+    "modelUsage": {
+     "claude-opus-5-5": {
+      "inputTokens": 50,
+      "outputTokens": 20,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.0006000000000000001,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 0,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 0,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+     }
+    },
+    "permission_denials": [],
+    "terminal_reason": "completed",
+    "fast_mode_state": "off",
+    "fast_mode_disabled_reason": "sdk_opt_in_required",
+    "subagent_stats": {
+     "spawned": 0,
+     "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+     },
+     "started_in_background": 0,
+     "max_depth": 0,
+     "spawned_by_subagents": 0,
+     "completed": 0,
+     "failed": 0,
+     "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+     },
+     "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+     },
+     "by_type": {}
+    },
+    "safety_stops": 0,
+    "is_error": false,
+    "num_turns": 2,
+    "subtype": "success",
+    "api_error_status": null,
+    "result": "done after tool (request 3)",
+    "ttft_ms": 46,
+    "type": "result",
+    "duration_ms": 3109,
+    "uuid": "27645918-cf3a-4f48-a6d2-b0edbb1c4b72",
+    "begun_message_ids": [
+     "msg_fake_2",
+     "msg_fake_3"
+    ],
+    "ttft_stream_ms": 45,
+    "time_to_request_ms": 37,
+    "first_content_frame_ms": 46,
+    "user_message_uuid": "$PUSH0",
+    "user_message_uuids": [
+     "$PUSH0",
+     "$PUSH1",
+     "$PUSH2"
+    ],
+    "request_sent_wall_ms": 1795595861642,
+    "first_request_input_tokens": 25,
+    "first_request_cache_read_input_tokens": 0,
+    "queued_turn_count": 0,
+    "result_index": 0,
+    "model_usage_since_last_result": {
+     "claude-opus-5-5": {
+      "inputTokens": 50,
+      "outputTokens": 20,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.0006000000000000001,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 0,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 0,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+     }
+    }
+   }
+  },
+  {
+   "t": "msg",
+   "m": {
+    "type": "command_lifecycle",
+    "command_uuid": "$PUSH0",
+    "state": "completed",
+    "uuid": "7155dc35-9d1f-4bb0-b626-5b21d2c8906c",
+    "session_id": "$SESSION"
+   }
+  },
+  {
+   "t": "append",
+   "entries": [
+    {
+     "type": "cost-state",
+     "sessionId": "$SESSION",
+     "totalCostUSD": 0.0006000000000000001,
+     "totalAPIDuration": 33,
+     "totalAPIDurationWithoutRetries": 30,
+     "totalToolDuration": 3033,
+     "totalLinesAdded": 0,
+     "totalLinesRemoved": 0,
+     "totalDuration": 8311,
+     "startTime": 1795595861413,
+     "modelUsage": {
+      "claude-opus-5-5": {
+       "inputTokens": 50,
+       "outputTokens": 20,
+       "thinkingTokens": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0,
+       "cacheCreationEphemeral5mInputTokens": 0,
+       "cacheCreationEphemeral1hInputTokens": 0,
+       "webSearchRequests": 0,
+       "costUSD": 0.0006000000000000001
+      }
+     },
+     "hasUnknownModelCost": false
+    }
+   ]
+  }
+ ]
+}

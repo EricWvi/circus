@@ -47,6 +47,9 @@ describe("event payloads equal the Go fake worker's", () => {
     // A control-plane note (a KIND_NOTE input) keeps its category; a ledger
     // note is not synthetic.
     note_ledger_problems: [Kind.USER, userMessagePayload(SESSION, INPUT, "[circus ledger] The ledger collection found problems.", "ledger_problems", STAMP, false)],
+    // Held notes, published each with its own event before the input whose message carried them.
+    note_ledger_merged: [Kind.USER, userMessagePayload(SESSION, EVENT, "[circus ledger] Your ledger changes were merged.", "ledger_merged", STAMP, false)],
+    note_ledger_discarded: [Kind.USER, userMessagePayload(SESSION, EVENT, "[circus ledger] Your ledger changes were discarded.", "ledger_discarded", STAMP, false)],
   };
 
   test.each(golden("worker_events.json").map((g) => [g.name!, g] as const))("%s", (name, g) => {

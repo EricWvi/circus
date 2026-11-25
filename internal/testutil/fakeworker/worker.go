@@ -432,7 +432,7 @@ func (w *worker) startSession(id string) {
 	ctx, cancel := context.WithCancelCause(context.WithoutCancel(w.ctx))
 	s := &session{
 		w: w, id: id, ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1),
-		seen: make(map[string]bool),
+		seen: make(map[string]bool), silent: make(map[string]string),
 	}
 	w.sessions[id] = s
 	w.wg.Go(func() {

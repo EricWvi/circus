@@ -339,6 +339,7 @@ export const en = {
     devicesNotReady: "Devices aren't available yet. Try again in a moment.",
     newSession: "New session",
     startPlaceholder: "Start a session… (Shift+Enter for a new line)",
+    creatingSession: "Creating session…",
     location: "Location",
     startConflict: "Couldn't start the session: the request clashed with an earlier one. Send again to start it.",
     locationGone: "Choose one of the project's locations.",
@@ -514,7 +515,7 @@ export const en = {
     startMode: "Start mode: {{mode}}",
     startModeLabel: "Permission mode the session started with: {{mode}}",
     startModeNote:
-      "Claude can switch modes during the session, for example when you approve its plan; this shows the mode it started with.",
+      "Claude can switch modes during the session; this shows the mode it started with.",
     modes: {
       auto: {
         name: "Auto",
@@ -526,11 +527,8 @@ export const en = {
       },
       acceptEdits: {
         name: "Accept edits",
-        description: "File edits in the working folder run without asking; commands come to you for approval.",
-      },
-      plan: {
-        name: "Plan",
-        description: "Claude looks around and proposes a plan first; what it wants to change or run comes to you for approval.",
+        description:
+          "File edits in the working folder and common file-system commands, including deletions and redirections (such as mkdir, touch, mv, cp, rm and >), run without asking; other commands come to you for approval.",
       },
       dontAsk: {
         name: "Don't ask",

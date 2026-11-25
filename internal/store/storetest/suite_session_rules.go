@@ -551,6 +551,9 @@ func testStringCaps(t *testing.T, b Backend) {
 			}
 			return err
 		}},
+		{"task kind", id, func(v string) error {
+			return s.PatchSessionRecords(ctx, fence, store.RecordsPatch{BgTasksStarted: []store.BgTask{{TaskID: fmt.Sprint("k", len(v)), Kind: v}}})
+		}},
 		{"task description", desc, func(v string) error {
 			return s.PatchSessionRecords(ctx, fence, store.RecordsPatch{BgTasksStarted: []store.BgTask{{TaskID: "t", Kind: "agent", Description: v}}})
 		}},

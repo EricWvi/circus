@@ -73,6 +73,26 @@ describe("budgets, bounds and restarts", () => {
     await h.done;
   });
 
+  test("a background task is recorded with the kind the SDK reports, or unknown without one", async () => {
+    const kinds = ["local_agent", "local_bash", "local_workflow", "mcp_task", "remote_agent", undefined];
+    const tasks = kinds.map((kind, i): Step => {
+      const step = task(`k${i}`, true) as { t: "msg"; m: Record<string, unknown> };
+      if (kind === undefined) delete step.m.task_type;
+      else step.m.task_type = kind;
+      return step;
+    });
+    const script: Step[] = [{ t: "push", i: 0 }, started(0), init(), ...tasks, assistant(), result({ user_message_uuids: ["$PUSH0"] })];
+    const h = new Harness([script]);
+    h.link.addInput({ inputId: ID1, text: "one" });
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "the turn");
+    await waitFor(() => h.link.ops("patchState").flatMap((p) => p.bgtasksStarted).length === kinds.length, "every task recorded");
+    const recorded = new Map(h.link.ops("patchState").flatMap((p) => p.bgtasksStarted).map((t) => [t.taskId, t.kind]));
+    expect(kinds.map((_, i) => recorded.get(`k${i}`))).toEqual(["local_agent", "local_bash", "local_workflow", "mcp_task", "remote_agent", "unknown"]);
+    h.runner.lose("done");
+    await h.done;
+  });
+
   test("a failed authentication closes the query; the next input starts a new one", async () => {
     const script: Step[] = [
       { t: "push", i: 0 }, started(0), init(),

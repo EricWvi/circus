@@ -1,9 +1,11 @@
 package fakeworker
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	pb "github.com/EricWvi/circus/gen/go/circus/v1"
 	"google.golang.org/protobuf/proto"
@@ -66,6 +68,97 @@ func TestNoteInputStartsTurn(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A held note before a NOW input is read in the input's turn, before it,
+// as with the real worker: the note is pushed silently and takes the
+// input's priority, and the CLI runs one turn for the input. Idle, that
+// is the only turn; mid-turn, the running turn is stopped first.
+func TestSilentNoteBeforeNowInput(t *testing.T) {
+	const merged = "[circus ledger] Your ledger changes were merged."
+	note := func() *input {
+		return &input{InputId: "note-1", Kind: pb.SessionReply_Inputs_Input_KIND_NOTE, Text: merged, Note: "ledger_merged",
+			Priority: pb.InputPriority_INPUT_PRIORITY_NORMAL}
+	}
+	now := func() *input {
+		in := userInput("in-1", "/fake ledger-path")
+		in.Priority = pb.InputPriority_INPUT_PRIORITY_NOW
+		return in
+	}
+	ended := func(f *fakeLink) []*pb.ReportTurn {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		var out []*pb.ReportTurn
+		for _, r := range f.reports {
+			if r.GetPhase() == pb.ReportTurn_PHASE_ENDED {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	users := func(f *fakeLink) []any {
+		var ids []any
+		for _, u := range f.kinds(pb.SessionEvent_KIND_USER) {
+			if u["uuid"] == "note-1" || strings.HasPrefix(fmt.Sprint(u["uuid"]), "in-") {
+				ids = append(ids, u["uuid"])
+			}
+		}
+		return ids
+	}
+
+	t.Run("idle", func(t *testing.T) {
+		f := &fakeLink{inputs: []*input{note(), now()}}
+		f.run(t)
+		reports := ended(f)
+		if len(reports) != 1 || reports[0].GetOutcome() != pb.TurnOutcome_TURN_OUTCOME_COMPLETED ||
+			!reflect.DeepEqual(reports[0].GetPersisted().GetInputIds(), []string{"note-1", "in-1"}) {
+			t.Fatalf("turns: %v", reports)
+		}
+		if got := users(f); !reflect.DeepEqual(got, []any{"note-1", "in-1"}) {
+			t.Errorf("user events %v", got)
+		}
+		// The note gets no answer of its own: the turn answers the input.
+		if got := f.resultText(t); got != "ledger path: none" {
+			t.Errorf("answer %q", got)
+		}
+		for _, a := range f.kinds(pb.SessionEvent_KIND_ASSISTANT) {
+			if strings.Contains(fmt.Sprint(a["message"]), "ledger changes were merged") {
+				t.Errorf("the note was answered: %v", a)
+			}
+		}
+	})
+
+	t.Run("mid-turn", func(t *testing.T) {
+		// A slow answer streams while the note and the NOW input arrive.
+		f := &fakeLink{inputs: []*input{userInput("in-0", "/fake slow 20")}, hints: make(chan *pb.WorkerEvent, 1), ended: 2}
+		go func() {
+			// The turn has started and taken its input (polled here: not
+			// the test goroutine).
+			for {
+				f.mu.Lock()
+				started := len(f.reports) == 1 && len(f.inputs) == 0
+				f.mu.Unlock()
+				if started {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			f.mu.Lock()
+			f.inputs = []*input{note(), now()}
+			f.mu.Unlock()
+			f.hints <- inputNudge()
+		}()
+		f.run(t)
+		reports := ended(f)
+		if len(reports) != 2 || reports[0].GetOutcome() != pb.TurnOutcome_TURN_OUTCOME_STOPPED ||
+			reports[1].GetOutcome() != pb.TurnOutcome_TURN_OUTCOME_COMPLETED ||
+			!reflect.DeepEqual(reports[1].GetPersisted().GetInputIds(), []string{"note-1", "in-1"}) {
+			t.Fatalf("turns: %v", reports)
+		}
+		if got := users(f); !reflect.DeepEqual(got, []any{"in-0", "note-1", "in-1"}) {
+			t.Errorf("user events %v", got)
+		}
+	})
 }
 
 func TestLedgerPathScript(t *testing.T) {

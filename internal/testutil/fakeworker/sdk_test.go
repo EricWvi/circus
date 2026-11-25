@@ -154,6 +154,10 @@ func TestWorkerEventPayloads(t *testing.T) {
 		{"note_history_missing", pb.SessionEvent_KIND_USER, user(eventID, "Part of the conversation history is missing.", noteHistoryMissing)},
 		// A ledger note is not synthetic; its view event names it.
 		{"note_ledger_problems", pb.SessionEvent_KIND_USER, ledgerNote(inputID, "[circus ledger] The ledger collection found problems.", noteLedgerProblems)},
+		// Held notes, published each with its own event before the input
+		// whose message carried them.
+		{"note_ledger_merged", pb.SessionEvent_KIND_USER, ledgerNote(eventID, "[circus ledger] Your ledger changes were merged.", "ledger_merged")},
+		{"note_ledger_discarded", pb.SessionEvent_KIND_USER, ledgerNote(eventID, "[circus ledger] Your ledger changes were discarded.", "ledger_discarded")},
 	}
 	type goldenEvent struct {
 		Name      string          `json:"name"`

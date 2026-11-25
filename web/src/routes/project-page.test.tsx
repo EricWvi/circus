@@ -167,6 +167,26 @@ describe("the first message", () => {
   })
 })
 
+describe("the button while a session is created", () => {
+  it("says the session is being created, not that it stops anything", async () => {
+    const state = seedState()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: { ...client.sessions, createSession: async (req) => (await held, client.sessions.createSession(req)) },
+    }))
+    fireEvent.change(composer(), { target: { value: "Hello" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(0)
+    const button = screen.getByRole("button", { name: "Creating session…" }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull()
+    release()
+    await advance(1000)
+  })
+})
+
 describe("starting a session again", () => {
   type CreateReq = Parameters<CircusClient["sessions"]["createSession"]>[0]
 
@@ -341,25 +361,29 @@ describe("the permission mode of a new session", () => {
     fireEvent.click(picker())
     await advance(0)
     const options = screen.getAllByRole("option")
+    // Plan mode is not offered: the session could not leave it.
     expect(options.map((o) => o.querySelector(".font-medium")?.textContent)).toEqual([
       "Auto",
       "Default",
       "Accept edits",
-      "Plan",
       "Don't ask",
       "Bypass permissions",
     ])
-    expect(screen.getByRole("option", { name: /^Plan/ }).textContent).toContain("proposes a plan first")
-    fireEvent.click(screen.getByRole("option", { name: /^Plan/ }))
+    const acceptEdits = screen.getByRole("option", { name: /^Accept edits/ }).textContent
+    expect(acceptEdits).toContain(
+      "common file-system commands, including deletions and redirections (such as mkdir, touch, mv, cp, rm and >), run without asking",
+    )
+    expect(acceptEdits).toContain("other commands come to you for approval")
+    fireEvent.click(screen.getByRole("option", { name: /^Accept edits/ }))
     await advance(0)
-    expect(picker().textContent).toBe("Plan")
+    expect(picker().textContent).toBe("Accept edits")
 
     fireEvent.change(composer(), { target: { value: "Sketch the migration" } })
     fireEvent.click(screen.getByRole("button", { name: "Submit" }))
     await advance(1000)
-    expect(creates.map((c) => c.permissionMode)).toEqual(["plan"])
+    expect(creates.map((c) => c.permissionMode)).toEqual(["acceptEdits"])
     const created = state.sessions.find((s) => !before.has(s.sessionId))!
-    expect(created.permissionMode).toBe("plan")
+    expect(created.permissionMode).toBe("acceptEdits")
     expect(router.state.location.pathname).toBe(`/p/circus/s/${created.sessionId}`)
   })
 

@@ -44,6 +44,8 @@ type fakeLink struct {
 
 	// hints, when set, are sent on the Attach stream as they come.
 	hints chan *pb.WorkerEvent
+	// ended is how many ENDED reports run waits for (default 1).
+	ended int
 }
 
 // run serves the fake worker until it has reported a turn ENDED, then
@@ -63,7 +65,13 @@ func (f *fakeLink) run(t *testing.T) {
 	wait.For(t, func() bool {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		return len(f.reports) != 0 && f.reports[len(f.reports)-1].GetPhase() == pb.ReportTurn_PHASE_ENDED
+		n := 0
+		for _, r := range f.reports {
+			if r.GetPhase() == pb.ReportTurn_PHASE_ENDED {
+				n++
+			}
+		}
+		return n >= max(f.ended, 1) && f.reports[len(f.reports)-1].GetPhase() == pb.ReportTurn_PHASE_ENDED
 	})
 	cancel()
 	if err := wait.Recv(t, done); err != nil && !errors.Is(err, context.Canceled) {
