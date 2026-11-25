@@ -18,6 +18,17 @@ const alive = (pid: number) => {
     return false;
   }
 };
+/** Whether the process has exited or is a zombie; it may be reaped between the checks. */
+const goneOrZombie = (pid: number) => {
+  if (!alive(pid)) return true;
+  try {
+    return readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1].startsWith("Z");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH" || code === "ENOENT") return true;
+    throw error;
+  }
+};
 const linux = process.platform === "linux";
 const killQuietly = (pid: number) => {
   try {
@@ -233,7 +244,7 @@ describe.skipIf(!linux)("CLI processes", () => {
     await processes.confirmExit("s1");
     expect(alive(orphan)).toBe(true);
     processes.cleanup("s1");
-    await waitFor(() => !alive(orphan) || readFileSync(`/proc/${orphan}/stat`, "utf8").split(") ")[1].startsWith("Z"), "orphan killed");
+    await waitFor(() => goneOrZombie(orphan), "orphan killed");
   });
 
   test("a record whose pid now leads another process group is left alone", async () => {
@@ -463,7 +474,7 @@ describe.skipIf(!linux)("CLI processes", () => {
       // Without an exit time it counts as the CLI's leftover.
       writeFileSync(join(dir, "old.1.1.cli.json"), record());
       new CliProcesses(dir, undefined, captureLogger()).cleanupAll();
-      await waitFor(() => !alive(member) || readFileSync(`/proc/${member}/stat`, "utf8").split(") ")[1].startsWith("Z"), "leftover killed");
+      await waitFor(() => goneOrZombie(member), "leftover killed");
     } finally {
       killQuietly(member);
     }
