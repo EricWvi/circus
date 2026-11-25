@@ -326,6 +326,12 @@ func (o *ops) ArchiveLedgerChangeset(ctx context.Context, id string) error {
 	return err
 }
 
+// purgeChangesetsQuery deletes up to a limit of a project's changesets,
+// found through an index on project_id; its args are the project id and
+// the limit.
+const purgeChangesetsQuery = `DELETE FROM ledger_changesets WHERE id IN (
+	SELECT id FROM ledger_changesets WHERE project_id = ? LIMIT ?)`
+
 // purgeLedgerChangesets deletes the changesets of a deleted project, at
 // most ledgerInstallRows rows per transaction. It continues when ctx ends,
 // within the ledger cleanup budget.
@@ -343,8 +349,7 @@ func (o *ops) purgeLedgerChangesets(ctx context.Context, projectID string) error
 				return nil
 			}
 			var err error
-			n, err = tx.exec(ctx, `DELETE FROM ledger_changesets WHERE id IN (
-				SELECT id FROM ledger_changesets WHERE project_id = ? LIMIT ?)`, projectID, ledgerInstallRows)
+			n, err = tx.exec(ctx, purgeChangesetsQuery, projectID, ledgerInstallRows)
 			return err
 		})
 		if err == nil && o.db != nil && o.db.afterChangesetChunk != nil {

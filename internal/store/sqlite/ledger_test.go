@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -215,10 +216,24 @@ func TestDeleteProjectWithLargeLedger(t *testing.T) {
 		t.Fatalf("history after an interrupted delete = %+v, %v", page, err)
 	}
 
-	const maxLatency = 250 * time.Millisecond
+	// Other calls keep running because nothing holds the store across the
+	// chunks: the store's only lock is its single connection, which each
+	// chunk takes for one transaction of at most ledgerInstallRows rows and
+	// which database/sql hands to a waiting call when the chunk commits. So
+	// the test checks the transactions and that reads complete between
+	// them, not how long a read takes: that is one chunk's commit, whose
+	// fsync depends on the host's disk and on what else writes to it, plus
+	// the reader's own scheduling on a loaded machine.
+	remaining := ledgerRows(t, d, "p")
+	var chunksDone atomic.Int64
+	d.afterLedgerChunk = func() error {
+		chunksDone.Add(1)
+		return nil
+	}
+	type span struct{ before, after int64 }
 	stop, done := make(chan struct{}), make(chan error, 1)
-	var worst time.Duration
-	var reads int
+	var spans []span
+	var slowest time.Duration
 	go func() {
 		for {
 			select {
@@ -227,11 +242,10 @@ func TestDeleteProjectWithLargeLedger(t *testing.T) {
 				return
 			default:
 			}
-			call, cancel := context.WithTimeout(ctx, maxLatency)
-			start := time.Now()
-			_, err := d.GetUser(call, "owner")
-			cancel()
-			worst, reads = max(worst, time.Since(start)), reads+1
+			before, start := chunksDone.Load(), time.Now()
+			_, err := d.GetUser(ctx, "owner")
+			slowest = max(slowest, time.Since(start))
+			spans = append(spans, span{before, chunksDone.Load()})
 			if err != nil {
 				done <- err
 				return
@@ -243,15 +257,68 @@ func TestDeleteProjectWithLargeLedger(t *testing.T) {
 	err = d.DeleteProject(ctx, "owner", "p", 2)
 	took := time.Since(start)
 	close(stop)
-	if readErr := <-done; readErr != nil || worst > maxLatency || reads < 2 {
-		t.Fatalf("concurrent GetUser: %d reads, worst %s, %v", reads, worst, readErr)
+	if readErr := <-done; readErr != nil {
+		t.Fatalf("concurrent GetUser: %v", readErr)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("deleted %d ledger rows in %s: %d concurrent reads, worst latency %s", rows, took, reads, worst)
+	committed := chunksDone.Load()
+	if committed < int64(remaining/ledgerInstallRows) {
+		t.Fatalf("%d ledger rows deleted in %d transactions", remaining, committed)
+	}
+	// A read that waited for the whole deletion would start before its
+	// first chunk or end after its last.
+	between, widest := 0, int64(0)
+	for _, s := range spans {
+		if s.before > 0 && s.after < committed {
+			between++
+		}
+		widest = max(widest, s.after-s.before)
+	}
+	if between == 0 {
+		t.Fatalf("no concurrent GetUser completed between the %d ledger chunks (%d reads)", committed, len(spans))
+	}
+	t.Logf("deleted %d ledger rows in %s, %d transactions: %d of %d concurrent reads between them, at most %d chunks and %s during one",
+		remaining, took, committed, between, len(spans), widest, slowest)
 	if n := ledgerRows(t, d, "p"); n != 0 {
 		t.Fatalf("%d ledger rows left", n)
+	}
+}
+
+// The statements that delete a ledger in chunks find their rows through an
+// index, so each chunk's work is bounded by its rows, not by the size of
+// the ledger: a full scan would make every chunk, and every store call
+// waiting for it, slower as the ledger grows.
+func TestLedgerPurgeUsesIndex(t *testing.T) {
+	d := openSeeded(t, t.TempDir(), Options{})
+	defer d.Close()
+	statements := map[string][]any{purgeChangesetsQuery: {"p", ledgerInstallRows}}
+	for _, query := range purgeLedgerQueries {
+		statements[query] = []any{"p", 0, 1, ledgerInstallRows}
+	}
+	for query, args := range statements {
+		rows, err := d.sqldb.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+query, args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var plan []string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			plan = append(plan, detail)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			t.Fatal(err)
+		}
+		for _, step := range plan {
+			if strings.HasPrefix(step, "SCAN ledger_") {
+				t.Errorf("%s\nscans a ledger table: %q", query, plan)
+			}
+		}
 	}
 }
 

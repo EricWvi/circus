@@ -298,6 +298,23 @@ func (o *ops) checkLedgerReservation(ctx context.Context, projectID string, gene
 	return nil
 }
 
+// purgeLedgerQueries delete up to a limit of a project's ledger rows whose
+// generation is in a range, taking the args project id, first generation,
+// end generation and limit. Each finds its rows through the table's
+// primary key, so a chunk's work does not grow with the ledger.
+var purgeLedgerQueries = func() []string {
+	var queries []string
+	for _, table := range []struct{ name, key string }{
+		{"ledger_entries", "project_id, generation, number"},
+		{"ledger_versions", "project_id, generation, number, position"},
+	} {
+		queries = append(queries, `DELETE FROM `+table.name+` WHERE (`+table.key+`) IN (
+			SELECT `+table.key+` FROM `+table.name+`
+			WHERE project_id = ? AND generation >= ? AND generation < ? LIMIT ?)`)
+	}
+	return queries
+}()
+
 // purgeLedgerIndex deletes the entries and versions of every generation
 // other than the live and the most recently reserved one, at most
 // ledgerInstallRows rows per transaction.
@@ -313,15 +330,9 @@ func (o *ops) purgeLedgerIndex(ctx context.Context, projectID string) error {
 			if err != nil {
 				return err
 			}
-			for _, table := range []struct{ name, key string }{
-				{"ledger_entries", "project_id, generation, number"},
-				{"ledger_versions", "project_id, generation, number, position"},
-			} {
+			for _, query := range purgeLedgerQueries {
 				for _, r := range [][2]int64{{0, live}, {live + 1, reserved}} {
-					n, err := tx.exec(ctx, `DELETE FROM `+table.name+` WHERE (`+table.key+`) IN (
-						SELECT `+table.key+` FROM `+table.name+`
-						WHERE project_id = ? AND generation >= ? AND generation < ? LIMIT ?)`,
-						projectID, r[0], r[1], ledgerInstallRows-deleted)
+					n, err := tx.exec(ctx, query, projectID, r[0], r[1], ledgerInstallRows-deleted)
 					if err != nil {
 						return err
 					}
