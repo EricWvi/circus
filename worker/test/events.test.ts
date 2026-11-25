@@ -44,6 +44,8 @@ describe("event payloads equal the Go fake worker's", () => {
     note_previous_turn_interrupted: [Kind.USER, userMessagePayload(SESSION, EVENT, "The previous turn was interrupted.", "previous_turn_interrupted", STAMP)],
     note_lost_bgtask: [Kind.USER, userMessagePayload(SESSION, EVENT, "Background task task-1 was lost.", "lost_bgtask", STAMP)],
     note_history_missing: [Kind.USER, userMessagePayload(SESSION, EVENT, "Part of the conversation history is missing.", "history_missing", STAMP)],
+    // A control-plane note (a KIND_NOTE input) keeps its category.
+    note_ledger_problems: [Kind.USER, userMessagePayload(SESSION, INPUT, "The ledger collection found problems.", "ledger_problems", STAMP)],
   };
 
   test.each(golden("worker_events.json").map((g) => [g.name!, g] as const))("%s", (name, g) => {

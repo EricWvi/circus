@@ -14,6 +14,7 @@ import {
   useRecoverSession,
   useResolveApproval,
   useRetryWorkspace,
+  useSessionLedgerFollows,
   useStopSession,
 } from "@/api/hooks"
 import type { ModelProvider, Project, QueueReason, SessionDetails, WorkspaceStatus } from "@/api/types"
@@ -27,6 +28,7 @@ import {
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { SessionProviderPicker } from "@/components/model-providers/provider-picker"
 import { PageHeader } from "@/components/page-header"
+import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { StatusBadge, WorkspaceBadge } from "@/components/status-dot"
 import { lastInputWasKeyboard, lastInputWasTouch } from "@/lib/input-modality"
 import { currentQueueReason, fixedOnProvidersPage, queueReasonText } from "@/lib/queue-reason"
@@ -45,6 +47,7 @@ import { EventItem } from "./event-list"
 import { SessionMenu } from "./session-menu"
 import { BrokenCard, DeviceOfflineNotice, GoneNotice, StoppedNotice, WorkerDisconnectedNotice } from "./session-notices"
 import { SessionPrompt } from "./session-prompt"
+import { LedgerButton, SessionLedgerSheet } from "./session-ledger"
 import { WorkspaceBanner, WorkspaceComposerNote } from "./workspace-banner"
 
 export function SessionView({ project, session }: { project: Project; session: SessionDetails }) {
@@ -73,12 +76,25 @@ export function SessionView({ project, session }: { project: Project; session: S
   const providers = useModelProviders()
   const changeProvider = useChangeSessionProvider()
   const [providerOpen, setProviderOpen] = useState(false)
+  const [ledgerOpen, setLedgerOpen] = useState(false)
+  // The drawer opens from the header's button, not a SheetTrigger: focus goes back to it.
+  const {
+    triggerRef: ledgerButton,
+    onOpenChange: ledgerFocusChange,
+    onCloseAutoFocus: ledgerCloseFocus,
+  } = useOverlayFocus<HTMLButtonElement>()
+  const openLedger = (open: boolean) => {
+    ledgerFocusChange(open)
+    setLedgerOpen(open)
+  }
   // The last action that failed, shown until the next one.
   const [actionError, setActionError] = useState<unknown>(null)
   const act = <Req,>(mutation: { mutate: (req: Req, options: { onError: (e: unknown) => void }) => void }, req: Req) => {
     setActionError(null)
     mutation.mutate(req, { onError: setActionError })
   }
+
+  useSessionLedgerFollows(sessionId, session.ledger?.updatedAtUnixMs ?? 0)
 
   const devices = useDevices()
   const composer = useRef<HTMLDivElement>(null)
@@ -177,6 +193,8 @@ export function SessionView({ project, session }: { project: Project; session: S
       <PageHeader
         actions={
           <>
+            {/* The session's repository state will sit beside its Ledger. */}
+            <LedgerButton ref={ledgerButton} status={session.ledger} onOpen={() => openLedger(true)} />
             <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground md:flex">
               {t("session.onDevice", { device: session.device })}
               {deviceOffline && <OfflineMark device={session.device} />}
@@ -205,6 +223,9 @@ export function SessionView({ project, session }: { project: Project; session: S
             )}
             {!watch.gone && (
               <SessionMenu
+                sessionId={sessionId}
+                projectId={project.projectId}
+                ledger={session.ledger}
                 stopped={stopped}
                 disabledReason={disconnected}
                 onStopSession={() => act(stopSession, { sessionId })}
@@ -230,6 +251,15 @@ export function SessionView({ project, session }: { project: Project; session: S
         )}
       </PageHeader>
 
+      <SessionLedgerSheet
+        open={ledgerOpen}
+        onOpenChange={openLedger}
+        onCloseAutoFocus={ledgerCloseFocus}
+        sessionId={sessionId}
+        projectId={project.projectId}
+        turnRunning={busy}
+        deviceOffline={deviceOffline}
+      />
       <ConnectionBanner connection={connection} noticed={watch.lossNoticed} onRetryNow={watch.retryNow} />
       <span aria-live="polite" className="sr-only" data-workspace-announcement>
         {announcement}
@@ -261,6 +291,7 @@ export function SessionView({ project, session }: { project: Project; session: S
               <EventItem
                 key={event.id}
                 event={event}
+                projectId={project.projectId}
                 deviceName={session.device}
                 actionsDisabledReason={disconnected}
                 approvalDisabledReason={approvalBlocked}

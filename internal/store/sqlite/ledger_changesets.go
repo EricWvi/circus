@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strconv"
@@ -22,13 +23,13 @@ func (o *ops) GetLedgerNextNumber(ctx context.Context, projectID string) (uint32
 }
 
 const changesetCols = `id, project_id, state, base_commit, opener_worker_id, created_at, updated_at,
-	merge_commit, merge_parent, code_commit, numbers, discard_reason, archived`
+	merge_commit, merge_parent, code_commit, numbers, discard_reason, archived, session_id`
 
 func scanChangeset(s scanner) (store.LedgerChangeset, error) {
 	var c store.LedgerChangeset
 	var state, numbers string
 	err := s.Scan(&c.ID, &c.ProjectID, &state, &c.BaseCommit, &c.OpenerWorkerID, &c.CreatedAt, &c.UpdatedAt,
-		&c.Merge.Commit, &c.Merge.Parent, &c.Merge.CodeCommit, &numbers, &c.DiscardReason, &c.Archived)
+		&c.Merge.Commit, &c.Merge.Parent, &c.Merge.CodeCommit, &numbers, &c.DiscardReason, &c.Archived, &c.SessionID)
 	if err != nil {
 		return c, mapErr(err)
 	}
@@ -96,6 +97,14 @@ func (o *ops) CreateLedgerChangeset(ctx context.Context, c store.LedgerChangeset
 			return err
 		}
 	}
+	if c.SessionID != "" {
+		if err := store.CheckID("session id", c.SessionID); err != nil {
+			return err
+		}
+		if c.OpenerWorkerID != "" {
+			return invalid("a session's changeset has no opener")
+		}
+	}
 	return o.unit(ctx, func(tx *ops) error {
 		var exists bool
 		if err := tx.q.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?)", c.ProjectID).Scan(&exists); err != nil {
@@ -111,8 +120,8 @@ func (o *ops) CreateLedgerChangeset(ctx context.Context, c store.LedgerChangeset
 		if open >= store.MaxOpenLedgerChangesets {
 			return store.ErrLimit
 		}
-		_, err = tx.exec(ctx, `INSERT INTO ledger_changesets (id, project_id, state, base_commit, opener_worker_id, created_at, updated_at)
-			VALUES (?,?,'open',?,?,?,?)`, c.ID, c.ProjectID, c.BaseCommit, c.OpenerWorkerID, c.CreatedAt, c.UpdatedAt)
+		_, err = tx.exec(ctx, `INSERT INTO ledger_changesets (id, project_id, state, base_commit, opener_worker_id, created_at, updated_at, session_id)
+			VALUES (?,?,'open',?,?,?,?,?)`, c.ID, c.ProjectID, c.BaseCommit, c.OpenerWorkerID, c.CreatedAt, c.UpdatedAt, c.SessionID)
 		return err
 	})
 }
@@ -133,6 +142,13 @@ func (o *ops) ListLedgerChangesets(ctx context.Context, f store.LedgerChangesetF
 	}
 	query := `SELECT ` + changesetCols + ` FROM ledger_changesets WHERE project_id = ?`
 	args := []any{f.ProjectID}
+	if f.SessionID != "" {
+		if err := store.CheckID("session id", f.SessionID); err != nil {
+			return nil, false, err
+		}
+		query += ` AND session_id = ?`
+		args = append(args, f.SessionID)
+	}
 	if f.State != "" {
 		query += ` AND state = ?`
 		args = append(args, string(f.State))
@@ -213,9 +229,51 @@ func (o *ops) PrepareLedgerMerge(ctx context.Context, id string, m store.LedgerM
 	if at <= 0 {
 		return false, invalid("PrepareLedgerMerge needs a time")
 	}
-	return o.changesetUpdate(ctx, id, `UPDATE ledger_changesets SET merge_commit = ?, merge_parent = ?, code_commit = ?, numbers = ?,
-		updated_at = MAX(updated_at, ?) WHERE id = ? AND state = 'open' AND merge_commit = ''`,
-		m.Commit, m.Parent, m.CodeCommit, encodeLedgerNumbers(m.Numbers), at, id)
+	var ok bool
+	err := o.unit(ctx, func(tx *ops) error {
+		if err := tx.sessionIdle(ctx, id, at); err != nil {
+			return err
+		}
+		var err error
+		ok, err = tx.changesetUpdate(ctx, id, `UPDATE ledger_changesets SET merge_commit = ?, merge_parent = ?, code_commit = ?, numbers = ?,
+			updated_at = MAX(updated_at, ?) WHERE id = ? AND state = 'open' AND merge_commit = ''`,
+			m.Commit, m.Parent, m.CodeCommit, encodeLedgerNumbers(m.Numbers), at, id)
+		return err
+	})
+	return ok, err
+}
+
+// sessionIdle refuses (ErrTurnRunning) a merge or a discard of the session
+// changeset id while its session runs a turn, or has inputs taken and not
+// yet persisted (a turn about to start); a changeset without a session, or
+// of a deleted session, passes.
+func (o *ops) sessionIdle(ctx context.Context, id string, at int64) error {
+	var sessionID string
+	err := o.q.QueryRow(ctx, `SELECT session_id FROM ledger_changesets WHERE id = ?`, id).Scan(&sessionID)
+	if err != nil || sessionID == "" {
+		if isNotFound(mapErr(err)) {
+			return nil
+		}
+		return mapErr(err)
+	}
+	s, err := o.getSession(ctx, sessionID, at)
+	if isNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if s.State == store.SessionRunning {
+		return fmt.Errorf("%w: session %q", store.ErrTurnRunning, sessionID)
+	}
+	taken, err := o.count(ctx, `SELECT COUNT(*) FROM session_inputs WHERE session_id = ? AND state = 'taken'`, sessionID)
+	if err != nil {
+		return err
+	}
+	if taken > 0 {
+		return fmt.Errorf("%w: session %q has taken inputs for a turn", store.ErrTurnRunning, sessionID)
+	}
+	return nil
 }
 
 func (o *ops) ClearLedgerMerge(ctx context.Context, id, commit string) (bool, error) {
@@ -230,16 +288,37 @@ func (o *ops) FinishLedgerMerge(ctx context.Context, id, commit string, at int64
 	if !store.IsLedgerCommitID(commit) || at <= 0 {
 		return false, invalid("FinishLedgerMerge needs a commit and a time")
 	}
-	return o.changesetUpdate(ctx, id, `UPDATE ledger_changesets SET state = 'merged', updated_at = MAX(updated_at, ?)
-		WHERE id = ? AND state = 'open' AND merge_commit = ?`, at, id, commit)
+	var ok bool
+	err := o.unit(ctx, func(tx *ops) error {
+		var err error
+		ok, err = tx.changesetUpdate(ctx, id, `UPDATE ledger_changesets SET state = 'merged', updated_at = MAX(updated_at, ?)
+			WHERE id = ? AND state = 'open' AND merge_commit = ?`, at, id, commit)
+		if err != nil || !ok {
+			return err
+		}
+		return tx.sessionChangesetClosed(ctx, id, store.SessionLedgerRebase, at)
+	})
+	return ok, err
 }
 
 func (o *ops) DiscardLedgerChangeset(ctx context.Context, id, reason string, archived bool, at int64) (bool, error) {
 	if reason == "" || len(reason) > store.MaxLedgerDiscardReasonBytes || !utf8.ValidString(reason) || strings.ContainsRune(reason, 0) || at <= 0 {
 		return false, invalid("a discard needs a reason of 1 to %d bytes of UTF-8 and a time", store.MaxLedgerDiscardReasonBytes)
 	}
-	return o.changesetUpdate(ctx, id, `UPDATE ledger_changesets SET state = 'discarded', discard_reason = ?, archived = ?,
-		updated_at = MAX(updated_at, ?) WHERE id = ? AND state = 'open' AND merge_commit = ''`, reason, archived, at, id)
+	var ok bool
+	err := o.unit(ctx, func(tx *ops) error {
+		if err := tx.sessionIdle(ctx, id, at); err != nil {
+			return err
+		}
+		var err error
+		ok, err = tx.changesetUpdate(ctx, id, `UPDATE ledger_changesets SET state = 'discarded', discard_reason = ?, archived = ?,
+			updated_at = MAX(updated_at, ?) WHERE id = ? AND state = 'open' AND merge_commit = ''`, reason, archived, at, id)
+		if err != nil || !ok {
+			return err
+		}
+		return tx.sessionChangesetClosed(ctx, id, store.SessionLedgerReset, at)
+	})
+	return ok, err
 }
 
 func (o *ops) ArchiveLedgerChangeset(ctx context.Context, id string) error {

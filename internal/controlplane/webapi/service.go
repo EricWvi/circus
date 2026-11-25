@@ -14,6 +14,8 @@ import (
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/controlplane/ledgerslots"
+	"github.com/EricWvi/circus/internal/controlplane/ledgersnaps"
 	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/workspaces"
@@ -105,6 +107,11 @@ type Config struct {
 	Jobs       JobStopper
 	Workspaces *workspaces.Manager
 	Ledger     *ledger.Manager
+	// Snapshots keeps sessions' ledger snapshots; nil without a ledger.
+	Snapshots *ledgersnaps.Manager
+	// LedgerWrites are the ledger write slots shared with Snapshots; nil
+	// gives the changeset RPCs slots of their own.
+	LedgerWrites *ledgerslots.Slots
 	// Workers authenticates worker credentials for LedgerChangesetService,
 	// which is served only with it and Ledger.
 	Workers *auth.Authenticator
@@ -140,6 +147,8 @@ type Service struct {
 	jobs          JobStopper
 	workspaces    *workspaces.Manager
 	ledger        *ledger.Manager
+	snapshots     *ledgersnaps.Manager
+	writes        *ledgerslots.Slots
 	workers       *auth.Authenticator
 	removalMu     sync.Mutex
 	removals      map[[2]string]chan struct{}
@@ -170,7 +179,11 @@ func New(cfg Config) (*Service, error) {
 		publicURL: strings.TrimRight(cfg.PublicURL, "/"), version: cfg.Version,
 		bus: cfg.Bus, waker: cfg.Waker, scheduler: cfg.Scheduler, onlineWorkers: cfg.OnlineWorkers, secrets: cfg.Secrets, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
 		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout,
-		query: cfg.Query, workspaces: cfg.Workspaces, ledger: cfg.Ledger, workers: cfg.Workers, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
+		query: cfg.Query, workspaces: cfg.Workspaces, ledger: cfg.Ledger, snapshots: cfg.Snapshots, writes: cfg.LedgerWrites,
+		workers: cfg.Workers, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
+	if s.writes == nil {
+		s.writes = ledgerslots.New(ledgerslots.Writes, ledgerslots.WritesPerUser, ledgerslots.MaxWaiters)
+	}
 	if s.query == nil {
 		s.query = func(context.Context, string, *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error) {
 			return nil, gateway.ErrDeviceOffline

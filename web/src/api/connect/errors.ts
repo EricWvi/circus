@@ -23,16 +23,18 @@ const codeNames: Record<Code, ErrorCode> = {
 }
 
 const BAD_REQUEST = "google.rpc.BadRequest"
+const PRECONDITION_FAILURE = "google.rpc.PreconditionFailure"
 
 /**
- * The `field` of each `google.rpc.BadRequest` field violation in a
- * serialized BadRequest. `gen/ts` has no schema for google.rpc, so this
- * reads the two fields it needs off the wire: `field_violations` (1, a
- * repeated message) and, inside each, `field` (1, a string). Everything
- * else is skipped. Throws on malformed input.
+ * The first string field of each message in a serialized message's first
+ * repeated message field: both `google.rpc.BadRequest` (field_violations,
+ * then field) and `google.rpc.PreconditionFailure` (violations, then type)
+ * hold what the client needs there. `gen/ts` has no schema for google.rpc,
+ * so this reads the wire directly; everything else is skipped. Throws on
+ * malformed input.
  */
-export function badRequestFields(bytes: Uint8Array): string[] {
-  const fields: string[] = []
+function violationStrings(bytes: Uint8Array): string[] {
+  const out: string[] = []
   const reader = new BinaryReader(bytes)
   while (reader.pos < reader.len) {
     const [no, type] = reader.tag()
@@ -41,15 +43,35 @@ export function badRequestFields(bytes: Uint8Array): string[] {
       continue
     }
     const violation = new BinaryReader(reader.bytes())
-    let field = ""
+    let value = ""
     while (violation.pos < violation.len) {
       const [vno, vtype] = violation.tag()
-      if (vno === 1 && vtype === WireType.LengthDelimited) field = violation.string()
+      if (vno === 1 && vtype === WireType.LengthDelimited) value = violation.string()
       else violation.skip(vtype, vno)
     }
-    fields.push(field)
+    out.push(value)
   }
-  return fields
+  return out
+}
+
+/** The `field` of each field violation in a serialized `google.rpc.BadRequest`. */
+export const badRequestFields = violationStrings
+
+/** The `type` of each violation in a serialized `google.rpc.PreconditionFailure`. */
+export const preconditionTypes = violationStrings
+
+/** The type of the error's first PreconditionFailure violation that names one. */
+function violatedPrecondition(error: ConnectError): string | undefined {
+  for (const detail of error.details) {
+    if (!("type" in detail) || detail.type !== PRECONDITION_FAILURE) continue
+    try {
+      const type = preconditionTypes(detail.value).find((t) => t !== "")
+      if (type) return type
+    } catch {
+      // A malformed detail carries no type.
+    }
+  }
+  return undefined
 }
 
 /** The field of the error's first BadRequest field violation that names one. */
@@ -68,7 +90,8 @@ function violatedField(error: ConnectError): string | undefined {
 
 /**
  * Converts whatever a Connect call threw into an `ApiError`. The code maps
- * one to one, and the field comes from a BadRequest detail. The server's
+ * one to one, the field comes from a BadRequest detail and the
+ * precondition type from a PreconditionFailure detail. The server's
  * message text is kept only as the `cause`: what the UI says is chosen from
  * the code (see `auth-messages.ts`).
  */
@@ -85,6 +108,7 @@ export function toApiError(error: unknown): ApiError {
   if (!connectError.isWireError && code !== "canceled") code = "unavailable"
   return new ApiError(code, "Something went wrong. Try again.", violatedField(connectError), {
     cause: connectError,
+    preconditionType: violatedPrecondition(connectError),
   })
 }
 

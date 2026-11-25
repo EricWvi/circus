@@ -41,8 +41,11 @@ const (
 	MaxSnapshotJobs         = 4096
 	MaxDirectoryResultBytes = 4 << 20
 	MaxDirectoryEntries     = 1000
-	MaxDecodeNodes          = 8192
-	MaxDecodeFields         = 65536
+	// MaxLedgerSnapshotFiles caps the files of one ledger snapshot call
+	// or result: a project holds at most 4096 decisions.
+	MaxLedgerSnapshotFiles = 4096
+	MaxDecodeNodes         = 8192
+	MaxDecodeFields        = 65536
 	// MaxTranscriptBatchBytes bounds the encoded entries of one
 	// AppendTranscript batch, unless the batch is a single larger entry.
 	MaxTranscriptBatchBytes = 8 << 20

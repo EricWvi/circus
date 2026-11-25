@@ -52,6 +52,13 @@ var repeatedLimits = [...]struct {
 	{"circus.v1.SessionReply.LaunchEnv.env", 72},
 	{"circus.v1.ListSessionsResponse.sessions", 1000},
 	{"circus.v1.ListApprovalsResponse.approvals", 32},
+	{"circus.v1.PrepareLedgerRequest.files", MaxLedgerSnapshotFiles},
+	{"circus.v1.CollectLedgerRequest.known", MaxLedgerSnapshotFiles},
+	{"circus.v1.CollectLedgerResult.changes", MaxLedgerSnapshotFiles},
+	{"circus.v1.CollectLedgerResult.reverted", MaxLedgerSnapshotFiles},
+	{"circus.v1.CollectLedgerResult.problems", 1024},
+	{"circus.v1.RebaseLedgerRequest.edits", MaxLedgerSnapshotFiles},
+	{"circus.v1.RebaseLedgerRequest.known", MaxLedgerSnapshotFiles},
 }
 
 // repeatedLimit returns the slot of a capped repeated field in

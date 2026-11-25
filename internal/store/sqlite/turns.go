@@ -10,15 +10,28 @@ import (
 // Inputs.
 
 const inputCols = `input_id, session_id, client_msg_id, kind, text, priority, state, taken_epoch,
-	created_at, taken_at, persisted_at, event_seq`
+	created_at, taken_at, persisted_at, event_seq, note`
 
 func scanInput(s scanner) (store.Input, error) {
 	var in store.Input
 	var kind, priority, state string
 	err := s.Scan(&in.InputID, &in.SessionID, &in.ClientMsgID, &kind, nullStr{&in.Text}, &priority, &state,
-		nullInt{&in.TakenEpoch}, &in.CreatedAt, nullInt{&in.TakenAt}, nullInt{&in.PersistedAt}, &in.EventSeq)
+		nullInt{&in.TakenEpoch}, &in.CreatedAt, nullInt{&in.TakenAt}, nullInt{&in.PersistedAt}, &in.EventSeq, &in.Note)
 	in.Kind, in.Priority, in.State = store.InputKind(kind), store.InputPriority(priority), store.InputState(state)
 	return in, mapErr(err)
+}
+
+// validNote accepts an empty note or a note category.
+func validNote(note string) bool {
+	if len(note) > store.MaxInputNoteBytes {
+		return false
+	}
+	for i := range len(note) {
+		if c := note[i]; !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // approvalMsgPrefix prefixes the client message id of an approval's retry
@@ -42,8 +55,11 @@ func checkInput(in store.Input) error {
 	if in.CreatedAt == 0 {
 		return invalid("input needs a creation time")
 	}
-	if in.Kind != store.InputUser && in.Kind != store.InputApproval {
+	if in.Kind != store.InputUser && in.Kind != store.InputApproval && in.Kind != store.InputNote {
 		return invalid("unknown input kind %q", in.Kind)
+	}
+	if (in.Kind == store.InputNote) != (in.Note != "") || !validNote(in.Note) {
+		return invalid("a note input, and only a note input, names its category: 1..%d bytes of [a-z0-9_]", store.MaxInputNoteBytes)
 	}
 	if in.Priority != store.InputNormal && in.Priority != store.InputNow {
 		return invalid("unknown input priority %q", in.Priority)
@@ -79,7 +95,7 @@ func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmi
 	switch {
 	case err == nil:
 		// A persisted input no longer has its text to compare.
-		if old.Kind != in.Kind || old.Priority != in.Priority || (old.State != store.InputPersisted && old.Text != in.Text) {
+		if old.Kind != in.Kind || old.Note != in.Note || old.Priority != in.Priority || (old.State != store.InputPersisted && old.Text != in.Text) {
 			return out, fmt.Errorf("%w: client message %q was submitted with other content", store.ErrExists, in.ClientMsgID)
 		}
 		out.Input = old
@@ -94,12 +110,14 @@ func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmi
 			in.SessionID).Scan(&open); err != nil {
 			return out, mapErr(err)
 		}
-		if open >= store.MaxOpenInputs {
+		// A note may exceed the bound a little: one that told of a merge
+		// must not wait behind inputs no turn takes while it waits.
+		if limit := store.MaxOpenInputs; open >= limit && (in.Kind != store.InputNote || open >= limit+store.MaxNoteOverflow) {
 			return out, fmt.Errorf("%w: %d inputs not yet persisted", store.ErrLimit, open)
 		}
 		if _, err := o.exec(ctx, `INSERT INTO session_inputs (input_id, session_id, client_msg_id, kind, text, priority,
-			state, created_at) VALUES (?,?,?,?,?,?,'pending',?)`, in.InputID, in.SessionID, in.ClientMsgID,
-			string(in.Kind), in.Text, string(in.Priority), in.CreatedAt); err != nil {
+			state, created_at, note) VALUES (?,?,?,?,?,?,'pending',?,?)`, in.InputID, in.SessionID, in.ClientMsgID,
+			string(in.Kind), in.Text, string(in.Priority), in.CreatedAt, in.Note); err != nil {
 			return out, err
 		}
 		out.Created = true
@@ -164,12 +182,15 @@ func (o *ops) TakeInputs(ctx context.Context, f store.Fence) ([]store.Input, err
 		case store.SessionBroken:
 			return nil // inputs wait for the repair
 		}
+		if s.WorkspaceBlocked {
+			return nil // inputs wait for the hold to end
+		}
 		if _, err := tx.exec(ctx, `UPDATE session_inputs SET state = 'taken', taken_epoch = ?, taken_at = ?
 			WHERE session_id = ? AND state = 'pending'`, f.Epoch, f.Now, f.SessionID); err != nil {
 			return err
 		}
 		rows, err := tx.q.QueryContext(ctx, `SELECT `+inputCols+` FROM session_inputs
-			WHERE session_id = ? AND state = 'taken' AND taken_epoch = ? ORDER BY created_at, input_id`, f.SessionID, f.Epoch)
+			WHERE session_id = ? AND state = 'taken' AND taken_epoch = ? ORDER BY kind = 'note' DESC, created_at, input_id`, f.SessionID, f.Epoch)
 		if err != nil {
 			return mapErr(err)
 		}
@@ -294,6 +315,9 @@ func (o *ops) ReportTurn(ctx context.Context, f store.Fence, r store.TurnReport)
 			if err := tx.markPersisted(ctx, f, r.Persisted, r.At); err != nil {
 				return err
 			}
+			if out.LedgerDue, err = tx.ledgerDue(ctx, f.SessionID, r.At); err != nil {
+				return err
+			}
 		}
 		if err := tx.trimHistory(ctx, f.SessionID); err != nil {
 			return err
@@ -394,7 +418,21 @@ func (o *ops) interruptOpenTurns(ctx context.Context, sessionID string, at int64
 			return 0, err
 		}
 	}
+	if len(turns) > 0 {
+		// An interrupted turn may have changed the ledger snapshot too.
+		if _, err := o.ledgerDue(ctx, sessionID, at); err != nil {
+			return 0, err
+		}
+	}
 	return len(turns), nil
+}
+
+// ledgerDue records that a turn of the session ended at, so a ready
+// ledger snapshot is due for a collection, and reports whether it has one.
+func (o *ops) ledgerDue(ctx context.Context, sessionID string, at int64) (bool, error) {
+	n, err := o.exec(ctx, `UPDATE session_ledgers SET due_at = MAX(due_at, ?), updated_at = MAX(?, updated_at + 1)
+		WHERE session_id = ? AND state = 'ready'`, max(at, 1), at, sessionID)
+	return n > 0, err
 }
 
 // addLateUsage records the usage of a late ENDED, for a turn its

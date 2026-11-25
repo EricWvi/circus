@@ -77,7 +77,14 @@ export const boundaryKinds: ReadonlySet<SessionEventKind> = new Set<SessionEvent
   "transcript_gap_accepted",
   "error",
   "workspace",
+  "ledger",
 ])
+
+/**
+ * Kinds whose live (ephemeral) events also count as boundaries: a ledger
+ * snapshot's collection is announced live only.
+ */
+export const liveBoundaryKinds: ReadonlySet<SessionEventKind> = new Set<SessionEventKind>(["ledger"])
 
 /** A durable event that arrives this long after the one before it was sent as it was recorded, not replayed. */
 export const LIVE_GAP_MS = 500
@@ -89,8 +96,8 @@ export interface SessionWatchOptions {
   sessions: Pick<SessionService, "watchSession">
   sessionId: string
   /**
-   * Durable events of these kinds arrived (once per batch, only between
-   * `start` and `stop`). After a RESULT it is called once more,
+   * Durable events of these kinds arrived, or live ones of
+   * `liveBoundaryKinds` (once per batch, only between `start` and `stop`). After a RESULT it is called once more,
    * `afterResultMs` later: the worker publishes RESULT just before it
    * reports the turn's end, so the session read right after may still run.
    */
@@ -164,7 +171,11 @@ export function createSessionWatch({
     const before = transcript.lastSeq
     transcript = applyEvents(transcript, batch)
     const kinds = new Set<SessionEventKind>()
-    for (const e of batch) if (e.seq > before && boundaryKinds.has(e.kind)) kinds.add(e.kind)
+    for (const e of batch) {
+      const durable = e.seq > before && boundaryKinds.has(e.kind)
+      const live = e.seq === 0 && liveBoundaryKinds.has(e.kind)
+      if (durable || live) kinds.add(e.kind)
+    }
     publish()
     if (kinds.size === 0 || !running) return
     onBoundary(kinds)

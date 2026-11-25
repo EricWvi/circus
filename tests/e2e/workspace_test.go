@@ -68,11 +68,41 @@ func (d workspaceDaemon) dispatch(ctx context.Context) *pb.DeviceCall {
 			d.snapshot(ctx)
 			continue
 		}
+		if d.ledger(ctx, m) {
+			continue
+		}
 		if c := m.GetDispatchCall().GetCall(); c != nil {
 			return c
 		}
 		d.t.Fatalf("expected dispatch, got %v", m)
 	}
+}
+
+// ledger answers m when it concerns the session's ledger snapshot, which
+// every daemon keeps and the test does not look at (ledgerReply).
+func (d workspaceDaemon) ledger(ctx context.Context, m *pb.DaemonDownlink) bool {
+	d.t.Helper()
+	up := ledgerReply(m)
+	if up != nil {
+		must(d.t, d.link.Send(ctx, up))
+	}
+	return up != nil
+}
+
+// ledgerReply is the answer to a message about the session's ledger
+// snapshot: a call answered with ledgerAnswer, a query of a call this
+// daemon never ran answered as lost (the control plane sends it again);
+// nil for any other message.
+func ledgerReply(m *pb.DaemonDownlink) *pb.DaemonUplink {
+	if c := m.GetDispatchCall().GetCall(); c != nil {
+		if r := ledgerAnswer(c); r != nil {
+			return &pb.DaemonUplink{Payload: &pb.DaemonUplink_Result{Result: r}}
+		}
+	}
+	if q := m.GetCallQuery(); q != nil && strings.HasPrefix(q.GetCallId(), store.LedgerSnapshotCallPrefix) {
+		return &pb.DaemonUplink{Payload: &pb.DaemonUplink_CallStatus{CallStatus: &pb.CallStatus{CallId: q.GetCallId(), State: pb.CallStatus_STATE_LOST}}}
+	}
+	return nil
 }
 
 func (d workspaceDaemon) result(ctx context.Context, result *pb.DeviceResult) {
@@ -303,6 +333,9 @@ func TestWorkspaceReattachAfterControlPlaneRestart(t *testing.T) {
 			device.snapshot(ctx)
 			break
 		}
+		if device.ledger(ctx, m) {
+			continue
+		}
 		query := m.GetCallQuery()
 		if query.GetCallId() != call.GetCallId() {
 			t.Fatalf("restart sent %v", m)
@@ -325,6 +358,13 @@ func TestWorkspaceReattachAfterControlPlaneRestart(t *testing.T) {
 				return
 			}
 			m := msg.(*pb.DaemonDownlink)
+			if up := ledgerReply(m); up != nil {
+				if err := device.link.Send(readCtx, up); err != nil {
+					seen <- err
+					return
+				}
+				continue
+			}
 			q := m.GetCallQuery()
 			if q.GetCallId() != call.GetCallId() {
 				seen <- errors.New("recovery did not query the original call")

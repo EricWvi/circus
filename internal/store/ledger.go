@@ -67,6 +67,10 @@ type LedgerChangeset struct {
 	// Archived is false while a discarded changeset's branch still has to
 	// be archived in the repository.
 	Archived bool
+	// SessionID is the session whose snapshot the changeset collects;
+	// empty for one a worker opened. A session has at most one open
+	// changeset.
+	SessionID string
 }
 
 // LedgerMerge is a merge commit and what it recorded.
@@ -97,8 +101,10 @@ type LedgerChangesetFilter struct {
 	ProjectID string
 	// State is empty for every state.
 	State LedgerChangesetState
-	After *LedgerChangesetCursor
-	Limit int // 1..MaxLedgerChangesetPage
+	// SessionID, when set, selects that session's changesets.
+	SessionID string
+	After     *LedgerChangesetCursor
+	Limit     int // 1..MaxLedgerChangesetPage
 }
 
 // IsLedgerCommitID reports whether id is a full lowercase SHA-1 object id.
@@ -180,11 +186,15 @@ type LedgerOps interface {
 
 	// CreateLedgerChangeset inserts an open changeset with no merge.
 	// ErrNotFound if the project does not exist; ErrExists if the id is
-	// taken; ErrLimit if the project already has MaxOpenLedgerChangesets
-	// open changesets, checked atomically with the insert.
+	// taken or c.SessionID names a session with an open changeset already;
+	// ErrLimit if the project already has MaxOpenLedgerChangesets open
+	// changesets, sessions' included, checked atomically with the insert.
 	CreateLedgerChangeset(ctx context.Context, c LedgerChangeset) error
 	// GetLedgerChangeset returns the changeset, or ErrNotFound.
 	GetLedgerChangeset(ctx context.Context, id string) (LedgerChangeset, error)
+	// GetOpenSessionChangeset returns the session's open changeset, or
+	// ErrNotFound.
+	GetOpenSessionChangeset(ctx context.Context, sessionID string) (LedgerChangeset, error)
 	// ListLedgerChangesets returns one page of a project's changesets,
 	// newest first (by creation time, then id), and whether more follow.
 	ListLedgerChangesets(ctx context.Context, f LedgerChangesetFilter) ([]LedgerChangeset, bool, error)
@@ -196,17 +206,27 @@ type LedgerOps interface {
 	TouchLedgerChangeset(ctx context.Context, id string, at int64) (bool, error)
 	// PrepareLedgerMerge records a merge in progress on an open changeset
 	// without one, before the merge commit is published, and reports
-	// whether it did. ErrNotFound if absent.
+	// whether it did. ErrNotFound if absent. A session's changeset is
+	// refused with ErrTurnRunning while its session runs a turn or has
+	// inputs taken and not yet persisted (a turn about to start); nothing
+	// is written then.
 	PrepareLedgerMerge(ctx context.Context, id string, m LedgerMerge, at int64) (bool, error)
 	// ClearLedgerMerge forgets the merge in progress with this commit, one
 	// that never reached the main line, and reports whether it did.
 	ClearLedgerMerge(ctx context.Context, id, commit string) (bool, error)
 	// FinishLedgerMerge marks the changeset merged by the merge in progress
-	// with this commit and reports whether it did.
+	// with this commit and reports whether it did. A session's changeset
+	// also leaves the session's snapshot owing a rebase and records a
+	// durable LEDGER event ("merged") on the session, in the same
+	// transaction.
 	FinishLedgerMerge(ctx context.Context, id, commit string, at int64) (bool, error)
 	// DiscardLedgerChangeset marks an open changeset without a merge in
 	// progress discarded with reason, archived or with its branch still to
-	// archive, and reports whether it did.
+	// archive, and reports whether it did. A session's changeset also
+	// leaves the session's snapshot owing a reset and records a durable
+	// LEDGER event ("discarded") on the session, in the same transaction.
+	// A session's changeset is refused with ErrTurnRunning as by
+	// PrepareLedgerMerge.
 	DiscardLedgerChangeset(ctx context.Context, id, reason string, archived bool, at int64) (bool, error)
 	// ArchiveLedgerChangeset records that a discarded changeset's branch
 	// was archived. ErrNotFound if absent.

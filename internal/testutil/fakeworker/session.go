@@ -42,6 +42,10 @@ type session struct {
 	interrupt, gap                  uint64
 	broken                          bool
 
+	// ledgerPath is the lease's ledger snapshot on the default device,
+	// empty when the session has none.
+	ledgerPath string
+
 	totalUsage    usageTotals
 	usageBatchSeq uint64
 	// results counts the results published in this lease, for result_index.
@@ -177,6 +181,7 @@ func (s *session) serve(lease *pb.SessionReply_Lease) error {
 		s.model = "claude-sonnet-4-6"
 	}
 	s.device = lease.GetConfig().GetDefaultDevice()
+	s.ledgerPath = lease.GetLedgerPath()
 	for _, dir := range lease.GetConfig().GetCwds() {
 		if dir.GetDevice() == s.device {
 			s.cwd = dir.GetCwd()
@@ -319,6 +324,10 @@ func (s *session) runTurn() error {
 	origin := pb.TurnOrigin_TURN_ORIGIN_NOTIFICATION
 	originText := "notification"
 	var in *input
+	// Every input TakeInputs returns starts an input turn, those the control
+	// plane writes itself (approval retries, notes) included: like the
+	// user's, it is pushed as a user message and acknowledged in
+	// Persisted.input_ids.
 	if len(s.inputs) != 0 {
 		origin = pb.TurnOrigin_TURN_ORIGIN_INPUT
 		originText = "input"
@@ -383,12 +392,23 @@ func (s *session) workTurn(t *turn, in *input) error {
 	return nil
 }
 
-func (s *session) deliverInput(t *turn, in *input) error {
-	note := ""
-	if in.GetKind() == pb.SessionReply_Inputs_Input_KIND_APPROVAL {
-		note = noteApprovalRetry
+// inputNote is the circus_note of an input's user message and whether
+// the message is synthetic: none for the user's own input; a
+// control-plane note keeps its category as given, an empty one included
+// (synthetic, without circus_note), as the real worker does.
+func inputNote(in *input) (string, bool) {
+	switch in.GetKind() {
+	case pb.SessionReply_Inputs_Input_KIND_APPROVAL:
+		return noteApprovalRetry, true
+	case pb.SessionReply_Inputs_Input_KIND_NOTE:
+		return in.GetNote(), true
 	}
-	if err := s.record(sdkUser(s.sdkID, in.GetInputId(), in.GetText(), note)); err != nil {
+	return "", false
+}
+
+func (s *session) deliverInput(t *turn, in *input) error {
+	note, synthetic := inputNote(in)
+	if err := s.record(sdkUserMessage(s.sdkID, in.GetInputId(), in.GetText(), note, synthetic)); err != nil {
 		return err
 	}
 	if t.userMessageID == "" {

@@ -43,6 +43,15 @@ const (
 	// LedgerServiceListDecisionHistoryProcedure is the fully-qualified name of the LedgerService's
 	// ListDecisionHistory RPC.
 	LedgerServiceListDecisionHistoryProcedure = "/circus.v1.LedgerService/ListDecisionHistory"
+	// LedgerServiceGetSessionLedgerProcedure is the fully-qualified name of the LedgerService's
+	// GetSessionLedger RPC.
+	LedgerServiceGetSessionLedgerProcedure = "/circus.v1.LedgerService/GetSessionLedger"
+	// LedgerServiceGetSessionLedgerDiffProcedure is the fully-qualified name of the LedgerService's
+	// GetSessionLedgerDiff RPC.
+	LedgerServiceGetSessionLedgerDiffProcedure = "/circus.v1.LedgerService/GetSessionLedgerDiff"
+	// LedgerServiceMergeSessionLedgerProcedure is the fully-qualified name of the LedgerService's
+	// MergeSessionLedger RPC.
+	LedgerServiceMergeSessionLedgerProcedure = "/circus.v1.LedgerService/MergeSessionLedger"
 	// LedgerChangesetServiceOpenChangesetProcedure is the fully-qualified name of the
 	// LedgerChangesetService's OpenChangeset RPC.
 	LedgerChangesetServiceOpenChangesetProcedure = "/circus.v1.LedgerChangesetService/OpenChangeset"
@@ -81,6 +90,33 @@ type LedgerServiceClient interface {
 	// ListDecisionHistory lists the main-line commits that changed one
 	// decision (its content, title or directory), newest first.
 	ListDecisionHistory(context.Context, *connect.Request[v1.ListDecisionHistoryRequest]) (*connect.Response[v1.ListDecisionHistoryResponse], error)
+	// GetSessionLedger returns a session's ledger snapshot: its status, the
+	// open changeset's changes as one entry per decision, the problems of
+	// its last collection and the session's merged changesets. NOT_FOUND for
+	// a session of another user's project, like an unknown one.
+	GetSessionLedger(context.Context, *connect.Request[v1.GetSessionLedgerRequest]) (*connect.Response[v1.GetSessionLedgerResponse], error)
+	// GetSessionLedgerDiff returns one changed file of the session's open
+	// changeset next to its version in the changeset's base, for showing a
+	// diff. NOT_FOUND when the open changeset does not change that path.
+	GetSessionLedgerDiff(context.Context, *connect.Request[v1.GetSessionLedgerDiffRequest]) (*connect.Response[v1.GetSessionLedgerDiffResponse], error)
+	// MergeSessionLedger merges the session's open changeset when it
+	// fast-forwards, for the project's owner (no integrator is needed). It
+	// first collects the snapshot from the device. FAILED_PRECONDITION with
+	// a google.rpc.PreconditionFailure whose type is:
+	//   - "TURN_RUNNING": a turn is running or about to start; merge after
+	//     it ends;
+	//   - "NOT_FAST_FORWARD": the base differs from the main line's head; an
+	//     integrator merges it with `circus ledger merge` (the page shows it
+	//     as waiting to be merged);
+	//   - "DEVICE_OFFLINE": the device is offline and a turn ended after the
+	//     last collection, so the changes on the device are not known yet;
+	//   - "PROBLEMS": the changeset fails validation;
+	//   - "NO_CHANGES": the session has no open changeset with changes;
+	//   - "CHANGESET_CHANGED": expected_changeset_id is not the open one.
+	//
+	// After merging, the control plane renames the session's new decisions
+	// on the device (DeviceCall rebase_ledger) and tells the agent.
+	MergeSessionLedger(context.Context, *connect.Request[v1.MergeSessionLedgerRequest]) (*connect.Response[v1.MergeSessionLedgerResponse], error)
 }
 
 // NewLedgerServiceClient constructs a client for the circus.v1.LedgerService service. By default,
@@ -112,14 +148,35 @@ func NewLedgerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(ledgerServiceMethods.ByName("ListDecisionHistory")),
 			connect.WithClientOptions(opts...),
 		),
+		getSessionLedger: connect.NewClient[v1.GetSessionLedgerRequest, v1.GetSessionLedgerResponse](
+			httpClient,
+			baseURL+LedgerServiceGetSessionLedgerProcedure,
+			connect.WithSchema(ledgerServiceMethods.ByName("GetSessionLedger")),
+			connect.WithClientOptions(opts...),
+		),
+		getSessionLedgerDiff: connect.NewClient[v1.GetSessionLedgerDiffRequest, v1.GetSessionLedgerDiffResponse](
+			httpClient,
+			baseURL+LedgerServiceGetSessionLedgerDiffProcedure,
+			connect.WithSchema(ledgerServiceMethods.ByName("GetSessionLedgerDiff")),
+			connect.WithClientOptions(opts...),
+		),
+		mergeSessionLedger: connect.NewClient[v1.MergeSessionLedgerRequest, v1.MergeSessionLedgerResponse](
+			httpClient,
+			baseURL+LedgerServiceMergeSessionLedgerProcedure,
+			connect.WithSchema(ledgerServiceMethods.ByName("MergeSessionLedger")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // ledgerServiceClient implements LedgerServiceClient.
 type ledgerServiceClient struct {
-	getLedger           *connect.Client[v1.GetLedgerRequest, v1.GetLedgerResponse]
-	getDecision         *connect.Client[v1.GetDecisionRequest, v1.GetDecisionResponse]
-	listDecisionHistory *connect.Client[v1.ListDecisionHistoryRequest, v1.ListDecisionHistoryResponse]
+	getLedger            *connect.Client[v1.GetLedgerRequest, v1.GetLedgerResponse]
+	getDecision          *connect.Client[v1.GetDecisionRequest, v1.GetDecisionResponse]
+	listDecisionHistory  *connect.Client[v1.ListDecisionHistoryRequest, v1.ListDecisionHistoryResponse]
+	getSessionLedger     *connect.Client[v1.GetSessionLedgerRequest, v1.GetSessionLedgerResponse]
+	getSessionLedgerDiff *connect.Client[v1.GetSessionLedgerDiffRequest, v1.GetSessionLedgerDiffResponse]
+	mergeSessionLedger   *connect.Client[v1.MergeSessionLedgerRequest, v1.MergeSessionLedgerResponse]
 }
 
 // GetLedger calls circus.v1.LedgerService.GetLedger.
@@ -137,6 +194,21 @@ func (c *ledgerServiceClient) ListDecisionHistory(ctx context.Context, req *conn
 	return c.listDecisionHistory.CallUnary(ctx, req)
 }
 
+// GetSessionLedger calls circus.v1.LedgerService.GetSessionLedger.
+func (c *ledgerServiceClient) GetSessionLedger(ctx context.Context, req *connect.Request[v1.GetSessionLedgerRequest]) (*connect.Response[v1.GetSessionLedgerResponse], error) {
+	return c.getSessionLedger.CallUnary(ctx, req)
+}
+
+// GetSessionLedgerDiff calls circus.v1.LedgerService.GetSessionLedgerDiff.
+func (c *ledgerServiceClient) GetSessionLedgerDiff(ctx context.Context, req *connect.Request[v1.GetSessionLedgerDiffRequest]) (*connect.Response[v1.GetSessionLedgerDiffResponse], error) {
+	return c.getSessionLedgerDiff.CallUnary(ctx, req)
+}
+
+// MergeSessionLedger calls circus.v1.LedgerService.MergeSessionLedger.
+func (c *ledgerServiceClient) MergeSessionLedger(ctx context.Context, req *connect.Request[v1.MergeSessionLedgerRequest]) (*connect.Response[v1.MergeSessionLedgerResponse], error) {
+	return c.mergeSessionLedger.CallUnary(ctx, req)
+}
+
 // LedgerServiceHandler is an implementation of the circus.v1.LedgerService service.
 type LedgerServiceHandler interface {
 	// GetLedger lists every decision on the ledger's main line, ordered by
@@ -149,6 +221,33 @@ type LedgerServiceHandler interface {
 	// ListDecisionHistory lists the main-line commits that changed one
 	// decision (its content, title or directory), newest first.
 	ListDecisionHistory(context.Context, *connect.Request[v1.ListDecisionHistoryRequest]) (*connect.Response[v1.ListDecisionHistoryResponse], error)
+	// GetSessionLedger returns a session's ledger snapshot: its status, the
+	// open changeset's changes as one entry per decision, the problems of
+	// its last collection and the session's merged changesets. NOT_FOUND for
+	// a session of another user's project, like an unknown one.
+	GetSessionLedger(context.Context, *connect.Request[v1.GetSessionLedgerRequest]) (*connect.Response[v1.GetSessionLedgerResponse], error)
+	// GetSessionLedgerDiff returns one changed file of the session's open
+	// changeset next to its version in the changeset's base, for showing a
+	// diff. NOT_FOUND when the open changeset does not change that path.
+	GetSessionLedgerDiff(context.Context, *connect.Request[v1.GetSessionLedgerDiffRequest]) (*connect.Response[v1.GetSessionLedgerDiffResponse], error)
+	// MergeSessionLedger merges the session's open changeset when it
+	// fast-forwards, for the project's owner (no integrator is needed). It
+	// first collects the snapshot from the device. FAILED_PRECONDITION with
+	// a google.rpc.PreconditionFailure whose type is:
+	//   - "TURN_RUNNING": a turn is running or about to start; merge after
+	//     it ends;
+	//   - "NOT_FAST_FORWARD": the base differs from the main line's head; an
+	//     integrator merges it with `circus ledger merge` (the page shows it
+	//     as waiting to be merged);
+	//   - "DEVICE_OFFLINE": the device is offline and a turn ended after the
+	//     last collection, so the changes on the device are not known yet;
+	//   - "PROBLEMS": the changeset fails validation;
+	//   - "NO_CHANGES": the session has no open changeset with changes;
+	//   - "CHANGESET_CHANGED": expected_changeset_id is not the open one.
+	//
+	// After merging, the control plane renames the session's new decisions
+	// on the device (DeviceCall rebase_ledger) and tells the agent.
+	MergeSessionLedger(context.Context, *connect.Request[v1.MergeSessionLedgerRequest]) (*connect.Response[v1.MergeSessionLedgerResponse], error)
 }
 
 // NewLedgerServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -176,6 +275,24 @@ func NewLedgerServiceHandler(svc LedgerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(ledgerServiceMethods.ByName("ListDecisionHistory")),
 		connect.WithHandlerOptions(opts...),
 	)
+	ledgerServiceGetSessionLedgerHandler := connect.NewUnaryHandler(
+		LedgerServiceGetSessionLedgerProcedure,
+		svc.GetSessionLedger,
+		connect.WithSchema(ledgerServiceMethods.ByName("GetSessionLedger")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ledgerServiceGetSessionLedgerDiffHandler := connect.NewUnaryHandler(
+		LedgerServiceGetSessionLedgerDiffProcedure,
+		svc.GetSessionLedgerDiff,
+		connect.WithSchema(ledgerServiceMethods.ByName("GetSessionLedgerDiff")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ledgerServiceMergeSessionLedgerHandler := connect.NewUnaryHandler(
+		LedgerServiceMergeSessionLedgerProcedure,
+		svc.MergeSessionLedger,
+		connect.WithSchema(ledgerServiceMethods.ByName("MergeSessionLedger")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/circus.v1.LedgerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case LedgerServiceGetLedgerProcedure:
@@ -184,6 +301,12 @@ func NewLedgerServiceHandler(svc LedgerServiceHandler, opts ...connect.HandlerOp
 			ledgerServiceGetDecisionHandler.ServeHTTP(w, r)
 		case LedgerServiceListDecisionHistoryProcedure:
 			ledgerServiceListDecisionHistoryHandler.ServeHTTP(w, r)
+		case LedgerServiceGetSessionLedgerProcedure:
+			ledgerServiceGetSessionLedgerHandler.ServeHTTP(w, r)
+		case LedgerServiceGetSessionLedgerDiffProcedure:
+			ledgerServiceGetSessionLedgerDiffHandler.ServeHTTP(w, r)
+		case LedgerServiceMergeSessionLedgerProcedure:
+			ledgerServiceMergeSessionLedgerHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -203,6 +326,18 @@ func (UnimplementedLedgerServiceHandler) GetDecision(context.Context, *connect.R
 
 func (UnimplementedLedgerServiceHandler) ListDecisionHistory(context.Context, *connect.Request[v1.ListDecisionHistoryRequest]) (*connect.Response[v1.ListDecisionHistoryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerService.ListDecisionHistory is not implemented"))
+}
+
+func (UnimplementedLedgerServiceHandler) GetSessionLedger(context.Context, *connect.Request[v1.GetSessionLedgerRequest]) (*connect.Response[v1.GetSessionLedgerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerService.GetSessionLedger is not implemented"))
+}
+
+func (UnimplementedLedgerServiceHandler) GetSessionLedgerDiff(context.Context, *connect.Request[v1.GetSessionLedgerDiffRequest]) (*connect.Response[v1.GetSessionLedgerDiffResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerService.GetSessionLedgerDiff is not implemented"))
+}
+
+func (UnimplementedLedgerServiceHandler) MergeSessionLedger(context.Context, *connect.Request[v1.MergeSessionLedgerRequest]) (*connect.Response[v1.MergeSessionLedgerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerService.MergeSessionLedger is not implemented"))
 }
 
 // LedgerChangesetServiceClient is a client for the circus.v1.LedgerChangesetService service.
@@ -233,8 +368,8 @@ type LedgerChangesetServiceClient interface {
 	ReadChangesetConflicts(context.Context, *connect.Request[v1.ReadChangesetConflictsRequest]) (*connect.Response[v1.ReadChangesetConflictsResponse], error)
 	// MergeChangeset merges an open changeset into the main line, under the
 	// project's lock, re-checking everything there:
-	//   - it fast-forwards when its base is the main line's head at that
-	//     moment; the opener may then merge it;
+	//   - it fast-forwards when its base's tree equals the tree of the main
+	//     line's head at that moment; the opener may then merge it;
 	//   - otherwise only an integrator may merge it, even when no file it
 	//     changes was changed on the main line after its base, and every
 	//     conflicting file must be given its final content in resolved.
@@ -401,8 +536,8 @@ type LedgerChangesetServiceHandler interface {
 	ReadChangesetConflicts(context.Context, *connect.Request[v1.ReadChangesetConflictsRequest]) (*connect.Response[v1.ReadChangesetConflictsResponse], error)
 	// MergeChangeset merges an open changeset into the main line, under the
 	// project's lock, re-checking everything there:
-	//   - it fast-forwards when its base is the main line's head at that
-	//     moment; the opener may then merge it;
+	//   - it fast-forwards when its base's tree equals the tree of the main
+	//     line's head at that moment; the opener may then merge it;
 	//   - otherwise only an integrator may merge it, even when no file it
 	//     changes was changed on the main line after its base, and every
 	//     conflicting file must be given its final content in resolved.

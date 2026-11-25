@@ -251,6 +251,7 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	e = s.track(id, res.Session.UserID) // reserved above, so present
 	s.bind(id, e, res.Lease, c, true, "acquired")
 	e.interrupt = res.Session.InterruptTurnNo
+	e.held = res.Session.WorkspaceBlocked
 	// Each acquisition has its own token, so the end of an earlier
 	// operation never touches a later one's state.
 	s.tokens++
@@ -409,6 +410,12 @@ func (c *Conn) leaseReply(ctx context.Context, id string, epoch int64, reattache
 		}
 		lease.ClaudeSessionId = sess.ClaudeSessionID
 		lease.TranscriptGapTurnNo = uint64(max(sess.TranscriptGapTurnNo, 0))
+		switch l, err := tx.GetSessionLedger(ctx, id); {
+		case err == nil && l.State == store.SessionLedgerReady:
+			lease.LedgerPath = l.Path
+		case err != nil && !errors.Is(err, store.ErrNotFound):
+			return err
+		}
 		return nil
 	})
 	var fe *store.FencedError
@@ -642,14 +649,17 @@ func (c *Conn) take(ctx context.Context, f store.Fence) *circusv1.SessionReply {
 	out := &circusv1.SessionReply_Inputs{}
 	for _, in := range inputs {
 		kind := circusv1.SessionReply_Inputs_Input_KIND_USER
-		if in.Kind == store.InputApproval {
+		switch in.Kind {
+		case store.InputApproval:
 			kind = circusv1.SessionReply_Inputs_Input_KIND_APPROVAL
+		case store.InputNote:
+			kind = circusv1.SessionReply_Inputs_Input_KIND_NOTE
 		}
 		prio := circusv1.InputPriority_INPUT_PRIORITY_NORMAL
 		if in.Priority == store.InputNow {
 			prio = circusv1.InputPriority_INPUT_PRIORITY_NOW
 		}
-		out.Inputs = append(out.Inputs, &circusv1.SessionReply_Inputs_Input{InputId: in.InputID, Kind: kind, Text: in.Text, Priority: prio})
+		out.Inputs = append(out.Inputs, &circusv1.SessionReply_Inputs_Input{InputId: in.InputID, Kind: kind, Text: in.Text, Priority: prio, Note: in.Note})
 	}
 	return &circusv1.SessionReply{Result: &circusv1.SessionReply_Inputs_{Inputs: out}}
 }
@@ -690,6 +700,9 @@ func (c *Conn) report(ctx context.Context, f store.Fence, r *circusv1.ReportTurn
 	c.s.updateInterrupt(f.SessionID, f.Epoch, rep.Session.InterruptTurnNo)
 	if tr.Phase == store.TurnEnded {
 		c.s.clearReasons(f.SessionID, f.Epoch, reasonInterrupt, g)
+	}
+	if rep.LedgerDue && c.s.cfg.LedgerDue != nil {
+		c.s.cfg.LedgerDue(ctx, f.SessionID)
 	}
 	c.s.turnLog(ctx, f, tr, rep, before.State)
 	return &circusv1.SessionReply{Result: &circusv1.SessionReply_Turn_{Turn: &circusv1.SessionReply_Turn{TurnNo: uint64(rep.Turn.TurnNo)}}}
@@ -1096,6 +1109,7 @@ func (c *Conn) resume(ctx context.Context, r *circusv1.ResumeLeases, sum *resume
 			s.bind(lr.SessionID, e, lr.Lease, c, true, "resumed")
 			e.known, e.pending, e.abandoned, e.token = true, false, false, 0
 			e.interrupt = sess.InterruptTurnNo
+			e.held = sess.WorkspaceBlocked
 			if fresh {
 				// Nothing is known of this lease in this process (it was
 				// acquired before a restart): hints sent before may be
@@ -1179,15 +1193,23 @@ func (s *Service) turnLog(ctx context.Context, f store.Fence, tr store.TurnRepor
 	}
 }
 
-// inputKinds counts inputs per kind, as "user=2,approval=1".
+// inputKinds counts inputs per kind, as "user=2,approval=1", with
+// ",note=1" when there are notes.
 func inputKinds(inputs []store.Input) string {
-	var user, approval int
+	var user, approval, note int
 	for _, in := range inputs {
-		if in.Kind == store.InputApproval {
+		switch in.Kind {
+		case store.InputApproval:
 			approval++
-		} else {
+		case store.InputNote:
+			note++
+		default:
 			user++
 		}
 	}
-	return "user=" + strconv.Itoa(user) + ",approval=" + strconv.Itoa(approval)
+	out := "user=" + strconv.Itoa(user) + ",approval=" + strconv.Itoa(approval)
+	if note > 0 {
+		out += ",note=" + strconv.Itoa(note)
+	}
+	return out
 }

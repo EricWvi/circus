@@ -40,6 +40,10 @@ func (r reasonSet) list() []circusv1.WorkerEvent_Nudge_Reason {
 	return out
 }
 
+// turnReasons are the reasons that make a holder start a turn: taking
+// inputs, and delivering job notices.
+const turnReasons = reasonInput | reasonJob | reasonApproval
+
 const (
 	reasonInput     = reasonSet(1 << circusv1.WorkerEvent_Nudge_REASON_INPUT)
 	reasonJob       = reasonSet(1 << circusv1.WorkerEvent_Nudge_REASON_JOB)
@@ -74,6 +78,12 @@ type entry struct {
 	// offeredAt is when the Offer was made (Unix ms).
 	offeredAt int64
 	reasons   reasonSet
+	// held: the session's turns are held (its workspace or ledger
+	// snapshot is not ready, or the snapshot owes a merge's rebase or a
+	// discard's reset), as the last read of it said. A Nudge then leaves
+	// out the reasons that start turns; they stay pending and go out with
+	// the Wake that ends the hold.
+	held bool
 	// gen is, per reason, the Wake generation that last set it. An
 	// operation clears a reason only if it was set no later than the
 	// generation the operation observed before reading the store, so a
@@ -736,6 +746,7 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 			e.known = true
 		}
 		e.interrupt = st.Session.InterruptTurnNo
+		e.held = st.Session.WorkspaceBlocked
 		if st.Session.State == store.SessionStopped {
 			rs |= reasonStop
 		}

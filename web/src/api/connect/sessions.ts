@@ -22,6 +22,7 @@ import type {
 import { viewState, type ServerSessionState, type TurnOutcome } from "@/lib/session-state"
 
 import { call, malformed, stream } from "./call"
+import { toSessionLedgerStatus } from "./ledger"
 import { toWorkspace } from "./workspaces"
 
 const states: Record<Session_State, ServerSessionState> = {
@@ -79,6 +80,7 @@ export function toSummary(session: ProtoSession): SessionSummary {
     // A reason this client doesn't know yet reads as none.
     queueReason: queueReasons[session.queueReason] ?? "unspecified",
     workerDisconnectedAtUnixMs: Number(session.workerDisconnectedAtUnixMs),
+    ...(session.ledger ? { ledger: toSessionLedgerStatus(session.ledger) } : {}),
   }
 }
 
@@ -160,6 +162,14 @@ export function createConnectSessions(transport: Transport): SessionService {
     stopSession: (req) => call(async () => void (await client.stopSession(req))),
     listApprovals: (req) => call(async () => (await client.listApprovals(req)).approvals.map(toApproval)),
     resolveApproval: (req) => call(async () => void (await client.resolveApproval(req))),
+    deleteSession: (req) =>
+      call(
+        async () =>
+          void (await client.deleteSession({
+            sessionId: req.sessionId,
+            discardLedgerChanges: req.discardLedgerChanges ?? false,
+          })),
+      ),
     recoverSession: (req) =>
       call(async () => void (await client.recoverSession({ sessionId: req.sessionId, acceptTranscriptGap: true }))),
     updateSession: (req) =>

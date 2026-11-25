@@ -46,8 +46,14 @@ const activeCallStates = `('accepted', 'dispatched', 'running', 'unknown')`
 
 // Sessions.
 
-const workspaceBlocked = `(sessions.workspace = 1 AND NOT EXISTS (SELECT 1 FROM workspaces w
-	WHERE w.project_id = sessions.project_id AND w.device_id = sessions.default_device_id AND w.state = 'ready'))`
+// workspaceBlocked holds a session's turns until its workspace is ready
+// and while its ledger snapshot, when it has one, holds them
+// (store.SessionLedger.HoldsTurns): waiting for its device, prepared, or
+// with a merge or discard still to apply that no problem stops.
+const workspaceBlocked = `((sessions.workspace = 1 AND NOT EXISTS (SELECT 1 FROM workspaces w
+	WHERE w.project_id = sessions.project_id AND w.device_id = sessions.default_device_id AND w.state = 'ready'))
+	OR EXISTS (SELECT 1 FROM session_ledgers sl WHERE sl.session_id = sessions.session_id
+		AND (sl.state IN ('pending', 'preparing') OR (sl.state = 'ready' AND sl.pending <> '' AND sl.problem_count = 0))))`
 
 const sessionCols = `session_id, user_id, claude_session_id, state, default_device_id, model, permission_mode,
 	pinned_worker_id, turn_count, last_turn_outcome, interrupt_turn_no, previous_turn_interrupted, transcript_gap_turn_no, input_tokens, output_tokens,
@@ -435,6 +441,11 @@ func (o *ops) DeleteSession(ctx context.Context, sessionID string, now int64) er
 			if err := tx.chargeTranscript(ctx, sessionID, s.UserID, -s.TranscriptBytes); err != nil {
 				return err
 			}
+			// The snapshot on the device outlives the row: it is removed
+			// later, when the device can be reached.
+			if err := tx.removeSessionLedger(ctx, sessionID, now); err != nil {
+				return err
+			}
 			_, err = tx.exec(ctx, `DELETE FROM sessions WHERE session_id = ?`, sessionID)
 			done = err == nil
 			return err
@@ -712,7 +723,7 @@ func (o *ops) AcquireLease(ctx context.Context, r store.LeaseRequest) (store.Lea
 			return mapErr(err)
 		}
 		if s.WorkspaceBlocked {
-			return fmt.Errorf("%w: workspace is not ready", store.ErrLeaseHeld)
+			return fmt.Errorf("%w: workspace or ledger snapshot is not ready", store.ErrLeaseHeld)
 		}
 		l, err := tx.getLease(ctx, r.SessionID)
 		if err != nil {

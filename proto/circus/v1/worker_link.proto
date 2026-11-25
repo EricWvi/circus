@@ -795,6 +795,11 @@ message SessionReply {
     // it with Persisted.gap_notice_turn_no; only an acknowledgement of the
     // equal value clears it.
     uint64 transcript_gap_turn_no = 8;
+    // Absolute path of the session's ledger snapshot on default_device,
+    // empty when the session has none (SessionLedgerStatus not READY). The
+    // worker tells the model about it in the system prompt: the directory,
+    // the decision file format, and "D?<letters>" for new decisions.
+    string ledger_path = 9;
   }
   message TranscriptPage {
     // Byte-bounded as LoadTranscript; structural node/field caps also apply.
@@ -814,10 +819,19 @@ message SessionReply {
       // At most 256 KiB.
       string text = 3;
       InputPriority priority = 4;
+      // KIND_NOTE only: the note's category, published as the view
+      // event's circus_note (for example "ledger_problems",
+      // "ledger_merged", "ledger_discarded"); at most 64 bytes.
+      string note = 5;
       enum Kind {
         KIND_UNSPECIFIED = 0;
         KIND_USER = 1;
         KIND_APPROVAL = 2;
+        // A note the control plane writes for the model, such as the
+        // problems a ledger collection found. Pushed as a synthetic user
+        // message (isSynthetic) whose view event carries circus_note =
+        // note. Priority NORMAL: it starts a turn when the session is idle.
+        KIND_NOTE = 3;
       }
     }
   }

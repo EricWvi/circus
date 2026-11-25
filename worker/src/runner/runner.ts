@@ -30,6 +30,7 @@ import {
   BrokenError, FencedError, RejectedError, SessionOps, StoppedError, type LinkPort, type ReadyWaiter, type Semaphore,
 } from "./ops.js";
 import { PROVIDER_DEFAULT_MODEL, launchPlan } from "./launch.js";
+import { ledgerPrompt } from "./ledger.js";
 import { PushQueue } from "./push.js";
 import { RetainedBudget, TranscriptLostError, TranscriptStore } from "./store.js";
 
@@ -182,6 +183,8 @@ export class SessionRunner {
   /** The device approvals and grants name: the session's default device, where its tools run. */
   readonly #device: string;
   readonly #gapAtLease: bigint;
+  /** The session's ledger snapshot, empty when none; fixed for the lease. */
+  readonly #ledgerPath: string;
   /** The Lease's state and recovery, until #begin has used them. */
   #initial?: Pick<SessionReply_Lease, "state" | "recovery">;
 
@@ -228,6 +231,7 @@ export class SessionRunner {
     this.#config = lease.config;
     this.#device = lease.config?.defaultDevice ?? "";
     this.#gapAtLease = lease.transcriptGapTurnNo;
+    this.#ledgerPath = lease.ledgerPath;
     this.#initial = { state: lease.state, recovery: lease.recovery };
     this.#shutdownGraceMs = deps.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
     this.epoch = lease.epoch;
@@ -456,7 +460,7 @@ export class SessionRunner {
     const options: Options = {
       cwd: this.#cwd,
       settingSources: ["user", "project", "local"],
-      systemPrompt: { type: "preset", preset: "claude_code" },
+      systemPrompt: { type: "preset", preset: "claude_code", ...(this.#ledgerPath ? { append: ledgerPrompt(this.#ledgerPath) } : {}) },
       permissionMode: mode,
       ...(mode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
       // An empty model: local login leaves it to the CLI; a provider session
@@ -969,7 +973,9 @@ export class SessionRunner {
         });
       }
     }
-    const note: NoteKind | undefined = input.kind === InputKind.APPROVAL ? "approval_retry" : undefined;
+    // A control-plane note keeps its category as given, empty included.
+    const synthetic = input.kind === InputKind.NOTE;
+    const note: string | undefined = input.kind === InputKind.APPROVAL ? "approval_retry" : synthetic ? input.note : undefined;
     events.push({ kind: Kind.USER, payload: userMessagePayload(this.#claudeSessionId, input.inputId, input.text, note, timestamp) });
     const content = notes.length
       ? [...notes.map((n) => ({ type: "text" as const, text: systemReminder(n.text) })), { type: "text" as const, text: input.text }]
@@ -978,6 +984,7 @@ export class SessionRunner {
     const message: SDKUserMessage = {
       type: "user", message: { role: "user", content }, parent_tool_use_id: null,
       uuid: input.inputId as SDKUserMessage["uuid"],
+      ...(synthetic ? { isSynthetic: true } : {}),
       ...(now ? { priority: "now" as const } : {}),
     };
     this.#pushed.add(input.inputId);

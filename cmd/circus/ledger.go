@@ -3,8 +3,6 @@ package main
 import (
 	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -28,6 +26,7 @@ import (
 	"github.com/EricWvi/circus/internal/circushome"
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/ledger"
+	"github.com/EricWvi/circus/internal/ledger/snapshot"
 	"github.com/EricWvi/circus/internal/store"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 )
@@ -37,7 +36,7 @@ const ledgerUsage = `usage:
   circus ledger check <changeset>
   circus ledger merge <changeset> [--commit SHA] [--resolved DIR]
   circus ledger discard <changeset> --reason TEXT
-  circus ledger list <project> [--state open|merged|discarded]
+  circus ledger list <project> [--state open|merged|discarded] [--session ID]
 
 Changes a project's ledger through a changeset, with the worker credential
 from circus join. All forms accept --credentials PATH and --ca-file FILE.
@@ -54,12 +53,21 @@ whether the changeset fast-forwards, and writes each conflicting file's
 versions that exist to <changeset>.conflicts/<path>.base, .changeset and
 .main in that state directory, whatever DIR is. It also warns of references to
 temporary numbers that no new decision has; a merge keeps those as they are.
+Files the ledger cannot hold (symlinks and other non-regular files, files
+over 256 KiB, invalid UTF-8) are printed as problems before anything is
+sent, and check and merge stop with exit 3, as for the server's problems.
 
 merge checks, then merges and prints the numbers given to new decisions;
 merging a merged changeset again prints the same result.
 A changeset whose base is behind the main line needs a worker with the
 integrator grant, and every conflicting file's final content in
 --resolved DIR at its path (or an empty <path>.deleted to remove it).
+
+A session's changeset (list --session ID lists them) collects the files
+of the session's ledger snapshot on its device: there is no local copy.
+Only a worker with the integrator grant may check, merge or discard it;
+check and merge make the server collect the snapshot first (with the
+device offline, the last collection is used, and check says so).
 
 A call the server refuses because it is busy with other checks or merges
 of the user is tried again for up to two minutes.
@@ -68,15 +76,14 @@ Exit codes: 0 = done; 1 = error or refusal; 3 = check found problems or
 conflicts.`
 
 // ledgerRecord is what open leaves beside the changeset's directory, so
-// later commands need only the changeset id.
+// later commands need only the changeset id. The base's manifest is
+// beside it, in <changeset>.manifest.json.
 type ledgerRecord struct {
 	ChangesetID     string `json:"changeset_id"`
 	ProjectID       string `json:"project_id"`
 	Dir             string `json:"dir"`
 	BaseCommit      string `json:"base_commit"`
 	ControlPlaneURL string `json:"control_plane_url"`
-	// Files maps each base file to the SHA-256 of its content.
-	Files map[string]string `json:"files"`
 }
 
 // ledgerCLI is one invocation's connection and local state.
@@ -100,6 +107,7 @@ func ledgerCommand(args []string, out, errOut io.Writer) error {
 	resolved := fs.String("resolved", "", "merge: directory with the final content of conflicting files")
 	reason := fs.String("reason", "", "discard: why the changeset is discarded")
 	state := fs.String("state", "", "list: open, merged or discarded")
+	session := fs.String("session", "", "list: only the changesets of this session")
 	pos, err := parseArgs(fs, args)
 	if err != nil {
 		return err
@@ -122,6 +130,9 @@ func ledgerCommand(args []string, out, errOut io.Writer) error {
 	}
 	if command == "discard" && strings.TrimSpace(*reason) == "" {
 		return errors.New("discard requires --reason TEXT")
+	}
+	if *session != "" && command != "list" {
+		return errors.New("--session is for list")
 	}
 	var listState circusv1.Changeset_State
 	if command == "list" {
@@ -154,7 +165,7 @@ func ledgerCommand(args []string, out, errOut io.Writer) error {
 	case "discard":
 		return cli.discard(ctx, arg, *reason)
 	default:
-		return cli.list(ctx, arg, listState)
+		return cli.list(ctx, arg, listState, *session)
 	}
 }
 
@@ -267,10 +278,26 @@ func busy(err error) bool {
 
 func (c *ledgerCLI) recordPath(id string) string { return filepath.Join(c.stateDir, id+".json") }
 
+func (c *ledgerCLI) manifestPath(id string) string {
+	return filepath.Join(c.stateDir, id+".manifest.json")
+}
+
+// manifest reads the base's manifest of the record r.
+func (c *ledgerCLI) manifest(r ledgerRecord) (*snapshot.Manifest, error) {
+	m, err := snapshot.ReadManifestFile(c.manifestPath(r.ChangesetID))
+	if err != nil {
+		return nil, fmt.Errorf("the manifest of changeset %s: %w", r.ChangesetID, err)
+	}
+	return m, nil
+}
+
+// errNoRecord marks a changeset without a local copy.
+var errNoRecord = errors.New("no local copy")
+
 func (c *ledgerCLI) readRecord(id string) (ledgerRecord, error) {
 	data, err := os.ReadFile(c.recordPath(id))
 	if errors.Is(err, fs.ErrNotExist) {
-		return ledgerRecord{}, fmt.Errorf("no local copy of changeset %s on this machine (%s); open it here with circus ledger open", id, c.recordPath(id))
+		return ledgerRecord{}, fmt.Errorf("%w of changeset %s on this machine (%s); open it here with circus ledger open", errNoRecord, id, c.recordPath(id))
 	}
 	if err != nil {
 		return ledgerRecord{}, err
@@ -348,7 +375,16 @@ func (c *ledgerCLI) writeBase(ctx context.Context, cs *circusv1.Changeset, dir s
 		return "", err
 	}
 	record := ledgerRecord{ChangesetID: id, ProjectID: cs.GetProjectId(), Dir: dir, BaseCommit: cs.GetBaseCommit(),
-		ControlPlaneURL: c.url, Files: map[string]string{}}
+		ControlPlaneURL: c.url}
+	d, err := os.Open(dir)
+	if err != nil {
+		return "", err
+	}
+	defer d.Close()
+	w := snapshot.NewWriter(d)
+	clocks, closeClocks := c.manifestClocks(d)
+	defer closeClocks()
+	w.Clocks = clocks
 	token := ""
 	for {
 		page, err := c.api.ReadChangesetBase(ctx, connect.NewRequest(&circusv1.ReadChangesetBaseRequest{ChangesetId: id, PageToken: token}))
@@ -356,21 +392,23 @@ func (c *ledgerCLI) writeBase(ctx context.Context, cs *circusv1.Changeset, dir s
 			return "", c.fail(err)
 		}
 		for _, f := range page.Msg.GetFiles() {
-			target, err := localPath(dir, f.GetPath())
-			if err != nil {
+			if err := w.Add(f.GetPath(), f.GetContent()); err != nil {
+				if errors.Is(err, snapshot.ErrInvalidPath) {
+					return "", fmt.Errorf("refusing ledger path %q", f.GetPath())
+				}
 				return "", err
 			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return "", err
-			}
-			if err := os.WriteFile(target, []byte(f.GetContent()), 0o644); err != nil {
-				return "", err
-			}
-			record.Files[f.GetPath()] = hashContent([]byte(f.GetContent()))
 		}
 		if token = page.Msg.GetNextPageToken(); token == "" {
 			break
 		}
+	}
+	m, err := w.Manifest(cs.GetBaseCommit())
+	if err != nil {
+		return "", err
+	}
+	if err := snapshot.WriteManifestFile(c.manifestPath(id), m); err != nil {
+		return "", err
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
@@ -379,59 +417,57 @@ func (c *ledgerCLI) writeBase(ctx context.Context, cs *circusv1.Changeset, dir s
 	return dir, writeFileAtomic(c.recordPath(id), append(data, '\n'), 0o600)
 }
 
-func hashContent(b []byte) string {
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
+// errLocalProblems reports a local copy with files the ledger cannot
+// hold; check prints them as problems.
+var errLocalProblems = errors.New("the local copy has problems; nothing was sent")
+
+// manifestClocks are where open may take the manifest's time, in order:
+// the state directory, which is circus's own, then the copy's parent. The
+// writer uses the first on the copy's file system whose probe file can be
+// made, so the probe never appears in the copy; with none, the manifest
+// takes the newest file's time, and the files written in that last tick
+// are read by every check.
+func (c *ledgerCLI) manifestClocks(d *os.File) ([]snapshot.Clock, func()) {
+	var clocks []snapshot.Clock
+	for _, dir := range []string{c.stateDir, filepath.Dir(d.Name())} {
+		if f, err := os.Open(dir); err == nil {
+			clocks = append(clocks, snapshot.Clock{Dir: f})
+		}
+	}
+	return clocks, func() {
+		for _, c := range clocks {
+			_ = c.Dir.Close()
+		}
+	}
 }
 
-// collect compares the directory with the base's manifest: new and
-// changed files with their content, removed files as deleted.
-func collect(r ledgerRecord) ([]*circusv1.FileChange, error) {
-	var out []*circusv1.FileChange
-	seen := make(map[string]bool, len(r.Files))
-	total := 0
-	err := filepath.WalkDir(r.Dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(r.Dir, path)
-		if err != nil {
-			return err
-		}
-		p := filepath.ToSlash(rel)
-		if !d.Type().IsRegular() {
-			return fmt.Errorf("%s is not a regular file; the ledger holds only files", path)
-		}
-		seen[p] = true
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		data, err := io.ReadAll(io.LimitReader(f, ledger.MaxChangesetBytes+1))
-		if err := errors.Join(err, f.Close()); err != nil {
-			return err
-		}
-		if hashContent(data) == r.Files[p] {
-			return nil
-		}
-		if total += len(data); total > ledger.MaxChangesetBytes {
-			return fmt.Errorf("the changed files exceed %d bytes", ledger.MaxChangesetBytes)
-		}
-		out = append(out, &circusv1.FileChange{Path: p, Change: &circusv1.FileChange_Content{Content: string(data)}})
-		return nil
-	})
+// collect compares the directory with the base's manifest m: new and
+// changed files with their content, removed files as deleted. Files whose
+// stat matches the manifest are not read. Files the ledger cannot hold
+// (symlinks and other non-regular files, files over 256 KiB, invalid
+// UTF-8) are returned as problems instead.
+func collect(ctx context.Context, r ledgerRecord, m *snapshot.Manifest) ([]*circusv1.FileChange, []snapshot.Problem, error) {
+	dir, err := os.Open(r.Dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	for _, p := range slices.Sorted(maps.Keys(r.Files)) {
-		if !seen[p] {
-			out = append(out, &circusv1.FileChange{Path: p, Change: &circusv1.FileChange_Deleted{Deleted: true}})
+	defer dir.Close()
+	res, err := snapshot.Compare(ctx, dir, m, snapshot.Limits{MaxChanges: ledger.MaxChanges, MaxChangedBytes: ledger.MaxChangesetBytes})
+	if err != nil {
+		return nil, nil, err
+	}
+	if res.TooLarge && len(res.Problems) == 0 {
+		return nil, nil, fmt.Errorf("the changed files exceed %d bytes", ledger.MaxChangesetBytes)
+	}
+	out := make([]*circusv1.FileChange, 0, len(res.Changes))
+	for _, ch := range res.Changes {
+		if ch.Deleted {
+			out = append(out, &circusv1.FileChange{Path: ch.Path, Change: &circusv1.FileChange_Deleted{Deleted: true}})
+		} else {
+			out = append(out, &circusv1.FileChange{Path: ch.Path, Change: &circusv1.FileChange_Content{Content: ch.Content}})
 		}
 	}
-	return out, nil
+	return out, res.Problems, nil
 }
 
 // check sends the local changes and prints the outcome. It returns the
@@ -439,24 +475,63 @@ func collect(r ledgerRecord) ([]*circusv1.FileChange, error) {
 // readOmitted reads the contents of conflicts the check left out.
 func (c *ledgerCLI) check(ctx context.Context, id string, readOmitted bool) (*circusv1.CheckChangesetResponse, error) {
 	r, err := c.readRecord(id)
+	var changes []*circusv1.FileChange
+	session := ""
+	if errors.Is(err, errNoRecord) {
+		// A session's changeset has no local copy: the server collects
+		// the session's snapshot.
+		current, getErr := c.api.GetChangeset(ctx, connect.NewRequest(&circusv1.GetChangesetRequest{ChangesetId: id}))
+		if connect.CodeOf(getErr) == connect.CodeNotFound {
+			return nil, err
+		}
+		if getErr != nil {
+			return nil, c.fail(getErr)
+		}
+		if session = current.Msg.GetChangeset().GetSessionId(); session == "" {
+			return nil, err
+		}
+		r, err = ledgerRecord{ChangesetID: id}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	changes, err := collect(r)
-	if err != nil {
-		return nil, err
+	var problems []snapshot.Problem
+	if session == "" {
+		base, err := c.manifest(r)
+		if err != nil {
+			return nil, err
+		}
+		if changes, problems, err = collect(ctx, r, base); err != nil {
+			return nil, err
+		}
+	}
+	if len(problems) > 0 {
+		// Printed as the server's problems are, before anything is sent.
+		fmt.Fprintf(c.out, "changeset: %s\nchanged files: %d\n", id, len(changes))
+		for _, p := range problems {
+			if p.Path == "" {
+				fmt.Fprintf(c.out, "problem: %s\n", p.Message)
+			} else {
+				fmt.Fprintf(c.out, "problem: %s: %s\n", p.Path, p.Message)
+			}
+		}
+		return nil, callExit{code: 3, err: errLocalProblems}
 	}
 	res, err := c.api.CheckChangeset(ctx, connect.NewRequest(&circusv1.CheckChangesetRequest{ChangesetId: id, Changes: changes}))
 	if err != nil {
 		return nil, c.fail(err)
 	}
 	m := res.Msg
-	fmt.Fprintf(c.out, "changeset: %s\nchanged files: %d\n", id, len(changes))
+	if session != "" {
+		fmt.Fprintf(c.out, "changeset: %s\nsession: %s (collected on the session's device)\n", id, session)
+	} else {
+		fmt.Fprintf(c.out, "changeset: %s\nchanged files: %d\n", id, len(changes))
+	}
 	for _, p := range m.GetProblems() {
 		fmt.Fprintf(c.out, "problem: %s: %s\n", p.GetPath(), p.GetMessage())
 	}
 	if m.GetFastForward() {
-		fmt.Fprintln(c.out, "fast-forward: yes (the base is the main line's head)")
+		fmt.Fprintln(c.out, "fast-forward: yes (the base matches the main line's head)")
 	} else {
 		fmt.Fprintf(c.out, "fast-forward: no (the main line is at %s; merging needs the integrator grant)\n", m.GetMainCommit())
 	}
@@ -592,6 +667,10 @@ func (c *ledgerCLI) merge(ctx context.Context, id, code, resolvedDir string) err
 	// The files in --resolved are what the merge sends: it needs no
 	// contents the check left out.
 	checked, err := c.check(ctx, id, resolvedDir == "")
+	if errors.Is(err, errLocalProblems) {
+		// Exit 3, as for the problems the server finds.
+		return callExit{code: 3, err: errors.New("the local copy has problems (listed above); nothing was merged")}
+	}
 	var exit callExit
 	if err != nil && !(errors.As(err, &exit) && exit.code == 3 && len(checked.GetProblems()) == 0) {
 		return err
@@ -642,17 +721,22 @@ func (c *ledgerCLI) discard(ctx context.Context, id, reason string) error {
 	return nil
 }
 
-func (c *ledgerCLI) list(ctx context.Context, project string, state circusv1.Changeset_State) error {
+func (c *ledgerCLI) list(ctx context.Context, project string, state circusv1.Changeset_State, session string) error {
 	token := ""
 	for {
-		res, err := c.api.ListChangesets(ctx, connect.NewRequest(&circusv1.ListChangesetsRequest{Project: project, State: state, PageSize: 100, PageToken: token}))
+		res, err := c.api.ListChangesets(ctx, connect.NewRequest(&circusv1.ListChangesetsRequest{Project: project, State: state, PageSize: 100,
+			PageToken: token, SessionId: session}))
 		if err != nil {
 			return c.fail(err)
 		}
 		for _, cs := range res.Msg.GetChangesets() {
-			line := fmt.Sprintf("%s\t%s\t%s\tbase %s\topener %s", cs.GetChangesetId(),
+			who := "opener " + cs.GetOpenerWorkerId()
+			if cs.GetSessionId() != "" {
+				who = "session " + cs.GetSessionId()
+			}
+			line := fmt.Sprintf("%s\t%s\t%s\tbase %s\t%s", cs.GetChangesetId(),
 				strings.ToLower(strings.TrimPrefix(cs.GetState().String(), "STATE_")),
-				time.UnixMilli(cs.GetCreatedAtUnixMs()).UTC().Format(time.RFC3339), short(cs.GetBaseCommit()), cs.GetOpenerWorkerId())
+				time.UnixMilli(cs.GetCreatedAtUnixMs()).UTC().Format(time.RFC3339), short(cs.GetBaseCommit()), who)
 			switch cs.GetState() {
 			case circusv1.Changeset_STATE_MERGED:
 				line += "\tmerged " + short(cs.GetMergedCommit())

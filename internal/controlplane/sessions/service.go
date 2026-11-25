@@ -111,6 +111,10 @@ type Config struct {
 	// tell whether a provider's secrets are readable. Nil: no provider's
 	// secrets are.
 	Secrets *providers.Box
+	// LedgerDue is told of a session whose ledger snapshot a turn's end
+	// made due for a collection, on the report's path: it may read and
+	// write the store but must not wait for other work. Optional.
+	LedgerDue func(ctx context.Context, sessionID string)
 }
 
 // Service is the worker-link side of sessions: it serves session operations
@@ -865,9 +869,13 @@ func (s *Service) hintEvents(c *Conn, id string, h *hint) []*circusv1.WorkerEven
 	if h.offer && e.offered == c {
 		out = append(out, &circusv1.WorkerEvent{Event: &circusv1.WorkerEvent_Offer_{Offer: &circusv1.WorkerEvent_Offer{SessionId: id}}})
 	}
-	if h.nudge && e.bound == c && e.reasons != 0 {
+	rs := e.reasons
+	if e.held {
+		rs &^= turnReasons
+	}
+	if h.nudge && e.bound == c && rs != 0 {
 		out = append(out, &circusv1.WorkerEvent{Event: &circusv1.WorkerEvent_Nudge_{Nudge: &circusv1.WorkerEvent_Nudge{
-			SessionId: id, Reasons: e.reasons.list(), InterruptTurnNo: uint64(e.interrupt)}}})
+			SessionId: id, Reasons: rs.list(), InterruptTurnNo: uint64(e.interrupt)}}})
 	}
 	return out
 }

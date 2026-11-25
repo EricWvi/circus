@@ -283,6 +283,27 @@ func (r *repository) changesetFiles(ctx context.Context, commit plumbing.Hash) (
 	return files, c, err
 }
 
+// sameTree reports whether two commits hold the same tree, which is how
+// a changeset's base is compared with the main line's head: a zero commit
+// (an empty ledger) holds no tree. r may be nil when both are zero.
+func (r *repository) sameTree(a, b plumbing.Hash) (bool, error) {
+	if a == b {
+		return true, nil
+	}
+	if a.IsZero() || b.IsZero() {
+		return false, nil
+	}
+	ca, err := r.commit(a)
+	if err != nil {
+		return false, err
+	}
+	cb, err := r.commit(b)
+	if err != nil {
+		return false, err
+	}
+	return ca.TreeHash == cb.TreeHash, nil
+}
+
 // diff lists the paths where two file maps differ, in path order.
 func diff(a, b map[string]plumbing.Hash) []string {
 	var out []string
@@ -325,14 +346,23 @@ func (m *Manager) CheckChangeset(ctx context.Context, id, author string, changes
 	if c.State != store.LedgerChangesetOpen {
 		return CheckResult{}, stateError(c)
 	}
+	out, _, _, err := m.check(ctx, l, c, author, changes)
+	return out, err
+}
+
+// check is CheckChangeset of the open changeset c under the project's
+// lock. It also returns the effective changes and the base's reference.
+func (m *Manager) check(ctx context.Context, l *locked, c store.LedgerChangeset, author string, changes []Change) (CheckResult, []change, reference, error) {
+	id := c.ID
 	base := plumbing.NewHash(c.BaseCommit)
 	var baseRef reference
+	var err error
 	if c.BaseCommit != "" {
 		if l.r == nil {
-			return CheckResult{}, fmt.Errorf("ledger: repository of project %q is missing", c.ProjectID)
+			return CheckResult{}, nil, reference{}, fmt.Errorf("ledger: repository of project %q is missing", c.ProjectID)
 		}
 		if baseRef, err = l.r.readReference(ctx, base, snapshot{}, true); err != nil {
-			return CheckResult{}, err
+			return CheckResult{}, nil, reference{}, err
 		}
 	} else {
 		baseRef = newReference(snapshot{})
@@ -346,7 +376,7 @@ func (m *Manager) CheckChangeset(ctx context.Context, id, author string, changes
 		old, exists := baseRef.files[ch.Path]
 		if ch.Deleted {
 			if !exists {
-				return CheckResult{}, &RequestError{Field: fmt.Sprintf("changes[%d].path", i), Message: "the base has no such file to remove"}
+				return CheckResult{}, nil, reference{}, &RequestError{Field: fmt.Sprintf("changes[%d].path", i), Message: "the base has no such file to remove"}
 			}
 			delete(files, ch.Path)
 			effective = append(effective, change{path: ch.Path, deleted: true})
@@ -361,12 +391,12 @@ func (m *Manager) CheckChangeset(ctx context.Context, id, author string, changes
 		effective = append(effective, change{path: ch.Path, content: ch.Content})
 	}
 	if len(files) > store.MaxLedgerDecisions+1 {
-		return CheckResult{}, &LimitError{Message: "a changeset holds at most 4096 decisions"}
+		return CheckResult{}, nil, reference{}, &LimitError{Message: "a changeset holds at most 4096 decisions"}
 	}
 	for p := range files {
 		for dir := fileDir(p); dir != ""; dir = fileDir(dir) {
 			if _, ok := files[dir]; ok {
-				return CheckResult{}, &RequestError{Field: "changes", Message: fmt.Sprintf("%q is a file and a directory of %q", dir, p)}
+				return CheckResult{}, nil, reference{}, &RequestError{Field: "changes", Message: fmt.Sprintf("%q is a file and a directory of %q", dir, p)}
 			}
 		}
 	}
@@ -374,17 +404,17 @@ func (m *Manager) CheckChangeset(ctx context.Context, id, author string, changes
 	if len(effective) == 0 {
 		if l.r != nil {
 			if err := l.r.dropBranch(id); err != nil {
-				return CheckResult{}, err
+				return CheckResult{}, nil, reference{}, err
 			}
 		}
 	} else {
 		if l.r == nil {
 			if err := l.createRepository(); err != nil {
-				return CheckResult{}, err
+				return CheckResult{}, nil, reference{}, err
 			}
 		}
 		if err := m.writeBranch(ctx, l.r, c, author, baseRef, files, effective, blobs); err != nil {
-			return CheckResult{}, err
+			return CheckResult{}, nil, reference{}, err
 		}
 	}
 
@@ -393,27 +423,29 @@ func (m *Manager) CheckChangeset(ctx context.Context, id, author string, changes
 	var head plumbing.Hash
 	if l.r != nil {
 		if head, err = l.r.head(); err != nil {
-			return CheckResult{}, err
+			return CheckResult{}, nil, reference{}, err
 		}
 	}
 	out.MainCommit = commitID(head)
-	out.FastForward = out.MainCommit == c.BaseCommit
+	if out.FastForward, err = l.r.sameTree(base, head); err != nil {
+		return CheckResult{}, nil, reference{}, err
+	}
 	if !out.FastForward {
 		mainRef, err := l.r.readReference(ctx, head, baseRef.snapshot, false)
 		if err != nil {
-			return CheckResult{}, err
+			return CheckResult{}, nil, reference{}, err
 		}
 		if out.Conflicts, err = l.r.conflicts(ctx, baseRef, mainRef, effective); err != nil {
-			return CheckResult{}, err
+			return CheckResult{}, nil, reference{}, err
 		}
 	}
 	if _, err := m.st.TouchLedgerChangeset(ctx, id, m.now().UnixMilli()); err != nil {
-		return CheckResult{}, err
+		return CheckResult{}, nil, reference{}, err
 	}
 	if out.Changeset, err = m.st.GetLedgerChangeset(ctx, id); err != nil {
-		return CheckResult{}, err
+		return CheckResult{}, nil, reference{}, err
 	}
-	return out, nil
+	return out, effective, baseRef, nil
 }
 
 // writeBranch stores the changeset's files as the commit of its branch,
@@ -599,8 +631,11 @@ func (m *Manager) ReadChangesetConflicts(ctx context.Context, id, mainCommit, br
 			Description: "the changeset was checked again while its conflicts were read; check again"}}}
 	}
 	page := ConflictPage{Branch: commitID(current)}
-	if current.IsZero() || commitID(head) == c.BaseCommit {
+	if current.IsZero() {
 		return page, nil
+	}
+	if same, err := r.sameTree(plumbing.NewHash(c.BaseCommit), head); err != nil || same {
+		return page, err
 	}
 	baseFiles, err := r.commitFiles(ctx, plumbing.NewHash(c.BaseCommit), false)
 	if err != nil {
@@ -747,7 +782,10 @@ func (m *Manager) MergeChangeset(ctx context.Context, id string, o MergeOptions)
 	if err != nil {
 		return store.LedgerChangeset{}, err
 	}
-	fastForward := commitID(head) == c.BaseCommit
+	fastForward, err := r.sameTree(plumbing.NewHash(c.BaseCommit), head)
+	if err != nil {
+		return store.LedgerChangeset{}, err
+	}
 	if o.Authorize != nil {
 		if err := o.Authorize(ctx, fastForward); err != nil {
 			return store.LedgerChangeset{}, err

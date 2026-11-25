@@ -34,6 +34,11 @@ const EDGE_PX = 8
 /** The class of a reference's anchor; its look is set once, on the body (`refStyles`). */
 export const REF_CLASS = "ledger-ref"
 
+// How references look, set once on the area that holds them rather than on
+// each of possibly tens of thousands of anchors.
+export const refStyles =
+  "[&_.ledger-ref]:rounded-sm [&_.ledger-ref]:font-medium [&_.ledger-ref]:text-foreground [&_.ledger-ref]:underline [&_.ledger-ref]:decoration-foreground/40 [&_.ledger-ref]:decoration-dotted [&_.ledger-ref]:underline-offset-4 [&_.ledger-ref]:outline-none [&_.ledger-ref:hover]:decoration-foreground [&_.ledger-ref:hover]:decoration-solid [&_.ledger-ref:focus-visible]:ring-2 [&_.ledger-ref:focus-visible]:ring-ring/50"
+
 /**
  * One reference: a plain anchor (its href says which decision, its text is
  * the label), muted text when its project or decision doesn't exist, or

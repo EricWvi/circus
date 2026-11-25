@@ -43,6 +43,31 @@ func (s *session) newToolCall(command, arg string) toolCall {
 	return toolCall{call: call, id: "toolu_" + uuid.NewString(), name: name, input: input}
 }
 
+// useResult is the call's tool_use_result (toolUseResult). A Write or
+// Edit that succeeded gets Claude Code's shape for it; the fake knows
+// neither the file's previous content nor the diff.
+func (u toolCall) useResult(arg, output string, result *pb.DeviceResult, failed bool) any {
+	if !failed {
+		switch u.name {
+		case "Write":
+			kind := "update"
+			if result.GetWrite().GetCreated() {
+				kind = "create"
+			}
+			return object{
+				"type": kind, "filePath": u.input["file_path"], "content": u.input["content"],
+				"structuredPatch": []any{}, "originalFile": nil,
+			}
+		case "Edit":
+			return object{
+				"filePath": u.input["file_path"], "oldString": u.input["old_string"], "newString": u.input["new_string"],
+				"originalFile": nil, "structuredPatch": []any{}, "userModified": false, "replaceAll": false,
+			}
+		}
+	}
+	return toolUseResult(u.name, arg, output, failed)
+}
+
 // announce streams the tool uses as the blocks of one API message.
 func (s *session) announce(t *turn, uses ...toolCall) error {
 	r := s.begin(t)
@@ -108,22 +133,40 @@ func (s *session) largeResult(t *turn, n int) error {
 // runTool runs an announced tool use and records its result; closing streams
 // the closing text.
 func (s *session) runTool(t *turn, command, arg string, u toolCall, closing bool) error {
-	call, toolID, name, input := u.call, u.id, u.name, u.input
 	if command == "approve" {
-		return s.denyApproval(t, toolID, arg, input)
+		return s.denyApproval(t, u.id, arg, u.input)
 	}
 	if command == "approved-bash" {
 		reply, err := s.request(wc.Op(s.id, s.epoch, &pb.ConsumeGrant{
-			Tool: approvalTool, Device: s.device, MatchKey: approvalKey(arg), ToolUseId: toolID,
+			Tool: approvalTool, Device: s.device, MatchKey: approvalKey(arg), ToolUseId: u.id,
 		}))
 		if err != nil {
 			return err
 		}
 		if !reply.GetGrant().GetAllowed() {
-			return s.denyApproval(t, toolID, arg, input)
+			return s.denyApproval(t, u.id, arg, u.input)
 		}
 	}
 
+	update, failed, err := s.callTool(t, u, arg, command == "approved-bash")
+	if err != nil || !closing {
+		return err
+	}
+	text := u.name + " finished."
+	if failed {
+		text = u.name + " returned an error."
+	} else if update.GetResult().GetBash().GetJobId() != "" {
+		text = "Bash started a background job."
+	}
+	return s.stream(t, text, s.w.opts.StreamDelay, plainText)
+}
+
+// callTool runs an announced tool use on the session's device and records
+// its tool_result; failed reports an error result. hook marks a call the
+// worker's PreToolUse hook let run (an approved retry). arg is the script's
+// argument: a Read's path as given.
+func (s *session) callTool(t *turn, u toolCall, arg string, hook bool) (*pb.CallUpdate, bool, error) {
+	call, toolID := u.call, u.id
 	req := &pb.SubmitCall{Device: s.device, Call: call, SessionEpoch: s.epoch, ToolUseId: toolID}
 	update, submitted, err := s.submit(t, req)
 	if err != nil {
@@ -131,28 +174,28 @@ func (s *session) runTool(t *turn, command, arg string, u toolCall, closing bool
 			t.abortReason = abortedTools
 			if submitted {
 				if _, patchErr := s.request(wc.Patch(s.id, s.epoch, &pb.PatchSessionState{ReturnedCallIds: []string{call.GetCallId()}})); patchErr != nil {
-					return errors.Join(err, patchErr)
+					return nil, false, errors.Join(err, patchErr)
 				}
 				t.marks.CallIds = append(t.marks.CallIds, call.GetCallId())
 			}
 			if saveErr := s.record(sdkInterruptedTool(s.sdkID, uuid.NewString(), toolID)); saveErr != nil {
-				return errors.Join(err, saveErr)
+				return nil, false, errors.Join(err, saveErr)
 			}
 		}
-		return err
+		return nil, false, err
 	}
 	switch update.GetRejected().GetCode() {
 	case pb.CallUpdate_Rejected_CODE_SESSION_FENCED:
-		return errFenced
+		return nil, false, errFenced
 	case pb.CallUpdate_Rejected_CODE_SESSION_STOPPED:
 		reply, err := s.request(wc.State(s.id, s.epoch, pb.GetSessionState_SECTION_NONE))
 		if err != nil {
-			return err
+			return nil, false, err
 		}
 		if reply.GetState().GetState().GetStopped() {
-			return errStopped
+			return nil, false, errStopped
 		}
-		return errBroken
+		return nil, false, errBroken
 	}
 
 	patch := &pb.PatchSessionState{ReturnedCallIds: []string{call.GetCallId()}}
@@ -173,27 +216,18 @@ func (s *session) runTool(t *turn, command, arg string, u toolCall, closing bool
 		}
 	}
 	if _, err := s.request(wc.Patch(s.id, s.epoch, patch)); err != nil {
-		return err
+		return nil, false, err
 	}
 	blocks, failed := callOutput(update)
 	content := resultContent(blocks)
 	output, _ := content.(string)
 	message := sdkToolResult(s.sdkID, uuid.NewString(), toolID, content, failed,
-		toolUseResult(name, arg, output, failed), allowedMeta(toolID, command == "approved-bash"))
+		u.useResult(arg, output, result, failed), allowedMeta(toolID, hook))
 	if err := s.record(message); err != nil {
-		return err
+		return nil, false, err
 	}
 	t.marks.CallIds = append(t.marks.CallIds, call.GetCallId())
-	if !closing {
-		return nil
-	}
-	text := name + " finished."
-	if failed {
-		text = name + " returned an error."
-	} else if result.GetBash().GetJobId() != "" {
-		text = "Bash started a background job."
-	}
-	return s.stream(t, text, s.w.opts.StreamDelay, plainText)
+	return update, failed, nil
 }
 
 func callOutput(u *pb.CallUpdate) ([]object, bool) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -249,6 +250,16 @@ func TestDefaultToolsDoesNotCollectEnvironment(t *testing.T) {
 	for _, path := range []string{state, marker} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("constructing default tools touched %s: %v", path, err)
+		}
+	}
+	var names []string
+	for _, tool := range tools {
+		names = append(names, tool.Name())
+	}
+	for _, name := range []string{"read", "write", "edit", "bash", "task_stop", "prepare_workspace", "remove_workspace",
+		"prepare_ledger", "collect_ledger", "rebase_ledger", "remove_ledger"} {
+		if !slices.Contains(names, name) {
+			t.Errorf("default tools %v lack %s", names, name)
 		}
 	}
 }

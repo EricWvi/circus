@@ -1,6 +1,7 @@
 package fakeworker
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,10 +14,14 @@ import (
 )
 
 func (s *session) script(t *turn, in *input) error {
-	if in.GetKind() == pb.SessionReply_Inputs_Input_KIND_APPROVAL {
-		return s.retryApproval(t, in.GetText())
-	}
 	text := in.GetText()
+	switch in.GetKind() {
+	case pb.SessionReply_Inputs_Input_KIND_APPROVAL:
+		return s.retryApproval(t, text)
+	case pb.SessionReply_Inputs_Input_KIND_NOTE:
+		// The control plane's note is answered as text, never run as a script.
+		return s.stream(t, quote(text), s.w.opts.StreamDelay, plainText)
+	}
 	command, arg, _ := strings.Cut(strings.TrimPrefix(text, "/fake "), " ")
 	if strings.HasPrefix(text, "/fake ") {
 		switch command {
@@ -25,6 +30,10 @@ func (s *session) script(t *turn, in *input) error {
 				return fmt.Errorf("/fake %s requires an argument", command)
 			}
 			return s.tool(t, command, arg)
+		case "ledger-path":
+			return s.stream(t, "ledger path: "+cmp.Or(s.ledgerPath, "none"), s.w.opts.StreamDelay, plainText)
+		case "ledger":
+			return s.ledger(t, arg)
 		case "parallel":
 			if strings.TrimSpace(arg) == "" {
 				return errors.New("/fake parallel requires an argument")

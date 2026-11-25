@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next"
 import { ArrowLeftIcon, FolderIcon, HistoryIcon } from "lucide-react"
 import { useEffect, useRef, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
@@ -202,7 +203,7 @@ function InlineMessage({ title, children }: { title: string; children: ReactNode
 }
 
 /** What a version changed, as short phrases. */
-function changes(v: DecisionVersion, previous: DecisionVersion | undefined, t: ReturnType<typeof useTranslation>["t"]): string[] {
+function changes(v: DecisionVersion, previous: DecisionVersion | undefined, t: TFunction): string[] {
   if (v.added) return [t("ledger.change.added")]
   const out: string[] = []
   // A retitle changes the path too: only a new directory is a move.

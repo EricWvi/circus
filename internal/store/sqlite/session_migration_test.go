@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -341,5 +342,69 @@ func TestSessionLocalMigration(t *testing.T) {
 	must(err)
 	if old.Local || old.PinDerived || old.PinnedWorkerID != "w" || old.RequestedWorkerID() != "w" {
 		t.Fatalf("legacy session = local %v, derived %v, pin %q", old.Local, old.PinDerived, old.PinnedWorkerID)
+	}
+}
+
+// TestSessionInputNoteMigration upgrades inputs of every state across the
+// rebuild of session_inputs that adds note inputs: rows, their order and
+// their indexes stay, and none is a note.
+func TestSessionInputNoteMigration(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), dbName)
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	raw.SetMaxOpenConns(1)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	ms, err := migrations()
+	must(err)
+	_, err = raw.ExecContext(ctx, `PRAGMA foreign_keys = ON; CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT`)
+	must(err)
+	for _, m := range ms[:18] {
+		_, err = raw.ExecContext(ctx, m.sql)
+		must(err)
+		_, err = raw.ExecContext(ctx, `INSERT INTO schema_migrations VALUES (?, 1)`, m.version)
+		must(err)
+	}
+	_, err = raw.ExecContext(ctx, `
+		INSERT INTO users(id,name,created_at) VALUES('u','user',1);
+		INSERT INTO projects(id,user_id,name,name_key,created_at,updated_at) VALUES('p','u','Project','project',1,1);
+		INSERT INTO devices(id,user_id,name,machine_id,created_at) VALUES('d','u','device','machine',1);
+		INSERT INTO sessions(session_id,user_id,claude_session_id,state,default_device_id,created_at,updated_at,project_id,last_activity_at)
+			VALUES('s','u','claude','idle','d',1,1,'p',1);
+		INSERT INTO session_inputs(input_id,session_id,client_msg_id,kind,text,priority,state,created_at,event_seq)
+			VALUES('i1','s','c1','user','hello','normal','pending',2,5);
+		INSERT INTO session_inputs(input_id,session_id,client_msg_id,kind,text,priority,state,taken_epoch,created_at,taken_at,persisted_at)
+			VALUES('i2','s','approval:a','approval',NULL,'normal','persisted',1,1,2,3);`)
+	must(err)
+	must(raw.Close())
+
+	d, err := Open(ctx, path, Options{})
+	must(err)
+	defer d.Close()
+	var got []store.Input
+	must(d.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		rows, err := tx.(*ops).q.QueryContext(ctx, `SELECT `+inputCols+` FROM session_inputs WHERE session_id = 's' ORDER BY created_at, input_id`)
+		if err != nil {
+			return err
+		}
+		got, err = collect(rows, scanInput)
+		return err
+	}))
+	want := []store.Input{
+		{InputID: "i2", SessionID: "s", ClientMsgID: "approval:a", Kind: store.InputApproval, Priority: store.InputNormal,
+			State: store.InputPersisted, TakenEpoch: 1, CreatedAt: 1, TakenAt: 2, PersistedAt: 3},
+		{InputID: "i1", SessionID: "s", ClientMsgID: "c1", Kind: store.InputUser, Text: "hello", Priority: store.InputNormal,
+			State: store.InputPending, CreatedAt: 2, EventSeq: 5},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("inputs after the migration:\n got %+v\nwant %+v", got, want)
 	}
 }

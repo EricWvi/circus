@@ -1,3 +1,4 @@
+import { BinaryWriter, WireType } from "@bufbuild/protobuf/wire"
 import { Code, ConnectError, createRouterTransport, type ServiceImpl } from "@connectrpc/connect"
 import {
   InputPriority,
@@ -7,7 +8,8 @@ import {
   Session_State,
   TurnOutcome,
 } from "@circus/proto/circus/v1/session_pb"
-import { PrepareWorkspaceResult_Action, WorkspaceError } from "@circus/proto/circus/v1/device_pb"
+import { LedgerSnapshotError, PrepareWorkspaceResult_Action, WorkspaceError } from "@circus/proto/circus/v1/device_pb"
+import { SessionLedgerStatus_Applying, SessionLedgerStatus_State } from "@circus/proto/circus/v1/ledger_pb"
 import { WorkspaceStatus_State, WorkspaceStatus_Waiting } from "@circus/proto/circus/v1/workspace_pb"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -65,6 +67,91 @@ describe("the Connect session client", () => {
       queueReason: "unspecified",
       workerDisconnectedAtUnixMs: 0,
     })
+  })
+
+  it("maps the session's ledger snapshot, and leaves it out when unset", async () => {
+    const client = sessions({
+      listSessions: () => ({
+        sessions: [
+          {
+            ...protoSession,
+            ledger: {
+              state: SessionLedgerStatus_State.FAILED,
+              path: "",
+              error: LedgerSnapshotError.NO_SPACE,
+              errorDetail: "disk full",
+              collectedAtUnixMs: 5n,
+              collectionDue: true,
+              changesetId: "c1",
+              changeCount: 3,
+              problemCount: 1,
+              updatedAtUnixMs: 9n,
+              applying: SessionLedgerStatus_Applying.DISCARD,
+            },
+          },
+          { ...protoSession, sessionId: "s2", ledger: { state: 99 as SessionLedgerStatus_State, error: 77 as LedgerSnapshotError } },
+          { ...protoSession, sessionId: "s3" },
+        ],
+        nextPageToken: "",
+      }),
+    })
+    const [a, b, c] = await client.listSessions({})
+    expect(a.ledger).toEqual({
+      state: "failed",
+      path: "",
+      error: "no_space",
+      errorDetail: "disk full",
+      collectedAtUnixMs: 5,
+      collectionDue: true,
+      changesetId: "c1",
+      changeCount: 3,
+      problemCount: 1,
+      updatedAtUnixMs: 9,
+      applying: "discard",
+    })
+    // Values from a newer server read as unspecified.
+    expect(b.ledger).toMatchObject({ state: "unspecified", error: "unspecified" })
+    expect(c).not.toHaveProperty("ledger")
+  })
+
+  it("deletes a session, discarding its Ledger changes only when asked, and names the refusal", async () => {
+    const seen: boolean[] = []
+    const failure = () => {
+      const w = new BinaryWriter()
+      w.tag(1, WireType.LengthDelimited).fork()
+      w.tag(1, WireType.LengthDelimited).string("LEDGER_CHANGES")
+      w.tag(2, WireType.LengthDelimited).string("s1")
+      w.join()
+      return w.finish()
+    }
+    const client = sessions({
+      deleteSession: (req) => {
+        seen.push(req.discardLedgerChanges)
+        if (req.discardLedgerChanges) return {}
+        const error = new ConnectError("unmerged ledger changes", Code.FailedPrecondition)
+        error.details.push({ type: "google.rpc.PreconditionFailure", value: failure() })
+        throw error
+      },
+    })
+    await expect(client.deleteSession({ sessionId: "s1" })).rejects.toMatchObject({
+      code: "failed_precondition",
+      preconditionType: "LEDGER_CHANGES",
+    })
+    await client.deleteSession({ sessionId: "s1", discardLedgerChanges: true })
+    expect(seen).toEqual([false, true])
+  })
+
+  it("names ledger events", async () => {
+    const client = sessions({
+      async *watchSession() {
+        yield { tsUnixMs: 4n, kind: SessionEvent_Kind.LEDGER, payloadJson: '{"event":"collected"}', ephemeral: true }
+      },
+    })
+    const kinds: string[] = []
+    for await (const e of client.watchSession({ sessionId: "s1", afterSeq: 0, signal: new AbortController().signal })) {
+      kinds.push(e.kind)
+    }
+    expect(kinds).toEqual(["ledger"])
   })
 
   it("maps when the worker holding the session disconnected, 0 while it is connected", async () => {

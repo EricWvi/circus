@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package circus.v1;
 
+import "circus/v1/ledger.proto";
 import "circus/v1/workspace.proto";
 
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
@@ -163,6 +164,14 @@ message Session {
   // not stored: after a control-plane start it is zero until a holder
   // disconnects again. Changes are announced live with KIND_WORKER events.
   int64 worker_disconnected_at_unix_ms = 17;
+  // The session's ledger snapshot (LedgerService.GetSessionLedger has its
+  // changes). Unset for a session created before snapshots existed. While
+  // it is PENDING or PREPARING the session runs no turn, as for the
+  // workspace, nor while a merge or discard of its changeset is still being
+  // applied to the snapshot (unless problems of the snapshot, which the
+  // agent is told to fix, stop that); FAILED does not hold turns: the
+  // session runs without a ledger.
+  SessionLedgerStatus ledger = 18;
 }
 
 // QueueReason says why a queued session cannot be leased now.
@@ -188,8 +197,8 @@ message SessionEvent {
   uint64 seq = 1;
   int64 ts_unix_ms = 2;
   // Shared with worker-published events. TURN_STARTED payload includes origin.
-  // Kinds 8, 9, 10, 15, 17, 18, 19, 20 and 21 are recorded by the control
-  // plane only: a worker event batch containing one of them is dropped as
+  // Kinds 8, 9, 10, 15, 17, 18, 19, 20, 21 and 22 are recorded by the
+  // control plane only: a worker event batch containing one of them is dropped as
   // INVALID.
   enum Kind {
     KIND_UNSPECIFIED = 0;
@@ -250,6 +259,14 @@ message SessionEvent {
     // {"disconnected_at_unix_ms":"<int64>"}, "0" when the holder reconnected
     // or the lease ended.
     KIND_WORKER = 21;
+    // Recorded by the control plane only: the session's ledger snapshot
+    // changed (SessionLedgerStatus.updated_at_unix_ms is ts_unix_ms).
+    // Durable for a merge or a discard of its changeset, ephemeral (seq 0)
+    // otherwise. payload_json: {"event":"prepared"|"failed"|"collected"|
+    // "merged"|"discarded", "changeset_id", "numbers":{"D?a":92,...} (merged
+    // only), "reason" (discarded only)}, at most 4 KiB. Clients fetch
+    // GetSessionLedger for the details.
+    KIND_LEDGER = 22;
   }
   Kind kind = 3;
   // Opaque SDK message JSON; durable view payloads over 256 KiB are truncated.
@@ -395,8 +412,15 @@ message StopSessionResponse {}
 // stopped, holds no unexpired lease and has no non-terminal call. NOT_FOUND
 // when absent, including after a delete that already succeeded; an
 // interrupted delete is finished by calling it again.
+// DeleteSession refuses with FAILED_PRECONDITION, a
+// google.rpc.PreconditionFailure of type "LEDGER_CHANGES", when the
+// session's ledger changeset is open with changes, or a collection is due,
+// unless discard_ledger_changes is set. Deleting discards the open
+// changeset (reason "session deleted") and removes the snapshot from the
+// device (DeviceCall remove_ledger), later if the device is offline.
 message DeleteSessionRequest {
   string session_id = 1;
+  bool discard_ledger_changes = 2;
 }
 message DeleteSessionResponse {}
 // RecoverSession accepts a gap in a broken session's transcript. Allowed only

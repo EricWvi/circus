@@ -376,3 +376,116 @@ func TestLedgerConflictsAfterMainMoved(t *testing.T) {
 		t.Fatalf("read against another commit: %v, %q", full, why)
 	}
 }
+
+// TestLedgerCheckLocalCopy: open leaves nothing of its own in the copy;
+// check reports what the ledger cannot hold as problems (exit 3) before
+// sending anything, merge refuses it (exit 3); a copy without its
+// manifest is refused.
+func TestLedgerCheckLocalCopy(t *testing.T) {
+	h := newLedgerHarness(t)
+	seed, seedDir := h.open()
+	writeFile(t, filepath.Join(seedDir, "D?a-Plugins.md"), decision("D?a", "Plugins", "x\n"))
+	h.must("merge", seed)
+	id, dir := h.open()
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 2 {
+		t.Fatalf("copy after open: %v %v", entries, err)
+	}
+	if out := h.must("check", id); !strings.Contains(out, "changed files: 0") {
+		t.Fatalf("check of the fresh copy:\n%s", out)
+	}
+	link := filepath.Join(dir, "link.md")
+	if err := os.Symlink("D0-Plugins.md", link); err != nil {
+		t.Fatal(err)
+	}
+	big := filepath.Join(dir, "D?a-Big.md")
+	writeFile(t, big, decision("D?a", "Big", strings.Repeat("x", 300<<10)))
+	out, _, code := h.run("check", id)
+	if code != 3 || !strings.Contains(out, "changed files: 0\n") || !strings.Contains(out, "problem: link.md: a symbolic link") ||
+		!strings.Contains(out, "problem: D?a-Big.md: 307") {
+		t.Fatalf("check with a symlink and a big file: exit %d\n%s", code, out)
+	}
+	// As for the server's problems, merge stops with exit 3.
+	if _, errOut, code := h.run("merge", id); code != 3 {
+		t.Fatalf("merge with local problems: exit %d\n%s", code, errOut)
+	}
+	for _, p := range []string{link, big} {
+		if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A copy whose manifest is gone cannot be compared: open it again.
+	stateDir := filepath.Join(h.state, "circus", "ledger", "cli")
+	if err := os.Remove(filepath.Join(stateDir, id+".manifest.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, code := h.run("check", id); code == 0 || !strings.Contains(errOut, "manifest") {
+		t.Fatalf("check without a manifest: exit %d\n%s", code, errOut)
+	}
+}
+
+// TestLedgerOpenBelowReadOnlyParent: open --dir into a writable directory
+// whose parent is read-only works, and leaves no probe file anywhere.
+func TestLedgerOpenBelowReadOnlyParent(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into read-only directories")
+	}
+	h := newLedgerHarness(t)
+	shared := filepath.Join(t.TempDir(), "shared")
+	copyDir := filepath.Join(shared, "copy")
+	if err := os.MkdirAll(copyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(shared, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(shared, 0o755) })
+	id, dir := h.open("--dir", copyDir)
+	if dir != copyDir {
+		t.Fatalf("directory %s", dir)
+	}
+	if out := h.must("check", id); !strings.Contains(out, "changed files: 0") {
+		t.Fatalf("check:\n%s", out)
+	}
+	for _, d := range []string{shared, copyDir, filepath.Join(h.state, "circus", "ledger", "cli")} {
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), ".circus-clock") {
+				t.Fatalf("probe left in %s", d)
+			}
+		}
+	}
+}
+
+// TestLedgerSessionChangesets: list --session lists one session's
+// changesets with the session instead of an opener; a changeset without a
+// local copy that is not a session's is still refused; --session is for
+// list only.
+func TestLedgerSessionChangesets(t *testing.T) {
+	h := newLedgerHarness(t)
+	ctx := t.Context()
+	now := time.Now().UnixMilli()
+	if err := h.st.CreateLedgerChangeset(ctx, store.LedgerChangeset{ID: "scs-1", ProjectID: "p1", State: store.LedgerChangesetOpen,
+		SessionID: "session-1", CreatedAt: now, UpdatedAt: now, Archived: true}); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := h.open()
+	out := h.must("list", "Notes", "--session", "session-1")
+	if !strings.HasPrefix(out, "scs-1\topen\t") || !strings.Contains(out, "\tsession session-1") || strings.Contains(out, id) {
+		t.Fatalf("list --session:\n%s", out)
+	}
+	if out := h.must("list", "Notes"); !strings.Contains(out, id) || !strings.Contains(out, "scs-1") {
+		t.Fatalf("list:\n%s", out)
+	}
+	if _, errOut, code := h.run("check", id, "--session", "session-1"); code != 1 || !strings.Contains(errOut, "--session is for list") {
+		t.Fatalf("check --session: exit %d\n%s", code, errOut)
+	}
+	if err := os.Remove(filepath.Join(h.state, "circus", "ledger", "cli", id+".json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, code := h.run("check", id); code != 1 || !strings.Contains(errOut, "no local copy") {
+		t.Fatalf("check without a local copy: exit %d\n%s", code, errOut)
+	}
+}

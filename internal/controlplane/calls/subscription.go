@@ -49,8 +49,31 @@ func toolName(c *circusv1.DeviceCall) string {
 		return "remove_workspace"
 	case *circusv1.DeviceCall_TaskStop:
 		return "task_stop"
+	case *circusv1.DeviceCall_PrepareLedger:
+		return "prepare_ledger"
+	case *circusv1.DeviceCall_CollectLedger:
+		return "collect_ledger"
+	case *circusv1.DeviceCall_RebaseLedger:
+		return "rebase_ledger"
+	case *circusv1.DeviceCall_RemoveLedger:
+		return "remove_ledger"
 	}
 	return ""
+}
+
+// ledgerSnapshotID returns the snapshot a ledger snapshot call names.
+func ledgerSnapshotID(c *circusv1.DeviceCall) (string, bool) {
+	switch t := c.Tool.(type) {
+	case *circusv1.DeviceCall_PrepareLedger:
+		return t.PrepareLedger.GetSnapshotId(), true
+	case *circusv1.DeviceCall_CollectLedger:
+		return t.CollectLedger.GetSnapshotId(), true
+	case *circusv1.DeviceCall_RebaseLedger:
+		return t.RebaseLedger.GetSnapshotId(), true
+	case *circusv1.DeviceCall_RemoveLedger:
+		return t.RemoveLedger.GetSnapshotId(), true
+	}
+	return "", false
 }
 
 // offline lists the user's online device names (bounded by the registry).

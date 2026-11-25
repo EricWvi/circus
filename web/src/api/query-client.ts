@@ -23,6 +23,9 @@ export const queryKeys = {
   sessions: (projectId?: string) => ["sessions", projectId ?? "all"] as const,
   allSessions: ["sessions"] as const,
   session: (sessionId: string) => ["session", sessionId] as const,
+  /** A session's ledger snapshot, and (under it) its changed files' diffs. */
+  sessionLedger: (sessionId: string) => ["session-ledger", sessionId] as const,
+  sessionLedgerDiff: (sessionId: string, path: string) => ["session-ledger", sessionId, "diff", path] as const,
   directory: (device: string, path: string, includeHidden: boolean) =>
     ["directory", device, path, includeHidden] as const,
   /** Everything of one project's ledger: the listing, decisions and histories. */

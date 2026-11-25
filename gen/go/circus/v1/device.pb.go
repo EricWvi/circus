@@ -148,6 +148,97 @@ func (WorkspaceError) EnumDescriptor() ([]byte, []int) {
 	return file_circus_v1_device_proto_rawDescGZIP(), []int{0}
 }
 
+// LedgerSnapshotError classifies ledger snapshot failures on a device.
+// Daemons send values up to 99; values from 100 are set by the control
+// plane only.
+type LedgerSnapshotError int32
+
+const (
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_UNSPECIFIED LedgerSnapshotError = 0
+	// Bad snapshot id, chunk order, path or content.
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_INVALID_REQUEST LedgerSnapshotError = 1
+	// The daemon's state directory cannot be resolved.
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_STATE_DIR_UNKNOWN LedgerSnapshotError = 2
+	// The device's OS is not supported (Windows).
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_UNSUPPORTED_OS LedgerSnapshotError = 3
+	// Something that is not a directory (or is a symlink) is in the way.
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_PATH_CONFLICT     LedgerSnapshotError = 4
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_PERMISSION_DENIED LedgerSnapshotError = 5
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_NO_SPACE          LedgerSnapshotError = 6
+	// No snapshot (or no manifest) exists for the id.
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_ABSENT LedgerSnapshotError = 7
+	// rebase_ledger: the snapshot holds a change the control plane has not
+	// collected (or a file to change differs from what it expected). The
+	// base is kept, so the change is not lost; collect again. Usually
+	// nothing was changed; when the change appeared while the edits were
+	// applied, the edits stay applied and show up in that collection.
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_STALE LedgerSnapshotError = 8
+	// Another call on the same snapshot holds its lock.
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_BUSY LedgerSnapshotError = 9
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_IO   LedgerSnapshotError = 10
+	// The device did not answer within the call's deadline.
+	LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_TIMEOUT LedgerSnapshotError = 101
+)
+
+// Enum value maps for LedgerSnapshotError.
+var (
+	LedgerSnapshotError_name = map[int32]string{
+		0:   "LEDGER_SNAPSHOT_ERROR_UNSPECIFIED",
+		1:   "LEDGER_SNAPSHOT_ERROR_INVALID_REQUEST",
+		2:   "LEDGER_SNAPSHOT_ERROR_STATE_DIR_UNKNOWN",
+		3:   "LEDGER_SNAPSHOT_ERROR_UNSUPPORTED_OS",
+		4:   "LEDGER_SNAPSHOT_ERROR_PATH_CONFLICT",
+		5:   "LEDGER_SNAPSHOT_ERROR_PERMISSION_DENIED",
+		6:   "LEDGER_SNAPSHOT_ERROR_NO_SPACE",
+		7:   "LEDGER_SNAPSHOT_ERROR_ABSENT",
+		8:   "LEDGER_SNAPSHOT_ERROR_STALE",
+		9:   "LEDGER_SNAPSHOT_ERROR_BUSY",
+		10:  "LEDGER_SNAPSHOT_ERROR_IO",
+		101: "LEDGER_SNAPSHOT_ERROR_TIMEOUT",
+	}
+	LedgerSnapshotError_value = map[string]int32{
+		"LEDGER_SNAPSHOT_ERROR_UNSPECIFIED":       0,
+		"LEDGER_SNAPSHOT_ERROR_INVALID_REQUEST":   1,
+		"LEDGER_SNAPSHOT_ERROR_STATE_DIR_UNKNOWN": 2,
+		"LEDGER_SNAPSHOT_ERROR_UNSUPPORTED_OS":    3,
+		"LEDGER_SNAPSHOT_ERROR_PATH_CONFLICT":     4,
+		"LEDGER_SNAPSHOT_ERROR_PERMISSION_DENIED": 5,
+		"LEDGER_SNAPSHOT_ERROR_NO_SPACE":          6,
+		"LEDGER_SNAPSHOT_ERROR_ABSENT":            7,
+		"LEDGER_SNAPSHOT_ERROR_STALE":             8,
+		"LEDGER_SNAPSHOT_ERROR_BUSY":              9,
+		"LEDGER_SNAPSHOT_ERROR_IO":                10,
+		"LEDGER_SNAPSHOT_ERROR_TIMEOUT":           101,
+	}
+)
+
+func (x LedgerSnapshotError) Enum() *LedgerSnapshotError {
+	p := new(LedgerSnapshotError)
+	*p = x
+	return p
+}
+
+func (x LedgerSnapshotError) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LedgerSnapshotError) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_device_proto_enumTypes[1].Descriptor()
+}
+
+func (LedgerSnapshotError) Type() protoreflect.EnumType {
+	return &file_circus_v1_device_proto_enumTypes[1]
+}
+
+func (x LedgerSnapshotError) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LedgerSnapshotError.Descriptor instead.
+func (LedgerSnapshotError) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{1}
+}
+
 // Code identifies the daemon failure.
 type DaemonFault_Code int32
 
@@ -201,11 +292,11 @@ func (x DaemonFault_Code) String() string {
 }
 
 func (DaemonFault_Code) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_device_proto_enumTypes[1].Descriptor()
+	return file_circus_v1_device_proto_enumTypes[2].Descriptor()
 }
 
 func (DaemonFault_Code) Type() protoreflect.EnumType {
-	return &file_circus_v1_device_proto_enumTypes[1]
+	return &file_circus_v1_device_proto_enumTypes[2]
 }
 
 func (x DaemonFault_Code) Number() protoreflect.EnumNumber {
@@ -258,11 +349,11 @@ func (x CallStatus_State) String() string {
 }
 
 func (CallStatus_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_device_proto_enumTypes[2].Descriptor()
+	return file_circus_v1_device_proto_enumTypes[3].Descriptor()
 }
 
 func (CallStatus_State) Type() protoreflect.EnumType {
-	return &file_circus_v1_device_proto_enumTypes[2]
+	return &file_circus_v1_device_proto_enumTypes[3]
 }
 
 func (x CallStatus_State) Number() protoreflect.EnumNumber {
@@ -319,11 +410,11 @@ func (x JobEvent_State) String() string {
 }
 
 func (JobEvent_State) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_device_proto_enumTypes[3].Descriptor()
+	return file_circus_v1_device_proto_enumTypes[4].Descriptor()
 }
 
 func (JobEvent_State) Type() protoreflect.EnumType {
-	return &file_circus_v1_device_proto_enumTypes[3]
+	return &file_circus_v1_device_proto_enumTypes[4]
 }
 
 func (x JobEvent_State) Number() protoreflect.EnumNumber {
@@ -378,11 +469,11 @@ func (x PrepareWorkspaceResult_Outcome) String() string {
 }
 
 func (PrepareWorkspaceResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_device_proto_enumTypes[4].Descriptor()
+	return file_circus_v1_device_proto_enumTypes[5].Descriptor()
 }
 
 func (PrepareWorkspaceResult_Outcome) Type() protoreflect.EnumType {
-	return &file_circus_v1_device_proto_enumTypes[4]
+	return &file_circus_v1_device_proto_enumTypes[5]
 }
 
 func (x PrepareWorkspaceResult_Outcome) Number() protoreflect.EnumNumber {
@@ -439,11 +530,11 @@ func (x PrepareWorkspaceResult_Action) String() string {
 }
 
 func (PrepareWorkspaceResult_Action) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_device_proto_enumTypes[5].Descriptor()
+	return file_circus_v1_device_proto_enumTypes[6].Descriptor()
 }
 
 func (PrepareWorkspaceResult_Action) Type() protoreflect.EnumType {
-	return &file_circus_v1_device_proto_enumTypes[5]
+	return &file_circus_v1_device_proto_enumTypes[6]
 }
 
 func (x PrepareWorkspaceResult_Action) Number() protoreflect.EnumNumber {
@@ -496,11 +587,11 @@ func (x RemoveWorkspaceResult_Outcome) String() string {
 }
 
 func (RemoveWorkspaceResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_circus_v1_device_proto_enumTypes[6].Descriptor()
+	return file_circus_v1_device_proto_enumTypes[7].Descriptor()
 }
 
 func (RemoveWorkspaceResult_Outcome) Type() protoreflect.EnumType {
-	return &file_circus_v1_device_proto_enumTypes[6]
+	return &file_circus_v1_device_proto_enumTypes[7]
 }
 
 func (x RemoveWorkspaceResult_Outcome) Number() protoreflect.EnumNumber {
@@ -510,6 +601,210 @@ func (x RemoveWorkspaceResult_Outcome) Number() protoreflect.EnumNumber {
 // Deprecated: Use RemoveWorkspaceResult_Outcome.Descriptor instead.
 func (RemoveWorkspaceResult_Outcome) EnumDescriptor() ([]byte, []int) {
 	return file_circus_v1_device_proto_rawDescGZIP(), []int{23, 0}
+}
+
+type PrepareLedgerResult_Outcome int32
+
+const (
+	PrepareLedgerResult_OUTCOME_UNSPECIFIED PrepareLedgerResult_Outcome = 0
+	// A chunk other than the last was staged.
+	PrepareLedgerResult_OUTCOME_CHUNK_ACCEPTED PrepareLedgerResult_Outcome = 1
+	// The snapshot is at path.
+	PrepareLedgerResult_OUTCOME_READY  PrepareLedgerResult_Outcome = 2
+	PrepareLedgerResult_OUTCOME_FAILED PrepareLedgerResult_Outcome = 3
+)
+
+// Enum value maps for PrepareLedgerResult_Outcome.
+var (
+	PrepareLedgerResult_Outcome_name = map[int32]string{
+		0: "OUTCOME_UNSPECIFIED",
+		1: "OUTCOME_CHUNK_ACCEPTED",
+		2: "OUTCOME_READY",
+		3: "OUTCOME_FAILED",
+	}
+	PrepareLedgerResult_Outcome_value = map[string]int32{
+		"OUTCOME_UNSPECIFIED":    0,
+		"OUTCOME_CHUNK_ACCEPTED": 1,
+		"OUTCOME_READY":          2,
+		"OUTCOME_FAILED":         3,
+	}
+)
+
+func (x PrepareLedgerResult_Outcome) Enum() *PrepareLedgerResult_Outcome {
+	p := new(PrepareLedgerResult_Outcome)
+	*p = x
+	return p
+}
+
+func (x PrepareLedgerResult_Outcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PrepareLedgerResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_device_proto_enumTypes[8].Descriptor()
+}
+
+func (PrepareLedgerResult_Outcome) Type() protoreflect.EnumType {
+	return &file_circus_v1_device_proto_enumTypes[8]
+}
+
+func (x PrepareLedgerResult_Outcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PrepareLedgerResult_Outcome.Descriptor instead.
+func (PrepareLedgerResult_Outcome) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{26, 0}
+}
+
+type CollectLedgerResult_Outcome int32
+
+const (
+	CollectLedgerResult_OUTCOME_UNSPECIFIED CollectLedgerResult_Outcome = 0
+	CollectLedgerResult_OUTCOME_COLLECTED   CollectLedgerResult_Outcome = 1
+	CollectLedgerResult_OUTCOME_FAILED      CollectLedgerResult_Outcome = 2
+)
+
+// Enum value maps for CollectLedgerResult_Outcome.
+var (
+	CollectLedgerResult_Outcome_name = map[int32]string{
+		0: "OUTCOME_UNSPECIFIED",
+		1: "OUTCOME_COLLECTED",
+		2: "OUTCOME_FAILED",
+	}
+	CollectLedgerResult_Outcome_value = map[string]int32{
+		"OUTCOME_UNSPECIFIED": 0,
+		"OUTCOME_COLLECTED":   1,
+		"OUTCOME_FAILED":      2,
+	}
+)
+
+func (x CollectLedgerResult_Outcome) Enum() *CollectLedgerResult_Outcome {
+	p := new(CollectLedgerResult_Outcome)
+	*p = x
+	return p
+}
+
+func (x CollectLedgerResult_Outcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CollectLedgerResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_device_proto_enumTypes[9].Descriptor()
+}
+
+func (CollectLedgerResult_Outcome) Type() protoreflect.EnumType {
+	return &file_circus_v1_device_proto_enumTypes[9]
+}
+
+func (x CollectLedgerResult_Outcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CollectLedgerResult_Outcome.Descriptor instead.
+func (CollectLedgerResult_Outcome) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{28, 0}
+}
+
+type RebaseLedgerResult_Outcome int32
+
+const (
+	RebaseLedgerResult_OUTCOME_UNSPECIFIED RebaseLedgerResult_Outcome = 0
+	RebaseLedgerResult_OUTCOME_REBASED     RebaseLedgerResult_Outcome = 1
+	RebaseLedgerResult_OUTCOME_FAILED      RebaseLedgerResult_Outcome = 2
+)
+
+// Enum value maps for RebaseLedgerResult_Outcome.
+var (
+	RebaseLedgerResult_Outcome_name = map[int32]string{
+		0: "OUTCOME_UNSPECIFIED",
+		1: "OUTCOME_REBASED",
+		2: "OUTCOME_FAILED",
+	}
+	RebaseLedgerResult_Outcome_value = map[string]int32{
+		"OUTCOME_UNSPECIFIED": 0,
+		"OUTCOME_REBASED":     1,
+		"OUTCOME_FAILED":      2,
+	}
+)
+
+func (x RebaseLedgerResult_Outcome) Enum() *RebaseLedgerResult_Outcome {
+	p := new(RebaseLedgerResult_Outcome)
+	*p = x
+	return p
+}
+
+func (x RebaseLedgerResult_Outcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RebaseLedgerResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_device_proto_enumTypes[10].Descriptor()
+}
+
+func (RebaseLedgerResult_Outcome) Type() protoreflect.EnumType {
+	return &file_circus_v1_device_proto_enumTypes[10]
+}
+
+func (x RebaseLedgerResult_Outcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RebaseLedgerResult_Outcome.Descriptor instead.
+func (RebaseLedgerResult_Outcome) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{30, 0}
+}
+
+type RemoveLedgerResult_Outcome int32
+
+const (
+	RemoveLedgerResult_OUTCOME_UNSPECIFIED RemoveLedgerResult_Outcome = 0
+	RemoveLedgerResult_OUTCOME_REMOVED     RemoveLedgerResult_Outcome = 1
+	RemoveLedgerResult_OUTCOME_ABSENT      RemoveLedgerResult_Outcome = 2
+	RemoveLedgerResult_OUTCOME_FAILED      RemoveLedgerResult_Outcome = 3
+)
+
+// Enum value maps for RemoveLedgerResult_Outcome.
+var (
+	RemoveLedgerResult_Outcome_name = map[int32]string{
+		0: "OUTCOME_UNSPECIFIED",
+		1: "OUTCOME_REMOVED",
+		2: "OUTCOME_ABSENT",
+		3: "OUTCOME_FAILED",
+	}
+	RemoveLedgerResult_Outcome_value = map[string]int32{
+		"OUTCOME_UNSPECIFIED": 0,
+		"OUTCOME_REMOVED":     1,
+		"OUTCOME_ABSENT":      2,
+		"OUTCOME_FAILED":      3,
+	}
+)
+
+func (x RemoveLedgerResult_Outcome) Enum() *RemoveLedgerResult_Outcome {
+	p := new(RemoveLedgerResult_Outcome)
+	*p = x
+	return p
+}
+
+func (x RemoveLedgerResult_Outcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RemoveLedgerResult_Outcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_circus_v1_device_proto_enumTypes[11].Descriptor()
+}
+
+func (RemoveLedgerResult_Outcome) Type() protoreflect.EnumType {
+	return &file_circus_v1_device_proto_enumTypes[11]
+}
+
+func (x RemoveLedgerResult_Outcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RemoveLedgerResult_Outcome.Descriptor instead.
+func (RemoveLedgerResult_Outcome) EnumDescriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{32, 0}
 }
 
 // DeviceCall is one tool invocation from the worker to a device daemon.
@@ -544,6 +839,10 @@ type DeviceCall struct {
 	//	*DeviceCall_TaskStop
 	//	*DeviceCall_PrepareWorkspace
 	//	*DeviceCall_RemoveWorkspace
+	//	*DeviceCall_PrepareLedger
+	//	*DeviceCall_CollectLedger
+	//	*DeviceCall_RebaseLedger
+	//	*DeviceCall_RemoveLedger
 	Tool          isDeviceCall_Tool `protobuf_oneof:"tool"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -677,6 +976,42 @@ func (x *DeviceCall) GetRemoveWorkspace() *RemoveWorkspaceRequest {
 	return nil
 }
 
+func (x *DeviceCall) GetPrepareLedger() *PrepareLedgerRequest {
+	if x != nil {
+		if x, ok := x.Tool.(*DeviceCall_PrepareLedger); ok {
+			return x.PrepareLedger
+		}
+	}
+	return nil
+}
+
+func (x *DeviceCall) GetCollectLedger() *CollectLedgerRequest {
+	if x != nil {
+		if x, ok := x.Tool.(*DeviceCall_CollectLedger); ok {
+			return x.CollectLedger
+		}
+	}
+	return nil
+}
+
+func (x *DeviceCall) GetRebaseLedger() *RebaseLedgerRequest {
+	if x != nil {
+		if x, ok := x.Tool.(*DeviceCall_RebaseLedger); ok {
+			return x.RebaseLedger
+		}
+	}
+	return nil
+}
+
+func (x *DeviceCall) GetRemoveLedger() *RemoveLedgerRequest {
+	if x != nil {
+		if x, ok := x.Tool.(*DeviceCall_RemoveLedger); ok {
+			return x.RemoveLedger
+		}
+	}
+	return nil
+}
+
 type isDeviceCall_Tool interface {
 	isDeviceCall_Tool()
 }
@@ -716,6 +1051,23 @@ type DeviceCall_RemoveWorkspace struct {
 	RemoveWorkspace *RemoveWorkspaceRequest `protobuf:"bytes,16,opt,name=remove_workspace,json=removeWorkspace,proto3,oneof"`
 }
 
+type DeviceCall_PrepareLedger struct {
+	// Session ledger snapshot calls (control plane only).
+	PrepareLedger *PrepareLedgerRequest `protobuf:"bytes,17,opt,name=prepare_ledger,json=prepareLedger,proto3,oneof"`
+}
+
+type DeviceCall_CollectLedger struct {
+	CollectLedger *CollectLedgerRequest `protobuf:"bytes,18,opt,name=collect_ledger,json=collectLedger,proto3,oneof"`
+}
+
+type DeviceCall_RebaseLedger struct {
+	RebaseLedger *RebaseLedgerRequest `protobuf:"bytes,19,opt,name=rebase_ledger,json=rebaseLedger,proto3,oneof"`
+}
+
+type DeviceCall_RemoveLedger struct {
+	RemoveLedger *RemoveLedgerRequest `protobuf:"bytes,20,opt,name=remove_ledger,json=removeLedger,proto3,oneof"`
+}
+
 func (*DeviceCall_Bash) isDeviceCall_Tool() {}
 
 func (*DeviceCall_Read) isDeviceCall_Tool() {}
@@ -729,6 +1081,14 @@ func (*DeviceCall_TaskStop) isDeviceCall_Tool() {}
 func (*DeviceCall_PrepareWorkspace) isDeviceCall_Tool() {}
 
 func (*DeviceCall_RemoveWorkspace) isDeviceCall_Tool() {}
+
+func (*DeviceCall_PrepareLedger) isDeviceCall_Tool() {}
+
+func (*DeviceCall_CollectLedger) isDeviceCall_Tool() {}
+
+func (*DeviceCall_RebaseLedger) isDeviceCall_Tool() {}
+
+func (*DeviceCall_RemoveLedger) isDeviceCall_Tool() {}
 
 // DeviceResult is the final result of a DeviceCall.
 type DeviceResult struct {
@@ -751,6 +1111,10 @@ type DeviceResult struct {
 	//	*DeviceResult_TaskStop
 	//	*DeviceResult_PrepareWorkspace
 	//	*DeviceResult_RemoveWorkspace
+	//	*DeviceResult_PrepareLedger
+	//	*DeviceResult_CollectLedger
+	//	*DeviceResult_RebaseLedger
+	//	*DeviceResult_RemoveLedger
 	Detail        isDeviceResult_Detail `protobuf_oneof:"detail"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -877,6 +1241,42 @@ func (x *DeviceResult) GetRemoveWorkspace() *RemoveWorkspaceResult {
 	return nil
 }
 
+func (x *DeviceResult) GetPrepareLedger() *PrepareLedgerResult {
+	if x != nil {
+		if x, ok := x.Detail.(*DeviceResult_PrepareLedger); ok {
+			return x.PrepareLedger
+		}
+	}
+	return nil
+}
+
+func (x *DeviceResult) GetCollectLedger() *CollectLedgerResult {
+	if x != nil {
+		if x, ok := x.Detail.(*DeviceResult_CollectLedger); ok {
+			return x.CollectLedger
+		}
+	}
+	return nil
+}
+
+func (x *DeviceResult) GetRebaseLedger() *RebaseLedgerResult {
+	if x != nil {
+		if x, ok := x.Detail.(*DeviceResult_RebaseLedger); ok {
+			return x.RebaseLedger
+		}
+	}
+	return nil
+}
+
+func (x *DeviceResult) GetRemoveLedger() *RemoveLedgerResult {
+	if x != nil {
+		if x, ok := x.Detail.(*DeviceResult_RemoveLedger); ok {
+			return x.RemoveLedger
+		}
+	}
+	return nil
+}
+
 type isDeviceResult_Detail interface {
 	isDeviceResult_Detail()
 }
@@ -916,6 +1316,23 @@ type DeviceResult_RemoveWorkspace struct {
 	RemoveWorkspace *RemoveWorkspaceResult `protobuf:"bytes,16,opt,name=remove_workspace,json=removeWorkspace,proto3,oneof"`
 }
 
+type DeviceResult_PrepareLedger struct {
+	// Session ledger snapshot outcomes.
+	PrepareLedger *PrepareLedgerResult `protobuf:"bytes,17,opt,name=prepare_ledger,json=prepareLedger,proto3,oneof"`
+}
+
+type DeviceResult_CollectLedger struct {
+	CollectLedger *CollectLedgerResult `protobuf:"bytes,18,opt,name=collect_ledger,json=collectLedger,proto3,oneof"`
+}
+
+type DeviceResult_RebaseLedger struct {
+	RebaseLedger *RebaseLedgerResult `protobuf:"bytes,19,opt,name=rebase_ledger,json=rebaseLedger,proto3,oneof"`
+}
+
+type DeviceResult_RemoveLedger struct {
+	RemoveLedger *RemoveLedgerResult `protobuf:"bytes,20,opt,name=remove_ledger,json=removeLedger,proto3,oneof"`
+}
+
 func (*DeviceResult_Bash) isDeviceResult_Detail() {}
 
 func (*DeviceResult_Read) isDeviceResult_Detail() {}
@@ -929,6 +1346,14 @@ func (*DeviceResult_TaskStop) isDeviceResult_Detail() {}
 func (*DeviceResult_PrepareWorkspace) isDeviceResult_Detail() {}
 
 func (*DeviceResult_RemoveWorkspace) isDeviceResult_Detail() {}
+
+func (*DeviceResult_PrepareLedger) isDeviceResult_Detail() {}
+
+func (*DeviceResult_CollectLedger) isDeviceResult_Detail() {}
+
+func (*DeviceResult_RebaseLedger) isDeviceResult_Detail() {}
+
+func (*DeviceResult_RemoveLedger) isDeviceResult_Detail() {}
 
 // DaemonFault distinguishes daemon failures from ordinary tool errors.
 type DaemonFault struct {
@@ -2470,11 +2895,1053 @@ func (x *RemoveWorkspaceResult) GetErrorDetail() string {
 	return ""
 }
 
+// SnapshotFile is a file sent to or from a snapshot.
+type SnapshotFile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Relative, '/'-separated, no "." or ".." segments, at most 4096 bytes.
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Complete content, valid UTF-8, at most 256 KiB.
+	Content       string `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SnapshotFile) Reset() {
+	*x = SnapshotFile{}
+	mi := &file_circus_v1_device_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotFile) ProtoMessage() {}
+
+func (x *SnapshotFile) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotFile.ProtoReflect.Descriptor instead.
+func (*SnapshotFile) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *SnapshotFile) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SnapshotFile) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+// PrepareLedgerRequest writes a snapshot from a base commit's files, sent
+// in chunks of at most 8 MiB of content and 4096 files. Chunks go into a hidden staging
+// directory beside the snapshot, in order from 0 (a repeated chunk is
+// accepted again; any other index restarts nothing and is
+// INVALID_REQUEST); the last chunk checks total_files, writes the manifest
+// and renames the staging directory onto the snapshot, replacing an
+// existing one only with reset. Idempotent: when the snapshot exists with
+// the same base_commit and reset is false, it reports READY at once.
+// Staging left for an hour is removed.
+type PrepareLedgerRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	// Full hex commit the files come from; recorded in the manifest.
+	BaseCommit string          `protobuf:"bytes,2,opt,name=base_commit,json=baseCommit,proto3" json:"base_commit,omitempty"`
+	ChunkIndex uint32          `protobuf:"varint,3,opt,name=chunk_index,json=chunkIndex,proto3" json:"chunk_index,omitempty"`
+	Files      []*SnapshotFile `protobuf:"bytes,4,rep,name=files,proto3" json:"files,omitempty"`
+	// This is the last chunk.
+	Last bool `protobuf:"varint,5,opt,name=last,proto3" json:"last,omitempty"`
+	// Last chunk only: the number of files over all chunks.
+	TotalFiles uint32 `protobuf:"varint,6,opt,name=total_files,json=totalFiles,proto3" json:"total_files,omitempty"`
+	// Replace an existing snapshot (after its changeset was discarded): its
+	// changes are lost.
+	Reset_        bool `protobuf:"varint,7,opt,name=reset,proto3" json:"reset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareLedgerRequest) Reset() {
+	*x = PrepareLedgerRequest{}
+	mi := &file_circus_v1_device_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareLedgerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareLedgerRequest) ProtoMessage() {}
+
+func (x *PrepareLedgerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareLedgerRequest.ProtoReflect.Descriptor instead.
+func (*PrepareLedgerRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *PrepareLedgerRequest) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+func (x *PrepareLedgerRequest) GetBaseCommit() string {
+	if x != nil {
+		return x.BaseCommit
+	}
+	return ""
+}
+
+func (x *PrepareLedgerRequest) GetChunkIndex() uint32 {
+	if x != nil {
+		return x.ChunkIndex
+	}
+	return 0
+}
+
+func (x *PrepareLedgerRequest) GetFiles() []*SnapshotFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *PrepareLedgerRequest) GetLast() bool {
+	if x != nil {
+		return x.Last
+	}
+	return false
+}
+
+func (x *PrepareLedgerRequest) GetTotalFiles() uint32 {
+	if x != nil {
+		return x.TotalFiles
+	}
+	return 0
+}
+
+func (x *PrepareLedgerRequest) GetReset_() bool {
+	if x != nil {
+		return x.Reset_
+	}
+	return false
+}
+
+type PrepareLedgerResult struct {
+	state   protoimpl.MessageState      `protogen:"open.v1"`
+	Outcome PrepareLedgerResult_Outcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=circus.v1.PrepareLedgerResult_Outcome" json:"outcome,omitempty"`
+	// Absolute, lexically clean path of the snapshot; READY only.
+	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	// FAILED only.
+	Error LedgerSnapshotError `protobuf:"varint,3,opt,name=error,proto3,enum=circus.v1.LedgerSnapshotError" json:"error,omitempty"`
+	// FAILED only: at most 1024 bytes of valid UTF-8.
+	ErrorDetail   string `protobuf:"bytes,4,opt,name=error_detail,json=errorDetail,proto3" json:"error_detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareLedgerResult) Reset() {
+	*x = PrepareLedgerResult{}
+	mi := &file_circus_v1_device_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareLedgerResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareLedgerResult) ProtoMessage() {}
+
+func (x *PrepareLedgerResult) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareLedgerResult.ProtoReflect.Descriptor instead.
+func (*PrepareLedgerResult) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *PrepareLedgerResult) GetOutcome() PrepareLedgerResult_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return PrepareLedgerResult_OUTCOME_UNSPECIFIED
+}
+
+func (x *PrepareLedgerResult) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *PrepareLedgerResult) GetError() LedgerSnapshotError {
+	if x != nil {
+		return x.Error
+	}
+	return LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_UNSPECIFIED
+}
+
+func (x *PrepareLedgerResult) GetErrorDetail() string {
+	if x != nil {
+		return x.ErrorDetail
+	}
+	return ""
+}
+
+// CollectLedgerRequest compares a snapshot with its manifest. The daemon
+// keeps no record of earlier collections: known is what the control plane
+// already holds, and the result sends contents only where they differ.
+type CollectLedgerRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	// The changes the control plane holds for the snapshot relative to its
+	// base, at most 4096.
+	Known         []*CollectLedgerRequest_KnownChange `protobuf:"bytes,2,rep,name=known,proto3" json:"known,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CollectLedgerRequest) Reset() {
+	*x = CollectLedgerRequest{}
+	mi := &file_circus_v1_device_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectLedgerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectLedgerRequest) ProtoMessage() {}
+
+func (x *CollectLedgerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectLedgerRequest.ProtoReflect.Descriptor instead.
+func (*CollectLedgerRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *CollectLedgerRequest) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+func (x *CollectLedgerRequest) GetKnown() []*CollectLedgerRequest_KnownChange {
+	if x != nil {
+		return x.Known
+	}
+	return nil
+}
+
+type CollectLedgerResult struct {
+	state   protoimpl.MessageState      `protogen:"open.v1"`
+	Outcome CollectLedgerResult_Outcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=circus.v1.CollectLedgerResult_Outcome" json:"outcome,omitempty"`
+	// COLLECTED: the complete set of changes relative to the base, in path
+	// order, at most 4096. A change equal to its known entry comes without
+	// content. More changed files are a problem of the whole snapshot, with
+	// too_large set and no changes.
+	Changes []*CollectLedgerResult_Change `protobuf:"bytes,2,rep,name=changes,proto3" json:"changes,omitempty"`
+	// Known paths that are no longer changed (back to their base content),
+	// at most 4096.
+	Reverted []string `protobuf:"bytes,3,rep,name=reverted,proto3" json:"reverted,omitempty"`
+	// What the daemon could not collect: non-regular files, files over
+	// 256 KiB, invalid UTF-8, more than 8192 entries. At most 1024.
+	Problems []*CollectLedgerResult_Problem `protobuf:"bytes,4,rep,name=problems,proto3" json:"problems,omitempty"`
+	// The changed content exceeds 8 MiB: changes carry paths and sizes but
+	// no content, and nothing of this collection is used.
+	TooLarge bool `protobuf:"varint,5,opt,name=too_large,json=tooLarge,proto3" json:"too_large,omitempty"`
+	// FAILED only.
+	Error       LedgerSnapshotError `protobuf:"varint,6,opt,name=error,proto3,enum=circus.v1.LedgerSnapshotError" json:"error,omitempty"`
+	ErrorDetail string              `protobuf:"bytes,7,opt,name=error_detail,json=errorDetail,proto3" json:"error_detail,omitempty"`
+	// The base commit the snapshot's manifest records, on every outcome
+	// where a manifest exists: the base the changes are relative to.
+	CurrentBaseCommit string `protobuf:"bytes,8,opt,name=current_base_commit,json=currentBaseCommit,proto3" json:"current_base_commit,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *CollectLedgerResult) Reset() {
+	*x = CollectLedgerResult{}
+	mi := &file_circus_v1_device_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectLedgerResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectLedgerResult) ProtoMessage() {}
+
+func (x *CollectLedgerResult) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectLedgerResult.ProtoReflect.Descriptor instead.
+func (*CollectLedgerResult) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *CollectLedgerResult) GetOutcome() CollectLedgerResult_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return CollectLedgerResult_OUTCOME_UNSPECIFIED
+}
+
+func (x *CollectLedgerResult) GetChanges() []*CollectLedgerResult_Change {
+	if x != nil {
+		return x.Changes
+	}
+	return nil
+}
+
+func (x *CollectLedgerResult) GetReverted() []string {
+	if x != nil {
+		return x.Reverted
+	}
+	return nil
+}
+
+func (x *CollectLedgerResult) GetProblems() []*CollectLedgerResult_Problem {
+	if x != nil {
+		return x.Problems
+	}
+	return nil
+}
+
+func (x *CollectLedgerResult) GetTooLarge() bool {
+	if x != nil {
+		return x.TooLarge
+	}
+	return false
+}
+
+func (x *CollectLedgerResult) GetError() LedgerSnapshotError {
+	if x != nil {
+		return x.Error
+	}
+	return LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_UNSPECIFIED
+}
+
+func (x *CollectLedgerResult) GetErrorDetail() string {
+	if x != nil {
+		return x.ErrorDetail
+	}
+	return ""
+}
+
+func (x *CollectLedgerResult) GetCurrentBaseCommit() string {
+	if x != nil {
+		return x.CurrentBaseCommit
+	}
+	return ""
+}
+
+// RebaseLedgerRequest applies edits to a snapshot and then makes its whole
+// current content the new base (manifest rewritten with base_commit). The
+// control plane sends it after merging the snapshot's changeset, to rename
+// new decisions ("D?a-x.md" to "D92-x.md") and rewrite their temporary
+// references, so the snapshot equals the merged view.
+//
+// Before changing anything the daemon compares the snapshot with its
+// manifest and requires the result to be exactly known, path by path,
+// except that a path of an edit may already hold the edit's target (its
+// content, or nothing for a deletion), so a rebase interrupted after some
+// edits finishes when sent again. Every edit must find expected_sha256 or
+// its target. Anything else, including any problem a collection would
+// report (a non-regular file, a file over 256 KiB, ...), is STALE and
+// changes nothing: the agent changed the snapshot after the collection the
+// merge used, and the control plane collects again. After applying the
+// edits the daemon requires the rebuilt base to be exactly the merged view
+// (the base, then known, then the edits) before writing the manifest; a
+// file the agent wrote meanwhile makes it STALE with the edits applied and
+// the old base kept, which the next collection reports.
+type RebaseLedgerRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	BaseCommit string                 `protobuf:"bytes,2,opt,name=base_commit,json=baseCommit,proto3" json:"base_commit,omitempty"`
+	// At most 4096, at most 8 MiB of content.
+	Edits []*RebaseLedgerRequest_Edit `protobuf:"bytes,3,rep,name=edits,proto3" json:"edits,omitempty"`
+	// The complete set of changes relative to the current base that the
+	// control plane collected and merged, at most 4096.
+	Known         []*CollectLedgerRequest_KnownChange `protobuf:"bytes,4,rep,name=known,proto3" json:"known,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RebaseLedgerRequest) Reset() {
+	*x = RebaseLedgerRequest{}
+	mi := &file_circus_v1_device_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RebaseLedgerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RebaseLedgerRequest) ProtoMessage() {}
+
+func (x *RebaseLedgerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RebaseLedgerRequest.ProtoReflect.Descriptor instead.
+func (*RebaseLedgerRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *RebaseLedgerRequest) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+func (x *RebaseLedgerRequest) GetBaseCommit() string {
+	if x != nil {
+		return x.BaseCommit
+	}
+	return ""
+}
+
+func (x *RebaseLedgerRequest) GetEdits() []*RebaseLedgerRequest_Edit {
+	if x != nil {
+		return x.Edits
+	}
+	return nil
+}
+
+func (x *RebaseLedgerRequest) GetKnown() []*CollectLedgerRequest_KnownChange {
+	if x != nil {
+		return x.Known
+	}
+	return nil
+}
+
+type RebaseLedgerResult struct {
+	state       protoimpl.MessageState     `protogen:"open.v1"`
+	Outcome     RebaseLedgerResult_Outcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=circus.v1.RebaseLedgerResult_Outcome" json:"outcome,omitempty"`
+	Error       LedgerSnapshotError        `protobuf:"varint,2,opt,name=error,proto3,enum=circus.v1.LedgerSnapshotError" json:"error,omitempty"`
+	ErrorDetail string                     `protobuf:"bytes,3,opt,name=error_detail,json=errorDetail,proto3" json:"error_detail,omitempty"`
+	// The base commit the snapshot's manifest records once the call ends,
+	// on every outcome where a manifest exists: the request's base_commit
+	// when REBASED, and when a STALE rebase finds the snapshot on it already
+	// (an earlier attempt's answer was lost); the base it kept otherwise.
+	CurrentBaseCommit string `protobuf:"bytes,4,opt,name=current_base_commit,json=currentBaseCommit,proto3" json:"current_base_commit,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *RebaseLedgerResult) Reset() {
+	*x = RebaseLedgerResult{}
+	mi := &file_circus_v1_device_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RebaseLedgerResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RebaseLedgerResult) ProtoMessage() {}
+
+func (x *RebaseLedgerResult) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RebaseLedgerResult.ProtoReflect.Descriptor instead.
+func (*RebaseLedgerResult) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *RebaseLedgerResult) GetOutcome() RebaseLedgerResult_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return RebaseLedgerResult_OUTCOME_UNSPECIFIED
+}
+
+func (x *RebaseLedgerResult) GetError() LedgerSnapshotError {
+	if x != nil {
+		return x.Error
+	}
+	return LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_UNSPECIFIED
+}
+
+func (x *RebaseLedgerResult) GetErrorDetail() string {
+	if x != nil {
+		return x.ErrorDetail
+	}
+	return ""
+}
+
+func (x *RebaseLedgerResult) GetCurrentBaseCommit() string {
+	if x != nil {
+		return x.CurrentBaseCommit
+	}
+	return ""
+}
+
+// RemoveLedgerRequest deletes a snapshot, its manifest and any staging of
+// it, when its session is deleted. It refuses anything but a real
+// directory directly under "<state>/circus/ledger/".
+type RemoveLedgerRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveLedgerRequest) Reset() {
+	*x = RemoveLedgerRequest{}
+	mi := &file_circus_v1_device_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveLedgerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveLedgerRequest) ProtoMessage() {}
+
+func (x *RemoveLedgerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveLedgerRequest.ProtoReflect.Descriptor instead.
+func (*RemoveLedgerRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *RemoveLedgerRequest) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+type RemoveLedgerResult struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Outcome       RemoveLedgerResult_Outcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=circus.v1.RemoveLedgerResult_Outcome" json:"outcome,omitempty"`
+	Error         LedgerSnapshotError        `protobuf:"varint,2,opt,name=error,proto3,enum=circus.v1.LedgerSnapshotError" json:"error,omitempty"`
+	ErrorDetail   string                     `protobuf:"bytes,3,opt,name=error_detail,json=errorDetail,proto3" json:"error_detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveLedgerResult) Reset() {
+	*x = RemoveLedgerResult{}
+	mi := &file_circus_v1_device_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveLedgerResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveLedgerResult) ProtoMessage() {}
+
+func (x *RemoveLedgerResult) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveLedgerResult.ProtoReflect.Descriptor instead.
+func (*RemoveLedgerResult) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *RemoveLedgerResult) GetOutcome() RemoveLedgerResult_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return RemoveLedgerResult_OUTCOME_UNSPECIFIED
+}
+
+func (x *RemoveLedgerResult) GetError() LedgerSnapshotError {
+	if x != nil {
+		return x.Error
+	}
+	return LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_UNSPECIFIED
+}
+
+func (x *RemoveLedgerResult) GetErrorDetail() string {
+	if x != nil {
+		return x.ErrorDetail
+	}
+	return ""
+}
+
+type CollectLedgerRequest_KnownChange struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Types that are valid to be assigned to Change:
+	//
+	//	*CollectLedgerRequest_KnownChange_Sha256
+	//	*CollectLedgerRequest_KnownChange_Deleted
+	Change        isCollectLedgerRequest_KnownChange_Change `protobuf_oneof:"change"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CollectLedgerRequest_KnownChange) Reset() {
+	*x = CollectLedgerRequest_KnownChange{}
+	mi := &file_circus_v1_device_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectLedgerRequest_KnownChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectLedgerRequest_KnownChange) ProtoMessage() {}
+
+func (x *CollectLedgerRequest_KnownChange) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectLedgerRequest_KnownChange.ProtoReflect.Descriptor instead.
+func (*CollectLedgerRequest_KnownChange) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{27, 0}
+}
+
+func (x *CollectLedgerRequest_KnownChange) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *CollectLedgerRequest_KnownChange) GetChange() isCollectLedgerRequest_KnownChange_Change {
+	if x != nil {
+		return x.Change
+	}
+	return nil
+}
+
+func (x *CollectLedgerRequest_KnownChange) GetSha256() string {
+	if x != nil {
+		if x, ok := x.Change.(*CollectLedgerRequest_KnownChange_Sha256); ok {
+			return x.Sha256
+		}
+	}
+	return ""
+}
+
+func (x *CollectLedgerRequest_KnownChange) GetDeleted() bool {
+	if x != nil {
+		if x, ok := x.Change.(*CollectLedgerRequest_KnownChange_Deleted); ok {
+			return x.Deleted
+		}
+	}
+	return false
+}
+
+type isCollectLedgerRequest_KnownChange_Change interface {
+	isCollectLedgerRequest_KnownChange_Change()
+}
+
+type CollectLedgerRequest_KnownChange_Sha256 struct {
+	// Lowercase hex SHA-256 of the content it holds.
+	Sha256 string `protobuf:"bytes,2,opt,name=sha256,proto3,oneof"`
+}
+
+type CollectLedgerRequest_KnownChange_Deleted struct {
+	Deleted bool `protobuf:"varint,3,opt,name=deleted,proto3,oneof"`
+}
+
+func (*CollectLedgerRequest_KnownChange_Sha256) isCollectLedgerRequest_KnownChange_Change() {}
+
+func (*CollectLedgerRequest_KnownChange_Deleted) isCollectLedgerRequest_KnownChange_Change() {}
+
+type CollectLedgerResult_Change struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Types that are valid to be assigned to Change:
+	//
+	//	*CollectLedgerResult_Change_Content
+	//	*CollectLedgerResult_Change_Deleted
+	//	*CollectLedgerResult_Change_Known
+	Change isCollectLedgerResult_Change_Change `protobuf_oneof:"change"`
+	// Lowercase hex SHA-256 and size of the current content; unset when
+	// deleted.
+	Sha256        string `protobuf:"bytes,5,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	Size          uint64 `protobuf:"varint,6,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CollectLedgerResult_Change) Reset() {
+	*x = CollectLedgerResult_Change{}
+	mi := &file_circus_v1_device_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectLedgerResult_Change) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectLedgerResult_Change) ProtoMessage() {}
+
+func (x *CollectLedgerResult_Change) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectLedgerResult_Change.ProtoReflect.Descriptor instead.
+func (*CollectLedgerResult_Change) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{28, 0}
+}
+
+func (x *CollectLedgerResult_Change) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *CollectLedgerResult_Change) GetChange() isCollectLedgerResult_Change_Change {
+	if x != nil {
+		return x.Change
+	}
+	return nil
+}
+
+func (x *CollectLedgerResult_Change) GetContent() string {
+	if x != nil {
+		if x, ok := x.Change.(*CollectLedgerResult_Change_Content); ok {
+			return x.Content
+		}
+	}
+	return ""
+}
+
+func (x *CollectLedgerResult_Change) GetDeleted() bool {
+	if x != nil {
+		if x, ok := x.Change.(*CollectLedgerResult_Change_Deleted); ok {
+			return x.Deleted
+		}
+	}
+	return false
+}
+
+func (x *CollectLedgerResult_Change) GetKnown() bool {
+	if x != nil {
+		if x, ok := x.Change.(*CollectLedgerResult_Change_Known); ok {
+			return x.Known
+		}
+	}
+	return false
+}
+
+func (x *CollectLedgerResult_Change) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *CollectLedgerResult_Change) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+type isCollectLedgerResult_Change_Change interface {
+	isCollectLedgerResult_Change_Change()
+}
+
+type CollectLedgerResult_Change_Content struct {
+	// New or changed: its content, unless equal to the known entry.
+	Content string `protobuf:"bytes,2,opt,name=content,proto3,oneof"`
+}
+
+type CollectLedgerResult_Change_Deleted struct {
+	Deleted bool `protobuf:"varint,3,opt,name=deleted,proto3,oneof"`
+}
+
+type CollectLedgerResult_Change_Known struct {
+	// Equal to the known entry (or too_large): content left out.
+	Known bool `protobuf:"varint,4,opt,name=known,proto3,oneof"`
+}
+
+func (*CollectLedgerResult_Change_Content) isCollectLedgerResult_Change_Change() {}
+
+func (*CollectLedgerResult_Change_Deleted) isCollectLedgerResult_Change_Change() {}
+
+func (*CollectLedgerResult_Change_Known) isCollectLedgerResult_Change_Change() {}
+
+type CollectLedgerResult_Problem struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Empty for a problem of the whole snapshot (too many entries).
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// English, at most 1024 bytes.
+	Message       string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CollectLedgerResult_Problem) Reset() {
+	*x = CollectLedgerResult_Problem{}
+	mi := &file_circus_v1_device_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectLedgerResult_Problem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectLedgerResult_Problem) ProtoMessage() {}
+
+func (x *CollectLedgerResult_Problem) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectLedgerResult_Problem.ProtoReflect.Descriptor instead.
+func (*CollectLedgerResult_Problem) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{28, 1}
+}
+
+func (x *CollectLedgerResult_Problem) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *CollectLedgerResult_Problem) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type RebaseLedgerRequest_Edit struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// Lowercase hex SHA-256 the file must have now; empty: it must not
+	// exist.
+	ExpectedSha256 string `protobuf:"bytes,2,opt,name=expected_sha256,json=expectedSha256,proto3" json:"expected_sha256,omitempty"`
+	// Types that are valid to be assigned to Change:
+	//
+	//	*RebaseLedgerRequest_Edit_Content
+	//	*RebaseLedgerRequest_Edit_Deleted
+	Change        isRebaseLedgerRequest_Edit_Change `protobuf_oneof:"change"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RebaseLedgerRequest_Edit) Reset() {
+	*x = RebaseLedgerRequest_Edit{}
+	mi := &file_circus_v1_device_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RebaseLedgerRequest_Edit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RebaseLedgerRequest_Edit) ProtoMessage() {}
+
+func (x *RebaseLedgerRequest_Edit) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_device_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RebaseLedgerRequest_Edit.ProtoReflect.Descriptor instead.
+func (*RebaseLedgerRequest_Edit) Descriptor() ([]byte, []int) {
+	return file_circus_v1_device_proto_rawDescGZIP(), []int{29, 0}
+}
+
+func (x *RebaseLedgerRequest_Edit) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *RebaseLedgerRequest_Edit) GetExpectedSha256() string {
+	if x != nil {
+		return x.ExpectedSha256
+	}
+	return ""
+}
+
+func (x *RebaseLedgerRequest_Edit) GetChange() isRebaseLedgerRequest_Edit_Change {
+	if x != nil {
+		return x.Change
+	}
+	return nil
+}
+
+func (x *RebaseLedgerRequest_Edit) GetContent() string {
+	if x != nil {
+		if x, ok := x.Change.(*RebaseLedgerRequest_Edit_Content); ok {
+			return x.Content
+		}
+	}
+	return ""
+}
+
+func (x *RebaseLedgerRequest_Edit) GetDeleted() bool {
+	if x != nil {
+		if x, ok := x.Change.(*RebaseLedgerRequest_Edit_Deleted); ok {
+			return x.Deleted
+		}
+	}
+	return false
+}
+
+type isRebaseLedgerRequest_Edit_Change interface {
+	isRebaseLedgerRequest_Edit_Change()
+}
+
+type RebaseLedgerRequest_Edit_Content struct {
+	Content string `protobuf:"bytes,3,opt,name=content,proto3,oneof"`
+}
+
+type RebaseLedgerRequest_Edit_Deleted struct {
+	Deleted bool `protobuf:"varint,4,opt,name=deleted,proto3,oneof"`
+}
+
+func (*RebaseLedgerRequest_Edit_Content) isRebaseLedgerRequest_Edit_Change() {}
+
+func (*RebaseLedgerRequest_Edit_Deleted) isRebaseLedgerRequest_Edit_Change() {}
+
 var File_circus_v1_device_proto protoreflect.FileDescriptor
 
 const file_circus_v1_device_proto_rawDesc = "" +
 	"\n" +
-	"\x16circus/v1/device.proto\x12\tcircus.v1\"\x9f\x04\n" +
+	"\x16circus/v1/device.proto\x12\tcircus.v1\"\xc1\x06\n" +
 	"\n" +
 	"DeviceCall\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x1d\n" +
@@ -2490,8 +3957,12 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"\x04edit\x18\r \x01(\v2\x16.circus.v1.EditRequestH\x00R\x04edit\x129\n" +
 	"\ttask_stop\x18\x0e \x01(\v2\x1a.circus.v1.TaskStopRequestH\x00R\btaskStop\x12Q\n" +
 	"\x11prepare_workspace\x18\x0f \x01(\v2\".circus.v1.PrepareWorkspaceRequestH\x00R\x10prepareWorkspace\x12N\n" +
-	"\x10remove_workspace\x18\x10 \x01(\v2!.circus.v1.RemoveWorkspaceRequestH\x00R\x0fremoveWorkspaceB\x06\n" +
-	"\x04tool\"\xa0\x04\n" +
+	"\x10remove_workspace\x18\x10 \x01(\v2!.circus.v1.RemoveWorkspaceRequestH\x00R\x0fremoveWorkspace\x12H\n" +
+	"\x0eprepare_ledger\x18\x11 \x01(\v2\x1f.circus.v1.PrepareLedgerRequestH\x00R\rprepareLedger\x12H\n" +
+	"\x0ecollect_ledger\x18\x12 \x01(\v2\x1f.circus.v1.CollectLedgerRequestH\x00R\rcollectLedger\x12E\n" +
+	"\rrebase_ledger\x18\x13 \x01(\v2\x1e.circus.v1.RebaseLedgerRequestH\x00R\frebaseLedger\x12E\n" +
+	"\rremove_ledger\x18\x14 \x01(\v2\x1e.circus.v1.RemoveLedgerRequestH\x00R\fremoveLedgerB\x06\n" +
+	"\x04tool\"\xbe\x06\n" +
 	"\fDeviceResult\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12-\n" +
 	"\x06output\x18\x02 \x01(\v2\x15.circus.v1.ToolOutputR\x06output\x12,\n" +
@@ -2503,7 +3974,11 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"\x04edit\x18\r \x01(\v2\x15.circus.v1.EditResultH\x00R\x04edit\x128\n" +
 	"\ttask_stop\x18\x0e \x01(\v2\x19.circus.v1.TaskStopResultH\x00R\btaskStop\x12P\n" +
 	"\x11prepare_workspace\x18\x0f \x01(\v2!.circus.v1.PrepareWorkspaceResultH\x00R\x10prepareWorkspace\x12M\n" +
-	"\x10remove_workspace\x18\x10 \x01(\v2 .circus.v1.RemoveWorkspaceResultH\x00R\x0fremoveWorkspaceB\b\n" +
+	"\x10remove_workspace\x18\x10 \x01(\v2 .circus.v1.RemoveWorkspaceResultH\x00R\x0fremoveWorkspace\x12G\n" +
+	"\x0eprepare_ledger\x18\x11 \x01(\v2\x1e.circus.v1.PrepareLedgerResultH\x00R\rprepareLedger\x12G\n" +
+	"\x0ecollect_ledger\x18\x12 \x01(\v2\x1e.circus.v1.CollectLedgerResultH\x00R\rcollectLedger\x12D\n" +
+	"\rrebase_ledger\x18\x13 \x01(\v2\x1d.circus.v1.RebaseLedgerResultH\x00R\frebaseLedger\x12D\n" +
+	"\rremove_ledger\x18\x14 \x01(\v2\x1d.circus.v1.RemoveLedgerResultH\x00R\fremoveLedgerB\b\n" +
 	"\x06detail\"\x98\x02\n" +
 	"\vDaemonFault\x12/\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x1b.circus.v1.DaemonFault.CodeR\x04code\x12\x18\n" +
@@ -2652,6 +4127,98 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fOUTCOME_REMOVED\x10\x01\x12\x12\n" +
 	"\x0eOUTCOME_ABSENT\x10\x02\x12\x12\n" +
+	"\x0eOUTCOME_FAILED\x10\x03\"<\n" +
+	"\fSnapshotFile\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\tR\acontent\"\xf3\x01\n" +
+	"\x14PrepareLedgerRequest\x12\x1f\n" +
+	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
+	"snapshotId\x12\x1f\n" +
+	"\vbase_commit\x18\x02 \x01(\tR\n" +
+	"baseCommit\x12\x1f\n" +
+	"\vchunk_index\x18\x03 \x01(\rR\n" +
+	"chunkIndex\x12-\n" +
+	"\x05files\x18\x04 \x03(\v2\x17.circus.v1.SnapshotFileR\x05files\x12\x12\n" +
+	"\x04last\x18\x05 \x01(\bR\x04last\x12\x1f\n" +
+	"\vtotal_files\x18\x06 \x01(\rR\n" +
+	"totalFiles\x12\x14\n" +
+	"\x05reset\x18\a \x01(\bR\x05reset\"\xab\x02\n" +
+	"\x13PrepareLedgerResult\x12@\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2&.circus.v1.PrepareLedgerResult.OutcomeR\aoutcome\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x124\n" +
+	"\x05error\x18\x03 \x01(\x0e2\x1e.circus.v1.LedgerSnapshotErrorR\x05error\x12!\n" +
+	"\ferror_detail\x18\x04 \x01(\tR\verrorDetail\"e\n" +
+	"\aOutcome\x12\x17\n" +
+	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16OUTCOME_CHUNK_ACCEPTED\x10\x01\x12\x11\n" +
+	"\rOUTCOME_READY\x10\x02\x12\x12\n" +
+	"\x0eOUTCOME_FAILED\x10\x03\"\xdd\x01\n" +
+	"\x14CollectLedgerRequest\x12\x1f\n" +
+	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
+	"snapshotId\x12A\n" +
+	"\x05known\x18\x02 \x03(\v2+.circus.v1.CollectLedgerRequest.KnownChangeR\x05known\x1aa\n" +
+	"\vKnownChange\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\x06sha256\x18\x02 \x01(\tH\x00R\x06sha256\x12\x1a\n" +
+	"\adeleted\x18\x03 \x01(\bH\x00R\adeletedB\b\n" +
+	"\x06change\"\xcb\x05\n" +
+	"\x13CollectLedgerResult\x12@\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2&.circus.v1.CollectLedgerResult.OutcomeR\aoutcome\x12?\n" +
+	"\achanges\x18\x02 \x03(\v2%.circus.v1.CollectLedgerResult.ChangeR\achanges\x12\x1a\n" +
+	"\breverted\x18\x03 \x03(\tR\breverted\x12B\n" +
+	"\bproblems\x18\x04 \x03(\v2&.circus.v1.CollectLedgerResult.ProblemR\bproblems\x12\x1b\n" +
+	"\ttoo_large\x18\x05 \x01(\bR\btooLarge\x124\n" +
+	"\x05error\x18\x06 \x01(\x0e2\x1e.circus.v1.LedgerSnapshotErrorR\x05error\x12!\n" +
+	"\ferror_detail\x18\a \x01(\tR\verrorDetail\x12.\n" +
+	"\x13current_base_commit\x18\b \x01(\tR\x11currentBaseCommit\x1a\xa2\x01\n" +
+	"\x06Change\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1a\n" +
+	"\acontent\x18\x02 \x01(\tH\x00R\acontent\x12\x1a\n" +
+	"\adeleted\x18\x03 \x01(\bH\x00R\adeleted\x12\x16\n" +
+	"\x05known\x18\x04 \x01(\bH\x00R\x05known\x12\x16\n" +
+	"\x06sha256\x18\x05 \x01(\tR\x06sha256\x12\x12\n" +
+	"\x04size\x18\x06 \x01(\x04R\x04sizeB\b\n" +
+	"\x06change\x1a7\n" +
+	"\aProblem\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"M\n" +
+	"\aOutcome\x12\x17\n" +
+	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11OUTCOME_COLLECTED\x10\x01\x12\x12\n" +
+	"\x0eOUTCOME_FAILED\x10\x02\"\xdd\x02\n" +
+	"\x13RebaseLedgerRequest\x12\x1f\n" +
+	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
+	"snapshotId\x12\x1f\n" +
+	"\vbase_commit\x18\x02 \x01(\tR\n" +
+	"baseCommit\x129\n" +
+	"\x05edits\x18\x03 \x03(\v2#.circus.v1.RebaseLedgerRequest.EditR\x05edits\x12A\n" +
+	"\x05known\x18\x04 \x03(\v2+.circus.v1.CollectLedgerRequest.KnownChangeR\x05known\x1a\x85\x01\n" +
+	"\x04Edit\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12'\n" +
+	"\x0fexpected_sha256\x18\x02 \x01(\tR\x0eexpectedSha256\x12\x1a\n" +
+	"\acontent\x18\x03 \x01(\tH\x00R\acontent\x12\x1a\n" +
+	"\adeleted\x18\x04 \x01(\bH\x00R\adeletedB\b\n" +
+	"\x06change\"\xab\x02\n" +
+	"\x12RebaseLedgerResult\x12?\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2%.circus.v1.RebaseLedgerResult.OutcomeR\aoutcome\x124\n" +
+	"\x05error\x18\x02 \x01(\x0e2\x1e.circus.v1.LedgerSnapshotErrorR\x05error\x12!\n" +
+	"\ferror_detail\x18\x03 \x01(\tR\verrorDetail\x12.\n" +
+	"\x13current_base_commit\x18\x04 \x01(\tR\x11currentBaseCommit\"K\n" +
+	"\aOutcome\x12\x17\n" +
+	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fOUTCOME_REBASED\x10\x01\x12\x12\n" +
+	"\x0eOUTCOME_FAILED\x10\x02\"6\n" +
+	"\x13RemoveLedgerRequest\x12\x1f\n" +
+	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
+	"snapshotId\"\x8f\x02\n" +
+	"\x12RemoveLedgerResult\x12?\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2%.circus.v1.RemoveLedgerResult.OutcomeR\aoutcome\x124\n" +
+	"\x05error\x18\x02 \x01(\x0e2\x1e.circus.v1.LedgerSnapshotErrorR\x05error\x12!\n" +
+	"\ferror_detail\x18\x03 \x01(\tR\verrorDetail\"_\n" +
+	"\aOutcome\x12\x17\n" +
+	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fOUTCOME_REMOVED\x10\x01\x12\x12\n" +
+	"\x0eOUTCOME_ABSENT\x10\x02\x12\x12\n" +
 	"\x0eOUTCOME_FAILED\x10\x03*\x81\x05\n" +
 	"\x0eWorkspaceError\x12\x1f\n" +
 	"\x1bWORKSPACE_ERROR_UNSPECIFIED\x10\x00\x12#\n" +
@@ -2673,7 +4240,21 @@ const file_circus_v1_device_proto_rawDesc = "" +
 	"\x17WORKSPACE_ERROR_REFUSED\x10\x0f\x12\"\n" +
 	"\x1eWORKSPACE_ERROR_DEVICE_REVOKED\x10d\x12\x1f\n" +
 	"\x1bWORKSPACE_ERROR_INTERRUPTED\x10e\x12 \n" +
-	"\x1cWORKSPACE_ERROR_DAEMON_FAULT\x10fB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
+	"\x1cWORKSPACE_ERROR_DAEMON_FAULT\x10f*\xdc\x03\n" +
+	"\x13LedgerSnapshotError\x12%\n" +
+	"!LEDGER_SNAPSHOT_ERROR_UNSPECIFIED\x10\x00\x12)\n" +
+	"%LEDGER_SNAPSHOT_ERROR_INVALID_REQUEST\x10\x01\x12+\n" +
+	"'LEDGER_SNAPSHOT_ERROR_STATE_DIR_UNKNOWN\x10\x02\x12(\n" +
+	"$LEDGER_SNAPSHOT_ERROR_UNSUPPORTED_OS\x10\x03\x12'\n" +
+	"#LEDGER_SNAPSHOT_ERROR_PATH_CONFLICT\x10\x04\x12+\n" +
+	"'LEDGER_SNAPSHOT_ERROR_PERMISSION_DENIED\x10\x05\x12\"\n" +
+	"\x1eLEDGER_SNAPSHOT_ERROR_NO_SPACE\x10\x06\x12 \n" +
+	"\x1cLEDGER_SNAPSHOT_ERROR_ABSENT\x10\a\x12\x1f\n" +
+	"\x1bLEDGER_SNAPSHOT_ERROR_STALE\x10\b\x12\x1e\n" +
+	"\x1aLEDGER_SNAPSHOT_ERROR_BUSY\x10\t\x12\x1c\n" +
+	"\x18LEDGER_SNAPSHOT_ERROR_IO\x10\n" +
+	"\x12!\n" +
+	"\x1dLEDGER_SNAPSHOT_ERROR_TIMEOUT\x10eB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 
 var (
 	file_circus_v1_device_proto_rawDescOnce sync.Once
@@ -2687,74 +4268,114 @@ func file_circus_v1_device_proto_rawDescGZIP() []byte {
 	return file_circus_v1_device_proto_rawDescData
 }
 
-var file_circus_v1_device_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_circus_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_circus_v1_device_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
+var file_circus_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_circus_v1_device_proto_goTypes = []any{
-	(WorkspaceError)(0),                 // 0: circus.v1.WorkspaceError
-	(DaemonFault_Code)(0),               // 1: circus.v1.DaemonFault.Code
-	(CallStatus_State)(0),               // 2: circus.v1.CallStatus.State
-	(JobEvent_State)(0),                 // 3: circus.v1.JobEvent.State
-	(PrepareWorkspaceResult_Outcome)(0), // 4: circus.v1.PrepareWorkspaceResult.Outcome
-	(PrepareWorkspaceResult_Action)(0),  // 5: circus.v1.PrepareWorkspaceResult.Action
-	(RemoveWorkspaceResult_Outcome)(0),  // 6: circus.v1.RemoveWorkspaceResult.Outcome
-	(*DeviceCall)(nil),                  // 7: circus.v1.DeviceCall
-	(*DeviceResult)(nil),                // 8: circus.v1.DeviceResult
-	(*DaemonFault)(nil),                 // 9: circus.v1.DaemonFault
-	(*ToolOutput)(nil),                  // 10: circus.v1.ToolOutput
-	(*ContentBlock)(nil),                // 11: circus.v1.ContentBlock
-	(*ImageBlock)(nil),                  // 12: circus.v1.ImageBlock
-	(*BashRequest)(nil),                 // 13: circus.v1.BashRequest
-	(*BashResult)(nil),                  // 14: circus.v1.BashResult
-	(*ReadRequest)(nil),                 // 15: circus.v1.ReadRequest
-	(*ReadResult)(nil),                  // 16: circus.v1.ReadResult
-	(*WriteRequest)(nil),                // 17: circus.v1.WriteRequest
-	(*WriteResult)(nil),                 // 18: circus.v1.WriteResult
-	(*EditRequest)(nil),                 // 19: circus.v1.EditRequest
-	(*EditResult)(nil),                  // 20: circus.v1.EditResult
-	(*TaskStopRequest)(nil),             // 21: circus.v1.TaskStopRequest
-	(*TaskStopResult)(nil),              // 22: circus.v1.TaskStopResult
-	(*CallQuery)(nil),                   // 23: circus.v1.CallQuery
-	(*CallStatus)(nil),                  // 24: circus.v1.CallStatus
-	(*CancelCall)(nil),                  // 25: circus.v1.CancelCall
-	(*JobEvent)(nil),                    // 26: circus.v1.JobEvent
-	(*PrepareWorkspaceRequest)(nil),     // 27: circus.v1.PrepareWorkspaceRequest
-	(*PrepareWorkspaceResult)(nil),      // 28: circus.v1.PrepareWorkspaceResult
-	(*RemoveWorkspaceRequest)(nil),      // 29: circus.v1.RemoveWorkspaceRequest
-	(*RemoveWorkspaceResult)(nil),       // 30: circus.v1.RemoveWorkspaceResult
+	(WorkspaceError)(0),                      // 0: circus.v1.WorkspaceError
+	(LedgerSnapshotError)(0),                 // 1: circus.v1.LedgerSnapshotError
+	(DaemonFault_Code)(0),                    // 2: circus.v1.DaemonFault.Code
+	(CallStatus_State)(0),                    // 3: circus.v1.CallStatus.State
+	(JobEvent_State)(0),                      // 4: circus.v1.JobEvent.State
+	(PrepareWorkspaceResult_Outcome)(0),      // 5: circus.v1.PrepareWorkspaceResult.Outcome
+	(PrepareWorkspaceResult_Action)(0),       // 6: circus.v1.PrepareWorkspaceResult.Action
+	(RemoveWorkspaceResult_Outcome)(0),       // 7: circus.v1.RemoveWorkspaceResult.Outcome
+	(PrepareLedgerResult_Outcome)(0),         // 8: circus.v1.PrepareLedgerResult.Outcome
+	(CollectLedgerResult_Outcome)(0),         // 9: circus.v1.CollectLedgerResult.Outcome
+	(RebaseLedgerResult_Outcome)(0),          // 10: circus.v1.RebaseLedgerResult.Outcome
+	(RemoveLedgerResult_Outcome)(0),          // 11: circus.v1.RemoveLedgerResult.Outcome
+	(*DeviceCall)(nil),                       // 12: circus.v1.DeviceCall
+	(*DeviceResult)(nil),                     // 13: circus.v1.DeviceResult
+	(*DaemonFault)(nil),                      // 14: circus.v1.DaemonFault
+	(*ToolOutput)(nil),                       // 15: circus.v1.ToolOutput
+	(*ContentBlock)(nil),                     // 16: circus.v1.ContentBlock
+	(*ImageBlock)(nil),                       // 17: circus.v1.ImageBlock
+	(*BashRequest)(nil),                      // 18: circus.v1.BashRequest
+	(*BashResult)(nil),                       // 19: circus.v1.BashResult
+	(*ReadRequest)(nil),                      // 20: circus.v1.ReadRequest
+	(*ReadResult)(nil),                       // 21: circus.v1.ReadResult
+	(*WriteRequest)(nil),                     // 22: circus.v1.WriteRequest
+	(*WriteResult)(nil),                      // 23: circus.v1.WriteResult
+	(*EditRequest)(nil),                      // 24: circus.v1.EditRequest
+	(*EditResult)(nil),                       // 25: circus.v1.EditResult
+	(*TaskStopRequest)(nil),                  // 26: circus.v1.TaskStopRequest
+	(*TaskStopResult)(nil),                   // 27: circus.v1.TaskStopResult
+	(*CallQuery)(nil),                        // 28: circus.v1.CallQuery
+	(*CallStatus)(nil),                       // 29: circus.v1.CallStatus
+	(*CancelCall)(nil),                       // 30: circus.v1.CancelCall
+	(*JobEvent)(nil),                         // 31: circus.v1.JobEvent
+	(*PrepareWorkspaceRequest)(nil),          // 32: circus.v1.PrepareWorkspaceRequest
+	(*PrepareWorkspaceResult)(nil),           // 33: circus.v1.PrepareWorkspaceResult
+	(*RemoveWorkspaceRequest)(nil),           // 34: circus.v1.RemoveWorkspaceRequest
+	(*RemoveWorkspaceResult)(nil),            // 35: circus.v1.RemoveWorkspaceResult
+	(*SnapshotFile)(nil),                     // 36: circus.v1.SnapshotFile
+	(*PrepareLedgerRequest)(nil),             // 37: circus.v1.PrepareLedgerRequest
+	(*PrepareLedgerResult)(nil),              // 38: circus.v1.PrepareLedgerResult
+	(*CollectLedgerRequest)(nil),             // 39: circus.v1.CollectLedgerRequest
+	(*CollectLedgerResult)(nil),              // 40: circus.v1.CollectLedgerResult
+	(*RebaseLedgerRequest)(nil),              // 41: circus.v1.RebaseLedgerRequest
+	(*RebaseLedgerResult)(nil),               // 42: circus.v1.RebaseLedgerResult
+	(*RemoveLedgerRequest)(nil),              // 43: circus.v1.RemoveLedgerRequest
+	(*RemoveLedgerResult)(nil),               // 44: circus.v1.RemoveLedgerResult
+	(*CollectLedgerRequest_KnownChange)(nil), // 45: circus.v1.CollectLedgerRequest.KnownChange
+	(*CollectLedgerResult_Change)(nil),       // 46: circus.v1.CollectLedgerResult.Change
+	(*CollectLedgerResult_Problem)(nil),      // 47: circus.v1.CollectLedgerResult.Problem
+	(*RebaseLedgerRequest_Edit)(nil),         // 48: circus.v1.RebaseLedgerRequest.Edit
 }
 var file_circus_v1_device_proto_depIdxs = []int32{
-	13, // 0: circus.v1.DeviceCall.bash:type_name -> circus.v1.BashRequest
-	15, // 1: circus.v1.DeviceCall.read:type_name -> circus.v1.ReadRequest
-	17, // 2: circus.v1.DeviceCall.write:type_name -> circus.v1.WriteRequest
-	19, // 3: circus.v1.DeviceCall.edit:type_name -> circus.v1.EditRequest
-	21, // 4: circus.v1.DeviceCall.task_stop:type_name -> circus.v1.TaskStopRequest
-	27, // 5: circus.v1.DeviceCall.prepare_workspace:type_name -> circus.v1.PrepareWorkspaceRequest
-	29, // 6: circus.v1.DeviceCall.remove_workspace:type_name -> circus.v1.RemoveWorkspaceRequest
-	10, // 7: circus.v1.DeviceResult.output:type_name -> circus.v1.ToolOutput
-	9,  // 8: circus.v1.DeviceResult.fault:type_name -> circus.v1.DaemonFault
-	14, // 9: circus.v1.DeviceResult.bash:type_name -> circus.v1.BashResult
-	16, // 10: circus.v1.DeviceResult.read:type_name -> circus.v1.ReadResult
-	18, // 11: circus.v1.DeviceResult.write:type_name -> circus.v1.WriteResult
-	20, // 12: circus.v1.DeviceResult.edit:type_name -> circus.v1.EditResult
-	22, // 13: circus.v1.DeviceResult.task_stop:type_name -> circus.v1.TaskStopResult
-	28, // 14: circus.v1.DeviceResult.prepare_workspace:type_name -> circus.v1.PrepareWorkspaceResult
-	30, // 15: circus.v1.DeviceResult.remove_workspace:type_name -> circus.v1.RemoveWorkspaceResult
-	1,  // 16: circus.v1.DaemonFault.code:type_name -> circus.v1.DaemonFault.Code
-	11, // 17: circus.v1.ToolOutput.content:type_name -> circus.v1.ContentBlock
-	12, // 18: circus.v1.ContentBlock.image:type_name -> circus.v1.ImageBlock
-	2,  // 19: circus.v1.CallStatus.state:type_name -> circus.v1.CallStatus.State
-	8,  // 20: circus.v1.CallStatus.result:type_name -> circus.v1.DeviceResult
-	3,  // 21: circus.v1.JobEvent.state:type_name -> circus.v1.JobEvent.State
-	4,  // 22: circus.v1.PrepareWorkspaceResult.outcome:type_name -> circus.v1.PrepareWorkspaceResult.Outcome
-	5,  // 23: circus.v1.PrepareWorkspaceResult.action:type_name -> circus.v1.PrepareWorkspaceResult.Action
-	0,  // 24: circus.v1.PrepareWorkspaceResult.error:type_name -> circus.v1.WorkspaceError
-	6,  // 25: circus.v1.RemoveWorkspaceResult.outcome:type_name -> circus.v1.RemoveWorkspaceResult.Outcome
-	0,  // 26: circus.v1.RemoveWorkspaceResult.error:type_name -> circus.v1.WorkspaceError
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	18, // 0: circus.v1.DeviceCall.bash:type_name -> circus.v1.BashRequest
+	20, // 1: circus.v1.DeviceCall.read:type_name -> circus.v1.ReadRequest
+	22, // 2: circus.v1.DeviceCall.write:type_name -> circus.v1.WriteRequest
+	24, // 3: circus.v1.DeviceCall.edit:type_name -> circus.v1.EditRequest
+	26, // 4: circus.v1.DeviceCall.task_stop:type_name -> circus.v1.TaskStopRequest
+	32, // 5: circus.v1.DeviceCall.prepare_workspace:type_name -> circus.v1.PrepareWorkspaceRequest
+	34, // 6: circus.v1.DeviceCall.remove_workspace:type_name -> circus.v1.RemoveWorkspaceRequest
+	37, // 7: circus.v1.DeviceCall.prepare_ledger:type_name -> circus.v1.PrepareLedgerRequest
+	39, // 8: circus.v1.DeviceCall.collect_ledger:type_name -> circus.v1.CollectLedgerRequest
+	41, // 9: circus.v1.DeviceCall.rebase_ledger:type_name -> circus.v1.RebaseLedgerRequest
+	43, // 10: circus.v1.DeviceCall.remove_ledger:type_name -> circus.v1.RemoveLedgerRequest
+	15, // 11: circus.v1.DeviceResult.output:type_name -> circus.v1.ToolOutput
+	14, // 12: circus.v1.DeviceResult.fault:type_name -> circus.v1.DaemonFault
+	19, // 13: circus.v1.DeviceResult.bash:type_name -> circus.v1.BashResult
+	21, // 14: circus.v1.DeviceResult.read:type_name -> circus.v1.ReadResult
+	23, // 15: circus.v1.DeviceResult.write:type_name -> circus.v1.WriteResult
+	25, // 16: circus.v1.DeviceResult.edit:type_name -> circus.v1.EditResult
+	27, // 17: circus.v1.DeviceResult.task_stop:type_name -> circus.v1.TaskStopResult
+	33, // 18: circus.v1.DeviceResult.prepare_workspace:type_name -> circus.v1.PrepareWorkspaceResult
+	35, // 19: circus.v1.DeviceResult.remove_workspace:type_name -> circus.v1.RemoveWorkspaceResult
+	38, // 20: circus.v1.DeviceResult.prepare_ledger:type_name -> circus.v1.PrepareLedgerResult
+	40, // 21: circus.v1.DeviceResult.collect_ledger:type_name -> circus.v1.CollectLedgerResult
+	42, // 22: circus.v1.DeviceResult.rebase_ledger:type_name -> circus.v1.RebaseLedgerResult
+	44, // 23: circus.v1.DeviceResult.remove_ledger:type_name -> circus.v1.RemoveLedgerResult
+	2,  // 24: circus.v1.DaemonFault.code:type_name -> circus.v1.DaemonFault.Code
+	16, // 25: circus.v1.ToolOutput.content:type_name -> circus.v1.ContentBlock
+	17, // 26: circus.v1.ContentBlock.image:type_name -> circus.v1.ImageBlock
+	3,  // 27: circus.v1.CallStatus.state:type_name -> circus.v1.CallStatus.State
+	13, // 28: circus.v1.CallStatus.result:type_name -> circus.v1.DeviceResult
+	4,  // 29: circus.v1.JobEvent.state:type_name -> circus.v1.JobEvent.State
+	5,  // 30: circus.v1.PrepareWorkspaceResult.outcome:type_name -> circus.v1.PrepareWorkspaceResult.Outcome
+	6,  // 31: circus.v1.PrepareWorkspaceResult.action:type_name -> circus.v1.PrepareWorkspaceResult.Action
+	0,  // 32: circus.v1.PrepareWorkspaceResult.error:type_name -> circus.v1.WorkspaceError
+	7,  // 33: circus.v1.RemoveWorkspaceResult.outcome:type_name -> circus.v1.RemoveWorkspaceResult.Outcome
+	0,  // 34: circus.v1.RemoveWorkspaceResult.error:type_name -> circus.v1.WorkspaceError
+	36, // 35: circus.v1.PrepareLedgerRequest.files:type_name -> circus.v1.SnapshotFile
+	8,  // 36: circus.v1.PrepareLedgerResult.outcome:type_name -> circus.v1.PrepareLedgerResult.Outcome
+	1,  // 37: circus.v1.PrepareLedgerResult.error:type_name -> circus.v1.LedgerSnapshotError
+	45, // 38: circus.v1.CollectLedgerRequest.known:type_name -> circus.v1.CollectLedgerRequest.KnownChange
+	9,  // 39: circus.v1.CollectLedgerResult.outcome:type_name -> circus.v1.CollectLedgerResult.Outcome
+	46, // 40: circus.v1.CollectLedgerResult.changes:type_name -> circus.v1.CollectLedgerResult.Change
+	47, // 41: circus.v1.CollectLedgerResult.problems:type_name -> circus.v1.CollectLedgerResult.Problem
+	1,  // 42: circus.v1.CollectLedgerResult.error:type_name -> circus.v1.LedgerSnapshotError
+	48, // 43: circus.v1.RebaseLedgerRequest.edits:type_name -> circus.v1.RebaseLedgerRequest.Edit
+	45, // 44: circus.v1.RebaseLedgerRequest.known:type_name -> circus.v1.CollectLedgerRequest.KnownChange
+	10, // 45: circus.v1.RebaseLedgerResult.outcome:type_name -> circus.v1.RebaseLedgerResult.Outcome
+	1,  // 46: circus.v1.RebaseLedgerResult.error:type_name -> circus.v1.LedgerSnapshotError
+	11, // 47: circus.v1.RemoveLedgerResult.outcome:type_name -> circus.v1.RemoveLedgerResult.Outcome
+	1,  // 48: circus.v1.RemoveLedgerResult.error:type_name -> circus.v1.LedgerSnapshotError
+	49, // [49:49] is the sub-list for method output_type
+	49, // [49:49] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_device_proto_init() }
@@ -2770,6 +4391,10 @@ func file_circus_v1_device_proto_init() {
 		(*DeviceCall_TaskStop)(nil),
 		(*DeviceCall_PrepareWorkspace)(nil),
 		(*DeviceCall_RemoveWorkspace)(nil),
+		(*DeviceCall_PrepareLedger)(nil),
+		(*DeviceCall_CollectLedger)(nil),
+		(*DeviceCall_RebaseLedger)(nil),
+		(*DeviceCall_RemoveLedger)(nil),
 	}
 	file_circus_v1_device_proto_msgTypes[1].OneofWrappers = []any{
 		(*DeviceResult_Bash)(nil),
@@ -2779,6 +4404,10 @@ func file_circus_v1_device_proto_init() {
 		(*DeviceResult_TaskStop)(nil),
 		(*DeviceResult_PrepareWorkspace)(nil),
 		(*DeviceResult_RemoveWorkspace)(nil),
+		(*DeviceResult_PrepareLedger)(nil),
+		(*DeviceResult_CollectLedger)(nil),
+		(*DeviceResult_RebaseLedger)(nil),
+		(*DeviceResult_RemoveLedger)(nil),
 	}
 	file_circus_v1_device_proto_msgTypes[4].OneofWrappers = []any{
 		(*ContentBlock_Text)(nil),
@@ -2787,13 +4416,26 @@ func file_circus_v1_device_proto_init() {
 	file_circus_v1_device_proto_msgTypes[8].OneofWrappers = []any{}
 	file_circus_v1_device_proto_msgTypes[10].OneofWrappers = []any{}
 	file_circus_v1_device_proto_msgTypes[12].OneofWrappers = []any{}
+	file_circus_v1_device_proto_msgTypes[33].OneofWrappers = []any{
+		(*CollectLedgerRequest_KnownChange_Sha256)(nil),
+		(*CollectLedgerRequest_KnownChange_Deleted)(nil),
+	}
+	file_circus_v1_device_proto_msgTypes[34].OneofWrappers = []any{
+		(*CollectLedgerResult_Change_Content)(nil),
+		(*CollectLedgerResult_Change_Deleted)(nil),
+		(*CollectLedgerResult_Change_Known)(nil),
+	}
+	file_circus_v1_device_proto_msgTypes[36].OneofWrappers = []any{
+		(*RebaseLedgerRequest_Edit_Content)(nil),
+		(*RebaseLedgerRequest_Edit_Deleted)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_device_proto_rawDesc), len(file_circus_v1_device_proto_rawDesc)),
-			NumEnums:      7,
-			NumMessages:   24,
+			NumEnums:      12,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

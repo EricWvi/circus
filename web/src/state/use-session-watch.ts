@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState, useSyncExternalStore } from "react"
 
 import { useClient } from "@/api/context"
-import { invalidateSession, trackLiveArrivals } from "@/api/hooks"
+import { invalidateSession, invalidateSessionLedger, trackLiveArrivals } from "@/api/hooks"
 
 import { lostSince, LOST_NOTICE_MS } from "./connection"
 import { createSessionWatch, type SessionWatch, type SessionWatchState } from "./session-watch"
@@ -11,7 +11,8 @@ const browserOnline = () => (typeof navigator === "undefined" ? true : navigator
 
 /**
  * Watches the session while the calling component is mounted (key it by
- * session). Boundary events refresh the session and the lists.
+ * session). Boundary events refresh the session and the lists; ledger
+ * events (live ones too) the session's snapshot as well.
  */
 export function useSessionWatch(sessionId: string): SessionWatchState & {
   /** The current loss has lasted long enough to show (see `LOST_NOTICE_MS`). */
@@ -27,11 +28,12 @@ export function useSessionWatch(sessionId: string): SessionWatchState & {
       sessions: client.sessions,
       sessionId,
       online: browserOnline(),
-      onBoundary: () => invalidateSession(queryClient, sessionId),
+      onBoundary: (kinds) =>
+        kinds.has("ledger") ? invalidateSessionLedger(queryClient, sessionId) : invalidateSession(queryClient, sessionId),
       // Every stream after the first (not on mount, which fetches anyway),
       // a loss's reconnect included: the session may have moved on
       // meanwhile, live-only values too.
-      onReopen: () => invalidateSession(queryClient, sessionId),
+      onReopen: () => invalidateSessionLedger(queryClient, sessionId),
     }),
   )
 

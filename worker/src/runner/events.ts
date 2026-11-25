@@ -38,13 +38,14 @@ export function lostTaskPayload(sessionId: string, uuid: string, task: { taskId:
 
 /**
  * An SDK user message as the view sees it: the user's own input (no note) or
- * a message the worker wrote for the model (a note: synthetic, with its kind).
+ * a message written for the model (a note: synthetic, with its kind, a
+ * NoteKind or a control-plane note's category; empty publishes none).
  */
-export function userMessagePayload(sessionId: string, uuid: string, content: unknown, note: NoteKind | undefined, timestamp: string) {
+export function userMessagePayload(sessionId: string, uuid: string, content: unknown, note: string | undefined, timestamp: string) {
   return {
     type: "user", session_id: sessionId, uuid, parent_tool_use_id: null,
     message: { role: "user", content },
-    ...(note ? { isSynthetic: true, circus_note: note } : {}),
+    ...(note !== undefined ? { isSynthetic: true, ...(note ? { circus_note: note } : {}) } : {}),
     timestamp,
   };
 }

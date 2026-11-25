@@ -30,18 +30,34 @@ export class ApiError extends Error {
    * "locations[1].path" (a Connect error's BadRequest field violation).
    */
   readonly field?: string
+  /**
+   * Why a precondition failed, as the server names it (the type of a
+   * Connect error's first google.rpc.PreconditionFailure violation that
+   * has one), such as "LEDGER_CHANGES".
+   */
+  readonly preconditionType?: string
 
-  constructor(code: ErrorCode, message: string, field?: string, options?: ErrorOptions) {
+  constructor(
+    code: ErrorCode,
+    message: string,
+    field?: string,
+    options?: ErrorOptions & { preconditionType?: string },
+  ) {
     super(message, options)
     this.name = "ApiError"
     this.code = code
     this.field = field
+    if (options?.preconditionType) this.preconditionType = options.preconditionType
   }
 }
 
 export function isApiError(error: unknown, code?: ErrorCode): error is ApiError {
   return error instanceof ApiError && (code === undefined || error.code === code)
 }
+
+/** A `failed_precondition` error whose precondition type is `type`. */
+export const isPreconditionFailure = (error: unknown, type: string): error is ApiError =>
+  isApiError(error, "failed_precondition") && error.preconditionType === type
 
 /**
  * A one-line message suitable for showing inside a form, chosen by code: the

@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/device.proto.
  */
 export const file_circus_v1_device: GenFile = /*@__PURE__*/
-  fileDesc("ChZjaXJjdXMvdjEvZGV2aWNlLnByb3RvEgljaXJjdXMudjEisgMKCkRldmljZUNhbGwSDwoHY2FsbF9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhAKCGFnZW50X2lkGAMgASgJEhIKCnRpbWVvdXRfbXMYBCABKA0SJgoEYmFzaBgKIAEoCzIWLmNpcmN1cy52MS5CYXNoUmVxdWVzdEgAEiYKBHJlYWQYCyABKAsyFi5jaXJjdXMudjEuUmVhZFJlcXVlc3RIABIoCgV3cml0ZRgMIAEoCzIXLmNpcmN1cy52MS5Xcml0ZVJlcXVlc3RIABImCgRlZGl0GA0gASgLMhYuY2lyY3VzLnYxLkVkaXRSZXF1ZXN0SAASLwoJdGFza19zdG9wGA4gASgLMhouY2lyY3VzLnYxLlRhc2tTdG9wUmVxdWVzdEgAEj8KEXByZXBhcmVfd29ya3NwYWNlGA8gASgLMiIuY2lyY3VzLnYxLlByZXBhcmVXb3Jrc3BhY2VSZXF1ZXN0SAASPQoQcmVtb3ZlX3dvcmtzcGFjZRgQIAEoCzIhLmNpcmN1cy52MS5SZW1vdmVXb3Jrc3BhY2VSZXF1ZXN0SABCBgoEdG9vbCLDAwoMRGV2aWNlUmVzdWx0Eg8KB2NhbGxfaWQYASABKAkSJQoGb3V0cHV0GAIgASgLMhUuY2lyY3VzLnYxLlRvb2xPdXRwdXQSJQoFZmF1bHQYAyABKAsyFi5jaXJjdXMudjEuRGFlbW9uRmF1bHQSJQoEYmFzaBgKIAEoCzIVLmNpcmN1cy52MS5CYXNoUmVzdWx0SAASJQoEcmVhZBgLIAEoCzIVLmNpcmN1cy52MS5SZWFkUmVzdWx0SAASJwoFd3JpdGUYDCABKAsyFi5jaXJjdXMudjEuV3JpdGVSZXN1bHRIABIlCgRlZGl0GA0gASgLMhUuY2lyY3VzLnYxLkVkaXRSZXN1bHRIABIuCgl0YXNrX3N0b3AYDiABKAsyGS5jaXJjdXMudjEuVGFza1N0b3BSZXN1bHRIABI+ChFwcmVwYXJlX3dvcmtzcGFjZRgPIAEoCzIhLmNpcmN1cy52MS5QcmVwYXJlV29ya3NwYWNlUmVzdWx0SAASPAoQcmVtb3ZlX3dvcmtzcGFjZRgQIAEoCzIgLmNpcmN1cy52MS5SZW1vdmVXb3Jrc3BhY2VSZXN1bHRIAEIICgZkZXRhaWwiiQIKC0RhZW1vbkZhdWx0EikKBGNvZGUYASABKA4yGy5jaXJjdXMudjEuRGFlbW9uRmF1bHQuQ29kZRIPCgdtZXNzYWdlGAIgASgJIr0BCgRDb2RlEhQKEENPREVfVU5TUEVDSUZJRUQQABIRCg1DT0RFX0lOVEVSTkFMEAESDgoKQ09ERV9QQU5JQxACEiAKHENPREVfQUJBTkRPTkVEX0FGVEVSX1RJTUVPVVQQAxIfChtDT0RFX0FCQU5ET05FRF9BRlRFUl9DQU5DRUwQBBIeChpDT0RFX1BSRVBBUkFUSU9OX0VYSEFVU1RFRBAFEhkKFUNPREVfVE9PTF9VTkFWQUlMQUJMRRAGIkgKClRvb2xPdXRwdXQSKAoHY29udGVudBgBIAMoCzIXLmNpcmN1cy52MS5Db250ZW50QmxvY2sSEAoIaXNfZXJyb3IYAiABKAgiTwoMQ29udGVudEJsb2NrEg4KBHRleHQYASABKAlIABImCgVpbWFnZRgCIAEoCzIVLmNpcmN1cy52MS5JbWFnZUJsb2NrSABCBwoFYmxvY2siLgoKSW1hZ2VCbG9jaxISCgptZWRpYV90eXBlGAEgASgJEgwKBGRhdGEYAiABKAwicQoLQmFzaFJlcXVlc3QSDwoHY29tbWFuZBgBIAEoCRILCgNjd2QYAiABKAkSGQoRcnVuX2luX2JhY2tncm91bmQYAyABKAgSEwoLZGVzY3JpcHRpb24YBCABKAkSFAoMd29ya2luZ19kaXJzGAUgAygJIpMBCgpCYXNoUmVzdWx0EhEKCWV4aXRfY29kZRgBIAEoBRILCgNjd2QYAiABKAkSEQoJdGltZWRfb3V0GAMgASgIEhMKC2ludGVycnVwdGVkGAQgASgIEhgKEG91dHB1dF90cnVuY2F0ZWQYBSABKAgSEwoLb3V0cHV0X3BhdGgYBiABKAkSDgoGam9iX2lkGAcgASgJIlcKC1JlYWRSZXF1ZXN0EgwKBHBhdGgYASABKAkSEwoGb2Zmc2V0GAIgASgNSACIAQESDQoFbGltaXQYAyABKA0SCwoDY3dkGAQgASgJQgkKB19vZmZzZXQiSAoKUmVhZFJlc3VsdBIOCgZzaGEyNTYYASABKAkSFQoNbXRpbWVfdW5peF9tcxgCIAEoAxITCgt0b3RhbF9saW5lcxgDIAEoDSJsCgxXcml0ZVJlcXVlc3QSDAoEcGF0aBgBIAEoCRIPCgdjb250ZW50GAIgASgJEhwKD2V4cGVjdGVkX3NoYTI1NhgDIAEoCUgAiAEBEgsKA2N3ZBgEIAEoCUISChBfZXhwZWN0ZWRfc2hhMjU2Ii4KC1dyaXRlUmVzdWx0Eg4KBnNoYTI1NhgBIAEoCRIPCgdjcmVhdGVkGAIgASgIIpcBCgtFZGl0UmVxdWVzdBIMCgRwYXRoGAEgASgJEhIKCm9sZF9zdHJpbmcYAiABKAkSEgoKbmV3X3N0cmluZxgDIAEoCRITCgtyZXBsYWNlX2FsbBgEIAEoCBIcCg9leHBlY3RlZF9zaGEyNTYYBSABKAlIAIgBARILCgNjd2QYBiABKAlCEgoQX2V4cGVjdGVkX3NoYTI1NiJKCgpFZGl0UmVzdWx0Eg4KBnNoYTI1NhgBIAEoCRIbChNtb2RpZmllZF9zaW5jZV9yZWFkGAIgASgIEg8KB2NyZWF0ZWQYAyABKAgiIQoPVGFza1N0b3BSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSIQCg5UYXNrU3RvcFJlc3VsdCIcCglDYWxsUXVlcnkSDwoHY2FsbF9pZBgBIAEoCSLKAQoKQ2FsbFN0YXR1cxIPCgdjYWxsX2lkGAEgASgJEioKBXN0YXRlGAIgASgOMhsuY2lyY3VzLnYxLkNhbGxTdGF0dXMuU3RhdGUSJwoGcmVzdWx0GAMgASgLMhcuY2lyY3VzLnYxLkRldmljZVJlc3VsdCJWCgVTdGF0ZRIVChFTVEFURV9VTlNQRUNJRklFRBAAEhEKDVNUQVRFX1JVTk5JTkcQARITCg9TVEFURV9DT01QTEVURUQQAhIOCgpTVEFURV9MT1NUEAMiHQoKQ2FuY2VsQ2FsbBIPCgdjYWxsX2lkGAEgASgJIoUCCghKb2JFdmVudBIOCgZqb2JfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIoCgVzdGF0ZRgDIAEoDjIZLmNpcmN1cy52MS5Kb2JFdmVudC5TdGF0ZRIRCglleGl0X2NvZGUYBCABKAUSEwoLb3V0cHV0X3BhdGgYBSABKAkSCwoDc2VxGAYgASgEEg8KB2NhbGxfaWQYByABKAkiZQoFU3RhdGUSFQoRU1RBVEVfVU5TUEVDSUZJRUQQABIRCg1TVEFURV9SVU5OSU5HEAESEAoMU1RBVEVfRVhJVEVEEAISEAoMU1RBVEVfS0lMTEVEEAMSDgoKU1RBVEVfTE9TVBAEIlAKF1ByZXBhcmVXb3Jrc3BhY2VSZXF1ZXN0EgwKBHBhdGgYASABKAkSEAoIcmVwb191cmwYAiABKAkSFQoNcmVzdW1lX2pvYl9pZBgDIAEoCSLOAwoWUHJlcGFyZVdvcmtzcGFjZVJlc3VsdBI6CgdvdXRjb21lGAEgASgOMikuY2lyY3VzLnYxLlByZXBhcmVXb3Jrc3BhY2VSZXN1bHQuT3V0Y29tZRIMCgRwYXRoGAIgASgJEjgKBmFjdGlvbhgDIAEoDjIoLmNpcmN1cy52MS5QcmVwYXJlV29ya3NwYWNlUmVzdWx0LkFjdGlvbhIOCgZqb2JfaWQYBCABKAkSKAoFZXJyb3IYBSABKA4yGS5jaXJjdXMudjEuV29ya3NwYWNlRXJyb3ISFAoMZXJyb3JfZGV0YWlsGAYgASgJImQKB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhEKDU9VVENPTUVfUkVBRFkQARIZChVPVVRDT01FX0lOX0JBQ0tHUk9VTkQQAhISCg5PVVRDT01FX0ZBSUxFRBADInoKBkFjdGlvbhIWChJBQ1RJT05fVU5TUEVDSUZJRUQQABISCg5BQ1RJT05fQ1JFQVRFRBABEhUKEUFDVElPTl9VU0VEX0VNUFRZEAISEQoNQUNUSU9OX0NMT05FRBADEhoKFkFDVElPTl9VU0VEX1JFUE9TSVRPUlkQBCImChZSZW1vdmVXb3Jrc3BhY2VSZXF1ZXN0EgwKBHBhdGgYASABKAkigQIKFVJlbW92ZVdvcmtzcGFjZVJlc3VsdBI5CgdvdXRjb21lGAEgASgOMiguY2lyY3VzLnYxLlJlbW92ZVdvcmtzcGFjZVJlc3VsdC5PdXRjb21lEgwKBHBhdGgYAiABKAkSKAoFZXJyb3IYAyABKA4yGS5jaXJjdXMudjEuV29ya3NwYWNlRXJyb3ISFAoMZXJyb3JfZGV0YWlsGAQgASgJIl8KB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhMKD09VVENPTUVfUkVNT1ZFRBABEhIKDk9VVENPTUVfQUJTRU5UEAISEgoOT1VUQ09NRV9GQUlMRUQQAyqBBQoOV29ya3NwYWNlRXJyb3ISHwobV09SS1NQQUNFX0VSUk9SX1VOU1BFQ0lGSUVEEAASIwofV09SS1NQQUNFX0VSUk9SX0lOVkFMSURfUkVRVUVTVBABEiAKHFdPUktTUEFDRV9FUlJPUl9IT01FX1VOS05PV04QAhIiCh5XT1JLU1BBQ0VfRVJST1JfVU5TVVBQT1JURURfT1MQAxIhCh1XT1JLU1BBQ0VfRVJST1JfUEFUSF9DT05GTElDVBAEEh0KGVdPUktTUEFDRV9FUlJPUl9OT1RfRU1QVFkQBRIjCh9XT1JLU1BBQ0VfRVJST1JfUkVNT1RFX01JU01BVENIEAYSIwofV09SS1NQQUNFX0VSUk9SX0dJVF9VTkFWQUlMQUJMRRAHEiAKHFdPUktTUEFDRV9FUlJPUl9DTE9ORV9GQUlMRUQQCBIcChhXT1JLU1BBQ0VfRVJST1JfTk9fU1BBQ0UQCRIlCiFXT1JLU1BBQ0VfRVJST1JfUEVSTUlTU0lPTl9ERU5JRUQQChIbChdXT1JLU1BBQ0VfRVJST1JfVElNRU9VVBALEhgKFFdPUktTUEFDRV9FUlJPUl9CVVNZEAwSHQoZV09SS1NQQUNFX0VSUk9SX0NBTkNFTExFRBANEhYKEldPUktTUEFDRV9FUlJPUl9JTxAOEhsKF1dPUktTUEFDRV9FUlJPUl9SRUZVU0VEEA8SIgoeV09SS1NQQUNFX0VSUk9SX0RFVklDRV9SRVZPS0VEEGQSHwobV09SS1NQQUNFX0VSUk9SX0lOVEVSUlVQVEVEEGUSIAocV09SS1NQQUNFX0VSUk9SX0RBRU1PTl9GQVVMVBBmQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z");
+  fileDesc("ChZjaXJjdXMvdjEvZGV2aWNlLnByb3RvEgljaXJjdXMudjEimgUKCkRldmljZUNhbGwSDwoHY2FsbF9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEhAKCGFnZW50X2lkGAMgASgJEhIKCnRpbWVvdXRfbXMYBCABKA0SJgoEYmFzaBgKIAEoCzIWLmNpcmN1cy52MS5CYXNoUmVxdWVzdEgAEiYKBHJlYWQYCyABKAsyFi5jaXJjdXMudjEuUmVhZFJlcXVlc3RIABIoCgV3cml0ZRgMIAEoCzIXLmNpcmN1cy52MS5Xcml0ZVJlcXVlc3RIABImCgRlZGl0GA0gASgLMhYuY2lyY3VzLnYxLkVkaXRSZXF1ZXN0SAASLwoJdGFza19zdG9wGA4gASgLMhouY2lyY3VzLnYxLlRhc2tTdG9wUmVxdWVzdEgAEj8KEXByZXBhcmVfd29ya3NwYWNlGA8gASgLMiIuY2lyY3VzLnYxLlByZXBhcmVXb3Jrc3BhY2VSZXF1ZXN0SAASPQoQcmVtb3ZlX3dvcmtzcGFjZRgQIAEoCzIhLmNpcmN1cy52MS5SZW1vdmVXb3Jrc3BhY2VSZXF1ZXN0SAASOQoOcHJlcGFyZV9sZWRnZXIYESABKAsyHy5jaXJjdXMudjEuUHJlcGFyZUxlZGdlclJlcXVlc3RIABI5Cg5jb2xsZWN0X2xlZGdlchgSIAEoCzIfLmNpcmN1cy52MS5Db2xsZWN0TGVkZ2VyUmVxdWVzdEgAEjcKDXJlYmFzZV9sZWRnZXIYEyABKAsyHi5jaXJjdXMudjEuUmViYXNlTGVkZ2VyUmVxdWVzdEgAEjcKDXJlbW92ZV9sZWRnZXIYFCABKAsyHi5jaXJjdXMudjEuUmVtb3ZlTGVkZ2VyUmVxdWVzdEgAQgYKBHRvb2wipwUKDERldmljZVJlc3VsdBIPCgdjYWxsX2lkGAEgASgJEiUKBm91dHB1dBgCIAEoCzIVLmNpcmN1cy52MS5Ub29sT3V0cHV0EiUKBWZhdWx0GAMgASgLMhYuY2lyY3VzLnYxLkRhZW1vbkZhdWx0EiUKBGJhc2gYCiABKAsyFS5jaXJjdXMudjEuQmFzaFJlc3VsdEgAEiUKBHJlYWQYCyABKAsyFS5jaXJjdXMudjEuUmVhZFJlc3VsdEgAEicKBXdyaXRlGAwgASgLMhYuY2lyY3VzLnYxLldyaXRlUmVzdWx0SAASJQoEZWRpdBgNIAEoCzIVLmNpcmN1cy52MS5FZGl0UmVzdWx0SAASLgoJdGFza19zdG9wGA4gASgLMhkuY2lyY3VzLnYxLlRhc2tTdG9wUmVzdWx0SAASPgoRcHJlcGFyZV93b3Jrc3BhY2UYDyABKAsyIS5jaXJjdXMudjEuUHJlcGFyZVdvcmtzcGFjZVJlc3VsdEgAEjwKEHJlbW92ZV93b3Jrc3BhY2UYECABKAsyIC5jaXJjdXMudjEuUmVtb3ZlV29ya3NwYWNlUmVzdWx0SAASOAoOcHJlcGFyZV9sZWRnZXIYESABKAsyHi5jaXJjdXMudjEuUHJlcGFyZUxlZGdlclJlc3VsdEgAEjgKDmNvbGxlY3RfbGVkZ2VyGBIgASgLMh4uY2lyY3VzLnYxLkNvbGxlY3RMZWRnZXJSZXN1bHRIABI2Cg1yZWJhc2VfbGVkZ2VyGBMgASgLMh0uY2lyY3VzLnYxLlJlYmFzZUxlZGdlclJlc3VsdEgAEjYKDXJlbW92ZV9sZWRnZXIYFCABKAsyHS5jaXJjdXMudjEuUmVtb3ZlTGVkZ2VyUmVzdWx0SABCCAoGZGV0YWlsIokCCgtEYWVtb25GYXVsdBIpCgRjb2RlGAEgASgOMhsuY2lyY3VzLnYxLkRhZW1vbkZhdWx0LkNvZGUSDwoHbWVzc2FnZRgCIAEoCSK9AQoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASEQoNQ09ERV9JTlRFUk5BTBABEg4KCkNPREVfUEFOSUMQAhIgChxDT0RFX0FCQU5ET05FRF9BRlRFUl9USU1FT1VUEAMSHwobQ09ERV9BQkFORE9ORURfQUZURVJfQ0FOQ0VMEAQSHgoaQ09ERV9QUkVQQVJBVElPTl9FWEhBVVNURUQQBRIZChVDT0RFX1RPT0xfVU5BVkFJTEFCTEUQBiJICgpUb29sT3V0cHV0EigKB2NvbnRlbnQYASADKAsyFy5jaXJjdXMudjEuQ29udGVudEJsb2NrEhAKCGlzX2Vycm9yGAIgASgIIk8KDENvbnRlbnRCbG9jaxIOCgR0ZXh0GAEgASgJSAASJgoFaW1hZ2UYAiABKAsyFS5jaXJjdXMudjEuSW1hZ2VCbG9ja0gAQgcKBWJsb2NrIi4KCkltYWdlQmxvY2sSEgoKbWVkaWFfdHlwZRgBIAEoCRIMCgRkYXRhGAIgASgMInEKC0Jhc2hSZXF1ZXN0Eg8KB2NvbW1hbmQYASABKAkSCwoDY3dkGAIgASgJEhkKEXJ1bl9pbl9iYWNrZ3JvdW5kGAMgASgIEhMKC2Rlc2NyaXB0aW9uGAQgASgJEhQKDHdvcmtpbmdfZGlycxgFIAMoCSKTAQoKQmFzaFJlc3VsdBIRCglleGl0X2NvZGUYASABKAUSCwoDY3dkGAIgASgJEhEKCXRpbWVkX291dBgDIAEoCBITCgtpbnRlcnJ1cHRlZBgEIAEoCBIYChBvdXRwdXRfdHJ1bmNhdGVkGAUgASgIEhMKC291dHB1dF9wYXRoGAYgASgJEg4KBmpvYl9pZBgHIAEoCSJXCgtSZWFkUmVxdWVzdBIMCgRwYXRoGAEgASgJEhMKBm9mZnNldBgCIAEoDUgAiAEBEg0KBWxpbWl0GAMgASgNEgsKA2N3ZBgEIAEoCUIJCgdfb2Zmc2V0IkgKClJlYWRSZXN1bHQSDgoGc2hhMjU2GAEgASgJEhUKDW10aW1lX3VuaXhfbXMYAiABKAMSEwoLdG90YWxfbGluZXMYAyABKA0ibAoMV3JpdGVSZXF1ZXN0EgwKBHBhdGgYASABKAkSDwoHY29udGVudBgCIAEoCRIcCg9leHBlY3RlZF9zaGEyNTYYAyABKAlIAIgBARILCgNjd2QYBCABKAlCEgoQX2V4cGVjdGVkX3NoYTI1NiIuCgtXcml0ZVJlc3VsdBIOCgZzaGEyNTYYASABKAkSDwoHY3JlYXRlZBgCIAEoCCKXAQoLRWRpdFJlcXVlc3QSDAoEcGF0aBgBIAEoCRISCgpvbGRfc3RyaW5nGAIgASgJEhIKCm5ld19zdHJpbmcYAyABKAkSEwoLcmVwbGFjZV9hbGwYBCABKAgSHAoPZXhwZWN0ZWRfc2hhMjU2GAUgASgJSACIAQESCwoDY3dkGAYgASgJQhIKEF9leHBlY3RlZF9zaGEyNTYiSgoKRWRpdFJlc3VsdBIOCgZzaGEyNTYYASABKAkSGwoTbW9kaWZpZWRfc2luY2VfcmVhZBgCIAEoCBIPCgdjcmVhdGVkGAMgASgIIiEKD1Rhc2tTdG9wUmVxdWVzdBIOCgZqb2JfaWQYASABKAkiEAoOVGFza1N0b3BSZXN1bHQiHAoJQ2FsbFF1ZXJ5Eg8KB2NhbGxfaWQYASABKAkiygEKCkNhbGxTdGF0dXMSDwoHY2FsbF9pZBgBIAEoCRIqCgVzdGF0ZRgCIAEoDjIbLmNpcmN1cy52MS5DYWxsU3RhdHVzLlN0YXRlEicKBnJlc3VsdBgDIAEoCzIXLmNpcmN1cy52MS5EZXZpY2VSZXN1bHQiVgoFU3RhdGUSFQoRU1RBVEVfVU5TUEVDSUZJRUQQABIRCg1TVEFURV9SVU5OSU5HEAESEwoPU1RBVEVfQ09NUExFVEVEEAISDgoKU1RBVEVfTE9TVBADIh0KCkNhbmNlbENhbGwSDwoHY2FsbF9pZBgBIAEoCSKFAgoISm9iRXZlbnQSDgoGam9iX2lkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSKAoFc3RhdGUYAyABKA4yGS5jaXJjdXMudjEuSm9iRXZlbnQuU3RhdGUSEQoJZXhpdF9jb2RlGAQgASgFEhMKC291dHB1dF9wYXRoGAUgASgJEgsKA3NlcRgGIAEoBBIPCgdjYWxsX2lkGAcgASgJImUKBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASEQoNU1RBVEVfUlVOTklORxABEhAKDFNUQVRFX0VYSVRFRBACEhAKDFNUQVRFX0tJTExFRBADEg4KClNUQVRFX0xPU1QQBCJQChdQcmVwYXJlV29ya3NwYWNlUmVxdWVzdBIMCgRwYXRoGAEgASgJEhAKCHJlcG9fdXJsGAIgASgJEhUKDXJlc3VtZV9qb2JfaWQYAyABKAkizgMKFlByZXBhcmVXb3Jrc3BhY2VSZXN1bHQSOgoHb3V0Y29tZRgBIAEoDjIpLmNpcmN1cy52MS5QcmVwYXJlV29ya3NwYWNlUmVzdWx0Lk91dGNvbWUSDAoEcGF0aBgCIAEoCRI4CgZhY3Rpb24YAyABKA4yKC5jaXJjdXMudjEuUHJlcGFyZVdvcmtzcGFjZVJlc3VsdC5BY3Rpb24SDgoGam9iX2lkGAQgASgJEigKBWVycm9yGAUgASgOMhkuY2lyY3VzLnYxLldvcmtzcGFjZUVycm9yEhQKDGVycm9yX2RldGFpbBgGIAEoCSJkCgdPdXRjb21lEhcKE09VVENPTUVfVU5TUEVDSUZJRUQQABIRCg1PVVRDT01FX1JFQURZEAESGQoVT1VUQ09NRV9JTl9CQUNLR1JPVU5EEAISEgoOT1VUQ09NRV9GQUlMRUQQAyJ6CgZBY3Rpb24SFgoSQUNUSU9OX1VOU1BFQ0lGSUVEEAASEgoOQUNUSU9OX0NSRUFURUQQARIVChFBQ1RJT05fVVNFRF9FTVBUWRACEhEKDUFDVElPTl9DTE9ORUQQAxIaChZBQ1RJT05fVVNFRF9SRVBPU0lUT1JZEAQiJgoWUmVtb3ZlV29ya3NwYWNlUmVxdWVzdBIMCgRwYXRoGAEgASgJIoECChVSZW1vdmVXb3Jrc3BhY2VSZXN1bHQSOQoHb3V0Y29tZRgBIAEoDjIoLmNpcmN1cy52MS5SZW1vdmVXb3Jrc3BhY2VSZXN1bHQuT3V0Y29tZRIMCgRwYXRoGAIgASgJEigKBWVycm9yGAMgASgOMhkuY2lyY3VzLnYxLldvcmtzcGFjZUVycm9yEhQKDGVycm9yX2RldGFpbBgEIAEoCSJfCgdPdXRjb21lEhcKE09VVENPTUVfVU5TUEVDSUZJRUQQABITCg9PVVRDT01FX1JFTU9WRUQQARISCg5PVVRDT01FX0FCU0VOVBACEhIKDk9VVENPTUVfRkFJTEVEEAMiLQoMU25hcHNob3RGaWxlEgwKBHBhdGgYASABKAkSDwoHY29udGVudBgCIAEoCSKvAQoUUHJlcGFyZUxlZGdlclJlcXVlc3QSEwoLc25hcHNob3RfaWQYASABKAkSEwoLYmFzZV9jb21taXQYAiABKAkSEwoLY2h1bmtfaW5kZXgYAyABKA0SJgoFZmlsZXMYBCADKAsyFy5jaXJjdXMudjEuU25hcHNob3RGaWxlEgwKBGxhc3QYBSABKAgSEwoLdG90YWxfZmlsZXMYBiABKA0SDQoFcmVzZXQYByABKAgiiAIKE1ByZXBhcmVMZWRnZXJSZXN1bHQSNwoHb3V0Y29tZRgBIAEoDjImLmNpcmN1cy52MS5QcmVwYXJlTGVkZ2VyUmVzdWx0Lk91dGNvbWUSDAoEcGF0aBgCIAEoCRItCgVlcnJvchgDIAEoDjIeLmNpcmN1cy52MS5MZWRnZXJTbmFwc2hvdEVycm9yEhQKDGVycm9yX2RldGFpbBgEIAEoCSJlCgdPdXRjb21lEhcKE09VVENPTUVfVU5TUEVDSUZJRUQQABIaChZPVVRDT01FX0NIVU5LX0FDQ0VQVEVEEAESEQoNT1VUQ09NRV9SRUFEWRACEhIKDk9VVENPTUVfRkFJTEVEEAMiswEKFENvbGxlY3RMZWRnZXJSZXF1ZXN0EhMKC3NuYXBzaG90X2lkGAEgASgJEjoKBWtub3duGAIgAygLMisuY2lyY3VzLnYxLkNvbGxlY3RMZWRnZXJSZXF1ZXN0Lktub3duQ2hhbmdlGkoKC0tub3duQ2hhbmdlEgwKBHBhdGgYASABKAkSEAoGc2hhMjU2GAIgASgJSAASEQoHZGVsZXRlZBgDIAEoCEgAQggKBmNoYW5nZSK3BAoTQ29sbGVjdExlZGdlclJlc3VsdBI3CgdvdXRjb21lGAEgASgOMiYuY2lyY3VzLnYxLkNvbGxlY3RMZWRnZXJSZXN1bHQuT3V0Y29tZRI2CgdjaGFuZ2VzGAIgAygLMiUuY2lyY3VzLnYxLkNvbGxlY3RMZWRnZXJSZXN1bHQuQ2hhbmdlEhAKCHJldmVydGVkGAMgAygJEjgKCHByb2JsZW1zGAQgAygLMiYuY2lyY3VzLnYxLkNvbGxlY3RMZWRnZXJSZXN1bHQuUHJvYmxlbRIRCgl0b29fbGFyZ2UYBSABKAgSLQoFZXJyb3IYBiABKA4yHi5jaXJjdXMudjEuTGVkZ2VyU25hcHNob3RFcnJvchIUCgxlcnJvcl9kZXRhaWwYByABKAkSGwoTY3VycmVudF9iYXNlX2NvbW1pdBgIIAEoCRp1CgZDaGFuZ2USDAoEcGF0aBgBIAEoCRIRCgdjb250ZW50GAIgASgJSAASEQoHZGVsZXRlZBgDIAEoCEgAEg8KBWtub3duGAQgASgISAASDgoGc2hhMjU2GAUgASgJEgwKBHNpemUYBiABKARCCAoGY2hhbmdlGigKB1Byb2JsZW0SDAoEcGF0aBgBIAEoCRIPCgdtZXNzYWdlGAIgASgJIk0KB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhUKEU9VVENPTUVfQ09MTEVDVEVEEAESEgoOT1VUQ09NRV9GQUlMRUQQAiKOAgoTUmViYXNlTGVkZ2VyUmVxdWVzdBITCgtzbmFwc2hvdF9pZBgBIAEoCRITCgtiYXNlX2NvbW1pdBgCIAEoCRIyCgVlZGl0cxgDIAMoCzIjLmNpcmN1cy52MS5SZWJhc2VMZWRnZXJSZXF1ZXN0LkVkaXQSOgoFa25vd24YBCADKAsyKy5jaXJjdXMudjEuQ29sbGVjdExlZGdlclJlcXVlc3QuS25vd25DaGFuZ2UaXQoERWRpdBIMCgRwYXRoGAEgASgJEhcKD2V4cGVjdGVkX3NoYTI1NhgCIAEoCRIRCgdjb250ZW50GAMgASgJSAASEQoHZGVsZXRlZBgEIAEoCEgAQggKBmNoYW5nZSL7AQoSUmViYXNlTGVkZ2VyUmVzdWx0EjYKB291dGNvbWUYASABKA4yJS5jaXJjdXMudjEuUmViYXNlTGVkZ2VyUmVzdWx0Lk91dGNvbWUSLQoFZXJyb3IYAiABKA4yHi5jaXJjdXMudjEuTGVkZ2VyU25hcHNob3RFcnJvchIUCgxlcnJvcl9kZXRhaWwYAyABKAkSGwoTY3VycmVudF9iYXNlX2NvbW1pdBgEIAEoCSJLCgdPdXRjb21lEhcKE09VVENPTUVfVU5TUEVDSUZJRUQQABITCg9PVVRDT01FX1JFQkFTRUQQARISCg5PVVRDT01FX0ZBSUxFRBACIioKE1JlbW92ZUxlZGdlclJlcXVlc3QSEwoLc25hcHNob3RfaWQYASABKAki8gEKElJlbW92ZUxlZGdlclJlc3VsdBI2CgdvdXRjb21lGAEgASgOMiUuY2lyY3VzLnYxLlJlbW92ZUxlZGdlclJlc3VsdC5PdXRjb21lEi0KBWVycm9yGAIgASgOMh4uY2lyY3VzLnYxLkxlZGdlclNuYXBzaG90RXJyb3ISFAoMZXJyb3JfZGV0YWlsGAMgASgJIl8KB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhMKD09VVENPTUVfUkVNT1ZFRBABEhIKDk9VVENPTUVfQUJTRU5UEAISEgoOT1VUQ09NRV9GQUlMRUQQAyqBBQoOV29ya3NwYWNlRXJyb3ISHwobV09SS1NQQUNFX0VSUk9SX1VOU1BFQ0lGSUVEEAASIwofV09SS1NQQUNFX0VSUk9SX0lOVkFMSURfUkVRVUVTVBABEiAKHFdPUktTUEFDRV9FUlJPUl9IT01FX1VOS05PV04QAhIiCh5XT1JLU1BBQ0VfRVJST1JfVU5TVVBQT1JURURfT1MQAxIhCh1XT1JLU1BBQ0VfRVJST1JfUEFUSF9DT05GTElDVBAEEh0KGVdPUktTUEFDRV9FUlJPUl9OT1RfRU1QVFkQBRIjCh9XT1JLU1BBQ0VfRVJST1JfUkVNT1RFX01JU01BVENIEAYSIwofV09SS1NQQUNFX0VSUk9SX0dJVF9VTkFWQUlMQUJMRRAHEiAKHFdPUktTUEFDRV9FUlJPUl9DTE9ORV9GQUlMRUQQCBIcChhXT1JLU1BBQ0VfRVJST1JfTk9fU1BBQ0UQCRIlCiFXT1JLU1BBQ0VfRVJST1JfUEVSTUlTU0lPTl9ERU5JRUQQChIbChdXT1JLU1BBQ0VfRVJST1JfVElNRU9VVBALEhgKFFdPUktTUEFDRV9FUlJPUl9CVVNZEAwSHQoZV09SS1NQQUNFX0VSUk9SX0NBTkNFTExFRBANEhYKEldPUktTUEFDRV9FUlJPUl9JTxAOEhsKF1dPUktTUEFDRV9FUlJPUl9SRUZVU0VEEA8SIgoeV09SS1NQQUNFX0VSUk9SX0RFVklDRV9SRVZPS0VEEGQSHwobV09SS1NQQUNFX0VSUk9SX0lOVEVSUlVQVEVEEGUSIAocV09SS1NQQUNFX0VSUk9SX0RBRU1PTl9GQVVMVBBmKtwDChNMZWRnZXJTbmFwc2hvdEVycm9yEiUKIUxFREdFUl9TTkFQU0hPVF9FUlJPUl9VTlNQRUNJRklFRBAAEikKJUxFREdFUl9TTkFQU0hPVF9FUlJPUl9JTlZBTElEX1JFUVVFU1QQARIrCidMRURHRVJfU05BUFNIT1RfRVJST1JfU1RBVEVfRElSX1VOS05PV04QAhIoCiRMRURHRVJfU05BUFNIT1RfRVJST1JfVU5TVVBQT1JURURfT1MQAxInCiNMRURHRVJfU05BUFNIT1RfRVJST1JfUEFUSF9DT05GTElDVBAEEisKJ0xFREdFUl9TTkFQU0hPVF9FUlJPUl9QRVJNSVNTSU9OX0RFTklFRBAFEiIKHkxFREdFUl9TTkFQU0hPVF9FUlJPUl9OT19TUEFDRRAGEiAKHExFREdFUl9TTkFQU0hPVF9FUlJPUl9BQlNFTlQQBxIfChtMRURHRVJfU05BUFNIT1RfRVJST1JfU1RBTEUQCBIeChpMRURHRVJfU05BUFNIT1RfRVJST1JfQlVTWRAJEhwKGExFREdFUl9TTkFQU0hPVF9FUlJPUl9JTxAKEiEKHUxFREdFUl9TTkFQU0hPVF9FUlJPUl9USU1FT1VUEGVCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM");
 
 /**
  * DeviceCall is one tool invocation from the worker to a device daemon.
@@ -121,6 +121,32 @@ export type DeviceCall = Message<"circus.v1.DeviceCall"> & {
      */
     value: RemoveWorkspaceRequest;
     case: "removeWorkspace";
+  } | {
+    /**
+     * Session ledger snapshot calls (control plane only).
+     *
+     * @generated from field: circus.v1.PrepareLedgerRequest prepare_ledger = 17;
+     */
+    value: PrepareLedgerRequest;
+    case: "prepareLedger";
+  } | {
+    /**
+     * @generated from field: circus.v1.CollectLedgerRequest collect_ledger = 18;
+     */
+    value: CollectLedgerRequest;
+    case: "collectLedger";
+  } | {
+    /**
+     * @generated from field: circus.v1.RebaseLedgerRequest rebase_ledger = 19;
+     */
+    value: RebaseLedgerRequest;
+    case: "rebaseLedger";
+  } | {
+    /**
+     * @generated from field: circus.v1.RemoveLedgerRequest remove_ledger = 20;
+     */
+    value: RemoveLedgerRequest;
+    case: "removeLedger";
   } | { case: undefined; value?: undefined };
 };
 
@@ -220,6 +246,32 @@ export type DeviceResult = Message<"circus.v1.DeviceResult"> & {
      */
     value: RemoveWorkspaceResult;
     case: "removeWorkspace";
+  } | {
+    /**
+     * Session ledger snapshot outcomes.
+     *
+     * @generated from field: circus.v1.PrepareLedgerResult prepare_ledger = 17;
+     */
+    value: PrepareLedgerResult;
+    case: "prepareLedger";
+  } | {
+    /**
+     * @generated from field: circus.v1.CollectLedgerResult collect_ledger = 18;
+     */
+    value: CollectLedgerResult;
+    case: "collectLedger";
+  } | {
+    /**
+     * @generated from field: circus.v1.RebaseLedgerResult rebase_ledger = 19;
+     */
+    value: RebaseLedgerResult;
+    case: "rebaseLedger";
+  } | {
+    /**
+     * @generated from field: circus.v1.RemoveLedgerResult remove_ledger = 20;
+     */
+    value: RemoveLedgerResult;
+    case: "removeLedger";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1387,6 +1439,659 @@ export const RemoveWorkspaceResult_OutcomeSchema: GenEnum<RemoveWorkspaceResult_
   enumDesc(file_circus_v1_device, 23, 0);
 
 /**
+ * SnapshotFile is a file sent to or from a snapshot.
+ *
+ * @generated from message circus.v1.SnapshotFile
+ */
+export type SnapshotFile = Message<"circus.v1.SnapshotFile"> & {
+  /**
+   * Relative, '/'-separated, no "." or ".." segments, at most 4096 bytes.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * Complete content, valid UTF-8, at most 256 KiB.
+   *
+   * @generated from field: string content = 2;
+   */
+  content: string;
+};
+
+/**
+ * Describes the message circus.v1.SnapshotFile.
+ * Use `create(SnapshotFileSchema)` to create a new message.
+ */
+export const SnapshotFileSchema: GenMessage<SnapshotFile> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 24);
+
+/**
+ * PrepareLedgerRequest writes a snapshot from a base commit's files, sent
+ * in chunks of at most 8 MiB of content and 4096 files. Chunks go into a hidden staging
+ * directory beside the snapshot, in order from 0 (a repeated chunk is
+ * accepted again; any other index restarts nothing and is
+ * INVALID_REQUEST); the last chunk checks total_files, writes the manifest
+ * and renames the staging directory onto the snapshot, replacing an
+ * existing one only with reset. Idempotent: when the snapshot exists with
+ * the same base_commit and reset is false, it reports READY at once.
+ * Staging left for an hour is removed.
+ *
+ * @generated from message circus.v1.PrepareLedgerRequest
+ */
+export type PrepareLedgerRequest = Message<"circus.v1.PrepareLedgerRequest"> & {
+  /**
+   * @generated from field: string snapshot_id = 1;
+   */
+  snapshotId: string;
+
+  /**
+   * Full hex commit the files come from; recorded in the manifest.
+   *
+   * @generated from field: string base_commit = 2;
+   */
+  baseCommit: string;
+
+  /**
+   * @generated from field: uint32 chunk_index = 3;
+   */
+  chunkIndex: number;
+
+  /**
+   * @generated from field: repeated circus.v1.SnapshotFile files = 4;
+   */
+  files: SnapshotFile[];
+
+  /**
+   * This is the last chunk.
+   *
+   * @generated from field: bool last = 5;
+   */
+  last: boolean;
+
+  /**
+   * Last chunk only: the number of files over all chunks.
+   *
+   * @generated from field: uint32 total_files = 6;
+   */
+  totalFiles: number;
+
+  /**
+   * Replace an existing snapshot (after its changeset was discarded): its
+   * changes are lost.
+   *
+   * @generated from field: bool reset = 7;
+   */
+  reset: boolean;
+};
+
+/**
+ * Describes the message circus.v1.PrepareLedgerRequest.
+ * Use `create(PrepareLedgerRequestSchema)` to create a new message.
+ */
+export const PrepareLedgerRequestSchema: GenMessage<PrepareLedgerRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 25);
+
+/**
+ * @generated from message circus.v1.PrepareLedgerResult
+ */
+export type PrepareLedgerResult = Message<"circus.v1.PrepareLedgerResult"> & {
+  /**
+   * @generated from field: circus.v1.PrepareLedgerResult.Outcome outcome = 1;
+   */
+  outcome: PrepareLedgerResult_Outcome;
+
+  /**
+   * Absolute, lexically clean path of the snapshot; READY only.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * FAILED only.
+   *
+   * @generated from field: circus.v1.LedgerSnapshotError error = 3;
+   */
+  error: LedgerSnapshotError;
+
+  /**
+   * FAILED only: at most 1024 bytes of valid UTF-8.
+   *
+   * @generated from field: string error_detail = 4;
+   */
+  errorDetail: string;
+};
+
+/**
+ * Describes the message circus.v1.PrepareLedgerResult.
+ * Use `create(PrepareLedgerResultSchema)` to create a new message.
+ */
+export const PrepareLedgerResultSchema: GenMessage<PrepareLedgerResult> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 26);
+
+/**
+ * @generated from enum circus.v1.PrepareLedgerResult.Outcome
+ */
+export enum PrepareLedgerResult_Outcome {
+  /**
+   * @generated from enum value: OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A chunk other than the last was staged.
+   *
+   * @generated from enum value: OUTCOME_CHUNK_ACCEPTED = 1;
+   */
+  CHUNK_ACCEPTED = 1,
+
+  /**
+   * The snapshot is at path.
+   *
+   * @generated from enum value: OUTCOME_READY = 2;
+   */
+  READY = 2,
+
+  /**
+   * @generated from enum value: OUTCOME_FAILED = 3;
+   */
+  FAILED = 3,
+}
+
+/**
+ * Describes the enum circus.v1.PrepareLedgerResult.Outcome.
+ */
+export const PrepareLedgerResult_OutcomeSchema: GenEnum<PrepareLedgerResult_Outcome> = /*@__PURE__*/
+  enumDesc(file_circus_v1_device, 26, 0);
+
+/**
+ * CollectLedgerRequest compares a snapshot with its manifest. The daemon
+ * keeps no record of earlier collections: known is what the control plane
+ * already holds, and the result sends contents only where they differ.
+ *
+ * @generated from message circus.v1.CollectLedgerRequest
+ */
+export type CollectLedgerRequest = Message<"circus.v1.CollectLedgerRequest"> & {
+  /**
+   * @generated from field: string snapshot_id = 1;
+   */
+  snapshotId: string;
+
+  /**
+   * The changes the control plane holds for the snapshot relative to its
+   * base, at most 4096.
+   *
+   * @generated from field: repeated circus.v1.CollectLedgerRequest.KnownChange known = 2;
+   */
+  known: CollectLedgerRequest_KnownChange[];
+};
+
+/**
+ * Describes the message circus.v1.CollectLedgerRequest.
+ * Use `create(CollectLedgerRequestSchema)` to create a new message.
+ */
+export const CollectLedgerRequestSchema: GenMessage<CollectLedgerRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 27);
+
+/**
+ * @generated from message circus.v1.CollectLedgerRequest.KnownChange
+ */
+export type CollectLedgerRequest_KnownChange = Message<"circus.v1.CollectLedgerRequest.KnownChange"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from oneof circus.v1.CollectLedgerRequest.KnownChange.change
+   */
+  change: {
+    /**
+     * Lowercase hex SHA-256 of the content it holds.
+     *
+     * @generated from field: string sha256 = 2;
+     */
+    value: string;
+    case: "sha256";
+  } | {
+    /**
+     * @generated from field: bool deleted = 3;
+     */
+    value: boolean;
+    case: "deleted";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message circus.v1.CollectLedgerRequest.KnownChange.
+ * Use `create(CollectLedgerRequest_KnownChangeSchema)` to create a new message.
+ */
+export const CollectLedgerRequest_KnownChangeSchema: GenMessage<CollectLedgerRequest_KnownChange> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 27, 0);
+
+/**
+ * @generated from message circus.v1.CollectLedgerResult
+ */
+export type CollectLedgerResult = Message<"circus.v1.CollectLedgerResult"> & {
+  /**
+   * @generated from field: circus.v1.CollectLedgerResult.Outcome outcome = 1;
+   */
+  outcome: CollectLedgerResult_Outcome;
+
+  /**
+   * COLLECTED: the complete set of changes relative to the base, in path
+   * order, at most 4096. A change equal to its known entry comes without
+   * content. More changed files are a problem of the whole snapshot, with
+   * too_large set and no changes.
+   *
+   * @generated from field: repeated circus.v1.CollectLedgerResult.Change changes = 2;
+   */
+  changes: CollectLedgerResult_Change[];
+
+  /**
+   * Known paths that are no longer changed (back to their base content),
+   * at most 4096.
+   *
+   * @generated from field: repeated string reverted = 3;
+   */
+  reverted: string[];
+
+  /**
+   * What the daemon could not collect: non-regular files, files over
+   * 256 KiB, invalid UTF-8, more than 8192 entries. At most 1024.
+   *
+   * @generated from field: repeated circus.v1.CollectLedgerResult.Problem problems = 4;
+   */
+  problems: CollectLedgerResult_Problem[];
+
+  /**
+   * The changed content exceeds 8 MiB: changes carry paths and sizes but
+   * no content, and nothing of this collection is used.
+   *
+   * @generated from field: bool too_large = 5;
+   */
+  tooLarge: boolean;
+
+  /**
+   * FAILED only.
+   *
+   * @generated from field: circus.v1.LedgerSnapshotError error = 6;
+   */
+  error: LedgerSnapshotError;
+
+  /**
+   * @generated from field: string error_detail = 7;
+   */
+  errorDetail: string;
+
+  /**
+   * The base commit the snapshot's manifest records, on every outcome
+   * where a manifest exists: the base the changes are relative to.
+   *
+   * @generated from field: string current_base_commit = 8;
+   */
+  currentBaseCommit: string;
+};
+
+/**
+ * Describes the message circus.v1.CollectLedgerResult.
+ * Use `create(CollectLedgerResultSchema)` to create a new message.
+ */
+export const CollectLedgerResultSchema: GenMessage<CollectLedgerResult> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 28);
+
+/**
+ * @generated from message circus.v1.CollectLedgerResult.Change
+ */
+export type CollectLedgerResult_Change = Message<"circus.v1.CollectLedgerResult.Change"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from oneof circus.v1.CollectLedgerResult.Change.change
+   */
+  change: {
+    /**
+     * New or changed: its content, unless equal to the known entry.
+     *
+     * @generated from field: string content = 2;
+     */
+    value: string;
+    case: "content";
+  } | {
+    /**
+     * @generated from field: bool deleted = 3;
+     */
+    value: boolean;
+    case: "deleted";
+  } | {
+    /**
+     * Equal to the known entry (or too_large): content left out.
+     *
+     * @generated from field: bool known = 4;
+     */
+    value: boolean;
+    case: "known";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * Lowercase hex SHA-256 and size of the current content; unset when
+   * deleted.
+   *
+   * @generated from field: string sha256 = 5;
+   */
+  sha256: string;
+
+  /**
+   * @generated from field: uint64 size = 6;
+   */
+  size: bigint;
+};
+
+/**
+ * Describes the message circus.v1.CollectLedgerResult.Change.
+ * Use `create(CollectLedgerResult_ChangeSchema)` to create a new message.
+ */
+export const CollectLedgerResult_ChangeSchema: GenMessage<CollectLedgerResult_Change> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 28, 0);
+
+/**
+ * @generated from message circus.v1.CollectLedgerResult.Problem
+ */
+export type CollectLedgerResult_Problem = Message<"circus.v1.CollectLedgerResult.Problem"> & {
+  /**
+   * Empty for a problem of the whole snapshot (too many entries).
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * English, at most 1024 bytes.
+   *
+   * @generated from field: string message = 2;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message circus.v1.CollectLedgerResult.Problem.
+ * Use `create(CollectLedgerResult_ProblemSchema)` to create a new message.
+ */
+export const CollectLedgerResult_ProblemSchema: GenMessage<CollectLedgerResult_Problem> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 28, 1);
+
+/**
+ * @generated from enum circus.v1.CollectLedgerResult.Outcome
+ */
+export enum CollectLedgerResult_Outcome {
+  /**
+   * @generated from enum value: OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: OUTCOME_COLLECTED = 1;
+   */
+  COLLECTED = 1,
+
+  /**
+   * @generated from enum value: OUTCOME_FAILED = 2;
+   */
+  FAILED = 2,
+}
+
+/**
+ * Describes the enum circus.v1.CollectLedgerResult.Outcome.
+ */
+export const CollectLedgerResult_OutcomeSchema: GenEnum<CollectLedgerResult_Outcome> = /*@__PURE__*/
+  enumDesc(file_circus_v1_device, 28, 0);
+
+/**
+ * RebaseLedgerRequest applies edits to a snapshot and then makes its whole
+ * current content the new base (manifest rewritten with base_commit). The
+ * control plane sends it after merging the snapshot's changeset, to rename
+ * new decisions ("D?a-x.md" to "D92-x.md") and rewrite their temporary
+ * references, so the snapshot equals the merged view.
+ *
+ * Before changing anything the daemon compares the snapshot with its
+ * manifest and requires the result to be exactly known, path by path,
+ * except that a path of an edit may already hold the edit's target (its
+ * content, or nothing for a deletion), so a rebase interrupted after some
+ * edits finishes when sent again. Every edit must find expected_sha256 or
+ * its target. Anything else, including any problem a collection would
+ * report (a non-regular file, a file over 256 KiB, ...), is STALE and
+ * changes nothing: the agent changed the snapshot after the collection the
+ * merge used, and the control plane collects again. After applying the
+ * edits the daemon requires the rebuilt base to be exactly the merged view
+ * (the base, then known, then the edits) before writing the manifest; a
+ * file the agent wrote meanwhile makes it STALE with the edits applied and
+ * the old base kept, which the next collection reports.
+ *
+ * @generated from message circus.v1.RebaseLedgerRequest
+ */
+export type RebaseLedgerRequest = Message<"circus.v1.RebaseLedgerRequest"> & {
+  /**
+   * @generated from field: string snapshot_id = 1;
+   */
+  snapshotId: string;
+
+  /**
+   * @generated from field: string base_commit = 2;
+   */
+  baseCommit: string;
+
+  /**
+   * At most 4096, at most 8 MiB of content.
+   *
+   * @generated from field: repeated circus.v1.RebaseLedgerRequest.Edit edits = 3;
+   */
+  edits: RebaseLedgerRequest_Edit[];
+
+  /**
+   * The complete set of changes relative to the current base that the
+   * control plane collected and merged, at most 4096.
+   *
+   * @generated from field: repeated circus.v1.CollectLedgerRequest.KnownChange known = 4;
+   */
+  known: CollectLedgerRequest_KnownChange[];
+};
+
+/**
+ * Describes the message circus.v1.RebaseLedgerRequest.
+ * Use `create(RebaseLedgerRequestSchema)` to create a new message.
+ */
+export const RebaseLedgerRequestSchema: GenMessage<RebaseLedgerRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 29);
+
+/**
+ * @generated from message circus.v1.RebaseLedgerRequest.Edit
+ */
+export type RebaseLedgerRequest_Edit = Message<"circus.v1.RebaseLedgerRequest.Edit"> & {
+  /**
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * Lowercase hex SHA-256 the file must have now; empty: it must not
+   * exist.
+   *
+   * @generated from field: string expected_sha256 = 2;
+   */
+  expectedSha256: string;
+
+  /**
+   * @generated from oneof circus.v1.RebaseLedgerRequest.Edit.change
+   */
+  change: {
+    /**
+     * @generated from field: string content = 3;
+     */
+    value: string;
+    case: "content";
+  } | {
+    /**
+     * @generated from field: bool deleted = 4;
+     */
+    value: boolean;
+    case: "deleted";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message circus.v1.RebaseLedgerRequest.Edit.
+ * Use `create(RebaseLedgerRequest_EditSchema)` to create a new message.
+ */
+export const RebaseLedgerRequest_EditSchema: GenMessage<RebaseLedgerRequest_Edit> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 29, 0);
+
+/**
+ * @generated from message circus.v1.RebaseLedgerResult
+ */
+export type RebaseLedgerResult = Message<"circus.v1.RebaseLedgerResult"> & {
+  /**
+   * @generated from field: circus.v1.RebaseLedgerResult.Outcome outcome = 1;
+   */
+  outcome: RebaseLedgerResult_Outcome;
+
+  /**
+   * @generated from field: circus.v1.LedgerSnapshotError error = 2;
+   */
+  error: LedgerSnapshotError;
+
+  /**
+   * @generated from field: string error_detail = 3;
+   */
+  errorDetail: string;
+
+  /**
+   * The base commit the snapshot's manifest records once the call ends,
+   * on every outcome where a manifest exists: the request's base_commit
+   * when REBASED, and when a STALE rebase finds the snapshot on it already
+   * (an earlier attempt's answer was lost); the base it kept otherwise.
+   *
+   * @generated from field: string current_base_commit = 4;
+   */
+  currentBaseCommit: string;
+};
+
+/**
+ * Describes the message circus.v1.RebaseLedgerResult.
+ * Use `create(RebaseLedgerResultSchema)` to create a new message.
+ */
+export const RebaseLedgerResultSchema: GenMessage<RebaseLedgerResult> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 30);
+
+/**
+ * @generated from enum circus.v1.RebaseLedgerResult.Outcome
+ */
+export enum RebaseLedgerResult_Outcome {
+  /**
+   * @generated from enum value: OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: OUTCOME_REBASED = 1;
+   */
+  REBASED = 1,
+
+  /**
+   * @generated from enum value: OUTCOME_FAILED = 2;
+   */
+  FAILED = 2,
+}
+
+/**
+ * Describes the enum circus.v1.RebaseLedgerResult.Outcome.
+ */
+export const RebaseLedgerResult_OutcomeSchema: GenEnum<RebaseLedgerResult_Outcome> = /*@__PURE__*/
+  enumDesc(file_circus_v1_device, 30, 0);
+
+/**
+ * RemoveLedgerRequest deletes a snapshot, its manifest and any staging of
+ * it, when its session is deleted. It refuses anything but a real
+ * directory directly under "<state>/circus/ledger/".
+ *
+ * @generated from message circus.v1.RemoveLedgerRequest
+ */
+export type RemoveLedgerRequest = Message<"circus.v1.RemoveLedgerRequest"> & {
+  /**
+   * @generated from field: string snapshot_id = 1;
+   */
+  snapshotId: string;
+};
+
+/**
+ * Describes the message circus.v1.RemoveLedgerRequest.
+ * Use `create(RemoveLedgerRequestSchema)` to create a new message.
+ */
+export const RemoveLedgerRequestSchema: GenMessage<RemoveLedgerRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 31);
+
+/**
+ * @generated from message circus.v1.RemoveLedgerResult
+ */
+export type RemoveLedgerResult = Message<"circus.v1.RemoveLedgerResult"> & {
+  /**
+   * @generated from field: circus.v1.RemoveLedgerResult.Outcome outcome = 1;
+   */
+  outcome: RemoveLedgerResult_Outcome;
+
+  /**
+   * @generated from field: circus.v1.LedgerSnapshotError error = 2;
+   */
+  error: LedgerSnapshotError;
+
+  /**
+   * @generated from field: string error_detail = 3;
+   */
+  errorDetail: string;
+};
+
+/**
+ * Describes the message circus.v1.RemoveLedgerResult.
+ * Use `create(RemoveLedgerResultSchema)` to create a new message.
+ */
+export const RemoveLedgerResultSchema: GenMessage<RemoveLedgerResult> = /*@__PURE__*/
+  messageDesc(file_circus_v1_device, 32);
+
+/**
+ * @generated from enum circus.v1.RemoveLedgerResult.Outcome
+ */
+export enum RemoveLedgerResult_Outcome {
+  /**
+   * @generated from enum value: OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: OUTCOME_REMOVED = 1;
+   */
+  REMOVED = 1,
+
+  /**
+   * @generated from enum value: OUTCOME_ABSENT = 2;
+   */
+  ABSENT = 2,
+
+  /**
+   * @generated from enum value: OUTCOME_FAILED = 3;
+   */
+  FAILED = 3,
+}
+
+/**
+ * Describes the enum circus.v1.RemoveLedgerResult.Outcome.
+ */
+export const RemoveLedgerResult_OutcomeSchema: GenEnum<RemoveLedgerResult_Outcome> = /*@__PURE__*/
+  enumDesc(file_circus_v1_device, 32, 0);
+
+/**
  * WorkspaceError classifies workspace failures. Daemons send values up to
  * 99; the control plane also sets one of them when it reaches the same
  * conclusion itself (e.g. TIMEOUT when a background clone outlived its
@@ -1537,4 +2242,99 @@ export enum WorkspaceError {
  */
 export const WorkspaceErrorSchema: GenEnum<WorkspaceError> = /*@__PURE__*/
   enumDesc(file_circus_v1_device, 0);
+
+/**
+ * LedgerSnapshotError classifies ledger snapshot failures on a device.
+ * Daemons send values up to 99; values from 100 are set by the control
+ * plane only.
+ *
+ * @generated from enum circus.v1.LedgerSnapshotError
+ */
+export enum LedgerSnapshotError {
+  /**
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Bad snapshot id, chunk order, path or content.
+   *
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_INVALID_REQUEST = 1;
+   */
+  INVALID_REQUEST = 1,
+
+  /**
+   * The daemon's state directory cannot be resolved.
+   *
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_STATE_DIR_UNKNOWN = 2;
+   */
+  STATE_DIR_UNKNOWN = 2,
+
+  /**
+   * The device's OS is not supported (Windows).
+   *
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_UNSUPPORTED_OS = 3;
+   */
+  UNSUPPORTED_OS = 3,
+
+  /**
+   * Something that is not a directory (or is a symlink) is in the way.
+   *
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_PATH_CONFLICT = 4;
+   */
+  PATH_CONFLICT = 4,
+
+  /**
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_PERMISSION_DENIED = 5;
+   */
+  PERMISSION_DENIED = 5,
+
+  /**
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_NO_SPACE = 6;
+   */
+  NO_SPACE = 6,
+
+  /**
+   * No snapshot (or no manifest) exists for the id.
+   *
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_ABSENT = 7;
+   */
+  ABSENT = 7,
+
+  /**
+   * rebase_ledger: the snapshot holds a change the control plane has not
+   * collected (or a file to change differs from what it expected). The
+   * base is kept, so the change is not lost; collect again. Usually
+   * nothing was changed; when the change appeared while the edits were
+   * applied, the edits stay applied and show up in that collection.
+   *
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_STALE = 8;
+   */
+  STALE = 8,
+
+  /**
+   * Another call on the same snapshot holds its lock.
+   *
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_BUSY = 9;
+   */
+  BUSY = 9,
+
+  /**
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_IO = 10;
+   */
+  IO = 10,
+
+  /**
+   * The device did not answer within the call's deadline.
+   *
+   * @generated from enum value: LEDGER_SNAPSHOT_ERROR_TIMEOUT = 101;
+   */
+  TIMEOUT = 101,
+}
+
+/**
+ * Describes the enum circus.v1.LedgerSnapshotError.
+ */
+export const LedgerSnapshotErrorSchema: GenEnum<LedgerSnapshotError> = /*@__PURE__*/
+  enumDesc(file_circus_v1_device, 1);
 

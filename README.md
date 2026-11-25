@@ -216,7 +216,9 @@ The CLI keeps its local files in the XDG directories: credentials in
 directory instead (`$CIRCUS_HOME/config`, `$CIRCUS_HOME/state`,
 `$CIRCUS_HOME/cache`; a relative value is relative to the working
 directory). It changes only circus's own paths, so tools the daemon runs
-still see the usual XDG defaults.
+still see the usual XDG defaults. The daemon keeps sessions' ledger
+snapshots in the state directory too, at `ledger/<session>/` (docs/wire.md,
+"Session ledger snapshots").
 
 `task cli -- <args>` runs the CLI from source with `CIRCUS_HOME=.tmp/dev`,
 next to an installed circus without sharing its credentials:
@@ -379,11 +381,11 @@ The daemon-link pools are not the whole process budget. At the default
 | Call router | 512 MiB | pending requests 256 MiB plus distinct buffered updates 256 MiB (one global charge per shared immutable clone) |
 | Session service (worker-link side) | about 1,093 MiB | 2 read replies built at once, each ≤ 2·M = 128 MiB, so ≤ 256 MiB together; per worker socket one inline operation's converted request (≤ M) plus its queue of inline replies (≤ 16 MiB encoded, about 32 MiB decoded): 8 × 96 MiB = 768 MiB; session table, Wake queue, provider scan, stale-read and fallback ids, hint queues and extension keys ≤ about 20 MiB; log record batches held at once: (8 + 1) × 5.4 MiB = 49 MiB; see `internal/controlplane/sessions/doc.go` |
 | Session watch streams | about 888 MiB | 256 streams × about 3.47 MiB each: the bus queue and the batch being delivered (2 × 272 KiB), one replay page (about 294 KiB), the stored event being converted (256 KiB, plus 512 KiB when its UTF-8 must be repaired) and its JSON encoding (up to 1.5 MiB, in a pooled buffer of up to about 1.9 MiB; SessionService does not compress responses); see `internal/controlplane/sessions/bus.go` |
-| Ledger | about 813 MiB | `LedgerService`: 4 requests of about 45 MiB = 180 MiB; `LedgerChangesetService`: 3 checks, merges or conflict reads of up to about 199 MiB each plus one base page of about 36 MiB = 633 MiB; see the Ledger section below |
+| Ledger | about 1,291 MiB | `LedgerService`: 4 requests, of which at most 2 read a session's ledger (about 95 MiB each) and the others about 45 MiB = 280 MiB; the 3 ledger write slots (checks, merges and conflict reads, sessions' collections and rebases included) of up to about 199 MiB each plus 4 lighter changeset requests of up to about 36 MiB = 741 MiB; session snapshot operations, 4 at once, each holding up to about 67 MiB of device results and requests = 268 MiB; snapshot queues under 2 MiB; see the Ledger section below |
 
-That is about 7.0 GiB (4,355 MiB for the links and the router, 1,093 MiB
-for the session service, 888 MiB for watch streams, 813 MiB for the
-ledger: 7,149 MiB) before SQLite, TLS/kernel buffers, bounded operation scratch, the
+That is about 7.4 GiB (4,355 MiB for the links and the router, 1,093 MiB
+for the session service, 888 MiB for watch streams, 1,291 MiB for the
+ledger: 7,627 MiB) before SQLite, TLS/kernel buffers, bounded operation scratch, the
 runtime and GC headroom; set `GOMEMLIMIT` above it, for example
 `GOMEMLIMIT=8GiB` with at least 9 GiB of memory for the process. The daemon connection limit (100 sockets)
 is fixed; worker sockets default to 8 (`worker_connections`, at most 4 per
@@ -484,13 +486,19 @@ circus ledger open <project>             # prints the changeset id and its direc
 circus ledger check <changeset>          # problems, fast-forward, conflicts
 circus ledger merge <changeset> [--commit <sha>] [--resolved <dir>]
 circus ledger discard <changeset> --reason <text>
-circus ledger list <project> [--state open|merged|discarded]
+circus ledger list <project> [--state open|merged|discarded] [--session <id>]
 ```
 
 `open` writes the main line's files to
 `$XDG_STATE_HOME/circus/ledger/cli/<changeset>/` (under
 `$CIRCUS_HOME/state` when that is set), or `--dir`, and a manifest of their
-hashes beside it, so `check` and `merge` find the changes by the id alone.
+sizes, modification times, inodes and hashes beside it
+(`<changeset>.manifest.json`), so `check` and `merge` find the changes by
+the id alone and read only the files whose size, modification time or
+inode changed (its inode change time included, as git does). Symlinks
+and other non-regular files, files over 256 KiB and invalid UTF-8 are
+never followed or sent: `check` prints them as `problem:` lines, and
+`check` and `merge` stop with exit 3, as for the server's problems.
 A new decision is `<dir>/D?<letters>-<title>.md` with `number: D?<letters>`
 (one to four lowercase letters, unique in the changeset), and other changed
 files may refer to it by that number. A merge gives new decisions the next
@@ -507,7 +515,8 @@ branch, committed with its opener as author on top of its base; a check
 without changes removes the branch. A discarded changeset's branch moves to
 `refs/discarded/<id>`, on a commit that records the reason. The worker
 that opened a changeset may check, discard and merge it while it
-fast-forwards (its base is the main line's head). Otherwise only a worker
+fast-forwards: its base's tree is the main line head's tree, which for a
+changeset opened here means its base is the head. Otherwise only a worker
 with the integrator grant, set on the Web devices page, may merge it, even
 when the main line changed other files only, and every file that both
 changed after the base must be resolved: `check` writes the versions that
@@ -575,14 +584,162 @@ at these bounds, in memory held at once:
 | A base page: files 8 MiB, or the generated index alone up to 12 MiB, their copies and the encoded page | ≈ 36 MiB |
 | Open, discard, list, get | < 1 MiB |
 
-The service therefore holds at most about 633 MiB: three conflict reads
-and a base page (3 × 199 + 36). With the four requests of `LedgerService`
-above (a full listing about 45 MiB each with its index rows and message),
-the ledger's requests hold at most about 813 MiB. These are live bytes:
-with the default `GOGC=100` and no `GOMEMLIMIT` the heap may grow to about
-twice the live data before a collection, about 1.6 GiB. With `GOMEMLIMIT`
-set as the process budget above recommends, that budget, which counts
-these 813 MiB, applies instead.
+The three write slots are the server's, shared with the session
+snapshots below, whose collections and rebases wait for one instead of
+being refused. With every write slot held by a conflict read (3 × 199) the
+four admitted requests can all be lighter ones, such as base pages or a
+session changeset's check after its collection (4 × 36): the service and
+the snapshots' engine work hold at most about 741 MiB. With the four
+requests of `LedgerService` (a full listing about 45 MiB each with its index
+rows and message; a session's ledger about 95 MiB, of which at most two
+run at once, see below) and the snapshot operations (268 MiB), the ledger
+holds at most about 1,291 MiB. These are live bytes: with the default
+`GOGC=100` and no `GOMEMLIMIT` the heap may grow to about twice the live
+data before a collection, about 2.6 GiB. With `GOMEMLIMIT` set as the
+process budget above recommends, that budget, which counts these
+1,291 MiB, applies instead.
+
+#### Session snapshots
+
+Every session created on a server with a ledger gets a **ledger snapshot**:
+a copy of the project's ledger on the session's device, outside the
+workspace, at `$XDG_STATE_HOME/circus/ledger/<session>/` (docs/wire.md,
+"Session ledger snapshots"). The control plane prepares it from the main
+line's head when the preparation starts, sending the files in chunks of at
+most 8 MiB (and half the message limit) and 4096 files, the generated
+`INDEX.md` apart (up to about 11 MiB, the most 4096 decisions make); the
+session's first turn waits while the device is offline or the snapshot is
+prepared, as for a workspace, and the worker gets the snapshot's path in
+the lease (`Lease.ledger_path`) and tells the model about it. A failure,
+a daemon without the ledger calls or a revoked device included, leaves the
+session without a ledger (`FAILED`). Sessions created before snapshots
+existed have none.
+
+After every turn the control plane collects the snapshot in the
+background: the daemon compares it with its manifest and sends the
+contents only of files that differ from what the control plane already
+holds. The changes become the session's changeset, opened by the first
+collection that finds any (at most one open per session, no opener,
+counted in the project's 64 open changesets); a collection is skipped when
+a new turn has started and runs when that one ends, and one due while the
+device is offline runs when it connects (the session's status shows
+`collection_due` meanwhile, and the turn's end is announced as a
+`KIND_LEDGER` event). Nothing changes a snapshot while a turn runs. At most
+four snapshot operations run at once, two per device; the others wait in a
+queue that holds only session ids, and work that finds its device busy is
+queued again when one of the device's operations ends. Work for an offline
+device does nothing but a cheap check until the device connects; a revoked
+device fails the snapshot. The check of a collection takes one of the
+ledger write slots and waits for it rather than failing. Problems (a file
+that is not a decision, a changed number, a removed decision, a symlink or
+a file over 256 KiB, or two paths that differ only in case or Unicode
+normalization, which are one name on macOS; ledger validation refuses
+those in every changeset) are told to the agent in a note,
+`ledger_problems`, which starts a turn when the session is idle; the same
+set of problems is not told again. Each note starts a turn without the
+user, so after three notes in a row with no input of the user between
+them, new problems are told only after the user's next input: an agent
+that cannot fix its snapshot does not run on forever. A note is written
+in the transaction that records what it tells, so it is never lost or
+given twice, and a session takes notes before the user's messages that
+arrived with them.
+
+The project's owner merges a session's changeset from the session page
+(`LedgerService.MergeSessionLedger`) when it fast-forwards; the server
+collects the snapshot first and refuses a merge while a turn runs, while
+the device is offline after a turn ended, with problems, or for another
+changeset than the one shown. Otherwise an integrator merges it with
+`circus ledger merge`: `circus ledger list <project> --session <id>` lists
+a session's changesets, and `check`, `merge` and `discard` take a session's
+changeset by its id without a local copy (the server collects the snapshot,
+or with the device offline uses the last collection and says so); only a
+worker with the integrator grant may change a session's changeset.
+
+After a merge the control plane builds the session's **view**: the
+changeset's base with the merged files (new decisions renamed, their
+references rewritten, conflicts as resolved), kept on `refs/sessions/<id>`
+as a commit on top of the merge commit. The next changeset starts from the
+view, so it fast-forwards until someone else merges, and the snapshot
+never takes in others' changes. An integrator's merge or discard of a
+session's changeset is refused (`TURN_RUNNING`) while a turn of the
+session runs or is about to start (its worker took inputs for it), as the
+owner's is, checked in the transaction that records the merge or the
+discard; once it succeeds, the session's turns are
+held until the snapshot follows, as for a preparation, the session's status
+says so (`applying`), and a worker that keeps its lease takes no inputs
+meanwhile and is not nudged to start a turn (the session is woken when the
+hold ends). So between the merge's collection and the rebase only a
+process the agent left running in the background, or a turn the Claude CLI
+starts on its own (a subagent or background task finishing, which nothing
+can hold back), can change the snapshot. The control plane collects the
+snapshot and applies the merge's numbers to what the agent holds now
+(`rebase_ledger`): a new decision whose temporary number the merge
+assigned becomes `D<n>` where the agent left it, under its current title,
+its references rewritten as the merge rewrote them, also when the agent
+moved, retitled, revised or rewrote it after the collection the merge
+used; other files keep the agent's content with the temporary references
+replaced. A file stands for the merged decision only when it is at the
+decision's collected path, or that path is gone and it is the only file
+with the decision's temporary number; any other file with that number is
+another new decision, which gets fresh letters while the merged file is
+kept, and the agent is asked to check it; its references to the reused
+letters stay, and are problems of the next changeset ("refers to D?a,
+which no decision of this changeset has") until the agent resolves them. A merged new decision the agent
+deleted is put back, since the ledger keeps every decision. When nothing
+changed since that collection the snapshot is the view; otherwise its base
+is a commit on top of the view holding those later changes, which then go
+into the next changeset as changes of `D<n>` (never a second new
+decision). The agent is told (`ledger_merged`) with one list of the
+renames, what was put back and what to check, before its next turn.
+Every rebase's base commit names exactly the files it installs, and is
+recorded before it is sent; each collection and rebase answer names the
+base the snapshot's manifest records (`current_base_commit`), so a
+collection on that commit finds an attempt whose answer was lost
+finished, and one on a base the control plane does not expect is collected
+again relative to it rather than mixed with the old base. A rebase
+refused as stale (the snapshot changed meanwhile) is planned again from a
+new collection. Files a collection cannot take (a symlink, say) stop the
+rebase: the agent is told, its turns are not held meanwhile, and the
+rebase is tried again at the end of its next turn or after a backoff. A
+rebase or reset the device keeps refusing (permissions, a full disk, a
+file in the way, or a snapshot that keeps changing) is retried after a
+backoff, and after three failed attempts in a row (about 15 seconds) is
+recorded as a problem of the snapshot the same way, so a session is never
+held without a word. A file the daemon could not put back
+(`<name>.conflict-<hash>`) is collected as a file that is not a decision,
+and the agent is told what to do with it. After an integrator discards a
+session's changeset the snapshot is written again from the view, between
+turns as well, and the agent told (`ledger_discarded`). Deleting a session
+whose changeset has changes, or whose collection is due, needs
+`discard_ledger_changes`; once the session is deleted the changeset is
+discarded (a periodic sweep, one page at a time from where the last one
+stopped, discards what a failure left open) and the snapshot removed from
+the device, when the device connects if it is offline (a removal waits at
+most 30 days). Deleting a project removes its sessions' snapshots the same
+way. A daemon without the ledger calls fails the snapshot for good: the
+session runs without a ledger even after the daemon is updated.
+
+The snapshot's memory: a collection holds the device's result (8 MiB of
+contents, 4096 paths of up to 4 KiB with their hashes, 4096 reverted paths
+and 1024 problems: about 46 MiB), a copy of its contents for the check
+(8 MiB; the decoded result is dropped before the check) and the known
+changes it sent (about 5 MiB); a rebase holds first such a collection
+(its contents are dropped before the rebase is sent), then its request:
+edits of at most 8 MiB plus the generated index (about 11 MiB; a larger
+merge fails the snapshot) and the known changes, copied into the request
+and encoded (about 48 MiB); a preparation holds one chunk, or the
+generated index alone, and its copy in the request: at most about 67 MiB
+for one operation, 268 MiB for four. The engine work of a collection's
+check (about 70 MiB) and of a rebase's plan (the view, about 106 MiB with
+the index, and the agent's later changes renumbered, up to 8 MiB more:
+about 114 MiB) runs in a write slot, below a conflict read's 199 MiB. `GetSessionLedger`
+reads the changeset's base and its changed files one at a time (about
+27 MiB) and answers with up to 4096 entries (titles cut to 512 bytes, their
+control characters replaced, so JSON at most doubles them), the last
+collection's problems and warnings and the merged changesets' numbers:
+about 28 MiB of JSON at most, about 95 MiB with its message and the
+encoding buffer's growth. At most two session ledger reads run at once,
+one per user, within the four `LedgerService` requests.
 
 ## Releases and deployment
 

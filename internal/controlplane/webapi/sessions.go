@@ -15,7 +15,9 @@ import (
 
 	"connectrpc.com/connect"
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/internal/controlplane/ledgersnaps"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
+	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/google/uuid"
 )
@@ -179,6 +181,12 @@ func (s *Service) fullSession(ctx context.Context, ops store.Ops, sess store.Ses
 		return nil, err
 	}
 	out.Workspace = status
+	switch l, err := ops.GetSessionLedger(ctx, sess.ID); {
+	case err == nil:
+		out.Ledger = ledgersnaps.Status(l)
+	case !errors.Is(err, store.ErrNotFound):
+		return nil, err
+	}
 	names := newDeviceNames(ops)
 	device, err := names.name(ctx, sess.DefaultDeviceID)
 	if err != nil {
@@ -380,6 +388,20 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		if err != nil {
 			return err
 		}
+		if res.Created && s.snapshots != nil {
+			// The session's ledger snapshot starts from the main line's
+			// head; the first turn waits until it is ready or failed.
+			head, err := tx.GetLedgerHead(ctx, p.ID)
+			if err != nil {
+				return err
+			}
+			if err := tx.CreateSessionLedger(ctx, ledgersnaps.NewSessionLedger(res.Session, head)); err != nil {
+				return err
+			}
+			if res.Session, err = tx.GetSession(ctx, id, now); err != nil {
+				return err
+			}
+		}
 		if res.Created {
 			created = res.Session
 			if res.Session.Workspace {
@@ -422,6 +444,9 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		return nil, s.sessionError(ctx, "create session", err)
 	}
 	s.workspaceCommitted(workspaceChange)
+	if c := created; c.ID != "" && s.snapshots != nil {
+		s.snapshots.Kick(c.ID)
+	}
 	if c := created; c.ID != "" {
 		s.logger.LogAttrs(ctx, slog.LevelInfo, "session created", slog.String("session_id", c.ID), slog.String("user_id", c.UserID),
 			slog.String("project_id", c.ProjectID), slog.String("device_id", c.DefaultDeviceID), slog.String("pinned_worker_id", c.PinnedWorkerID),
@@ -632,8 +657,19 @@ func (s *Service) ListSessions(ctx context.Context, req *connect.Request[circusv
 		if err != nil {
 			return nil, s.internal(ctx, "list sessions", err)
 		}
+		ids := make([]string, 0, len(rows))
+		for _, sess := range rows {
+			ids = append(ids, sess.ID)
+		}
+		ledgers, err := s.st.ListSessionLedgerStatuses(ctx, ids)
+		if err != nil {
+			return nil, s.internal(ctx, "list session ledgers", err)
+		}
 		for _, sess := range rows {
 			summary := s.listSession(sess)
+			if l, ok := ledgers[sess.ID]; ok {
+				summary.Ledger = ledgersnaps.Status(l)
+			}
 			if sess.Workspace {
 				key := [2]string{sess.ProjectID, sess.DefaultDeviceID}
 				status, ok := statuses[key]
@@ -961,6 +997,10 @@ func (s *Service) StopSession(ctx context.Context, req *connect.Request[circusv1
 	if changed {
 		s.bus.Durable(id, uint64(seq))
 		s.waker.Wake(id, circusv1.WorkerEvent_Nudge_REASON_STOP)
+		if s.snapshots != nil {
+			// A turn the stop ended leaves the snapshot due for a collection.
+			s.snapshots.Kick(id)
+		}
 	}
 	// Repeated on every StopSession, so a retry reaches jobs whose device
 	// was offline the first time.
@@ -987,14 +1027,27 @@ func (s *Service) DeleteSession(ctx context.Context, req *connect.Request[circus
 	}
 	// DeleteSession runs its own chunked transactions, so the check is a
 	// separate read; a session never changes project, so it stays valid.
-	if _, err := ownSession(ctx, s.st, u, id, s.now().UnixMilli()); err != nil {
+	sess, err := ownSession(ctx, s.st, u, id, s.now().UnixMilli())
+	if err != nil {
 		return nil, s.sessionError(ctx, "delete session", err)
 	}
-	err = s.st.DeleteSession(ctx, id, s.now().UnixMilli())
-	if errors.Is(err, store.ErrSessionActive) && ctx.Err() == nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the session is not stopped or is still busy"))
+	del := func(ctx context.Context) error { return s.st.DeleteSession(ctx, id, s.now().UnixMilli()) }
+	if s.snapshots != nil {
+		check := func(ctx context.Context) error { return s.st.CheckSessionDeletable(ctx, id, s.now().UnixMilli()) }
+		err = s.snapshots.DeleteSession(ctx, sess, req.Msg.GetDiscardLedgerChanges(), check, del)
+	} else {
+		err = del(ctx)
 	}
-	if err != nil {
+	var refusal *ledgersnaps.Refusal
+	var repair *ledger.RepairError
+	switch {
+	case errors.As(err, &refusal):
+		return nil, refusalError(refusal)
+	case errors.As(err, &repair):
+		return nil, repairRefusal(repair)
+	case errors.Is(err, store.ErrSessionActive) && ctx.Err() == nil:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the session is not stopped or is still busy"))
+	case err != nil:
 		return nil, s.sessionError(ctx, "delete session", err)
 	}
 	s.bus.Deleted(id)

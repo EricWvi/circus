@@ -22,6 +22,8 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/controlplane/ledgerslots"
+	"github.com/EricWvi/circus/internal/controlplane/ledgersnaps"
 	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
@@ -195,6 +197,11 @@ type Server struct {
 	sessions   *sessions.Service
 	bus        *sessions.Bus
 	workspaces *workspaces.Manager
+	// ledger is the projects' ledger, nil without a database path; then
+	// sessions get no ledger snapshots (snapshots is nil).
+	ledger      *ledger.Manager
+	snapshots   *ledgersnaps.Manager
+	ledgerSlots *ledgerslots.Slots
 	// secrets seals and opens provider secrets.
 	secrets *providers.Box
 
@@ -213,6 +220,8 @@ type Server struct {
 	stopBg         context.CancelFunc
 	stopWorkspaces context.CancelFunc
 	workspacesDone chan struct{}
+	stopSnapshots  context.CancelFunc
+	snapshotsDone  chan struct{}
 	bg             sync.WaitGroup
 
 	shutdownOnce sync.Once
@@ -266,6 +275,7 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 		}
 		// Background checks of broken ledgers stop with the server.
 		s.hooks = append(s.hooks, shutdownHook{"ledger checks", ledgerManager.Close})
+		s.ledger = ledgerManager
 	}
 	s.authn = auth.NewAuthenticator(st, auth.Options{Now: now, Logger: s.logger})
 
@@ -323,7 +333,7 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger,
 		Bus: s.bus, Waker: s.sessions, Scheduler: s.sessions, OnlineWorkers: s.sessions.OnlineWorkers, Secrets: s.secrets,
 		Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query, Workspaces: s.workspaces, Ledger: ledgerManager,
-		Workers: s.authn})
+		Workers: s.authn, Snapshots: s.snapshots, LedgerWrites: s.ledgerSlots})
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
@@ -394,6 +404,17 @@ func (s *Server) Start() error {
 		defer close(s.workspacesDone)
 		s.workspaces.Run(workspaceCtx)
 	}()
+	if s.snapshots != nil {
+		snapshotCtx, stop := context.WithCancel(bgCtx)
+		s.stopSnapshots = stop
+		s.snapshotsDone = make(chan struct{})
+		s.bg.Add(1)
+		go func() {
+			defer s.bg.Done()
+			defer close(s.snapshotsDone)
+			s.snapshots.Run(snapshotCtx)
+		}()
+	}
 	go func() {
 		defer s.bg.Done()
 		err := s.httpSrv.Serve(ln)

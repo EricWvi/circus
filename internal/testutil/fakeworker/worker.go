@@ -1,8 +1,9 @@
 // Package fakeworker runs a scripted worker against a real control plane and
 // generates Claude Agent SDK messages locally.
 //
-// The following inputs select a script. Other input gets a streamed Markdown
-// reply quoting the input.
+// The following inputs select a script. Other input, and every note the
+// control plane pushes (KIND_NOTE, a synthetic user message whose view event
+// names it in circus_note), gets a streamed Markdown reply quoting the input.
 //
 //	/fake bash <command>     Run Bash on the session's default device and cwd.
 //	/fake read <path>        Read a file on that device, relative to the session cwd.
@@ -14,6 +15,10 @@
 //	/fake break             Report a transcript mirror failure. Recover in the Web UI.
 //	/fake job <command>      Run Bash in the background and deliver the completion notice.
 //	/fake error             End the turn with a scripted error.
+//	/fake ledger-path       Answer "ledger path: <path>" (or "none") from the lease.
+//	/fake ledger <json>     Change the lease's ledger snapshot: a JSON array of
+//	                        operations on paths relative to it, one device call
+//	                        each (see ledgerOp).
 package fakeworker
 
 import (

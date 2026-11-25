@@ -312,6 +312,10 @@ func (s *Service) DeleteProject(ctx context.Context, req *connect.Request[circus
 			s.bus.Deleted(id)
 		}
 		stopSessions()
+		if len(ids) > 0 && s.snapshots != nil {
+			// The deleted sessions' snapshots are removed from their devices.
+			s.snapshots.RemoveSnapshots()
+		}
 		if err == nil {
 			if s.workspaces != nil {
 				unpause := s.workspaces.PauseProject(projectID)

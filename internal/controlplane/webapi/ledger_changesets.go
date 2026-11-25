@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -54,16 +55,14 @@ const (
 	maxChangesetListBytes     = store.MaxLedgerChangesetPage*(6*(store.MaxLedgerDiscardReasonBytes+maxRepairFailureBytes)+2048) + 4<<10
 	maxChangesetSmallResponse = 6*(store.MaxLedgerDiscardReasonBytes+maxRepairFailureBytes) + 8<<10
 	// Requests in flight, admitted before their bodies are read, in total
-	// and per user; of them, at most maxChangesetWrites checks, merges and
-	// conflict reads, which use the most memory, one per user. A user's
-	// share is smaller than the whole, so one user's clients that stop
-	// sending or reading cannot keep other users out; it takes the clients
-	// of two users to hold every request slot, and of three users to hold
-	// every write slot. See the README's ledger section.
+	// and per user; of them, checks, merges and conflict reads, which use
+	// the most memory, also take one of the server's ledger write slots
+	// (ledgerslots), which sessions' collections share. A user's share is
+	// smaller than the whole, so one user's clients that stop sending or
+	// reading cannot keep other users out; it takes the clients of two
+	// users to hold every request slot. See the README's ledger section.
 	maxChangesetRequests        = 4
 	maxChangesetRequestsPerUser = 2
-	maxChangesetWrites          = 3
-	maxChangesetWritesPerUser   = 1
 	changesetRequestTimeout     = time.Minute
 	// A project name has at most 64 characters of up to 4 bytes; an id is
 	// shorter.
@@ -92,7 +91,7 @@ func (s *Service) registerChangesets(mux *http.ServeMux) {
 	}
 	cs := &changesetService{Service: s, workers: s.workers}
 	slots := &ledgerSlots{byUser: make(map[string]int), limit: maxChangesetRequests, perUser: maxChangesetRequestsPerUser}
-	writes := &ledgerSlots{byUser: make(map[string]int), limit: maxChangesetWrites, perUser: maxChangesetWritesPerUser}
+	writes := s.writes
 	errs := connect.NewErrorWriter()
 	for _, p := range []struct {
 		path            string
@@ -131,16 +130,44 @@ func (s *Service) registerChangesets(mux *http.ServeMux) {
 				return
 			}
 			defer slots.release(principal.UserID)
+			held := &heldWrite{}
 			if p.heavy {
-				if !writes.take(principal.UserID) {
+				if !writes.TryTake(principal.UserID) {
 					refuse(errs, w, r, busyError())
 					return
 				}
-				defer writes.release(principal.UserID)
+				held.release = func() { writes.Release(principal.UserID) }
+				defer held.done()
 			}
 			limitBody(w, r, p.request)
-			h.ServeHTTP(w, r.WithContext(context.WithValue(ctx, workerKey{}, principal)))
+			ctx = context.WithValue(context.WithValue(ctx, workerKey{}, principal), heldWriteKey{}, held)
+			h.ServeHTTP(w, r.WithContext(ctx))
 		}))
+	}
+}
+
+// heldWrite is the write slot a request took at its admission. The
+// operations on a session's changeset release it early: they wait for a
+// slot themselves, after the session's lock (see ledgersnaps), and a slot
+// held while waiting for that lock could hold up the session's collection
+// that holds it.
+type heldWrite struct {
+	once    sync.Once
+	release func()
+}
+
+type heldWriteKey struct{}
+
+func (h *heldWrite) done() {
+	if h.release != nil {
+		h.once.Do(h.release)
+	}
+}
+
+// releaseWrite releases the request's write slot, if it holds one.
+func releaseWrite(ctx context.Context) {
+	if h, ok := ctx.Value(heldWriteKey{}).(*heldWrite); ok {
+		h.done()
 	}
 }
 
@@ -259,16 +286,32 @@ func (cs *changesetService) integrator(ctx context.Context, p auth.Principal) (b
 	return w.Integrator && w.DeletedAt == 0, nil
 }
 
-// mayChange lets the opener or an integrator check, discard or merge.
+// mayChange lets the opener or an integrator check, discard or merge; a
+// session's changeset has no opener.
 func (cs *changesetService) mayChange(ctx context.Context, p auth.Principal, c store.LedgerChangeset) error {
-	if c.OpenerWorkerID == p.ID {
+	if c.SessionID == "" && c.OpenerWorkerID == p.ID {
 		return nil
 	}
 	ok, err := cs.integrator(ctx, p)
 	if err != nil || ok {
 		return err
 	}
+	if c.SessionID != "" {
+		return integratorError("a session's changeset may be changed only by a worker with the integrator grant")
+	}
 	return integratorError("only the worker that opened the changeset, or a worker with the integrator grant, may change it")
+}
+
+// sessionChangeset reports a session's changeset, which the snapshot
+// manager handles; without one (no ledger snapshots) it is refused.
+func (cs *changesetService) sessionChangeset(c store.LedgerChangeset) (bool, error) {
+	if c.SessionID == "" {
+		return false, nil
+	}
+	if cs.snapshots == nil {
+		return true, connect.NewError(connect.CodeFailedPrecondition, errors.New("this server keeps no session ledger snapshots"))
+	}
+	return true, nil
 }
 
 func (cs *changesetService) workerName(ctx context.Context, id string) string {
@@ -319,7 +362,7 @@ func repairRefusal(e *ledger.RepairError) error {
 
 func changesetMessage(c store.LedgerChangeset) *circusv1.Changeset {
 	out := &circusv1.Changeset{ChangesetId: c.ID, ProjectId: c.ProjectID, BaseCommit: c.BaseCommit, OpenerWorkerId: c.OpenerWorkerID,
-		CreatedAtUnixMs: c.CreatedAt, UpdatedAtUnixMs: c.UpdatedAt}
+		CreatedAtUnixMs: c.CreatedAt, UpdatedAtUnixMs: c.UpdatedAt, SessionId: c.SessionID}
 	switch c.State {
 	case store.LedgerChangesetOpen:
 		out.State = circusv1.Changeset_STATE_OPEN
@@ -414,13 +457,33 @@ func (cs *changesetService) CheckChangeset(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, err
 	}
-	res, err := cs.ledger.CheckChangeset(ctx, c.ID, cs.workerName(ctx, c.OpenerWorkerID), in)
-	if err != nil {
-		return nil, cs.fail(ctx, "check changeset", err)
+	var res ledger.CheckResult
+	var problems []*circusv1.LedgerProblem
+	var warning string
+	if session, err := cs.sessionChangeset(c); err != nil {
+		return nil, err
+	} else if session {
+		if len(in) > 0 {
+			return nil, invalidField("changes", "a session's changeset takes its changes from the session's snapshot; send none")
+		}
+		releaseWrite(ctx)
+		check, err := cs.snapshots.CheckChangeset(ctx, c)
+		if err != nil {
+			return nil, cs.fail(ctx, "check session changeset", err)
+		}
+		res, problems, warning = check.CheckResult, problemMessages(check.Problems), check.Warning
+	} else {
+		if res, err = cs.ledger.CheckChangeset(ctx, c.ID, cs.workerName(ctx, c.OpenerWorkerID), in); err != nil {
+			return nil, cs.fail(ctx, "check changeset", err)
+		}
+		for _, problem := range res.Problems {
+			problems = append(problems, &circusv1.LedgerProblem{Path: problem.Path, Message: problem.Message})
+		}
 	}
-	out := &circusv1.CheckChangesetResponse{Changeset: changesetMessage(res.Changeset), FastForward: res.FastForward, MainCommit: res.MainCommit}
-	for _, problem := range res.Problems {
-		out.Problems = append(out.Problems, &circusv1.LedgerProblem{Path: problem.Path, Message: problem.Message})
+	out := &circusv1.CheckChangesetResponse{Changeset: changesetMessage(res.Changeset), FastForward: res.FastForward, MainCommit: res.MainCommit,
+		Problems: problems}
+	if warning != "" {
+		out.Warnings = append(out.Warnings, &circusv1.LedgerProblem{Path: ".", Message: warning})
 	}
 	for _, warning := range res.Warnings {
 		out.Warnings = append(out.Warnings, &circusv1.LedgerProblem{Path: warning.Path, Message: warning.Message})
@@ -498,7 +561,7 @@ func (cs *changesetService) MergeChangeset(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, err
 	}
-	merged, err := cs.ledger.MergeChangeset(ctx, c.ID, ledger.MergeOptions{Author: p.Name, CodeCommit: code, Resolved: resolved,
+	o := ledger.MergeOptions{Author: p.Name, CodeCommit: code, Resolved: resolved,
 		Authorize: func(ctx context.Context, fastForward bool) error {
 			if fastForward {
 				return nil
@@ -507,9 +570,18 @@ func (cs *changesetService) MergeChangeset(ctx context.Context, req *connect.Req
 			if err != nil || ok {
 				return err
 			}
-			return integratorError("the changeset does not fast-forward: its base is behind the main line, so only a worker with the integrator grant may merge it")
-		}})
-	if err != nil {
+			return integratorError("the changeset does not fast-forward: its base differs from the main line's head, so only a worker with the integrator grant may merge it")
+		}}
+	var merged store.LedgerChangeset
+	if session, err := cs.sessionChangeset(c); err != nil {
+		return nil, err
+	} else if session {
+		releaseWrite(ctx)
+		merged, err = cs.snapshots.MergeChangeset(ctx, p.UserID, c, o)
+		if err != nil {
+			return nil, cs.fail(ctx, "merge session changeset", err)
+		}
+	} else if merged, err = cs.ledger.MergeChangeset(ctx, c.ID, o); err != nil {
 		return nil, cs.fail(ctx, "merge changeset", err)
 	}
 	out := &circusv1.MergeChangesetResponse{Changeset: changesetMessage(merged), Numbers: make(map[string]uint32, len(merged.Merge.Numbers))}
@@ -535,8 +607,15 @@ func (cs *changesetService) DiscardChangeset(ctx context.Context, req *connect.R
 	if err := cs.mayChange(ctx, p, c); err != nil {
 		return nil, err
 	}
-	discarded, err := cs.ledger.DiscardChangeset(ctx, c.ID, reason, p.Name)
-	if err != nil {
+	var discarded store.LedgerChangeset
+	if session, err := cs.sessionChangeset(c); err != nil {
+		return nil, err
+	} else if session {
+		discarded, err = cs.snapshots.DiscardChangeset(ctx, c, reason, p.Name)
+		if err != nil {
+			return nil, cs.fail(ctx, "discard session changeset", err)
+		}
+	} else if discarded, err = cs.ledger.DiscardChangeset(ctx, c.ID, reason, p.Name); err != nil {
 		return nil, cs.fail(ctx, "discard changeset", err)
 	}
 	return connect.NewResponse(&circusv1.DiscardChangesetResponse{Changeset: changesetMessage(discarded)}), nil
@@ -551,7 +630,10 @@ func (cs *changesetService) ListChangesets(ctx context.Context, req *connect.Req
 	if err != nil {
 		return nil, err
 	}
-	f := store.LedgerChangesetFilter{ProjectID: projectID, Limit: int(req.Msg.GetPageSize())}
+	f := store.LedgerChangesetFilter{ProjectID: projectID, Limit: int(req.Msg.GetPageSize()), SessionID: req.Msg.GetSessionId()}
+	if len(f.SessionID) > store.MaxIDBytes {
+		return nil, invalidField("session_id", "session id is too long")
+	}
 	switch req.Msg.GetState() {
 	case circusv1.Changeset_STATE_UNSPECIFIED:
 	case circusv1.Changeset_STATE_OPEN:

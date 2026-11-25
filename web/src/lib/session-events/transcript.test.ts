@@ -779,3 +779,40 @@ describe("workspace events", () => {
     expect(t.workspace?.status).toMatchObject({ error: "unspecified", waiting: "unspecified", action: "unspecified", background: false })
   })
 })
+
+describe("ledger events", () => {
+  const ledger = (seq: number, payload: object): RawSessionEvent => ({
+    seq,
+    tsUnixMs: 1_763_200_000_000 + seq,
+    kind: "ledger",
+    payloadJson: JSON.stringify(payload),
+    ephemeral: seq === 0,
+    truncated: false,
+  })
+
+  it("shows a recorded merge with its new numbers in order, and a recorded discard with why", () => {
+    const t = run([
+      ledger(1, { event: "merged", changeset_id: "c1", numbers: { "D?b": 93, "D?a": 92 } }),
+      ledger(2, { event: "discarded", changeset_id: "c2", reason: "session deleted" }),
+      ledger(3, { event: "merged", changeset_id: "c3" }),
+    ])
+    expect(ofKind(t, "ledger")).toEqual([
+      { kind: "ledger", id: "ledger:1", at: expect.any(String), change: "merged", numbers: [92, 93] },
+      { kind: "ledger", id: "ledger:2", at: expect.any(String), change: "discarded", reason: "session deleted" },
+      { kind: "ledger", id: "ledger:3", at: expect.any(String), change: "merged", numbers: [] },
+    ])
+  })
+
+  it("shows nothing for live changes, other events or numbers that aren't numbers", () => {
+    const t = run([
+      ledger(0, { event: "merged", numbers: { "D?a": 92 } }),
+      ledger(1, { event: "collected", changeset_id: "c1" }),
+      ledger(2, { event: "prepared" }),
+      ledger(3, { event: "merged", numbers: { "D?a": "92", "D?b": -1, "D?c": 7 } }),
+    ])
+    expect(ofKind(t, "ledger")).toEqual([
+      { kind: "ledger", id: "ledger:3", at: expect.any(String), change: "merged", numbers: [7] },
+    ])
+    expect(t.lastSeq).toBe(3)
+  })
+})

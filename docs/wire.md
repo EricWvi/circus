@@ -460,6 +460,8 @@ Further size rules:
 | `SessionReply.TranscriptKeys.subpaths` | 1024 |
 | `SessionReply.Devices.devices` | 256 |
 | `SessionReply.LaunchEnv.env` | 72 |
+| `PrepareLedgerRequest.files`, `CollectLedgerRequest.known`, `CollectLedgerResult.changes`, `CollectLedgerResult.reverted`, `RebaseLedgerRequest.edits`, `RebaseLedgerRequest.known` | 4096 each (`MaxLedgerSnapshotFiles`) |
+| `CollectLedgerResult.problems` | 1024 |
 
 User-side RPC response caps are registered in the same table:
 `ListSessionsResponse.sessions` ≤ 1000, `ListApprovalsResponse.approvals` ≤ 32.
@@ -854,6 +856,237 @@ run in parallel with a shared 30-second budget and
 responses or the deadline. A timed-out removal is reported as KEPT,
 which means the control plane received no confirmation. No removal is
 retried. Workspace records cascade with the project.
+
+### Session ledger snapshots
+
+A session's **ledger snapshot** is a plain directory on the session's
+device holding a copy of the project's ledger, which the session's agent
+reads and edits with ordinary tools. Four device calls manage it:
+`PrepareLedgerRequest` (`DeviceCall.prepare_ledger`) writes it from a base
+commit's files, `CollectLedgerRequest` (`collect_ledger`) reports its
+changes relative to that base, `RebaseLedgerRequest` (`rebase_ledger`)
+applies edits and makes the result the new base, and
+`RemoveLedgerRequest` (`remove_ledger`) deletes it. Only the control plane
+sends them, with a `session_id` of `ledger-<snapshot_id>`, where
+`snapshot_id` is the circus session id, to any connected daemon: a daemon
+without these calls answers with a `DaemonFault`, which fails the
+snapshot's preparation. Results carry the
+matching `DeviceResult` detail; `output` holds one human-readable line and
+`is_error` matches `OUTCOME_FAILED`. `error_detail` is at most 1024 bytes
+of valid UTF-8. Daemon failures remain `DaemonFault`s.
+
+#### Daemon
+
+**Layout.** Below the ledger directory `$XDG_STATE_HOME/circus/ledger`
+(`$CIRCUS_HOME/state/ledger` when that is set; `~/.local/state` when
+`XDG_STATE_HOME` is unset or relative):
+
+| Path | Holds |
+| --- | --- |
+| `<id>/` | the snapshot |
+| `.<id>.circus-lock` | the lock serializing calls on `<id>` |
+| `.manifests/<id>.json` | its manifest (and `<id>.json.tmp` while it is replaced) |
+| `.staging/<id>/`, `.staging/<id>.state`, `.staging/<id>.paths.<n>` | the chunks of a preparation, the last chunk accepted, and each chunk's paths |
+| `.staging/<id>.old`, `.staging/<id>.tmp` | a replaced snapshot being removed; a file a rebase is writing |
+| `.staging/<id>.aside`, `.staging/<id>.aside.path` | a file a rebase moved aside to check it, and its path and expected hash |
+| `.staging/<id>.clock` | the probe file whose timestamp a manifest records |
+
+`cli/` beside them belongs to `circus ledger`; the id `cli` (in any case)
+is `INVALID_REQUEST`, as is any id outside 1–128 bytes of
+`[A-Za-z0-9_-]`. The directories above the ledger directory are created
+as needed and may be symlinks; the ledger directory and everything below
+it are opened relative to their open parent with `O_NOFOLLOW`, so a symlink
+there is `PATH_CONFLICT`, never followed. A state directory that cannot
+be resolved is `STATE_DIR_UNKNOWN`; a Windows daemon answers
+`UNSUPPORTED_OS`.
+
+**Manifest.** JSON: for each base file its path, size, modification time
+and inode change time in nanoseconds, inode and lowercase hex SHA-256, in
+path order, plus the base commit and `written_at_ns`, a timestamp of the
+snapshot's own file system taken from a probe file in `.staging/`, outside
+the snapshot, so a daemon killed while the probe exists never leaves it
+where a collection would see it. It is replaced atomically (temporary
+file, fsync, rename, fsync of the directory). A snapshot exists exactly
+when its manifest does: a directory without one is `ABSENT` to collect and
+rebase, and a manifest without its directory (removed from outside) is
+removed by the next ledger call that can take its id's lock. Every
+directory the daemon creates is followed by a sync of its parent; syncs
+use `F_FULLFSYNC` on macOS.
+
+**Paths and content.** A path is relative, `/`-separated, valid UTF-8
+without control characters, at most 4096 bytes, with no empty, `.` or `..`
+segment and no segment over 255 bytes. Content is valid UTF-8 of at most
+256 KiB, except the ledger's generated index, `INDEX.md` at the top, which
+may hold up to `MaxIndexBytes` (64 + 4096 × 2848 bytes, about 11 MiB: a
+row per decision whose title's `<`, `>` and `&` take five bytes each) and
+does not count toward a chunk's or a rebase's 8 MiB of content. Anything else, duplicate paths in one request, or a base commit
+that is not 40 or 64 lowercase hex digits is `INVALID_REQUEST`. On macOS,
+whose file systems usually take names differing in case or Unicode
+normalization for one, two requested paths (or their directories) that
+would be one name (canonical caseless matching) are `INVALID_REQUEST`
+naming them, within a request, across a preparation's chunks, and for a
+rebase's written paths against those already in the snapshot (a file an
+edit deletes does not count, so a case-only rename works). Elsewhere such
+names are prepared like any others, and the last chunk's check that the
+file system holds exactly the requested paths catches a file system that
+folds them anyway. The ledger's validation refuses such names in
+changesets (a problem naming both paths), so a ledger written through
+changesets holds none.
+
+**Preparation.** Chunks hold at most 4096 files and 8 MiB of content.
+Chunk 0 discards any staging of the id and starts a new one; chunk *n*
+must follow chunk *n*−1 of the same base, or repeat the last chunk
+accepted (its files are written again); any other index is
+`INVALID_REQUEST` and changes nothing. Files are written and fsynced into
+`.staging/<id>/`, never through a symlink, and each chunk's paths are
+recorded. The last chunk checks all the chunks' paths together: they must
+be `total_files` (at most 8192) distinct paths, free of the collisions
+above, which with their directories make at most 8192 entries; anything
+else is `INVALID_REQUEST`. It then reads the staged files back into the
+manifest, which must hold exactly the requested paths (another file
+system's rules may still merge names), else `INVALID_REQUEST`. It removes
+the old manifest (whether or not a directory is there) and the chunk
+state, moves an existing snapshot aside, renames the staging directory
+onto `<id>`, writes the new manifest last and deletes the old directory
+without following symlinks. A last chunk sent again after a failure past
+the chunk state's removal is `INVALID_REQUEST` "start again from chunk 0". Before staging anything every chunk checks the
+existing snapshot: the same `base_commit` without `reset` answers `READY`
+at once and changes nothing; another base without `reset` is
+`INVALID_REQUEST`; a symlink or non-directory at `<id>` is
+`PATH_CONFLICT` unless `reset` (it is then unlinked, never followed); a
+directory without a manifest is replaced without `reset`. Staging of any
+id untouched for an hour is removed by the next ledger call that can take
+that id's lock.
+
+**Collection.** The daemon compares the directory with the manifest as
+git compares a work tree with its index (with `core.trustctime`, git's
+default): a regular file whose size, modification time, inode change time
+and inode equal its entry is unchanged and is not opened; any other file
+is read and hashed, and so is every file whose modification time is not
+earlier than `written_at_ns` (racy). The inode change time, which no one
+can set, catches a same-size rewrite whose modification time was set back. Manifests
+are taken once the file system clock has moved past the files written
+(waiting at most 50 ms), so a fresh snapshot has no racy file. Dot files
+are ordinary files. Directories are opened with `O_NOFOLLOW`; other
+entries are examined without following them and regular files are opened
+with `O_NOFOLLOW|O_NONBLOCK` and checked again on the descriptor, so a
+symlink, FIFO, socket or device is a problem and is never opened. Bounds:
+
+| Bound | Beyond it |
+| --- | --- |
+| 8192 directory entries scanned | a problem of the whole snapshot (empty path), `too_large`, no changes, nothing reverted |
+| 128 directory levels, 4096-byte paths | a problem at that path |
+| 256 KiB per file, `MaxIndexBytes` for `INDEX.md` (reads stop one byte beyond) | a problem with the file's size |
+| 4096 changes, deletions included | a problem of the whole snapshot, `too_large`, no changes |
+| 8 MiB of changed content | `too_large`; every change has path, hash and size, `known` set, no content |
+| 1024 problems | the first 1024 in path order |
+
+Invalid UTF-8 content or names, and names with control characters, are
+problems too. A base file at or below a problem path is not reported as
+deleted. A change equal to its `known` entry (same SHA-256, or both
+deleted) comes with `known` set and no content; `reverted` lists the known
+paths that are no longer changed and are not problems. Every result made
+while a manifest exists names its base commit in `current_base_commit`,
+so the control plane reads the changes against the base they are relative
+to.
+
+**Rebase.** A rebase whose `base_commit` the manifest already records was
+done by an earlier attempt whose answer was lost: it is `REBASED` when the
+snapshot shows no change, and otherwise `STALE`; its edits are never
+applied again, since any change since then (even one back to a file's
+collected content) is the agent's. The result's `current_base_commit`
+names the base the manifest records when the call ends, on every outcome
+where a manifest exists: the request's `base_commit` when the snapshot is
+on it, the kept base otherwise.
+
+Otherwise `known` is the complete set of changes against the current
+base that the control plane collected and merged. Before anything changes,
+the daemon compares the snapshot with its manifest as a collection does
+(hashes only) and requires, for every path, its collected state (its
+`known` change, or the base's content for a path without one) or, on a
+path with an edit, the edit's target (its content, or nothing for a
+deletion); and every edit must find `expected_sha256` (empty: nothing at
+the path) or its target. Any other state, and any problem a collection
+would report (a symlink or other non-regular file, a file over 256 KiB,
+invalid UTF-8, too many entries), is `STALE` and nothing changes: the
+agent changed the snapshot after the collection the merge used, and
+**a STALE rebase means "collect again"**, merge what is new and send the
+rebase with the new `known`. Accepting an edit's target is what lets the
+same request finish a rebase that stopped after some edits.
+
+The edits are then applied in order, each only if its file still holds
+what the edit expects, checked again right before and enforced by the
+file operations themselves, since the agent may be writing meanwhile. A
+file to replace or delete is first renamed to `.staging/<id>.aside` (its
+path and expected hash recorded in `.staging/<id>.aside.path` beforehand,
+and never while an earlier one is there) and hashed there; anything but
+the expected content is renamed back. A new file, written
+and fsynced as `.staging/<id>.tmp`, is installed only where nothing
+exists: `renameat2(RENAME_NOREPLACE)` on Linux, `renameatx_np(RENAME_EXCL)`
+on macOS, else a hard link (which fails on an existing name) and an
+unlink, else a check followed by a plain rename. So a file the agent
+rewrote, deleted or created on an edit's path is never replaced or
+removed: the rebase stops there with `STALE`, the edits before it stay
+applied and the old manifest stays. The next collection reports the
+agent's write (and the applied edits, as changes against the old base);
+the same request sent again is `STALE`, as that path holds neither its
+collected state nor its target; a rebase built from the new collection
+finishes. What remains is a write through a descriptor the agent opened
+before the file was renamed aside, landing in the moved file: before the
+moved file is hashed, it is hashed with it and renamed back; after (within
+microseconds of the moved file being discarded or replaced), it is lost,
+as with any rename of a file someone holds open. Directories are synced
+once, after all renames.
+
+A daemon killed with a file aside leaves the journal, and the next
+collection or rebase recovers it before anything else, never recreating
+a directory the agent removed:
+
+- the path is free: the file goes back;
+- the path is taken (by the edit's target, or by the agent's newer file
+  or directory): a file holding the expected content, which the control
+  plane already has, is dropped; anything else is renamed beside it to
+  `<name>.conflict-<first 12 hex digits of its SHA-256>`;
+- a directory on the way is gone or is no longer a directory: the same,
+  but the conflict file goes into the nearest directory that is still
+  there;
+- the journal cannot be read or parsed: the file goes to the snapshot's
+  top as `recovered.conflict-<…>`.
+
+A conflict file is an ordinary file of the snapshot: the agent sees it,
+and the next collection reports it as an added file, which ledger
+validation reports as a file that is not a decision, for the agent to
+resolve. Nothing of the agent's is dropped, and no recovery fails a call.
+
+Finally the daemon reads the whole directory into a new manifest with the
+request's `base_commit`. That manifest must be exactly the merged view
+(the base, then `known`, then the edits), else the answer is `STALE` with
+the edits applied and the old manifest kept, so a file the agent wrote
+while the rebase ran is collected next rather than made part of the base.
+The manifest is written last: a crash before it leaves the old one, the
+next collection reports the applied edits as changes against the old
+base, and the same rebase sent again completes it.
+
+**Removal.** The daemon refuses (`PATH_CONFLICT`) a symlink or
+non-directory at `<id>` and removes nothing. Otherwise it removes the
+manifest first, then the directory (with the removal walk of "Workspace
+preparation", which never follows a symlink or enters another mount), then
+any staging of the id: `OUTCOME_REMOVED`, or `OUTCOME_ABSENT` when none of
+them existed.
+
+**Concurrency and resources.** A non-blocking `flock` on
+`.<id>.circus-lock` serializes the calls on one snapshot (`BUSY` when
+held); at most two ledger calls run at once per daemon (`BUSY` beyond).
+`EACCES`/`EPERM` is `PERMISSION_DENIED`, `ENOSPC`/`EDQUOT` `NO_SPACE`, a
+symlink or file in the way `PATH_CONFLICT`, anything else `IO`. One
+collection holds at most 8 MiB of changed content plus one read buffer
+(256 KiB, or about 11 MiB while the generated index is read), the manifest and the change and problem lists (a few megabytes for
+a real ledger; with every path at 4096 bytes the bound is about 100 MiB).
+A chunk holds its request (at most 8 MiB of content, plus the generated
+index of up to about 11 MiB) and the last chunk
+reads the staged files back one at a time. Disk holds one copy of the
+ledger per session, its manifest and, while a preparation or reset runs,
+a staged copy.
 
 ## 7. Worker link operations
 
@@ -1332,7 +1565,11 @@ the two cases share the code, and a gap only follows from a worker bug. `STORE_U
 #### Inputs and turns
 
 TakeInputs retries return everything taken in this epoch and not yet
-persisted. Push to the SDK with uuid=input_id, avoiding duplicate pushes
+persisted. While a session's turns are held (its workspace or ledger
+snapshot is not ready, or the snapshot owes a merge's rebase or a discard's
+reset) TakeInputs takes and returns nothing, and Nudges leave out
+`REASON_INPUT`, `REASON_JOB` and `REASON_APPROVAL`; they stay pending and
+are sent when the hold ends. A turn the CLI starts on its own still runs. Push to the SDK with uuid=input_id, avoiding duplicate pushes
 within the epoch. NORMAL (and unspecified priority) merges into a running
 turn or starts one when idle; NOW interrupts the current turn first.
 Approval inputs use NORMAL.
@@ -1458,6 +1695,12 @@ creates), `user_interrupt` (the annotation of a user's Interrupt),
 recovery), `call_notice` (a late call's completion), `job_notice` (a device
 background job's completion), `lost_bgtask` (an SDK background task lost
 with its worker) and `history_missing` (the missing-history reminder).
+A note input the control plane writes (`Inputs.Input` of `KIND_NOTE`) is
+published with its `note` as the kind: `ledger_problems` (the problems of
+a collection of the session's ledger snapshot), `ledger_merged` (the
+session's ledger changes were merged and its new decisions renamed) and
+`ledger_discarded` (they were discarded). The control plane records no view
+event for a note itself: the view shows it when the worker delivers it.
 Clients treat an unknown kind, or a synthetic user message without one, as
 a generic note to the model.
 

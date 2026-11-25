@@ -18,15 +18,28 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import type { SessionLedgerStatus } from "@/api/types"
 import { useMenuFocus } from "@/hooks/use-menu-focus"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 
-/** The session header's actions: stopping the session, after confirming. */
+import { DeleteSessionDialog } from "./delete-session-dialog"
+
+/**
+ * The session header's actions, each after confirming: stopping the
+ * session, and deleting it once stopped.
+ */
 export function SessionMenu({
+  sessionId,
+  projectId,
+  ledger,
   stopped,
   disabledReason,
   onStopSession,
 }: {
+  sessionId: string
+  projectId: string
+  /** The session's snapshot, for warning up front that deleting discards its changes. */
+  ledger: SessionLedgerStatus | undefined
   stopped: boolean
   /** Why the actions can't be used right now; null when they can. */
   disabledReason: string | null
@@ -35,10 +48,10 @@ export function SessionMenu({
   const { t } = useTranslation()
   const menuFocus = useMenuFocus()
   const { triggerRef, onOpenChange, onCloseAutoFocus } = useOverlayFocus<HTMLButtonElement>()
-  const [confirming, setConfirming] = useState(false)
-  const change = (open: boolean) => {
+  const [confirming, setConfirming] = useState<"stop" | "delete" | null>(null)
+  const change = (open: boolean, action: "stop" | "delete" = "stop") => {
     onOpenChange(open)
-    setConfirming(open)
+    setConfirming(open ? action : null)
   }
 
   return (
@@ -57,9 +70,25 @@ export function SessionMenu({
           >
             {t("session.stopSession")}
           </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            disabled={!stopped || disabledReason !== null}
+            onSelect={() => change(true, "delete")}
+          >
+            {t("session.delete.menu")}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <Dialog open={confirming} onOpenChange={change}>
+      <DeleteSessionDialog
+        open={confirming === "delete"}
+        onOpenChange={(open) => change(open, "delete")}
+        sessionId={sessionId}
+        projectId={projectId}
+        ledger={ledger}
+        disabledReason={disabledReason}
+        onCloseAutoFocus={onCloseAutoFocus}
+      />
+      <Dialog open={confirming === "stop"} onOpenChange={(open) => change(open)}>
         <DialogContent showCloseButton={false} onCloseAutoFocus={onCloseAutoFocus}>
           <DialogHeader>
             <DialogTitle>{t("session.stopConfirmTitle")}</DialogTitle>

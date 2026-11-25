@@ -95,6 +95,13 @@ func (r *router) submit(ctx context.Context, user, name string, call *circusv1.D
 	if (prepare || remove) && (!internal || !synthetic || workspaceID == "") {
 		return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
 	}
+	// A ledger snapshot call comes from the control plane only, under the
+	// session id "ledger-<snapshot id>" with a call id of its own prefix.
+	snapshotID, snapshotCall := ledgerSnapshotID(call)
+	if snapshotCall && (!internal || call.SessionId != store.LedgerSnapshotSessionPrefix+snapshotID || snapshotID == "" ||
+		!strings.HasPrefix(id, store.LedgerSnapshotCallPrefix)) {
+		return r.once(ctx, user, rejected(id, circusv1.CallUpdate_Rejected_CODE_INVALID))
+	}
 	// admit runs the session admission in the caller's Tx (or on its own
 	// for an attach, which writes nothing).
 	var admit func(ctx context.Context, tx store.Ops) error
@@ -123,6 +130,30 @@ func (r *router) submit(ctx context.Context, user, name string, call *circusv1.D
 		case err != nil && !errors.Is(err, store.ErrNotFound):
 			r.storeFailed(err)
 			return nil, errors.Join(ErrStoreUnavailable, err)
+		}
+	}
+	if snapshotCall {
+		// The snapshot is of a session of the user (or of a deleted one
+		// whose removal waits) on the named device.
+		admit = func(ctx context.Context, tx store.Ops) error {
+			owner, deviceID := "", ""
+			if l, err := tx.GetSessionLedger(ctx, snapshotID); err == nil {
+				owner, deviceID = l.UserID, l.DeviceID
+			} else if !errors.Is(err, store.ErrNotFound) {
+				return err
+			} else if r, err := tx.GetLedgerSnapshotRemoval(ctx, snapshotID); err == nil {
+				owner, deviceID = r.UserID, r.DeviceID
+			} else if !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+			if owner != user {
+				return refusal{circusv1.CallUpdate_Rejected_CODE_INVALID}
+			}
+			d, err := tx.GetIdentityByName(ctx, store.KindDevice, user, name)
+			if errors.Is(err, store.ErrNotFound) || (err == nil && d.ID != deviceID) {
+				return refusal{circusv1.CallUpdate_Rejected_CODE_UNKNOWN_DEVICE}
+			}
+			return err
 		}
 	}
 	if prepare || remove {

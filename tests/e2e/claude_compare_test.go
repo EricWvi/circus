@@ -266,9 +266,11 @@ var opaqueFields = map[string]bool{
 //     Streamed SDK events are named by their event, delta and block type;
 //     a run of content_block_delta events of one delta type counts as one
 //     (the fake model and the fake worker chunk texts differently).
-//     KIND_QUEUE events are left out of the real side: the control plane
-//     publishes them on its own timing while a session waits for a worker
-//     (the fixture records none, its stack has the worker attached first).
+//     KIND_QUEUE and ephemeral KIND_LEDGER events are left out of the real
+//     side: the control plane publishes them on its own timing, while a
+//     session waits for a worker and as its ledger snapshot is prepared and
+//     collected (the fixture records none, its stack has the worker
+//     attached first and no snapshot).
 //   - Each event's payload must have the same key paths, with the same
 //     JSON types, as the fake's matching event, its n-th event of the same
 //     kind (arrays element by element); values are equal for enumFields
@@ -281,7 +283,7 @@ var opaqueFields = map[string]bool{
 func compareEvents(real, fake []fixtureEvent) []string {
 	var kept []fixtureEvent
 	for _, e := range real {
-		if e.Ephemeral && e.Kind == pb.SessionEvent_KIND_QUEUE.String() {
+		if e.Ephemeral && (e.Kind == pb.SessionEvent_KIND_QUEUE.String() || e.Kind == pb.SessionEvent_KIND_LEDGER.String()) {
 			continue
 		}
 		e.Payload = fakeworker.MaskUnstable(clone(e.Payload))

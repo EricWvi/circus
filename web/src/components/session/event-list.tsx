@@ -7,6 +7,7 @@ import {
   FolderClockIcon,
   FolderSyncIcon,
   FolderXIcon,
+  GitMergeIcon,
   SquareIcon,
   TriangleAlertIcon,
 } from "lucide-react"
@@ -17,9 +18,18 @@ import type { WorkspaceStatus } from "@/api/types"
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message"
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning"
 import { DisabledReason } from "@/components/disabled-reason"
+import { DecisionLinks, DecisionRefArea } from "@/components/ledger/decision-links"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import type { ApprovalRequest, NoteEvent, NoteKind, SendFailure, SessionEvent, UserMessageEvent } from "@/lib/types"
+import type {
+  ApprovalRequest,
+  LedgerEvent,
+  NoteEvent,
+  NoteKind,
+  SendFailure,
+  SessionEvent,
+  UserMessageEvent,
+} from "@/lib/types"
 import { workspaceEventText } from "@/lib/workspace"
 
 import { ApprovalCard } from "./approval-card"
@@ -109,6 +119,40 @@ export function WorkspaceRow({ workspace }: { workspace: WorkspaceStatus }) {
   )
 }
 
+/** A recorded merge or discard of the session's Ledger changes: one quiet line, the new decisions linked. */
+export function LedgerRow({ event, projectId }: { event: LedgerEvent; projectId: string }) {
+  const { t } = useTranslation()
+  if (event.change === "discarded") {
+    return (
+      <p className="flex items-start gap-1.5 text-xs text-muted-foreground" data-ledger-event="discarded">
+        <CircleSlashIcon className="mt-px size-3 shrink-0" aria-hidden />
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          {event.reason
+            ? t("session.ledgerDiscarded", { reason: event.reason })
+            : t("session.ledgerDiscardedNoReason")}
+        </span>
+      </p>
+    )
+  }
+  return (
+    <DecisionRefArea>
+      <p className="flex items-start gap-1.5 text-xs text-muted-foreground" data-ledger-event="merged">
+        <GitMergeIcon className="mt-px size-3 shrink-0" aria-hidden />
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          {event.numbers.length > 0 ? (
+            <>
+              {t("session.ledgerMerged")}
+              <DecisionLinks projectId={projectId} numbers={event.numbers} />
+            </>
+          ) : (
+            t("session.ledgerMergedNoNumbers")
+          )}
+        </span>
+      </p>
+    </DecisionRefArea>
+  )
+}
+
 const failureKeys = {
   too_many: "session.delivery.tooMany",
   stopped: "session.delivery.stopped",
@@ -163,6 +207,7 @@ function Delivery({ event, onRetry }: { event: UserMessageEvent; onRetry: () => 
 
 export function EventItem({
   event,
+  projectId,
   deviceName,
   actionsDisabledReason = null,
   approvalDisabledReason = () => actionsDisabledReason,
@@ -171,6 +216,8 @@ export function EventItem({
   onDecide,
 }: {
   event: SessionEvent
+  /** The session's project, whose Ledger decisions it links to. */
+  projectId: string
   /** Device the session's tools execute on. */
   deviceName: string
   /** Why actions can't be used right now; null when they can. */
@@ -258,6 +305,8 @@ export function EventItem({
       return <NoteRow event={event} />
     case "workspace":
       return <WorkspaceRow workspace={event.status} />
+    case "ledger":
+      return <LedgerRow event={event} projectId={projectId} />
     case "truncated":
       return (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

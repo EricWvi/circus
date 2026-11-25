@@ -34,6 +34,18 @@ import { listMockDirectory, readMockGitRemote } from "./directories"
 import { decisionOf, historyOf, ledgerOf, type MockLedgers } from "./ledger"
 import { createMockModelProviders } from "./model-providers"
 import {
+  collectSessionLedger,
+  deleteSessionLedger,
+  addLargeDecision,
+  discardSessionLedger,
+  mainLineMoved,
+  mergeSessionLedger,
+  readyLedger,
+  seedSessionLedger,
+  sessionLedgerDiffOf,
+  sessionLedgerOf,
+} from "./session-ledger"
+import {
   createMockSessionRuntime,
   defaultSessionTiming,
   detailsOf,
@@ -93,6 +105,8 @@ export interface MockBackendOptions {
    * ledger.
    */
   ledgers?: MockLedgers
+  /** `web-vite`'s snapshot also adds a decision at the size limit (256 KiB), for large diffs. */
+  largeSnapshotChange?: boolean
 }
 
 /** Failed sign-ins per email within the window before further tries are refused. */
@@ -117,6 +131,7 @@ export function createMockBackend({
   note = () => {},
   oidc = true,
   ledgers = seedLedgers(now()),
+  largeSnapshotChange = false,
 }: MockBackendOptions): MockBackend {
   const methods = (): LoginMethods =>
     oidc ? structuredClone(MOCK_LOGIN_METHODS) : { password: MOCK_LOGIN_METHODS.password }
@@ -332,6 +347,22 @@ export function createMockBackend({
     )
   }
 
+  /** Announces a change of the session's snapshot live, or recorded for a merge or a discard. */
+  function ledgerChanged(s: MockSession, payload: object, durable: boolean) {
+    if (!s.ledger) return
+    runtime.record(s, "ledger", payload, durable, s.ledger.status.updatedAtUnixMs)
+  }
+
+  /** The seeded sessions' snapshots, from their projects' main lines. */
+  function seedSnapshots() {
+    for (const s of state.sessions) {
+      if (s.ledger) continue
+      const ledger = seedSessionLedger(s.sessionId, ledgers.get(s.projectId) ?? [], now())
+      if (ledger && largeSnapshotChange && s.sessionId === "web-vite") addLargeDecision(ledger)
+      if (ledger) s.ledger = ledger
+    }
+  }
+
   const runtime = createMockSessionRuntime({
     sessions: () => state.sessions,
     own: ownSession,
@@ -359,6 +390,25 @@ export function createMockBackend({
         reschedule()
       }
     },
+    turnEnded(s, input) {
+      // A message that asks for a discard plays an integrator discarding the changes.
+      if (/\bdiscard\b/i.test(input)) {
+        const discarded = discardSessionLedger(s.ledger, now())
+        if (discarded !== null) {
+          ledgerChanged(s, { event: "discarded", changeset_id: discarded, reason: "discarded by an integrator" }, true)
+          return
+        }
+      }
+      // A message that asks for a decision gets one in the snapshot.
+      const asked = /\b(ledger|decision)\b/i.test(input)
+      const head = ledgerOf(ledgers.get(s.projectId) ?? []).headCommit
+      const newDecision = asked
+        ? { title: `Record: ${input.trim().slice(0, 60)}`, body: `Recorded from the session's message:\n\n> ${input.trim()}\n` }
+        : undefined
+      if (collectSessionLedger(s.ledger, { sessionId: s.sessionId, head, newDecision }, now())) {
+        ledgerChanged(s, { event: "collected", changeset_id: s.ledger?.open?.changeset.changesetId ?? "" }, false)
+      }
+    },
     stopped(s) {
       setQueueReason(s, "unspecified")
       clearWorkerDisconnect(s)
@@ -369,6 +419,7 @@ export function createMockBackend({
   })
 
   for (const s of state.sessions) expireLeaseOf(s)
+  seedSnapshots()
 
   const workspaces = createMockWorkspaces({
     now,
@@ -701,8 +752,9 @@ export function createMockBackend({
         const device = state.devices.find((d) => d.deviceId === stored?.deviceId)
         const workspace = location.path === "" && device ? workspaces.ensure(project.projectId, device) : undefined
         const at = now()
+        const sessionId = nanoid(12)
         const session: MockSession = {
-          sessionId: nanoid(12),
+          sessionId,
           projectId: project.projectId,
           title: "",
           device: location.device,
@@ -718,6 +770,7 @@ export function createMockBackend({
           created: { clientRequestId: key, locationIndex: req.locationIndex, providerId: req.providerId },
           ...(workspace ? { workspace } : {}),
           providerId,
+          ledger: readyLedger(sessionId, at),
         }
         state.sessions.push(session)
         return detailsOf(session)
@@ -729,6 +782,16 @@ export function createMockBackend({
         if (!s.workspace) throw new ApiError("failed_precondition", "The session has no workspace.")
         workspaces.retry(s.workspace)
         return workspaceStatus(s.workspace)
+      }),
+
+      deleteSession: callAsync(async ({ sessionId, discardLedgerChanges }: { sessionId: string; discardLedgerChanges?: boolean }) => {
+        await sleep(latency())
+        const s = ownSession(sessionId)
+        if (s.state !== "stopped" || s.leased) {
+          throw new ApiError("failed_precondition", "The session is not stopped.")
+        }
+        deleteSessionLedger(s.ledger, discardLedgerChanges === true, now())
+        state.sessions = state.sessions.filter((x) => x !== s)
       }),
 
       ...runtime.service,
@@ -756,6 +819,30 @@ export function createMockBackend({
         (req: { projectId: string; number: number; pageSize?: number; pageToken?: string }) =>
           historyOf(mainLine(req.projectId), req.number, req.pageSize, req.pageToken),
       ),
+      getSessionLedger: call(({ sessionId }: { sessionId: string }) => sessionLedgerOf(ownSession(sessionId).ledger)),
+      getSessionLedgerDiff: call(({ sessionId, path }: { sessionId: string; path: string }) =>
+        sessionLedgerDiffOf(ownSession(sessionId).ledger, path),
+      ),
+      mergeSessionLedger: call(({ sessionId, expectedChangesetId }: { sessionId: string; expectedChangesetId: string }) => {
+        const s = ownSession(sessionId)
+        const commits = ledgers.get(s.projectId) ?? []
+        const device = state.devices.find((d) => d.owner === ownerOf(s) && d.name === s.device)
+        const { commit, merged } = mergeSessionLedger(
+          s.ledger,
+          { sessionId, expectedChangesetId, turnRunning: s.state === "running", deviceOnline: device?.online === true },
+          commits,
+          now(),
+        )
+        ledgers.set(s.projectId, [...commits, commit])
+        ledgerChanged(s, { event: "merged", changeset_id: merged.changeset.changesetId, numbers: merged.numbers }, true)
+        // The other sessions' open changesets are behind the main line now.
+        for (const other of state.sessions) {
+          if (other !== s && other.projectId === s.projectId && mainLineMoved(other.ledger, commit.commit, now())) {
+            ledgerChanged(other, { event: "collected", changeset_id: other.ledger?.open?.changeset.changesetId ?? "" }, false)
+          }
+        }
+        return { changeset: merged.changeset, numbers: merged.numbers }
+      }),
     },
   }
 

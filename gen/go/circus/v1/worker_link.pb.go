@@ -544,6 +544,11 @@ const (
 	SessionReply_Inputs_Input_KIND_UNSPECIFIED SessionReply_Inputs_Input_Kind = 0
 	SessionReply_Inputs_Input_KIND_USER        SessionReply_Inputs_Input_Kind = 1
 	SessionReply_Inputs_Input_KIND_APPROVAL    SessionReply_Inputs_Input_Kind = 2
+	// A note the control plane writes for the model, such as the
+	// problems a ledger collection found. Pushed as a synthetic user
+	// message (isSynthetic) whose view event carries circus_note =
+	// note. Priority NORMAL: it starts a turn when the session is idle.
+	SessionReply_Inputs_Input_KIND_NOTE SessionReply_Inputs_Input_Kind = 3
 )
 
 // Enum value maps for SessionReply_Inputs_Input_Kind.
@@ -552,11 +557,13 @@ var (
 		0: "KIND_UNSPECIFIED",
 		1: "KIND_USER",
 		2: "KIND_APPROVAL",
+		3: "KIND_NOTE",
 	}
 	SessionReply_Inputs_Input_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
 		"KIND_USER":        1,
 		"KIND_APPROVAL":    2,
+		"KIND_NOTE":        3,
 	}
 )
 
@@ -4851,8 +4858,13 @@ type SessionReply_Lease struct {
 	// it with Persisted.gap_notice_turn_no; only an acknowledgement of the
 	// equal value clears it.
 	TranscriptGapTurnNo uint64 `protobuf:"varint,8,opt,name=transcript_gap_turn_no,json=transcriptGapTurnNo,proto3" json:"transcript_gap_turn_no,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Absolute path of the session's ledger snapshot on default_device,
+	// empty when the session has none (SessionLedgerStatus not READY). The
+	// worker tells the model about it in the system prompt: the directory,
+	// the decision file format, and "D?<letters>" for new decisions.
+	LedgerPath    string `protobuf:"bytes,9,opt,name=ledger_path,json=ledgerPath,proto3" json:"ledger_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SessionReply_Lease) Reset() {
@@ -4939,6 +4951,13 @@ func (x *SessionReply_Lease) GetTranscriptGapTurnNo() uint64 {
 		return x.TranscriptGapTurnNo
 	}
 	return 0
+}
+
+func (x *SessionReply_Lease) GetLedgerPath() string {
+	if x != nil {
+		return x.LedgerPath
+	}
+	return ""
 }
 
 type SessionReply_TranscriptPage struct {
@@ -5437,8 +5456,12 @@ type SessionReply_Inputs_Input struct {
 	InputId string                         `protobuf:"bytes,1,opt,name=input_id,json=inputId,proto3" json:"input_id,omitempty"`
 	Kind    SessionReply_Inputs_Input_Kind `protobuf:"varint,2,opt,name=kind,proto3,enum=circus.v1.SessionReply_Inputs_Input_Kind" json:"kind,omitempty"`
 	// At most 256 KiB.
-	Text          string        `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
-	Priority      InputPriority `protobuf:"varint,4,opt,name=priority,proto3,enum=circus.v1.InputPriority" json:"priority,omitempty"`
+	Text     string        `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	Priority InputPriority `protobuf:"varint,4,opt,name=priority,proto3,enum=circus.v1.InputPriority" json:"priority,omitempty"`
+	// KIND_NOTE only: the note's category, published as the view
+	// event's circus_note (for example "ledger_problems",
+	// "ledger_merged", "ledger_discarded"); at most 64 bytes.
+	Note          string `protobuf:"bytes,5,opt,name=note,proto3" json:"note,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5499,6 +5522,13 @@ func (x *SessionReply_Inputs_Input) GetPriority() InputPriority {
 		return x.Priority
 	}
 	return InputPriority_INPUT_PRIORITY_UNSPECIFIED
+}
+
+func (x *SessionReply_Inputs_Input) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
 }
 
 type SessionReply_Devices_Device struct {
@@ -6009,7 +6039,7 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\"\r\n" +
-	"\vListDevices\"\x9a\x17\n" +
+	"\vListDevices\"\xde\x17\n" +
 	"\fSessionReply\x12,\n" +
 	"\x02ok\x18\x01 \x01(\v2\x1a.circus.v1.SessionReply.OkH\x00R\x02ok\x128\n" +
 	"\x06fenced\x18\x02 \x01(\v2\x1e.circus.v1.SessionReply.FencedH\x00R\x06fenced\x12>\n" +
@@ -6047,7 +6077,7 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\vCODE_BROKEN\x10\b\x12\x1d\n" +
 	"\x19CODE_PROVIDER_UNAVAILABLE\x10\t\x12\x16\n" +
 	"\x12CODE_PROVIDER_FULL\x10\n" +
-	"\x1a\xd7\x02\n" +
+	"\x1a\xf8\x02\n" +
 	"\x05Lease\x12\x14\n" +
 	"\x05epoch\x18\x01 \x01(\x04R\x05epoch\x12*\n" +
 	"\x11claude_session_id\x18\x02 \x01(\tR\x0fclaudeSessionId\x12%\n" +
@@ -6058,24 +6088,28 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
 	"reattached\x18\a \x01(\bR\n" +
 	"reattached\x123\n" +
-	"\x16transcript_gap_turn_no\x18\b \x01(\x04R\x13transcriptGapTurnNo\x1au\n" +
+	"\x16transcript_gap_turn_no\x18\b \x01(\x04R\x13transcriptGapTurnNo\x12\x1f\n" +
+	"\vledger_path\x18\t \x01(\tR\n" +
+	"ledgerPath\x1au\n" +
 	"\x0eTranscriptPage\x124\n" +
 	"\aentries\x18\x01 \x03(\v2\x1a.circus.v1.TranscriptEntryR\aentries\x12\x19\n" +
 	"\bnext_seq\x18\x02 \x01(\x04R\anextSeq\x12\x12\n" +
 	"\x04done\x18\x03 \x01(\bR\x04done\x1a,\n" +
 	"\x0eTranscriptKeys\x12\x1a\n" +
-	"\bsubpaths\x18\x01 \x03(\tR\bsubpaths\x1a\xb4\x02\n" +
+	"\bsubpaths\x18\x01 \x03(\tR\bsubpaths\x1a\xd7\x02\n" +
 	"\x06Inputs\x12<\n" +
-	"\x06inputs\x18\x01 \x03(\v2$.circus.v1.SessionReply.Inputs.InputR\x06inputs\x1a\xeb\x01\n" +
+	"\x06inputs\x18\x01 \x03(\v2$.circus.v1.SessionReply.Inputs.InputR\x06inputs\x1a\x8e\x02\n" +
 	"\x05Input\x12\x19\n" +
 	"\binput_id\x18\x01 \x01(\tR\ainputId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).circus.v1.SessionReply.Inputs.Input.KindR\x04kind\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x124\n" +
-	"\bpriority\x18\x04 \x01(\x0e2\x18.circus.v1.InputPriorityR\bpriority\">\n" +
+	"\bpriority\x18\x04 \x01(\x0e2\x18.circus.v1.InputPriorityR\bpriority\x12\x12\n" +
+	"\x04note\x18\x05 \x01(\tR\x04note\"M\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tKIND_USER\x10\x01\x12\x11\n" +
-	"\rKIND_APPROVAL\x10\x02\x1a\x1f\n" +
+	"\rKIND_APPROVAL\x10\x02\x12\r\n" +
+	"\tKIND_NOTE\x10\x03\x1a\x1f\n" +
 	"\x04Turn\x12\x17\n" +
 	"\aturn_no\x18\x01 \x01(\x04R\x06turnNo\x1aB\n" +
 	"\x11SessionStateReply\x12-\n" +

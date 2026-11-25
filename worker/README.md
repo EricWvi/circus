@@ -42,7 +42,9 @@ versions.
 
 Each session runs one `query()` on the main thread with: `cwd` the
 `SessionConfig.cwds` entry of `default_device`; `settingSources: ['user',
-'project', 'local']`; the `claude_code` preset system prompt; the session's
+'project', 'local']`; the `claude_code` preset system prompt, with a section
+describing the session's ledger snapshot appended when the lease has a
+`ledger_path` (`src/runner/ledger.ts`); the session's
 permission mode (`auto` when empty); partial messages; `sessionId`, or
 `resume` once the session has a transcript; the control-plane SessionStore
 with eager flushing; a PreToolUse hook; the CLI launcher below; and, for a

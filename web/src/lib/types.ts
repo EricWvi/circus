@@ -172,6 +172,16 @@ export interface WorkspaceEvent extends EventBase {
   status: WorkspaceStatus
 }
 
+/**
+ * A recorded outcome of the session's ledger changeset (KIND_LEDGER):
+ * merged, with the numbers its new decisions got (in number order), or
+ * discarded, with why (the server's English text).
+ */
+export type LedgerEvent = EventBase & { kind: "ledger" } & (
+    | { change: "merged"; numbers: number[] }
+    | { change: "discarded"; reason: string }
+  )
+
 export type SessionEvent =
   | UserMessageEvent
   | AssistantTextEvent
@@ -184,3 +194,4 @@ export type SessionEvent =
   | TruncatedEvent
   | NoteEvent
   | WorkspaceEvent
+  | LedgerEvent

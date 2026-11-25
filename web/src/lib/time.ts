@@ -85,3 +85,14 @@ export function formatTimeUntil(
 function spaceDigits(text: string): string {
   return text.replace(/(\d)(?=[\u4e00-\u9fff])/g, "$1 ").replace(/([\u4e00-\u9fff])(?=\d)/g, "$1 ")
 }
+
+/**
+ * A time of day for a status line: "14:05" today, with the date before it
+ * on another day ("Nov 20, 14:05"; in Chinese 11 月 20 日 14:05).
+ */
+export function formatClock(unixMs: number, now: number = Date.now(), language: string = currentLanguage()): string {
+  const sameDay = new Date(unixMs).toDateString() === new Date(now).toDateString()
+  const options: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }
+  if (!sameDay) Object.assign(options, { month: "short", day: "numeric" })
+  return spaceDigits(new Intl.DateTimeFormat(language, options).format(unixMs))
+}

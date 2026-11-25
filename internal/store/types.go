@@ -726,6 +726,10 @@ const (
 
 	// MaxOpenInputs bounds a session's inputs not yet persisted.
 	MaxOpenInputs = 32
+	// MaxNoteOverflow is how many note inputs may exceed MaxOpenInputs:
+	// the user's inputs filling the bound do not keep the control plane's
+	// notes out.
+	MaxNoteOverflow = 8
 	// MaxInputTextBytes bounds one input's text.
 	MaxInputTextBytes = 256 << 10
 	// KeptInputs is how many persisted inputs a session keeps (metadata
@@ -911,7 +915,7 @@ const (
 // Session is one remote Claude Code session.
 type Session struct {
 	Workspace        bool   // the session uses a project default directory
-	WorkspaceBlocked bool   // computed from the workspace row on reads
+	WorkspaceBlocked bool   // computed from the workspace and ledger snapshot rows on reads
 	ID               string // UUIDv7, chosen by the control plane; never reused
 	// UserID owns the project, session, and the devices and workers that serve it.
 	UserID          string
@@ -920,7 +924,7 @@ type Session struct {
 	LocationIndex   uint32 // resolved project location at creation
 	Title           string
 	// LastActivityAt is the maximum of creation, stored durable event times
-	// (excluding workspace events), and accepted user input times. It never decreases.
+	// (excluding workspace and ledger events), and accepted user input times. It never decreases.
 	LastActivityAt int64
 	// PendingApprovalCount excludes approvals expired at the read's supplied now.
 	PendingApprovalCount uint32
@@ -1014,7 +1018,7 @@ type SessionCursor struct {
 // SessionFilter selects sessions for ListSessions. Limit is required
 // (1..MaxPageSize); other empty fields do not filter.
 type SessionFilter struct {
-	Runnable  bool // skip sessions blocked on workspace preparation
+	Runnable  bool // skip sessions blocked on workspace or ledger snapshot preparation
 	UserID    string
 	ProjectID string
 	// WebUserID selects the sessions of the projects this Web user owns
@@ -1271,6 +1275,9 @@ type InputKind string
 const (
 	InputUser     InputKind = "user"
 	InputApproval InputKind = "approval" // the "approved, retry" message
+	// InputNote is a note the control plane writes for the model, such as
+	// the problems of a ledger collection; Input.Note names its category.
+	InputNote InputKind = "note"
 )
 
 // InputPriority is how the worker pushes an input to the CLI.
@@ -1310,6 +1317,9 @@ type Input struct {
 	// EventSeq is the seq of the view event the control plane recorded for
 	// the input (SetInputEventSeq); 0 when none was recorded or stored.
 	EventSeq int64
+	// Note is the category of an InputNote (at most MaxInputNoteBytes of
+	// [a-z0-9_]); empty for other kinds.
+	Note string
 }
 
 // InputSubmitted is SubmitInput's result: the stored input, whether this
@@ -1423,6 +1433,9 @@ type TurnReported struct {
 	Turn      Turn
 	Duplicate bool
 	Session   Session
+	// LedgerDue reports that the first ENDED made the session's ready
+	// ledger snapshot due for a collection (SessionLedger.DueAt).
+	LedgerDue bool
 }
 
 // TurnFilter selects turns for ListTurns. Limit is required
@@ -1601,6 +1614,9 @@ const (
 	EventKindApprovalResolved = "APPROVAL_RESOLVED"
 	EventKindSessionState     = "SESSION_STATE"
 	EventKindWorkspace        = "WORKSPACE"
+	// EventKindLedger: the session's ledger snapshot changed. Like
+	// workspace events, it does not count as activity.
+	EventKindLedger = "LEDGER"
 )
 
 // Live-only kinds the control plane announces and never stores: a queued
@@ -1616,7 +1632,7 @@ const (
 func ControlPlaneOnlyKind(kind string) bool {
 	switch kind {
 	case EventKindTranscriptGapAccepted, EventKindTurnInterrupted, EventKindTurnStopped,
-		EventKindInputAccepted, EventKindApprovalResolved, EventKindSessionState, EventKindWorkspace,
+		EventKindInputAccepted, EventKindApprovalResolved, EventKindSessionState, EventKindWorkspace, EventKindLedger,
 		EventKindQueue, EventKindWorker:
 		return true
 	}

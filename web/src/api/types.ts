@@ -409,6 +409,11 @@ export interface SessionSummary {
    * connected, no lease is held, or nothing is known.
    */
   workerDisconnectedAtUnixMs: number
+  /**
+   * The session's ledger snapshot; unset for a session created before
+   * snapshots existed. `LedgerService.getSessionLedger` has its changes.
+   */
+  ledger?: SessionLedgerStatus
 }
 
 /**
@@ -466,6 +471,7 @@ export type SessionEventKind =
   | "workspace"
   | "queue"
   | "worker"
+  | "ledger"
 
 /**
  * A session event as the control plane streams it. Durable events have
@@ -553,6 +559,14 @@ export interface SessionService {
   resolveApproval(req: { approvalId: string; approve: boolean }): Promise<void>
   /** Lets a broken session go on without the part of its history that was lost. */
   recoverSession(req: { sessionId: string }): Promise<void>
+  /**
+   * Deletes a stopped session and everything recorded for it;
+   * `failed_precondition` while it isn't stopped or still holds a lease.
+   * While its ledger changeset is open with changes, or a collection is
+   * due, it is refused with `failed_precondition` and precondition type
+   * `LEDGER_CHANGES` unless `discardLedgerChanges` is set.
+   */
+  deleteSession(req: { sessionId: string; discardLedgerChanges?: boolean }): Promise<void>
   /**
    * Changes the fields that are set (at least one). `providerId` ("" for
    * local login) is refused with `failed_precondition` while a turn runs
@@ -722,6 +736,135 @@ export interface DecisionVersion {
   codeCommit: string
 }
 
+/** How far a session's ledger snapshot is, by the proto names without `STATE_`. */
+export type SessionLedgerState = "unspecified" | "pending" | "preparing" | "ready" | "failed"
+
+/**
+ * Why a ledger snapshot failed on a device, by the proto names without
+ * `LEDGER_SNAPSHOT_ERROR_`; a value this client doesn't know reads as
+ * `unspecified`.
+ */
+export type LedgerSnapshotError =
+  | "unspecified"
+  | "invalid_request"
+  | "state_dir_unknown"
+  | "unsupported_os"
+  | "path_conflict"
+  | "permission_denied"
+  | "no_space"
+  | "absent"
+  | "stale"
+  | "busy"
+  | "io"
+  | "timeout"
+
+/**
+ * A session's ledger snapshot: a copy of the project's ledger on the
+ * session's device that its agent edits. After every turn the control
+ * plane collects its changes into the session's changeset.
+ */
+export interface SessionLedgerStatus {
+  state: SessionLedgerState
+  /** Absolute path on the device once ready. */
+  path: string
+  /** Failed only. */
+  error: LedgerSnapshotError
+  /** Untrusted text from the device, at most 1024 bytes. */
+  errorDetail: string
+  /** The last successful collection; 0 before any. */
+  collectedAtUnixMs: number
+  /** A turn ended after the last collection: the device may hold changes not seen yet. */
+  collectionDue: boolean
+  /** The open changeset; empty when none. */
+  changesetId: string
+  changeCount: number
+  problemCount: number
+  /** Increases on every change; a KIND_LEDGER event carries it as its time. */
+  updatedAtUnixMs: number
+  /** A merge or a discard of the changeset being applied to the snapshot; the session's turns wait for it. */
+  applying: LedgerApplying
+}
+
+/** What is being applied to a session's snapshot: nothing, a merge, or a discard. */
+export type LedgerApplying = "none" | "merge" | "discard"
+
+/** One decision (or other file) a session's open changeset changes, relative to its base. */
+export interface SessionLedgerEntry {
+  /** Path in the changeset; for a deleted file, its path in the base. */
+  path: string
+  /** Path in the base when it differs (moved or renamed); empty otherwise. */
+  basePath: string
+  /** "D12", or a temporary "D?a" for a new decision; empty for a file that isn't a decision. */
+  number: string
+  /** Title in the changeset, and in the base when it differs. */
+  title: string
+  baseTitle: string
+  added: boolean
+  contentChanged: boolean
+  moved: boolean
+  retitled: boolean
+  deleted: boolean
+  /** In English, from the server; also in `SessionLedger.problems`. */
+  problems: string[]
+}
+
+/** A problem (or warning) of a collection; `path` is empty for one of the whole snapshot. English text. */
+export interface LedgerProblem {
+  path: string
+  message: string
+}
+
+export type ChangesetState = "unspecified" | "open" | "merged" | "discarded"
+
+/** A ledger changeset, as far as a session's view needs it. */
+export interface LedgerChangeset {
+  changesetId: string
+  state: ChangesetState
+  baseCommit: string
+  createdAtUnixMs: number
+  updatedAtUnixMs: number
+  mergedCommit: string
+  discardReason: string
+}
+
+/** A merged changeset of a session, with the numbers its new decisions got ("D?a" → 92). */
+export interface MergedSessionChangeset {
+  changeset: LedgerChangeset
+  numbers: Record<string, number>
+}
+
+/** A session's ledger snapshot with its open changeset's changes. */
+export interface SessionLedger {
+  /** Unset for a session without a snapshot. */
+  status?: SessionLedgerStatus
+  /** The open changeset; unset when none. */
+  changeset?: LedgerChangeset
+  /** In path order. */
+  entries: SessionLedgerEntry[]
+  /** All problems of the last collection, including those without a path. */
+  problems: LedgerProblem[]
+  warnings: LedgerProblem[]
+  /** The open changeset fast-forwards now; false: it waits for an integrator. */
+  fastForward: boolean
+  /** Newest first. */
+  merged: MergedSessionChangeset[]
+}
+
+/**
+ * One changed file of a session's open changeset next to its version in
+ * the changeset's base. A side where it doesn't exist has `exists` false
+ * and empty content; a side over 256 KiB is cut and marked truncated.
+ * Both are untrusted text.
+ */
+export interface SessionLedgerDiff {
+  baseExists: boolean
+  base: string
+  baseTruncated: boolean
+  changesetExists: boolean
+  changeset: string
+  changesetTruncated: boolean
+}
+
 /** Read-only access to projects' ledgers. A project of another user is `not_found`. */
 export interface LedgerService {
   getLedger(req: { projectId: string }): Promise<Ledger>
@@ -738,4 +881,17 @@ export interface LedgerService {
     pageSize?: number
     pageToken?: string
   }): Promise<{ versions: DecisionVersion[]; nextPageToken: string }>
+  /** A session's ledger snapshot and its open changeset's changes. */
+  getSessionLedger(req: { sessionId: string }): Promise<SessionLedger>
+  /** One entry's file in the base and the changeset; `not_found` when the open changeset doesn't change it. */
+  getSessionLedgerDiff(req: { sessionId: string; path: string }): Promise<SessionLedgerDiff>
+  /**
+   * Merges the session's open changeset when it fast-forwards. Refused
+   * with `failed_precondition` and a precondition type otherwise (see
+   * `MergeRefusal` in `lib/session-ledger.ts`).
+   */
+  mergeSessionLedger(req: {
+    sessionId: string
+    expectedChangesetId: string
+  }): Promise<{ changeset: LedgerChangeset; numbers: Record<string, number> }>
 }

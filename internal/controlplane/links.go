@@ -9,6 +9,8 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/controlplane/ledgerslots"
+	"github.com/EricWvi/circus/internal/controlplane/ledgersnaps"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/controlplane/workspaces"
@@ -56,8 +58,16 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		return err
 	}
 	bus := sessions.NewBus(sessions.DefaultBusOptions())
+	// The snapshot manager is built after the session service it wakes;
+	// the service's turn ends reach it through this variable.
+	var snapshots *ledgersnaps.Manager
 	svc, err = sessions.New(sessions.Config{Store: s.st, Bus: bus, InstanceID: s.instanceID, Clock: clk, Logger: s.logger,
-		StopJobs: r.StopSessionJobs, Online: s.onlineDevices, MaxMessageBytes: c.MaxMessageBytes, Secrets: s.secrets})
+		StopJobs: r.StopSessionJobs, Online: s.onlineDevices, MaxMessageBytes: c.MaxMessageBytes, Secrets: s.secrets,
+		LedgerDue: func(ctx context.Context, sessionID string) {
+			if snapshots != nil {
+				snapshots.Due(ctx, sessionID)
+			}
+		}})
 	if err == nil {
 		err = svc.Start(ctx)
 	}
@@ -66,7 +76,13 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		return err
 	}
 	opts := wire.Options{Clock: clk, MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}
-	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, MetadataStore: s.st, Registry: registry, Hooks: workspaceHooks{Hooks: r, online: func(userID, deviceID string) { s.workspaces.DeviceOnline(userID, deviceID) }}, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
+	online := func(userID, deviceID string) {
+		s.workspaces.DeviceOnline(userID, deviceID)
+		if snapshots != nil {
+			snapshots.DeviceOnline(userID, deviceID)
+		}
+	}
+	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, MetadataStore: s.st, Registry: registry, Hooks: workspaceHooks{Hooks: r, online: online}, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
 	if err != nil {
 		_ = svc.Close(ctx)
 		_ = r.Close(ctx)
@@ -83,6 +99,15 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		Store: s.st, Clock: clk, Submit: workspaces.SubmitThrough(r), Supports: g.Supports,
 		Cancel: r.Cancel, StopJobs: r.StopSessionJobs, Bus: bus, Waker: svc, Logger: s.logger,
 	})
+	s.ledgerSlots = ledgerslots.New(ledgerslots.Writes, ledgerslots.WritesPerUser, ledgerslots.MaxWaiters)
+	if s.ledger != nil {
+		snapshots = ledgersnaps.New(ledgersnaps.Config{Store: s.st, Ledger: s.ledger, Clock: clk, Submit: workspaces.SubmitThrough(r),
+			Online: func(deviceID string) bool {
+				online, _ := g.Supports(deviceID, "")
+				return online
+			}, Slots: s.ledgerSlots, Bus: bus, Waker: svc, Logger: s.logger, MaxMessageBytes: c.MaxMessageBytes})
+		s.snapshots = snapshots
+	}
 	s.router = r
 	s.sessions, s.bus = svc, bus
 	s.registry = registry
@@ -106,6 +131,14 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 			case <-s.workspacesDone:
 			case <-ctx.Done():
 				workspaceErr = ctx.Err()
+			}
+		}
+		if s.stopSnapshots != nil {
+			s.stopSnapshots()
+			select {
+			case <-s.snapshotsDone:
+			case <-ctx.Done():
+				workspaceErr = errors.Join(workspaceErr, ctx.Err())
 			}
 		}
 		return errors.Join(workspaceErr, closeCallPlane(ctx, workerSide{w, svc}, g, r, s.stopBg, s.timersDone))

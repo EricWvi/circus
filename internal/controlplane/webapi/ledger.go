@@ -38,9 +38,23 @@ const (
 	maxLedgerRequests        = 4
 	maxLedgerRequestsPerUser = 2
 	ledgerRequestTimeout     = 30 * time.Second
+	// mergeSessionTimeout covers a collection (its device call's deadline
+	// and the wait for a write slot) and the merge.
+	mergeSessionTimeout = 3 * time.Minute
+	// Of the requests in flight, at most this many read a session's
+	// ledger (GetSessionLedger, GetSessionLedgerDiff), in total and per
+	// user. See the README's ledger section.
+	maxSessionLedgerReads        = 2
+	maxSessionLedgerReadsPerUser = 1
 )
 
 type ledgerAdmissionKey struct{}
+
+// ledgerAdmission is what a ledger request took at its admission.
+type ledgerAdmission struct {
+	user        string
+	sessionRead bool
+}
 
 // ledgerSlots counts the ledger requests in flight, in total and per user,
 // up to limit and perUser.
@@ -122,6 +136,9 @@ func refuse(errs *connect.ErrorWriter, w http.ResponseWriter, r *http.Request, e
 
 func (s *Service) registerLedger(mux *http.ServeMux) {
 	slots := &ledgerSlots{byUser: make(map[string]int), limit: maxLedgerRequests, perUser: maxLedgerRequestsPerUser}
+	// A session's ledger reads its changeset's files and answers with up
+	// to 4096 entries: fewer of those run at once.
+	sessionReads := &ledgerSlots{byUser: make(map[string]int), limit: maxSessionLedgerReads, perUser: maxSessionLedgerReadsPerUser}
 	admit := connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			// Connect decodes the body before interceptors run. The browser
@@ -130,37 +147,57 @@ func (s *Service) registerLedger(mux *http.ServeMux) {
 			if err != nil {
 				return nil, err
 			}
+			admission := ctx.Value(ledgerAdmissionKey{}).(*ledgerAdmission)
+			switch req.Spec().Procedure {
+			case circusv1connect.LedgerServiceGetSessionLedgerProcedure, circusv1connect.LedgerServiceGetSessionLedgerDiffProcedure:
+				if !sessionReads.take(u.ID) {
+					return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("ledger is busy"))
+				}
+				admission.sessionRead = true
+			}
 			if !slots.take(u.ID) {
+				if admission.sessionRead {
+					sessionReads.release(u.ID)
+					admission.sessionRead = false
+				}
 				return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("ledger is busy"))
 			}
-			*ctx.Value(ledgerAdmissionKey{}).(*string) = u.ID
+			admission.user = u.ID
 			return next(ctx, req)
 		}
 	})
 	for _, procedure := range []struct {
-		path  string
-		limit int
+		path    string
+		limit   int
+		timeout time.Duration
 	}{
-		{circusv1connect.LedgerServiceGetLedgerProcedure, maxLedgerListingBytes},
-		{circusv1connect.LedgerServiceGetDecisionProcedure, maxLedgerDecisionBytes},
-		{circusv1connect.LedgerServiceListDecisionHistoryProcedure, maxLedgerHistoryBytes},
+		{circusv1connect.LedgerServiceGetLedgerProcedure, maxLedgerListingBytes, ledgerRequestTimeout},
+		{circusv1connect.LedgerServiceGetDecisionProcedure, maxLedgerDecisionBytes, ledgerRequestTimeout},
+		{circusv1connect.LedgerServiceListDecisionHistoryProcedure, maxLedgerHistoryBytes, ledgerRequestTimeout},
+		{circusv1connect.LedgerServiceGetSessionLedgerProcedure, maxSessionLedgerBytes, ledgerRequestTimeout},
+		{circusv1connect.LedgerServiceGetSessionLedgerDiffProcedure, maxSessionLedgerDiffBytes, ledgerRequestTimeout},
+		// A merge first collects the snapshot from the device.
+		{circusv1connect.LedgerServiceMergeSessionLedgerProcedure, maxMergeSessionBytes, mergeSessionTimeout},
 	} {
 		_, h := circusv1connect.NewLedgerServiceHandler(s, connect.WithReadMaxBytes(maxLedgerRequestBytes),
 			connect.WithSendMaxBytes(procedure.limit), connect.WithInterceptors(s.interceptor, admit),
 			connect.WithCompression("gzip", nil, nil))
 		mux.Handle(procedure.path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx, cancel := context.WithTimeout(r.Context(), ledgerRequestTimeout)
+			ctx, cancel := context.WithTimeout(r.Context(), procedure.timeout)
 			defer cancel()
 			defer boundRequest(ctx, w)()
 			limitBody(w, r, maxLedgerRequestBytes)
 			// Release only after Connect has encoded and sent the response.
-			var admitted string
+			admitted := &ledgerAdmission{}
 			defer func() {
-				if admitted != "" {
-					slots.release(admitted)
+				if admitted.user != "" {
+					slots.release(admitted.user)
+					if admitted.sessionRead {
+						sessionReads.release(admitted.user)
+					}
 				}
 			}()
-			h.ServeHTTP(w, r.WithContext(context.WithValue(ctx, ledgerAdmissionKey{}, &admitted)))
+			h.ServeHTTP(w, r.WithContext(context.WithValue(ctx, ledgerAdmissionKey{}, admitted)))
 		}))
 	}
 }

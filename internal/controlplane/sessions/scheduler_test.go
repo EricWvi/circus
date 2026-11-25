@@ -1,8 +1,10 @@
 package sessions_test
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
@@ -195,4 +197,125 @@ func TestWorkspaceSchedulingGate(t *testing.T) {
 	if cwd := reply.GetLease().GetConfig().GetCwds()[0].GetCwd(); cwd != "/home/device/project" {
 		t.Fatalf("lease cwd = %q", cwd)
 	}
+}
+
+// TestHeldSessionNotNudged: while a session's ledger snapshot holds its
+// turns, its holder is not nudged to start one and takes no inputs; the
+// Wake that ends the hold nudges it with every reason left pending.
+func TestHeldSessionNotNudged(t *testing.T) {
+	f := newFixture(t)
+	f.session("s1", -1)
+	c := f.dial(0, "boot-a")
+	ev := f.attach(c, 1)
+	f.input("s1", "go", store.InputNormal)
+	offerTo(t, ev, "s1")
+	epoch := acquire(t, c, "s1")
+	f.settle()
+	call(t, c, wc.TakeInputs("s1", epoch))
+	quietFor(ev)
+
+	// A discard of the session's changeset owes a reset: held.
+	ctx := t.Context()
+	l := store.SessionLedger{SessionID: "s1", UserID: f.user.ID, ProjectID: "p1", DeviceID: f.device.ID, State: store.SessionLedgerReady,
+		Path: "/snap", Pending: store.SessionLedgerReset, PendingChangeset: "cs1", PendingReason: "no", CreatedAt: ms(f), UpdatedAt: ms(f)}
+	must(t, f.st.CreateSessionLedger(ctx, l))
+	f.input("s1", "next", store.InputNormal)
+	f.svc.Wake("s1", circusv1.WorkerEvent_Nudge_REASON_JOB)
+	f.settle()
+	quietCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	for {
+		e, err := ev.Next(quietCtx)
+		if err != nil {
+			break
+		}
+		if n := e.GetNudge(); hasReason(n, circusv1.WorkerEvent_Nudge_REASON_INPUT) || hasReason(n, circusv1.WorkerEvent_Nudge_REASON_JOB) {
+			t.Fatalf("nudged to start a turn while held: %v", n)
+		}
+	}
+	if got := call(t, c, wc.TakeInputs("s1", epoch)).GetInputs().GetInputs(); len(got) != 0 {
+		t.Fatalf("inputs taken while held: %v", got)
+	}
+
+	// The reset is done: the Wake that ends the hold nudges with the input
+	// and the job notice left pending.
+	got, err := f.st.GetSessionLedger(ctx, "s1")
+	must(t, err)
+	done := got
+	done.Pending, done.PendingChangeset, done.PendingReason, done.UpdatedAt = "", "", "", got.UpdatedAt+1
+	ok, err := f.st.UpdateSessionLedger(ctx, done, got.UpdatedAt)
+	must(t, err)
+	if !ok {
+		t.Fatal("the row changed")
+	}
+	f.svc.Wake("s1", circusv1.WorkerEvent_Nudge_REASON_INPUT)
+	nudge(t, ev, "s1", circusv1.WorkerEvent_Nudge_REASON_INPUT, circusv1.WorkerEvent_Nudge_REASON_JOB)
+	// The first input, taken and not persisted, comes again.
+	if got := call(t, c, wc.TakeInputs("s1", epoch)).GetInputs().GetInputs(); len(got) != 2 || got[1].GetText() != "next" {
+		t.Fatalf("inputs after the hold: %v", got)
+	}
+}
+
+// heldThenReleased leases s1 to a new connection, holds its turns until
+// the scheduler has seen the hold (with an input left pending), then ends
+// the hold in the store without telling the scheduler. It returns the
+// connection, its events and the lease's epoch.
+func heldThenReleased(t *testing.T, f *fixture) (*wc.Client, wc.Events, uint64) {
+	t.Helper()
+	f.session("s1", -1)
+	c := f.dial(0, "boot-a")
+	ev := f.attach(c, 1)
+	f.input("s1", "go", store.InputNormal)
+	offerTo(t, ev, "s1")
+	epoch := acquire(t, c, "s1")
+	f.settle()
+	call(t, c, wc.TakeInputs("s1", epoch))
+	quietFor(ev)
+	ctx := t.Context()
+	l := store.SessionLedger{SessionID: "s1", UserID: f.user.ID, ProjectID: "p1", DeviceID: f.device.ID, State: store.SessionLedgerReady,
+		Path: "/snap", Pending: store.SessionLedgerReset, PendingChangeset: "cs1", PendingReason: "no", CreatedAt: ms(f), UpdatedAt: ms(f)}
+	must(t, f.st.CreateSessionLedger(ctx, l))
+	f.input("s1", "next", store.InputNormal)
+	f.settle()
+	quietFor(ev)
+	got, err := f.st.GetSessionLedger(ctx, "s1")
+	must(t, err)
+	done := got
+	done.Pending, done.PendingChangeset, done.PendingReason, done.UpdatedAt = "", "", "", got.UpdatedAt+1
+	ok, err := f.st.UpdateSessionLedger(ctx, done, got.UpdatedAt)
+	must(t, err)
+	if !ok {
+		t.Fatal("the row changed")
+	}
+	return c, ev, epoch
+}
+
+// TestResumeRefreshesHold: a lease resumed after the hold ended is nudged
+// with the input left pending: the resumption reads the hold again.
+func TestResumeRefreshesHold(t *testing.T) {
+	f := newFixture(t)
+	c, _, epoch := heldThenReleased(t, f)
+	_ = c.Close()
+	c2 := f.dial(0, "boot-a")
+	ev2 := f.attach(c2, 1)
+	if !call2resume(t, c2, "s1", epoch) {
+		t.Fatal("resume failed")
+	}
+	nudge(t, ev2, "s1", circusv1.WorkerEvent_Nudge_REASON_INPUT)
+}
+
+// TestAcquireRefreshesHold: a lease acquired after the hold ended is
+// nudged with the input pending on the session: the acquisition reads the
+// hold again rather than keep what the last lease saw.
+func TestAcquireRefreshesHold(t *testing.T) {
+	f := newFixture(t)
+	c, ev, epoch := heldThenReleased(t, f)
+	call(t, c, wc.Release("s1", epoch, circusv1.ReleaseLease_REASON_IDLE))
+	offerTo(t, ev, "s1")
+	// Another input while the session is offered: its reason waits on the
+	// entry for the next lease, and its evaluation is done before.
+	f.input("s1", "more", store.InputNormal)
+	f.settle()
+	acquire(t, c, "s1")
+	nudge(t, ev, "s1", circusv1.WorkerEvent_Nudge_REASON_INPUT)
 }

@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package circus.v1;
 
+import "circus/v1/device.proto";
+
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 
 // LedgerService reads a project's ledger: its numbered decisions, filed in
@@ -32,6 +34,33 @@ service LedgerService {
   // ListDecisionHistory lists the main-line commits that changed one
   // decision (its content, title or directory), newest first.
   rpc ListDecisionHistory(ListDecisionHistoryRequest) returns (ListDecisionHistoryResponse);
+
+  // GetSessionLedger returns a session's ledger snapshot: its status, the
+  // open changeset's changes as one entry per decision, the problems of
+  // its last collection and the session's merged changesets. NOT_FOUND for
+  // a session of another user's project, like an unknown one.
+  rpc GetSessionLedger(GetSessionLedgerRequest) returns (GetSessionLedgerResponse);
+  // GetSessionLedgerDiff returns one changed file of the session's open
+  // changeset next to its version in the changeset's base, for showing a
+  // diff. NOT_FOUND when the open changeset does not change that path.
+  rpc GetSessionLedgerDiff(GetSessionLedgerDiffRequest) returns (GetSessionLedgerDiffResponse);
+  // MergeSessionLedger merges the session's open changeset when it
+  // fast-forwards, for the project's owner (no integrator is needed). It
+  // first collects the snapshot from the device. FAILED_PRECONDITION with
+  // a google.rpc.PreconditionFailure whose type is:
+  //   - "TURN_RUNNING": a turn is running or about to start; merge after
+  //     it ends;
+  //   - "NOT_FAST_FORWARD": the base differs from the main line's head; an
+  //     integrator merges it with `circus ledger merge` (the page shows it
+  //     as waiting to be merged);
+  //   - "DEVICE_OFFLINE": the device is offline and a turn ended after the
+  //     last collection, so the changes on the device are not known yet;
+  //   - "PROBLEMS": the changeset fails validation;
+  //   - "NO_CHANGES": the session has no open changeset with changes;
+  //   - "CHANGESET_CHANGED": expected_changeset_id is not the open one.
+  // After merging, the control plane renames the session's new decisions
+  // on the device (DeviceCall rebase_ledger) and tells the agent.
+  rpc MergeSessionLedger(MergeSessionLedgerRequest) returns (MergeSessionLedgerResponse);
 }
 
 message LedgerEntry {
@@ -134,6 +163,8 @@ message ListDecisionHistoryResponse {
 // Who may do what:
 //   - any worker of the user: OpenChangeset, ReadChangesetBase,
 //     ListChangesets, GetChangeset;
+//   - a session's changeset (session_id set) has no opener: only an
+//     integrator may check, read conflicts of, merge or discard it;
 //   - the worker that opened the changeset, or a worker with the integrator
 //     grant (MachineService.SetWorkerGrant): CheckChangeset,
 //     ReadChangesetConflicts, DiscardChangeset, and MergeChangeset when it
@@ -151,8 +182,26 @@ message ListDecisionHistoryResponse {
 // numbers and rewrites them. The generated root INDEX.md is not a decision
 // and is never part of a changeset.
 //
+// Fast-forward: a changeset fast-forwards when its base commit's tree
+// equals the tree of the main line's head. A changeset opened here has a
+// main-line commit as its base, so this is "the base is the head"; a
+// session's later changeset has as its base the session's view after its
+// earlier merge (a commit whose parent is that merge commit), which equals
+// the main line until someone else merges.
+//
+// Sessions: a session with a ledger snapshot has at most one open
+// changeset, opened by the control plane when a collection first finds
+// changes. CheckChangeset on it takes no changes: it collects the snapshot
+// from the device first, or, with the device offline, uses the last
+// collection and says so in a warning. MergeChangeset and DiscardChangeset
+// of it are refused with FAILED_PRECONDITION, violation type TURN_RUNNING,
+// while a turn of the session runs or is about to start (its inputs are
+// taken); once one succeeds, the session's turns
+// wait until the snapshot follows (new decisions renamed, or the snapshot
+// written again) and the agent is told.
+//
 // Bounds: as LedgerService, plus at most 8 MiB of changed file content per
-// changeset and at most 64 open changesets per project
+// changeset and at most 64 open changesets per project, sessions' included
 // (RESOURCE_EXHAUSTED beyond).
 service LedgerChangesetService {
   // OpenChangeset starts a changeset based on the current head of the main
@@ -181,8 +230,8 @@ service LedgerChangesetService {
   rpc ReadChangesetConflicts(ReadChangesetConflictsRequest) returns (ReadChangesetConflictsResponse);
   // MergeChangeset merges an open changeset into the main line, under the
   // project's lock, re-checking everything there:
-  //   - it fast-forwards when its base is the main line's head at that
-  //     moment; the opener may then merge it;
+  //   - it fast-forwards when its base's tree equals the tree of the main
+  //     line's head at that moment; the opener may then merge it;
   //   - otherwise only an integrator may merge it, even when no file it
   //     changes was changed on the main line after its base, and every
   //     conflicting file must be given its final content in resolved.
@@ -217,7 +266,7 @@ message Changeset {
   State state = 3;
   // Main-line commit the changeset started from.
   string base_commit = 4;
-  // The worker that opened it (empty for a session's changeset, later).
+  // The worker that opened it; empty for a session's changeset.
   string opener_worker_id = 5;
   int64 created_at_unix_ms = 6;
   int64 updated_at_unix_ms = 7;
@@ -234,6 +283,9 @@ message Changeset {
   // refused with FAILED_PRECONDITION, a google.rpc.PreconditionFailure of
   // type "CHANGESET_REPAIR", until a repair succeeds.
   string repair_failure = 11;
+  // The session whose snapshot it collects; empty for one opened with
+  // OpenChangeset.
+  string session_id = 12;
 }
 
 message LedgerFile {
@@ -297,14 +349,16 @@ message LedgerConflict {
 
 message CheckChangesetRequest {
   string changeset_id = 1;
-  // The complete set of changes relative to the base.
+  // The complete set of changes relative to the base. Empty for a
+  // session's changeset, whose changes come from its snapshot
+  // (INVALID_ARGUMENT otherwise).
   repeated FileChange changes = 2;
 }
 message CheckChangesetResponse {
   Changeset changeset = 1;
   repeated LedgerProblem problems = 2;
-  // The base is the main line's head now: merging needs no integrator and
-  // has no conflicts (unless the main line moves first).
+  // The base's tree is the main line head's tree now: merging needs no
+  // integrator and has no conflicts (unless the main line moves first).
   bool fast_forward = 3;
   // Main-line head the comparison used.
   string main_commit = 4;
@@ -362,6 +416,8 @@ message ListChangesetsRequest {
   // 1 to 100; 0 selects 50.
   uint32 page_size = 3;
   string page_token = 4;
+  // Only this session's changesets.
+  string session_id = 5;
 }
 message ListChangesetsResponse {
   repeated Changeset changesets = 1;
@@ -373,4 +429,138 @@ message GetChangesetRequest {
 }
 message GetChangesetResponse {
   Changeset changeset = 1;
+}
+
+// SessionLedgerStatus is the state of a session's ledger snapshot: a copy
+// of the project's ledger in a directory on the session's device, outside
+// the workspace, that the session's agent reads and writes. The control
+// plane prepares it when the session is created (the first turn waits for
+// it while its device is offline or it is prepared, as for the workspace),
+// collects its changes after every turn into the session's changeset, and
+// between turns renames new decisions in it after a merge, or writes it
+// again after a discard: turns are held until that is done and the agent
+// is told. The snapshot never takes in others' later main-line changes.
+message SessionLedgerStatus {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    // Waiting for the device to connect. It holds the session's turns.
+    STATE_PENDING = 1;
+    // Preparation runs on the device; it holds the session's turns.
+    STATE_PREPARING = 2;
+    // The snapshot is at path.
+    STATE_READY = 3;
+    // Preparation failed; the session runs without a ledger. See error.
+    STATE_FAILED = 4;
+  }
+  State state = 1;
+  // Absolute device path once READY.
+  string path = 2;
+  // FAILED only.
+  LedgerSnapshotError error = 3;
+  // At most 1024 bytes of valid UTF-8.
+  string error_detail = 4;
+  // The last successful collection; zero before any.
+  int64 collected_at_unix_ms = 5;
+  // A turn ended after the last successful collection (the device was
+  // offline, or the collection waits or runs): the device may hold changes
+  // the control plane has not seen.
+  bool collection_due = 6;
+  // The open changeset, empty when none.
+  string changeset_id = 7;
+  // Entries and problems of the open changeset's last collection.
+  uint32 change_count = 8;
+  uint32 problem_count = 9;
+  // Strictly increases on every change of this status; a KIND_LEDGER
+  // event carries it as ts_unix_ms.
+  int64 updated_at_unix_ms = 10;
+  // A merge or a discard of the session's changeset being applied to the
+  // snapshot (READY only). The session's turns wait for it, unless
+  // problems stop it (problem_count): then the agent is told and the
+  // step is tried again after its next turn.
+  Applying applying = 11;
+  enum Applying {
+    // Nothing is being applied.
+    APPLYING_UNSPECIFIED = 0;
+    // The merge: new decisions are renamed in the snapshot.
+    APPLYING_MERGE = 1;
+    // The discard: the snapshot is written again.
+    APPLYING_DISCARD = 2;
+  }
+}
+
+// SessionLedgerEntry is one decision (or other file) the open changeset
+// changes, relative to its base.
+message SessionLedgerEntry {
+  // Path in the changeset; for a deleted file, its path in the base.
+  string path = 1;
+  // Path in the base when it differs (moved or renamed); empty otherwise.
+  string base_path = 2;
+  // "D12", or a temporary "D?a" for a new decision; empty when the file
+  // is not a decision file.
+  string number = 3;
+  // Title in the changeset, and in the base when it differs.
+  string title = 4;
+  string base_title = 5;
+  // What changed; several may hold.
+  bool added = 6;
+  bool content_changed = 7;
+  bool moved = 8;
+  bool retitled = 9;
+  bool deleted = 10;
+  // The collection's problems for this path, in English (also listed in
+  // GetSessionLedgerResponse.problems).
+  repeated string problems = 11;
+}
+
+message GetSessionLedgerRequest {
+  string session_id = 1;
+}
+message GetSessionLedgerResponse {
+  SessionLedgerStatus status = 1;
+  // The open changeset; unset when none.
+  Changeset changeset = 2;
+  // In path order, at most 4096.
+  repeated SessionLedgerEntry entries = 3;
+  // All problems of the last collection, including those without a path
+  // (such as too many files). At most 256.
+  repeated LedgerProblem problems = 4;
+  repeated LedgerProblem warnings = 5;
+  // The open changeset fast-forwards now, so MergeSessionLedger may merge
+  // it; false means it waits for an integrator.
+  bool fast_forward = 6;
+  // The session's merged changesets, newest first, at most 64.
+  repeated MergedSessionChangeset merged = 7;
+}
+message MergedSessionChangeset {
+  Changeset changeset = 1;
+  // Temporary number to assigned number, as MergeChangesetResponse.numbers.
+  map<string, uint32> numbers = 2;
+}
+
+message GetSessionLedgerDiffRequest {
+  string session_id = 1;
+  // A SessionLedgerEntry.path.
+  string path = 2;
+}
+message GetSessionLedgerDiffResponse {
+  // The entry's file in the base (at base_path when moved) and in the
+  // changeset; a side where it does not exist has exists false and empty
+  // content. Each at most 256 KiB plus one byte: a longer file is cut and
+  // marked truncated.
+  bool base_exists = 1;
+  string base = 2;
+  bool base_truncated = 3;
+  bool changeset_exists = 4;
+  string changeset = 5;
+  bool changeset_truncated = 6;
+}
+
+message MergeSessionLedgerRequest {
+  string session_id = 1;
+  // The open changeset the user saw (SessionLedgerStatus.changeset_id).
+  string expected_changeset_id = 2;
+}
+message MergeSessionLedgerResponse {
+  Changeset changeset = 1;
+  map<string, uint32> numbers = 2;
 }

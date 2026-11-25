@@ -51,6 +51,10 @@ const (
 	noteJobNotice               = "job_notice"
 	noteLostBgtask              = "lost_bgtask"
 	noteHistoryMissing          = "history_missing"
+	// noteLedgerProblems is the category of a control-plane note (an
+	// input of KIND_NOTE) about a ledger collection's problems; such a
+	// note keeps the category the control plane gave it.
+	noteLedgerProblems = "ledger_problems"
 )
 
 // sdkUser builds an SDK user message. A non-empty note marks a message the
@@ -66,10 +70,19 @@ const (
 )
 
 func sdkUser(sessionID, id string, content any, note string) sdkMessage {
+	return sdkUserMessage(sessionID, id, content, note, note != "")
+}
+
+// sdkUserMessage is sdkUser for a synthetic message whose note may be
+// empty, as a control-plane note without a category: synthetic, without
+// circus_note.
+func sdkUserMessage(sessionID, id string, content any, note string, synthetic bool) sdkMessage {
 	m := sdkEnvelope("user", sessionID, id)
 	m["message"] = object{"role": "user", "content": content}
-	if note != "" {
+	if synthetic {
 		m["isSynthetic"] = true
+	}
+	if note != "" {
 		m["circus_note"] = note
 	}
 	return sdkMessage{pb.SessionEvent_KIND_USER, m}

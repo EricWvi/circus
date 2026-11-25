@@ -101,8 +101,11 @@ func newProviderWorld(t *testing.T) *providerWorld {
 	}
 	token, _, err := auth.CreateEnrollToken(ctx, h.st, h.user(), store.KindDevice, time.Hour, time.Now())
 	must(t, err)
-	_, err = auth.Enroll(ctx, h.st, auth.EnrollRequest{Token: token, Kind: store.KindDevice, Name: "solo", MachineID: "machine-solo", OS: "linux", Arch: "amd64"}, time.Now())
+	solo, err := auth.Enroll(ctx, h.st, auth.EnrollRequest{Token: token, Kind: store.KindDevice, Name: "solo", MachineID: "machine-solo", OS: "linux", Arch: "amd64"}, time.Now())
 	must(t, err)
+	// Its daemon keeps the sessions' ledger snapshots, whose preparation
+	// a session's first turn waits for.
+	ledgerOnlyDaemon(t, h, solo.Identity.ID, solo.Token)
 	p, err := w.projects.CreateProject(ctx, connect.NewRequest(&pb.CreateProjectRequest{Name: "Providers", Locations: []*pb.Project_Location{{Device: "solo", Path: h.dir}}}))
 	must(t, err)
 	w.project = p.Msg.GetProject().GetProjectId()

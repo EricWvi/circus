@@ -179,6 +179,13 @@ func TestRepeatedLimitsMatchWireDoc(t *testing.T) {
 		"circus.v1.SessionReply.LaunchEnv.env":              72,
 		"circus.v1.ListSessionsResponse.sessions":           1000,
 		"circus.v1.ListApprovalsResponse.approvals":         32,
+		"circus.v1.PrepareLedgerRequest.files":              4096,
+		"circus.v1.CollectLedgerRequest.known":              4096,
+		"circus.v1.CollectLedgerResult.changes":             4096,
+		"circus.v1.CollectLedgerResult.reverted":            4096,
+		"circus.v1.CollectLedgerResult.problems":            1024,
+		"circus.v1.RebaseLedgerRequest.edits":               4096,
+		"circus.v1.RebaseLedgerRequest.known":               4096,
 	}
 	got := map[protoreflect.FullName]int{}
 	for _, r := range repeatedLimits {

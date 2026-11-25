@@ -34,12 +34,17 @@ function save(state: MockState) {
  * Starts the mock backend from persisted state. `?mock=fresh` resets it to
  * an uninitialized server and `?mock=reset` restores the demo seed;
  * `?mock=nooidc` turns the OIDC provider off until the next page load and
- * `?mock=stress` adds decisions at the ledger's size limits to `palace`;
+ * `?mock=stress` adds decisions at the ledger's size limits to `palace`,
+ * and one to `web-vite`'s Ledger changes;
  * `?mock=queue` adds sessions that wait for each reason a session can, and
  * `?mock=worker` sessions whose worker lost its connection (it doesn't come
  * back: their leases end a minute later).
  * Modes combine with commas (`?mock=reset,nooidc`); the query parameter is
- * removed afterwards. Sessions live in this tab's memory only.
+ * removed afterwards. Sessions live in this tab's memory only. A message
+ * that mentions a "ledger" or "decision" makes the agent add a new
+ * decision to the session's Ledger snapshot, and one that mentions a
+ * "discard" discards its open changes as an integrator would (see
+ * `session-ledger.ts`).
  */
 export function startMockBackend(): MockBackend {
   const url = new URL(window.location.href)
@@ -69,7 +74,7 @@ export function startMockBackend(): MockBackend {
     onChange: save,
     note: (message) => console.info(message),
     oidc: !modes.has("nooidc"),
-    ...(modes.has("stress") ? { ledgers: stressLedgers() } : {}),
+    ...(modes.has("stress") ? { ledgers: stressLedgers(), largeSnapshotChange: true } : {}),
   })
 
   // Another tab changed the store: adopt its state so this tab's next write

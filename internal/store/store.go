@@ -51,6 +51,9 @@ type Ops interface {
 	WebAuthOps
 	WorkspaceOps
 	LedgerOps
+	// SessionLedgerOps holds the session ledger snapshot operations
+	// (session_ledgers.go).
+	SessionLedgerOps
 	// ProjectOps holds the project operations (projects.go).
 	ProjectOps
 	// ProviderOps holds the provider operations (providers.go).

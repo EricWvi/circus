@@ -4,13 +4,15 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { LedgerSnapshotError } from "./device_pb.js";
+import { file_circus_v1_device } from "./device_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file circus/v1/ledger.proto.
  */
 export const file_circus_v1_ledger: GenFile = /*@__PURE__*/
-  fileDesc("ChZjaXJjdXMvdjEvbGVkZ2VyLnByb3RvEgljaXJjdXMudjEiYwoLTGVkZ2VyRW50cnkSDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgFIAEoAyImChBHZXRMZWRnZXJSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiZgoRR2V0TGVkZ2VyUmVzcG9uc2USEwoLaGVhZF9jb21taXQYASABKAkSJwoHZW50cmllcxgCIAMoCzIWLmNpcmN1cy52MS5MZWRnZXJFbnRyeRITCgtuZXh0X251bWJlchgDIAEoDSKAAQoIRGVjaXNpb24SDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEgwKBGJvZHkYBSABKAkSDgoGY29tbWl0GAYgASgJEhwKFGNvbW1pdHRlZF9hdF91bml4X21zGAcgASgDIkgKEkdldERlY2lzaW9uUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIOCgZjb21taXQYAyABKAkiPAoTR2V0RGVjaXNpb25SZXNwb25zZRIlCghkZWNpc2lvbhgBIAEoCzITLmNpcmN1cy52MS5EZWNpc2lvbiLbAQoPRGVjaXNpb25WZXJzaW9uEg4KBmNvbW1pdBgBIAEoCRIcChRjb21taXR0ZWRfYXRfdW5peF9tcxgCIAEoAxIOCgZhdXRob3IYAyABKAkSDwoHc3VtbWFyeRgEIAEoCRIMCgRwYXRoGAUgASgJEg0KBXRpdGxlGAYgASgJEg0KBWFkZGVkGAcgASgIEhcKD2NvbnRlbnRfY2hhbmdlZBgIIAEoCBINCgVtb3ZlZBgJIAEoCBIQCghyZXRpdGxlZBgKIAEoCBITCgtjb2RlX2NvbW1pdBgLIAEoCSJnChpMaXN0RGVjaXNpb25IaXN0b3J5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJkChtMaXN0RGVjaXNpb25IaXN0b3J5UmVzcG9uc2USLAoIdmVyc2lvbnMYASADKAsyGi5jaXJjdXMudjEuRGVjaXNpb25WZXJzaW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSL6AgoJQ2hhbmdlc2V0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEikKBXN0YXRlGAMgASgOMhouY2lyY3VzLnYxLkNoYW5nZXNldC5TdGF0ZRITCgtiYXNlX2NvbW1pdBgEIAEoCRIYChBvcGVuZXJfd29ya2VyX2lkGAUgASgJEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgGIAEoAxIaChJ1cGRhdGVkX2F0X3VuaXhfbXMYByABKAMSFQoNbWVyZ2VkX2NvbW1pdBgIIAEoCRITCgtjb2RlX2NvbW1pdBgJIAEoCRIWCg5kaXNjYXJkX3JlYXNvbhgKIAEoCRIWCg5yZXBhaXJfZmFpbHVyZRgLIAEoCSJVCgVTdGF0ZRIVChFTVEFURV9VTlNQRUNJRklFRBAAEg4KClNUQVRFX09QRU4QARIQCgxTVEFURV9NRVJHRUQQAhITCg9TVEFURV9ESVNDQVJERUQQAyIrCgpMZWRnZXJGaWxlEgwKBHBhdGgYASABKAkSDwoHY29udGVudBgCIAEoCSJKCgpGaWxlQ2hhbmdlEgwKBHBhdGgYASABKAkSEQoHY29udGVudBgCIAEoCUgAEhEKB2RlbGV0ZWQYAyABKAhIAEIICgZjaGFuZ2UiJwoUT3BlbkNoYW5nZXNldFJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCSJAChVPcGVuQ2hhbmdlc2V0UmVzcG9uc2USJwoJY2hhbmdlc2V0GAEgASgLMhQuY2lyY3VzLnYxLkNoYW5nZXNldCJEChhSZWFkQ2hhbmdlc2V0QmFzZVJlcXVlc3QSFAoMY2hhbmdlc2V0X2lkGAEgASgJEhIKCnBhZ2VfdG9rZW4YAiABKAkiWgoZUmVhZENoYW5nZXNldEJhc2VSZXNwb25zZRIkCgVmaWxlcxgBIAMoCzIVLmNpcmN1cy52MS5MZWRnZXJGaWxlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIuCg1MZWRnZXJQcm9ibGVtEgwKBHBhdGgYASABKAkSDwoHbWVzc2FnZRgCIAEoCSKqAQoOTGVkZ2VyQ29uZmxpY3QSDAoEcGF0aBgBIAEoCRITCgtiYXNlX2V4aXN0cxgCIAEoCBIMCgRiYXNlGAMgASgJEhgKEGNoYW5nZXNldF9leGlzdHMYBCABKAgSEQoJY2hhbmdlc2V0GAUgASgJEhMKC21haW5fZXhpc3RzGAYgASgIEgwKBG1haW4YByABKAkSFwoPY29udGVudF9vbWl0dGVkGAggASgIIlUKFUNoZWNrQ2hhbmdlc2V0UmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSJgoHY2hhbmdlcxgCIAMoCzIVLmNpcmN1cy52MS5GaWxlQ2hhbmdlIvIBChZDaGVja0NoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSKgoIcHJvYmxlbXMYAiADKAsyGC5jaXJjdXMudjEuTGVkZ2VyUHJvYmxlbRIUCgxmYXN0X2ZvcndhcmQYAyABKAgSEwoLbWFpbl9jb21taXQYBCABKAkSLAoJY29uZmxpY3RzGAUgAygLMhkuY2lyY3VzLnYxLkxlZGdlckNvbmZsaWN0EioKCHdhcm5pbmdzGAYgAygLMhguY2lyY3VzLnYxLkxlZGdlclByb2JsZW0iXgodUmVhZENoYW5nZXNldENvbmZsaWN0c1JlcXVlc3QSFAoMY2hhbmdlc2V0X2lkGAEgASgJEhMKC21haW5fY29tbWl0GAIgASgJEhIKCnBhZ2VfdG9rZW4YAyABKAkiZwoeUmVhZENoYW5nZXNldENvbmZsaWN0c1Jlc3BvbnNlEiwKCWNvbmZsaWN0cxgBIAMoCzIZLmNpcmN1cy52MS5MZWRnZXJDb25mbGljdBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiawoVTWVyZ2VDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRITCgtjb2RlX2NvbW1pdBgCIAEoCRInCghyZXNvbHZlZBgDIAMoCzIVLmNpcmN1cy52MS5GaWxlQ2hhbmdlIrIBChZNZXJnZUNoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSPwoHbnVtYmVycxgCIAMoCzIuLmNpcmN1cy52MS5NZXJnZUNoYW5nZXNldFJlc3BvbnNlLk51bWJlcnNFbnRyeRouCgxOdW1iZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgNOgI4ASI/ChdEaXNjYXJkQ2hhbmdlc2V0UmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSDgoGcmVhc29uGAIgASgJIkMKGERpc2NhcmRDaGFuZ2VzZXRSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0InoKFUxpc3RDaGFuZ2VzZXRzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEikKBXN0YXRlGAIgASgOMhouY2lyY3VzLnYxLkNoYW5nZXNldC5TdGF0ZRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJbChZMaXN0Q2hhbmdlc2V0c1Jlc3BvbnNlEigKCmNoYW5nZXNldHMYASADKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIrChNHZXRDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCSI/ChRHZXRDaGFuZ2VzZXRSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0MosCCg1MZWRnZXJTZXJ2aWNlEkYKCUdldExlZGdlchIbLmNpcmN1cy52MS5HZXRMZWRnZXJSZXF1ZXN0GhwuY2lyY3VzLnYxLkdldExlZGdlclJlc3BvbnNlEkwKC0dldERlY2lzaW9uEh0uY2lyY3VzLnYxLkdldERlY2lzaW9uUmVxdWVzdBoeLmNpcmN1cy52MS5HZXREZWNpc2lvblJlc3BvbnNlEmQKE0xpc3REZWNpc2lvbkhpc3RvcnkSJS5jaXJjdXMudjEuTGlzdERlY2lzaW9uSGlzdG9yeVJlcXVlc3QaJi5jaXJjdXMudjEuTGlzdERlY2lzaW9uSGlzdG9yeVJlc3BvbnNlMu4FChZMZWRnZXJDaGFuZ2VzZXRTZXJ2aWNlElIKDU9wZW5DaGFuZ2VzZXQSHy5jaXJjdXMudjEuT3BlbkNoYW5nZXNldFJlcXVlc3QaIC5jaXJjdXMudjEuT3BlbkNoYW5nZXNldFJlc3BvbnNlEl4KEVJlYWRDaGFuZ2VzZXRCYXNlEiMuY2lyY3VzLnYxLlJlYWRDaGFuZ2VzZXRCYXNlUmVxdWVzdBokLmNpcmN1cy52MS5SZWFkQ2hhbmdlc2V0QmFzZVJlc3BvbnNlElUKDkNoZWNrQ2hhbmdlc2V0EiAuY2lyY3VzLnYxLkNoZWNrQ2hhbmdlc2V0UmVxdWVzdBohLmNpcmN1cy52MS5DaGVja0NoYW5nZXNldFJlc3BvbnNlEm0KFlJlYWRDaGFuZ2VzZXRDb25mbGljdHMSKC5jaXJjdXMudjEuUmVhZENoYW5nZXNldENvbmZsaWN0c1JlcXVlc3QaKS5jaXJjdXMudjEuUmVhZENoYW5nZXNldENvbmZsaWN0c1Jlc3BvbnNlElUKDk1lcmdlQ2hhbmdlc2V0EiAuY2lyY3VzLnYxLk1lcmdlQ2hhbmdlc2V0UmVxdWVzdBohLmNpcmN1cy52MS5NZXJnZUNoYW5nZXNldFJlc3BvbnNlElsKEERpc2NhcmRDaGFuZ2VzZXQSIi5jaXJjdXMudjEuRGlzY2FyZENoYW5nZXNldFJlcXVlc3QaIy5jaXJjdXMudjEuRGlzY2FyZENoYW5nZXNldFJlc3BvbnNlElUKDkxpc3RDaGFuZ2VzZXRzEiAuY2lyY3VzLnYxLkxpc3RDaGFuZ2VzZXRzUmVxdWVzdBohLmNpcmN1cy52MS5MaXN0Q2hhbmdlc2V0c1Jlc3BvbnNlEk8KDEdldENoYW5nZXNldBIeLmNpcmN1cy52MS5HZXRDaGFuZ2VzZXRSZXF1ZXN0Gh8uY2lyY3VzLnYxLkdldENoYW5nZXNldFJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z");
+  fileDesc("ChZjaXJjdXMvdjEvbGVkZ2VyLnByb3RvEgljaXJjdXMudjEiYwoLTGVkZ2VyRW50cnkSDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgFIAEoAyImChBHZXRMZWRnZXJSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiZgoRR2V0TGVkZ2VyUmVzcG9uc2USEwoLaGVhZF9jb21taXQYASABKAkSJwoHZW50cmllcxgCIAMoCzIWLmNpcmN1cy52MS5MZWRnZXJFbnRyeRITCgtuZXh0X251bWJlchgDIAEoDSKAAQoIRGVjaXNpb24SDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEgwKBGJvZHkYBSABKAkSDgoGY29tbWl0GAYgASgJEhwKFGNvbW1pdHRlZF9hdF91bml4X21zGAcgASgDIkgKEkdldERlY2lzaW9uUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIOCgZjb21taXQYAyABKAkiPAoTR2V0RGVjaXNpb25SZXNwb25zZRIlCghkZWNpc2lvbhgBIAEoCzITLmNpcmN1cy52MS5EZWNpc2lvbiLbAQoPRGVjaXNpb25WZXJzaW9uEg4KBmNvbW1pdBgBIAEoCRIcChRjb21taXR0ZWRfYXRfdW5peF9tcxgCIAEoAxIOCgZhdXRob3IYAyABKAkSDwoHc3VtbWFyeRgEIAEoCRIMCgRwYXRoGAUgASgJEg0KBXRpdGxlGAYgASgJEg0KBWFkZGVkGAcgASgIEhcKD2NvbnRlbnRfY2hhbmdlZBgIIAEoCBINCgVtb3ZlZBgJIAEoCBIQCghyZXRpdGxlZBgKIAEoCBITCgtjb2RlX2NvbW1pdBgLIAEoCSJnChpMaXN0RGVjaXNpb25IaXN0b3J5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJkChtMaXN0RGVjaXNpb25IaXN0b3J5UmVzcG9uc2USLAoIdmVyc2lvbnMYASADKAsyGi5jaXJjdXMudjEuRGVjaXNpb25WZXJzaW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSKOAwoJQ2hhbmdlc2V0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEikKBXN0YXRlGAMgASgOMhouY2lyY3VzLnYxLkNoYW5nZXNldC5TdGF0ZRITCgtiYXNlX2NvbW1pdBgEIAEoCRIYChBvcGVuZXJfd29ya2VyX2lkGAUgASgJEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgGIAEoAxIaChJ1cGRhdGVkX2F0X3VuaXhfbXMYByABKAMSFQoNbWVyZ2VkX2NvbW1pdBgIIAEoCRITCgtjb2RlX2NvbW1pdBgJIAEoCRIWCg5kaXNjYXJkX3JlYXNvbhgKIAEoCRIWCg5yZXBhaXJfZmFpbHVyZRgLIAEoCRISCgpzZXNzaW9uX2lkGAwgASgJIlUKBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASDgoKU1RBVEVfT1BFThABEhAKDFNUQVRFX01FUkdFRBACEhMKD1NUQVRFX0RJU0NBUkRFRBADIisKCkxlZGdlckZpbGUSDAoEcGF0aBgBIAEoCRIPCgdjb250ZW50GAIgASgJIkoKCkZpbGVDaGFuZ2USDAoEcGF0aBgBIAEoCRIRCgdjb250ZW50GAIgASgJSAASEQoHZGVsZXRlZBgDIAEoCEgAQggKBmNoYW5nZSInChRPcGVuQ2hhbmdlc2V0UmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJIkAKFU9wZW5DaGFuZ2VzZXRSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0IkQKGFJlYWRDaGFuZ2VzZXRCYXNlUmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSEgoKcGFnZV90b2tlbhgCIAEoCSJaChlSZWFkQ2hhbmdlc2V0QmFzZVJlc3BvbnNlEiQKBWZpbGVzGAEgAygLMhUuY2lyY3VzLnYxLkxlZGdlckZpbGUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIi4KDUxlZGdlclByb2JsZW0SDAoEcGF0aBgBIAEoCRIPCgdtZXNzYWdlGAIgASgJIqoBCg5MZWRnZXJDb25mbGljdBIMCgRwYXRoGAEgASgJEhMKC2Jhc2VfZXhpc3RzGAIgASgIEgwKBGJhc2UYAyABKAkSGAoQY2hhbmdlc2V0X2V4aXN0cxgEIAEoCBIRCgljaGFuZ2VzZXQYBSABKAkSEwoLbWFpbl9leGlzdHMYBiABKAgSDAoEbWFpbhgHIAEoCRIXCg9jb250ZW50X29taXR0ZWQYCCABKAgiVQoVQ2hlY2tDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRImCgdjaGFuZ2VzGAIgAygLMhUuY2lyY3VzLnYxLkZpbGVDaGFuZ2Ui8gEKFkNoZWNrQ2hhbmdlc2V0UmVzcG9uc2USJwoJY2hhbmdlc2V0GAEgASgLMhQuY2lyY3VzLnYxLkNoYW5nZXNldBIqCghwcm9ibGVtcxgCIAMoCzIYLmNpcmN1cy52MS5MZWRnZXJQcm9ibGVtEhQKDGZhc3RfZm9yd2FyZBgDIAEoCBITCgttYWluX2NvbW1pdBgEIAEoCRIsCgljb25mbGljdHMYBSADKAsyGS5jaXJjdXMudjEuTGVkZ2VyQ29uZmxpY3QSKgoId2FybmluZ3MYBiADKAsyGC5jaXJjdXMudjEuTGVkZ2VyUHJvYmxlbSJeCh1SZWFkQ2hhbmdlc2V0Q29uZmxpY3RzUmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSEwoLbWFpbl9jb21taXQYAiABKAkSEgoKcGFnZV90b2tlbhgDIAEoCSJnCh5SZWFkQ2hhbmdlc2V0Q29uZmxpY3RzUmVzcG9uc2USLAoJY29uZmxpY3RzGAEgAygLMhkuY2lyY3VzLnYxLkxlZGdlckNvbmZsaWN0EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJrChVNZXJnZUNoYW5nZXNldFJlcXVlc3QSFAoMY2hhbmdlc2V0X2lkGAEgASgJEhMKC2NvZGVfY29tbWl0GAIgASgJEicKCHJlc29sdmVkGAMgAygLMhUuY2lyY3VzLnYxLkZpbGVDaGFuZ2UisgEKFk1lcmdlQ2hhbmdlc2V0UmVzcG9uc2USJwoJY2hhbmdlc2V0GAEgASgLMhQuY2lyY3VzLnYxLkNoYW5nZXNldBI/CgdudW1iZXJzGAIgAygLMi4uY2lyY3VzLnYxLk1lcmdlQ2hhbmdlc2V0UmVzcG9uc2UuTnVtYmVyc0VudHJ5Gi4KDE51bWJlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKA06AjgBIj8KF0Rpc2NhcmRDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAkiQwoYRGlzY2FyZENoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQijgEKFUxpc3RDaGFuZ2VzZXRzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEikKBXN0YXRlGAIgASgOMhouY2lyY3VzLnYxLkNoYW5nZXNldC5TdGF0ZRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCRISCgpzZXNzaW9uX2lkGAUgASgJIlsKFkxpc3RDaGFuZ2VzZXRzUmVzcG9uc2USKAoKY2hhbmdlc2V0cxgBIAMoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIisKE0dldENoYW5nZXNldFJlcXVlc3QSFAoMY2hhbmdlc2V0X2lkGAEgASgJIj8KFEdldENoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQiqAQKE1Nlc3Npb25MZWRnZXJTdGF0dXMSMwoFc3RhdGUYASABKA4yJC5jaXJjdXMudjEuU2Vzc2lvbkxlZGdlclN0YXR1cy5TdGF0ZRIMCgRwYXRoGAIgASgJEi0KBWVycm9yGAMgASgOMh4uY2lyY3VzLnYxLkxlZGdlclNuYXBzaG90RXJyb3ISFAoMZXJyb3JfZGV0YWlsGAQgASgJEhwKFGNvbGxlY3RlZF9hdF91bml4X21zGAUgASgDEhYKDmNvbGxlY3Rpb25fZHVlGAYgASgIEhQKDGNoYW5nZXNldF9pZBgHIAEoCRIUCgxjaGFuZ2VfY291bnQYCCABKA0SFQoNcHJvYmxlbV9jb3VudBgJIAEoDRIaChJ1cGRhdGVkX2F0X3VuaXhfbXMYCiABKAMSOQoIYXBwbHlpbmcYCyABKA4yJy5jaXJjdXMudjEuU2Vzc2lvbkxlZGdlclN0YXR1cy5BcHBseWluZyJpCgVTdGF0ZRIVChFTVEFURV9VTlNQRUNJRklFRBAAEhEKDVNUQVRFX1BFTkRJTkcQARITCg9TVEFURV9QUkVQQVJJTkcQAhIPCgtTVEFURV9SRUFEWRADEhAKDFNUQVRFX0ZBSUxFRBAEIk4KCEFwcGx5aW5nEhgKFEFQUExZSU5HX1VOU1BFQ0lGSUVEEAASEgoOQVBQTFlJTkdfTUVSR0UQARIUChBBUFBMWUlOR19ESVNDQVJEEAIi1AEKElNlc3Npb25MZWRnZXJFbnRyeRIMCgRwYXRoGAEgASgJEhEKCWJhc2VfcGF0aBgCIAEoCRIOCgZudW1iZXIYAyABKAkSDQoFdGl0bGUYBCABKAkSEgoKYmFzZV90aXRsZRgFIAEoCRINCgVhZGRlZBgGIAEoCBIXCg9jb250ZW50X2NoYW5nZWQYByABKAgSDQoFbW92ZWQYCCABKAgSEAoIcmV0aXRsZWQYCSABKAgSDwoHZGVsZXRlZBgKIAEoCBIQCghwcm9ibGVtcxgLIAMoCSItChdHZXRTZXNzaW9uTGVkZ2VyUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIsQCChhHZXRTZXNzaW9uTGVkZ2VyUmVzcG9uc2USLgoGc3RhdHVzGAEgASgLMh4uY2lyY3VzLnYxLlNlc3Npb25MZWRnZXJTdGF0dXMSJwoJY2hhbmdlc2V0GAIgASgLMhQuY2lyY3VzLnYxLkNoYW5nZXNldBIuCgdlbnRyaWVzGAMgAygLMh0uY2lyY3VzLnYxLlNlc3Npb25MZWRnZXJFbnRyeRIqCghwcm9ibGVtcxgEIAMoCzIYLmNpcmN1cy52MS5MZWRnZXJQcm9ibGVtEioKCHdhcm5pbmdzGAUgAygLMhguY2lyY3VzLnYxLkxlZGdlclByb2JsZW0SFAoMZmFzdF9mb3J3YXJkGAYgASgIEjEKBm1lcmdlZBgHIAMoCzIhLmNpcmN1cy52MS5NZXJnZWRTZXNzaW9uQ2hhbmdlc2V0IrIBChZNZXJnZWRTZXNzaW9uQ2hhbmdlc2V0EicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSPwoHbnVtYmVycxgCIAMoCzIuLmNpcmN1cy52MS5NZXJnZWRTZXNzaW9uQ2hhbmdlc2V0Lk51bWJlcnNFbnRyeRouCgxOdW1iZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgNOgI4ASI/ChtHZXRTZXNzaW9uTGVkZ2VyRGlmZlJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRwYXRoGAIgASgJIqMBChxHZXRTZXNzaW9uTGVkZ2VyRGlmZlJlc3BvbnNlEhMKC2Jhc2VfZXhpc3RzGAEgASgIEgwKBGJhc2UYAiABKAkSFgoOYmFzZV90cnVuY2F0ZWQYAyABKAgSGAoQY2hhbmdlc2V0X2V4aXN0cxgEIAEoCBIRCgljaGFuZ2VzZXQYBSABKAkSGwoTY2hhbmdlc2V0X3RydW5jYXRlZBgGIAEoCCJOChlNZXJnZVNlc3Npb25MZWRnZXJSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSHQoVZXhwZWN0ZWRfY2hhbmdlc2V0X2lkGAIgASgJIroBChpNZXJnZVNlc3Npb25MZWRnZXJSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0EkMKB251bWJlcnMYAiADKAsyMi5jaXJjdXMudjEuTWVyZ2VTZXNzaW9uTGVkZ2VyUmVzcG9uc2UuTnVtYmVyc0VudHJ5Gi4KDE51bWJlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKA06AjgBMrQECg1MZWRnZXJTZXJ2aWNlEkYKCUdldExlZGdlchIbLmNpcmN1cy52MS5HZXRMZWRnZXJSZXF1ZXN0GhwuY2lyY3VzLnYxLkdldExlZGdlclJlc3BvbnNlEkwKC0dldERlY2lzaW9uEh0uY2lyY3VzLnYxLkdldERlY2lzaW9uUmVxdWVzdBoeLmNpcmN1cy52MS5HZXREZWNpc2lvblJlc3BvbnNlEmQKE0xpc3REZWNpc2lvbkhpc3RvcnkSJS5jaXJjdXMudjEuTGlzdERlY2lzaW9uSGlzdG9yeVJlcXVlc3QaJi5jaXJjdXMudjEuTGlzdERlY2lzaW9uSGlzdG9yeVJlc3BvbnNlElsKEEdldFNlc3Npb25MZWRnZXISIi5jaXJjdXMudjEuR2V0U2Vzc2lvbkxlZGdlclJlcXVlc3QaIy5jaXJjdXMudjEuR2V0U2Vzc2lvbkxlZGdlclJlc3BvbnNlEmcKFEdldFNlc3Npb25MZWRnZXJEaWZmEiYuY2lyY3VzLnYxLkdldFNlc3Npb25MZWRnZXJEaWZmUmVxdWVzdBonLmNpcmN1cy52MS5HZXRTZXNzaW9uTGVkZ2VyRGlmZlJlc3BvbnNlEmEKEk1lcmdlU2Vzc2lvbkxlZGdlchIkLmNpcmN1cy52MS5NZXJnZVNlc3Npb25MZWRnZXJSZXF1ZXN0GiUuY2lyY3VzLnYxLk1lcmdlU2Vzc2lvbkxlZGdlclJlc3BvbnNlMu4FChZMZWRnZXJDaGFuZ2VzZXRTZXJ2aWNlElIKDU9wZW5DaGFuZ2VzZXQSHy5jaXJjdXMudjEuT3BlbkNoYW5nZXNldFJlcXVlc3QaIC5jaXJjdXMudjEuT3BlbkNoYW5nZXNldFJlc3BvbnNlEl4KEVJlYWRDaGFuZ2VzZXRCYXNlEiMuY2lyY3VzLnYxLlJlYWRDaGFuZ2VzZXRCYXNlUmVxdWVzdBokLmNpcmN1cy52MS5SZWFkQ2hhbmdlc2V0QmFzZVJlc3BvbnNlElUKDkNoZWNrQ2hhbmdlc2V0EiAuY2lyY3VzLnYxLkNoZWNrQ2hhbmdlc2V0UmVxdWVzdBohLmNpcmN1cy52MS5DaGVja0NoYW5nZXNldFJlc3BvbnNlEm0KFlJlYWRDaGFuZ2VzZXRDb25mbGljdHMSKC5jaXJjdXMudjEuUmVhZENoYW5nZXNldENvbmZsaWN0c1JlcXVlc3QaKS5jaXJjdXMudjEuUmVhZENoYW5nZXNldENvbmZsaWN0c1Jlc3BvbnNlElUKDk1lcmdlQ2hhbmdlc2V0EiAuY2lyY3VzLnYxLk1lcmdlQ2hhbmdlc2V0UmVxdWVzdBohLmNpcmN1cy52MS5NZXJnZUNoYW5nZXNldFJlc3BvbnNlElsKEERpc2NhcmRDaGFuZ2VzZXQSIi5jaXJjdXMudjEuRGlzY2FyZENoYW5nZXNldFJlcXVlc3QaIy5jaXJjdXMudjEuRGlzY2FyZENoYW5nZXNldFJlc3BvbnNlElUKDkxpc3RDaGFuZ2VzZXRzEiAuY2lyY3VzLnYxLkxpc3RDaGFuZ2VzZXRzUmVxdWVzdBohLmNpcmN1cy52MS5MaXN0Q2hhbmdlc2V0c1Jlc3BvbnNlEk8KDEdldENoYW5nZXNldBIeLmNpcmN1cy52MS5HZXRDaGFuZ2VzZXRSZXF1ZXN0Gh8uY2lyY3VzLnYxLkdldENoYW5nZXNldFJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device]);
 
 /**
  * @generated from message circus.v1.LedgerEntry
@@ -374,7 +376,7 @@ export type Changeset = Message<"circus.v1.Changeset"> & {
   baseCommit: string;
 
   /**
-   * The worker that opened it (empty for a session's changeset, later).
+   * The worker that opened it; empty for a session's changeset.
    *
    * @generated from field: string opener_worker_id = 5;
    */
@@ -421,6 +423,14 @@ export type Changeset = Message<"circus.v1.Changeset"> & {
    * @generated from field: string repair_failure = 11;
    */
   repairFailure: string;
+
+  /**
+   * The session whose snapshot it collects; empty for one opened with
+   * OpenChangeset.
+   *
+   * @generated from field: string session_id = 12;
+   */
+  sessionId: string;
 };
 
 /**
@@ -703,7 +713,9 @@ export type CheckChangesetRequest = Message<"circus.v1.CheckChangesetRequest"> &
   changesetId: string;
 
   /**
-   * The complete set of changes relative to the base.
+   * The complete set of changes relative to the base. Empty for a
+   * session's changeset, whose changes come from its snapshot
+   * (INVALID_ARGUMENT otherwise).
    *
    * @generated from field: repeated circus.v1.FileChange changes = 2;
    */
@@ -732,8 +744,8 @@ export type CheckChangesetResponse = Message<"circus.v1.CheckChangesetResponse">
   problems: LedgerProblem[];
 
   /**
-   * The base is the main line's head now: merging needs no integrator and
-   * has no conflicts (unless the main line moves first).
+   * The base's tree is the main line head's tree now: merging needs no
+   * integrator and has no conflicts (unless the main line moves first).
    *
    * @generated from field: bool fast_forward = 3;
    */
@@ -952,6 +964,13 @@ export type ListChangesetsRequest = Message<"circus.v1.ListChangesetsRequest"> &
    * @generated from field: string page_token = 4;
    */
   pageToken: string;
+
+  /**
+   * Only this session's changesets.
+   *
+   * @generated from field: string session_id = 5;
+   */
+  sessionId: string;
 };
 
 /**
@@ -1018,6 +1037,484 @@ export const GetChangesetResponseSchema: GenMessage<GetChangesetResponse> = /*@_
   messageDesc(file_circus_v1_ledger, 29);
 
 /**
+ * SessionLedgerStatus is the state of a session's ledger snapshot: a copy
+ * of the project's ledger in a directory on the session's device, outside
+ * the workspace, that the session's agent reads and writes. The control
+ * plane prepares it when the session is created (the first turn waits for
+ * it while its device is offline or it is prepared, as for the workspace),
+ * collects its changes after every turn into the session's changeset, and
+ * between turns renames new decisions in it after a merge, or writes it
+ * again after a discard: turns are held until that is done and the agent
+ * is told. The snapshot never takes in others' later main-line changes.
+ *
+ * @generated from message circus.v1.SessionLedgerStatus
+ */
+export type SessionLedgerStatus = Message<"circus.v1.SessionLedgerStatus"> & {
+  /**
+   * @generated from field: circus.v1.SessionLedgerStatus.State state = 1;
+   */
+  state: SessionLedgerStatus_State;
+
+  /**
+   * Absolute device path once READY.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * FAILED only.
+   *
+   * @generated from field: circus.v1.LedgerSnapshotError error = 3;
+   */
+  error: LedgerSnapshotError;
+
+  /**
+   * At most 1024 bytes of valid UTF-8.
+   *
+   * @generated from field: string error_detail = 4;
+   */
+  errorDetail: string;
+
+  /**
+   * The last successful collection; zero before any.
+   *
+   * @generated from field: int64 collected_at_unix_ms = 5;
+   */
+  collectedAtUnixMs: bigint;
+
+  /**
+   * A turn ended after the last successful collection (the device was
+   * offline, or the collection waits or runs): the device may hold changes
+   * the control plane has not seen.
+   *
+   * @generated from field: bool collection_due = 6;
+   */
+  collectionDue: boolean;
+
+  /**
+   * The open changeset, empty when none.
+   *
+   * @generated from field: string changeset_id = 7;
+   */
+  changesetId: string;
+
+  /**
+   * Entries and problems of the open changeset's last collection.
+   *
+   * @generated from field: uint32 change_count = 8;
+   */
+  changeCount: number;
+
+  /**
+   * @generated from field: uint32 problem_count = 9;
+   */
+  problemCount: number;
+
+  /**
+   * Strictly increases on every change of this status; a KIND_LEDGER
+   * event carries it as ts_unix_ms.
+   *
+   * @generated from field: int64 updated_at_unix_ms = 10;
+   */
+  updatedAtUnixMs: bigint;
+
+  /**
+   * A merge or a discard of the session's changeset being applied to the
+   * snapshot (READY only). The session's turns wait for it, unless
+   * problems stop it (problem_count): then the agent is told and the
+   * step is tried again after its next turn.
+   *
+   * @generated from field: circus.v1.SessionLedgerStatus.Applying applying = 11;
+   */
+  applying: SessionLedgerStatus_Applying;
+};
+
+/**
+ * Describes the message circus.v1.SessionLedgerStatus.
+ * Use `create(SessionLedgerStatusSchema)` to create a new message.
+ */
+export const SessionLedgerStatusSchema: GenMessage<SessionLedgerStatus> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 30);
+
+/**
+ * @generated from enum circus.v1.SessionLedgerStatus.State
+ */
+export enum SessionLedgerStatus_State {
+  /**
+   * @generated from enum value: STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Waiting for the device to connect. It holds the session's turns.
+   *
+   * @generated from enum value: STATE_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * Preparation runs on the device; it holds the session's turns.
+   *
+   * @generated from enum value: STATE_PREPARING = 2;
+   */
+  PREPARING = 2,
+
+  /**
+   * The snapshot is at path.
+   *
+   * @generated from enum value: STATE_READY = 3;
+   */
+  READY = 3,
+
+  /**
+   * Preparation failed; the session runs without a ledger. See error.
+   *
+   * @generated from enum value: STATE_FAILED = 4;
+   */
+  FAILED = 4,
+}
+
+/**
+ * Describes the enum circus.v1.SessionLedgerStatus.State.
+ */
+export const SessionLedgerStatus_StateSchema: GenEnum<SessionLedgerStatus_State> = /*@__PURE__*/
+  enumDesc(file_circus_v1_ledger, 30, 0);
+
+/**
+ * @generated from enum circus.v1.SessionLedgerStatus.Applying
+ */
+export enum SessionLedgerStatus_Applying {
+  /**
+   * Nothing is being applied.
+   *
+   * @generated from enum value: APPLYING_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The merge: new decisions are renamed in the snapshot.
+   *
+   * @generated from enum value: APPLYING_MERGE = 1;
+   */
+  MERGE = 1,
+
+  /**
+   * The discard: the snapshot is written again.
+   *
+   * @generated from enum value: APPLYING_DISCARD = 2;
+   */
+  DISCARD = 2,
+}
+
+/**
+ * Describes the enum circus.v1.SessionLedgerStatus.Applying.
+ */
+export const SessionLedgerStatus_ApplyingSchema: GenEnum<SessionLedgerStatus_Applying> = /*@__PURE__*/
+  enumDesc(file_circus_v1_ledger, 30, 1);
+
+/**
+ * SessionLedgerEntry is one decision (or other file) the open changeset
+ * changes, relative to its base.
+ *
+ * @generated from message circus.v1.SessionLedgerEntry
+ */
+export type SessionLedgerEntry = Message<"circus.v1.SessionLedgerEntry"> & {
+  /**
+   * Path in the changeset; for a deleted file, its path in the base.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * Path in the base when it differs (moved or renamed); empty otherwise.
+   *
+   * @generated from field: string base_path = 2;
+   */
+  basePath: string;
+
+  /**
+   * "D12", or a temporary "D?a" for a new decision; empty when the file
+   * is not a decision file.
+   *
+   * @generated from field: string number = 3;
+   */
+  number: string;
+
+  /**
+   * Title in the changeset, and in the base when it differs.
+   *
+   * @generated from field: string title = 4;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string base_title = 5;
+   */
+  baseTitle: string;
+
+  /**
+   * What changed; several may hold.
+   *
+   * @generated from field: bool added = 6;
+   */
+  added: boolean;
+
+  /**
+   * @generated from field: bool content_changed = 7;
+   */
+  contentChanged: boolean;
+
+  /**
+   * @generated from field: bool moved = 8;
+   */
+  moved: boolean;
+
+  /**
+   * @generated from field: bool retitled = 9;
+   */
+  retitled: boolean;
+
+  /**
+   * @generated from field: bool deleted = 10;
+   */
+  deleted: boolean;
+
+  /**
+   * The collection's problems for this path, in English (also listed in
+   * GetSessionLedgerResponse.problems).
+   *
+   * @generated from field: repeated string problems = 11;
+   */
+  problems: string[];
+};
+
+/**
+ * Describes the message circus.v1.SessionLedgerEntry.
+ * Use `create(SessionLedgerEntrySchema)` to create a new message.
+ */
+export const SessionLedgerEntrySchema: GenMessage<SessionLedgerEntry> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 31);
+
+/**
+ * @generated from message circus.v1.GetSessionLedgerRequest
+ */
+export type GetSessionLedgerRequest = Message<"circus.v1.GetSessionLedgerRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message circus.v1.GetSessionLedgerRequest.
+ * Use `create(GetSessionLedgerRequestSchema)` to create a new message.
+ */
+export const GetSessionLedgerRequestSchema: GenMessage<GetSessionLedgerRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 32);
+
+/**
+ * @generated from message circus.v1.GetSessionLedgerResponse
+ */
+export type GetSessionLedgerResponse = Message<"circus.v1.GetSessionLedgerResponse"> & {
+  /**
+   * @generated from field: circus.v1.SessionLedgerStatus status = 1;
+   */
+  status?: SessionLedgerStatus | undefined;
+
+  /**
+   * The open changeset; unset when none.
+   *
+   * @generated from field: circus.v1.Changeset changeset = 2;
+   */
+  changeset?: Changeset | undefined;
+
+  /**
+   * In path order, at most 4096.
+   *
+   * @generated from field: repeated circus.v1.SessionLedgerEntry entries = 3;
+   */
+  entries: SessionLedgerEntry[];
+
+  /**
+   * All problems of the last collection, including those without a path
+   * (such as too many files). At most 256.
+   *
+   * @generated from field: repeated circus.v1.LedgerProblem problems = 4;
+   */
+  problems: LedgerProblem[];
+
+  /**
+   * @generated from field: repeated circus.v1.LedgerProblem warnings = 5;
+   */
+  warnings: LedgerProblem[];
+
+  /**
+   * The open changeset fast-forwards now, so MergeSessionLedger may merge
+   * it; false means it waits for an integrator.
+   *
+   * @generated from field: bool fast_forward = 6;
+   */
+  fastForward: boolean;
+
+  /**
+   * The session's merged changesets, newest first, at most 64.
+   *
+   * @generated from field: repeated circus.v1.MergedSessionChangeset merged = 7;
+   */
+  merged: MergedSessionChangeset[];
+};
+
+/**
+ * Describes the message circus.v1.GetSessionLedgerResponse.
+ * Use `create(GetSessionLedgerResponseSchema)` to create a new message.
+ */
+export const GetSessionLedgerResponseSchema: GenMessage<GetSessionLedgerResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 33);
+
+/**
+ * @generated from message circus.v1.MergedSessionChangeset
+ */
+export type MergedSessionChangeset = Message<"circus.v1.MergedSessionChangeset"> & {
+  /**
+   * @generated from field: circus.v1.Changeset changeset = 1;
+   */
+  changeset?: Changeset | undefined;
+
+  /**
+   * Temporary number to assigned number, as MergeChangesetResponse.numbers.
+   *
+   * @generated from field: map<string, uint32> numbers = 2;
+   */
+  numbers: { [key: string]: number };
+};
+
+/**
+ * Describes the message circus.v1.MergedSessionChangeset.
+ * Use `create(MergedSessionChangesetSchema)` to create a new message.
+ */
+export const MergedSessionChangesetSchema: GenMessage<MergedSessionChangeset> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 34);
+
+/**
+ * @generated from message circus.v1.GetSessionLedgerDiffRequest
+ */
+export type GetSessionLedgerDiffRequest = Message<"circus.v1.GetSessionLedgerDiffRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * A SessionLedgerEntry.path.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+};
+
+/**
+ * Describes the message circus.v1.GetSessionLedgerDiffRequest.
+ * Use `create(GetSessionLedgerDiffRequestSchema)` to create a new message.
+ */
+export const GetSessionLedgerDiffRequestSchema: GenMessage<GetSessionLedgerDiffRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 35);
+
+/**
+ * @generated from message circus.v1.GetSessionLedgerDiffResponse
+ */
+export type GetSessionLedgerDiffResponse = Message<"circus.v1.GetSessionLedgerDiffResponse"> & {
+  /**
+   * The entry's file in the base (at base_path when moved) and in the
+   * changeset; a side where it does not exist has exists false and empty
+   * content. Each at most 256 KiB plus one byte: a longer file is cut and
+   * marked truncated.
+   *
+   * @generated from field: bool base_exists = 1;
+   */
+  baseExists: boolean;
+
+  /**
+   * @generated from field: string base = 2;
+   */
+  base: string;
+
+  /**
+   * @generated from field: bool base_truncated = 3;
+   */
+  baseTruncated: boolean;
+
+  /**
+   * @generated from field: bool changeset_exists = 4;
+   */
+  changesetExists: boolean;
+
+  /**
+   * @generated from field: string changeset = 5;
+   */
+  changeset: string;
+
+  /**
+   * @generated from field: bool changeset_truncated = 6;
+   */
+  changesetTruncated: boolean;
+};
+
+/**
+ * Describes the message circus.v1.GetSessionLedgerDiffResponse.
+ * Use `create(GetSessionLedgerDiffResponseSchema)` to create a new message.
+ */
+export const GetSessionLedgerDiffResponseSchema: GenMessage<GetSessionLedgerDiffResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 36);
+
+/**
+ * @generated from message circus.v1.MergeSessionLedgerRequest
+ */
+export type MergeSessionLedgerRequest = Message<"circus.v1.MergeSessionLedgerRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * The open changeset the user saw (SessionLedgerStatus.changeset_id).
+   *
+   * @generated from field: string expected_changeset_id = 2;
+   */
+  expectedChangesetId: string;
+};
+
+/**
+ * Describes the message circus.v1.MergeSessionLedgerRequest.
+ * Use `create(MergeSessionLedgerRequestSchema)` to create a new message.
+ */
+export const MergeSessionLedgerRequestSchema: GenMessage<MergeSessionLedgerRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 37);
+
+/**
+ * @generated from message circus.v1.MergeSessionLedgerResponse
+ */
+export type MergeSessionLedgerResponse = Message<"circus.v1.MergeSessionLedgerResponse"> & {
+  /**
+   * @generated from field: circus.v1.Changeset changeset = 1;
+   */
+  changeset?: Changeset | undefined;
+
+  /**
+   * @generated from field: map<string, uint32> numbers = 2;
+   */
+  numbers: { [key: string]: number };
+};
+
+/**
+ * Describes the message circus.v1.MergeSessionLedgerResponse.
+ * Use `create(MergeSessionLedgerResponseSchema)` to create a new message.
+ */
+export const MergeSessionLedgerResponseSchema: GenMessage<MergeSessionLedgerResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 38);
+
+/**
  * LedgerService reads a project's ledger: its numbered decisions, filed in
  * directories. The ledger is read-only here; it changes only through
  * changesets (LedgerChangesetService).
@@ -1073,6 +1570,56 @@ export const LedgerService: GenService<{
     input: typeof ListDecisionHistoryRequestSchema;
     output: typeof ListDecisionHistoryResponseSchema;
   },
+  /**
+   * GetSessionLedger returns a session's ledger snapshot: its status, the
+   * open changeset's changes as one entry per decision, the problems of
+   * its last collection and the session's merged changesets. NOT_FOUND for
+   * a session of another user's project, like an unknown one.
+   *
+   * @generated from rpc circus.v1.LedgerService.GetSessionLedger
+   */
+  getSessionLedger: {
+    methodKind: "unary";
+    input: typeof GetSessionLedgerRequestSchema;
+    output: typeof GetSessionLedgerResponseSchema;
+  },
+  /**
+   * GetSessionLedgerDiff returns one changed file of the session's open
+   * changeset next to its version in the changeset's base, for showing a
+   * diff. NOT_FOUND when the open changeset does not change that path.
+   *
+   * @generated from rpc circus.v1.LedgerService.GetSessionLedgerDiff
+   */
+  getSessionLedgerDiff: {
+    methodKind: "unary";
+    input: typeof GetSessionLedgerDiffRequestSchema;
+    output: typeof GetSessionLedgerDiffResponseSchema;
+  },
+  /**
+   * MergeSessionLedger merges the session's open changeset when it
+   * fast-forwards, for the project's owner (no integrator is needed). It
+   * first collects the snapshot from the device. FAILED_PRECONDITION with
+   * a google.rpc.PreconditionFailure whose type is:
+   *   - "TURN_RUNNING": a turn is running or about to start; merge after
+   *     it ends;
+   *   - "NOT_FAST_FORWARD": the base differs from the main line's head; an
+   *     integrator merges it with `circus ledger merge` (the page shows it
+   *     as waiting to be merged);
+   *   - "DEVICE_OFFLINE": the device is offline and a turn ended after the
+   *     last collection, so the changes on the device are not known yet;
+   *   - "PROBLEMS": the changeset fails validation;
+   *   - "NO_CHANGES": the session has no open changeset with changes;
+   *   - "CHANGESET_CHANGED": expected_changeset_id is not the open one.
+   * After merging, the control plane renames the session's new decisions
+   * on the device (DeviceCall rebase_ledger) and tells the agent.
+   *
+   * @generated from rpc circus.v1.LedgerService.MergeSessionLedger
+   */
+  mergeSessionLedger: {
+    methodKind: "unary";
+    input: typeof MergeSessionLedgerRequestSchema;
+    output: typeof MergeSessionLedgerResponseSchema;
+  },
 }> = /*@__PURE__*/
   serviceDesc(file_circus_v1_ledger, 0);
 
@@ -1092,6 +1639,8 @@ export const LedgerService: GenService<{
  * Who may do what:
  *   - any worker of the user: OpenChangeset, ReadChangesetBase,
  *     ListChangesets, GetChangeset;
+ *   - a session's changeset (session_id set) has no opener: only an
+ *     integrator may check, read conflicts of, merge or discard it;
  *   - the worker that opened the changeset, or a worker with the integrator
  *     grant (MachineService.SetWorkerGrant): CheckChangeset,
  *     ReadChangesetConflicts, DiscardChangeset, and MergeChangeset when it
@@ -1109,8 +1658,26 @@ export const LedgerService: GenService<{
  * numbers and rewrites them. The generated root INDEX.md is not a decision
  * and is never part of a changeset.
  *
+ * Fast-forward: a changeset fast-forwards when its base commit's tree
+ * equals the tree of the main line's head. A changeset opened here has a
+ * main-line commit as its base, so this is "the base is the head"; a
+ * session's later changeset has as its base the session's view after its
+ * earlier merge (a commit whose parent is that merge commit), which equals
+ * the main line until someone else merges.
+ *
+ * Sessions: a session with a ledger snapshot has at most one open
+ * changeset, opened by the control plane when a collection first finds
+ * changes. CheckChangeset on it takes no changes: it collects the snapshot
+ * from the device first, or, with the device offline, uses the last
+ * collection and says so in a warning. MergeChangeset and DiscardChangeset
+ * of it are refused with FAILED_PRECONDITION, violation type TURN_RUNNING,
+ * while a turn of the session runs or is about to start (its inputs are
+ * taken); once one succeeds, the session's turns
+ * wait until the snapshot follows (new decisions renamed, or the snapshot
+ * written again) and the agent is told.
+ *
  * Bounds: as LedgerService, plus at most 8 MiB of changed file content per
- * changeset and at most 64 open changesets per project
+ * changeset and at most 64 open changesets per project, sessions' included
  * (RESOURCE_EXHAUSTED beyond).
  *
  * @generated from service circus.v1.LedgerChangesetService
@@ -1175,8 +1742,8 @@ export const LedgerChangesetService: GenService<{
   /**
    * MergeChangeset merges an open changeset into the main line, under the
    * project's lock, re-checking everything there:
-   *   - it fast-forwards when its base is the main line's head at that
-   *     moment; the opener may then merge it;
+   *   - it fast-forwards when its base's tree equals the tree of the main
+   *     line's head at that moment; the opener may then merge it;
    *   - otherwise only an integrator may merge it, even when no file it
    *     changes was changed on the main line after its base, and every
    *     conflicting file must be given its final content in resolved.

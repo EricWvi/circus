@@ -1,5 +1,12 @@
-import { createRouterTransport, type ServiceImpl } from "@connectrpc/connect"
-import { LedgerService } from "@circus/proto/circus/v1/ledger_pb"
+import { create } from "@bufbuild/protobuf"
+import { BinaryWriter, WireType } from "@bufbuild/protobuf/wire"
+import { Code, ConnectError, createRouterTransport, type ServiceImpl } from "@connectrpc/connect"
+import {
+  Changeset_State,
+  GetSessionLedgerResponseSchema,
+  LedgerService,
+  SessionLedgerStatus_State,
+} from "@circus/proto/circus/v1/ledger_pb"
 import { describe, expect, it } from "vitest"
 
 import { createConnectLedger } from "./ledger"
@@ -98,5 +105,161 @@ describe("ledger over Connect", () => {
       codeCommit: "f00",
     })
     expect((await client.listDecisionHistory({ projectId: "p", number: 1, pageSize: 20, pageToken: "next" })).nextPageToken).toBe("")
+  })
+
+  it("maps a session's ledger: status, open changeset, entries, problems and merged changesets", async () => {
+    const changeset = {
+      changesetId: "c1",
+      state: Changeset_State.OPEN,
+      baseCommit: "b",
+      createdAtUnixMs: 1n,
+      updatedAtUnixMs: 2n,
+      sessionId: "s1",
+    }
+    const res = await ledger({
+      getSessionLedger: (req) => {
+        expect(req.sessionId).toBe("s1")
+        return create(GetSessionLedgerResponseSchema, {
+          status: { state: SessionLedgerStatus_State.READY, path: "/l", changesetId: "c1", changeCount: 1, updatedAtUnixMs: 3n },
+          changeset,
+          entries: [{ path: "a/D3-x.md", basePath: "b/D3-x.md", number: "D3", title: "X", moved: true, problems: ["bad"] }],
+          problems: [{ path: "", message: "too many" }],
+          warnings: [{ path: "n.md", message: "not a decision" }],
+          fastForward: true,
+          merged: [
+            { changeset: { ...changeset, changesetId: "c0", state: Changeset_State.MERGED, mergedCommit: "m" }, numbers: { "D?a": 92 } },
+            // A merged entry without its changeset is dropped.
+            { numbers: { "D?b": 93 } },
+          ],
+        })
+      },
+    }).getSessionLedger({ sessionId: "s1" })
+    expect(res).toEqual({
+      status: {
+        state: "ready",
+        path: "/l",
+        error: "unspecified",
+        errorDetail: "",
+        collectedAtUnixMs: 0,
+        collectionDue: false,
+        changesetId: "c1",
+        changeCount: 1,
+        problemCount: 0,
+        updatedAtUnixMs: 3,
+        applying: "none",
+      },
+      changeset: {
+        changesetId: "c1",
+        state: "open",
+        baseCommit: "b",
+        createdAtUnixMs: 1,
+        updatedAtUnixMs: 2,
+        mergedCommit: "",
+        discardReason: "",
+      },
+      entries: [
+        {
+          path: "a/D3-x.md",
+          basePath: "b/D3-x.md",
+          number: "D3",
+          title: "X",
+          baseTitle: "",
+          added: false,
+          contentChanged: false,
+          moved: true,
+          retitled: false,
+          deleted: false,
+          problems: ["bad"],
+        },
+      ],
+      problems: [{ path: "", message: "too many" }],
+      warnings: [{ path: "n.md", message: "not a decision" }],
+      fastForward: true,
+      merged: [
+        {
+          changeset: {
+            changesetId: "c0",
+            state: "merged",
+            baseCommit: "b",
+            createdAtUnixMs: 1,
+            updatedAtUnixMs: 2,
+            mergedCommit: "m",
+            discardReason: "",
+          },
+          numbers: { "D?a": 92 },
+        },
+      ],
+    })
+    // Without a snapshot or an open changeset.
+    expect(await ledger({ getSessionLedger: () => ({}) }).getSessionLedger({ sessionId: "s1" })).toEqual({
+      entries: [],
+      problems: [],
+      warnings: [],
+      fastForward: false,
+      merged: [],
+    })
+  })
+
+  it("reads a diff of one path", async () => {
+    const diff = await ledger({
+      getSessionLedgerDiff: (req) => {
+        expect(req).toMatchObject({ sessionId: "s1", path: "web/D1-x.md" })
+        return { baseExists: true, base: "a", baseTruncated: true, changesetExists: true, changeset: "b" }
+      },
+    }).getSessionLedgerDiff({ sessionId: "s1", path: "web/D1-x.md" })
+    expect(diff).toEqual({
+      baseExists: true,
+      base: "a",
+      baseTruncated: true,
+      changesetExists: true,
+      changeset: "b",
+      changesetTruncated: false,
+    })
+  })
+
+  it("merges the changeset the user saw, and names why a merge is refused", async () => {
+    const refusal = (type: string) => {
+      const w = new BinaryWriter()
+      w.tag(1, WireType.LengthDelimited).fork()
+      w.tag(1, WireType.LengthDelimited).string(type)
+      w.tag(3, WireType.LengthDelimited).string(`${type} description`)
+      w.join()
+      return w.finish()
+    }
+    const client = ledger({
+      mergeSessionLedger: (req) => {
+        if (req.expectedChangesetId !== "c1") {
+          const error = new ConnectError("changed", Code.FailedPrecondition)
+          error.details.push({ type: "google.rpc.PreconditionFailure", value: refusal("CHANGESET_CHANGED") })
+          throw error
+        }
+        return { changeset: { changesetId: "c1", state: Changeset_State.MERGED }, numbers: { "D?a": 92, "D?b": 93 } }
+      },
+    })
+    expect(await client.mergeSessionLedger({ sessionId: "s1", expectedChangesetId: "c1" })).toMatchObject({
+      changeset: { changesetId: "c1", state: "merged" },
+      numbers: { "D?a": 92, "D?b": 93 },
+    })
+    await expect(client.mergeSessionLedger({ sessionId: "s1", expectedChangesetId: "c0" })).rejects.toMatchObject({
+      code: "failed_precondition",
+      preconditionType: "CHANGESET_CHANGED",
+    })
+    // A malformed detail, or none, carries no type.
+    const bare = ledger({
+      mergeSessionLedger: () => {
+        const error = new ConnectError("no", Code.FailedPrecondition)
+        error.details.push({ type: "google.rpc.PreconditionFailure", value: new Uint8Array([0x0a, 0xff]) })
+        throw error
+      },
+    })
+    const error = await bare.mergeSessionLedger({ sessionId: "s1", expectedChangesetId: "c1" }).catch((e: unknown) => e)
+    expect(error).toMatchObject({ code: "failed_precondition" })
+    expect((error as { preconditionType?: string }).preconditionType).toBeUndefined()
+  })
+
+  it("fails a merge answer without its changeset", async () => {
+    await expect(
+      ledger({ mergeSessionLedger: () => ({}) }).mergeSessionLedger({ sessionId: "s1", expectedChangesetId: "c1" }),
+    ).rejects.toMatchObject({ code: "internal" })
   })
 })

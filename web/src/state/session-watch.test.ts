@@ -97,6 +97,28 @@ describe("the session watch", () => {
     expect([...onBoundary.mock.calls[0][0]].sort()).toEqual(["input_accepted", "turn_started"])
   })
 
+  it("reports ledger events as boundaries, live ones too", async () => {
+    const s = server()
+    const { onBoundary } = start(s)
+    s.streams[0].send(keepalive)
+    await tick()
+    expect(onBoundary).not.toHaveBeenCalled()
+    // A collection is announced live only.
+    s.streams[0].send(event(0, "ledger", { event: "collected" }))
+    await tick()
+    expect(onBoundary).toHaveBeenCalledTimes(1)
+    expect([...onBoundary.mock.calls[0][0]]).toEqual(["ledger"])
+    // A merge is recorded.
+    s.streams[0].send(event(1, "ledger", { event: "merged", numbers: { "D?a": 9 } }))
+    await tick()
+    expect(onBoundary).toHaveBeenCalledTimes(2)
+    expect([...onBoundary.mock.calls[1][0]]).toEqual(["ledger"])
+    // Other live events still aren't boundaries.
+    s.streams[0].send(event(0, "queue", { queue_reason: "provider_full" }))
+    await tick()
+    expect(onBoundary).toHaveBeenCalledTimes(2)
+  })
+
   it("reopens a stream that served a while at once, after the last durable event, showing nothing twice", async () => {
     const s = server()
     const { watch } = start(s)

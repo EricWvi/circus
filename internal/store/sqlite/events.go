@@ -149,7 +149,7 @@ func (o *ops) storeEvents(ctx context.Context, sessionID string, events []store.
 		viewBytes += int64(len(payload))
 		count++
 		seqs[i] = lastSeq
-		if e.Kind != store.EventKindWorkspace {
+		if e.Kind != store.EventKindWorkspace && e.Kind != store.EventKindLedger {
 			lastActivity = max(lastActivity, e.At)
 		}
 	}

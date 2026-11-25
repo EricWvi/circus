@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	snapshotfiles "github.com/EricWvi/circus/internal/ledger/snapshot"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -74,7 +75,8 @@ type Conflict struct {
 type CheckResult struct {
 	Changeset store.LedgerChangeset
 	Problems  []Problem
-	// FastForward reports that the base is the main line's head.
+	// FastForward reports that the base's tree is the main line head's
+	// tree.
 	FastForward bool
 	MainCommit  string
 	Conflicts   []Conflict
@@ -377,7 +379,65 @@ func validateChanges(ref reference, changes []change) ([]Problem, map[string]str
 	if len(ref.entries)+len(temporary) > store.MaxLedgerDecisions {
 		v.add(".", "ledger exceeds 4096 decisions")
 	}
+	v.problems = append(v.problems, foldCollisions(ref, changes)...)
 	return v.problems, temporary
+}
+
+// foldCollisions reports each changed file whose path, or a directory on
+// it, is one name with another path of the resulting ledger on a file
+// system that ignores case and Unicode normalization (macOS by default),
+// as snapshotfiles.FoldKey compares names: such a ledger could not be written
+// to a session's snapshot there.
+func foldCollisions(ref reference, changes []change) []Problem {
+	files := make(map[string]bool, len(ref.files)+len(changes))
+	for p := range ref.files {
+		files[p] = true
+	}
+	for _, c := range changes {
+		files[c.path] = !c.deleted
+	}
+	// Every name of the result, files and their directories, by key.
+	names := make(map[string]map[string]bool)
+	for p, exists := range files {
+		if !exists {
+			continue
+		}
+		for i := 0; i <= len(p); i++ {
+			if i < len(p) && p[i] != '/' {
+				continue
+			}
+			key := snapshotfiles.FoldKey(p[:i])
+			if names[key] == nil {
+				names[key] = make(map[string]bool, 1)
+			}
+			names[key][p[:i]] = true
+		}
+	}
+	var out []Problem
+	for _, c := range changes {
+		if c.deleted {
+			continue
+		}
+		p := c.path
+		for i := 0; i <= len(p); i++ {
+			if i < len(p) && p[i] != '/' {
+				continue
+			}
+			var others []string
+			for name := range names[snapshotfiles.FoldKey(p[:i])] {
+				if name != p[:i] {
+					others = append(others, name)
+				}
+			}
+			if len(others) > 0 {
+				slices.Sort(others)
+				out = append(out, Problem{Path: p, Message: fmt.Sprintf("%q and %q differ only in case or Unicode normalization, "+
+					"so they are one name on macOS; rename one of them", p[:i], others[0])})
+				break
+			}
+		}
+	}
+	return out
 }
 
 // checkContent is checkDecision without the number and the path, which

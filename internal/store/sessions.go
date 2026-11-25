@@ -532,8 +532,10 @@ type SessionOps interface {
 	// empty title to DeriveSessionTitle(in.Text), when nonempty, in this
 	// transaction. Approval inputs and retries do not set it. A new user
 	// input also moves LastActivityAt to max(current, in.CreatedAt) in this
-	// transaction, even before a worker publishes. Approval inputs and
-	// retries do not move activity. SubmitInput appends no view event itself.
+	// transaction, even before a worker publishes. Approval inputs, note
+	// inputs and retries do not move activity, nor set the title. A note
+	// input (InputNote) names its category in Note; other kinds have none.
+	// SubmitInput appends no view event itself.
 	SubmitInput(ctx context.Context, in Input) (InputSubmitted, error)
 	// SetInputEventSeq records seq as the view event of the session's input
 	// inputID, so a repeated SubmitInput returns it (Input.EventSeq). The
@@ -541,10 +543,14 @@ type SessionOps interface {
 	// appended the event. seq ≥ 0; ErrNotFound if the input is absent.
 	SetInputEventSeq(ctx context.Context, sessionID, inputID string, seq int64) error
 	// TakeInputs marks every pending input taken by f.Epoch and returns all
-	// inputs taken by f.Epoch and not yet persisted, oldest first (at most
-	// MaxOpenInputs). Fenced. Idempotent: a retry returns the same inputs
-	// plus any that arrived since. ErrStopped on a stopped session; on a
-	// broken one it takes nothing and returns none.
+	// inputs taken by f.Epoch and not yet persisted, notes first, then
+	// oldest first (at most MaxOpenInputs plus MaxNoteOverflow). Fenced.
+	// Idempotent: a retry returns the same inputs plus any that arrived
+	// since. ErrStopped on a stopped session; on a broken one, and while
+	// the session's turns are held (Session.WorkspaceBlocked: its ledger
+	// snapshot owes a merge's rebase or a discard's reset, say), it takes
+	// nothing and returns none, so a holder that keeps its lease starts no
+	// turn meanwhile.
 	TakeInputs(ctx context.Context, f Fence) ([]Input, error)
 
 	// Turns.
@@ -577,7 +583,9 @@ type SessionOps interface {
 	// persisted set is ErrInvalid. A repeated ENDED changes nothing but
 	// applies its persisted set again. Stopped and broken sessions keep
 	// their state. Only the newest KeptTurns turns, and KeptInputs
-	// persisted inputs, are kept.
+	// persisted inputs, are kept. Either first ENDED, and every turn closed
+	// as interrupted, makes the session's ready ledger snapshot due for a
+	// collection (SessionLedger.DueAt, UpdatedAt moved forward).
 	ReportTurn(ctx context.Context, f Fence, r TurnReport) (TurnReported, error)
 	// ListTurns returns at most f.Limit turns of the session ordered by
 	// turn number.

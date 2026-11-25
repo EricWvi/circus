@@ -16,7 +16,7 @@ import { useStreamdownTranslations } from "@/i18n/streamdown"
 import { DECISION_REF_TAG, IMAGE_LINK_TAG, isFootnoteHref, ledgerRehypePlugins, safeHref } from "@/lib/ledger-markdown"
 import { cn } from "@/lib/utils"
 
-import { DecisionRefTag as DecisionRef, RefPreviewLayer } from "./decision-ref"
+import { DecisionRefTag as DecisionRef, RefPreviewLayer, refStyles } from "./decision-ref"
 import { RefResolverContext } from "./ledger-context"
 import { useRefResolver } from "./use-ref-resolver"
 
@@ -91,10 +91,6 @@ const plugins = { cjk, code }
 
 type PluggableList = NonNullable<ComponentProps<typeof Streamdown>["rehypePlugins"]>
 
-// How references look, set once here rather than on each of possibly
-// tens of thousands of anchors.
-const refStyles =
-  "[&_.ledger-ref]:rounded-sm [&_.ledger-ref]:font-medium [&_.ledger-ref]:text-foreground [&_.ledger-ref]:underline [&_.ledger-ref]:decoration-foreground/40 [&_.ledger-ref]:decoration-dotted [&_.ledger-ref]:underline-offset-4 [&_.ledger-ref]:outline-none [&_.ledger-ref:hover]:decoration-foreground [&_.ledger-ref:hover]:decoration-solid [&_.ledger-ref:focus-visible]:ring-2 [&_.ledger-ref:focus-visible]:ring-ring/50"
 
 // Long words, inline code and headings wrap. Lists and quotes stop
 // indenting after a few levels, keep a readable width and scroll inside

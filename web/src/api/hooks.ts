@@ -2,6 +2,7 @@ import {
   keepPreviousData,
   replaceEqualDeep,
   useInfiniteQuery,
+  useIsFetching,
   useQueries,
   useMutation,
   useMutationState,
@@ -10,7 +11,7 @@ import {
   type MutationState,
   type QueryClient,
 } from "@tanstack/react-query"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 
 import { useShowNotice } from "@/components/notice-context"
 import { i18n } from "@/i18n/i18n"
@@ -31,6 +32,7 @@ import type {
   Project,
   ProjectService,
   SessionDetails,
+  SessionLedger,
   SessionSummary,
   User,
   Worker,
@@ -165,6 +167,99 @@ function useSessionAction<Req>(run: (req: Req) => Promise<void>, sessionIdOf: (r
   return useMutation({
     mutationFn: run,
     onSettled: (_data, _error, req) => invalidateSession(queryClient, sessionIdOf(req)),
+  })
+}
+
+/**
+ * A session's ledger snapshot with its open changeset's changes. The
+ * session watch refetches it on every KIND_LEDGER event.
+ */
+export function useSessionLedger(sessionId: string) {
+  const client = useClient()
+  return useQuery({
+    queryKey: queryKeys.sessionLedger(sessionId),
+    queryFn: () => client.ledger.getSessionLedger({ sessionId }),
+  })
+}
+
+/** One changed file of the session's open changeset next to its base version. */
+export function useSessionLedgerDiff(sessionId: string, path: string) {
+  const client = useClient()
+  return useQuery({
+    queryKey: queryKeys.sessionLedgerDiff(sessionId, path),
+    queryFn: () => client.ledger.getSessionLedgerDiff({ sessionId, path }),
+    retry: false,
+  })
+}
+
+/**
+ * Reads the session's snapshot again when the session shows it changed
+ * (`version` is its `updatedAtUnixMs`): a change found by a poll or a read
+ * after a turn, which no live event announced. Not while the changes are
+ * being read (a ledger event or a merge reads them together with the
+ * session): once that read is in, its version decides, since it may have
+ * started before the change.
+ */
+export function useSessionLedgerFollows(sessionId: string, version: number) {
+  const queryClient = useQueryClient()
+  const fetching = useIsFetching({ queryKey: queryKeys.sessionLedger(sessionId), exact: true }) > 0
+  // The version the changes were last read again for; the one the page opened with needs no read.
+  const asked = useRef(version)
+  useEffect(() => {
+    if (fetching || asked.current >= version) return
+    const queryKey = queryKeys.sessionLedger(sessionId)
+    const held = queryClient.getQueryData<SessionLedger>(queryKey)?.status?.updatedAtUnixMs ?? -1
+    if (held >= version) return
+    asked.current = version
+    void queryClient.invalidateQueries({ queryKey })
+  }, [queryClient, sessionId, version, fetching])
+}
+
+/** Refetches a session's snapshot and what shows it: the session and the lists. */
+export function invalidateSessionLedger(queryClient: QueryClient, sessionId: string) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.sessionLedger(sessionId) })
+  invalidateSession(queryClient, sessionId)
+}
+
+/**
+ * Merges the session's open changeset. Whatever the answer, the snapshot
+ * and the session are read again; once merged, the project's ledger too.
+ */
+export function useMergeSessionLedger() {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (req: { sessionId: string; projectId: string; expectedChangesetId: string }) =>
+      client.ledger.mergeSessionLedger({ sessionId: req.sessionId, expectedChangesetId: req.expectedChangesetId }),
+    onSuccess: (_data, { projectId }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.ledgerAll(projectId) })
+    },
+    onSettled: (_data, _error, { sessionId }) => invalidateSessionLedger(queryClient, sessionId),
+  })
+}
+
+/**
+ * Deletes a stopped session. Once deleted it leaves the cache, so nothing
+ * refetches it, and `onDeleted` runs (with the mutation, not with the
+ * component that started it, so it runs even if that one stopped
+ * listening); on a refusal the session is read again.
+ */
+export function useDeleteSession({ onDeleted }: { onDeleted?: (sessionId: string) => void } = {}) {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (req: { sessionId: string; discardLedgerChanges?: boolean }) => client.sessions.deleteSession(req),
+    onSuccess: (_data, { sessionId }) => {
+      void queryClient.cancelQueries({ queryKey: queryKeys.session(sessionId) })
+      queryClient.removeQueries({ queryKey: queryKeys.session(sessionId) })
+      queryClient.removeQueries({ queryKey: queryKeys.sessionLedger(sessionId) })
+      queryClient.setQueriesData<SessionSummary[]>({ queryKey: queryKeys.allSessions }, (list) =>
+        list?.filter((s) => s.sessionId !== sessionId),
+      )
+      void queryClient.invalidateQueries({ queryKey: queryKeys.allSessions })
+      onDeleted?.(sessionId)
+    },
+    onError: (_error, { sessionId }) => invalidateSessionLedger(queryClient, sessionId),
   })
 }
 

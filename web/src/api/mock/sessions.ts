@@ -21,6 +21,7 @@ import { viewState, type ServerSessionState, type TurnOutcome } from "@/lib/sess
 import { titleFromMessage } from "@/lib/title"
 import type { SeedSession } from "@/mock/data"
 
+import { ledgerStatusOf, type MockSessionLedger } from "./session-ledger"
 import { workspaceStatus, type MockWorkspace } from "./workspaces"
 
 export interface MockApproval {
@@ -65,6 +66,8 @@ export interface MockSession {
    * the session stops or changes provider, as a worker keeping its CLI.
    */
   leased?: boolean
+  /** The session's ledger snapshot; missing for a session without one. */
+  ledger?: MockSessionLedger
 }
 
 /** How the scripted replies pace themselves; tests shorten it. */
@@ -439,6 +442,7 @@ export function summaryOf(s: MockSession): SessionSummary {
     providerId: s.providerId ?? "",
     queueReason: s.state === "queued" ? (s.queueReason ?? "unspecified") : "unspecified",
     workerDisconnectedAtUnixMs: s.workerDisconnectedAtUnixMs ?? 0,
+    ...(s.ledger ? { ledger: ledgerStatusOf(s.ledger) } : {}),
   }
 }
 
@@ -458,6 +462,8 @@ export interface MockSessionHost {
    * if so. When not, the host has recorded why (`queueReason`).
    */
   admit?(s: MockSession): boolean
+  /** A turn completed; `input` is the message it answered. */
+  turnEnded?(s: MockSession, input: string): void
   /**
    * Changes the session's provider ("" for local login) once the session
    * runs no turn and isn't stopped; throws as the server refuses.
@@ -472,7 +478,7 @@ type Live = (event: RawSessionEvent) => void
 /** What the rest of the mock backend can do to sessions. */
 export interface MockSessionRuntime {
   /** The session RPCs besides listing, creating and retrying a workspace, which need the projects. */
-  service: Omit<SessionService, "listSessions" | "createSession" | "retryWorkspace">
+  service: Omit<SessionService, "listSessions" | "createSession" | "retryWorkspace" | "deleteSession">
   /** Records an event as the control plane does: durable, or live only, at `tsUnixMs`. */
   record(s: MockSession, kind: SessionEventKind, payload: object, durable: boolean, tsUnixMs: number): void
   /** Starts the next turn if one waits and the session can run it. */
@@ -619,6 +625,7 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       r.durable("result", result(text, input.inputId))
       s.state = "idle"
       s.lastTurnOutcome = "completed"
+      host.turnEnded?.(s, input.text)
     }
     const start = () => {
       r.turnStarted()

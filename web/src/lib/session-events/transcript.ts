@@ -401,6 +401,8 @@ class Builder {
         // Live only, applied in the order received: the latest one counts.
         this.queue = { reason: queueReasonFromPayload(p), receivedAtMs: raw.receivedAtMs ?? 0 }
         return
+      case "ledger":
+        return this.ledgerChanged(p, raw, at)
       case "worker":
         // Live only, like a queue reason: the latest one received counts.
         this.worker = { disconnectedAtUnixMs: workerDisconnectedAtFromPayload(p), receivedAtMs: raw.receivedAtMs ?? 0 }
@@ -408,6 +410,26 @@ class Builder {
       default:
         // Progress, background tasks, notices and kinds this view doesn't know.
         return
+    }
+  }
+
+  /**
+   * The session's ledger snapshot changed. Only a recorded merge or
+   * discard of its changeset is a line in the conversation; the rest is
+   * read with GetSessionLedger (the session watch refetches it).
+   */
+  private ledgerChanged(p: Json, raw: RawSessionEvent, at: string) {
+    if (raw.seq === 0) return
+    const id = `ledger:${raw.seq}`
+    if (p.event === "merged") {
+      const numbers = isObject(p.numbers)
+        ? Object.values(p.numbers)
+            .filter((n): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)
+            .sort((a, b) => a - b)
+        : []
+      this.add({ kind: "ledger", id, at, change: "merged", numbers })
+    } else if (p.event === "discarded") {
+      this.add({ kind: "ledger", id, at, change: "discarded", reason: str(p.reason) })
     }
   }
 

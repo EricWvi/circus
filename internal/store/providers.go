@@ -80,8 +80,9 @@ var ErrProviderFull = errors.New("store: session provider at its session limit")
 // change. It matches ErrNotFound. Nothing was written.
 var ErrUnknownProvider = fmt.Errorf("%w: unknown provider", ErrNotFound)
 
-// ErrTurnRunning refuses SetSessionProvider while a turn runs. Nothing was
-// written.
+// ErrTurnRunning refuses SetSessionProvider while a turn runs, and a
+// merge or a discard of a session's changeset while a turn runs or is
+// about to start. Nothing was written.
 var ErrTurnRunning = errors.New("store: a turn is running")
 
 // ProviderWorkerError reports a provider's worker that is not a live worker

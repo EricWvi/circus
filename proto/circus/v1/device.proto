@@ -43,6 +43,11 @@ message DeviceCall {
     PrepareWorkspaceRequest prepare_workspace = 15;
     // Project default directory removal (control plane only).
     RemoveWorkspaceRequest remove_workspace = 16;
+    // Session ledger snapshot calls (control plane only).
+    PrepareLedgerRequest prepare_ledger = 17;
+    CollectLedgerRequest collect_ledger = 18;
+    RebaseLedgerRequest rebase_ledger = 19;
+    RemoveLedgerRequest remove_ledger = 20;
   }
 }
 
@@ -71,6 +76,11 @@ message DeviceResult {
     PrepareWorkspaceResult prepare_workspace = 15;
     // Workspace removal outcome.
     RemoveWorkspaceResult remove_workspace = 16;
+    // Session ledger snapshot outcomes.
+    PrepareLedgerResult prepare_ledger = 17;
+    CollectLedgerResult collect_ledger = 18;
+    RebaseLedgerResult rebase_ledger = 19;
+    RemoveLedgerResult remove_ledger = 20;
   }
 }
 
@@ -498,4 +508,243 @@ enum WorkspaceError {
   WORKSPACE_ERROR_INTERRUPTED = 101;
   // Control plane only: a daemon fault other than TOOL_UNAVAILABLE.
   WORKSPACE_ERROR_DAEMON_FAULT = 102;
+}
+
+// Session ledger snapshots. A snapshot is a plain directory holding a copy
+// of a project's ledger for one session, at
+// "<state>/circus/ledger/<snapshot_id>/", where <state> is the daemon's
+// state directory ($XDG_STATE_HOME, following CIRCUS_HOME). Its manifest
+// lives outside it, at "<state>/circus/ledger/.manifests/<snapshot_id>.json":
+// for each base file its path, size, modification time (ns), inode and
+// SHA-256, and the base commit. The control plane sends these calls, never
+// a worker, with session_id "ledger-<snapshot_id>"; snapshot_id is the
+// circus session id (1-128 bytes, charset [A-Za-z0-9_-]). Calls on one
+// snapshot are serialized by a lock beside it (BUSY when held); at most two
+// ledger calls run at once on a daemon (BUSY beyond). The daemon never
+// follows a symlink inside or at the snapshot.
+//
+// Comparison works as git's index does: a file whose size, modification
+// time and inode equal its manifest entry is unchanged without being read;
+// otherwise it is read and hashed. A file whose modification time is not
+// earlier than the manifest's write time (racy) is always hashed.
+
+// SnapshotFile is a file sent to or from a snapshot.
+message SnapshotFile {
+  // Relative, '/'-separated, no "." or ".." segments, at most 4096 bytes.
+  string path = 1;
+  // Complete content, valid UTF-8, at most 256 KiB.
+  string content = 2;
+}
+
+// PrepareLedgerRequest writes a snapshot from a base commit's files, sent
+// in chunks of at most 8 MiB of content and 4096 files. Chunks go into a hidden staging
+// directory beside the snapshot, in order from 0 (a repeated chunk is
+// accepted again; any other index restarts nothing and is
+// INVALID_REQUEST); the last chunk checks total_files, writes the manifest
+// and renames the staging directory onto the snapshot, replacing an
+// existing one only with reset. Idempotent: when the snapshot exists with
+// the same base_commit and reset is false, it reports READY at once.
+// Staging left for an hour is removed.
+message PrepareLedgerRequest {
+  string snapshot_id = 1;
+  // Full hex commit the files come from; recorded in the manifest.
+  string base_commit = 2;
+  uint32 chunk_index = 3;
+  repeated SnapshotFile files = 4;
+  // This is the last chunk.
+  bool last = 5;
+  // Last chunk only: the number of files over all chunks.
+  uint32 total_files = 6;
+  // Replace an existing snapshot (after its changeset was discarded): its
+  // changes are lost.
+  bool reset = 7;
+}
+
+message PrepareLedgerResult {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // A chunk other than the last was staged.
+    OUTCOME_CHUNK_ACCEPTED = 1;
+    // The snapshot is at path.
+    OUTCOME_READY = 2;
+    OUTCOME_FAILED = 3;
+  }
+  Outcome outcome = 1;
+  // Absolute, lexically clean path of the snapshot; READY only.
+  string path = 2;
+  // FAILED only.
+  LedgerSnapshotError error = 3;
+  // FAILED only: at most 1024 bytes of valid UTF-8.
+  string error_detail = 4;
+}
+
+// CollectLedgerRequest compares a snapshot with its manifest. The daemon
+// keeps no record of earlier collections: known is what the control plane
+// already holds, and the result sends contents only where they differ.
+message CollectLedgerRequest {
+  string snapshot_id = 1;
+  // The changes the control plane holds for the snapshot relative to its
+  // base, at most 4096.
+  repeated KnownChange known = 2;
+  message KnownChange {
+    string path = 1;
+    oneof change {
+      // Lowercase hex SHA-256 of the content it holds.
+      string sha256 = 2;
+      bool deleted = 3;
+    }
+  }
+}
+
+message CollectLedgerResult {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_COLLECTED = 1;
+    OUTCOME_FAILED = 2;
+  }
+  Outcome outcome = 1;
+  // COLLECTED: the complete set of changes relative to the base, in path
+  // order, at most 4096. A change equal to its known entry comes without
+  // content. More changed files are a problem of the whole snapshot, with
+  // too_large set and no changes.
+  repeated Change changes = 2;
+  // Known paths that are no longer changed (back to their base content),
+  // at most 4096.
+  repeated string reverted = 3;
+  // What the daemon could not collect: non-regular files, files over
+  // 256 KiB, invalid UTF-8, more than 8192 entries. At most 1024.
+  repeated Problem problems = 4;
+  // The changed content exceeds 8 MiB: changes carry paths and sizes but
+  // no content, and nothing of this collection is used.
+  bool too_large = 5;
+  // FAILED only.
+  LedgerSnapshotError error = 6;
+  string error_detail = 7;
+  // The base commit the snapshot's manifest records, on every outcome
+  // where a manifest exists: the base the changes are relative to.
+  string current_base_commit = 8;
+  message Change {
+    string path = 1;
+    oneof change {
+      // New or changed: its content, unless equal to the known entry.
+      string content = 2;
+      bool deleted = 3;
+      // Equal to the known entry (or too_large): content left out.
+      bool known = 4;
+    }
+    // Lowercase hex SHA-256 and size of the current content; unset when
+    // deleted.
+    string sha256 = 5;
+    uint64 size = 6;
+  }
+  message Problem {
+    // Empty for a problem of the whole snapshot (too many entries).
+    string path = 1;
+    // English, at most 1024 bytes.
+    string message = 2;
+  }
+}
+
+// RebaseLedgerRequest applies edits to a snapshot and then makes its whole
+// current content the new base (manifest rewritten with base_commit). The
+// control plane sends it after merging the snapshot's changeset, to rename
+// new decisions ("D?a-x.md" to "D92-x.md") and rewrite their temporary
+// references, so the snapshot equals the merged view.
+//
+// Before changing anything the daemon compares the snapshot with its
+// manifest and requires the result to be exactly known, path by path,
+// except that a path of an edit may already hold the edit's target (its
+// content, or nothing for a deletion), so a rebase interrupted after some
+// edits finishes when sent again. Every edit must find expected_sha256 or
+// its target. Anything else, including any problem a collection would
+// report (a non-regular file, a file over 256 KiB, ...), is STALE and
+// changes nothing: the agent changed the snapshot after the collection the
+// merge used, and the control plane collects again. After applying the
+// edits the daemon requires the rebuilt base to be exactly the merged view
+// (the base, then known, then the edits) before writing the manifest; a
+// file the agent wrote meanwhile makes it STALE with the edits applied and
+// the old base kept, which the next collection reports.
+message RebaseLedgerRequest {
+  string snapshot_id = 1;
+  string base_commit = 2;
+  // At most 4096, at most 8 MiB of content.
+  repeated Edit edits = 3;
+  // The complete set of changes relative to the current base that the
+  // control plane collected and merged, at most 4096.
+  repeated CollectLedgerRequest.KnownChange known = 4;
+  message Edit {
+    string path = 1;
+    // Lowercase hex SHA-256 the file must have now; empty: it must not
+    // exist.
+    string expected_sha256 = 2;
+    oneof change {
+      string content = 3;
+      bool deleted = 4;
+    }
+  }
+}
+
+message RebaseLedgerResult {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_REBASED = 1;
+    OUTCOME_FAILED = 2;
+  }
+  Outcome outcome = 1;
+  LedgerSnapshotError error = 2;
+  string error_detail = 3;
+  // The base commit the snapshot's manifest records once the call ends,
+  // on every outcome where a manifest exists: the request's base_commit
+  // when REBASED, and when a STALE rebase finds the snapshot on it already
+  // (an earlier attempt's answer was lost); the base it kept otherwise.
+  string current_base_commit = 4;
+}
+
+// RemoveLedgerRequest deletes a snapshot, its manifest and any staging of
+// it, when its session is deleted. It refuses anything but a real
+// directory directly under "<state>/circus/ledger/".
+message RemoveLedgerRequest {
+  string snapshot_id = 1;
+}
+
+message RemoveLedgerResult {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_REMOVED = 1;
+    OUTCOME_ABSENT = 2;
+    OUTCOME_FAILED = 3;
+  }
+  Outcome outcome = 1;
+  LedgerSnapshotError error = 2;
+  string error_detail = 3;
+}
+
+// LedgerSnapshotError classifies ledger snapshot failures on a device.
+// Daemons send values up to 99; values from 100 are set by the control
+// plane only.
+enum LedgerSnapshotError {
+  LEDGER_SNAPSHOT_ERROR_UNSPECIFIED = 0;
+  // Bad snapshot id, chunk order, path or content.
+  LEDGER_SNAPSHOT_ERROR_INVALID_REQUEST = 1;
+  // The daemon's state directory cannot be resolved.
+  LEDGER_SNAPSHOT_ERROR_STATE_DIR_UNKNOWN = 2;
+  // The device's OS is not supported (Windows).
+  LEDGER_SNAPSHOT_ERROR_UNSUPPORTED_OS = 3;
+  // Something that is not a directory (or is a symlink) is in the way.
+  LEDGER_SNAPSHOT_ERROR_PATH_CONFLICT = 4;
+  LEDGER_SNAPSHOT_ERROR_PERMISSION_DENIED = 5;
+  LEDGER_SNAPSHOT_ERROR_NO_SPACE = 6;
+  // No snapshot (or no manifest) exists for the id.
+  LEDGER_SNAPSHOT_ERROR_ABSENT = 7;
+  // rebase_ledger: the snapshot holds a change the control plane has not
+  // collected (or a file to change differs from what it expected). The
+  // base is kept, so the change is not lost; collect again. Usually
+  // nothing was changed; when the change appeared while the edits were
+  // applied, the edits stay applied and show up in that collection.
+  LEDGER_SNAPSHOT_ERROR_STALE = 8;
+  // Another call on the same snapshot holds its lock.
+  LEDGER_SNAPSHOT_ERROR_BUSY = 9;
+  LEDGER_SNAPSHOT_ERROR_IO = 10;
+  // The device did not answer within the call's deadline.
+  LEDGER_SNAPSHOT_ERROR_TIMEOUT = 101;
 }
