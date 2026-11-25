@@ -535,8 +535,20 @@ type SessionOps interface {
 	// transaction, even before a worker publishes. Approval inputs, note
 	// inputs and retries do not move activity, nor set the title. A note
 	// input (InputNote) names its category in Note; other kinds have none.
+	// A new deferred note (Input.Deferred) leaves an idle session idle.
+	// The inputs not yet persisted, deferred notes apart, are bounded by
+	// MaxOpenInputs (notes by MaxNoteOverflow more): ErrLimit. Deferred
+	// notes are not bounded here (see FoldDeferredNotes).
 	// SubmitInput appends no view event itself.
 	SubmitInput(ctx context.Context, in Input) (InputSubmitted, error)
+	// FoldDeferredNotes keeps a session's pending deferred notes bounded:
+	// when it has MaxDeferredNotes or more, it deletes them all and
+	// inserts replacement in their place (a deferred note, given the
+	// oldest one's creation time, so it is taken where they were). It
+	// returns how many it replaced, 0 below the bound (replacement is
+	// then not inserted). Called before submitting a deferred note, in the
+	// same transaction. ErrStopped on a stopped session.
+	FoldDeferredNotes(ctx context.Context, replacement Input) (int, error)
 	// SetInputEventSeq records seq as the view event of the session's input
 	// inputID, so a repeated SubmitInput returns it (Input.EventSeq). The
 	// control plane calls it in the transaction that submitted the input and
@@ -545,6 +557,10 @@ type SessionOps interface {
 	// TakeInputs marks every pending input taken by f.Epoch and returns all
 	// inputs taken by f.Epoch and not yet persisted, notes first, then
 	// oldest first (at most MaxOpenInputs plus MaxNoteOverflow). Fenced.
+	// Deferred notes are taken only when an input that is not deferred is
+	// pending too; otherwise they stay pending. A turn the CLI starts by
+	// itself (a background task ending) takes no input, so it carries
+	// none of them: they wait for the next input.
 	// Idempotent: a retry returns the same inputs plus any that arrived
 	// since. ErrStopped on a stopped session; on a broken one, and while
 	// the session's turns are held (Session.WorkspaceBlocked: its ledger

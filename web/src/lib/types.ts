@@ -162,6 +162,9 @@ export type NoteKind =
   | "job_notice"
   | "lost_bgtask"
   | "history_missing"
+  | "ledger_problems"
+  | "ledger_merged"
+  | "ledger_discarded"
   | "other"
 
 /** A message the worker wrote for Claude, neither the user's input nor a tool result. */

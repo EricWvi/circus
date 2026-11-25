@@ -256,7 +256,9 @@ func (m *Manager) CheckSessionChangeset(ctx context.Context, sc SessionCheck) (S
 			}
 		}
 	} else {
-		snapBase, viewFiles, source = map[string]plumbing.Hash{}, map[string]plumbing.Hash{}, map[string]plumbing.Hash{}
+		// The empty ledger, without a repository: its index alone.
+		empty := map[string]plumbing.Hash{indexName: emptyIndexHash}
+		snapBase, viewFiles, source = empty, empty, empty
 	}
 	files, contents, err := r.snapshotFiles(snapBase, source, sc.Changes)
 	if err != nil {
@@ -436,7 +438,7 @@ func (m *Manager) readSession(ctx context.Context, id string, visit func(r *repo
 		return err
 	}
 	if r == nil {
-		return visit(nil, c, newReference(snapshot{}), nil, nil, plumbing.ZeroHash)
+		return visit(nil, c, newReference(emptySnapshot()), nil, nil, plumbing.ZeroHash)
 	}
 	defer r.storage.Close()
 	baseRef, err := r.readReference(ctx, plumbing.NewHash(c.BaseCommit), snapshot{}, false)
@@ -1204,19 +1206,31 @@ func (m *Manager) RemoveSession(ctx context.Context, projectID, sessionID string
 	return err
 }
 
+// emptyFiles returns the files of the empty ledger after the path after:
+// its index.
+func emptyFiles(after string) []File {
+	if indexName <= after {
+		return nil
+	}
+	return []File{{Path: indexName, Content: slices.Clone(emptyIndex)}}
+}
+
 // SnapshotPage is one chunk of a commit's files for prepare_ledger.
 type SnapshotPage struct {
 	Files []File
 	More  bool
 }
 
-// ReadSnapshotFiles returns the files of commit (empty: none) after the
-// path after, in path order, up to maxBytes of content and maxFiles
-// files; a file larger than maxBytes (only the generated index, up to its
-// own bound) comes alone.
+// ReadSnapshotFiles returns the files of commit (empty: the empty
+// ledger, whose only file is its index) after the path after, in path
+// order, up to maxBytes of content and maxFiles files; a file larger than
+// maxBytes (only the generated index, up to its own bound) comes alone.
 func (m *Manager) ReadSnapshotFiles(ctx context.Context, projectID, commit, after string, maxBytes, maxFiles int) (SnapshotPage, error) {
-	if err := checkCommitID("commit", commit); err != nil || commit == "" {
+	if err := checkCommitID("commit", commit); err != nil {
 		return SnapshotPage{}, err
+	}
+	if commit == "" {
+		return SnapshotPage{Files: emptyFiles(after)}, nil
 	}
 	if err := m.CheckProject(ctx, projectID); err != nil {
 		return SnapshotPage{}, err

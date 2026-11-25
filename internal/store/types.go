@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"cmp"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -724,12 +726,17 @@ const (
 	// the write/edit path.
 	MatchKeyHexDigits = 64
 
-	// MaxOpenInputs bounds a session's inputs not yet persisted.
+	// MaxOpenInputs bounds a session's inputs not yet persisted, deferred
+	// notes apart.
 	MaxOpenInputs = 32
 	// MaxNoteOverflow is how many note inputs may exceed MaxOpenInputs:
 	// the user's inputs filling the bound do not keep the control plane's
 	// notes out.
 	MaxNoteOverflow = 8
+	// MaxDeferredNotes bounds a session's pending deferred notes, which
+	// count towards neither bound above: at the bound, FoldDeferredNotes
+	// replaces them with one.
+	MaxDeferredNotes = 8
 	// MaxInputTextBytes bounds one input's text.
 	MaxInputTextBytes = 256 << 10
 	// KeptInputs is how many persisted inputs a session keeps (metadata
@@ -1211,6 +1218,29 @@ type TranscriptEntry struct {
 	Epoch   int64 // the epoch that appended it
 }
 
+// QueuedCommandSource returns the input id an entry stands for when it
+// is the record Claude Code writes of a message it absorbed into a
+// running turn: an attachment of type queued_command, whose source_uuid
+// is the pushed message's uuid (the input's id). Otherwise, or when the
+// id is not a valid one, it returns "".
+func QueuedCommandSource(entry []byte) string {
+	if !bytes.Contains(entry, []byte(`"queued_command"`)) {
+		return ""
+	}
+	var e struct {
+		Type       string `json:"type"`
+		Attachment struct {
+			Type       string `json:"type"`
+			SourceUUID string `json:"source_uuid"`
+		} `json:"attachment"`
+	}
+	if json.Unmarshal(entry, &e) != nil || e.Type != "attachment" || e.Attachment.Type != "queued_command" ||
+		e.Attachment.SourceUUID == "" || CheckID("source uuid", e.Attachment.SourceUUID) != nil {
+		return ""
+	}
+	return e.Attachment.SourceUUID
+}
+
 // TranscriptCharge is what an entry counts against the transcript caps:
 // its JSON, its uuid and TranscriptEntryOverhead.
 func TranscriptCharge(e TranscriptEntry) int64 {
@@ -1320,6 +1350,13 @@ type Input struct {
 	// Note is the category of an InputNote (at most MaxInputNoteBytes of
 	// [a-z0-9_]); empty for other kinds.
 	Note string
+	// Deferred (InputNote only) is a note that starts no turn: it stays
+	// pending, does not queue the session and is not work for a worker,
+	// until an input that is not deferred is pending too; TakeInputs then
+	// takes it with that input, so it reaches the model in the same turn,
+	// before it. Deferred notes do not count towards MaxOpenInputs, so
+	// they never keep the user's input out; MaxDeferredNotes bounds them.
+	Deferred bool
 }
 
 // InputSubmitted is SubmitInput's result: the stored input, whether this

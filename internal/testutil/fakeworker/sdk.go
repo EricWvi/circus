@@ -57,6 +57,12 @@ const (
 	noteLedgerProblems = "ledger_problems"
 )
 
+// ledgerNotes are the categories of the control plane's ledger notes,
+// which the real worker pushes as ordinary user messages, not synthetic
+// ones (worker/src/runner/ledger.ts); their view events still name them
+// in circus_note.
+var ledgerNotes = map[string]bool{noteLedgerProblems: true, "ledger_merged": true, "ledger_discarded": true}
+
 // sdkUser builds an SDK user message. A non-empty note marks a message the
 // worker wrote for the model rather than the user's own input or a tool
 // result: it is synthetic, and the published view event names its kind in

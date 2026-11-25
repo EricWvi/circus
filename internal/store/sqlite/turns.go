@@ -10,13 +10,13 @@ import (
 // Inputs.
 
 const inputCols = `input_id, session_id, client_msg_id, kind, text, priority, state, taken_epoch,
-	created_at, taken_at, persisted_at, event_seq, note`
+	created_at, taken_at, persisted_at, event_seq, note, deferred`
 
 func scanInput(s scanner) (store.Input, error) {
 	var in store.Input
 	var kind, priority, state string
 	err := s.Scan(&in.InputID, &in.SessionID, &in.ClientMsgID, &kind, nullStr{&in.Text}, &priority, &state,
-		nullInt{&in.TakenEpoch}, &in.CreatedAt, nullInt{&in.TakenAt}, nullInt{&in.PersistedAt}, &in.EventSeq, &in.Note)
+		nullInt{&in.TakenEpoch}, &in.CreatedAt, nullInt{&in.TakenAt}, nullInt{&in.PersistedAt}, &in.EventSeq, &in.Note, &in.Deferred)
 	in.Kind, in.Priority, in.State = store.InputKind(kind), store.InputPriority(priority), store.InputState(state)
 	return in, mapErr(err)
 }
@@ -61,6 +61,9 @@ func checkInput(in store.Input) error {
 	if (in.Kind == store.InputNote) != (in.Note != "") || !validNote(in.Note) {
 		return invalid("a note input, and only a note input, names its category: 1..%d bytes of [a-z0-9_]", store.MaxInputNoteBytes)
 	}
+	if in.Deferred && in.Kind != store.InputNote {
+		return invalid("only a note input may be deferred")
+	}
 	if in.Priority != store.InputNormal && in.Priority != store.InputNow {
 		return invalid("unknown input priority %q", in.Priority)
 	}
@@ -95,7 +98,8 @@ func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmi
 	switch {
 	case err == nil:
 		// A persisted input no longer has its text to compare.
-		if old.Kind != in.Kind || old.Note != in.Note || old.Priority != in.Priority || (old.State != store.InputPersisted && old.Text != in.Text) {
+		if old.Kind != in.Kind || old.Note != in.Note || old.Deferred != in.Deferred || old.Priority != in.Priority ||
+			(old.State != store.InputPersisted && old.Text != in.Text) {
 			return out, fmt.Errorf("%w: client message %q was submitted with other content", store.ErrExists, in.ClientMsgID)
 		}
 		out.Input = old
@@ -105,19 +109,24 @@ func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmi
 		if s.State == store.SessionStopped {
 			return out, fmt.Errorf("%w: session %q", store.ErrStopped, in.SessionID)
 		}
-		var open int
-		if err := o.q.QueryRow(ctx, `SELECT COUNT(*) FROM session_inputs WHERE session_id = ? AND state <> 'persisted'`,
-			in.SessionID).Scan(&open); err != nil {
-			return out, mapErr(err)
-		}
-		// A note may exceed the bound a little: one that told of a merge
-		// must not wait behind inputs no turn takes while it waits.
-		if limit := store.MaxOpenInputs; open >= limit && (in.Kind != store.InputNote || open >= limit+store.MaxNoteOverflow) {
-			return out, fmt.Errorf("%w: %d inputs not yet persisted", store.ErrLimit, open)
+		// Deferred notes have their own bound (FoldDeferredNotes) and do
+		// not count here, so they never keep the user's input out.
+		if !in.Deferred {
+			var open int
+			if err := o.q.QueryRow(ctx, `SELECT COUNT(*) FROM session_inputs WHERE session_id = ? AND state <> 'persisted' AND deferred = 0`,
+				in.SessionID).Scan(&open); err != nil {
+				return out, mapErr(err)
+			}
+			// A note may exceed the bound a little: one that told of
+			// problems must not wait behind inputs no turn takes while it
+			// waits.
+			if limit := store.MaxOpenInputs; open >= limit && (in.Kind != store.InputNote || open >= limit+store.MaxNoteOverflow) {
+				return out, fmt.Errorf("%w: %d inputs not yet persisted", store.ErrLimit, open)
+			}
 		}
 		if _, err := o.exec(ctx, `INSERT INTO session_inputs (input_id, session_id, client_msg_id, kind, text, priority,
-			state, created_at, note) VALUES (?,?,?,?,?,?,'pending',?,?)`, in.InputID, in.SessionID, in.ClientMsgID,
-			string(in.Kind), in.Text, string(in.Priority), in.CreatedAt, in.Note); err != nil {
+			state, created_at, note, deferred) VALUES (?,?,?,?,?,?,'pending',?,?,?)`, in.InputID, in.SessionID, in.ClientMsgID,
+			string(in.Kind), in.Text, string(in.Priority), in.CreatedAt, in.Note, in.Deferred); err != nil {
 			return out, err
 		}
 		out.Created = true
@@ -140,13 +149,48 @@ func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmi
 	if out.Lease, err = o.getLease(ctx, in.SessionID); err != nil {
 		return out, err
 	}
-	if out.Created && s.State == store.SessionIdle && !out.Lease.Live(in.CreatedAt) {
+	if out.Created && !in.Deferred && s.State == store.SessionIdle && !out.Lease.Live(in.CreatedAt) {
 		if err := o.setState(ctx, in.SessionID, store.SessionQueued, in.CreatedAt); err != nil {
 			return out, err
 		}
 	}
 	out.Session, err = o.getSession(ctx, in.SessionID, in.CreatedAt)
 	return out, err
+}
+
+func (o *ops) FoldDeferredNotes(ctx context.Context, in store.Input) (int, error) {
+	if err := checkInput(in); err != nil {
+		return 0, err
+	}
+	if !in.Deferred {
+		return 0, invalid("the replacement of deferred notes is a deferred note")
+	}
+	var n int
+	err := o.unit(ctx, func(tx *ops) error {
+		s, err := tx.getSession(ctx, in.SessionID, in.CreatedAt)
+		if err != nil {
+			return err
+		}
+		if s.State == store.SessionStopped {
+			return fmt.Errorf("%w: session %q", store.ErrStopped, in.SessionID)
+		}
+		var oldest int64
+		if err := tx.q.QueryRow(ctx, `SELECT COUNT(*), COALESCE(MIN(created_at), 0) FROM session_inputs
+			WHERE session_id = ? AND state = 'pending' AND deferred = 1`, in.SessionID).Scan(&n, &oldest); err != nil {
+			return mapErr(err)
+		}
+		if n < store.MaxDeferredNotes {
+			n = 0
+			return nil
+		}
+		if _, err := tx.exec(ctx, `DELETE FROM session_inputs WHERE session_id = ? AND state = 'pending' AND deferred = 1`, in.SessionID); err != nil {
+			return err
+		}
+		in.CreatedAt = oldest
+		_, err = tx.submitInput(ctx, in)
+		return err
+	})
+	return n, err
 }
 
 func (o *ops) SetInputEventSeq(ctx context.Context, sessionID, inputID string, seq int64) error {
@@ -185,8 +229,12 @@ func (o *ops) TakeInputs(ctx context.Context, f store.Fence) ([]store.Input, err
 		if s.WorkspaceBlocked {
 			return nil // inputs wait for the hold to end
 		}
-		if _, err := tx.exec(ctx, `UPDATE session_inputs SET state = 'taken', taken_epoch = ?, taken_at = ?
-			WHERE session_id = ? AND state = 'pending'`, f.Epoch, f.Now, f.SessionID); err != nil {
+		// Deferred notes go only with an input that starts a turn. A turn
+		// the CLI starts by itself (a background task ending) takes no
+		// input, so it does not carry them: they wait for the next input.
+		if _, err := tx.exec(ctx, `UPDATE session_inputs SET state = 'taken', taken_epoch = ?1, taken_at = ?2
+			WHERE session_id = ?3 AND state = 'pending' AND (deferred = 0 OR EXISTS (SELECT 1 FROM session_inputs
+				WHERE session_id = ?3 AND state = 'pending' AND deferred = 0))`, f.Epoch, f.Now, f.SessionID); err != nil {
 			return err
 		}
 		rows, err := tx.q.QueryContext(ctx, `SELECT `+inputCols+` FROM session_inputs

@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -132,7 +133,8 @@ func (s *sessionLedgerHarness) events() []store.SessionEvent {
 	}
 }
 
-// notes returns the notes of a category the worker published.
+// notes returns the notes of a category the worker published: ledger
+// notes, which name their category and are not synthetic.
 func (s *sessionLedgerHarness) notes(category string) []store.SessionEvent {
 	s.t.Helper()
 	var out []store.SessionEvent
@@ -143,15 +145,80 @@ func (s *sessionLedgerHarness) notes(category string) []store.SessionEvent {
 		var p struct {
 			Note        string `json:"circus_note"`
 			IsSynthetic bool   `json:"isSynthetic"`
+			Message     struct {
+				Content string `json:"content"`
+			} `json:"message"`
 		}
 		if json.Unmarshal(e.Payload, &p) == nil && p.Note == category {
-			if !p.IsSynthetic {
-				s.t.Fatalf("note %s is not synthetic: %s", category, e.Payload)
+			if p.IsSynthetic || !strings.HasPrefix(p.Message.Content, "[circus ledger] ") {
+				s.t.Fatalf("ledger note %s: %s", category, e.Payload)
 			}
 			out = append(out, e)
 		}
 	}
 	return out
+}
+
+// heldNote waits until a merge or a discard is applied, sends text, and
+// checks that its one turn delivered the note, the count-th of category,
+// right before the message: the database shows that one TakeInputs took
+// both, so the note never started a turn of its own. It returns the note.
+func (s *sessionLedgerHarness) heldNote(category string, count int, text string) store.SessionEvent {
+	s.t.Helper()
+	s.waitLedger(category+" applied", func(r *pb.GetSessionLedgerResponse) bool {
+		st := r.GetStatus()
+		return st.GetState() == pb.SessionLedgerStatus_STATE_READY && st.GetApplying() == pb.SessionLedgerStatus_APPLYING_UNSPECIFIED
+	})
+	turns := s.session().GetTurnCount()
+	s.turn(text)
+	if got := s.session().GetTurnCount(); got != turns+1 {
+		s.t.Fatalf("%d turns for the held note and the message, want 1", got-turns)
+	}
+	notes := s.notes(category)
+	if len(notes) != count {
+		s.t.Fatalf("%d %s notes, want %d", len(notes), category, count)
+	}
+	note := notes[count-1]
+	// After the note, in the same turn: the user's message.
+	var userID string
+	for _, e := range s.events() {
+		if e.Seq <= note.Seq || userID != "" {
+			continue
+		}
+		if e.Kind == "TURN_STARTED" || e.Kind == "RESULT" {
+			s.t.Fatalf("the %s note's turn ended before the user's message: %s %s", category, e.Kind, e.Payload)
+		}
+		var p struct {
+			UUID    string `json:"uuid"`
+			Note    string `json:"circus_note"`
+			Message struct {
+				Content any `json:"content"`
+			} `json:"message"`
+		}
+		if e.Kind == "USER" && json.Unmarshal(e.Payload, &p) == nil && p.Note == "" && p.Message.Content == text {
+			userID = p.UUID
+		}
+	}
+	if userID == "" {
+		s.t.Fatalf("no user message %q after the %s note", text, category)
+	}
+	var noteID struct {
+		UUID string `json:"uuid"`
+	}
+	must(s.t, json.Unmarshal(note.Payload, &noteID))
+	db, err := sql.Open("sqlite", "file:"+s.h.db+"?mode=ro&_pragma=busy_timeout(5000)")
+	must(s.t, err)
+	defer db.Close()
+	var takes int
+	must(s.t, db.QueryRowContext(s.ctx, `SELECT COUNT(DISTINCT taken_epoch || ':' || taken_at) FROM session_inputs
+		WHERE session_id = ? AND input_id IN (?, ?) AND state = 'persisted' AND taken_at IS NOT NULL`, s.id, noteID.UUID, userID).Scan(&takes))
+	var rows int
+	must(s.t, db.QueryRowContext(s.ctx, `SELECT COUNT(*) FROM session_inputs WHERE session_id = ? AND input_id IN (?, ?)`,
+		s.id, noteID.UUID, userID).Scan(&rows))
+	if rows != 2 || takes != 1 {
+		s.t.Fatalf("the %s note and the message: %d inputs taken in %d takes, want 2 in 1", category, rows, takes)
+	}
+	return note
 }
 
 // noteTurn waits until the count-th note of category was published, the
@@ -349,7 +416,8 @@ func TestSessionLedgerSnapshots(t *testing.T) {
 	}
 
 	// A file that is not a decision is a problem: the agent hears of it
-	// once, in a note that starts a turn, and fixing it clears it.
+	// once, in a note that starts a turn, and fixing it clears it. The
+	// notes of merges and discards wait for the user's next message.
 	r = s.edit(write("notes.txt", "scratch\n"))
 	if r.GetStatus().GetProblemCount() == 0 || len(r.GetProblems()) == 0 || r.GetProblems()[0].GetPath() != "notes.txt" {
 		t.Fatalf("problems %v", r.GetProblems())
@@ -375,7 +443,7 @@ func TestSessionLedgerSnapshots(t *testing.T) {
 	if merged.Msg.GetNumbers()["D?a"] != 1 || merged.Msg.GetChangeset().GetState() != pb.Changeset_STATE_MERGED {
 		t.Fatalf("merge %v", merged.Msg)
 	}
-	note = s.noteTurn("ledger_merged", 1)
+	note = s.heldNote("ledger_merged", 1, "carry on")
 	if !strings.Contains(string(note.Payload), "D?a is now D1") {
 		t.Fatalf("merged note %s", note.Payload)
 	}
@@ -410,7 +478,7 @@ func TestSessionLedgerSnapshots(t *testing.T) {
 	_, err = ledgerAPI.MergeSessionLedger(ctx, connect.NewRequest(&pb.MergeSessionLedgerRequest{SessionId: s.id,
 		ExpectedChangesetId: r.GetStatus().GetChangesetId()}))
 	must(t, err)
-	s.noteTurn("ledger_merged", 2)
+	s.heldNote("ledger_merged", 2, "next")
 
 	// Someone else merges: the session's next changeset no longer
 	// fast-forwards, and only an integrator merges it.
@@ -439,7 +507,7 @@ func TestSessionLedgerSnapshots(t *testing.T) {
 		t.Fatalf("integrator check:\n%s", out)
 	}
 	h.ledgerCLI(integratorEnv, 0, "merge", changeset)
-	s.noteTurn("ledger_merged", 3)
+	s.heldNote("ledger_merged", 3, "and on")
 	if body, _ := s.file("D1-Backups.md"); !strings.Contains(body, "every hour") {
 		t.Fatalf("D1 after the integrator's merge %q", body)
 	}
@@ -452,7 +520,7 @@ func TestSessionLedgerSnapshots(t *testing.T) {
 	r = s.edit(write("ops/D?b-Later.md", ledgerDecision("D?b", "Later", "Maybe.\n")))
 	discarded := r.GetStatus().GetChangesetId()
 	h.ledgerCLI(integratorEnv, 0, "discard", discarded, "--reason", "not now")
-	note = s.noteTurn("ledger_discarded", 1)
+	note = s.heldNote("ledger_discarded", 1, "go on")
 	if !strings.Contains(string(note.Payload), "not now") {
 		t.Fatalf("discarded note %s", note.Payload)
 	}
@@ -485,7 +553,7 @@ func TestSessionLedgerSnapshots(t *testing.T) {
 	editInPlace(t, filepath.Join(snapshot, "D0-Storage.md"), "WAL mode.", "WAL mode, with a later change.")
 	restarted := time.Now().UnixMilli()
 	h.restartDaemon()
-	note = s.noteTurn("ledger_merged", 4)
+	note = s.heldNote("ledger_merged", 4, "the device is back")
 	if !strings.Contains(string(note.Payload), "D?c is now D2") {
 		t.Fatalf("merged note %s", note.Payload)
 	}

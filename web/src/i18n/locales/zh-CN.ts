@@ -616,6 +616,9 @@ export const zhCN = {
       jobNotice: "已告知 Claude：一个后台作业已结束",
       lostBgtask: "已告知 Claude：一个后台任务已丢失",
       historyMissing: "已告知 Claude：部分历史记录缺失",
+      ledgerProblems: "已告知 Claude：账本改动有问题",
+      ledgerMerged: "已告知 Claude：账本改动已合并",
+      ledgerDiscarded: "已告知 Claude：账本改动已丢弃",
       other: "已向 Claude 发送说明",
     },
     connection: {

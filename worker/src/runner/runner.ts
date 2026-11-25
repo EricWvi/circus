@@ -30,7 +30,7 @@ import {
   BrokenError, FencedError, RejectedError, SessionOps, StoppedError, type LinkPort, type ReadyWaiter, type Semaphore,
 } from "./ops.js";
 import { PROVIDER_DEFAULT_MODEL, launchPlan } from "./launch.js";
-import { ledgerPrompt } from "./ledger.js";
+import { ledgerNoteKinds, ledgerPrompt } from "./ledger.js";
 import { PushQueue } from "./push.js";
 import { RetainedBudget, TranscriptLostError, TranscriptStore } from "./store.js";
 
@@ -973,10 +973,17 @@ export class SessionRunner {
         });
       }
     }
-    // A control-plane note keeps its category as given, empty included.
-    const synthetic = input.kind === InputKind.NOTE;
-    const note: string | undefined = input.kind === InputKind.APPROVAL ? "approval_retry" : synthetic ? input.note : undefined;
-    events.push({ kind: Kind.USER, payload: userMessagePayload(this.#claudeSessionId, input.inputId, input.text, note, timestamp) });
+    // A control-plane note keeps its category as given, empty included. A
+    // ledger note goes to the CLI as an ordinary user message; its view
+    // event still names its category, so the view shows it as a note.
+    const isNote = input.kind === InputKind.NOTE;
+    const ledger = isNote && ledgerNoteKinds.has(input.note);
+    const synthetic = isNote && !ledger;
+    const note: string | undefined = input.kind === InputKind.APPROVAL ? "approval_retry" : isNote ? input.note : undefined;
+    events.push({
+      kind: Kind.USER,
+      payload: userMessagePayload(this.#claudeSessionId, input.inputId, input.text, note, timestamp, note !== undefined && !ledger),
+    });
     const content = notes.length
       ? [...notes.map((n) => ({ type: "text" as const, text: systemReminder(n.text) })), { type: "text" as const, text: input.text }]
       : input.text;

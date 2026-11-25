@@ -537,6 +537,12 @@ func (r *repository) tree(hash plumbing.Hash) (*object.Tree, error) {
 }
 
 func (r *repository) blob(hash plumbing.Hash, limit int64, buffer []byte) (_ []byte, err error) {
+	if hash == emptyIndexHash && int64(len(emptyIndex)) <= limit {
+		// The empty ledger's index: no commit stores it, so a repository
+		// may lack it (one whose main line began with CommitMain, read as
+		// the base of a changeset opened on the empty ledger).
+		return append(buffer[:0], emptyIndex...), nil
+	}
 	defer func() {
 		if err != nil && r.faults != nil {
 			r.faults.add(hash)

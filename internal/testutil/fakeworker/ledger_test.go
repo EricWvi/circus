@@ -13,11 +13,15 @@ func userInput(id, text string) *input {
 	return &input{InputId: id, Kind: pb.SessionReply_Inputs_Input_KIND_USER, Text: text, Priority: pb.InputPriority_INPUT_PRIORITY_NORMAL}
 }
 
-// A control-plane note is pushed as a synthetic user message whose view
-// event names it in circus_note, starts an input turn on an idle session
-// and is answered as text even when it reads like a script command.
+// A control-plane note is pushed as a user message whose view event names
+// it in circus_note, synthetic unless it is a ledger note, starts an input
+// turn on an idle session and is answered as text even when it reads like
+// a script command.
 func TestNoteInputStartsTurn(t *testing.T) {
-	for _, tc := range []struct{ name, note string }{{"ledger_problems", "ledger_problems"}, {"empty", ""}} {
+	for _, tc := range []struct {
+		name, note string
+		synthetic  bool
+	}{{"ledger_problems", "ledger_problems", false}, {"ledger_merged", "ledger_merged", false}, {"other", "other_note", true}, {"empty", "", true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			const text = "/fake bash echo not a script"
 			f := &fakeLink{inputs: []*input{{
@@ -32,7 +36,7 @@ func TestNoteInputStartsTurn(t *testing.T) {
 			}
 			user := users[0]
 			// An empty category is left out, as the real worker does.
-			if note, ok := user["circus_note"]; user["uuid"] != "note-1" || user["isSynthetic"] != true || ok != (tc.note != "") || ok && note != tc.note {
+			if note, ok := user["circus_note"]; user["uuid"] != "note-1" || (user["isSynthetic"] == true) != tc.synthetic || ok != (tc.note != "") || ok && note != tc.note {
 				t.Errorf("user event: %v", user)
 			}
 			if content := user["message"].(map[string]any)["content"]; content != text {
@@ -49,9 +53,9 @@ func TestNoteInputStartsTurn(t *testing.T) {
 				!reflect.DeepEqual(reports[1].GetPersisted().GetInputIds(), []string{"note-1"}) {
 				t.Errorf("reports: %v", reports)
 			}
-			// The transcript keeps the SDK message: synthetic, without circus_note.
+			// The transcript keeps the SDK message, without circus_note.
 			if len(entries) == 0 || entries[0].GetUuid() != "note-1" ||
-				!strings.Contains(entries[0].GetJson(), `"isSynthetic":true`) || strings.Contains(entries[0].GetJson(), "circus_note") {
+				strings.Contains(entries[0].GetJson(), `"isSynthetic":true`) != tc.synthetic || strings.Contains(entries[0].GetJson(), "circus_note") {
 				t.Errorf("transcript entries: %v", entries)
 			}
 			if len(f.submitted()) != 0 {

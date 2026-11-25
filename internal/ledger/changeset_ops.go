@@ -195,7 +195,7 @@ func (m *Manager) OpenChangeset(ctx context.Context, projectID, id, openerWorker
 // the budget comes alone. more reports that files follow.
 func (m *Manager) ReadChangesetBase(ctx context.Context, c store.LedgerChangeset, after string, budget int) (files []File, more bool, _ error) {
 	if c.BaseCommit == "" {
-		return nil, false, nil
+		return emptyFiles(after), false, nil
 	}
 	if err := m.CheckProject(ctx, c.ProjectID); err != nil {
 		return nil, false, err
@@ -252,7 +252,7 @@ func (m *Manager) ReadChangesetBase(ctx context.Context, c store.LedgerChangeset
 // when trees is true; cache supplies parsed entries by blob.
 func (r *repository) readReference(ctx context.Context, commit plumbing.Hash, cache snapshot, trees bool) (reference, error) {
 	if commit.IsZero() {
-		return newReference(snapshot{}), nil
+		return newReference(emptySnapshot()), nil
 	}
 	c, err := r.commit(commit)
 	if err != nil {
@@ -365,7 +365,7 @@ func (m *Manager) check(ctx context.Context, l *locked, c store.LedgerChangeset,
 			return CheckResult{}, nil, reference{}, err
 		}
 	} else {
-		baseRef = newReference(snapshot{})
+		baseRef = newReference(emptySnapshot())
 	}
 
 	// Apply the changes to the base's files.
@@ -457,6 +457,13 @@ func (m *Manager) writeBranch(ctx context.Context, r *repository, c store.Ledger
 			if err := r.storeObject(plumbing.BlobObject, blobs[ch.path], ch.content); err != nil {
 				return err
 			}
+		}
+	}
+	if files[indexName] == emptyIndexHash {
+		// A changeset of the empty ledger keeps its index, which no
+		// commit stored.
+		if err := r.storeObject(plumbing.BlobObject, emptyIndexHash, emptyIndex); err != nil {
+			return err
 		}
 	}
 	reusable := maps.Clone(baseRef.trees)
@@ -688,11 +695,13 @@ func (m *Manager) ReadChangesetConflicts(ctx context.Context, id, mainCommit, br
 }
 
 // commitFiles maps the files of a commit to their blobs, reading only its
-// trees; a zero commit has none. lenient accepts the files of a
-// changeset's branch, which the main line could not hold.
+// trees; a zero commit (the empty ledger) has only the empty index.
+// lenient accepts the files of a changeset's branch, which the main line
+// could not hold.
 func (r *repository) commitFiles(ctx context.Context, commit plumbing.Hash, lenient bool) (map[string]plumbing.Hash, error) {
 	files := make(map[string]plumbing.Hash)
 	if commit.IsZero() {
+		files[indexName] = emptyIndexHash
 		return files, nil
 	}
 	c, err := r.commit(commit)

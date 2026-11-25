@@ -126,8 +126,9 @@ func (o *ops) AppendTranscript(ctx context.Context, f store.Fence, b store.Trans
 		}
 		for _, e := range insert {
 			lastSeq++
-			if _, err := tx.exec(ctx, `INSERT INTO transcript_entries (session_id, subpath, seq, uuid, entry, bytes, epoch)
-				VALUES (?,?,?,?,?,?,?)`, f.SessionID, b.Subpath, lastSeq, nstr(e.UUID), e.JSON, store.TranscriptCharge(e), f.Epoch); err != nil {
+			if _, err := tx.exec(ctx, `INSERT INTO transcript_entries (session_id, subpath, seq, uuid, entry, bytes, epoch, source_uuid)
+				VALUES (?,?,?,?,?,?,?,?)`, f.SessionID, b.Subpath, lastSeq, nstr(e.UUID), e.JSON, store.TranscriptCharge(e), f.Epoch,
+				nstr(store.QueuedCommandSource(e.JSON))); err != nil {
 				return err
 			}
 		}

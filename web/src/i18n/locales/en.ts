@@ -630,6 +630,9 @@ export const en = {
       jobNotice: "Told Claude: a background job finished",
       lostBgtask: "Told Claude: a background task was lost",
       historyMissing: "Told Claude: part of the history is missing",
+      ledgerProblems: "Told Claude: problems in its ledger changes",
+      ledgerMerged: "Told Claude: its ledger changes were merged",
+      ledgerDiscarded: "Told Claude: its ledger changes were discarded",
       other: "Sent Claude a note",
     },
     connection: {

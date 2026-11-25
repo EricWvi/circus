@@ -182,8 +182,9 @@ type SessionLedgerOps interface {
 	// PruneLedgerSnapshotRemovals drops at most limit removals created
 	// before the given time and returns how many.
 	PruneLedgerSnapshotRemovals(ctx context.Context, before int64, limit int) (int, error)
-	// CountNotesSinceUserInput counts the session's note inputs created
-	// after its newest user input (all of them without one).
+	// CountNotesSinceUserInput counts the session's note inputs that are
+	// not deferred (each started a turn) created after its newest user
+	// input (all of them without one).
 	CountNotesSinceUserInput(ctx context.Context, sessionID string) (int, error)
 	// ListOrphanSessionChangesets lists at most limit open changesets of
 	// sessions that no longer exist, by id after after.

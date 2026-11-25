@@ -1,9 +1,12 @@
 package ledger
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -515,10 +518,29 @@ func TestSessionEntries(t *testing.T) {
 }
 
 // TestSessionChangesetOfAnEmptyLedger: a snapshot of an empty ledger has
-// no base commit; its changeset merges and gets a view.
+// no base commit and holds the generated index alone; its changeset merges
+// and gets a view, and the rebase replaces the empty index.
 func TestSessionChangesetOfAnEmptyLedger(t *testing.T) {
 	ctx := t.Context()
 	m, _ := openLedger(t, nil, "project")
+	page, err := m.ReadSnapshotFiles(ctx, "project", "", "", 1<<20, 10)
+	check(t, err)
+	if len(page.Files) != 1 || page.Files[0].Path != indexName || page.More ||
+		!bytes.Equal(page.Files[0].Content, RenderIndex(nil)) || !bytes.Contains(page.Files[0].Content, []byte("no decisions yet")) {
+		t.Fatalf("empty ledger page = %+v", page)
+	}
+	if page, err = m.ReadSnapshotFiles(ctx, "project", "", indexName, 1<<20, 10); err != nil || len(page.Files) != 0 || page.More {
+		t.Fatalf("empty ledger page after its index = %+v, %v", page, err)
+	}
+	// The unchanged snapshot, without a repository, has no changes; a
+	// changed index is a problem, as for any ledger.
+	if res := sessionCheck(t, m, "s0", "", ""); res.Opened || res.Changeset.ID != "" || len(res.Problems) != 0 || len(res.Known) != 0 {
+		t.Fatalf("unchanged empty snapshot = %+v", res)
+	}
+	removed := sessionCheck(t, m, "s0", "", "", SnapshotChange{Path: indexName, Deleted: true})
+	if !removed.Opened || !hasProblem(removed.Problems, indexName, "generated") {
+		t.Fatalf("removed index = %+v", removed)
+	}
 	newDoc := doc("D?a", "First", "Start.\n")
 	res := sessionCheck(t, m, "s1", "", "", content("D?a-First.md", newDoc))
 	if !res.Opened || res.Changeset.BaseCommit != "" || !res.FastForward {
@@ -530,8 +552,13 @@ func TestSessionChangesetOfAnEmptyLedger(t *testing.T) {
 	if plan.Renamed["D?a-First.md"] != "D0-First.md" || len(plan.Known) != 1 || plan.Target != plan.View {
 		t.Fatalf("plan = %+v", plan)
 	}
+	// The snapshot holds the empty index, which the rebase replaces.
+	i := slices.IndexFunc(plan.Edits, func(e SnapshotEdit) bool { return e.Path == indexName })
+	if i < 0 || plan.Edits[i].Deleted || plan.Edits[i].ExpectedSHA256 != sha256Hex(RenderIndex(nil)) || !bytes.Contains(plan.Edits[i].Content, []byte("| D0 |  | First |")) {
+		t.Fatalf("edits = %+v", plan.Edits)
+	}
 	view := struct{ Commit string }{plan.View}
-	page, err := m.ReadSnapshotFiles(ctx, "project", view.Commit, "", 1<<20, 1)
+	page, err = m.ReadSnapshotFiles(ctx, "project", view.Commit, "", 1<<20, 1)
 	check(t, err)
 	if len(page.Files) != 1 || page.Files[0].Path != "D0-First.md" || !page.More {
 		t.Fatalf("first page = %+v", page)
@@ -540,11 +567,6 @@ func TestSessionChangesetOfAnEmptyLedger(t *testing.T) {
 	check(t, err)
 	if len(page.Files) != 1 || page.Files[0].Path != "INDEX.md" || page.More {
 		t.Fatalf("second page = %+v", page)
-	}
-	page, err = m.ReadSnapshotFiles(ctx, "project", "", "", 1<<20, 10)
-	check(t, err)
-	if len(page.Files) != 0 || page.More {
-		t.Fatalf("empty ledger page = %+v", page)
 	}
 }
 
@@ -582,5 +604,29 @@ func TestIndexBound(t *testing.T) {
 	}
 	if n := len(renderIndex(entries)); n > snapshotfiles.MaxIndexBytes {
 		t.Fatalf("index of %d bytes, over %d", n, snapshotfiles.MaxIndexBytes)
+	}
+}
+
+// TestEmptyIndexObjects: a changeset of the empty ledger that keeps its
+// index stores the index's blob, so its branch is a complete Git object
+// graph; a changeset of the empty ledger that changed the index, once
+// the main line has moved, reads the empty index as its conflict's base
+// although no commit stored it.
+func TestEmptyIndexObjects(t *testing.T) {
+	m, _ := openLedger(t, nil, "project", "other")
+	c := openCS(t, m, "project")
+	checkCS(t, m, c.ID, edit("D?a-First.md", doc("D?a", "First", "x\n")))
+	cmd := exec.Command("git", "fsck", "--full", "--strict")
+	cmd.Env = append(os.Environ(), "GIT_DIR="+m.repoPath("project"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git fsck: %v\n%s", err, out)
+	}
+
+	stale := openCS(t, m, "other")
+	commit(t, m, "other", []Decision{{Number: 0, Title: "Seed", Body: []byte("x\n")}}, CommitOptions{Author: "a", Message: "seed"})
+	res := checkCS(t, m, stale.ID, edit("INDEX.md", []byte("changed\n")))
+	if len(res.Conflicts) != 1 || res.Conflicts[0].Path != indexName || !res.Conflicts[0].Base.Exists ||
+		!bytes.Equal(res.Conflicts[0].Base.Content, RenderIndex(nil)) || !hasProblem(res.Problems, indexName, "generated") {
+		t.Fatalf("check = %+v", res)
 	}
 }

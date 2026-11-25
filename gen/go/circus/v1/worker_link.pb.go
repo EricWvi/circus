@@ -545,9 +545,12 @@ const (
 	SessionReply_Inputs_Input_KIND_USER        SessionReply_Inputs_Input_Kind = 1
 	SessionReply_Inputs_Input_KIND_APPROVAL    SessionReply_Inputs_Input_Kind = 2
 	// A note the control plane writes for the model, such as the
-	// problems a ledger collection found. Pushed as a synthetic user
-	// message (isSynthetic) whose view event carries circus_note =
-	// note. Priority NORMAL: it starts a turn when the session is idle.
+	// problems a ledger collection found; its view event carries
+	// circus_note = note. Ledger notes (ledger_*) are pushed as ordinary
+	// user messages whose text starts with "[circus ledger]"; any other
+	// note as a synthetic user message (isSynthetic). A problems note
+	// starts a turn when the session is idle; merged and discarded
+	// notes are held and taken with the next input that starts a turn.
 	SessionReply_Inputs_Input_KIND_NOTE SessionReply_Inputs_Input_Kind = 3
 )
 

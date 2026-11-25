@@ -152,6 +152,11 @@ func (o *faultyOps) SubmitInput(ctx context.Context, in store.Input) (v store.In
 	return v, err
 }
 
+func (o *faultyOps) FoldDeferredNotes(ctx context.Context, in store.Input) (v int, err error) {
+	err = o.write(ctx, func(x store.Ops) error { v, err = x.FoldDeferredNotes(ctx, in); return err })
+	return v, err
+}
+
 func (o *faultyOps) TakeInputs(ctx context.Context, f store.Fence) (v []store.Input, err error) {
 	err = o.write(ctx, func(x store.Ops) error { v, err = x.TakeInputs(ctx, f); return err })
 	return v, err

@@ -125,6 +125,11 @@ func TestWorkerEventPayloads(t *testing.T) {
 		m["timestamp"] = stamp
 		return m
 	}
+	ledgerNote := func(id string, content any, note string) object {
+		m := sdkUserMessage(sessionID, id, content, note, false).payload
+		m["timestamp"] = stamp
+		return m
+	}
 	interrupt := []object{{"type": "text", "text": "[Request interrupted by user]"}}
 	type named struct {
 		name    string
@@ -147,7 +152,8 @@ func TestWorkerEventPayloads(t *testing.T) {
 		{"note_previous_turn_interrupted", pb.SessionEvent_KIND_USER, user(eventID, "The previous turn was interrupted.", notePreviousTurnInterrupted)},
 		{"note_lost_bgtask", pb.SessionEvent_KIND_USER, user(eventID, "Background task task-1 was lost.", noteLostBgtask)},
 		{"note_history_missing", pb.SessionEvent_KIND_USER, user(eventID, "Part of the conversation history is missing.", noteHistoryMissing)},
-		{"note_ledger_problems", pb.SessionEvent_KIND_USER, user(inputID, "The ledger collection found problems.", noteLedgerProblems)},
+		// A ledger note is not synthetic; its view event names it.
+		{"note_ledger_problems", pb.SessionEvent_KIND_USER, ledgerNote(inputID, "[circus ledger] The ledger collection found problems.", noteLedgerProblems)},
 	}
 	type goldenEvent struct {
 		Name      string          `json:"name"`

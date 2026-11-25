@@ -293,7 +293,7 @@ func (o *ops) CountNotesSinceUserInput(ctx context.Context, sessionID string) (i
 	if err := store.CheckID("session id", sessionID); err != nil {
 		return 0, err
 	}
-	return o.count(ctx, `SELECT COUNT(*) FROM session_inputs WHERE session_id = ?1 AND kind = 'note'
+	return o.count(ctx, `SELECT COUNT(*) FROM session_inputs WHERE session_id = ?1 AND kind = 'note' AND deferred = 0
 		AND created_at > COALESCE((SELECT MAX(created_at) FROM session_inputs WHERE session_id = ?1 AND kind = 'user'), 0)`, sessionID)
 }
 

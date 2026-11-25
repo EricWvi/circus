@@ -15,6 +15,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon"
 	"github.com/EricWvi/circus/internal/daemon/ledgersnap"
 	"github.com/EricWvi/circus/internal/daemon/workspace"
+	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/ledger/snapshot"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 )
@@ -971,5 +972,43 @@ func TestGeneratedIndex(t *testing.T) {
 	}
 	if read(t, filepath.Join(path, "INDEX.md")) != newIndex {
 		t.Fatal("index not rebased")
+	}
+}
+
+// TestEmptyLedger: the snapshot of an empty ledger holds its generated
+// index alone; a collection finds no change and no problem in it, a
+// rebase replaces the index, and a reset writes it again.
+func TestEmptyLedger(t *testing.T) {
+	f := newFixture(t, ledgersnap.Options{})
+	const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	empty := string(ledger.RenderIndex(nil))
+	path := f.ready(emptyTree, "INDEX.md", empty)
+	if got := entries(t, path); !slices.Equal(got, []string{"INDEX.md"}) || read(t, filepath.Join(path, "INDEX.md")) != empty {
+		t.Fatalf("empty snapshot: %v", got)
+	}
+	r := f.collect()
+	if got := changes(r); got != "" || len(r.Problems) != 0 || r.CurrentBaseCommit != emptyTree {
+		t.Fatalf("collect: %q, %v on %q", got, r.Problems, r.CurrentBaseCommit)
+	}
+	decision := "---\nnumber: D0\ntitle: \"First\"\n---\n\nStart.\n"
+	index := string(ledger.RenderIndex([]ledger.Decision{{Number: 0, Title: "First"}}))
+	edits := []*circusv1.RebaseLedgerRequest_Edit{rebaseEdit("INDEX.md", empty, &index), rebaseEdit("D0-First.md", "", ptr(decision))}
+	if got := f.rebase(nil, edits); got.Outcome != circusv1.RebaseLedgerResult_OUTCOME_REBASED {
+		t.Fatalf("rebase: %v", got)
+	}
+	if read(t, filepath.Join(path, "INDEX.md")) != index || read(t, filepath.Join(path, "D0-First.md")) != decision {
+		t.Fatal("not rebased")
+	}
+	// A reset to the empty ledger (its changeset discarded) writes the
+	// empty index again.
+	reset := f.prepare(&circusv1.PrepareLedgerRequest{BaseCommit: emptyTree, Files: files("INDEX.md", empty), Last: true, TotalFiles: 1, Reset_: true})
+	if reset.Outcome != circusv1.PrepareLedgerResult_OUTCOME_READY || read(t, filepath.Join(path, "INDEX.md")) != empty {
+		t.Fatalf("reset: %v", reset)
+	}
+	if got := entries(t, path); !slices.Equal(got, []string{"INDEX.md"}) {
+		t.Fatalf("after reset: %v", got)
+	}
+	if got := changes(f.collect()); got != "" {
+		t.Fatalf("collect after reset: %q", got)
 	}
 }

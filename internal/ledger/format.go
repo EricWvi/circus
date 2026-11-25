@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/go-git/go-git/v5/plumbing"
 	"gopkg.in/yaml.v3"
 )
 
@@ -268,8 +269,23 @@ func renderIndex(entries []store.LedgerEntry) []byte {
 	for _, e := range entries {
 		b = fmt.Appendf(b, "| %s | %s | %s |\n", numberName(e.Number), tableCell(e.Dir), tableCell(e.Title))
 	}
+	if len(entries) == 0 {
+		b = append(b, "\nThe ledger has no decisions yet.\n"...)
+	}
 	return b
 }
+
+// emptyIndex is the generated index of the empty ledger, which has no
+// commit: it is the one file of the empty ledger, so every copy of the
+// ledger holds its index. The repository serves its blob without storing
+// it (repository.blob) and stores it when a tree refers to it.
+var (
+	emptyIndex     = renderIndex(nil)
+	emptyIndexHash = plumbing.ComputeHash(plumbing.BlobObject, emptyIndex)
+)
+
+// emptySnapshot is the snapshot of the empty ledger.
+func emptySnapshot() snapshot { return snapshot{index: emptyIndexHash} }
 
 func tableCell(s string) string {
 	var b strings.Builder

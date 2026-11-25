@@ -20,3 +20,17 @@ func TestProblemsText(t *testing.T) {
 		t.Fatalf("conflict text:\n%s", text)
 	}
 }
+
+// TestNotesStartWithTheMarker: every ledger note's text starts with the
+// marker the system prompt names.
+func TestNotesStartWithTheMarker(t *testing.T) {
+	for _, text := range []string{
+		problemsText("/snap", []store.LedgerProblem{{Path: "notes.txt", Message: "unexpected file"}}),
+		mergedText("/snap", "cs-1", mergeNote{numbers: map[string]uint32{"a": 3}}),
+		discardedText("/snap", "cs-1", "not now"),
+	} {
+		if !strings.HasPrefix(text, "[circus ledger] ") {
+			t.Fatalf("text without the marker:\n%s", text)
+		}
+	}
+}

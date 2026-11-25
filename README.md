@@ -607,8 +607,11 @@ workspace, at `$XDG_STATE_HOME/circus/ledger/<session>/` (docs/wire.md,
 "Session ledger snapshots"). The control plane prepares it from the main
 line's head when the preparation starts, sending the files in chunks of at
 most 8 MiB (and half the message limit) and 4096 files, the generated
-`INDEX.md` apart (up to about 11 MiB, the most 4096 decisions make); the
-session's first turn waits while the device is offline or the snapshot is
+`INDEX.md` apart (up to about 11 MiB, the most 4096 decisions make). Every
+snapshot holds `INDEX.md`, that of a project without decisions included:
+the empty ledger (no commit yet) is its index alone, an empty table that
+says the ledger has no decisions yet, so the agent never has to look for
+it anywhere else. The session's first turn waits while the device is offline or the snapshot is
 prepared, as for a workspace, and the worker gets the snapshot's path in
 the lease (`Lease.ledger_path`) and tells the model about it. A failure,
 a daemon without the ledger calls or a revoked device included, leaves the
@@ -636,13 +639,40 @@ a file over 256 KiB, or two paths that differ only in case or Unicode
 normalization, which are one name on macOS; ledger validation refuses
 those in every changeset) are told to the agent in a note,
 `ledger_problems`, which starts a turn when the session is idle; the same
-set of problems is not told again. Each note starts a turn without the
-user, so after three notes in a row with no input of the user between
-them, new problems are told only after the user's next input: an agent
-that cannot fix its snapshot does not run on forever. A note is written
-in the transaction that records what it tells, so it is never lost or
-given twice, and a session takes notes before the user's messages that
-arrived with them.
+set of problems is not told again. Each such note starts a turn without
+the user, so after three of them in a row with no input of the user
+between them, new problems are told only after the user's next input: an
+agent that cannot fix its snapshot does not run on forever. The notes of a
+merge and a discard (below) start no turn: they wait, pending, for the
+next input that starts one (the user's message, an approval's retry or a
+problems note) and reach the agent in that turn, before it; they do not
+count towards the three. A turn the CLI starts by itself (a background task
+ending) takes no input and so carries none of them. Held notes count towards
+no bound of the session's open inputs, so they never keep the user's
+messages or an approval's retry out; at most eight are held per session,
+and one more folds them into a single note telling the agent that earlier
+ledger changes were merged or discarded and to re-read the snapshot's
+`INDEX.md` before relying on decision numbers. If a lease is lost after
+the CLI got the input a held note was taken with but not the note itself,
+the note comes back as one that starts a turn: it can no longer go before
+that input, so it goes as soon as possible. The reason an integrator gives
+for a discard is quoted in the note as data (escaped, at most 300 bytes),
+marked as not an instruction. A note is written in the transaction that records
+what it tells, so it is given exactly when that is recorded, and it survives
+a worker's restart, a lost lease and a stopped session like the user's
+inputs. A held note is never dropped silently: past the bound its text is
+replaced, together with the other held notes', by the one summary note
+above, which carries none of their details. A session takes notes before
+the user's messages that arrived with them. On a lost lease, an input
+counts as received when the transcript holds an entry with its id or the
+`queued_command` attachment Claude Code writes for a message it absorbed
+into a running turn (whose `source_uuid` is the input's id); such an input
+is not given again.
+The worker pushes ledger notes to the agent as ordinary user messages,
+not as synthetic ones (which Claude Code marks as not coming from the
+user), each starting with `[circus ledger]`; the system prompt's ledger
+section tells the agent that such a message comes from circus's ledger
+collector on the user's behalf.
 
 The project's owner merges a session's changeset from the session page
 (`LedgerService.MergeSessionLedger`) when it fast-forwards; the server
@@ -690,7 +720,7 @@ changed since that collection the snapshot is the view; otherwise its base
 is a commit on top of the view holding those later changes, which then go
 into the next changeset as changes of `D<n>` (never a second new
 decision). The agent is told (`ledger_merged`) with one list of the
-renames, what was put back and what to check, before its next turn.
+renames, what was put back and what to check, in its next turn.
 Every rebase's base commit names exactly the files it installs, and is
 recorded before it is sent; each collection and rebase answer names the
 base the snapshot's manifest records (`current_base_commit`), so a

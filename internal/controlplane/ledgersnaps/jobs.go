@@ -35,7 +35,9 @@ const (
 	// told of new problems after every turn its last note started,
 	// forever; past the bound it hears of them after the user's next
 	// input. Notes of merges and discards, one per integrator action, are
-	// always given and count towards the bound.
+	// always given but start no turn (they are deferred: they go with the
+	// next input that starts one), so they do not count towards the
+	// bound.
 	maxNotesWithoutUser = 3
 	// maxDeviceFailures is how many attempts in a row a rebase or a reset
 	// may fail for a reason a retry alone does not fix (the device refuses
@@ -80,11 +82,13 @@ func ledgerCommit(commit string) string {
 }
 
 // note is a note for the agent that a change of a snapshot row gives: an
-// input of kind note, which starts a turn when the session is idle. It is
-// written in the change's transaction, so it is given exactly when the
-// change is.
+// input of kind note, which starts a turn when the session is idle, or
+// when deferred waits for the next input that starts one and goes before
+// it in that turn (store.Input.Deferred). It is written in the change's
+// transaction, so it is given exactly when the change is.
 type note struct {
 	category, text string
+	deferred       bool
 	// refused, when set, undoes what the change records of the note when
 	// the session takes none (stopped, or too many inputs open).
 	refused func(l *store.SessionLedger)
@@ -95,7 +99,7 @@ var errRaced = errors.New("ledgersnaps: the snapshot row changed")
 // change applies fn to the session's snapshot row in a transaction and
 // writes it, with the note fn returns, when fn returns true; it announces
 // the change with a KIND_LEDGER event and wakes the session for a new
-// note.
+// note that is not deferred.
 func (m *Manager) change(ctx context.Context, sessionID, event string,
 	fn func(ctx context.Context, tx store.Ops, l *store.SessionLedger) (bool, *note, error)) (store.SessionLedger, bool, error) {
 	for range 8 {
@@ -114,7 +118,7 @@ func (m *Manager) change(ctx context.Context, sessionID, event string,
 				return err
 			}
 			if n != nil {
-				created, err := m.submitNote(ctx, tx, sessionID, n)
+				created, err := m.submitNote(ctx, tx, sessionID, l.Path, n)
 				switch {
 				case errors.Is(err, store.ErrStopped) || errors.Is(err, store.ErrLimit):
 					if n.refused != nil {
@@ -123,7 +127,7 @@ func (m *Manager) change(ctx context.Context, sessionID, event string,
 				case err != nil:
 					return err
 				default:
-					noted = created
+					noted = created && !n.deferred
 				}
 			}
 			l.UpdatedAt = max(m.now(), prev+1)
@@ -161,14 +165,29 @@ func (m *Manager) update(ctx context.Context, sessionID, event string, fn func(l
 	})
 }
 
-// submitNote gives the agent n in tx.
-func (m *Manager) submitNote(ctx context.Context, tx store.Ops, sessionID string, n *note) (bool, error) {
-	id, err := uuid.NewV7()
+// submitNote gives the agent n in tx. A deferred note at the bound of
+// the session's held notes first folds them into one (foldedText), so
+// none is dropped without a word.
+func (m *Manager) submitNote(ctx context.Context, tx store.Ops, sessionID, snapshotPath string, n *note) (bool, error) {
+	input := func(category, text string) (store.Input, error) {
+		id, err := uuid.NewV7()
+		return store.Input{InputID: id.String(), SessionID: sessionID, ClientMsgID: "ledger-note:" + id.String(), Kind: store.InputNote,
+			Note: category, Text: clipText(text, store.MaxInputTextBytes), Priority: store.InputNormal, CreatedAt: m.now(), Deferred: n.deferred}, err
+	}
+	if n.deferred {
+		folded, err := input(noteMerged, foldedText(snapshotPath))
+		if err != nil {
+			return false, err
+		}
+		if _, err := tx.FoldDeferredNotes(ctx, folded); err != nil {
+			return false, err
+		}
+	}
+	in, err := input(n.category, n.text)
 	if err != nil {
 		return false, err
 	}
-	res, err := tx.SubmitInput(ctx, store.Input{InputID: id.String(), SessionID: sessionID, ClientMsgID: "ledger-note:" + id.String(),
-		Kind: store.InputNote, Note: n.category, Text: clipText(n.text, store.MaxInputTextBytes), Priority: store.InputNormal, CreatedAt: m.now()})
+	res, err := tx.SubmitInput(ctx, in)
 	return res.Created, err
 }
 
@@ -433,7 +452,7 @@ func (m *Manager) reset(ctx context.Context, l store.SessionLedger) {
 		if x.Pending != store.SessionLedgerReset || x.PendingChangeset != l.PendingChangeset {
 			return false, nil, nil
 		}
-		n := &note{category: noteDiscarded, text: discardedText(x.Path, x.PendingChangeset, x.PendingReason)}
+		n := &note{category: noteDiscarded, text: discardedText(x.Path, x.PendingChangeset, x.PendingReason), deferred: true}
 		x.BaseCommit, x.Known, x.Problems, x.Warnings, x.ChangeCount, x.ProblemCount = x.ViewCommit, nil, nil, nil, 0, 0
 		x.Pending, x.PendingChangeset, x.PendingReason, x.RebaseTarget, x.NotedHash, x.Attempts, x.RetryAt = "", "", "", "", "", 0, 0
 		return true, n, nil
@@ -1019,7 +1038,7 @@ func (m *Manager) rebased(ctx context.Context, l store.SessionLedger, plan ledge
 			return false, nil, nil
 		}
 		n := &note{category: noteMerged, text: mergedText(x.Path, changeset, mergeNote{numbers: numbers, renamed: plan.Renamed,
-			restored: plan.Restored, problems: plan.Problems, found: found, kept: plan.Target != plan.View})}
+			restored: plan.Restored, problems: plan.Problems, found: found, kept: plan.Target != plan.View}), deferred: true}
 		x.BaseCommit, x.ViewCommit, x.Known, x.Problems, x.Warnings, x.ChangeCount, x.ProblemCount = plan.Target, plan.View, nil, nil, nil, 0, 0
 		x.Pending, x.PendingChangeset, x.PendingReason, x.RebaseTarget, x.NotedHash, x.Attempts, x.RetryAt = "", "", "", "", "", 0, 0
 		switch {

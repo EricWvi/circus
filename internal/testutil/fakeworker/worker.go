@@ -2,8 +2,9 @@
 // generates Claude Agent SDK messages locally.
 //
 // The following inputs select a script. Other input, and every note the
-// control plane pushes (KIND_NOTE, a synthetic user message whose view event
-// names it in circus_note), gets a streamed Markdown reply quoting the input.
+// control plane pushes (KIND_NOTE, a user message whose view event names it
+// in circus_note, synthetic unless it is a ledger note), gets a streamed
+// Markdown reply quoting the input.
 //
 //	/fake bash <command>     Run Bash on the session's default device and cwd.
 //	/fake read <path>        Read a file on that device, relative to the session cwd.

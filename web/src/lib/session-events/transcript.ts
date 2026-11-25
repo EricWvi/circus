@@ -180,7 +180,20 @@ const shownNotes = new Set<string>([
   "job_notice",
   "lost_bgtask",
   "history_missing",
+  "ledger_problems",
+  "ledger_merged",
+  "ledger_discarded",
 ] satisfies NoteKind[])
+
+/** The ledger collector's notes (docs/wire.md). */
+const ledgerNotes = new Set<string>(["ledger_problems", "ledger_merged", "ledger_discarded"] satisfies NoteKind[])
+
+/** The marker every ledger note's text starts with; the note's label says it. */
+const ledgerNoteMarker = "[circus ledger] "
+
+function withoutLedgerMarker(text: string): string {
+  return text.startsWith(ledgerNoteMarker) ? text.slice(ledgerNoteMarker.length) : text
+}
 
 /**
  * Notes the view already says in its own way: the approval card shows the
@@ -639,7 +652,7 @@ class Builder {
       id: uuid ? `note:${uuid}` : `note:${seq}`,
       at,
       noteKind: shownNotes.has(note) ? (note as NoteKind) : "other",
-      text: noteText(content),
+      text: ledgerNotes.has(note) ? withoutLedgerMarker(noteText(content)) : noteText(content),
     })
   }
 

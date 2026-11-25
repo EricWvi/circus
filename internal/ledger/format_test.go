@@ -219,4 +219,16 @@ func TestRenderIndex(t *testing.T) {
 	if string(got) != want {
 		t.Fatalf("index = %q, want %q", got, want)
 	}
+	// The empty ledger's index says so below the table header, and is
+	// the whole of a valid empty tree.
+	empty := RenderIndex(nil)
+	if want := "| Number | Directory | Title |\n| --- | --- | --- |\n\nThe ledger has no decisions yet.\n"; string(empty) != want {
+		t.Fatalf("empty index = %q, want %q", empty, want)
+	}
+	if problems := ValidateTree(map[string][]byte{"INDEX.md": empty}); len(problems) != 0 {
+		t.Fatalf("empty tree problems = %v", problems)
+	}
+	if problems := ValidateTree(map[string][]byte{}); len(problems) != 1 || problems[0].Path != "INDEX.md" {
+		t.Fatalf("tree without an index = %v", problems)
+	}
 }

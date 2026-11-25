@@ -916,7 +916,9 @@ use `F_FULLFSYNC` on macOS.
 **Paths and content.** A path is relative, `/`-separated, valid UTF-8
 without control characters, at most 4096 bytes, with no empty, `.` or `..`
 segment and no segment over 255 bytes. Content is valid UTF-8 of at most
-256 KiB, except the ledger's generated index, `INDEX.md` at the top, which
+256 KiB, except the ledger's generated index, `INDEX.md` at the top (every
+snapshot holds it; that of the empty ledger, base commit Git's empty tree,
+is an empty table saying there are no decisions yet), which
 may hold up to `MaxIndexBytes` (64 + 4096 × 2848 bytes, about 11 MiB: a
 row per decision whose title's `<`, `>` and `&` take five bytes each) and
 does not count toward a chunk's or a rebase's 8 MiB of content. Anything else, duplicate paths in one request, or a base commit
@@ -1701,6 +1703,16 @@ a collection of the session's ledger snapshot), `ledger_merged` (the
 session's ledger changes were merged and its new decisions renamed) and
 `ledger_discarded` (they were discarded). The control plane records no view
 event for a note itself: the view shows it when the worker delivers it.
+These three ledger notes, whose text starts with `[circus ledger]`, are
+pushed to the CLI as ordinary user messages, not synthetic ones, and their
+view events carry `circus_note` without `isSynthetic`; any other note is
+synthetic. The control plane holds `ledger_merged` and `ledger_discarded`
+back (deferred inputs): `TakeInputs` returns them only with an input that
+starts a turn, before it, so they never start one themselves (a turn the
+CLI starts by itself takes no input and does not carry them). Held notes do
+not count towards the 32 open inputs; at most 8 are held, and one more
+replaces them with a single `ledger_merged` note that tells the agent to
+re-read `INDEX.md`.
 Clients treat an unknown kind, or a synthetic user message without one, as
 a generic note to the model.
 

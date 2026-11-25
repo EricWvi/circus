@@ -618,6 +618,23 @@ describe("notes to Claude", () => {
     ])
   })
 
+  it("names the ledger notes, which are not synthetic, without their marker", () => {
+    const ledger = (seq: number, kind: string, text: string) =>
+      user(seq, { uuid: `u${seq}`, circus_note: kind, message: { role: "user", content: text } })
+    const t = run([
+      ledger(1, "ledger_problems", "[circus ledger] The ledger snapshot at /s has problems."),
+      ledger(2, "ledger_merged", "[circus ledger] Your ledger changes were merged."),
+      ledger(3, "ledger_discarded", "[circus ledger] Your ledger changes were discarded. [circus ledger] stays."),
+      note(4, "job_notice", "[circus ledger] only a ledger note loses it"),
+    ])
+    expect(notes(t)).toEqual([
+      ["ledger_problems", "The ledger snapshot at /s has problems."],
+      ["ledger_merged", "Your ledger changes were merged."],
+      ["ledger_discarded", "Your ledger changes were discarded. [circus ledger] stays."],
+      ["job_notice", "[circus ledger] only a ledger note loses it"],
+    ])
+  })
+
   it("marks by circus_note even without isSynthetic", () => {
     const t = run([user(1, { uuid: "u1", circus_note: "job_notice", message: { role: "user", content: "done" } })])
     expect(notes(t)).toEqual([["job_notice", "done"]])

@@ -395,13 +395,14 @@ func (s *session) workTurn(t *turn, in *input) error {
 // inputNote is the circus_note of an input's user message and whether
 // the message is synthetic: none for the user's own input; a
 // control-plane note keeps its category as given, an empty one included
-// (synthetic, without circus_note), as the real worker does.
+// (synthetic, without circus_note), as the real worker does; a ledger
+// note is not synthetic.
 func inputNote(in *input) (string, bool) {
 	switch in.GetKind() {
 	case pb.SessionReply_Inputs_Input_KIND_APPROVAL:
 		return noteApprovalRetry, true
 	case pb.SessionReply_Inputs_Input_KIND_NOTE:
-		return in.GetNote(), true
+		return in.GetNote(), !ledgerNotes[in.GetNote()]
 	}
 	return "", false
 }

@@ -578,12 +578,12 @@ func (o *ops) SettleSession(ctx context.Context, sessionID string, now int64) (s
 }
 
 // pendingWork reports whether the session has work for a worker: a
-// pending input, or a job that ended and whose notification was not
-// handed.
+// pending input that is not deferred, or a job that ended and whose
+// notification was not handed.
 func (o *ops) pendingWork(ctx context.Context, sessionID string) (bool, error) {
 	var work bool
 	err := o.q.QueryRow(ctx, `SELECT
-		EXISTS (SELECT 1 FROM session_inputs WHERE session_id = ?1 AND state = 'pending')
+		EXISTS (SELECT 1 FROM session_inputs WHERE session_id = ?1 AND state = 'pending' AND deferred = 0)
 		OR EXISTS (SELECT 1 FROM session_jobs sj JOIN jobs j
 			ON j.device_id = sj.device_id AND j.boot_id = sj.boot_id AND j.job_id = sj.job_id
 			WHERE sj.session_id = ?1 AND sj.notice = 'no' AND j.state <> 'running'
@@ -641,6 +641,15 @@ func (o *ops) fence(ctx context.Context, f store.Fence) (store.Lease, error) {
 	return l, nil
 }
 
+// inputInTranscript holds for a session_inputs row whose input the CLI
+// got: the transcript has an entry with the input's id (a message that
+// started a turn), or a queued_command attachment naming it (a message
+// absorbed into a running turn, store.QueuedCommandSource).
+const inputInTranscript = `(EXISTS (SELECT 1 FROM transcript_entries t
+		WHERE t.session_id = session_inputs.session_id AND t.uuid = session_inputs.input_id)
+	OR EXISTS (SELECT 1 FROM transcript_entries t
+		WHERE t.session_id = session_inputs.session_id AND t.source_uuid = session_inputs.input_id))`
+
 // loseLease clears l's holder and applies the lease-loss rule at now.
 func (o *ops) loseLease(ctx context.Context, l store.Lease, now int64) (store.LeaseLoss, error) {
 	loss := store.LeaseLoss{Released: l}
@@ -662,9 +671,16 @@ func (o *ops) loseLease(ctx context.Context, l store.Lease, now int64) (store.Le
 	}
 	// Taken inputs: the transcript decides whether the CLI got them.
 	if _, err := o.exec(ctx, `UPDATE session_inputs SET state = 'persisted', text = NULL, persisted_at = ?2
-		WHERE session_id = ?1 AND state = 'taken' AND EXISTS (
-			SELECT 1 FROM transcript_entries t WHERE t.session_id = ?1 AND t.uuid = session_inputs.input_id)`,
-		l.SessionID, now); err != nil {
+		WHERE session_id = ?1 AND state = 'taken' AND `+inputInTranscript, l.SessionID, now); err != nil {
+		return loss, err
+	}
+	// A deferred note taken with an input the CLI got (and not itself)
+	// can no longer go before that input: it goes as soon as possible
+	// instead, as a note that starts a turn. The others wait again.
+	if _, err := o.exec(ctx, `UPDATE session_inputs SET deferred = 0
+		WHERE session_id = ?1 AND state = 'taken' AND deferred = 1 AND EXISTS (SELECT 1 FROM session_inputs p
+			WHERE p.session_id = ?1 AND p.state = 'persisted' AND p.deferred = 0
+			AND p.taken_epoch = session_inputs.taken_epoch AND p.taken_at = session_inputs.taken_at)`, l.SessionID); err != nil {
 		return loss, err
 	}
 	if _, err := o.exec(ctx, `UPDATE session_inputs SET state = 'pending', taken_epoch = NULL, taken_at = NULL

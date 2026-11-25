@@ -1,6 +1,7 @@
 package ledger
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -490,9 +491,14 @@ func TestReadChangesetBasePages(t *testing.T) {
 	if len(paths) != 21 || !slices.IsSorted(paths) || !slices.Contains(paths, indexName) {
 		t.Fatalf("base paths = %q", paths)
 	}
-	files, more, err := m.ReadChangesetBase(t.Context(), openCS(t, m, "empty"), "", 3000)
-	if err != nil || more || len(files) != 0 {
+	// The empty ledger's base is its index alone.
+	empty := openCS(t, m, "empty")
+	files, more, err := m.ReadChangesetBase(t.Context(), empty, "", 3000)
+	if err != nil || more || len(files) != 1 || files[0].Path != indexName || !bytes.Equal(files[0].Content, RenderIndex(nil)) {
 		t.Fatalf("empty base = %v, %v, %v", files, more, err)
+	}
+	if files, more, err = m.ReadChangesetBase(t.Context(), empty, indexName, 3000); err != nil || more || len(files) != 0 {
+		t.Fatalf("empty base after its index = %v, %v, %v", files, more, err)
 	}
 }
 

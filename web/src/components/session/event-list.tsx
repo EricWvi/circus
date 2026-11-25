@@ -107,6 +107,9 @@ const noteKeys = {
   job_notice: "session.note.jobNotice",
   lost_bgtask: "session.note.lostBgtask",
   history_missing: "session.note.historyMissing",
+  ledger_problems: "session.note.ledgerProblems",
+  ledger_merged: "session.note.ledgerMerged",
+  ledger_discarded: "session.note.ledgerDiscarded",
   other: "session.note.other",
 } as const satisfies Record<NoteKind, string>
 

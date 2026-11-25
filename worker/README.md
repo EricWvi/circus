@@ -86,7 +86,11 @@ replay):
 - `isSynthetic: true` on a pushed message makes the CLI prefix it with
   `[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]`, so the worker's own
   notes are pushed as `<system-reminder>` blocks in front of the user's
-  input instead.
+  input instead. The control plane's ledger notes (`ledger_problems`,
+  `ledger_merged`, `ledger_discarded`) are pushed without it, as ordinary
+  user messages starting with `[circus ledger]`, which the ledger section of
+  the system prompt explains (the model refused the prefixed ones as
+  possible injection); other control-plane notes stay synthetic.
 - A query that resumes from the SessionStore runs Claude Code with a
   temporary `CLAUDE_CONFIG_DIR` (`$TMPDIR/claude-resume-*`, with copies of
   the credentials and settings) that the SDK deletes when the query ends.

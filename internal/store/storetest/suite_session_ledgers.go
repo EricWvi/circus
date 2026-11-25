@@ -333,6 +333,179 @@ func testNoteOrderAndLimits(t *testing.T, b Backend) {
 	mustEqual(t, "notes in order", taken[0].InputID+","+taken[1].InputID, "note-0,note-1")
 }
 
+// testDeferredNotes: a deferred note starts no turn (the session stays
+// idle and a holder takes nothing), is not counted as a note that started
+// one, and is taken, before it, with the next input that starts a turn;
+// given back with a lost lease, it is held again with that input.
+func testDeferredNotes(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createSession(t, s, f, "s1")
+	note := func(id string, deferred bool, at int64) store.Input {
+		return store.Input{InputID: id, SessionID: "s1", ClientMsgID: id, Kind: store.InputNote, Note: "ledger_merged",
+			Text: "merged", Priority: store.InputNormal, CreatedAt: at, Deferred: deferred}
+	}
+	ids := func(list []store.Input) string {
+		var out []string
+		for _, in := range list {
+			out = append(out, in.InputID)
+		}
+		return strings.Join(out, ",")
+	}
+	take := func(f store.Fence) []store.Input {
+		t.Helper()
+		taken, err := s.TakeInputs(ctx, f)
+		must(t, err)
+		return taken
+	}
+	user := newInput("s1", 1)
+	user.Deferred = true
+	mustIs(t, errOf(s.SubmitInput(ctx, user)), store.ErrInvalid)
+
+	res := submit(t, s, note("held-1", true, t0+5))
+	mustEqual(t, "created", res.Created, true)
+	mustEqual(t, "stays idle", res.Session.State, store.SessionIdle)
+	mustEqual(t, "deferred", res.Input.Deferred, true)
+	mustIs(t, errOf(s.SubmitInput(ctx, note("held-1", false, t0+5))), store.ErrExists)
+	n, err := s.CountNotesSinceUserInput(ctx, "s1")
+	must(t, err)
+	mustEqual(t, "deferred notes are not counted", n, 0)
+	fence := acquire(t, s, "s1", f.worker.ID, "b1", t0+6)
+	mustEqual(t, "nothing to take", ids(take(fence)), "")
+
+	// The user's input takes the held note with it, the note first.
+	submit(t, s, newInput("s1", 10))
+	taken := take(fence)
+	mustEqual(t, "taken together", ids(taken), "held-1,s1-in10")
+	mustEqual(t, "taken deferred", taken[0].Deferred, true)
+	// A note deferred while they are taken waits for the next input.
+	submit(t, s, note("held-2", true, t0+20))
+	mustEqual(t, "a retry", ids(take(fence)), "held-1,s1-in10")
+
+	// A lost lease gives the taken inputs back; the session is queued for
+	// the user's input, not for the notes, which stay deferred.
+	loss, err := s.ReleaseLease(ctx, fence)
+	must(t, err)
+	mustEqual(t, "released", loss.Released.SessionID, "s1")
+	sess, err := s.GetSession(ctx, "s1", t0+30)
+	must(t, err)
+	mustEqual(t, "queued", sess.State, store.SessionQueued)
+	fence = acquire(t, s, "s1", f.worker.ID, "b2", t0+40)
+	taken = take(fence)
+	mustEqual(t, "taken again", ids(taken), "held-1,held-2,s1-in10")
+	mustEqual(t, "still deferred", taken[0].Deferred && taken[1].Deferred, true)
+
+	// A note that starts a turn takes a held one with it too.
+	createSession(t, s, f, "s2")
+	held := note("s2-held", true, t0+50)
+	held.SessionID = "s2"
+	problems := note("s2-problems", false, t0+60)
+	problems.SessionID, problems.Note = "s2", "ledger_problems"
+	submit(t, s, held)
+	res = submit(t, s, problems)
+	mustEqual(t, "queued by the note that starts a turn", res.Session.State, store.SessionQueued)
+	n, err = s.CountNotesSinceUserInput(ctx, "s2")
+	must(t, err)
+	mustEqual(t, "counted", n, 1)
+	other := acquire(t, s, "s2", f.worker.ID, "b3", t0+70)
+	mustEqual(t, "both notes", ids(take(other)), "s2-held,s2-problems")
+}
+
+// testDeferredNotesAlone: a lost lease, or a settle, with only deferred
+// notes pending leaves the session idle: they are no work for a worker.
+// A deferred note taken with an input the CLI got, itself missing from
+// the transcript, can no longer go before that input: it comes back as a
+// note that starts a turn.
+func testDeferredNotesAlone(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createSession(t, s, f, "s1")
+	note := func(id string, at int64) store.Input {
+		return store.Input{InputID: id, SessionID: "s1", ClientMsgID: id, Kind: store.InputNote, Note: "ledger_merged",
+			Text: "merged", Priority: store.InputNormal, CreatedAt: at, Deferred: true}
+	}
+	fence := acquire(t, s, "s1", f.worker.ID, "b1", t0+1)
+	submit(t, s, note("held-1", t0+2))
+	_, err := s.ReleaseLease(ctx, fence)
+	must(t, err)
+	sess, err := s.GetSession(ctx, "s1", t0+3)
+	must(t, err)
+	mustEqual(t, "idle with a held note", sess.State, store.SessionIdle)
+	settled, err := s.SettleSession(ctx, "s1", t0+4)
+	must(t, err)
+	mustEqual(t, "settled idle", settled.Session.State, store.SessionIdle)
+
+	fence = acquire(t, s, "s1", f.worker.ID, "b2", t0+5)
+	submit(t, s, newInput("s1", 6))
+	taken, err := s.TakeInputs(ctx, fence)
+	must(t, err)
+	mustEqual(t, "taken together", len(taken), 2)
+	appendEntries(t, s, fence, "", 1, entry("s1-in6", `{"n":1}`))
+	_, err = s.ReleaseLease(ctx, fence)
+	must(t, err)
+	sess, err = s.GetSession(ctx, "s1", t0+7)
+	must(t, err)
+	mustEqual(t, "queued for the note", sess.State, store.SessionQueued)
+	fence = acquire(t, s, "s1", f.worker.ID, "b3", t0+8)
+	taken, err = s.TakeInputs(ctx, fence)
+	must(t, err)
+	mustEqual(t, "the note alone", len(taken), 1)
+	mustEqual(t, "no longer deferred", taken[0].InputID+" "+fmt.Sprint(taken[0].Deferred), "held-1 false")
+}
+
+// testDeferredNoteBound: deferred notes count towards no bound of the
+// open inputs, so the user's input and an approval's retry are accepted
+// with them at their own bound; FoldDeferredNotes replaces them at that
+// bound with one note in the oldest one's place.
+func testDeferredNoteBound(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createSession(t, s, f, "s1")
+	held := func(id string, at int64) store.Input {
+		return store.Input{InputID: id, SessionID: "s1", ClientMsgID: id, Kind: store.InputNote, Note: "ledger_merged",
+			Text: id, Priority: store.InputNormal, CreatedAt: at, Deferred: true}
+	}
+	fold := func(at int64) int {
+		t.Helper()
+		n, err := s.FoldDeferredNotes(ctx, held(fmt.Sprintf("fold-%d", at-t0), at))
+		must(t, err)
+		return n
+	}
+	for i := range store.MaxDeferredNotes {
+		mustEqual(t, "below the bound", fold(t0+100+int64(i)), 0)
+		submit(t, s, held(fmt.Sprintf("held-%d", i), t0+10+int64(i)))
+	}
+	// At the bound of held notes, every bound of the open inputs is
+	// still free.
+	for i := 1; i <= store.MaxOpenInputs-1; i++ {
+		submit(t, s, newInput("s1", 1000+i))
+	}
+	approval := newInput("s1", 2000)
+	approval.Kind = store.InputApproval
+	submit(t, s, approval)
+	mustIs(t, errOf(s.SubmitInput(ctx, newInput("s1", 3000))), store.ErrLimit)
+	submit(t, s, held("beyond", t0+500))
+	mustEqual(t, "folded", fold(t0+600), store.MaxDeferredNotes+1)
+	mustIs(t, errOf(s.FoldDeferredNotes(ctx, store.Input{InputID: "x", SessionID: "s1", ClientMsgID: "x", Kind: store.InputNote,
+		Note: "ledger_merged", Text: "x", Priority: store.InputNormal, CreatedAt: t0})), store.ErrInvalid)
+	submit(t, s, held("newest", t0+700))
+	fence := acquire(t, s, "s1", f.worker.ID, "b1", t0+800)
+	taken, err := s.TakeInputs(ctx, fence)
+	must(t, err)
+	var notes []string
+	for _, in := range taken {
+		if in.Kind == store.InputNote {
+			notes = append(notes, fmt.Sprintf("%s@%d", in.InputID, in.CreatedAt-t0))
+		}
+	}
+	// The replacement takes the oldest one's place, before the newest.
+	mustEqual(t, "held notes", strings.Join(notes, ","), "fold-600@10,newest@700")
+	mustEqual(t, "all taken", len(taken), 2+store.MaxOpenInputs)
+}
+
 // testSessionLedgerHolds: a pending rebase or reset holds the session's
 // turns unless problems stop it, a holder that keeps its lease included:
 // it takes no inputs meanwhile. A turn that a new turn closes makes a
@@ -497,4 +670,109 @@ func testLedgerCalls(t *testing.T, b Backend) {
 	must(t, err)
 	_, err = s.GetCall(ctx, "other")
 	must(t, err)
+}
+
+// queuedCommand is the transcript entry Claude Code writes for a message
+// it absorbed into a running turn, in the shape the recorded SDK sequence
+// shows (worker/test/fixtures/sdk/merged.json): an attachment with a uuid
+// of its own whose source_uuid is the pushed message's uuid.
+func queuedCommand(uuid, source string) store.TranscriptEntry {
+	return entry(uuid, `{"parentUuid":"p","isSidechain":false,"attachment":{"type":"queued_command","prompt":"also this",`+
+		`"source_uuid":"`+source+`","delivery_id":"d","commandMode":"prompt","timestamp":"2026-11-21T16:48:51.485Z"},`+
+		`"type":"attachment","uuid":"`+uuid+`","timestamp":"2026-11-21T16:48:51.485Z"}`)
+}
+
+// testAbsorbedInputs: on a lost lease, an input the CLI absorbed into a
+// running turn (a queued_command attachment naming it) counts as got: it
+// is persisted, not given again, and a held note absorbed so stays
+// delivered rather than coming back as a note that starts a turn.
+func testAbsorbedInputs(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createSession(t, s, f, "s1")
+	if got := store.QueuedCommandSource(queuedCommand("a1", "s1-in2").JSON); got != "s1-in2" {
+		t.Fatalf("source %q", got)
+	}
+	for _, other := range []string{`{"type":"user","uuid":"x","message":{"content":"queued_command"}}`,
+		`{"type":"attachment","attachment":{"type":"queued_command"}}`, `{"type":"attachment","attachment":{"type":"other","source_uuid":"x"}}`, `queued_command`} {
+		if got := store.QueuedCommandSource([]byte(other)); got != "" {
+			t.Fatalf("source of %s: %q", other, got)
+		}
+	}
+
+	// A user input starts a turn; a second one is absorbed into it.
+	fence := acquire(t, s, "s1", f.worker.ID, "b1", t0+1)
+	submit(t, s, newInput("s1", 1))
+	submit(t, s, newInput("s1", 2))
+	taken, err := s.TakeInputs(ctx, fence)
+	must(t, err)
+	mustEqual(t, "taken", len(taken), 2)
+	appendEntries(t, s, fence, "", 1, entry("s1-in1", `{"type":"user"}`), queuedCommand("a1", "s1-in2"))
+	_, err = s.ReleaseLease(ctx, fence)
+	must(t, err)
+	sess, err := s.GetSession(ctx, "s1", t0+3)
+	must(t, err)
+	mustEqual(t, "nothing to give again", sess.State, store.SessionIdle)
+	fence = acquire(t, s, "s1", f.worker.ID, "b2", t0+4)
+	taken, err = s.TakeInputs(ctx, fence)
+	must(t, err)
+	mustEqual(t, "taken again", len(taken), 0)
+
+	// A held note absorbed into a running turn, the user's input that
+	// took it starting the next one.
+	submit(t, s, store.Input{InputID: "held-1", SessionID: "s1", ClientMsgID: "held-1", Kind: store.InputNote, Note: "ledger_merged",
+		Text: "merged", Priority: store.InputNormal, CreatedAt: t0 + 5, Deferred: true})
+	submit(t, s, newInput("s1", 6))
+	taken, err = s.TakeInputs(ctx, fence)
+	must(t, err)
+	mustEqual(t, "taken together", len(taken), 2)
+	appendEntries(t, s, fence, "", 1, queuedCommand("a2", "held-1"), entry("s1-in6", `{"type":"user"}`))
+	_, err = s.ReleaseLease(ctx, fence)
+	must(t, err)
+	fence = acquire(t, s, "s1", f.worker.ID, "b3", t0+7)
+	taken, err = s.TakeInputs(ctx, fence)
+	must(t, err)
+	mustEqual(t, "the note is not given again", len(taken), 0)
+}
+
+// testFoldKeepsTakenNotes: the fold replaces only the pending held notes;
+// those taken with a running turn's input stay in flight.
+func testFoldKeepsTakenNotes(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createSession(t, s, f, "s1")
+	held := func(id string, at int64) store.Input {
+		return store.Input{InputID: id, SessionID: "s1", ClientMsgID: id, Kind: store.InputNote, Note: "ledger_merged",
+			Text: id, Priority: store.InputNormal, CreatedAt: at, Deferred: true}
+	}
+	for i := range store.MaxDeferredNotes {
+		submit(t, s, held(fmt.Sprintf("taken-%d", i), t0+1+int64(i)))
+	}
+	submit(t, s, newInput("s1", 100))
+	fence := acquire(t, s, "s1", f.worker.ID, "b1", t0+200)
+	taken, err := s.TakeInputs(ctx, fence)
+	must(t, err)
+	mustEqual(t, "in flight", len(taken), store.MaxDeferredNotes+1)
+	for i := range store.MaxDeferredNotes {
+		submit(t, s, held(fmt.Sprintf("pending-%d", i), t0+300+int64(i)))
+	}
+	n, err := s.FoldDeferredNotes(ctx, held("fold", t0+400))
+	must(t, err)
+	mustEqual(t, "folded the pending ones", n, store.MaxDeferredNotes)
+	taken, err = s.TakeInputs(ctx, fence)
+	must(t, err)
+	mustEqual(t, "the ones in flight remain", len(taken), store.MaxDeferredNotes+1)
+	_, err = s.ReleaseLease(ctx, fence)
+	must(t, err)
+	fence = acquire(t, s, "s1", f.worker.ID, "b2", t0+500)
+	taken, err = s.TakeInputs(ctx, fence)
+	must(t, err)
+	var ids []string
+	for _, in := range taken {
+		ids = append(ids, in.InputID)
+	}
+	mustEqual(t, "after the loss", strings.Join(ids, ","),
+		"taken-0,taken-1,taken-2,taken-3,taken-4,taken-5,taken-6,taken-7,fold,s1-in100")
 }

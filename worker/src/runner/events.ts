@@ -41,11 +41,13 @@ export function lostTaskPayload(sessionId: string, uuid: string, task: { taskId:
  * a message written for the model (a note: synthetic, with its kind, a
  * NoteKind or a control-plane note's category; empty publishes none).
  */
-export function userMessagePayload(sessionId: string, uuid: string, content: unknown, note: string | undefined, timestamp: string) {
+export function userMessagePayload(sessionId: string, uuid: string, content: unknown, note: string | undefined, timestamp: string,
+  synthetic = note !== undefined) {
   return {
     type: "user", session_id: sessionId, uuid, parent_tool_use_id: null,
     message: { role: "user", content },
-    ...(note !== undefined ? { isSynthetic: true, ...(note ? { circus_note: note } : {}) } : {}),
+    ...(synthetic ? { isSynthetic: true } : {}),
+    ...(note ? { circus_note: note } : {}),
     timestamp,
   };
 }
