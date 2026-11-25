@@ -22,6 +22,8 @@ class StubRunner implements Runner {
   get epoch() { return this.lease.epoch; }
   start() { return this.#end.promise; }
   nudge(reasons: Reason[], level: bigint) { this.nudges.push([reasons, level]); }
+  releaseRequests = 0;
+  releaseIdle() { this.releaseRequests++; return true; }
   stop() { this.stopped = true; }
   lose(reason: string) { this.lost = reason; this.#end.resolve("lost"); }
   /** When set, shutdown() starts a release that takes this long. */
@@ -130,6 +132,35 @@ describe("SessionPool", () => {
     expect(runners[0].lost).toBeUndefined();
     hint({ case: "leaseRevoked", value: { sessionId: "s1", epoch: runners[0].epoch } });
     expect(runners[0].lost).toBe("lease revoked");
+  });
+
+  test("ReleaseIdle reaches the runner holding that epoch only, and never one already ending", async () => {
+    const { runners, hint, offer } = setup();
+    offer("s1");
+    await waitFor(() => runners.length === 1, "runner");
+    hint({ case: "releaseIdle", value: { sessionId: "s1", epoch: runners[0].epoch + 1n } });
+    hint({ case: "releaseIdle", value: { sessionId: "other", epoch: runners[0].epoch } });
+    expect(runners[0].releaseRequests).toBe(0);
+    hint({ case: "releaseIdle", value: { sessionId: "s1", epoch: runners[0].epoch } });
+    expect(runners[0].releaseRequests).toBe(1);
+    runners[0].ending = true;
+    hint({ case: "releaseIdle", value: { sessionId: "s1", epoch: runners[0].epoch } });
+    expect(runners[0].releaseRequests).toBe(1);
+  });
+
+  test("ReleaseIdle for a session being acquired or not held does nothing", async () => {
+    const { link, runners, hint, acquires } = setup();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    link.interceptors.push(async (call) => { if (call.op.case === "acquireLease") await gate; return undefined; });
+    hint({ case: "offer", value: { sessionId: "s1" } });
+    await waitFor(() => acquires().length === 1, "acquire sent");
+    hint({ case: "releaseIdle", value: { sessionId: "s1", epoch: 1n } });
+    expect(acquires()).toHaveLength(1);
+    release();
+    await waitFor(() => runners.length === 1, "runner");
+    expect(runners[0].releaseRequests).toBe(0);
+    expect(link.calls.filter((c) => c.op.case === "releaseLease")).toEqual([]);
   });
 
   test("after a reconnect, sessions not resumed are dropped and stopped ones stopped", async () => {

@@ -376,6 +376,15 @@ func (w *worker) hint(l *connection, event *pb.WorkerEvent) {
 		}
 		return
 	}
+	if r := event.GetReleaseIdle(); r != nil {
+		// Only the lease held at that epoch; the session decides whether it
+		// is idle (serve).
+		if s := w.sessions[r.GetSessionId()]; s != nil && s.epoch != 0 && s.epoch == r.GetEpoch() {
+			s.pending.release = true
+			s.signal()
+		}
+		return
+	}
 	n := event.GetNudge()
 	id := n.GetSessionId()
 	offer := event.GetOffer()

@@ -226,6 +226,7 @@ message WorkerEvent {
     Offer offer = 1;
     Nudge nudge = 2;
     LeaseRevoked lease_revoked = 3;
+    ReleaseIdle release_idle = 4;
   }
   message Offer {
     string session_id = 1;
@@ -254,6 +255,36 @@ message WorkerEvent {
     }
   }
   message LeaseRevoked {
+    string session_id = 1;
+    uint64 epoch = 2;
+  }
+  // ReleaseIdle asks the holder of the session's lease at epoch to give it
+  // back now if the session is idle, because a session of the same
+  // provider waits as PROVIDER_FULL and a connection of a worker that may
+  // run it is live. The control plane sends it only for a lease bound to
+  // this connection whose session it finds idle (state IDLE; no input
+  // pending or taken; no pending approval; no ended job whose notice is
+  // not yet persisted; no background task recorded in this epoch; no
+  // ledger merge or discard still to apply), and only while no Nudge
+  // reason is pending for it (the holder acknowledges each reason as the
+  // hint table says, JOB included). The holder checks again on its side
+  // (no turn running, starting or still being reported; no input being
+  // taken or pushed and not yet answered; no background task running or
+  // ended and not yet told to the model, in the CLI or only in the
+  // worker's memory; no transcript repair; no transcript append
+  // unacknowledged): if the session is idle it releases exactly as its
+  // idle timer would (end the CLI's input and let it exit by itself,
+  // closing it after a grace, while no turn may start and every tool use
+  // is denied; confirm its exit; store what it wrote as it exited, within
+  // the same grace; flush; ReleaseLease with REASON_IDLE). A session busy only for
+  // a moment (a turn's end being reported, an append in flight) is
+  // released once that is over, if no turn starts first and within 30
+  // seconds. Otherwise, for another epoch, or for a session it does not
+  // hold or is already releasing, the hint is a no-op and gets no answer.
+  // It is a request, never a fence: inputs that arrive meanwhile stay
+  // pending in the store and queue the session again after the release.
+  // The control plane may repeat it.
+  message ReleaseIdle {
     string session_id = 1;
     uint64 epoch = 2;
   }

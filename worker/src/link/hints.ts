@@ -21,6 +21,10 @@ export class HintQueue {
       throw new ProtocolError("invalid worker event");
     }
     const id = event.value.sessionId;
+    // A Nudge means the session has work: a ReleaseIdle not yet consumed
+    // is dropped, and one arriving while a Nudge waits is ignored.
+    if (event.case === "nudge") this.#events.delete(`releaseIdle/${id}`);
+    if (event.case === "releaseIdle" && this.#events.has(`nudge/${id}`)) return;
     const key = event.case === "leaseRevoked"
       ? `${event.case}/${id}/${event.value.epoch}`
       : `${event.case}/${id}`;

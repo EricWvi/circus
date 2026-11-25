@@ -25,7 +25,7 @@ bearer token and optional CA bundle.
 | --- | --- | --- |
 | `CIRCUS_WORKER_MAX_SESSIONS` | `4` | Integer from 1 to 64 |
 | `CIRCUS_WORKER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `CIRCUS_WORKER_IDLE_SECONDS` | `300` | Integer from 1 to 86400: how long an idle session keeps its lease |
+| `CIRCUS_WORKER_IDLE_SECONDS` | `300` | Integer from 1 to 86400: how long an idle session keeps its lease. An idle session releases at once when the control plane asks (`ReleaseIdle`) because a session of the same provider waits for its `max_sessions` |
 | `CIRCUS_BIN` | `circus` on `PATH` | The `circus` binary providing `internal exec-guard` |
 
 Claude Code runs with the environment of the worker (`CLAUDE_CONFIG_DIR` is

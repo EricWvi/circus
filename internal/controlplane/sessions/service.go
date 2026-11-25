@@ -61,6 +61,13 @@ const (
 	// Wake of an untracked session is dropped and the next fallback scan
 	// finds the session queued in the store.
 	MaxWakeQueue = 4096
+	// ReleaseIdleTimeout is how long a ReleaseIdle request counts as
+	// outstanding: its session is not asked again and counts as a lease
+	// about to be freed for the sessions waiting for its provider. A holder
+	// that keeps a busy session sends no answer, so past this another idle
+	// session (or the same one) may be asked; a turn the session starts
+	// voids the request at once.
+	ReleaseIdleTimeout = 30 * time.Second
 	// ApprovalLifetime is how long a pending approval and an unused grant
 	// live.
 	ApprovalLifetime = 10 * time.Minute
@@ -154,6 +161,12 @@ type Service struct {
 	// provScans are providers (→ their user) whose queued sessions to
 	// evaluate (ProviderChanged), at most MaxWakeQueue.
 	provScans map[string]string
+	// reclaims are providers whose sessions wait as PROVIDER_FULL and whose
+	// idle leases may be asked back (ReleaseIdle), at most MaxWakeQueue.
+	reclaims map[string]struct{}
+	// idlePage is the page size of reclaim's idle lease reads
+	// (store.MaxPageSize; tests lower it).
+	idlePage int
 	// provEpoch counts provider leases that ended and provider changes, so
 	// an evaluation can tell that its provider read may be stale.
 	provEpoch uint64
@@ -238,6 +251,8 @@ func New(cfg Config) (*Service, error) {
 		wakes:      make(map[string]reasonSet),
 		rescan:     make(map[string]struct{}),
 		provScans:  make(map[string]string),
+		reclaims:   make(map[string]struct{}),
+		idlePage:   store.MaxPageSize,
 		staleReads: make(map[string]int),
 		parked:     make(map[string]reasonSet),
 		boots:      make(map[string]bootRec),
@@ -624,6 +639,7 @@ type recentAcquire struct {
 type hint struct {
 	offer, nudge bool
 	revoke       int64 // a LeaseRevoked for this epoch, or 0
+	release      int64 // a ReleaseIdle for this epoch, or 0
 }
 
 // ID returns the connection's opaque id (it never appears on the wire).
@@ -665,6 +681,9 @@ func (c *Conn) Close() {
 		}
 		if e.bound == c {
 			s.setBound(e, nil)
+			// A ReleaseIdle queued here is gone with the connection: it no
+			// longer counts as outstanding, so another lease may be asked.
+			e.askedAt = 0
 		}
 		// Leases bound here, and those left unbound by an earlier
 		// connection of the boot that closed while this one was live: the
@@ -849,6 +868,11 @@ func (c *Conn) detach() {
 			s.setOffer(id, e, nil, "detached")
 			s.queueWake(id, 0)
 		}
+		if e.bound == c {
+			// No hint reaches the worker any more: a ReleaseIdle queued
+			// here no longer counts as outstanding.
+			e.askedAt = 0
+		}
 	}
 }
 
@@ -876,6 +900,12 @@ func (s *Service) hintEvents(c *Conn, id string, h *hint) []*circusv1.WorkerEven
 	if h.nudge && e.bound == c && rs != 0 {
 		out = append(out, &circusv1.WorkerEvent{Event: &circusv1.WorkerEvent_Nudge_{Nudge: &circusv1.WorkerEvent_Nudge{
 			SessionId: id, Reasons: rs.list(), InterruptTurnNo: uint64(e.interrupt)}}})
+	}
+	// A reason raised since the request was queued (an input, a job's end,
+	// a stop) means the session has work: the request is dropped.
+	if h.release > 0 && e.bound == c && e.holder.epoch == h.release && e.reasons == 0 && !e.pending && !e.abandoned {
+		out = append(out, &circusv1.WorkerEvent{Event: &circusv1.WorkerEvent_ReleaseIdle_{ReleaseIdle: &circusv1.WorkerEvent_ReleaseIdle{
+			SessionId: id, Epoch: uint64(h.release)}}})
 	}
 	return out
 }

@@ -1290,6 +1290,45 @@ func (o *ops) ExpireLeases(ctx context.Context, now int64, limit int) ([]store.L
 		ORDER BY expires_at, session_id LIMIT ?`, now, limit)
 }
 
+func (o *ops) ListIdleLeases(ctx context.Context, providerID string, now int64, after *store.SessionCursor, limit int) ([]store.IdleLease, error) {
+	if err := store.CheckID("provider id", providerID); err != nil {
+		return nil, err
+	}
+	if err := store.CheckLimit(limit); err != nil {
+		return nil, err
+	}
+	if now == 0 {
+		return nil, invalid("ListIdleLeases needs a time")
+	}
+	cursor, args := "", []any{providerID, now, limit}
+	if after != nil {
+		cursor, args = " AND (s.last_activity_at, l.session_id) > (?4, ?5)", append(args, after.LastActivityAt, after.ID)
+	}
+	rows, err := o.q.QueryContext(ctx, `SELECT l.session_id, l.epoch, l.holder_worker_id, l.holder_boot_id, l.holder_conn_id,
+		l.acquired_at, l.expires_at, l.provider_id, s.last_activity_at
+		FROM session_leases l JOIN sessions s ON s.session_id = l.session_id
+		WHERE l.provider_id = ?1 AND l.holder_worker_id IS NOT NULL AND l.expires_at > ?2 AND s.state = 'idle'
+		AND NOT EXISTS (SELECT 1 FROM session_inputs i WHERE i.session_id = l.session_id
+			AND (i.state = 'taken' OR (i.state = 'pending' AND i.deferred = 0)))
+		AND NOT EXISTS (SELECT 1 FROM session_approvals a WHERE a.session_id = l.session_id AND a.state = 'pending' AND a.expires_at > ?2)
+		AND NOT EXISTS (SELECT 1 FROM session_jobs sj WHERE sj.session_id = l.session_id AND (sj.notice = 'handed'
+			OR (sj.notice = 'no' AND EXISTS (SELECT 1 FROM jobs j WHERE j.device_id = sj.device_id AND j.boot_id = sj.boot_id
+				AND j.job_id = sj.job_id AND j.state <> 'running' AND j.user_id = s.user_id))))
+		AND NOT EXISTS (SELECT 1 FROM session_bgtasks b WHERE b.session_id = l.session_id AND b.epoch = l.epoch)
+		AND NOT EXISTS (SELECT 1 FROM session_ledgers sl WHERE sl.session_id = l.session_id
+			AND sl.state = 'ready' AND sl.pending <> '' AND sl.problem_count = 0)`+cursor+`
+		ORDER BY s.last_activity_at, l.session_id LIMIT ?3`, args...)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return collect(rows, func(sc scanner) (store.IdleLease, error) {
+		var x store.IdleLease
+		err := sc.Scan(&x.SessionID, &x.Epoch, nullStr{&x.WorkerID}, nullStr{&x.BootID}, nullStr{&x.ConnID},
+			nullInt{&x.AcquiredAt}, nullInt{&x.ExpiresAt}, nullStr{&x.ProviderID}, &x.LastActivityAt)
+		return x, mapErr(err)
+	})
+}
+
 func (o *ops) ResumeLeases(ctx context.Context, workerID, bootID, connID string, keys []store.SessionEpoch, now, expiresAt int64) ([]store.LeaseResumed, error) {
 	if err := checkHolder(workerID, bootID, connID); err != nil {
 		return nil, err

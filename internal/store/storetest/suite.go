@@ -82,6 +82,8 @@ func Run(t *testing.T, b Backend) {
 		{"ProviderBounds", testProviderBounds},
 		{"ProviderLeases", testProviderLeases},
 		{"ProviderLeaseRelease", testProviderLeaseRelease},
+		{"IdleLeases", testIdleLeases},
+		{"IdleLeasesTakenHeldNote", testIdleLeasesTakenHeldNote},
 		{"SessionProvider", testSessionProvider},
 		{"ProjectDefaultProvider", testProjectDefaultProvider},
 		{"ProviderConcurrentAcquire", testProviderConcurrentAcquire},

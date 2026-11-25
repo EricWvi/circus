@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -547,4 +548,76 @@ func resumeDirOf(t *testing.T, s *claudeStack, r cliRecord) string {
 		return ""
 	}
 	return rec.ResumeDir.Dir
+}
+
+// TestClaudeProviderFullAfterRestart: with max_sessions 1, the real
+// worker gives an idle lease back as soon as another session of the
+// provider waits, also for a lease it resumed after a control-plane
+// restart (whose resumption raises Nudge reasons the worker must
+// acknowledge, JOB included), long before its idle timer (300 s). The
+// released session's transcript keeps what the CLI wrote after its last
+// result (cost-state).
+func TestClaudeProviderFullAfterRestart(t *testing.T) {
+	var log scriptLog
+	main := func(r *fakemodel.Request) *fakemodel.Response {
+		switch {
+		case r.Contains("first of b"):
+			return fakemodel.Text("B answered.")
+		case r.Contains("first of a"):
+			return fakemodel.Text("A answered.")
+		}
+		return log.fail("unexpected request: %.300s", r.Last().Text())
+	}
+	s := newProviderStack(t, main)
+	s.startProviderWorker()
+	p := s.provider("capped", "provider", pb.Provider_ApiEndpoint_SCHEME_BEARER, providerBearer)
+	p.MaxSessions = 1
+	p = s.assign(p, s.h.worker.PrincipalID)
+	if p.GetMaxSessions() != 1 {
+		t.Fatalf("provider %v", p)
+	}
+	a := s.openWith(p.GetProviderId())
+	wa := a.watch(0)
+	logOnFailure(t, wa)
+	wa.expect(pb.SessionEvent_KIND_UNSPECIFIED)
+	s.turn(a, wa, "first of a")
+	cli := s.liveCLI(a.id)
+	before, err := s.h.st.GetLease(s.ctx, a.id)
+	must(t, err)
+	must(t, wa.stream.Close())
+
+	s.h.server.signal(t, syscall.SIGTERM)
+	must(t, s.h.server.wait(t, 10*time.Second))
+	s.h.startServer(false)
+	wait(t, 20*time.Second, func() bool {
+		l, err := s.h.st.GetLease(s.ctx, a.id)
+		must(t, err)
+		return l.ConnID != "" && l.ConnID != before.ConnID
+	})
+
+	b := s.openWith(p.GetProviderId())
+	wb := b.watch(0)
+	logOnFailure(t, wb)
+	wb.expect(pb.SessionEvent_KIND_UNSPECIFIED)
+	begun := time.Now()
+	s.turn(b, wb, "first of b")
+	if took := time.Since(begun); took > 30*time.Second {
+		t.Fatalf("b ran after %v", took)
+	}
+	released, err := s.h.st.GetLease(s.ctx, a.id)
+	must(t, err)
+	if released.WorkerID != "" || released.Epoch != before.Epoch {
+		t.Fatalf("a's lease before the restart %+v, after b ran %+v", before, released)
+	}
+	reapExited(t, cli.PID, cli.Start, 20*time.Second)
+	costState := false
+	for _, e := range s.transcript(a.id) {
+		costState = costState || (e.Subpath == "" && strings.Contains(e.JSON, `"type":"cost-state"`))
+	}
+	if !costState {
+		t.Fatal("a's transcript lacks the CLI's cost-state")
+	}
+	s.checkTranscript(a.id)
+	s.checkTranscript(b.id)
+	log.check(t)
 }

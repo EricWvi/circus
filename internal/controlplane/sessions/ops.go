@@ -701,6 +701,7 @@ func (c *Conn) report(ctx context.Context, f store.Fence, r *circusv1.ReportTurn
 	if tr.Phase == store.TurnEnded {
 		c.s.clearReasons(f.SessionID, f.Epoch, reasonInterrupt, g)
 	}
+	c.s.mayIdle(f.SessionID, f.Epoch, tr.Phase == store.TurnStarted)
 	if rep.LedgerDue && c.s.cfg.LedgerDue != nil {
 		c.s.cfg.LedgerDue(ctx, f.SessionID)
 	}
@@ -762,6 +763,9 @@ func (c *Conn) patch(ctx context.Context, f store.Fence, r *circusv1.PatchSessio
 	})
 	if err != nil {
 		return c.failed(ctx, f, "patch", err)
+	}
+	if len(p.BgTasksEnded) > 0 {
+		c.s.mayIdle(f.SessionID, f.Epoch, false)
 	}
 	return ok(false)
 }

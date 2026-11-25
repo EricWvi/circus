@@ -69,7 +69,8 @@ type entry struct {
 	user string
 	// local and pin are the session's local mode and pinned worker, which
 	// never change; set when the session is offered (Attach checks them
-	// before it moves an Offer).
+	// before it moves an Offer) or gets a queue reason (reclaim counts a
+	// waiter only where it may run).
 	local   bool
 	pin     string
 	holder  holder // zero when no live lease is known
@@ -133,6 +134,12 @@ type entry struct {
 	// read predates either (a resumption moves a lease without a new
 	// epoch; a release keeps it).
 	changedAt uint64
+	// askedAt is when a ReleaseIdle for the current lease was last queued
+	// on its bound connection (Unix ms), 0 when never. Binding the lease to
+	// another connection, its end and a turn's start clear it; past
+	// ReleaseIdleTimeout it is no longer outstanding, and the lease is
+	// asked again only after the leases never asked.
+	askedAt int64
 }
 
 // bit returns the reason value of a one-reason set.
@@ -356,6 +363,172 @@ func (s *Service) providerFreed(p string) {
 	}
 }
 
+// wantReclaim asks the scheduler to look for idle leases of provider p to
+// ask back for the sessions waiting as PROVIDER_FULL; s.mu held. Past
+// MaxWakeQueue providers it is dropped: the fallback asks again.
+func (s *Service) wantReclaim(p string) {
+	if p == "" {
+		return
+	}
+	if _, ok := s.reclaims[p]; !ok && len(s.reclaims) >= MaxWakeQueue {
+		return
+	}
+	s.reclaims[p] = struct{}{}
+	s.signal()
+}
+
+// releaseNeed returns how many more leases of provider p to ask back at
+// now: the sessions waiting as PROVIDER_FULL for it that could take a
+// freed lease, less the requests still outstanding for its leases; s.mu
+// held. With g nil (the provider not read yet) every waiter counts, an
+// upper bound; with g only a waiter that a live, attached connection of
+// the worker's current boot may run (its pin and local mode honoured, the
+// worker assigned to the provider), so a waiter whose workers are all
+// offline asks for nothing.
+func (s *Service) releaseNeed(p string, now int64, g *gate) int {
+	n := 0
+	for _, e := range s.entries {
+		if e.queue == circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL && e.provider == p && (g == nil || s.runnable(e, *g)) {
+			n++
+		}
+		if e.holder.provider == p && s.asked(e, now) {
+			n--
+		}
+	}
+	return n
+}
+
+// runnable reports whether waiting session e could run on a connection
+// now, provider g allowing; s.mu held.
+func (s *Service) runnable(e *entry, g gate) bool {
+	for _, c := range s.conns {
+		if !c.closed && !s.stale(c) && c.attached && c.userID == e.user && c.runs(e.local, e.pin) && g.allows(c.workerID) {
+			return true
+		}
+	}
+	return false
+}
+
+// asked reports whether a ReleaseIdle for e's lease is outstanding at now;
+// s.mu held.
+func (s *Service) asked(e *entry, now int64) bool {
+	return e.askedAt != 0 && now < e.askedAt+ReleaseIdleTimeout.Milliseconds()
+}
+
+// askable reports whether the lease l, which the store found idle under
+// provider p, may get a ReleaseIdle now: the entry still names that lease
+// (epoch, holder, provider), it is bound to l's connection, live,
+// attached and of the worker's current boot, its Lease reply was
+// delivered, no Nudge reason is pending for it, no acquisition or
+// resumption holds it, and no request for it is outstanding; s.mu held.
+func (s *Service) askable(e *entry, l store.IdleLease, p string, now int64) bool {
+	if e == nil || e.holder.epoch != l.Epoch || e.holder.worker != l.WorkerID || e.holder.boot != l.BootID || e.holder.provider != p {
+		return false
+	}
+	c := e.bound
+	return c != nil && c.id == l.ConnID && !c.closed && c.attached && !s.stale(c) && e.reasons == 0 && !e.pending && !e.abandoned &&
+		e.reserved == 0 && !s.asked(e, now)
+}
+
+// reclaim asks the holders of provider p's idle leases to release them
+// (ReleaseIdle), one lease per waiting session that could take it (see
+// releaseNeed) beyond the requests already outstanding, least recent
+// activity first. The provider and every page of its idle leases are read
+// without s.mu, so each lease is checked again against its entry before
+// it is asked (askable). The holder decides: it releases an idle session
+// as its idle timer would and keeps a busy one. A released lease wakes
+// the waiting sessions (providerFreed).
+//
+// The count is a best effort, at worst one release too many or a waiter
+// served 30 s late: a lease released while the store is read leaves its
+// waiters counted until their evaluation, a request already sent is not
+// taken back when the waiter no longer needs it (offered elsewhere,
+// stopped, the cap raised), and a lease's note input after its release
+// (a ledger collection's) queues it again behind the waiter.
+func (s *Service) reclaim(ctx context.Context, p string) {
+	s.mu.Lock()
+	need, user := s.releaseNeed(p, s.nowMs(), nil), ""
+	for _, e := range s.entries {
+		if e.queue == circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL && e.provider == p {
+			user = e.user
+			break
+		}
+	}
+	s.unlock()
+	if need <= 0 || user == "" {
+		return
+	}
+	g, err := s.gateFor(ctx, user, p, s.nowMs())
+	if err == nil && g.deleted {
+		return
+	}
+	var leases []store.IdleLease
+	var after *store.SessionCursor
+	for err == nil {
+		tctx, cancel := storeCtx(ctx)
+		var page []store.IdleLease
+		page, err = s.cfg.Store.ListIdleLeases(tctx, p, s.nowMs(), after, s.idlePage)
+		cancel()
+		leases = append(leases, page...)
+		if err != nil || len(page) < s.idlePage {
+			break
+		}
+		last := page[len(page)-1]
+		after = &store.SessionCursor{LastActivityAt: last.LastActivityAt, ID: last.SessionID}
+	}
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log.Warn("idle lease read failed; the fallback retries", "provider_id", p, "error", err)
+		}
+		return
+	}
+	s.mu.Lock()
+	defer s.unlock()
+	now := s.nowMs()
+	need = s.releaseNeed(p, now, &g)
+	// Leases never asked go first; one whose holder kept it after an
+	// earlier request (it found the session busy) is asked again only
+	// after them, so a holder that keeps declining never blocks the others.
+	for _, again := range []bool{false, true} {
+		for _, l := range leases {
+			if need <= 0 {
+				return
+			}
+			e := s.entries[l.SessionID]
+			if e == nil || (e.askedAt != 0) != again || !s.askable(e, l, p, now) {
+				continue
+			}
+			c := e.bound
+			e.askedAt = now
+			epoch := e.holder.epoch
+			c.queue(l.SessionID, func(h *hint) { h.release = epoch })
+			need--
+			s.later(slog.LevelInfo, "idle release requested", slog.String("session_id", l.SessionID), slog.String("provider_id", p),
+				slog.String("worker_id", c.workerID), slog.String("conn_id", c.id), slog.Int64("epoch", epoch))
+		}
+	}
+}
+
+// mayIdle notes that session id's lease at epoch may have become idle (a
+// turn ended, a background task ended): if sessions wait for its
+// provider, the provider's idle leases are looked for. With started (a
+// turn started) the session is busy instead, and a ReleaseIdle still
+// outstanding is void: its holder keeps the session, so the end of the
+// turn may ask again at once.
+func (s *Service) mayIdle(id string, epoch int64, started bool) {
+	s.mu.Lock()
+	defer s.unlock()
+	e := s.entries[id]
+	if e == nil || e.holder.epoch != epoch {
+		return
+	}
+	if started {
+		e.askedAt = 0
+		return
+	}
+	s.wantReclaim(e.holder.provider)
+}
+
 // ProviderChanged tells the scheduler that provider providerID of user
 // userID changed (assignments, cap, secrets) or was deleted: every queued
 // session naming it is evaluated again, and the user's queued sessions
@@ -456,6 +629,10 @@ func (s *Service) bind(id string, e *entry, l store.Lease, c *Conn, revokeOld bo
 		s.unbind(id, e, revokeOld, cause)
 	}
 	e.holder = h
+	if c != nil && e.bound != c {
+		// A ReleaseIdle queued on another connection went with it.
+		e.askedAt = 0
+	}
 	// pending and abandoned belong to an acquisition (its token): only
 	// AcquireLease and ResumeLeases, the two ways a lease is bound to a
 	// connection of this process, set or reset them.
@@ -494,7 +671,7 @@ func (s *Service) unbind(id string, e *entry, revoke bool, cause string) {
 	e.changedAt = s.leaseGen
 	s.providerFreed(e.holder.provider)
 	e.holder = holder{}
-	e.reasons, e.interrupt = 0, 0
+	e.reasons, e.interrupt, e.askedAt = 0, 0, 0
 	e.pending, e.abandoned, e.known, e.token = false, false, false, 0
 }
 
@@ -632,12 +809,13 @@ func (s *Service) upkeep(ctx context.Context, now time.Time, alarm <-chan time.T
 func (s *Service) processWakes(ctx context.Context) {
 	for ctx.Err() == nil {
 		s.mu.Lock()
-		wakes, users, scans := s.wakes, s.rescan, s.provScans
-		if len(wakes) == 0 && len(users) == 0 && len(scans) == 0 {
+		wakes, users, scans, reclaims := s.wakes, s.rescan, s.provScans, s.reclaims
+		if len(wakes) == 0 && len(users) == 0 && len(scans) == 0 && len(reclaims) == 0 {
 			s.unlock()
 			return
 		}
 		s.wakes, s.rescan, s.provScans = make(map[string]reasonSet), make(map[string]struct{}), make(map[string]string)
+		s.reclaims = make(map[string]struct{})
 		s.busy++
 		s.unlock()
 		for id, rs := range wakes {
@@ -648,6 +826,11 @@ func (s *Service) processWakes(ctx context.Context) {
 		}
 		for u := range users {
 			s.rescanUser(ctx, u)
+		}
+		// Last: the evaluations above may have offered waiting sessions
+		// (a lease ended) or found more of them waiting.
+		for p := range reclaims {
+			s.reclaim(ctx, p)
 		}
 		s.mu.Lock()
 		s.busy--
@@ -752,6 +935,11 @@ func (s *Service) evaluate(ctx context.Context, id string, rs reasonSet) {
 		}
 		s.addReasons(e, rs)
 		s.nudge(id, e)
+		if st.Session.State == store.SessionIdle && rs == 0 {
+			// Something changed that may have left the session idle (a
+			// ledger merge or discard applied, for one).
+			s.wantReclaim(e.holder.provider)
+		}
 		return
 	}
 	e := s.entries[id]
@@ -837,11 +1025,16 @@ func (s *Service) gateOf(ctx context.Context, sess store.Session, now int64) (ga
 	if sess.ProviderID == "" {
 		return gate{}, nil
 	}
+	return s.gateFor(ctx, sess.UserID, sess.ProviderID, now)
+}
+
+// gateFor reads the gate of user's provider at now.
+func (s *Service) gateFor(ctx context.Context, user, provider string, now int64) (gate, error) {
 	s.mu.Lock()
-	g := gate{provider: sess.ProviderID, epoch: s.provEpoch}
+	g := gate{provider: provider, epoch: s.provEpoch}
 	s.unlock()
 	tctx, cancel := storeCtx(ctx)
-	p, err := s.cfg.Store.GetProvider(tctx, sess.UserID, sess.ProviderID, now)
+	p, err := s.cfg.Store.GetProvider(tctx, user, provider, now)
 	cancel()
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -914,10 +1107,15 @@ func (s *Service) queued(id string, e *entry, sess store.Session, r circusv1.Que
 		e = &entry{user: sess.UserID}
 		s.entries[id] = e
 	}
+	// For reclaim, which counts only waiters some connection may run.
+	e.local, e.pin = sess.Local, sess.PinnedWorkerID
 	s.setQueue(id, e, r, g.provider)
 	e.derivedAt = s.nowMs()
 	if g.provider != "" && g.epoch != s.provEpoch {
 		s.queueWake(id, 0)
+	}
+	if r == circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL {
+		s.wantReclaim(g.provider)
 	}
 }
 
@@ -1108,6 +1306,12 @@ func (s *Service) fallback(ctx context.Context) {
 			if e.gone != 0 && now >= e.gone+goneRecheck.Milliseconds() && goneChecks < MaxReasonRechecks {
 				goneChecks++
 				s.queueWake(id, 0)
+			}
+			// While sessions wait for a full provider, its idle leases
+			// are asked back again (a holder that kept a busy session,
+			// a session idle since without an event that said so).
+			if e.queue == circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL {
+				s.wantReclaim(e.provider)
 			}
 		}
 		for id, rs := range s.parked {

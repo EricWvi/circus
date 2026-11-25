@@ -14,11 +14,18 @@ func Extend(s *Service, ctx context.Context) { s.extend(ctx) }
 // Fallback runs the session_schedule fallback now.
 func Fallback(s *Service, ctx context.Context) { s.fallback(ctx) }
 
+// SetIdlePage sets the page size of reclaim's idle lease reads.
+func SetIdlePage(s *Service, n int) {
+	s.mu.Lock()
+	defer s.unlock()
+	s.idlePage = n
+}
+
 // Idle reports whether no Wake or rescan waits for the scheduler.
 func Idle(s *Service) bool {
 	s.mu.Lock()
 	defer s.unlock()
-	return len(s.wakes) == 0 && len(s.rescan) == 0 && len(s.provScans) == 0 && s.busy == 0
+	return len(s.wakes) == 0 && len(s.rescan) == 0 && len(s.provScans) == 0 && len(s.reclaims) == 0 && s.busy == 0
 }
 
 // Tracked returns the number of sessions in the in-memory table.

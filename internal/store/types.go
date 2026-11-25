@@ -1071,6 +1071,13 @@ type Lease struct {
 	ProviderID string
 }
 
+// IdleLease is a lease ListIdleLeases found idle, with its session's
+// LastActivityAt for the next page's cursor.
+type IdleLease struct {
+	Lease
+	LastActivityAt int64
+}
+
 // Live reports whether the lease has a holder and has not expired at now.
 func (l Lease) Live(now int64) bool { return l.WorkerID != "" && l.ExpiresAt > now }
 

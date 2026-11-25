@@ -452,6 +452,23 @@ type SessionOps interface {
 	// sweep; a lease is never extended by a timer write, so extension
 	// stays one statement.
 	ExpireLeases(ctx context.Context, now int64, limit int) ([]LeaseLoss, error)
+	// ListIdleLeases returns at most limit (1..MaxPageSize) leases live at
+	// now and acquired under providerID whose sessions are idle, least
+	// recent activity first (LastActivityAt, then session id), strictly
+	// after the cursor when after is set (the last listed lease's
+	// LastActivityAt and session id). A session is idle when its state is
+	// SessionIdle and it has no input taken or pending (a deferred note
+	// pending does not count: it waits for the next input, and stays
+	// pending across a release), no approval
+	// pending and unexpired at now, no job whose notice is owed (ended and
+	// not handed) or handed and not yet persisted, no background task
+	// recorded at the lease's epoch, and no merge or discard its ledger
+	// snapshot still has to apply (a ready snapshot with Pending work that
+	// no problem stops, as SessionLedger.HoldsTurns). A collection still
+	// due does not count: it may add a note input after a release, which
+	// queues the session again. The control plane asks the holders to
+	// release them (ReleaseIdle) when sessions wait for the provider's cap.
+	ListIdleLeases(ctx context.Context, providerID string, now int64, after *SessionCursor, limit int) ([]IdleLease, error)
 	// CheckFence returns the lease when f matches it, else *FencedError
 	// with the current epoch. ErrNotFound if the session does not exist. It
 	// writes nothing.

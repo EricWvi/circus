@@ -386,3 +386,76 @@ func TestProviderChangesAndLeases(t *testing.T) {
 		}
 	}
 }
+
+// TestProviderFullReleasesIdleLease: with max_sessions 1, a session queued
+// behind an idle session of the same provider starts promptly: the
+// control plane asks the fake worker for the idle lease (ReleaseIdle)
+// instead of waiting for its idle timer (an hour here). A holder whose
+// session runs a turn keeps it: the waiting session starts once that turn
+// has ended, which completes rather than being interrupted.
+func TestProviderFullReleasesIdleLease(t *testing.T) {
+	w := newProviderWorld(t)
+	capped := apiProvider("capped", pb.Provider_ApiEndpoint_SCHEME_X_API_KEY, "sk-fake-capped", w.worker("alpha"))
+	capped.MaxSessions = 1
+	p := w.provider(t, capped)
+	w.run(t, "alpha", time.Hour)
+
+	a := w.session(t, proto.String(p.GetProviderId()))
+	a.send("hello a", pb.InputPriority_INPUT_PRIORITY_NORMAL)
+	a.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED)
+	held, err := w.h.st.GetLease(a.ctx, a.id)
+	must(t, err)
+	if !held.Live(time.Now().UnixMilli()) {
+		t.Fatalf("a's lease after its turn: %+v", held)
+	}
+
+	// b waits for the cap only until a's idle lease is given back.
+	b := w.session(t, proto.String(p.GetProviderId()))
+	begun := time.Now()
+	b.send("hello b", pb.InputPriority_INPUT_PRIORITY_NORMAL)
+	b.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED)
+	if took := time.Since(begun); took > 10*time.Second {
+		t.Fatalf("b started after %v", took)
+	}
+	if l, err := w.h.st.GetLease(a.ctx, a.id); err != nil || l.WorkerID != "" || l.Epoch != held.Epoch {
+		t.Fatalf("a's lease after b started: %+v, %v", l, err)
+	}
+	if got := a.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED); got.GetTurnCount() != 1 {
+		t.Fatalf("a after its release: %v", got)
+	}
+
+	// a runs a slow turn (b's idle lease is asked back for it); b's next
+	// input waits while that turn runs.
+	aWatch := a.watch(0)
+	a.send("/fake slow 2", pb.InputPriority_INPUT_PRIORITY_NORMAL)
+	started := 0
+	aWatch.until(func(e *pb.SessionEvent) bool {
+		if e.GetKind() == pb.SessionEvent_KIND_TURN_STARTED && !e.GetEphemeral() {
+			started++
+		}
+		return started == 2
+	})
+	running, err := w.h.st.GetLease(a.ctx, a.id)
+	must(t, err)
+	b.send("after a", pb.InputPriority_INPUT_PRIORITY_NORMAL)
+	if got := b.state(pb.Session_STATE_QUEUED, pb.TurnOutcome_TURN_OUTCOME_COMPLETED); got.GetQueueReason() != pb.QueueReason_QUEUE_REASON_PROVIDER_FULL {
+		t.Fatalf("b while a runs: %v", got)
+	}
+	// a's turn completes on the lease it started with; then b runs.
+	if got := a.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED); got.GetTurnCount() != 2 {
+		t.Fatalf("a after its slow turn: %v", got)
+	}
+	testwait.For(t, func() bool {
+		got, err := w.sessions.GetSession(b.ctx, connect.NewRequest(&pb.GetSessionRequest{SessionId: b.id}))
+		must(t, err)
+		return got.Msg.GetTurnCount() == 2 && got.Msg.GetState() == pb.Session_STATE_IDLE
+	})
+	if l, err := w.h.st.GetLease(a.ctx, a.id); err != nil || l.Epoch != running.Epoch || running.WorkerID == "" {
+		t.Fatalf("a's lease: during its turn %+v, after %+v, %v", running, l, err)
+	}
+	for _, e := range aWatch.all {
+		if e.GetKind() == pb.SessionEvent_KIND_TURN_INTERRUPTED {
+			t.Fatalf("a's turn was interrupted: %v", e)
+		}
+	}
+}

@@ -275,6 +275,176 @@ func testProviderLeases(t *testing.T, b Backend) {
 	mustEqual(t, "expired lease kept", []any{l.WorkerID, l.Epoch, l.ProviderID}, []any{"w1", f1.Epoch, "p1"})
 }
 
+// testIdleLeases: ListIdleLeases lists the live leases of a provider whose
+// sessions are idle, least recent activity first and in pages, and leaves
+// out every session with work, a running turn, a pending approval, an owed
+// or handed job notice, a background task of the lease's epoch or a ledger
+// merge or discard still to apply (one problems stop does not count).
+func testIdleLeases(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createProvider(t, s, newProvider("p1", "u1", "Prod", "w1"))
+	createProvider(t, s, newProvider("p2", "u1", "Other", "w1"))
+	list := func(now int64, after *store.SessionCursor, limit int) []store.IdleLease {
+		t.Helper()
+		ls, err := s.ListIdleLeases(ctx, "p1", now, after, limit)
+		must(t, err)
+		return ls
+	}
+	idle := func(now int64, want ...string) {
+		t.Helper()
+		var got []string
+		for _, l := range list(now, nil, store.MaxPageSize) {
+			if l.ProviderID != "p1" || l.WorkerID != "w1" || l.Epoch < 1 {
+				t.Fatalf("lease %+v", l)
+			}
+			got = append(got, l.SessionID)
+		}
+		mustEqual(t, "idle leases", strings.Join(got, " "), strings.Join(want, " "))
+	}
+	ids := []string{"idle", "input", "taken", "running", "approval", "bgtask", "ledger", "problems", "jobowed", "jobhanded", "jobrunning", "other"}
+	fences := map[string]store.Fence{}
+	for i, id := range ids {
+		prov := "p1"
+		if id == "other" {
+			prov = "p2"
+		}
+		// Created in reverse order: least recent activity is not id order.
+		sess := newSession(id, f)
+		sess.ProviderID, sess.CreatedAt = prov, t0-int64(i)
+		must(t, errOf(s.CreateSession(ctx, sess, nil, store.DefaultMaxSessionsPerUser)))
+		fences[id] = acquire(t, s, id, "w1", "b1", t0+int64(i))
+	}
+	// A session without a lease is never listed.
+	sessionWithProvider(t, s, f, "unleased", "p1")
+	all := []string{"jobrunning", "jobhanded", "jobowed", "problems", "ledger", "bgtask", "approval", "running", "taken", "input", "idle"}
+	idle(t0+20, all...)
+	// Pages: each strictly after the last lease of the one before.
+	var paged []string
+	var after *store.SessionCursor
+	for {
+		page := list(t0+20, after, 3)
+		for _, l := range page {
+			paged = append(paged, l.SessionID)
+		}
+		if len(page) < 3 {
+			break
+		}
+		last := page[len(page)-1]
+		after = &store.SessionCursor{LastActivityAt: last.LastActivityAt, ID: last.SessionID}
+	}
+	mustEqual(t, "paged", strings.Join(paged, " "), strings.Join(all, " "))
+
+	submit(t, s, newInput("input", 1))
+	submit(t, s, newInput("taken", 1))
+	// A deferred note alone is no work: "idle" stays idle with one.
+	note := newInput("idle", 1)
+	note.Kind, note.Note, note.Deferred = store.InputNote, "ledger_merged", true
+	submit(t, s, note)
+	_, err := s.TakeInputs(ctx, at(fences["taken"], t0+20))
+	must(t, err)
+	report(t, s, at(fences["running"], t0+20), store.TurnReport{LocalSeq: 1, Phase: store.TurnStarted})
+	_, err = s.RequestApproval(ctx, at(fences["approval"], t0+20), store.Approval{ApprovalID: "a1", Tool: "bash", DeviceID: f.device.ID,
+		MatchKey: mk("ls"), CreatedAt: t0 + 20, ExpiresAt: t0 + 100})
+	must(t, err)
+	must(t, s.PatchSessionRecords(ctx, at(fences["bgtask"], t0+20), store.RecordsPatch{BgTasksStarted: []store.BgTask{{TaskID: "t1", Kind: "agent"}}}))
+	for i, id := range []string{"ledger", "problems"} {
+		l := newSessionLedger(id, f)
+		l.State, l.Path = store.SessionLedgerReady, "/snap-"+id
+		must(t, s.CreateSessionLedger(ctx, l))
+		c := newChangeset("cs-"+id, "session-project", t0)
+		c.OpenerWorkerID, c.SessionID = "", id
+		must(t, s.CreateLedgerChangeset(ctx, c))
+		_, err = s.DiscardLedgerChangeset(ctx, "cs-"+id, "no", true, t0+20+int64(i))
+		must(t, err)
+	}
+	// Problems stop the discard's reset until the agent fixes them: that
+	// session is idle.
+	got, err := s.GetSessionLedger(ctx, "problems")
+	must(t, err)
+	stopped := got
+	stopped.ProblemCount, stopped.Problems, stopped.UpdatedAt = 1, []store.LedgerProblem{{Path: "x", Message: "y"}}, got.UpdatedAt+1
+	ok, err := s.UpdateSessionLedger(ctx, stopped, got.UpdatedAt)
+	must(t, err)
+	mustEqual(t, "updated", ok, true)
+	// Jobs: an ended job whose notice is owed, an ended one handed and not
+	// persisted, and one still running (not work yet).
+	for i, j := range []struct {
+		session string
+		state   store.JobState
+		handed  bool
+	}{{"jobowed", store.JobExited, false}, {"jobhanded", store.JobExited, true}, {"jobrunning", store.JobRunning, false}} {
+		call, job := "c-"+j.session, fmt.Sprintf("j%d", i)
+		sessionCall(t, s, f, call, j.session, store.CallCompleted)
+		_, err = s.PutJob(ctx, store.Job{DeviceID: "d1", BootID: "b1", JobID: job, UserID: "u1", SessionID: j.session, CallID: call, State: j.state, LastSeq: 1})
+		must(t, err)
+		patch := store.RecordsPatch{Jobs: []store.SessionJob{{CallID: call, JobID: job}}}
+		if j.handed {
+			patch.HandedJobCalls = []string{call}
+		}
+		must(t, s.PatchSessionRecords(ctx, at(fences[j.session], t0+20), patch))
+	}
+	idle(t0+21, "jobrunning", "problems", "idle")
+
+	// An expired approval no longer counts; the running turn's end and a
+	// persisted input make their sessions idle again.
+	idle(t0+100, "jobrunning", "problems", "approval", "idle")
+	report(t, s, at(fences["running"], t0+21), store.TurnReport{LocalSeq: 1, Phase: store.TurnEnded})
+	idle(t0+100, "jobrunning", "problems", "approval", "running", "idle")
+	// The background task of an earlier epoch is lost, not running: a new
+	// epoch's session is idle.
+	_, err = s.ReleaseLease(ctx, at(fences["bgtask"], t0+22))
+	must(t, err)
+	acquire(t, s, "bgtask", "w1", "b1", t0+23)
+	idle(t0+100, "jobrunning", "problems", "bgtask", "approval", "running", "idle")
+	// The limit and an expired lease.
+	mustEqual(t, "limited", len(list(t0+100, nil, 1)), 1)
+	// Released, the note is still pending, and the session idle.
+	_, err = s.ReleaseLease(ctx, at(fences["idle"], t0+24))
+	must(t, err)
+	mustEqual(t, "idle after the release", getSession(t, s, "idle").State, store.SessionIdle)
+	n, err := s.TakeInputs(ctx, acquire(t, s, "idle", "w1", "b1", t0+25))
+	must(t, err)
+	mustEqual(t, "the note alone is not taken", len(n), 0)
+	idle(t0 + ttl + 30)
+	mustIs(t, errOf(s.ListIdleLeases(ctx, "p1", t0, nil, 0)), store.ErrInvalid)
+}
+
+// testIdleLeasesTakenHeldNote: a held note taken along with an input
+// keeps the session busy until the turn persists it, even once that input
+// is persisted: released then, the note's delivery would be unconfirmed.
+func testIdleLeasesTakenHeldNote(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s)
+	createProvider(t, s, newProvider("p1", "u1", "Prod", "w1"))
+	sessionWithProvider(t, s, f, "s1", "p1")
+	fence := acquire(t, s, "s1", "w1", "b1", t0)
+	listed := func(now int64) int {
+		t.Helper()
+		ls, err := s.ListIdleLeases(ctx, "p1", now, nil, store.MaxPageSize)
+		must(t, err)
+		return len(ls)
+	}
+	note := newInput("s1", 1)
+	note.InputID, note.ClientMsgID = "s1-note", "note-1"
+	note.Kind, note.Note, note.Deferred = store.InputNote, "ledger_merged", true
+	submit(t, s, note)
+	mustEqual(t, "held note pending", listed(t0+1), 1)
+	in := newInput("s1", 2)
+	submit(t, s, in)
+	taken, err := s.TakeInputs(ctx, at(fence, t0+3))
+	must(t, err)
+	mustEqual(t, "taken together", len(taken), 2)
+	report(t, s, at(fence, t0+4), store.TurnReport{LocalSeq: 1, Phase: store.TurnStarted})
+	report(t, s, at(fence, t0+5), store.TurnReport{LocalSeq: 1, Phase: store.TurnEnded, Persisted: store.TurnPersisted{InputIDs: []string{in.InputID}}})
+	mustEqual(t, "state", getSession(t, s, "s1").State, store.SessionIdle)
+	mustEqual(t, "held note taken, not persisted", listed(t0+6), 0)
+	must(t, s.PatchSessionRecords(ctx, at(fence, t0+7), store.RecordsPatch{Persisted: store.TurnPersisted{InputIDs: []string{"s1-note"}}}))
+	mustEqual(t, "held note persisted", listed(t0+8), 1)
+}
+
 // testProviderLeaseRelease: the provider recorded on a lease is cleared
 // when it loses its holder, and deletion is refused until then.
 func testProviderLeaseRelease(t *testing.T, b Backend) {

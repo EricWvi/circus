@@ -17,6 +17,8 @@ export interface Runner {
   readonly releasing: boolean;
   start(): Promise<RunnerEnd>;
   nudge(reasons: WorkerEvent_Nudge["reasons"], interruptTurnNo: bigint): void;
+  /** ReleaseIdle: release as the idle timer would if idle; reports whether it did. */
+  releaseIdle(): boolean;
   stop(): void;
   lose(reason: string): void;
   shutdown(): void;
@@ -108,6 +110,13 @@ export class SessionPool {
     if (event.case === "leaseRevoked") {
       const runner = this.#runners.get(event.value.sessionId);
       if (runner && runner.epoch === event.value.epoch) runner.lose("lease revoked");
+      return;
+    }
+    if (event.case === "releaseIdle") {
+      // Only for the lease held at that epoch: never one acquired since,
+      // nor a session being acquired, released or not held.
+      const runner = this.#runners.get(event.value.sessionId);
+      if (runner && runner.epoch === event.value.epoch && !runner.ending) runner.releaseIdle();
       return;
     }
     if (event.case !== "offer" && event.case !== "nudge") return;

@@ -19,7 +19,9 @@ type input = pb.SessionReply_Inputs_Input
 
 type hints struct {
 	inputs, jobs, stop bool
-	interrupt          uint64
+	// release: a ReleaseIdle for the held epoch arrived.
+	release   bool
+	interrupt uint64
 }
 
 // A session goroutine owns the turn and transcript state. The worker mutex
@@ -34,6 +36,9 @@ type session struct {
 	epoch   uint64
 	pending hints
 	offered bool
+	// releaseAsked: the hints just handled include a ReleaseIdle; serve
+	// releases the lease if the session is idle on that pass.
+	releaseAsked bool
 
 	released                        bool
 	sdkID, model, device, cwd, root string
@@ -221,6 +226,17 @@ func (s *session) serve(lease *pb.SessionReply_Lease) error {
 			idleUntil = s.w.opts.Clock.Now().Add(s.w.opts.IdleRelease)
 			continue
 		}
+		// A request taken here with work to run, or during a turn (by the
+		// turn's serviceHints), is overwritten by the next pass: dropped,
+		// as the real worker drops one for a busy session. Owed call
+		// notices and a broken transcript keep the session too.
+		if s.releaseAsked {
+			s.releaseAsked = false
+			if len(s.owed) == 0 && !s.broken {
+				s.w.log.Info("session idle; releasing", "session_id", s.id, "requested", true)
+				return nil
+			}
+		}
 		delay := idleUntil.Sub(s.w.opts.Clock.Now())
 		if delay <= 0 {
 			return nil
@@ -263,6 +279,8 @@ func (s *session) serviceHints(t *turn) error {
 	if h.stop {
 		return errStopped
 	}
+	// Read by serve's idle pass only (see there).
+	s.releaseAsked = h.release
 	if h.inputs {
 		if err := s.takeInputs(); err != nil {
 			return err

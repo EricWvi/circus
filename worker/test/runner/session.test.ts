@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { SessionEvent_Kind as Kind, TurnOutcome } from "@circus/proto/circus/v1/session_pb";
 import {
-  PatchSessionState_BackgroundTaskSchema, ReleaseLease_Reason, ReportTurn_Phase,
+  GetSessionState_Section, PatchSessionState_BackgroundTaskSchema, ReleaseLease_Reason, ReportTurn_Phase,
   SessionReply_Inputs_Input_Kind as InputKind, SessionReply_Rejected_Code as Code, WorkerEvent_Nudge_Reason as Reason,
 } from "@circus/proto/circus/v1/worker_link_pb";
 import { describe, expect, test } from "vitest";
@@ -177,6 +177,205 @@ describe("stop, idle and lease loss", () => {
     expect(await h.done).toBe("released");
     expect(performance.now() - begun).toBeGreaterThanOrEqual(550);
     expect(h.log.lines.some((l) => l.message.includes("background tasks still running"))).toBe(true);
+  });
+
+  test("ReleaseIdle releases an idle session as the idle timer does", async () => {
+    const h = withInput(new Harness([steps("text")]));
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    await waitFor(() => h.runner.releaseIdle(), "the request honoured");
+    expect(await h.done).toBe("released");
+    expect(h.link.released).toEqual([ReleaseLease_Reason.IDLE]);
+    expect(h.query.closed).toBe(true);
+    // The CLI has exited before the lease is given back (confirmedAt is the call count then).
+    expect(h.processes.confirmedAt[0]).toBeLessThanOrEqual(h.link.indexOf((c) => c.op.case === "releaseLease"));
+    expect(ended(h)[0].persisted?.inputIds).toEqual([INPUT1]);
+    expect(h.log.lines.some((l) => l.message === "session idle; releasing" && l.fields?.requested === true)).toBe(true);
+    // Repeated, it changes nothing.
+    expect(h.runner.releaseIdle()).toBe(false);
+    expect(h.link.released).toEqual([ReleaseLease_Reason.IDLE]);
+  });
+
+  test("ReleaseIdle keeps a session whose turn runs", async () => {
+    const h = withInput(new Harness([steps("interrupt-stream")], { deps: { shutdownGraceMs: 100 } }));
+    await h.start();
+    await waitFor(() => startedCount(h) === 1, "STARTED");
+    expect(h.runner.releaseIdle()).toBe(false);
+    await sleep(30);
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    expect(h.query.closed).toBe(false);
+    h.runner.shutdown();
+    expect(await h.done).toBe("released");
+  });
+
+  test("ReleaseIdle keeps a session whose inputs are being taken; the input runs", async () => {
+    let releaseTake!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseTake = resolve; });
+    const h = withInput(new Harness([steps("text")]));
+    h.link.interceptors.push(async (call) => {
+      if (call.op.case === "takeInputs") await gate;
+      return undefined;
+    });
+    await h.start();
+    await waitFor(() => h.link.ops("takeInputs").length === 1, "TakeInputs sent");
+    expect(h.runner.releaseIdle()).toBe(false);
+    releaseTake();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    expect(ended(h)[0]).toMatchObject({ outcome: TurnOutcome.COMPLETED, persisted: { inputIds: [INPUT1] } });
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    await waitFor(() => h.runner.releaseIdle(), "the request honoured once idle");
+    expect(await h.done).toBe("released");
+  });
+
+  test("an input arriving after ReleaseIdle started is left pending, never taken on the released lease", async () => {
+    const h = withInput(new Harness([steps("text")]));
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    await waitFor(() => h.runner.releaseIdle(), "the request honoured");
+    const takes = h.link.ops("takeInputs").length;
+    withInput(h, INPUT2, "late");
+    h.runner.nudge([Reason.INPUT], 0n);
+    expect(await h.done).toBe("released");
+    expect(h.link.ops("takeInputs")).toHaveLength(takes);
+    expect(h.link.pending.map((i) => i.inputId)).toEqual([INPUT2]);
+    expect(startedCount(h)).toBe(1);
+  });
+
+  test("ReleaseIdle keeps a session with a background task running", async () => {
+    const script = steps("cli-turn");
+    const cut = script.findIndex((s) => s.t === "msg" && s.m.type === "system" && s.m.subtype === "task_updated");
+    const h = withInput(new Harness([script.slice(0, cut)], { deps: { taskHoldMs: 60_000 } }));
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    await sleep(30);
+    expect(h.runner.releaseIdle()).toBe(false);
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    h.runner.shutdown();
+    expect(await h.done).toBe("released");
+  });
+
+  test("Nudge JOB reads the jobs section, which acknowledges it", async () => {
+    const h = withInput(new Harness([steps("text")]));
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    h.runner.nudge([Reason.JOB], 0n);
+    await waitFor(() => h.link.ops("getState").some((g) => g.sections.includes(GetSessionState_Section.JOBS)), "jobs read");
+    expect(h.link.ops("takeInputs")).toHaveLength(1);
+    h.runner.shutdown();
+    expect(await h.done).toBe("released");
+  });
+
+  test("a ReleaseIdle that meets the turn's ENDED being reported is honoured once it is", async () => {
+    let releaseEnded!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseEnded = resolve; });
+    // The CLI's end-of-run write moved before the result: only the
+    // reporting of ENDED keeps the session then.
+    const script = steps("text");
+    const cost = script.findLastIndex((s) => s.t === "append" && s.entries.some((e) => e.type === "cost-state"));
+    const [costStep] = script.splice(cost, 1);
+    script.splice(script.findIndex((s) => s.t === "msg" && s.m.type === "result"), 0, costStep);
+    const h = withInput(new Harness([script]));
+    h.link.interceptors.push(async (call) => {
+      if (call.op.case === "reportTurn" && call.op.value.phase === ReportTurn_Phase.ENDED) await gate;
+      return undefined;
+    });
+    await h.start();
+    await waitFor(() => h.link.calls.some((c) => c.op.case === "reportTurn" && c.op.value.phase === ReportTurn_Phase.ENDED), "ENDED sent");
+    expect(h.runner.releaseIdle()).toBe(false);
+    releaseEnded();
+    // No second request: the deferred one is acted on.
+    expect(await h.done).toBe("released");
+    expect(h.link.released).toEqual([ReleaseLease_Reason.IDLE]);
+  });
+
+  test("a release lets the CLI exit by itself; what it writes as it exits is stored first", async () => {
+    // The CLI's end-of-run write (cost-state) when its input ends, held a while.
+    let releaseWrite!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const script = steps("text");
+    const last = script.findLastIndex((s) => s.t === "append" && s.entries.some((e) => e.type === "cost-state"));
+    const [cost] = script.splice(last, 1);
+    script.push({ t: "exit" }, { t: "call", fn: async () => { await gate; } }, cost);
+    const h = withInput(new Harness([script]));
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    await waitFor(() => h.runner.releaseIdle(), "the request honoured");
+    await sleep(30);
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    expect(h.query.closed).toBe(false);
+    releaseWrite();
+    expect(await h.done).toBe("released");
+    expect(h.link.entries("").some((e) => e.type === "cost-state")).toBe(true);
+    expect(h.link.indexOf((c) => c.op.case === "appendTranscript" && c.op.value.entries.some((e) => e.json.includes("cost-state"))))
+      .toBeLessThan(h.link.indexOf((c) => c.op.case === "releaseLease"));
+  });
+
+  test("appends still in flight when the query ends are stored before the release", async () => {
+    let ack!: () => void;
+    const gate = new Promise<void>((resolve) => { ack = resolve; });
+    const script = steps("text");
+    const last = script.findLastIndex((s) => s.t === "append" && s.entries.some((e) => e.type === "cost-state"));
+    const [cost] = script.splice(last, 1);
+    script.push({ t: "exit" }, cost);
+    const h = withInput(new Harness([script], { replay: { endBeforeAppends: true } }));
+    h.link.interceptors.push(async (call) => {
+      if (call.op.case === "appendTranscript" && call.op.value.entries.some((e) => e.json.includes("cost-state"))) await gate;
+      return undefined;
+    });
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    await waitFor(() => h.runner.releaseIdle(), "the request honoured");
+    await waitFor(() => h.link.calls.some((c) => c.op.case === "appendTranscript" && c.op.value.entries.some((e) => e.json.includes("cost-state"))),
+      "cost-state sent");
+    await sleep(30);
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    ack();
+    expect(await h.done).toBe("released");
+    expect(h.link.entries("").some((e) => e.type === "cost-state")).toBe(true);
+  });
+
+  test("a CLI that does not exit by itself is closed after the grace", async () => {
+    const script = steps("text");
+    script.push({ t: "exit" }, { t: "call", fn: () => new Promise<void>(() => {}) });
+    const h = withInput(new Harness([script], { deps: { abortGraceMs: 100 } }));
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    await waitFor(() => h.runner.releaseIdle(), "the request honoured");
+    expect(await h.done).toBe("released");
+    expect(h.query.closed).toBe(true);
+  });
+
+  test("a requested release waits for the CLI's last write to be acknowledged", async () => {
+    let ack!: () => void;
+    const gate = new Promise<void>((resolve) => { ack = resolve; });
+    const h = withInput(new Harness([steps("text")]));
+    h.link.interceptors.push(async (call) => {
+      if (call.op.case === "appendTranscript" && call.op.value.entries.some((e) => e.json.includes("cost-state"))) await gate;
+      return undefined;
+    });
+    await h.start();
+    await waitFor(() => h.link.calls.some((c) => c.op.case === "appendTranscript" && c.op.value.entries.some((e) => e.json.includes("cost-state"))),
+      "cost-state sent");
+    expect(h.runner.releaseIdle()).toBe(false);
+    await sleep(30);
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    ack();
+    expect(await h.done).toBe("released");
+    expect(h.link.entries("").some((e) => e.type === "cost-state")).toBe(true);
+  });
+
+  test("a broken session is not released on request", async () => {
+    const h = withInput(new Harness([steps("denied")]));
+    h.link.interceptors.push((call) => call.op.case === "requestApproval" ? rejected(Code.BROKEN, "broken") : undefined);
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    await waitFor(() => h.replay.instances[0].appended.some((a) => a.some((e) => e.type === "cost-state")), "cost-state");
+    await sleep(30);
+    expect(h.runner.releaseIdle()).toBe(false);
+    await sleep(30);
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    h.runner.shutdown();
+    expect(await h.done).toBe("released");
   });
 
   test("a lost lease closes the query without ENDED or release", async () => {
@@ -379,6 +578,259 @@ describe("approvals", () => {
     expect(ended(h)[1].persisted?.inputIds).toEqual([INPUT2]);
     h.runner.shutdown();
     await h.done;
+  });
+});
+
+describe("ending the CLI", () => {
+  // The review's probe: a stop or a shutdown after an input was pushed but
+  // before the CLI started its turn closes the CLI at once; it runs no turn
+  // and no tool.
+  for (const how of ["stop", "shutdown"] as const) {
+    test(`${how} between the push and system/init runs no turn and no tool`, async () => {
+      let open!: () => void;
+      const opened = new Promise<void>((resolve) => { open = resolve; });
+      const script: Step[] = steps("tool").slice();
+      // After the push the CLI is still starting: hold it there.
+      script.splice(1, 0, { t: "call", fn: async () => { await opened; } });
+      const h = withInput(new Harness([script], { deps: { abortGraceMs: 2_000 } }), INPUT1, "run ls");
+      await h.start();
+      await waitFor(() => h.query?.pushed.length === 1, "input pushed");
+      const begun = performance.now();
+      if (how === "stop") {
+        h.link.stopped = true;
+        h.runner.stop();
+      } else {
+        h.runner.shutdown();
+      }
+      open();
+      expect(await h.done).toBe("released");
+      expect(performance.now() - begun).toBeLessThan(1_500);
+      expect(h.query.hookResults).toEqual([]);
+      expect(startedCount(h)).toBe(0);
+      expect(h.link.released).toEqual([how === "stop" ? ReleaseLease_Reason.STOPPED : ReleaseLease_Reason.IDLE]);
+      expect(h.query.closed).toBe(true);
+    });
+  }
+
+  // A CLI that would never end by itself: a graceful end would wait the
+  // whole grace for it; these close it at once.
+  const lingering = (): Step[] => [{ t: "exit" }, { t: "call", fn: () => new Promise<void>(() => {}) }];
+
+  for (const how of ["stop", "shutdown"] as const) {
+    test(`a ${how} between turns closes the CLI at once`, async () => {
+      const h = withInput(new Harness([[...steps("text"), ...lingering()]], { deps: { abortGraceMs: 5_000 } }));
+      await h.start();
+      await waitFor(() => ended(h).length === 1, "ENDED");
+      const begun = performance.now();
+      if (how === "stop") {
+        h.link.stopped = true;
+        h.runner.stop();
+      } else {
+        h.runner.shutdown();
+      }
+      expect(await h.done).toBe("released");
+      expect(performance.now() - begun).toBeLessThan(2_000);
+    });
+  }
+
+  for (const how of ["stop", "shutdown"] as const) {
+    test(`a ${how} during a graceful end closes the CLI at once and names the release`, async () => {
+      const h = withInput(new Harness([[...steps("text"), ...lingering()]], { deps: { abortGraceMs: 5_000 } }));
+      await h.start();
+      await waitFor(() => ended(h).length === 1, "ENDED");
+      await waitFor(() => h.runner.releaseIdle(), "the request honoured");
+      await sleep(50);
+      expect(h.query.closed).toBe(false);
+      const begun = performance.now();
+      if (how === "stop") {
+        h.link.stopped = true;
+        h.runner.stop();
+      } else {
+        h.runner.shutdown();
+      }
+      expect(await h.done).toBe("released");
+      expect(performance.now() - begun).toBeLessThan(2_000);
+      expect(h.query.closed).toBe(true);
+      expect(h.link.released).toEqual([how === "stop" ? ReleaseLease_Reason.STOPPED : ReleaseLease_Reason.IDLE]);
+    });
+  }
+
+  test("a session closing at once denies every tool use", async () => {
+    const h = withInput(new Harness([steps("interrupt-stream")], { deps: { shutdownGraceMs: 100 } }));
+    await h.start();
+    await waitFor(() => startedCount(h) === 1, "STARTED");
+    const hook = h.query.options.hooks!.PreToolUse![0].hooks[0];
+    const ask = () => hook({ session_id: "s", transcript_path: "", cwd: "/", hook_event_name: "PreToolUse", tool_name: "Bash",
+      tool_input: { command: "ls" }, tool_use_id: "toolu_late" } as never, "toolu_late", { signal: new AbortController().signal });
+    // While the session runs, the permission mode decides.
+    expect(await ask()).toEqual({});
+    h.link.stopped = true;
+    h.runner.stop();
+    expect(await ask()).toEqual({
+      hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "The session is ending." },
+    });
+    expect(await h.done).toBe("released");
+  });
+
+  test("an idle release with a task notice the CLI has yet to deliver closes it at once", async () => {
+    // The background task ended while idle; the CLI's notification turn
+    // has not started (and the CLI would not end by itself).
+    const cli = steps("cli-turn");
+    const cut = cli.findIndex((s) => s.t === "msg" && s.m.type === "system" && s.m.subtype === "background_tasks_changed" &&
+      cli.slice(0, cli.indexOf(s)).some((p) => p.t === "msg" && p.m.subtype === "task_notification"));
+    const h = withInput(new Harness([[...cli.slice(0, cut), ...lingering()]], { deps: { abortGraceMs: 5_000, idleMs: 50 } }));
+    await h.start();
+    await waitFor(() => h.link.ops("patchState").some((p) => p.bgtasksEnded.length), "task ended");
+    const begun = performance.now();
+    expect(await h.done).toBe("released");
+    expect(performance.now() - begun).toBeLessThan(2_000);
+    expect(startedCount(h)).toBe(1);
+  });
+
+  test("an idle release with an input the CLI may still hold closes it at once", async () => {
+    // The turn's result names no input: the pushed one stays a delivery.
+    const script: Step[] = [{ t: "push", i: 0 }, ...steps("text").filter((s) => !(s.t === "push" || (s.t === "msg" && s.m.type === "command_lifecycle")))
+      .map((s) => s.t === "msg" && s.m.type === "result" ? { ...s, m: { ...s.m, user_message_uuid: undefined, user_message_uuids: [] } } : s),
+    ...lingering()];
+    const h = withInput(new Harness([script], { deps: { abortGraceMs: 5_000, idleMs: 50 } }));
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    const begun = performance.now();
+    expect(await h.done).toBe("released");
+    expect(performance.now() - begun).toBeLessThan(2_000);
+    expect(h.link.persistedInputs.has(INPUT1)).toBe(false);
+  });
+
+  test("the drain after a graceful end is bounded by the grace", async () => {
+    const script = steps("text");
+    const last = script.findLastIndex((s) => s.t === "append" && s.entries.some((e) => e.type === "cost-state"));
+    const [cost] = script.splice(last, 1);
+    script.push({ t: "exit" }, cost);
+    const h = withInput(new Harness([script], { replay: { endBeforeAppends: true }, deps: { abortGraceMs: 300, appendBudgetMs: 60_000 } }));
+    let held = false;
+    h.link.interceptors.push(async (call) => {
+      if (call.op.case === "appendTranscript" && call.op.value.entries.some((e) => e.json.includes("cost-state"))) {
+        held = true;
+        await new Promise<void>(() => {});
+      }
+      return undefined;
+    });
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    await waitFor(() => h.runner.releaseIdle(), "the request honoured");
+    expect(await h.done).toBe("released");
+    expect(held).toBe(true);
+  });
+
+  test("during a graceful end no turn starts and every tool use is denied", async () => {
+    const tool = steps("tool");
+    const init = tool.findIndex((s) => s.t === "msg" && s.m.type === "system" && s.m.subtype === "init");
+    const hook = tool.find((s) => s.t === "hook")!;
+    // After its input ended, the CLI asks for a tool and then starts a turn by itself.
+    const script = [...steps("text"), { t: "exit" } as Step, hook, tool[init]];
+    const h = withInput(new Harness([script], { deps: { abortGraceMs: 2_000 } }));
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    await waitFor(() => h.runner.releaseIdle(), "the request honoured");
+    expect(await h.done).toBe("released");
+    expect(h.query.hookResults).toEqual([{
+      hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "The session is ending." },
+    }]);
+    expect(startedCount(h)).toBe(1);
+    expect(h.query.closed).toBe(true);
+    expect(h.link.released).toEqual([ReleaseLease_Reason.IDLE]);
+  });
+
+  for (const how of ["idle timer", "stop", "shutdown"] as const) {
+    test(`with a background task running, the ${how} closes the CLI at once`, async () => {
+      const cli = steps("cli-turn");
+      const cut = cli.findIndex((s) => s.t === "msg" && s.m.type === "system" && s.m.subtype === "task_updated");
+      // Were it allowed to end by itself, the CLI would wait for its task.
+      const script: Step[] = [...cli.slice(0, cut), { t: "exit" }, { t: "call", fn: () => new Promise<void>(() => {}) }];
+      const h = withInput(new Harness([script], { deps: { abortGraceMs: 3_000, idleMs: 20, taskHoldMs: 100 } }));
+      await h.start();
+      await waitFor(() => ended(h).length === 1, "ENDED");
+      await waitFor(() => h.link.ops("patchState").some((p) => p.bgtasksStarted.length), "task recorded");
+      const begun = performance.now();
+      if (how === "stop") {
+        h.link.stopped = true;
+        h.runner.stop();
+      } else if (how === "shutdown") {
+        h.runner.shutdown();
+      }
+      expect(await h.done).toBe("released");
+      expect(performance.now() - begun).toBeLessThan(1_500);
+      expect(h.query.closed).toBe(true);
+    });
+  }
+});
+
+describe("deferred requests and jobs", () => {
+  test("a deferred request expires: a session idle only later is kept", async () => {
+    let ack!: () => void;
+    const gate = new Promise<void>((resolve) => { ack = resolve; });
+    const h = withInput(new Harness([steps("text")], { deps: { releaseWantedMs: 50 } }));
+    h.link.interceptors.push(async (call) => {
+      if (call.op.case === "appendTranscript" && call.op.value.entries.some((e) => e.json.includes("cost-state"))) await gate;
+      return undefined;
+    });
+    await h.start();
+    await waitFor(() => h.link.calls.some((c) => c.op.case === "appendTranscript" && c.op.value.entries.some((e) => e.json.includes("cost-state"))),
+      "cost-state sent");
+    expect(h.runner.releaseIdle()).toBe(false);
+    await sleep(120);
+    ack();
+    await sleep(60);
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    h.runner.shutdown();
+    expect(await h.done).toBe("released");
+  });
+
+  test("a jobs read that finds the session stopped stops it", async () => {
+    const h = withInput(new Harness([steps("text")]));
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "ENDED");
+    h.link.stopped = true;
+    h.runner.nudge([Reason.JOB], 0n);
+    expect(await h.done).toBe("released");
+    expect(h.link.released).toEqual([ReleaseLease_Reason.STOPPED]);
+  });
+});
+
+describe("ReleaseIdle and task notices", () => {
+  test("a task notice not yet told to the model keeps the session, in the CLI or in the worker's notes", async () => {
+    // The background task ends while idle and the CLI has yet to start its
+    // notification turn; then a repair closes that CLI and the notice
+    // moves to the worker's notes, which only the next input delivers.
+    const cli = steps("cli-turn");
+    const firstResult = cli.findIndex((s) => s.t === "msg" && s.m.type === "result");
+    const cut = cli.findIndex((s) => s.t === "msg" && s.m.type === "system" && s.m.subtype === "background_tasks_changed" &&
+      cli.slice(0, cli.indexOf(s)).some((p) => p.t === "msg" && p.m.subtype === "task_notification"));
+    const script: Step[] = [
+      ...cli.slice(0, firstResult + 1),
+      // The CLI's end-of-run write, so nothing but the notice keeps the session.
+      { t: "append", entries: [{ type: "cost-state", sessionId: "$SESSION" }] },
+      ...cli.slice(firstResult + 1, cut),
+    ];
+    const h = withInput(new Harness([script, steps("text")], { replay: { retryDelays: [10, 10] } }));
+    await h.start();
+    await waitFor(() => h.link.ops("patchState").some((p) => p.bgtasksEnded.length), "task ended");
+    await sleep(30);
+    expect(h.runner.releaseIdle()).toBe(false);
+    h.query.emit({ type: "system", subtype: "mirror_error", error: "x", key: { projectKey: "p", sessionId: h.link.claudeSessionId }, uuid: crypto.randomUUID(), session_id: h.link.claudeSessionId });
+    await waitFor(() => h.link.repaired === 1, "repaired");
+    await sleep(30);
+    expect(h.runner.releaseIdle()).toBe(false);
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    withInput(h, INPUT2, "again");
+    h.runner.nudge([Reason.INPUT], 0n);
+    await waitFor(() => ended(h).length === 2, "next turn");
+    // That turn's start voided the deferred requests: nothing is released
+    // until the control plane asks again.
+    await sleep(50);
+    expect(h.link.ops("releaseLease")).toEqual([]);
+    await waitFor(() => h.runner.releaseIdle(), "the request honoured");
+    expect(await h.done).toBe("released");
   });
 });
 

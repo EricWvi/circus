@@ -59,6 +59,27 @@ describe("TranscriptStore keeps the SessionStore contract of InMemorySessionStor
   });
 });
 
+describe("TranscriptStore idle and drained", () => {
+  test("an append counts from its call, before it reaches the link, until it is acknowledged", async () => {
+    const { link, store } = setup();
+    let ack!: () => void;
+    const gate = new Promise<void>((resolve) => { ack = resolve; });
+    link.interceptors.push(async (call) => { if (call.op.case === "appendTranscript") await gate; return undefined; });
+    expect(store.idle).toBe(true);
+    const first = store.append(key(), [entry()]);
+    expect(store.idle).toBe(false);
+    const second = store.append(key(), [entry()]);
+    let drained = false;
+    void store.drained().then(() => { drained = true; });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect([store.idle, drained]).toEqual([false, false]);
+    ack();
+    await Promise.all([first, second]);
+    await store.drained();
+    expect(store.idle).toBe(true);
+  });
+});
+
 describe("TranscriptStore retries", () => {
   test("link loss and STORE_UNAVAILABLE are retried within the call", async () => {
     const { link, store, readyCalls } = setup();

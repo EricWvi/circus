@@ -33,6 +33,8 @@ export interface StoreEvents {
   stopped(error: StoppedError): void;
   /** A loaded transcript has entries whose parentUuid is unknown. */
   gap(subpath: string, unknownParents: string[]): void;
+  /** Every append handed to the store so far has settled. */
+  settled?(): void;
 }
 
 interface Entry {
@@ -108,6 +110,8 @@ export class TranscriptStore implements SessionStore {
   #subpaths = new Map<string, Subpath>();
   #chain: Promise<unknown> = Promise.resolve();
   #queuedBytes = 0;
+  /** append() calls not yet settled. */
+  #active = 0;
   #disposed = false;
   /** Why some entries can no longer reach the control plane, if they cannot. */
   #lost?: string;
@@ -142,6 +146,20 @@ export class TranscriptStore implements SessionStore {
     return this.#queuedBytes;
   }
 
+  /** No append is in progress and every entry handed to the store is acknowledged. */
+  get idle(): boolean {
+    return this.#active === 0 && this.#queuedBytes === 0;
+  }
+
+  /**
+   * Resolves once every append handed to the store so far has settled
+   * (acknowledged, or failed after its retry budget), so entries the CLI
+   * wrote while it exited reach the control plane before dispose().
+   */
+  drained(): Promise<void> {
+    return this.#chain.then(() => {});
+  }
+
   #check(key: { sessionId: string }): void {
     if (key.sessionId !== this.claudeSessionId) {
       throw new Error(`session store bound to ${this.claudeSessionId} got ${String(key.sessionId).slice(0, 128)}`);
@@ -158,7 +176,12 @@ export class TranscriptStore implements SessionStore {
     // Encode now: the SDK may reuse its objects after the call returns.
     const jsons = entries.map((entry) => JSON.stringify(entry));
     const uuids = entries.map((entry) => typeof entry.uuid === "string" ? entry.uuid : "");
-    return this.#serialize(() => this.#append(subpath, jsons, uuids));
+    this.#active++;
+    const run = this.#serialize(() => this.#append(subpath, jsons, uuids));
+    void run.catch(() => {}).finally(() => {
+      if (--this.#active === 0 && this.#queuedBytes === 0) this.events.settled?.();
+    });
+    return run;
   }
 
   #serialize(fn: () => Promise<void>): Promise<void> {

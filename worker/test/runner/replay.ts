@@ -12,6 +12,9 @@ import type { QueryFactory } from "../../src/runner/runner.js";
 export type Step =
   | { t: "msg"; m: Record<string, unknown> }
   | { t: "append"; subpath?: string; entries: Array<Record<string, unknown>> }
+  // Waits until the runner has ended the prompt (the CLI's input): what
+  // follows is what the CLI does as it exits.
+  | { t: "exit" }
   | { t: "hook"; input: Record<string, unknown> }
   | { t: "push"; i: number; priority?: string }
   | { t: "interrupt" }
@@ -36,6 +39,8 @@ export interface ReplayOptions {
   /** Called when the script waits for the runner's i-th push (to queue the input it pushes). */
   onWaitPush?: (i: number, q: ReplayQuery) => void;
   retryDelays?: [number, number];
+  /** The query ends when its script does, with appends still in flight (as the SDK may when the CLI exits). */
+  endBeforeAppends?: boolean;
 }
 
 export class Replay {
@@ -73,6 +78,8 @@ export class ReplayQuery {
   #wake = new Set<() => void>();
   #chain: Promise<void> = Promise.resolve();
   #mirrorShape?: Record<string, unknown>;
+  /** The runner ended the prompt: like the CLI, the replay ends once its script is done. */
+  #promptEnded = false;
 
   constructor(steps: Step[], readonly params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }, readonly opts: ReplayOptions) {
     this.sessionId = params.options.sessionId ?? params.options.resume ?? "";
@@ -93,6 +100,8 @@ export class ReplayQuery {
       this.pushed.push(message);
       this.#notify();
     }
+    this.#promptEnded = true;
+    this.#notify();
   }
 
   #notify(): void {
@@ -168,13 +177,17 @@ export class ReplayQuery {
           case "call":
             await step.fn(this);
             break;
+          case "exit":
+            await this.until(() => this.#promptEnded, "the prompt to end");
+            break;
           case "throw":
             throw new Error(step.message);
         }
       }
-      await this.#chain;
-      // The CLI stays up, idle, until the runner closes the query.
-      while (!this.closed) await new Promise<void>((resolve) => {
+      if (!this.opts.endBeforeAppends) await this.#chain;
+      // The CLI stays up, idle, until the runner closes the query or ends
+      // its input.
+      while (!this.closed && !this.#promptEnded) await new Promise<void>((resolve) => {
         const done = () => {
           this.#wake.delete(done);
           resolve();

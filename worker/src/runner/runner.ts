@@ -50,8 +50,10 @@ export interface RunnerDeps {
   idleMs?: number;
   /** Longest wait for running background tasks; two hours. */
   taskHoldMs?: number;
-  /** How long a worker-initiated interrupt may take before the query is closed. */
+  /** How long a worker-initiated interrupt may take before the query is closed; also bounds a graceful end. */
   abortGraceMs?: number;
+  /** How long a deferred ReleaseIdle stays wanted; the control plane's 30 s by default. */
+  releaseWantedMs?: number;
   /** How long a shutdown waits for the running turn to end; ten seconds. */
   shutdownGraceMs?: number;
   /** Retry budget of one SessionStore append; 20 seconds. */
@@ -68,6 +70,12 @@ export interface RunnerDeps {
 export type RunnerEnd = "released" | "failed" | "lost";
 
 const IDLE_MS = 5 * 60_000;
+/**
+ * How long a ReleaseIdle refused while the session was busy stays
+ * wanted: the control plane's ReleaseIdleTimeout, after which it counts
+ * the request as declined and may ask another session instead.
+ */
+const RELEASE_WANTED_MS = 30_000;
 const TASK_HOLD_MS = 2 * 60 * 60_000;
 const ABORT_GRACE_MS = 10_000;
 const SHUTDOWN_GRACE_MS = 10_000;
@@ -88,6 +96,12 @@ interface Note {
   text: string;
   gap?: bigint;
   task?: PatchSessionState_BackgroundTask;
+  /**
+   * Only this worker knows of it (a task notice the closed CLI never
+   * delivered): the control plane would not tell the next holder, so the
+   * session is not released on request while it is owed.
+   */
+  workerOnly?: boolean;
 }
 
 /** An input pushed to the SDK, until a turn takes it. */
@@ -219,6 +233,17 @@ export class SessionRunner {
   #grants = new Map<string, true>();
   #inputsBusy = false;
   #inputsAgain = false;
+  /** A turn's ENDED is being reported and its marks applied. */
+  #settling = false;
+  /** When a ReleaseIdle refused because the session was busy arrived (0: none wanted). */
+  #releaseWantedAt = 0;
+  readonly #releaseWantedMs: number;
+  /** The CLI's input has ended for a graceful end: no turn may start and every tool use is denied. */
+  #exiting = false;
+  /** Cuts a graceful end short: a stop, a shutdown or a lost lease arrived during it. */
+  readonly #cutShort = Promise.withResolvers<void>();
+  /** The release reason of a stop or error that cut a graceful end short. */
+  #lateReason?: ReleaseLease_Reason;
   #idleTimer?: ReturnType<typeof setTimeout>;
   #ending?: Promise<void>;
   #end = Promise.withResolvers<RunnerEnd>();
@@ -241,6 +266,7 @@ export class SessionRunner {
     this.#idleMs = deps.idleMs ?? IDLE_MS;
     this.#taskHoldMs = deps.taskHoldMs ?? TASK_HOLD_MS;
     this.#abortGraceMs = deps.abortGraceMs ?? ABORT_GRACE_MS;
+    this.#releaseWantedMs = deps.releaseWantedMs ?? RELEASE_WANTED_MS;
     this.ops = new SessionOps(deps.link, sessionId, lease.epoch, this.#abort.signal, deps.ready, deps.slots);
     this.#publisher = new EventPublisher(this.ops, deps.log, (error) => this.#fatal(error));
     this.#store = new TranscriptStore(this.ops, lease.claudeSessionId, {
@@ -249,6 +275,7 @@ export class SessionRunner {
       gap: (subpath, unknown) => {
         if (this.#gapAtLease !== 0n) this.#publisher.add(Kind.TRANSCRIPT_GAP_DETECTED, gapDetectedPayload(subpath, unknown));
       },
+      settled: () => this.#retryRelease(),
     }, deps.loadSlots, deps.appendBudgetMs, undefined, deps.retained);
   }
 
@@ -277,6 +304,91 @@ export class SessionRunner {
     }
     void this.#checkInterrupt();
     if (reasons.includes(Reason.INPUT) || reasons.includes(Reason.APPROVAL)) this.#kickInputs();
+    // The control plane keeps JOB pending until the holder reads the jobs
+    // section (docs/wire.md, the hint table), and raises it whenever
+    // earlier hints may be lost (a resumption after its restart, a
+    // transcript repair).
+    if (reasons.includes(Reason.JOB)) void this.#readJobs().catch((error: unknown) => this.#fatal(error));
+  }
+
+  /**
+   * Nudge JOB: GetSessionState with SECTION_JOBS, which acknowledges the
+   * reason. A local session submits no device calls, so it has no device
+   * jobs to deliver; one listed anyway is logged and left to the control
+   * plane.
+   */
+  async #readJobs(): Promise<void> {
+    if (this.#ending) return;
+    const reply = await this.ops.call({
+      case: "getState", value: create(GetSessionStateSchema, { sections: [GetSessionState_Section.JOBS] }),
+    });
+    if (reply.state?.stopped) {
+      this.stop();
+      return;
+    }
+    const jobs = reply.state?.jobs.length ?? 0;
+    if (jobs) this.#log.error("device jobs listed for a local session; ignoring them", { session_id: this.sessionId, jobs });
+  }
+
+  /**
+   * ReleaseIdle: the control plane asks for the lease back because a
+   * session of the same provider waits for its cap. An idle session is
+   * released exactly as by the idle timer (IDLE, the CLI closed first); a
+   * busy one is kept and the request is a no-op. Busy here is more than
+   * the idle timer's notion: a background task still running or ended and
+   * not yet told to the model, a turn's end still being reported, or a
+   * broken transcript also keep it. Reports whether the release started.
+   */
+  releaseIdle(): boolean {
+    if (this.#ending) return false;
+    if (!this.#releasable()) {
+      // Kept for a while: a session that turns idle without starting a
+      // turn (its ENDED reported, the CLI's last writes stored, no inputs
+      // after all) is released then; a turn's start drops it, since the
+      // control plane asks again after that turn.
+      this.#releaseWantedAt = performance.now();
+      this.#log.info("release request deferred; the session is busy", { session_id: this.sessionId, kept_by: this.#keeps() });
+      return false;
+    }
+    this.#idleRelease(true);
+    return true;
+  }
+
+  /**
+   * Whether a requested release may start now. Beyond the idle timer's
+   * notion of busy (#busy): a turn's end still being reported, the CLI's
+   * writes after its last result not yet stored, a broken transcript, a
+   * background task running or ended and not yet told to the model, and
+   * a task notice only this worker holds. (#stopping needs no check: a
+   * shutdown either finishes at once or waits for the running turn, which
+   * #busy and #settling cover.)
+   */
+  #releasable(): boolean {
+    return this.#keeps() === "";
+  }
+
+  /** What keeps the session from a requested release, "" when nothing does (for #releasable and the log). */
+  #keeps(): string {
+    if (this.#busy()) return "busy";
+    if (this.#settling) return "turn_ending";
+    if (this.#broken) return "broken";
+    if (this.#backgroundRunning()) return "background_task";
+    if (this.#undelivered.size > 0) return "task_notice";
+    if (this.#notes.some((note) => note.workerOnly)) return "worker_note";
+    if (!this.#store.idle) return "transcript_unacknowledged";
+    return "";
+  }
+
+  /** A deferred ReleaseIdle, at a moment the session may have turned idle. */
+  #retryRelease(): void {
+    if (!this.#releaseWantedAt || this.#ending) return;
+    if (performance.now() - this.#releaseWantedAt > this.#releaseWantedMs) {
+      this.#releaseWantedAt = 0;
+      return;
+    }
+    if (!this.#releasable()) return;
+    this.#releaseWantedAt = 0;
+    this.#idleRelease(true);
   }
 
   /** Stopped: close the query and release with STOPPED. */
@@ -301,6 +413,8 @@ export class SessionRunner {
   shutdown(): void {
     if (this.#stopping) return;
     this.#stopping = true;
+    // A graceful end in progress closes the CLI at once (the pool's deadline).
+    this.#cutShort.resolve();
     if (!this.#turn) {
       this.#finish({ release: ReleaseLease_Reason.IDLE });
       return;
@@ -376,7 +490,15 @@ export class SessionRunner {
 
   #finish(how: { lost: true } | { release: ReleaseLease_Reason }): void {
     if ("lost" in how) this.#abort.abort(new LeaseLost("session lease lost"));
-    if (this.#ending) return;
+    if (this.#ending) {
+      // Already ending (an idle release's graceful end): a stop or an
+      // error closes the CLI at once and gives its reason to the release.
+      if ("lost" in how || how.release !== ReleaseLease_Reason.IDLE) {
+        if ("release" in how) this.#lateReason ??= how.release;
+        this.#cutShort.resolve();
+      }
+      return;
+    }
     this.#ending = this.#close(how).then(
       (end) => this.#end.resolve(end),
       (error: unknown) => {
@@ -387,7 +509,18 @@ export class SessionRunner {
 
   async #close(how: { lost: true } | { release: ReleaseLease_Reason }): Promise<RunnerEnd> {
     this.#clearIdle();
-    await this.#closeQuery(true);
+    // An idle release lets the CLI finish on its own: it still writes
+    // after its last result (last-prompt, cost-state), as it exits. Only
+    // when the CLI holds nothing to run (no input pushed and unanswered,
+    // no background task, no task notice to deliver), and never for a
+    // stop, an error or a shutdown, which close it at once (a shutdown has
+    // the pool's deadline to keep). The end and the drain share one grace.
+    const graceful = "release" in how && how.release === ReleaseLease_Reason.IDLE && !this.#stopping && !this.#abort.signal.aborted &&
+      this.#cliIdle();
+    const deadline = performance.now() + this.#abortGraceMs;
+    await this.#closeQuery(true, graceful ? deadline : undefined);
+    // Its last writes reach the control plane before the store goes.
+    if (graceful) await within(Promise.race([this.#store.drained(), this.#cutShort.promise]), deadline);
     // What is still unacknowledged can no longer be repaired by this worker.
     this.#store.dispose();
     if ("lost" in how || this.#abort.signal.aborted) {
@@ -401,9 +534,11 @@ export class SessionRunner {
     }
     this.#publisher.close();
     this.#releasing = true;
+    // A stop or an error that cut the graceful end short names the release.
+    const reason = this.#lateReason ?? how.release;
     try {
-      await this.ops.call({ case: "releaseLease", value: create(ReleaseLeaseSchema, { reason: how.release }) });
-      this.#log.info("session lease released", { session_id: this.sessionId, reason: ReleaseLease_Reason[how.release] });
+      await this.ops.call({ case: "releaseLease", value: create(ReleaseLeaseSchema, { reason }) });
+      this.#log.info("session lease released", { session_id: this.sessionId, reason: ReleaseLease_Reason[reason] });
     } catch (error) {
       if (error instanceof FencedError) return "lost";
       if (isLeaseAbort(error)) return "lost";
@@ -411,7 +546,7 @@ export class SessionRunner {
     } finally {
       this.#abort.abort(new LeaseLost("session released"));
     }
-    return how.release === ReleaseLease_Reason.ERROR ? "failed" : "released";
+    return reason === ReleaseLease_Reason.ERROR ? "failed" : "released";
   }
 
   // ---- The query ----
@@ -495,15 +630,39 @@ export class SessionRunner {
   }
 
   /** Closes the query and confirms its CLI exited (also one closed by another path). */
-  async #closeQuery(waitLoop: boolean): Promise<void> {
+  /**
+   * Nothing is pushed to or running in the CLI: no turn, no input it holds,
+   * no background task or notice. (#nextTurn is implied by the callers'
+   * #busy check, which neither the idle timer nor a requested release
+   * passes with an announced turn waiting; it is kept so this check stands
+   * on its own.)
+   */
+  #cliIdle(): boolean {
+    return !this.#turn && this.#deliveries.size === 0 && this.#nextTurn.length === 0 && !this.#backgroundRunning() &&
+      this.#undelivered.size === 0;
+  }
+
+  /**
+   * Closes the open query and confirms its CLI's exit. With a graceful
+   * deadline, the CLI's input ends first and the query is closed once it
+   * has ended by itself (its exit-time writes done) or at the deadline;
+   * messages it still yields meanwhile are handled, but no turn starts
+   * (the query is closed at once instead) and every tool use is denied.
+   */
+  async #closeQuery(waitLoop: boolean, graceful?: number): Promise<void> {
     const gen = this.#gen;
     if (!gen) {
       await this.#exited;
       return;
     }
     this.#gen = undefined;
-    gen.closing = true;
+    if (graceful !== undefined && gen.done) {
+      this.#exiting = true;
+      gen.prompt.end();
+      await within(Promise.race([gen.done, this.#cutShort.promise]), graceful);
+    }
     gen.prompt.end();
+    gen.closing = true;
     try {
       gen.query.close();
     } catch (error) {
@@ -613,6 +772,9 @@ export class SessionRunner {
   // ---- Turns ----
 
   async #startTurn(): Promise<void> {
+    // A graceful end: the CLI started a turn after all; leaving the loop
+    // ends the wait, and the query is closed at once.
+    if (this.#exiting) throw new LeaseLost("the CLI is ending; no turn starts");
     // The SDK announces each input it takes (command_lifecycle "started")
     // before the system/init of the turn that takes it.
     const origin: TurnOriginName = this.#nextTurn.length ? "input" : "cli";
@@ -620,6 +782,7 @@ export class SessionRunner {
     this.#undelivered.clear();
     const turn = new Turn(++this.#localSeq, origin);
     this.#turn = turn;
+    this.#releaseWantedAt = 0;
     this.#clearIdle();
     try {
       // The preceding turn's events go first (docs/wire.md, "Inputs and turns").
@@ -702,6 +865,20 @@ export class SessionRunner {
   /** Flushes the turn's events, reports ENDED and applies its persistence marks. */
   async #reportEnded(turn: Turn, outcome: TurnOutcome, usage: string): Promise<void> {
     this.#turn = undefined;
+    this.#settling = true;
+    try {
+      await this.#settle(turn, outcome, usage);
+    } finally {
+      this.#settling = false;
+    }
+    if (this.#stopping) {
+      this.#finish({ release: ReleaseLease_Reason.IDLE });
+      return;
+    }
+    this.#armIdle();
+  }
+
+  async #settle(turn: Turn, outcome: TurnOutcome, usage: string): Promise<void> {
     await this.#publisher.flush();
     const marks = this.#marks(turn);
     // Never mark the items of a turn whose transcript is incomplete.
@@ -729,11 +906,6 @@ export class SessionRunner {
     if (this.#closeAfterAuth && !this.#backgroundRunning()) await this.#replaceAfterAuth();
     // Foreground tasks end with their turn.
     for (const [id, task] of this.#tasks) if (!task.backgrounded) this.#tasks.delete(id);
-    if (this.#stopping) {
-      this.#finish({ release: ReleaseLease_Reason.IDLE });
-      return;
-    }
-    this.#armIdle();
   }
 
   #marks(turn: Turn): ReportTurn_Persisted | undefined {
@@ -903,7 +1075,9 @@ export class SessionRunner {
     }
     this.#tasks.clear();
     for (const [taskId, notice] of this.#undelivered) {
-      this.#notes.push({ kind: "lost_bgtask", text: undeliveredTaskText(taskId, notice.toolUseId, notice.status, notice.summary) });
+      this.#notes.push({
+        kind: "lost_bgtask", text: undeliveredTaskText(taskId, notice.toolUseId, notice.status, notice.summary), workerOnly: true,
+      });
     }
     this.#undelivered.clear();
   }
@@ -1034,7 +1208,13 @@ export class SessionRunner {
     if (input.hook_event_name !== "PreToolUse") return {};
     const agentId = input.agent_id ?? "";
     this.#toolUses.remember(input.tool_use_id, { tool: input.tool_name, input: input.tool_input, agentId });
-    if (this.#broken || this.#ending) return {};
+    // The session is ending (its CLI may still run while it closes, or
+    // during a graceful end, which only an ending session starts): no tool
+    // runs any more.
+    if (this.#ending) {
+      return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "The session is ending." } };
+    }
+    if (this.#broken) return {};
     const subject = approvalSubject(input.tool_name, input.tool_input, this.#cwd);
     if (!subject || !this.#grants.has(`${subject.tool}\n${subject.matchKey}`)) return {};
     try {
@@ -1185,6 +1365,7 @@ export class SessionRunner {
 
   #armIdle(): void {
     this.#clearIdle();
+    this.#retryRelease();
     if (this.#ending || this.#busy()) return;
     const running = [...this.#tasks.values()].filter((task) => task.backgrounded);
     const delay = running.length
@@ -1199,9 +1380,14 @@ export class SessionRunner {
         return;
       }
       if (left.length) this.#log.warn("releasing with background tasks still running; they will count as lost", { session_id: this.sessionId, tasks: left.length });
-      this.#log.info("session idle; releasing", { session_id: this.sessionId });
-      this.#finish({ release: ReleaseLease_Reason.IDLE });
+      this.#idleRelease(false);
     }, delay);
+  }
+
+  /** The idle release, by the idle timer or on the control plane's request. */
+  #idleRelease(requested: boolean): void {
+    this.#log.info("session idle; releasing", { session_id: this.sessionId, requested });
+    this.#finish({ release: ReleaseLease_Reason.IDLE });
   }
 }
 
@@ -1213,6 +1399,17 @@ function usageJson(result: Record<string, unknown>): string {
     total_cost_usd: result.total_cost_usd, duration_ms: result.duration_ms, num_turns: result.num_turns,
   });
   return Buffer.byteLength(json) <= USAGE_BYTES ? json : "{}";
+}
+
+/** Resolves when promise settles or at deadline (performance.now() time), whichever comes first. */
+async function within(promise: Promise<unknown>, deadline: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<void>((resolve) => { timer = setTimeout(resolve, Math.max(0, deadline - performance.now())); });
+  try {
+    await Promise.race([promise.then(() => {}, () => {}), late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

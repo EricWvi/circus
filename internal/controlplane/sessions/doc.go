@@ -165,6 +165,30 @@
 // never revokes a lease; changing a session's provider releases its lease
 // in the store, and the Wake that follows revokes it on the holder.
 //
+// While sessions wait as PROVIDER_FULL, the provider's idle leases are
+// asked back (reclaim): one ReleaseIdle per waiting session that a live,
+// attached connection of a worker it may run on could take (its pin and
+// local mode honoured, the worker assigned to the provider; a waiter
+// pinned to an offline worker asks for nothing), beyond the requests
+// still outstanding (ReleaseIdleTimeout; a request queued on a connection
+// that closes or detaches, or for a lease resumed elsewhere, no longer
+// counts), sent to the holders of the leases ListIdleLeases finds idle
+// (every page), least recent activity first, and
+// only for a lease bound to a live, attached connection of the current
+// boot, its Lease reply delivered, with no Nudge reason pending (checked
+// again when the hint is sent: a reason raised meanwhile drops it). Only
+// as many as the waiting sessions need, not every idle lease: each
+// released session loses its running CLI, which its next input has to
+// start again. An evaluation that derives PROVIDER_FULL, a held
+// session's turn end or background task end (mayIdle), an evaluation of
+// a held idle session without reasons and every fallback pass while a
+// session waits look again (an attaching worker's rescan derives its
+// waiters again); a turn's start voids the request
+// outstanding for its lease. The holder releases with REASON_IDLE, the
+// same release as its idle timer's, only if it finds the session idle
+// itself; otherwise the request is a no-op. Its release wakes the
+// waiting sessions like any other.
+//
 // For a held session, Wake adds Nudge reasons to the session's pending set
 // and the scheduler nudges the holder's connection (with the stored
 // interrupt level); reasons stay pending until the holder acts (TakeInputs
@@ -191,7 +215,8 @@
 // or failed, and counts per outcome); "turn started" and "turn ended" (a
 // duplicate report logs nothing); "transcript repaired" (only when the
 // session was broken); "session stopped" (reason transcript_full); "queue
-// reason changed" (the KIND_QUEUE name); "worker disconnect marked" and
+// reason changed" (the KIND_QUEUE name); "idle release requested" (a
+// ReleaseIdle queued for a holder); "worker disconnect marked" and
 // "worker disconnect cleared" (only on a change); "worker attached",
 // "worker connection closed" (last_of_boot, marked) and "old boot leases
 // released". "session broken" is a warning: an ENDED report with an
@@ -311,19 +336,19 @@
 //     about twice that decoded: C·(M + 32 MiB) = 768 MiB;
 //   - the session table: at most MaxTracked (8192) entries, queue reasons
 //     and disconnect marks included (a mark is a field of its lease's
-//     entry, never an entry of its own). An entry is a 288-byte struct
-//     (its own size class), about
+//     entry, never an entry of its own). An entry is a 296-byte struct
+//     (allocated in the 320-byte size class), about
 //     32 bytes of map slot, and up to eight ids of at most 128 bytes each
 //     (the session id key, user, pin, the holder's worker, boot,
-//     connection and provider, the reason's provider): 288 + 32 + 8·128 =
-//     1,344 bytes, so 8192 · 1,344 B = 10.5 MiB at every id's cap (about
-//     5.5 MiB with 36-byte UUIDs: 288 + 32 + 8·48 = 704 B). The Wake queue
+//     connection and provider, the reason's provider): 320 + 32 + 8·128 =
+//     1,376 bytes, so 8192 · 1,376 B = 10.75 MiB at every id's cap (about
+//     5.75 MiB with 36-byte UUIDs: 320 + 32 + 8·48 = 736 B). The Wake queue
 //     holds at most MaxWakeQueue (4096) ids (1 MiB); the provider scans at
 //     most MaxWakeQueue provider and user ids, each pair about 2·16 bytes
 //     of string headers, 8 of slot and 2·128 of ids: 4096 · 296 B =
-//     1.2 MiB; the stale-read counts and the sessions parked for the
-//     fallback at most MaxWakeQueue ids each (about 0.6 MiB each at
-//     128-byte ids); a
+//     1.2 MiB; the stale-read counts, the sessions parked for the
+//     fallback and the providers to reclaim at most MaxWakeQueue ids each
+//     (about 0.6 MiB each at 128-byte ids); a
 //     connection's hint queue at most one hint per session of its user (the
 //     store's per-user cap, 1000), so all queues together at most C·1000
 //     hints (about 2 MiB); one lease extension round copies at most
@@ -368,7 +393,7 @@
 //     per connection, all but ReadConcurrency waiting for a permit or a
 //     send).
 //
-// At the defaults that is about 1,093 MiB. Live-only events handed to the
+// At the defaults that is about 1,094 MiB. Live-only events handed to the
 // Bus (at most 128 per batch, each payload at most 256 KiB; KIND_QUEUE and
 // KIND_WORKER announcements under 64 bytes each) are charged to
 // each watcher's queue (bus.go) and counted with the watch streams; a

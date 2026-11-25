@@ -118,6 +118,11 @@ func (o *faultyOps) ExpireLeases(ctx context.Context, now int64, limit int) (v [
 	return v, err
 }
 
+func (o *faultyOps) ListIdleLeases(ctx context.Context, providerID string, now int64, after *store.SessionCursor, limit int) (v []store.IdleLease, err error) {
+	err = o.read(ctx, func(x store.Ops) error { v, err = x.ListIdleLeases(ctx, providerID, now, after, limit); return err })
+	return v, err
+}
+
 func (o *faultyOps) CheckFence(ctx context.Context, f store.Fence) (v store.Lease, err error) {
 	err = o.read(ctx, func(x store.Ops) error { v, err = x.CheckFence(ctx, f); return err })
 	return v, err

@@ -29,3 +29,24 @@ it("keeps LeaseRevoked hints across epochs but merges duplicates within an epoch
   queue.close();
   await expect(last).resolves.toMatchObject({ done: true });
 });
+
+it("drops a ReleaseIdle when a Nudge for the session comes before it is consumed, and ignores one behind a Nudge", async () => {
+  const queue = new HintQueue();
+  const release = (sessionId: string, epoch: bigint) => create(WorkerEventSchema, { event: { case: "releaseIdle", value: { sessionId, epoch } } });
+  const nudge = (sessionId: string) => create(WorkerEventSchema, { event: { case: "nudge", value: { sessionId, reasons: [1], interruptTurnNo: 0n } } });
+  queue.push(release("a", 3n));
+  queue.push(release("b", 4n));
+  queue.push(release("b", 5n));
+  queue.push(nudge("a"));
+  queue.push(nudge("c"));
+  queue.push(release("c", 2n));
+  queue.ready();
+  const hints = queue.iterate()[Symbol.asyncIterator]();
+  // b's latest request (merged), then the two Nudges; a's and c's requests are gone.
+  await expect(hints.next()).resolves.toMatchObject({ value: { event: { case: "releaseIdle", value: { sessionId: "b", epoch: 5n } } } });
+  await expect(hints.next()).resolves.toMatchObject({ value: { event: { case: "nudge", value: { sessionId: "a" } } } });
+  await expect(hints.next()).resolves.toMatchObject({ value: { event: { case: "nudge", value: { sessionId: "c" } } } });
+  const last = hints.next();
+  queue.close();
+  await expect(last).resolves.toMatchObject({ done: true });
+});

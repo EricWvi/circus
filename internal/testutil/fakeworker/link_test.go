@@ -40,6 +40,10 @@ type fakeLink struct {
 	events           []*pb.PublishEvents_Event
 	reports          []*pb.ReportTurn
 	calls            []*pb.SubmitCall
+	releases         []pb.ReleaseLease_Reason
+
+	// hints, when set, are sent on the Attach stream as they come.
+	hints chan *pb.WorkerEvent
 }
 
 // run serves the fake worker until it has reported a turn ENDED, then
@@ -98,6 +102,21 @@ func (f *fakeLink) serve(w http.ResponseWriter, r *http.Request) {
 			down.Payload = &pb.WorkerDownlink_WorkerEvent{WorkerEvent: &pb.WorkerEvent{
 				Event: &pb.WorkerEvent_Offer_{Offer: &pb.WorkerEvent_Offer{SessionId: linkSessionID}},
 			}}
+			if f.hints != nil {
+				rid := up.GetRequestId()
+				go func() {
+					for {
+						select {
+						case ev := <-f.hints:
+							if link.Send(ctx, &pb.WorkerDownlink{RequestId: rid, Payload: &pb.WorkerDownlink_WorkerEvent{WorkerEvent: ev}}) != nil {
+								return
+							}
+						case <-ctx.Done():
+							return
+						}
+					}
+				}()
+			}
 		case up.GetResumeLeases() != nil:
 			down.Payload = sessionReply(&pb.SessionReply{Result: &pb.SessionReply_Resumed_{Resumed: &pb.SessionReply_Resumed{}}})
 		case up.GetSession() != nil:
@@ -154,6 +173,8 @@ func (f *fakeLink) session(req *pb.SessionRequest) *pb.SessionReply {
 			f.published = seq
 			f.events = append(f.events, op.PublishEvents.GetEvents()...)
 		}
+	case *pb.SessionRequest_ReleaseLease:
+		f.releases = append(f.releases, op.ReleaseLease.GetReason())
 	case *pb.SessionRequest_GetState:
 		return &pb.SessionReply{Result: &pb.SessionReply_State{State: &pb.SessionReply_SessionStateReply{State: &pb.SessionState{}}}}
 	}

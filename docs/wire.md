@@ -1127,7 +1127,7 @@ the ID lives only on the worker envelope.
 | `SubmitCall{device, call, session_epoch, tool_use_id}` | Submit a `DeviceCall` to the user's device named `device` (1-128 bytes). `call.call_id` and `call.session_id`: 1-128 bytes of `[A-Za-z0-9_-]`; `agent_id`: empty or the same grammar; exactly one tool. | A stream of `CallUpdate`s: zero or more nonterminal updates, then one terminal update (unless the link closes or the operation is unwatched first). | At its terminal update, or at Unwatch. |
 | `CallQuery{call_id}` | Read the call's current state. | Exactly one `CallUpdate` (may be nonterminal, e.g. `unknown`, or `rejected NOT_FOUND`). | At that reply (or Unwatch). |
 | `CancelCall{call_id}` | Cancel before dispatch; after dispatch record the intent (the daemon's result wins). The intent is recorded in receive order, so it cannot overtake an earlier Submit of the same call. | Exactly one `CallUpdate`: the call's state read after the intent was recorded (the call may have finished in between). `cancelled`: cancelled before dispatch. `dispatched` or `unknown`: intent recorded, the daemon's result decides. A terminal outcome (`result`, `lost`, ...): the call had already finished; `unknown` with reason `DEVICE_OFFLINE` when it finished but its result cannot be read now. `rejected NOT_FOUND`: no such call for this user; `rejected INVALID`: invalid id. | At that reply (or Unwatch). The intent stays recorded either way. |
-| `Attach` | Advertise 1..64 session capacity, SDK/CLI/account/check metadata and `local_only`; at most once per connection, even after Unwatch. `local_only`: this connection runs only local-mode sessions pinned to its worker (Scheduling below). | WorkerEvent stream: Offer, Nudge, LeaseRevoked, starting with every Offer still pending for this worker. Hints are level-triggered, may repeat or coalesce, and carry no authoritative state. Account is recorded only. | Unwatch or disconnect. |
+| `Attach` | Advertise 1..64 session capacity, SDK/CLI/account/check metadata and `local_only`; at most once per connection, even after Unwatch. `local_only`: this connection runs only local-mode sessions pinned to its worker (Scheduling below). | WorkerEvent stream: Offer, Nudge, LeaseRevoked, ReleaseIdle, starting with every Offer still pending for this worker. Hints are level-triggered, may repeat or coalesce, and carry no authoritative state. Account is recorded only. | Unwatch or disconnect. |
 | `SessionRequest{session_id, epoch, op}` | One of the session operations below; Data with key `session/<session_id>`. | Exactly one SessionReply, success, Fenced or Rejected. | At that reply (or Unwatch). |
 | `ResumeLeases{leases}` | Reattach up to 64 (session_id, epoch) leases on the same worker boot before expiry, rebinding each to this connection. | One SessionReply.resumed, one outcome per requested lease, with retained epoch (and `stopped`) on success or current epoch when fenced. | At that reply (or Unwatch). |
 | `ListDevices{}` | List the user's devices. | One SessionReply.devices, at most 256 devices with name, online, os, arch, hostname, last_seen_unix_ms. | At that reply (or Unwatch). |
@@ -1265,7 +1265,20 @@ them on the user-side API.
   again in its transaction (`PROVIDER_UNAVAILABLE`, `PROVIDER_FULL`); the
   lease records the provider and counts until it ends. A session that
   cannot be leased stays QUEUED with a `queue_reason`, announced by
-  ephemeral `KIND_QUEUE` events (`{"queue_reason":"<name>"}`). Like
+  ephemeral `KIND_QUEUE` events (`{"queue_reason":"<name>"}`). While
+  sessions wait as `PROVIDER_FULL`, the control plane asks holders of the
+  provider's idle leases to give them back (`WorkerEvent.ReleaseIdle`),
+  one per waiting session that a live connection of a worker it may run
+  on (its pin and local mode honoured, the worker assigned) could take,
+  beyond the requests still outstanding (30 seconds; a request queued on
+  a connection that closes or detaches no longer counts), least recent activity first, only for a lease bound to the
+  holder's live connection with no Nudge reason pending. Idle there means
+  state IDLE, no input pending or taken, no pending approval, no ended
+  job whose notice is not yet persisted, no background task recorded at
+  the lease's epoch and no ledger merge or discard still to apply. It asks
+  when a session is found waiting, when a held session's turn or
+  background task ends, and on every fallback pass while one waits; a
+  turn's start voids the request outstanding for its lease. Like
   `worker_disconnected_at_unix_ms` and its `KIND_WORKER` events
   (**Disconnected holder** under "Fencing and leases"), it is kept in
   memory and filled on every
@@ -1475,6 +1488,8 @@ reason withdraws an Offer the session no longer needs.
 | Nudge INTERRUPT | Interrupt the current turn only if its `turn_no` ≤ `Nudge.interrupt_turn_no`. If STARTED has not been answered yet, wait for its `turn_no`, then compare. |
 | Nudge STOP | Stopping is permanent, so the hint suffices: flush, close the query, ReleaseLease with `REASON_STOPPED`. |
 | LeaseRevoked for the held epoch | The fencing procedure above. |
+| ReleaseIdle for the held epoch | If the session is idle (no turn running or starting, no turn end being reported, no input being taken or pushed and not yet answered, no background task running or ended and not yet told to the model, in the CLI or only in the worker's notes, no transcript repair, no transcript append unacknowledged), release exactly as the idle timer does: end the CLI's input and let it exit by itself (closed after a grace; meanwhile no turn starts and every tool use is denied), confirm its exit, store what it wrote as it exited (within the same grace), flush, ReleaseLease with `REASON_IDLE`. A session busy only for a moment (a turn end being reported, an append in flight) is released once that is over, unless a turn starts first or 30 seconds pass. Otherwise keep it: no answer. A Nudge for the session queued before the request is consumed drops it. |
+| ReleaseIdle for another epoch, a session being acquired or released, or one not held | Ignore it. |
 
 **Interrupt is a level keyed to a turn.** `Interrupt` raises the session's
 `interrupt_turn_no` to the running turn's `turn_no`; with no running turn it
@@ -1930,7 +1945,14 @@ ENDED returns to IDLE (or QUEUED when work remains without a lease). Lease
 loss during a turn records INTERRUPTED, emits TURN_INTERRUPTED and returns
 to IDLE/QUEUED. Idle CLI subagents prevent idle release; otherwise release
 after five idle minutes with no pending pushes (subagents may hold at most
-two hours).
+two hours), or at once on a ReleaseIdle when idle (running subagents keep
+the lease then). Either idle release, when the CLI holds nothing to run
+(no input pushed and unanswered, no background task or undelivered task
+notice), ends the CLI's input and lets it exit by itself, bounded by a
+grace, so what it writes after its last result (`last-prompt`,
+`cost-state`) is stored before the lease is given back; no turn starts
+and every tool use is denied meanwhile. A stop, an error or a worker
+shutdown closes the CLI at once.
 
 #### Rejections and field caps
 
