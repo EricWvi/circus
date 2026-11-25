@@ -15,9 +15,20 @@ import { cn } from "@/lib/utils"
  * its base. Decision files are written by agents: everything here is plain
  * text, never Markdown or HTML.
  */
-export function LedgerDiff({ sessionId, path, label }: { sessionId: string; path: string; label: string }) {
+export function LedgerDiff({
+  sessionId,
+  path,
+  version,
+  label,
+}: {
+  sessionId: string
+  path: string
+  /** The snapshot's version the row comes from (its `updatedAtUnixMs`). */
+  version: number
+  label: string
+}) {
   const { t } = useTranslation()
-  const diff = useSessionLedgerDiff(sessionId, path)
+  const diff = useSessionLedgerDiff(sessionId, path, version)
   // The file is no longer changed: its row goes with the next read of the changes.
   if (isApiError(diff.error, "not_found")) return null
   if (diff.isError) return <p className="px-3 py-2 text-xs text-destructive">{t("sessionLedger.diffLoadFailed")}</p>

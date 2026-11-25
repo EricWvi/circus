@@ -63,6 +63,7 @@ describe("the Connect session client", () => {
       createdAtUnixMs: 1_000,
       device: "box",
       cwd: "/src",
+      permissionMode: "auto",
       providerId: "",
       queueReason: "unspecified",
       workerDisconnectedAtUnixMs: 0,
@@ -226,6 +227,22 @@ describe("the Connect session client", () => {
     const session = await client.updateSession({ sessionId: "s1", providerId: "" })
     expect(updates).toEqual([{ title: undefined, providerId: "" }])
     expect(session.providerId).toBe("")
+  })
+
+  it("sends the permission mode in the config, and reads a session's mode (auto when none)", async () => {
+    const modes: (string | undefined)[] = []
+    const client = sessions({
+      createSession: (req) => {
+        modes.push(req.config?.permissionMode)
+        return {
+          session: { ...protoSession, config: { defaultDevice: "box", cwds: [], permissionMode: req.config?.permissionMode ?? "" } },
+        }
+      },
+    })
+    expect((await client.createSession({ projectId: "p1", locationIndex: 0, clientRequestId: "k1" })).permissionMode).toBe("auto")
+    const plan = await client.createSession({ projectId: "p1", locationIndex: 0, clientRequestId: "k2", permissionMode: "plan" })
+    expect(plan.permissionMode).toBe("plan")
+    expect(modes).toEqual([undefined, "plan"])
   })
 
   it("follows list pages to the end", async () => {

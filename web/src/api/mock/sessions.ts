@@ -17,6 +17,7 @@ import type {
   SessionService,
   SessionSummary,
 } from "@/api/types"
+import { sessionPermissionMode } from "@/lib/permission-mode"
 import { viewState, type ServerSessionState, type TurnOutcome } from "@/lib/session-state"
 import { titleFromMessage } from "@/lib/title"
 import type { SeedSession } from "@/mock/data"
@@ -49,11 +50,13 @@ export interface MockSession {
   queue: { inputId: string; text: string; approval: boolean }[]
   turns: number
   /** The request that created the session, for retries of it; forgotten with the session. */
-  created?: { clientRequestId: string; locationIndex: number; providerId?: string }
+  created?: { clientRequestId: string; locationIndex: number; providerId?: string; permissionMode: string }
   /** Created in a default location: its folder, which holds turns until ready. */
   workspace?: MockWorkspace
   /** The model provider's id; empty or missing for local login. */
   providerId?: string
+  /** The permission mode the session was created with; empty or missing for the default. */
+  permissionMode?: string
   /** Why the session waits; missing or `unspecified` when it doesn't. */
   queueReason?: QueueReason
   /**
@@ -245,6 +248,23 @@ const result = (
   stop_reason: aborted === "aborted_tools" ? "tool_use" : failure ? null : "end_turn",
   ...(failure ? { errors: [failure] } : { ...firstRequest, result: text, terminal_reason: "completed" }),
   ...(aborted ? { terminal_reason: aborted } : {}),
+})
+/**
+ * Claude Code's synthetic reply when the API rejects the request (here a
+ * rejected key): an assistant message of its own, and a result that is an
+ * error while its subtype says success.
+ */
+const AUTH_FAILURE =
+  'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'
+const syntheticMessage = (text: string, userMessageId?: string) => {
+  const message = assistantMessage(`msg_${nanoid()}`, textBlock(text), false, userMessageId)
+  return { ...message, message: { ...message.message, model: "<synthetic>" }, error: "authentication_failed" }
+}
+const failedResult = (text: string, userMessageId: string | undefined) => ({
+  ...result(text, userMessageId),
+  is_error: true,
+  api_error_status: 401,
+  terminal_reason: "api_error",
 })
 const abortFailure = (reason: "aborted_streaming" | "aborted_tools") =>
   `[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=${reason === "aborted_tools" ? "tool_use" : "null"}`
@@ -446,7 +466,12 @@ export function summaryOf(s: MockSession): SessionSummary {
   }
 }
 
-export const detailsOf = (s: MockSession): SessionDetails => ({ ...summaryOf(s), device: s.device, cwd: s.cwd })
+export const detailsOf = (s: MockSession): SessionDetails => ({
+  ...summaryOf(s),
+  device: s.device,
+  cwd: s.cwd,
+  permissionMode: sessionPermissionMode(s.permissionMode ?? ""),
+})
 
 /** What the session service needs from the rest of the mock backend. */
 export interface MockSessionHost {
@@ -639,6 +664,17 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
         ...toolSteps(s, current, command, "branch 'fix' set up to track 'origin/fix'.", true),
         ...streamSteps(s, current, "Pushed. The branch is on the remote now."),
         finish("Pushed."),
+      ]
+    } else if (input.text.includes("401")) {
+      steps = [
+        start,
+        () => {
+          r.durable("assistant", syntheticMessage(AUTH_FAILURE, input.inputId))
+          r.durable("result", failedResult(AUTH_FAILURE, input.inputId))
+          s.state = "idle"
+          s.lastTurnOutcome = "error"
+          host.turnEnded?.(s, input.text)
+        },
       ]
     } else if (/approve/i.test(input.text)) {
       const command = "git push -u origin HEAD"

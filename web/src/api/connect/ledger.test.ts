@@ -9,6 +9,8 @@ import {
 } from "@circus/proto/circus/v1/ledger_pb"
 import { describe, expect, it } from "vitest"
 
+import { isLedgerBusy } from "@/api/errors"
+
 import { createConnectLedger } from "./ledger"
 
 function ledger(impl: Partial<ServiceImpl<typeof LedgerService>>) {
@@ -261,5 +263,54 @@ describe("ledger over Connect", () => {
     await expect(
       ledger({ mergeSessionLedger: () => ({}) }).mergeSessionLedger({ sessionId: "s1", expectedChangesetId: "c1" }),
     ).rejects.toMatchObject({ code: "internal" })
+  })
+})
+
+describe("the busy reply of a session ledger read", () => {
+  const refusing = (error: ConnectError) =>
+    ledger({
+      getSessionLedger: () => {
+        throw error
+      },
+    })
+  const refusal = (error: ConnectError) => refusing(error).getSessionLedger({ sessionId: "s1" }).catch((e: unknown) => e)
+
+  it("is a refusal marked LEDGER_BUSY, whatever its message, and no other", async () => {
+    // The message alone says nothing: protocol meaning is in the ErrorInfo.
+    expect(isLedgerBusy(await refusal(new ConnectError("ledger is busy", Code.ResourceExhausted)))).toBe(false)
+    const reason = new TextEncoder().encode("LEDGER_BUSY")
+    const marked = new ConnectError("slots taken", Code.ResourceExhausted)
+    marked.details.push({ type: "google.rpc.ErrorInfo", value: new Uint8Array([0x0a, reason.length, ...reason]) })
+    expect(await refusal(marked)).toMatchObject({ code: "resource_exhausted", reason: "LEDGER_BUSY" })
+    expect(isLedgerBusy(await refusal(marked))).toBe(true)
+    expect(isLedgerBusy(await refusal(new ConnectError("message too large", Code.ResourceExhausted)))).toBe(false)
+  })
+})
+
+describe("abandoning a session ledger read", () => {
+  it("passes the signal to the request, for the snapshot and for a diff", async () => {
+    const aborted: string[] = []
+    const hang = (name: string) => (_req: unknown, ctx: { signal: AbortSignal }) =>
+      new Promise<never>((_resolve, reject) => {
+        ctx.signal.addEventListener("abort", () => {
+          aborted.push(name)
+          reject(new ConnectError("abandoned", Code.Canceled))
+        })
+      })
+    const client = ledger({ getSessionLedger: hang("snapshot"), getSessionLedgerDiff: hang("diff") })
+    const snapshot = new AbortController()
+    const diff = new AbortController()
+    const reads = [
+      client.getSessionLedger({ sessionId: "s1" }, { signal: snapshot.signal }).catch((e: unknown) => e),
+      client.getSessionLedgerDiff({ sessionId: "s1", path: "D1-x.md" }, { signal: diff.signal }).catch((e: unknown) => e),
+    ]
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    snapshot.abort()
+    diff.abort()
+    expect(await Promise.all(reads)).toEqual([
+      expect.objectContaining({ code: "canceled" }),
+      expect.objectContaining({ code: "canceled" }),
+    ])
+    expect(aborted.sort()).toEqual(["diff", "snapshot"])
   })
 })

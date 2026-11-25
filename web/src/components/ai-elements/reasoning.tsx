@@ -76,10 +76,12 @@ export const Reasoning = memo(
       onChange: onOpenChange,
       prop: open,
     });
-    const [duration, setDuration] = useControllableState<number | undefined>({
-      defaultProp: undefined,
-      prop: durationProp,
-    });
+    // The duration measured here while it streamed, unless the caller knows
+    // it. Not a controllable state: callers pass it once it is known (after
+    // the stream, so undefined first), which would switch an uncontrolled
+    // state to a controlled one.
+    const [measured, setDuration] = useState<number | undefined>(undefined);
+    const duration = durationProp ?? measured;
 
     const hasEverStreamedRef = useRef(isStreaming);
     const [hasAutoClosed, setHasAutoClosed] = useState(false);

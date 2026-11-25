@@ -472,6 +472,114 @@ describe("recorded fake worker sessions", () => {
   })
 })
 
+describe("a live turn", () => {
+  it("streams thinking, text and tools without switching a component from uncontrolled to controlled", async () => {
+    const warnings: string[] = []
+    const record = (...args: unknown[]) => void warnings.push(args.map(String).join(" "))
+    const warn = vi.spyOn(console, "warn").mockImplementation(record)
+    const error = vi.spyOn(console, "error").mockImplementation(record)
+    try {
+      const stream = scriptedStream()
+      await renderSession("/p/circus/s/web-vite", { wrapClient: withSessions(() => ({ watchSession: stream.watchSession })) })
+      let seq = 1000
+      for (const scenario of ["think", "tool"] as const) {
+        for (const e of fakeWorkerEvents(scenario, Date.now())) {
+          act(() => stream.control.push(e.seq > 0 ? { ...e, seq: seq++ } : e))
+          await advance(30)
+        }
+      }
+      await advance(2_000)
+      expect(document.body.textContent).toContain("Thought for")
+    } finally {
+      warn.mockRestore()
+      error.mockRestore()
+    }
+    expect(warnings.filter((w) => /uncontrolled|controlled to/i.test(w))).toEqual([])
+  })
+})
+
+describe("a failed turn", () => {
+  it("marks the CLI's error and the turn's end as failed, says so in the header, and takes the next message", async () => {
+    await renderSession("/p/circus/s/web-vite")
+    expect(screen.getByText("Idle")).toBeTruthy()
+    await type("check the key: 401")
+    await advance(3_000)
+    const failed = document.querySelector<HTMLElement>("[data-failed]")!
+    expect(failed.textContent).toMatch(/^Failed to authenticate\. API Error: 401/)
+    expect(document.querySelector("[data-turn-error]")?.textContent).toBe("The turn ended with an error")
+    // The header's outcome and the stream agree: one line, not a second one from the header's side.
+    expect(document.querySelectorAll("[data-turn-error]")).toHaveLength(1)
+    expect(screen.getByText("Turn failed")).toBeTruthy()
+
+    await type("hello again")
+    await advance(10_000)
+    expect(screen.getByText("Idle")).toBeTruthy()
+    expect(document.querySelectorAll("[data-failed]")).toHaveLength(1)
+  })
+
+  it("ends the turn with a failure line when the server says it failed and the stream shows nothing of it", async () => {
+    // A worker-side abort the server counts as an error: its RESULT reads as aborted.
+    await renderRecorded("interrupt", {
+      upTo: fakeWorkerEvents("interrupt").findIndex((e) => e.kind === "turn_stopped"),
+      session: { serverState: "idle", state: "failed", turnCount: 1 },
+    })
+    expect(screen.getByText("Turn failed")).toBeTruthy()
+    expect([...document.querySelectorAll("[data-turn-error]")].map((e) => e.textContent)).toEqual([
+      "The turn ended with an error",
+    ])
+    cleanup()
+    // The server says the turn completed: no line.
+    await renderRecorded("interrupt", {
+      upTo: fakeWorkerEvents("interrupt").findIndex((e) => e.kind === "turn_stopped"),
+      session: { serverState: "idle", state: "idle", turnCount: 1 },
+    })
+    expect(document.querySelector("[data-turn-error]")).toBeNull()
+  })
+
+  it("says it in Chinese", async () => {
+    await renderSession("/p/circus/s/web-vite")
+    await type("401")
+    await advance(3_000)
+    await act(() => i18n.changeLanguage("zh-CN"))
+    expect(document.querySelector("[data-turn-error]")?.textContent).toBe("这一轮因错误而结束")
+    expect(screen.getByText("上一轮失败")).toBeTruthy()
+  })
+})
+
+describe("the session's permission mode", () => {
+  it("shows in the header, with what it means", async () => {
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions((mock) => ({
+        getSession: async (req) => ({ ...(await mock.getSession(req)), permissionMode: "acceptEdits" }),
+      })),
+    })
+    const mode = document.querySelector<HTMLElement>("[data-session-permission-mode]")!
+    expect(mode.dataset.sessionPermissionMode).toBe("acceptEdits")
+    expect(mode.querySelector("span[aria-hidden]")?.textContent).toBe("Start mode: Accept edits")
+    // It is the mode the session started in: Claude may leave it (after a plan is approved, say).
+    expect(mode.getAttribute("title")).toBe(
+      "Permission mode the session started with: Accept edits\n" +
+        "File edits in the working folder run without asking; commands come to you for approval.\n" +
+        "Claude can switch modes during the session, for example when you approve its plan; this shows the mode it started with.",
+    )
+    expect(mode.querySelector(".sr-only")?.textContent).toMatch(/^Permission mode the session started with: Accept edits File edits/)
+  })
+
+  it("shows auto for a session created without one, and a mode it doesn't know by its name", async () => {
+    await renderSession("/p/circus/s/web-vite")
+    expect(document.querySelector("[data-session-permission-mode]")?.textContent).toContain("Start mode: Auto")
+    cleanup()
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions((mock) => ({
+        getSession: async (req) => ({ ...(await mock.getSession(req)), permissionMode: "newMode" }),
+      })),
+    })
+    expect(document.querySelector("[data-session-permission-mode]")?.getAttribute("title")).toMatch(
+      /^Permission mode the session started with: newMode\nClaude can switch modes/,
+    )
+  })
+})
+
 describe("notes to Claude", () => {
   const label = "Told Claude: the previous turn was interrupted"
   const sent = /^The previous turn was interrupted before it finished: /
@@ -747,6 +855,19 @@ describe("a queued session", () => {
     expect(notice()?.getAttribute("data-queue-reason")).toBe(reason)
     expect(notice()?.textContent).toBe(text)
   })
+
+  it.each(["error", "interrupted"] as const)(
+    "says why it waits, not how its last turn ended (%s)",
+    async (outcome) => {
+      const state = seedState()
+      addQueueDemo(state)
+      state.sessions.find((s) => s.sessionId === "queue-deleted")!.lastTurnOutcome = outcome
+      await renderSession("/p/palace/s/queue-deleted", { state })
+      expect(screen.getByText("Queued")).toBeTruthy()
+      expect(notice()?.getAttribute("data-queue-reason")).toBe("provider_deleted")
+      expect(screen.getByRole("button", { name: "Change provider" })).toBeTruthy()
+    },
+  )
 
   it("offers another provider when its own was deleted, and goes on with it", async () => {
     const state = seedState()

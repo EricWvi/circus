@@ -28,6 +28,7 @@ import {
   validatePassword,
 } from "@/api/validation"
 
+import { sessionPermissionMode } from "@/lib/permission-mode"
 import { seedLedgers } from "@/mock/ledger"
 
 import { listMockDirectory, readMockGitRemote } from "./directories"
@@ -167,6 +168,11 @@ export function createMockBackend({
       return res === undefined ? res : structuredClone(res)
     }
   }
+
+  const getSessionLedger = call(({ sessionId }: { sessionId: string }) => sessionLedgerOf(ownSession(sessionId).ledger))
+  const getSessionLedgerDiff = call(({ sessionId, path }: { sessionId: string; path: string }) =>
+    sessionLedgerDiffOf(ownSession(sessionId).ledger, path),
+  )
 
   /** The signed-in user's id. */
   function currentUser(): string {
@@ -709,6 +715,11 @@ export function createMockBackend({
         if (typeof key !== "string" || key === "" || new TextEncoder().encode(key).length > 128) {
           throw invalid("client_request_id must be 1 to 128 bytes.", "client_request_id")
         }
+        // Kept as given, as the server keeps it; the worker refuses a mode it doesn't know.
+        const permissionMode = req.permissionMode ?? ""
+        if (new TextEncoder().encode(permissionMode).length > 128) {
+          throw invalid("permission mode is longer than 128 bytes", "config.permission_mode")
+        }
         // A retry returns the session the first request created, without
         // checking the location again; the same key for another request is
         // refused.
@@ -717,7 +728,9 @@ export function createMockBackend({
           const earlier = state.sessions.find((s) => s.projectId === req.projectId && s.created?.clientRequestId === key)
           if (
             earlier &&
-            (earlier.created!.locationIndex !== req.locationIndex || earlier.created!.providerId !== req.providerId)
+            (earlier.created!.locationIndex !== req.locationIndex ||
+              earlier.created!.providerId !== req.providerId ||
+              sessionPermissionMode(earlier.created!.permissionMode) !== sessionPermissionMode(permissionMode))
           ) {
             throw new ApiError("already_exists", "client_request_id was used for another request.", "client_request_id")
           }
@@ -767,9 +780,10 @@ export function createMockBackend({
           approvals: [],
           queue: [],
           turns: 0,
-          created: { clientRequestId: key, locationIndex: req.locationIndex, providerId: req.providerId },
+          created: { clientRequestId: key, locationIndex: req.locationIndex, providerId: req.providerId, permissionMode },
           ...(workspace ? { workspace } : {}),
           providerId,
+          permissionMode,
           ledger: readyLedger(sessionId, at),
         }
         state.sessions.push(session)
@@ -819,10 +833,9 @@ export function createMockBackend({
         (req: { projectId: string; number: number; pageSize?: number; pageToken?: string }) =>
           historyOf(mainLine(req.projectId), req.number, req.pageSize, req.pageToken),
       ),
-      getSessionLedger: call(({ sessionId }: { sessionId: string }) => sessionLedgerOf(ownSession(sessionId).ledger)),
-      getSessionLedgerDiff: call(({ sessionId, path }: { sessionId: string; path: string }) =>
-        sessionLedgerDiffOf(ownSession(sessionId).ledger, path),
-      ),
+      // The mock answers in a moment, so it ignores the abort signal (which can't be copied like the request).
+      getSessionLedger: (req: { sessionId: string }) => getSessionLedger(req),
+      getSessionLedgerDiff: (req: { sessionId: string; path: string }) => getSessionLedgerDiff(req),
       mergeSessionLedger: call(({ sessionId, expectedChangesetId }: { sessionId: string; expectedChangesetId: string }) => {
         const s = ownSession(sessionId)
         const commits = ledgers.get(s.projectId) ?? []

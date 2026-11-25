@@ -10,6 +10,7 @@ export type SessionState =
   | "queued"
   | "idle"
   | "interrupted"
+  | "failed"
   | "broken"
   | "stopped"
 
@@ -87,6 +88,8 @@ export interface AssistantTextEvent extends EventBase {
    * agent may not remember it.
    */
   unsaved?: boolean
+  /** The turn failed and this text is its error (the CLI's own, such as a rejected API key). */
+  failed?: boolean
 }
 
 export interface ReasoningEvent extends EventBase {
@@ -125,10 +128,16 @@ export interface TurnInterruptedEvent extends EventBase {
   kind: "turn_interrupted"
 }
 
-/** The turn ended with an error the worker reported. */
+/**
+ * The turn ended with an error: the worker reported one (KIND_ERROR), or
+ * the turn's RESULT says it failed.
+ */
 export interface TurnErrorEvent extends EventBase {
   kind: "turn_error"
-  /** The worker's own description; not translated. */
+  /**
+   * The worker's or the CLI's own description; not translated. Empty when
+   * there is none, or when the turn's failed text already says it.
+   */
   message: string
 }
 

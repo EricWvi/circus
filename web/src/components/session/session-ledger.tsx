@@ -341,6 +341,7 @@ function Changes({ ledger, sessionId, projectId }: { ledger: SessionLedger; sess
               warnings={ledger.warnings.filter((w) => w.path !== "" && (w.path === entry.path || w.path === entry.basePath))}
               sessionId={sessionId}
               projectId={projectId}
+              version={ledger.status?.updatedAtUnixMs ?? 0}
               expanded={expanded.has(entry.path)}
               onToggle={() => toggle(entry.path)}
             />
@@ -387,6 +388,7 @@ function EntryRow({
   warnings,
   sessionId,
   projectId,
+  version,
   expanded,
   onToggle,
 }: {
@@ -394,6 +396,8 @@ function EntryRow({
   warnings: LedgerProblem[]
   sessionId: string
   projectId: string
+  /** The snapshot's version (its `updatedAtUnixMs`). */
+  version: number
   expanded: boolean
   onToggle: () => void
 }) {
@@ -476,6 +480,7 @@ function EntryRow({
           <LedgerDiff
             sessionId={sessionId}
             path={entry.path}
+            version={version}
             label={t("sessionLedger.diffTable", { path: entry.path })}
           />
         </div>
@@ -502,9 +507,14 @@ function MergeFooter({
 }) {
   const { t } = useTranslation()
   const merge = useMergeSessionLedger()
-  const state = mergeState(ledger, { turnRunning, deviceOffline })
-  useForgetOnChange(merge, ledger.status?.updatedAtUnixMs ?? 0, fetching)
+  useForgetOnChange(merge, ledger, fetching)
   const result = merge.data
+  // Until the snapshot shows the merge, it still holds the merged changeset:
+  // nothing to merge (again) meanwhile.
+  const state =
+    result && ledger.changeset?.changesetId === result.changeset.changesetId
+      ? ({ kind: "none" } as const)
+      : mergeState(ledger, { turnRunning, deviceOffline })
   if (state.kind === "none" && !result && !merge.isError) return null
   return (
     <SheetFooter className="border-t" data-slot="ledger-merge">
@@ -573,21 +583,39 @@ function MergeFooter({
 }
 
 /**
- * Forgets a merge's answer (its numbers or its error) once the snapshot it
- * describes has changed: a new collection or changeset after it. The read
- * the merge itself causes is what the answer describes, so the snapshot's
- * version is taken once that read is in.
+ * Forgets a merge's answer once the snapshot has moved past it.
+ *
+ * Merged: once the snapshot holds another open changeset (new changes
+ * after the merge). Reads from before the merge still hold the merged
+ * changeset and reads after it none, so the answer stays whatever order
+ * the answer, the ledger event and the session's refresh come in.
+ *
+ * Refused: once the snapshot changed after the refusal. A refusal reads the
+ * changes again at once; that read is what the refusal describes, so the
+ * snapshot's version is taken once it is in.
  */
 function useForgetOnChange(
-  merge: { isSuccess: boolean; isError: boolean; reset: () => void },
-  version: number,
+  merge: {
+    isSuccess: boolean
+    isError: boolean
+    data?: { changeset: { changesetId: string } }
+    reset: () => void
+  },
+  ledger: SessionLedger,
   fetching: boolean,
 ) {
-  const { isSuccess, isError, reset } = merge
-  const settled = isSuccess || isError
+  const { isSuccess, isError, data, reset } = merge
+  const version = ledger.status?.updatedAtUnixMs ?? 0
+  const open = ledger.changeset?.changesetId
+  const merged = isSuccess ? data?.changeset.changesetId : undefined
   const seen = useRef<number | null>(null)
   useEffect(() => {
-    if (!settled) {
+    if (merged !== undefined) {
+      seen.current = null
+      if (open !== undefined && open !== merged) reset()
+      return
+    }
+    if (!isError) {
       seen.current = null
       return
     }
@@ -597,5 +625,5 @@ function useForgetOnChange(
       seen.current = null
       reset()
     }
-  }, [settled, fetching, version, reset])
+  }, [merged, open, isError, fetching, version, reset])
 }

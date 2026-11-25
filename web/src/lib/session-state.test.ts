@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest"
 
-import { approvalLapsed, APPROVAL_LIFETIME_MS, CLOCK_SKEW_MS, turnRunning, viewState } from "./session-state"
+import {
+  approvalLapsed,
+  APPROVAL_LIFETIME_MS,
+  CLOCK_SKEW_MS,
+  showsTurnFailure,
+  turnRunning,
+  viewState,
+} from "./session-state"
 
 describe("viewState", () => {
-  it("puts stopped and broken first, then approvals, running and a lost turn", () => {
+  it("puts stopped and broken first, then approvals, running and a lost or failed turn", () => {
     const s = (state: Parameters<typeof viewState>[0]["state"], extra = {}) =>
       viewState({ state, lastTurnOutcome: "completed", pendingApprovalCount: 0, ...extra })
     expect(s("stopped", { pendingApprovalCount: 2 })).toBe("stopped")
@@ -11,7 +18,32 @@ describe("viewState", () => {
     expect(s("running", { pendingApprovalCount: 1 })).toBe("awaiting_approval")
     expect(s("running")).toBe("running")
     expect(s("idle", { lastTurnOutcome: "interrupted" })).toBe("interrupted")
+    expect(s("idle", { lastTurnOutcome: "error" })).toBe("failed")
+    expect(s("running", { lastTurnOutcome: "error" })).toBe("running")
     expect(s("queued")).toBe("queued")
+  })
+
+  it("shows a queued session as queued, however its last turn ended", () => {
+    const s = (lastTurnOutcome: Parameters<typeof viewState>[0]["lastTurnOutcome"]) =>
+      viewState({ state: "queued", lastTurnOutcome, pendingApprovalCount: 0 })
+    expect(s("error")).toBe("queued")
+    expect(s("interrupted")).toBe("queued")
+    expect(s("stopped")).toBe("queued")
+  })
+})
+
+describe("showsTurnFailure", () => {
+  const stream = { lastSeq: 5, turnNo: 2, turnFailureShown: false }
+  const failed = { state: "failed" as const, turnCount: 2 }
+
+  it("adds a line only for the failed turn the stream has and shows nothing of", () => {
+    expect(showsTurnFailure(stream, failed, false)).toBe(true)
+    expect(showsTurnFailure({ ...stream, turnFailureShown: true }, failed, false)).toBe(false)
+    expect(showsTurnFailure(stream, { ...failed, state: "idle" }, false)).toBe(false)
+    expect(showsTurnFailure(stream, failed, true)).toBe(false)
+    // Another turn than the one the server counts, or no stream yet.
+    expect(showsTurnFailure({ ...stream, turnNo: 3 }, failed, false)).toBe(false)
+    expect(showsTurnFailure({ ...stream, lastSeq: 0 }, failed, false)).toBe(false)
   })
 })
 

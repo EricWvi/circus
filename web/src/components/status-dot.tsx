@@ -6,7 +6,8 @@ import type { SessionState } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 // The mono theme is greyscale, so states differ by shape, fill and motion.
-// Only "broken" uses a hue (the theme's destructive color).
+// Only "broken" and "failed" use a hue (the theme's destructive color):
+// broken fills it, a failed turn rings it.
 function Glyph({ state }: { state: SessionState }) {
   switch (state) {
     case "running":
@@ -32,6 +33,8 @@ function Glyph({ state }: { state: SessionState }) {
       return (
         <span className="size-2 rounded-full border border-muted-foreground bg-[linear-gradient(90deg,var(--color-muted-foreground)_50%,transparent_50%)]" />
       )
+    case "failed":
+      return <span className="size-2 rounded-full border-[1.5px] border-destructive" />
     case "broken":
       return <span className="size-2 rounded-full bg-destructive" />
     case "stopped":
@@ -70,7 +73,7 @@ export function StatusBadge({ state }: { state: SessionState }) {
     <span
       className={cn(
         "inline-flex h-6 shrink-0 items-center gap-1.5 border px-2 text-xs whitespace-nowrap",
-        state === "broken"
+        state === "broken" || state === "failed"
           ? "border-destructive/40 text-destructive"
           : "text-muted-foreground",
         state === "awaiting_approval" && "border-foreground text-foreground",

@@ -454,6 +454,24 @@ describe("sessions", () => {
     await expectCode(client.sessions.createSession({ ...req, clientRequestId: "" }), "invalid_argument")
   })
 
+  it("keeps the permission mode a session was created with, and refuses a retry with another", async () => {
+    const client = await signedIn()
+    const req = { projectId: "circus", locationIndex: 1, clientRequestId: crypto.randomUUID() }
+    const plain = await client.sessions.createSession(req)
+    expect(plain.permissionMode).toBe("auto")
+    // Empty and auto are the same request.
+    expect((await client.sessions.createSession({ ...req, permissionMode: "auto" })).sessionId).toBe(plain.sessionId)
+    await expectCode(client.sessions.createSession({ ...req, permissionMode: "plan" }), "already_exists")
+
+    const plan = await client.sessions.createSession({ ...req, clientRequestId: crypto.randomUUID(), permissionMode: "plan" })
+    expect(plan.permissionMode).toBe("plan")
+    expect((await client.sessions.getSession({ sessionId: plan.sessionId })).permissionMode).toBe("plan")
+    await expectCode(
+      client.sessions.createSession({ ...req, clientRequestId: crypto.randomUUID(), permissionMode: "x".repeat(129) }),
+      "invalid_argument",
+    )
+  })
+
 })
 
 it("does not share objects with the store", async () => {

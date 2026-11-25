@@ -185,7 +185,19 @@ describe("mock sessions", () => {
     await client.sessions.recoverSession({ sessionId: "libvips" })
     const t = view(await watchUntil(client, "libvips", has("transcript_gap_accepted")))
     expect(t.events.at(-1)?.kind).toBe("history_gap")
-    expect((await client.sessions.getSession({ sessionId: "libvips" })).state).toBe("idle")
+    // No longer broken; its last turn still ended with an error, as the server keeps it.
+    expect((await client.sessions.getSession({ sessionId: "libvips" })).state).toBe("failed")
+  })
+
+  it("fails a turn as Claude Code does when the provider rejects the key", async () => {
+    const { client } = mock()
+    await client.sessions.sendMessage({ sessionId: "web-vite", clientMsgId: "k", text: "try 401" })
+    const t = view(await watchUntil(client, "web-vite", has("result", 2)))
+    expect(t.events.slice(-2)).toEqual([
+      expect.objectContaining({ kind: "assistant_text", failed: true, text: expect.stringMatching(/^Failed to authenticate\. API Error: 401/) }),
+      expect.objectContaining({ kind: "turn_error", message: "" }),
+    ])
+    expect((await client.sessions.getSession({ sessionId: "web-vite" })).state).toBe("failed")
   })
 
   it("hides sessions of other users' projects", async () => {

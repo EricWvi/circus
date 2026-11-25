@@ -7,9 +7,10 @@ const urgency: Record<SessionState, number> = {
   broken: 1,
   running: 2,
   queued: 3,
-  interrupted: 4,
-  idle: 5,
-  stopped: 6,
+  failed: 4,
+  interrupted: 5,
+  idle: 6,
+  stopped: 7,
 }
 
 /** Sessions that appear in the sidebar tree; stopped ones live on the project page. */

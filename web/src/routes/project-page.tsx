@@ -11,6 +11,7 @@ import type { Device, Location, Project, ProjectLocation, SessionSummary } from 
 import { InfoTip } from "@/components/info-tip"
 import { NewSessionProviderPicker } from "@/components/model-providers/provider-picker"
 import { PageHeader } from "@/components/page-header"
+import { NewSessionPermissionPicker } from "@/components/session/permission-mode"
 import { SessionPrompt } from "@/components/session/session-prompt"
 import { StatusDot, WorkspaceMark } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
@@ -25,6 +26,7 @@ import {
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { i18n } from "@/i18n/i18n"
 import { locationDirectory, pickLocation, projectErrorMessage } from "@/lib/location-form"
+import { DEFAULT_PERMISSION_MODE, type PermissionMode } from "@/lib/permission-mode"
 import { choiceIsLocalLogin, DEFAULT_CHOICE, LOCAL_LOGIN, requestedProvider } from "@/lib/provider-choice"
 import { queueReasonText } from "@/lib/queue-reason"
 import { formatRelative } from "@/lib/time"
@@ -61,6 +63,7 @@ function ProjectHome({ project }: { project: Project }) {
   // (the request then names none, and the server applies the defaults). A
   // picked provider that is gone since counts as not picked.
   const [pickedProvider, setPickedProvider] = useState<string | null>(null)
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>(DEFAULT_PERMISSION_MODE)
   const providerChoice =
     pickedProvider === null ||
     pickedProvider === DEFAULT_CHOICE ||
@@ -106,8 +109,9 @@ function ProjectHome({ project }: { project: Project }) {
       const session = await createSession.mutateAsync({
         projectId: project.projectId,
         locationIndex,
-        clientRequestId: startKey(project.projectId, locationIndex, location, providerId),
+        clientRequestId: startKey(project.projectId, locationIndex, location, providerId, permissionMode),
         ...(providerId === undefined ? {} : { providerId }),
+        permissionMode,
       })
       forgetStartKey(project.projectId)
       // Once the session exists, the message belongs to it: its page shows
@@ -200,6 +204,7 @@ function ProjectHome({ project }: { project: Project }) {
                       onChange={setPickedProvider}
                     />
                   )}
+                  <NewSessionPermissionPicker value={permissionMode} disabled={starting} onChange={setPermissionMode} />
                 </div>
                 {providers.data && choiceIsLocalLogin(providerChoice, project, providers.data) && (
                   <p className="px-2 text-xs text-muted-foreground">{t("providers.select.localLoginHint")}</p>

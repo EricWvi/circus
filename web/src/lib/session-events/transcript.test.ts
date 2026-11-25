@@ -180,6 +180,23 @@ describe("turns that end early", () => {
     expect(ofKind(t, "turn_error")).toEqual([expect.objectContaining({ message: "scripted worker error" })])
   })
 
+  it("shows a worker error once, though the turn's RESULT is an error too", () => {
+    const t = run(raw("error"))
+    expect(kinds(t)).toEqual(["user_message", "turn_error"])
+  })
+
+  it.each(["interrupt", "interrupt_tool"] as const)(
+    "never shows a user-stopped turn as failed, not even before its stop arrives (%s)",
+    (scenario) => {
+      const events = raw(scenario)
+      const stop = events.findIndex((e) => e.kind === "turn_stopped")
+      const beforeStop = run(events.slice(0, stop))
+      expect(ofKind(beforeStop, "turn_error")).toEqual([])
+      expect(beforeStop.turnFailureShown).toBe(false)
+      expect(ofKind(run(events), "turn_error")).toEqual([])
+    },
+  )
+
   it("shows a broken turn's error, the accepted gap, and the message that waited", () => {
     const t = run(raw("broken"))
     expect(kinds(t)).toEqual([
@@ -814,5 +831,145 @@ describe("ledger events", () => {
       { kind: "ledger", id: "ledger:3", at: expect.any(String), change: "merged", numbers: [7] },
     ])
     expect(t.lastSeq).toBe(3)
+  })
+})
+
+describe("a turn that fails", () => {
+  const AUTH = 'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error"}}'
+  const at = (seq: number, kind: SessionEventKind, payload: object): RawSessionEvent => ({
+    seq,
+    tsUnixMs: 1_700_000_000_000 + seq,
+    kind,
+    payloadJson: JSON.stringify(payload),
+    ephemeral: false,
+    truncated: false,
+  })
+  const start = [
+    at(1, "input_accepted", { input_id: "in-1", client_msg_id: "c-1", priority: "normal", text: "hi" }),
+    at(2, "turn_started", { turn_no: "1", origin: "input" }),
+    at(3, "user", { type: "user", uuid: "in-1", message: { role: "user", content: "hi" } }),
+  ]
+  const synthetic = (seq: number, text: string) =>
+    at(seq, "assistant", {
+      type: "assistant",
+      uuid: `a-${seq}`,
+      message: { id: `msg_${seq}`, role: "assistant", model: "<synthetic>", content: [{ type: "text", text }] },
+      error: "authentication_failed",
+    })
+  const result = (seq: number, payload: object) => at(seq, "result", { type: "result", ...payload })
+
+  it("marks the CLI's error text as failed and ends the turn with a failure line", () => {
+    const t = run([...start, synthetic(4, AUTH), result(5, { subtype: "success", is_error: true, result: AUTH })])
+    expect(kinds(t)).toEqual(["user_message", "assistant_text", "turn_error"])
+    expect(t.events[1]).toMatchObject({ text: AUTH, failed: true })
+    // The text already says what went wrong.
+    expect(t.events[2]).toMatchObject({ kind: "turn_error", message: "" })
+    expect(t.turnOpen).toBe(false)
+  })
+
+  it("leaves earlier text of a failed turn as it is and names the errors", () => {
+    const t = run([
+      ...start,
+      synthetic(4, "Looking at it."),
+      result(5, { subtype: "error_max_turns", is_error: true, errors: ["Reached the maximum number of turns"] }),
+    ])
+    expect(t.events[1]).not.toHaveProperty("failed")
+    expect(ofKind(t, "turn_error")).toEqual([expect.objectContaining({ message: "Reached the maximum number of turns" })])
+  })
+
+  it("shows the RESULT's text when no assistant text said it", () => {
+    const t = run([...start, result(4, { subtype: "success", is_error: true, result: AUTH })])
+    expect(kinds(t)).toEqual(["user_message", "turn_error"])
+    expect(t.events[1]).toMatchObject({ message: AUTH })
+  })
+
+  it("leaves a successful turn without a failure", () => {
+    const t = run([...start, synthetic(4, "Done."), result(5, { subtype: "success", is_error: false, result: "Done." })])
+    expect(kinds(t)).toEqual(["user_message", "assistant_text"])
+    expect(t.events[1]).not.toHaveProperty("failed")
+  })
+
+  it("unmarks the text when an interruption is recorded after the RESULT", () => {
+    const failed = run([...start, synthetic(4, AUTH), result(5, { subtype: "success", is_error: true, result: AUTH })])
+    const t = run([at(6, "turn_interrupted", { turn_no: "1", outcome: "interrupted" })], failed)
+    expect(kinds(t)).toEqual(["user_message", "assistant_text", "turn_interrupted"])
+    expect(t.events[1]).not.toMatchObject({ failed: true })
+  })
+
+  it("never shows the CLI's internal diagnostics as the failure", () => {
+    const t = run([
+      ...start,
+      result(4, {
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"],
+      }),
+    ])
+    expect(ofKind(t, "turn_error")).toEqual([expect.objectContaining({ message: "" })])
+  })
+
+  it("isn't failed for an aborted turn, whatever the RESULT says", () => {
+    const t = run([
+      ...start,
+      result(4, { subtype: "error_during_execution", is_error: true, terminal_reason: "aborted_streaming", errors: ["x"] }),
+    ])
+    expect(kinds(t)).toEqual(["user_message"])
+    expect(t.turnFailureShown).toBe(false)
+  })
+
+  it("marks nothing for a RESULT that isn't recorded", () => {
+    const live = { ...result(4, { subtype: "success", is_error: true, result: AUTH }), seq: 0, ephemeral: true }
+    const t = run([...start, synthetic(4, AUTH), live])
+    expect(kinds(t)).toEqual(["user_message", "assistant_text"])
+    expect(t.events[1]).not.toHaveProperty("failed")
+    expect(t.turnFailureShown).toBe(false)
+  })
+
+  it("keeps a failure when a later turn's stop or interruption arrives without that turn's start", () => {
+    const failed = run([...start, synthetic(4, AUTH), result(5, { subtype: "success", is_error: true, result: AUTH })])
+    expect(failed.turnFailureShown).toBe(true)
+    const t = run([at(6, "turn_interrupted", { turn_no: "2", outcome: "interrupted" })], failed)
+    expect(kinds(t)).toEqual(["user_message", "assistant_text", "turn_error", "turn_interrupted"])
+    expect(t.events[1]).toMatchObject({ failed: true })
+  })
+
+  it("adds the RESULT's own line beside an unrelated ERROR, and none beside one that said the same", () => {
+    const unrelated = run([
+      ...start,
+      at(4, "error", { message: "Asking for approval of Bash failed: timeout" }),
+      result(5, { subtype: "error_max_turns", is_error: true, errors: ["Reached the maximum number of turns"] }),
+    ])
+    expect(ofKind(unrelated, "turn_error").map((e) => e.message)).toEqual([
+      "Asking for approval of Bash failed: timeout",
+      "Reached the maximum number of turns",
+    ])
+    const same = run([
+      ...start,
+      at(4, "error", { message: "boom" }),
+      result(5, { subtype: "error_during_execution", is_error: true, errors: ["boom"] }),
+    ])
+    expect(ofKind(same, "turn_error").map((e) => e.message)).toEqual(["boom"])
+  })
+
+  it("counts an ERROR too large to keep as shown, without a second, empty line", () => {
+    const tooLarge: RawSessionEvent = { ...at(4, "error", {}), payloadJson: "", truncated: true }
+    const t = run([...start, tooLarge, result(5, { subtype: "error_during_execution", is_error: true })])
+    expect(kinds(t)).toEqual(["user_message", "truncated"])
+    expect(t.turnFailureShown).toBe(true)
+  })
+
+  it("forgets the failure when the next turn starts", () => {
+    const failed = run([...start, synthetic(4, AUTH), result(5, { subtype: "success", is_error: true, result: AUTH })])
+    const t = run(
+      [
+        at(6, "input_accepted", { input_id: "in-2", client_msg_id: "c-2", priority: "normal", text: "again" }),
+        at(7, "turn_started", { turn_no: "2", origin: "input" }),
+        at(8, "turn_stopped", { turn_no: "2", outcome: "stopped" }),
+      ],
+      failed,
+    )
+    // The stop belongs to the next turn: the first one stays failed.
+    expect(kinds(t)).toEqual(["user_message", "assistant_text", "turn_error", "user_message", "turn_stopped"])
+    expect(t.events[1]).toMatchObject({ failed: true })
   })
 })

@@ -439,6 +439,12 @@ export interface SessionDetails extends SessionSummary {
   /** The main thread's working directory on that device. */
   cwd: string
   /**
+   * The Claude Code permission mode the session runs in (`auto` when the
+   * server keeps none). Usually one of `PERMISSION_MODES`; a mode this
+   * client doesn't know is kept as the server names it.
+   */
+  permissionMode: string
+  /**
    * Client only: when the request that read this session was sent (this
    * browser's clock). A live value the stream announced at or after it is
    * newer than the read's; one announced before it is in the read already
@@ -518,6 +524,8 @@ export interface CreateSessionRequest {
    * login. "" chooses local login; otherwise one of the user's providers.
    */
   providerId?: string
+  /** The Claude Code permission mode, at most 128 bytes; missing or empty selects `auto`. */
+  permissionMode?: string
 }
 
 export interface SessionService {
@@ -881,10 +889,13 @@ export interface LedgerService {
     pageSize?: number
     pageToken?: string
   }): Promise<{ versions: DecisionVersion[]; nextPageToken: string }>
-  /** A session's ledger snapshot and its open changeset's changes. */
-  getSessionLedger(req: { sessionId: string }): Promise<SessionLedger>
+  /** A session's ledger snapshot and its open changeset's changes. `signal` abandons the request. */
+  getSessionLedger(req: { sessionId: string }, options?: { signal?: AbortSignal }): Promise<SessionLedger>
   /** One entry's file in the base and the changeset; `not_found` when the open changeset doesn't change it. */
-  getSessionLedgerDiff(req: { sessionId: string; path: string }): Promise<SessionLedgerDiff>
+  getSessionLedgerDiff(
+    req: { sessionId: string; path: string },
+    options?: { signal?: AbortSignal },
+  ): Promise<SessionLedgerDiff>
   /**
    * Merges the session's open changeset when it fast-forwards. Refused
    * with `failed_precondition` and a precondition type otherwise (see

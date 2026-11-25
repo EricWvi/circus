@@ -7,9 +7,11 @@ export type ServerSessionState = "unspecified" | "idle" | "queued" | "running" |
 export type TurnOutcome = "unspecified" | "completed" | "interrupted" | "error" | "stopped"
 
 /**
- * The state the UI shows for a session. Stopped and broken win; then a
- * pending approval, a running turn, and a last turn the worker lost
- * (interrupted, until something else runs).
+ * The state the UI shows for a session. Stopped and broken win; then what
+ * the session does now: a pending approval, a running turn, or waiting to
+ * run (queued, whose reason and actions matter more than how the last turn
+ * ended). Only an idle session shows how its last turn ended: lost by the
+ * worker (interrupted) or with an error (failed).
  */
 export function viewState(session: {
   state: ServerSessionState
@@ -24,8 +26,26 @@ export function viewState(session: {
   }
   if (session.pendingApprovalCount > 0) return "awaiting_approval"
   if (session.state === "running") return "running"
+  if (session.state === "queued") return "queued"
   if (session.lastTurnOutcome === "interrupted") return "interrupted"
-  return session.state === "queued" ? "queued" : "idle"
+  if (session.lastTurnOutcome === "error") return "failed"
+  return "idle"
+}
+
+/**
+ * Whether the session view adds a failure line of its own: the header says
+ * the last turn failed (the server's outcome, `failed`), the stream has
+ * that turn and nothing in it shows the failure (its RESULT was too large
+ * to keep, or a worker-side abort the server counts as an error). The
+ * header and the conversation then agree.
+ */
+export function showsTurnFailure(
+  stream: { lastSeq: number; turnNo: number; turnFailureShown: boolean },
+  session: { state: SessionState; turnCount: number },
+  running: boolean,
+): boolean {
+  if (running || session.state !== "failed" || stream.lastSeq === 0) return false
+  return stream.turnNo > 0 && stream.turnNo === session.turnCount && !stream.turnFailureShown
 }
 
 /** How long a pending approval request lasts on the server. */

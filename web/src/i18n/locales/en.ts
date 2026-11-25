@@ -154,6 +154,7 @@ export const en = {
     queued: "Queued",
     idle: "Idle",
     interrupted: "Interrupted",
+    failed: "Turn failed",
     broken: "Broken",
     stopped: "Stopped",
   },
@@ -507,6 +508,42 @@ export const en = {
       gone: "{{device}} is no longer one of your devices.",
     },
   },
+  permissionMode: {
+    label: "Permission mode",
+    choose: "Permission mode for the new session",
+    startMode: "Start mode: {{mode}}",
+    startModeLabel: "Permission mode the session started with: {{mode}}",
+    startModeNote:
+      "Claude can switch modes during the session, for example when you approve its plan; this shows the mode it started with.",
+    modes: {
+      auto: {
+        name: "Auto",
+        description: "A classifier lets safe tool calls run; the rest come to you for approval.",
+      },
+      default: {
+        name: "Default",
+        description: "Reading runs freely; file edits and commands come to you for approval.",
+      },
+      acceptEdits: {
+        name: "Accept edits",
+        description: "File edits in the working folder run without asking; commands come to you for approval.",
+      },
+      plan: {
+        name: "Plan",
+        description: "Claude looks around and proposes a plan first; what it wants to change or run comes to you for approval.",
+      },
+      dontAsk: {
+        name: "Don't ask",
+        description: "Only what your Claude Code settings allow runs; the rest comes to you for approval.",
+      },
+      bypassPermissions: {
+        name: "Bypass permissions",
+        description:
+          "Tool calls run without asking; only deny rules and hooks in your Claude Code settings still stop them. Use it only where nothing can do harm.",
+      },
+    },
+  },
+
   session: {
     onDevice: "on {{device}}",
     deviceOfflineMark: "{{device}} is offline",
@@ -563,6 +600,7 @@ export const en = {
       stateWithReason: "{{state}}: {{reason}}",
     },
     turnError: "The turn ended with an error: {{message}}",
+    turnFailed: "The turn ended with an error",
     truncated: "Too large to show here.",
     viewFull: "This session's history grew too large to keep in full: new messages and replies no longer show here.",
     actionError: {

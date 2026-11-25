@@ -33,7 +33,7 @@ import { StatusBadge, WorkspaceBadge } from "@/components/status-dot"
 import { lastInputWasKeyboard, lastInputWasTouch } from "@/lib/input-modality"
 import { currentQueueReason, fixedOnProvidersPage, queueReasonText } from "@/lib/queue-reason"
 import { withOutbox } from "@/lib/session-events/outbox"
-import { approvalLapsed, turnRunning } from "@/lib/session-state"
+import { approvalLapsed, showsTurnFailure, turnRunning } from "@/lib/session-state"
 import { sessionTitle } from "@/lib/title"
 import { projectPath } from "@/lib/tree"
 import { interruptedTurnInput, latestInterruptId } from "@/lib/turns"
@@ -43,10 +43,11 @@ import { currentWorkspace, workspaceBlocks, workspaceEventText } from "@/lib/wor
 import { useSessionWatch } from "@/state/use-session-watch"
 
 import { ConnectionBanner } from "./connection-banner"
-import { EventItem } from "./event-list"
+import { EventItem, TurnErrorRow } from "./event-list"
 import { SessionMenu } from "./session-menu"
 import { BrokenCard, DeviceOfflineNotice, GoneNotice, StoppedNotice, WorkerDisconnectedNotice } from "./session-notices"
 import { SessionPrompt } from "./session-prompt"
+import { SessionPermissionMode } from "./permission-mode"
 import { LedgerButton, SessionLedgerSheet } from "./session-ledger"
 import { WorkspaceBanner, WorkspaceComposerNote } from "./workspace-banner"
 
@@ -199,6 +200,7 @@ export function SessionView({ project, session }: { project: Project; session: S
               {t("session.onDevice", { device: session.device })}
               {deviceOffline && <OfflineMark device={session.device} />}
             </span>
+            <SessionPermissionMode mode={session.permissionMode} className="hidden px-1 md:flex" />
             <SessionProviderPicker
               className="max-w-44"
               providerId={session.providerId}
@@ -318,6 +320,7 @@ export function SessionView({ project, session }: { project: Project; session: S
               />
             ))
           )}
+          {showsTurnFailure(transcript, session, busy) && <TurnErrorRow message="" />}
           {showWorking && (
             <div className="text-sm">
               <Shimmer>{t("session.working")}</Shimmer>

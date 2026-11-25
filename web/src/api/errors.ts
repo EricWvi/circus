@@ -36,20 +36,31 @@ export class ApiError extends Error {
    * has one), such as "LEDGER_CHANGES".
    */
   readonly preconditionType?: string
+  /** The reason of a Connect error's google.rpc.ErrorInfo detail, such as "LEDGER_BUSY". */
+  readonly reason?: string
 
   constructor(
     code: ErrorCode,
     message: string,
     field?: string,
-    options?: ErrorOptions & { preconditionType?: string },
+    options?: ErrorOptions & { preconditionType?: string; reason?: string },
   ) {
     super(message, options)
     this.name = "ApiError"
     this.code = code
     this.field = field
     if (options?.preconditionType) this.preconditionType = options.preconditionType
+    if (options?.reason) this.reason = options.reason
   }
 }
+
+/**
+ * The control plane's busy refusal of a Ledger request (ErrorInfo reason
+ * LEDGER_BUSY): every slot it may use is taken, try again shortly. Other
+ * `resource_exhausted` refusals aren't helped by a retry.
+ */
+export const isLedgerBusy = (error: unknown): error is ApiError =>
+  isApiError(error, "resource_exhausted") && error.reason === "LEDGER_BUSY"
 
 export function isApiError(error: unknown, code?: ErrorCode): error is ApiError {
   return error instanceof ApiError && (code === undefined || error.code === code)

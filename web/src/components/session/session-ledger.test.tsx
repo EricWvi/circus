@@ -425,6 +425,156 @@ describe("merging", () => {
   })
 })
 
+describe("reading the changes one at a time", () => {
+  /**
+   * The server's single slot per user for session ledger reads: a read
+   * while another is under way is refused as busy.
+   */
+  const oneSlot = (log: { busy: number; snapshots: number; diffs: number }) =>
+    patch({
+      ledger: (mock) => {
+        let inFlight = 0
+        const guard =
+          <A, R>(count: () => void, read: (req: A) => Promise<R>) =>
+          async (req: A) => {
+            if (inFlight > 0) {
+              log.busy++
+              throw new ApiError("resource_exhausted", "ledger is busy", undefined, { reason: "LEDGER_BUSY" })
+            }
+            inFlight++
+            count()
+            try {
+              return await read(req)
+            } finally {
+              inFlight--
+            }
+          }
+        return {
+          getSessionLedger: guard(() => log.snapshots++, mock.getSessionLedger),
+          getSessionLedgerDiff: guard(() => log.diffs++, mock.getSessionLedgerDiff),
+        }
+      },
+    })
+
+  it("merges with diffs open without a busy refusal, reading the changes once they changed", async () => {
+    const log = { busy: 0, snapshots: 0, diffs: 0 }
+    await renderSession("/p/circus/s/web-vite", { wrapClient: oneSlot(log) })
+    await openDrawer()
+    for (const r of rows()) fireEvent.click(within(r).getByRole("button", { name: /^Show the changes to / }))
+    await advance(200)
+    expect(rows().every((r) => r.querySelector('[data-slot="ledger-diff"]'))).toBe(true)
+    const before = { ...log }
+    expect(before.diffs).toBe(rows().length)
+
+    fireEvent.click(within(drawer()).getByRole("button", { name: "Merge Ledger changes" }))
+    await advance(500)
+    expect(within(drawer()).getByText("No Ledger changes in this session.")).toBeTruthy()
+    expect(log.busy).toBe(0)
+    // The merge's ledger event reads the changes; the diffs went with them.
+    expect(log.snapshots - before.snapshots).toBe(1)
+    expect(log.diffs).toBe(before.diffs)
+  })
+
+  it("waits out a busy refusal, showing the diff once a retry gets it", async () => {
+    let refusals = 1
+    await renderSession("/p/palace/s/palace-new", {
+      wrapClient: patch({
+        ledger: (mock) => ({
+          getSessionLedgerDiff: async (req) => {
+            if (refusals-- > 0) throw new ApiError("resource_exhausted", "ledger is busy", undefined, { reason: "LEDGER_BUSY" })
+            return mock.getSessionLedgerDiff(req)
+          },
+        }),
+      }),
+    })
+    await openDrawer()
+    const added = row("D?a")
+    fireEvent.click(within(added).getByRole("button", { name: /^Show the changes to / }))
+    await advance(50)
+    expect(added.textContent).not.toContain("Couldn't load the changes to this file.")
+    await advance(1_000)
+    expect(added.querySelector('[data-slot="ledger-diff"]')?.textContent).toContain("Health checks over HTTP")
+  })
+})
+
+describe("a diff and the snapshot's version", () => {
+  it("reads an open diff again for a new version of the snapshot, showing the old one until the new one is in", async () => {
+    let stream: ReturnType<typeof scripted> | undefined
+    let diffReads = 0
+    let holdDiff: Promise<void> | null = null
+    const { state } = await renderSession("/p/circus/s/web-vite", {
+      wrapClient: patch({
+        sessions: (mock) => {
+          stream = scripted(mock)
+          return { watchSession: stream.watchSession }
+        },
+        ledger: (mock) => ({
+          getSessionLedgerDiff: async (req) => {
+            diffReads++
+            if (holdDiff) await holdDiff
+            return mock.getSessionLedgerDiff(req)
+          },
+        }),
+      }),
+    })
+    await openDrawer()
+    const first = rows()[0]
+    fireEvent.click(within(first).getByRole("button", { name: /^Show the changes to / }))
+    await advance(100)
+    const diff = () => rows()[0].querySelector<HTMLElement>('[data-slot="ledger-diff"]')
+    expect(diff()?.textContent).not.toContain("A line the agent added later")
+    expect(diffReads).toBe(1)
+
+    // The agent changed the file; a collection gives the snapshot a new version.
+    const ledger = state.sessions.find((s) => s.sessionId === "web-vite")!.ledger!
+    const change = ledger.open!.changes[0]
+    change.content = `${change.content ?? ""}\nA line the agent added later\n`
+    ledger.status.updatedAtUnixMs += 1_000
+    let release = () => {}
+    holdDiff = new Promise<void>((resolve) => (release = resolve))
+    act(() =>
+      stream!.control.push({
+        seq: 0,
+        tsUnixMs: ledger.status.updatedAtUnixMs,
+        kind: "ledger",
+        payloadJson: '{"event":"collected","changeset_id":"cs-web-vite"}',
+        ephemeral: true,
+        truncated: false,
+      }),
+    )
+    await advance(100)
+    expect(diffReads).toBe(2)
+    // The old diff stays while the new one is read.
+    expect(diff()).not.toBeNull()
+    expect(diff()?.textContent).not.toContain("A line the agent added later")
+    holdDiff = null
+    act(() => release())
+    await advance(100)
+    expect(diff()?.textContent).toContain("A line the agent added later")
+    expect(diffReads).toBe(2)
+  })
+
+  it("shows a refusal other than busy as an error without retrying it", async () => {
+    let diffReads = 0
+    await renderSession("/p/palace/s/palace-new", {
+      wrapClient: patch({
+        ledger: () => ({
+          getSessionLedgerDiff: async () => {
+            diffReads++
+            throw new ApiError("resource_exhausted", "message too large")
+          },
+        }),
+      }),
+    })
+    await openDrawer()
+    const added = row("D?a")
+    fireEvent.click(within(added).getByRole("button", { name: /^Show the changes to / }))
+    await advance(100)
+    expect(added.textContent).toContain("Couldn't load the changes to this file.")
+    expect(diffReads).toBe(1)
+  })
+})
+
 describe("live updates", () => {
   it("reads the changes and the session again on a ledger event, live or recorded", async () => {
     let ledgerReads = 0
@@ -758,6 +908,89 @@ describe("merge messages and blocks", () => {
     )
     await advance(50)
     expect(within(drawer()).queryByRole("alert")).toBeNull()
+  })
+
+  it.each(["the answer first", "the ledger event first"] as const)(
+    "keeps the numbers of a merge whatever comes first (%s)",
+    async (order) => {
+      let stream: ReturnType<typeof scripted> | undefined
+      const mergedEvent = (seq: number): RawSessionEvent => ({
+        seq,
+        tsUnixMs: Date.now(),
+        kind: "ledger",
+        payloadJson: '{"event":"merged","changeset_id":"cs-web-vite","numbers":{"D?a":99}}',
+        ephemeral: false,
+        truncated: false,
+      })
+      await renderSession("/p/circus/s/web-vite", {
+        wrapClient: patch({
+          // The mock's own stream stays quiet after the history: the test sends the ledger event.
+          sessions: (mock) => {
+            stream = scripted(mock)
+            return { watchSession: stream.watchSession }
+          },
+          ledger: (mock) => ({
+            mergeSessionLedger: async (req) => {
+              const answer = await mock.mergeSessionLedger(req)
+              if (order === "the ledger event first") {
+                act(() => stream!.control.push(mergedEvent(1000)))
+                await new Promise((resolve) => setTimeout(resolve, 300))
+              }
+              return answer
+            },
+          }),
+        }),
+      })
+      await openDrawer()
+      fireEvent.click(within(drawer()).getByRole("button", { name: "Merge Ledger changes" }))
+      const merged = () => within(drawer()).queryByText(/^Merged\. New decisions:/)
+      await advance(order === "the ledger event first" ? 400 : 50)
+      expect(merged()).toBeTruthy()
+      // Not offered again while the snapshot read still shows the merged changes.
+      expect(within(drawer()).queryByRole("button", { name: "Merge Ledger changes" })).toBeNull()
+      if (order === "the answer first") {
+        await advance(300)
+        act(() => stream!.control.push(mergedEvent(1000)))
+      }
+      await advance(100)
+      expect(merged()).toBeTruthy()
+      // The session's poll and the follow-up reads change nothing about it.
+      await advance(5_100)
+      expect(merged()).toBeTruthy()
+      expect(within(drawer()).getByText("No Ledger changes in this session.")).toBeTruthy()
+    },
+  )
+
+  it("doesn't offer the merge again while the changes read still show the merged changeset", async () => {
+    // Once frozen, reads answer with the changes as they were before the merge.
+    let last: Awaited<ReturnType<LedgerService["getSessionLedger"]>> | undefined
+    let frozen = false
+    let reads = 0
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: patch({
+        // The stream stays quiet after the history, so no ledger event reads the changes.
+        sessions: (mock) => ({ watchSession: scripted(mock).watchSession }),
+        ledger: (mock) => ({
+          getSessionLedger: async (req) => {
+            reads++
+            if (!frozen || !last) last = await mock.getSessionLedger(req)
+            return last
+          },
+        }),
+      }),
+    })
+    await openDrawer()
+    const merge = () => within(drawer()).queryByRole("button", { name: "Merge Ledger changes" })
+    expect(merge()).toHaveProperty("disabled", false)
+    frozen = true
+    const before = reads
+    fireEvent.click(merge()!)
+    await advance(500)
+    // The session's newer version read the changes again, still as before the merge.
+    expect(reads).toBeGreaterThan(before)
+    expect(rows().length).toBeGreaterThan(0)
+    expect(within(drawer()).getByText(/^Merged\. New decisions:/)).toBeTruthy()
+    expect(merge()).toBeNull()
   })
 
   it("forgets the numbers of a merge once a new changeset opens", async () => {

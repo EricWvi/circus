@@ -18,7 +18,7 @@ import { i18n } from "@/i18n/i18n"
 import { localDeadline } from "@/lib/enroll"
 
 import { useClient } from "./context"
-import { isApiError } from "./errors"
+import { ApiError, isApiError, isLedgerBusy } from "./errors"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
 import type {
   CreateSessionRequest,
@@ -171,24 +171,94 @@ function useSessionAction<Req>(run: (req: Req) => Promise<void>, sessionIdOf: (r
 }
 
 /**
+ * How long this tab waits for one session ledger read before it gives up on
+ * it (`deadline_exceeded`), a little past the server's own 30 seconds, so a
+ * read that hangs (a stalled connection) can't hold the queue below.
+ */
+export const SESSION_LEDGER_READ_TIMEOUT_MS = 35_000
+
+/**
+ * The server runs one read of a session's ledger (the snapshot or a diff)
+ * per user at a time and refuses another meanwhile as busy. This tab sends
+ * them one after another. A read cancelled while it waits isn't sent; one
+ * cancelled or timed out while it runs is abandoned (its request aborted)
+ * and the next read goes at once.
+ */
+let sessionLedgerReads: Promise<unknown> = Promise.resolve()
+
+export function oneSessionLedgerRead<T>(
+  read: (signal: AbortSignal) => Promise<T>,
+  signal?: AbortSignal,
+  timeoutMs = SESSION_LEDGER_READ_TIMEOUT_MS,
+): Promise<T> {
+  const run = sessionLedgerReads.then(() => {
+    signal?.throwIfAborted()
+    const abort = new AbortController()
+    return new Promise<T>((resolve, reject) => {
+      const stop = (reason: unknown) => {
+        abort.abort(reason)
+        reject(reason)
+      }
+      const timer = setTimeout(
+        () => stop(new ApiError("deadline_exceeded", "The Ledger read took too long.")),
+        timeoutMs,
+      )
+      const onAbort = () => stop(signal?.reason)
+      signal?.addEventListener("abort", onAbort, { once: true })
+      read(abort.signal)
+        .then(resolve, reject)
+        .finally(() => {
+          clearTimeout(timer)
+          signal?.removeEventListener("abort", onAbort)
+        })
+    })
+  })
+  sessionLedgerReads = run.catch(() => {})
+  return run
+}
+
+/**
+ * Retries for session ledger reads. The server's busy reply is transient
+ * (another tab, or another session's drawer, holds the user's slot):
+ * retried with backoff, up to six times, while the query keeps what it
+ * showed, and an error only once it lasts. Other refusals are errors.
+ */
+export const SESSION_LEDGER_BUSY_RETRIES = 6
+const sessionLedgerRetry = (failures: number, error: unknown) =>
+  (isLedgerBusy(error) && failures < SESSION_LEDGER_BUSY_RETRIES) ||
+  (isApiError(error, "unavailable") && failures < 2)
+export const sessionLedgerRetryDelay = (attempt: number) => Math.min(250 * 2 ** attempt, 4_000)
+
+/**
  * A session's ledger snapshot with its open changeset's changes. The
- * session watch refetches it on every KIND_LEDGER event.
+ * session watch reads it again on every KIND_LEDGER event, and
+ * `useSessionLedgerFollows` when the session shows a newer version.
  */
 export function useSessionLedger(sessionId: string) {
   const client = useClient()
   return useQuery({
     queryKey: queryKeys.sessionLedger(sessionId),
-    queryFn: () => client.ledger.getSessionLedger({ sessionId }),
+    queryFn: ({ signal }) =>
+      oneSessionLedgerRead((abort) => client.ledger.getSessionLedger({ sessionId }, { signal: abort }), signal),
+    retry: sessionLedgerRetry,
+    retryDelay: sessionLedgerRetryDelay,
   })
 }
 
-/** One changed file of the session's open changeset next to its base version. */
-export function useSessionLedgerDiff(sessionId: string, path: string) {
+/**
+ * One changed file of the session's open changeset next to its base
+ * version, as of the snapshot's `version`: read again only once a newer
+ * snapshot is in, showing the previous version's diff meanwhile.
+ */
+export function useSessionLedgerDiff(sessionId: string, path: string, version: number) {
   const client = useClient()
   return useQuery({
-    queryKey: queryKeys.sessionLedgerDiff(sessionId, path),
-    queryFn: () => client.ledger.getSessionLedgerDiff({ sessionId, path }),
-    retry: false,
+    queryKey: queryKeys.sessionLedgerDiff(sessionId, path, version),
+    queryFn: ({ signal }) =>
+      oneSessionLedgerRead((abort) => client.ledger.getSessionLedgerDiff({ sessionId, path }, { signal: abort }), signal),
+    placeholderData: keepPreviousData,
+    retry: sessionLedgerRetry,
+    retryDelay: sessionLedgerRetryDelay,
   })
 }
 
@@ -211,19 +281,26 @@ export function useSessionLedgerFollows(sessionId: string, version: number) {
     const held = queryClient.getQueryData<SessionLedger>(queryKey)?.status?.updatedAtUnixMs ?? -1
     if (held >= version) return
     asked.current = version
-    void queryClient.invalidateQueries({ queryKey })
+    void queryClient.invalidateQueries({ queryKey, exact: true })
   }, [queryClient, sessionId, version, fetching])
 }
 
-/** Refetches a session's snapshot and what shows it: the session and the lists. */
+/**
+ * Refetches a session's snapshot (its diffs follow its new version) and
+ * what shows it: the session and the lists.
+ */
 export function invalidateSessionLedger(queryClient: QueryClient, sessionId: string) {
-  void queryClient.invalidateQueries({ queryKey: queryKeys.sessionLedger(sessionId) })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.sessionLedger(sessionId), exact: true })
   invalidateSession(queryClient, sessionId)
 }
 
 /**
- * Merges the session's open changeset. Whatever the answer, the snapshot
- * and the session are read again; once merged, the project's ledger too.
+ * Merges the session's open changeset. Merged, the session and the
+ * project's ledger are read again, and the snapshot once it changes: its
+ * KIND_LEDGER event, or the session's newer version
+ * (`useSessionLedgerFollows`), not while the server still applies the
+ * merge. Refused, the snapshot is read again at once, since it may have
+ * changed under the request.
  */
 export function useMergeSessionLedger() {
   const client = useClient()
@@ -231,10 +308,11 @@ export function useMergeSessionLedger() {
   return useMutation({
     mutationFn: (req: { sessionId: string; projectId: string; expectedChangesetId: string }) =>
       client.ledger.mergeSessionLedger({ sessionId: req.sessionId, expectedChangesetId: req.expectedChangesetId }),
-    onSuccess: (_data, { projectId }) => {
+    onSuccess: (_data, { sessionId, projectId }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.ledgerAll(projectId) })
+      invalidateSession(queryClient, sessionId)
     },
-    onSettled: (_data, _error, { sessionId }) => invalidateSessionLedger(queryClient, sessionId),
+    onError: (_error, { sessionId }) => invalidateSessionLedger(queryClient, sessionId),
   })
 }
 

@@ -12,11 +12,13 @@ describe("rollupState", () => {
     )
   })
 
-  it("orders broken > running > queued > interrupted > idle", () => {
+  it("orders broken > running > queued > failed > interrupted > idle", () => {
     expect(rollupState(of("running", "broken", "queued"))).toBe("broken")
     expect(rollupState(of("queued", "idle", "running"))).toBe("running")
     expect(rollupState(of("idle", "queued", "interrupted"))).toBe("queued")
     expect(rollupState(of("idle", "interrupted"))).toBe("interrupted")
+    expect(rollupState(of("interrupted", "failed", "idle"))).toBe("failed")
+    expect(rollupState(of("failed", "queued"))).toBe("queued")
   })
 
   it("ignores stopped sessions", () => {

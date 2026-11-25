@@ -134,6 +134,29 @@ func refuse(errs *connect.ErrorWriter, w http.ResponseWriter, r *http.Request, e
 	_ = errs.Write(w, r, err)
 }
 
+// admitLedgerRequest takes the slots a LedgerService request of the user
+// needs, recording them in admission for their release, or refuses it as
+// busy (busyError: a retry may pass) when the user's share or all slots
+// are taken. A session's ledger reads take a slot of sessionReads too.
+func admitLedgerRequest(slots, sessionReads *ledgerSlots, procedure, userID string, admission *ledgerAdmission) error {
+	switch procedure {
+	case circusv1connect.LedgerServiceGetSessionLedgerProcedure, circusv1connect.LedgerServiceGetSessionLedgerDiffProcedure:
+		if !sessionReads.take(userID) {
+			return busyError()
+		}
+		admission.sessionRead = true
+	}
+	if !slots.take(userID) {
+		if admission.sessionRead {
+			sessionReads.release(userID)
+			admission.sessionRead = false
+		}
+		return busyError()
+	}
+	admission.user = userID
+	return nil
+}
+
 func (s *Service) registerLedger(mux *http.ServeMux) {
 	slots := &ledgerSlots{byUser: make(map[string]int), limit: maxLedgerRequests, perUser: maxLedgerRequestsPerUser}
 	// A session's ledger reads its changeset's files and answers with up
@@ -148,21 +171,9 @@ func (s *Service) registerLedger(mux *http.ServeMux) {
 				return nil, err
 			}
 			admission := ctx.Value(ledgerAdmissionKey{}).(*ledgerAdmission)
-			switch req.Spec().Procedure {
-			case circusv1connect.LedgerServiceGetSessionLedgerProcedure, circusv1connect.LedgerServiceGetSessionLedgerDiffProcedure:
-				if !sessionReads.take(u.ID) {
-					return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("ledger is busy"))
-				}
-				admission.sessionRead = true
+			if err := admitLedgerRequest(slots, sessionReads, req.Spec().Procedure, u.ID, admission); err != nil {
+				return nil, err
 			}
-			if !slots.take(u.ID) {
-				if admission.sessionRead {
-					sessionReads.release(u.ID)
-					admission.sessionRead = false
-				}
-				return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("ledger is busy"))
-			}
-			admission.user = u.ID
 			return next(ctx, req)
 		}
 	})

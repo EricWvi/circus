@@ -23,9 +23,15 @@ export const queryKeys = {
   sessions: (projectId?: string) => ["sessions", projectId ?? "all"] as const,
   allSessions: ["sessions"] as const,
   session: (sessionId: string) => ["session", sessionId] as const,
-  /** A session's ledger snapshot, and (under it) its changed files' diffs. */
+  /**
+   * A session's ledger snapshot, and (under it) its changed files' diffs,
+   * each read for one version of the snapshot (its `updatedAtUnixMs`).
+   * Invalidate the snapshot alone (`exact`): a diff is read again once the
+   * snapshot's new version is in.
+   */
   sessionLedger: (sessionId: string) => ["session-ledger", sessionId] as const,
-  sessionLedgerDiff: (sessionId: string, path: string) => ["session-ledger", sessionId, "diff", path] as const,
+  sessionLedgerDiff: (sessionId: string, path: string, version: number) =>
+    ["session-ledger", sessionId, "diff", path, version] as const,
   directory: (device: string, path: string, includeHidden: boolean) =>
     ["directory", device, path, includeHidden] as const,
   /** Everything of one project's ledger: the listing, decisions and histories. */

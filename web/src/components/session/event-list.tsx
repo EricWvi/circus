@@ -30,11 +30,25 @@ import type {
   SessionEvent,
   UserMessageEvent,
 } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import { workspaceEventText } from "@/lib/workspace"
 
 import { ApprovalCard } from "./approval-card"
 import { NoteDisclosure } from "./note-disclosure"
 import { ToolCall } from "./tool-call"
+
+/** The end of a turn that failed: with the worker's or CLI's message, when there is one. */
+export function TurnErrorRow({ message }: { message: string }) {
+  const { t } = useTranslation()
+  return (
+    <p className="flex items-start gap-1.5 text-xs text-destructive" data-turn-error>
+      <CircleAlertIcon className="mt-px size-3 shrink-0" aria-hidden />
+      <span className="min-w-0 break-words">
+        {message ? t("session.turnError", { message }) : t("session.turnFailed")}
+      </span>
+    </p>
+  )
+}
 
 /** What the row of an interrupted turn offers while the turn can still be redone. */
 export interface InterruptedTurnActions {
@@ -258,6 +272,21 @@ export function EventItem({
           </div>
         )
       }
+      if (event.failed) {
+        // The CLI's own error (a rejected API key, say), not the model's answer.
+        return (
+          <Message from="assistant" data-failed>
+            <MessageContent
+              className={cn(
+                ASSISTANT_CONTENT,
+                "border border-destructive/40 bg-destructive/5 px-3 py-2 group-[.is-assistant]:text-destructive",
+              )}
+            >
+              <MessageResponse>{event.text}</MessageResponse>
+            </MessageContent>
+          </Message>
+        )
+      }
       return (
         <Message from="assistant">
           <MessageContent className={ASSISTANT_CONTENT}>
@@ -295,12 +324,7 @@ export function EventItem({
         </Reasoning>
       )
     case "turn_error":
-      return (
-        <p className="flex items-start gap-1.5 text-xs text-destructive">
-          <CircleAlertIcon className="mt-px size-3 shrink-0" aria-hidden />
-          <span className="min-w-0 break-words">{t("session.turnError", { message: event.message })}</span>
-        </p>
-      )
+      return <TurnErrorRow message={event.message} />
     case "note":
       return <NoteRow event={event} />
     case "workspace":

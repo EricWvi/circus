@@ -157,6 +157,7 @@ export const zhCN = {
     queued: "排队中",
     idle: "空闲",
     interrupted: "已中断",
+    failed: "上一轮失败",
     broken: "异常",
     stopped: "已停止",
   },
@@ -499,6 +500,40 @@ export const zhCN = {
       gone: "{{device}} 已不在你的设备列表中。",
     },
   },
+  permissionMode: {
+    label: "权限模式",
+    choose: "新会话的权限模式",
+    startMode: "起始模式：{{mode}}",
+    startModeLabel: "会话开始时的权限模式：{{mode}}",
+    startModeNote: "Claude 可能在会话中切换模式，例如你批准它的计划之后；这里显示的是会话开始时的模式。",
+    modes: {
+      auto: {
+        name: "自动",
+        description: "由分类器放行安全的工具调用，其余的交给你批准。",
+      },
+      default: {
+        name: "默认",
+        description: "读取直接进行，修改文件和执行命令需要你批准。",
+      },
+      acceptEdits: {
+        name: "接受修改",
+        description: "工作目录内的文件修改无需询问，执行命令需要你批准。",
+      },
+      plan: {
+        name: "计划",
+        description: "Claude 先查看并提出计划；它要修改或执行的操作需要你批准。",
+      },
+      dontAsk: {
+        name: "不询问",
+        description: "只运行 Claude Code 设置中允许的操作，其余的需要你批准。",
+      },
+      bypassPermissions: {
+        name: "跳过权限检查",
+        description: "工具调用无需询问直接运行，只有 Claude Code 设置中的拒绝规则和 hook 仍会阻止。仅用于不会造成损害的环境。",
+      },
+    },
+  },
+
   session: {
     onDevice: "在 {{device}} 上",
     deviceOfflineMark: "{{device}} 已离线",
@@ -551,6 +586,7 @@ export const zhCN = {
       stateWithReason: "{{state}}：{{reason}}",
     },
     turnError: "这一轮因错误而结束：{{message}}",
+    turnFailed: "这一轮因错误而结束",
     truncated: "内容过大，无法在此显示。",
     viewFull: "这个会话的历史已过大，无法完整保留：新的消息和回复不再显示在这里。",
     actionError: {

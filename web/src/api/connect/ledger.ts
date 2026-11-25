@@ -169,9 +169,9 @@ export function createConnectLedger(transport: Transport): LedgerService {
         })
         return { versions: res.versions.map(toVersion), nextPageToken: res.nextPageToken }
       }),
-    getSessionLedger: (req) =>
+    getSessionLedger: (req, options) =>
       call(async () => {
-        const res = await client.getSessionLedger({ sessionId: req.sessionId })
+        const res = await client.getSessionLedger({ sessionId: req.sessionId }, { signal: options?.signal })
         return {
           ...(res.status ? { status: toSessionLedgerStatus(res.status) } : {}),
           ...(res.changeset ? { changeset: toChangeset(res.changeset) } : {}),
@@ -184,9 +184,9 @@ export function createConnectLedger(transport: Transport): LedgerService {
           ),
         }
       }),
-    getSessionLedgerDiff: (req) =>
+    getSessionLedgerDiff: (req, options) =>
       call(async () => {
-        const res = await client.getSessionLedgerDiff({ sessionId: req.sessionId, path: req.path })
+        const res = await client.getSessionLedgerDiff({ sessionId: req.sessionId, path: req.path }, { signal: options?.signal })
         return {
           baseExists: res.baseExists,
           base: res.base,

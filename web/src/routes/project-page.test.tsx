@@ -325,6 +325,57 @@ describe("a project deleted elsewhere", () => {
   })
 })
 
+describe("the permission mode of a new session", () => {
+  type CreateReq = Parameters<CircusClient["sessions"]["createSession"]>[0]
+  const picker = () => screen.getByRole("combobox", { name: "Permission mode for the new session" })
+
+  it("starts as auto, offers each mode with what it means, and sends the one chosen", async () => {
+    const creates: CreateReq[] = []
+    const state = seedState()
+    const before = new Set(state.sessions.map((s) => s.sessionId))
+    const { router } = await renderProject("circus", state, (client) => ({
+      ...client,
+      sessions: { ...client.sessions, createSession: (req) => (creates.push(req), client.sessions.createSession(req)) },
+    }))
+    expect(picker().textContent).toBe("Auto")
+    fireEvent.click(picker())
+    await advance(0)
+    const options = screen.getAllByRole("option")
+    expect(options.map((o) => o.querySelector(".font-medium")?.textContent)).toEqual([
+      "Auto",
+      "Default",
+      "Accept edits",
+      "Plan",
+      "Don't ask",
+      "Bypass permissions",
+    ])
+    expect(screen.getByRole("option", { name: /^Plan/ }).textContent).toContain("proposes a plan first")
+    fireEvent.click(screen.getByRole("option", { name: /^Plan/ }))
+    await advance(0)
+    expect(picker().textContent).toBe("Plan")
+
+    fireEvent.change(composer(), { target: { value: "Sketch the migration" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(1000)
+    expect(creates.map((c) => c.permissionMode)).toEqual(["plan"])
+    const created = state.sessions.find((s) => !before.has(s.sessionId))!
+    expect(created.permissionMode).toBe("plan")
+    expect(router.state.location.pathname).toBe(`/p/circus/s/${created.sessionId}`)
+  })
+
+  it("sends auto when left alone", async () => {
+    const creates: CreateReq[] = []
+    await renderProject("circus", seedState(), (client) => ({
+      ...client,
+      sessions: { ...client.sessions, createSession: (req) => (creates.push(req), client.sessions.createSession(req)) },
+    }))
+    fireEvent.change(composer(), { target: { value: "Hello" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(1000)
+    expect(creates.map((c) => c.permissionMode)).toEqual(["auto"])
+  })
+})
+
 describe("the provider of a new session", () => {
   type CreateReq = Parameters<CircusClient["sessions"]["createSession"]>[0]
   const picker = () => screen.getByRole("combobox", { name: "Provider" })
@@ -463,5 +514,14 @@ describe("the provider of a new session", () => {
     expect(dot.getAttribute("title")).toBe(
       "Queued: Team proxy already runs as many sessions as it allows. This one starts when one of them ends.",
     )
+  })
+
+  it("shows why a session waits even when its last turn failed", async () => {
+    const state = seedState()
+    addQueueDemo(state)
+    state.sessions.find((s) => s.sessionId === "queue-full")!.lastTurnOutcome = "error"
+    await renderProject("circus", state)
+    const dot = screen.getByText("Add a dark mode screenshot test").closest("a")!.querySelector("[title]")!
+    expect(dot.getAttribute("title")).toMatch(/^Queued: Team proxy already runs as many sessions/)
   })
 })

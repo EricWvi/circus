@@ -19,6 +19,7 @@ import type {
   SessionService,
   SessionSummary,
 } from "@/api/types"
+import { sessionPermissionMode } from "@/lib/permission-mode"
 import { viewState, type ServerSessionState, type TurnOutcome } from "@/lib/session-state"
 
 import { call, malformed, stream } from "./call"
@@ -92,6 +93,7 @@ export function toDetails(session: ProtoSession | undefined, rpc: string): Sessi
     ...toSummary(session),
     device,
     cwd: session.config.cwds.find((c) => c.device === device)?.cwd ?? "",
+    permissionMode: sessionPermissionMode(session.config.permissionMode),
   }
 }
 
@@ -142,6 +144,7 @@ export function createConnectSessions(transport: Transport): SessionService {
           locationIndex: req.locationIndex,
           clientRequestId: req.clientRequestId,
           providerId: req.providerId,
+          ...(req.permissionMode ? { config: { permissionMode: req.permissionMode } } : {}),
         })
         return toDetails(res.session, "CreateSession")
       }),

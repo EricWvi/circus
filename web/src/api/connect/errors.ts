@@ -23,6 +23,7 @@ const codeNames: Record<Code, ErrorCode> = {
 }
 
 const BAD_REQUEST = "google.rpc.BadRequest"
+const ERROR_INFO = "google.rpc.ErrorInfo"
 const PRECONDITION_FAILURE = "google.rpc.PreconditionFailure"
 
 /**
@@ -74,6 +75,32 @@ function violatedPrecondition(error: ConnectError): string | undefined {
   return undefined
 }
 
+/** The reason (field 1) of a serialized `google.rpc.ErrorInfo`. Throws on malformed input. */
+export function errorInfoReason(bytes: Uint8Array): string {
+  const reader = new BinaryReader(bytes)
+  let reason = ""
+  while (reader.pos < reader.len) {
+    const [no, type] = reader.tag()
+    if (no === 1 && type === WireType.LengthDelimited) reason = reader.string()
+    else reader.skip(type, no)
+  }
+  return reason
+}
+
+/** The reason of the error's first ErrorInfo detail that names one. */
+function errorReason(error: ConnectError): string | undefined {
+  for (const detail of error.details) {
+    if (!("type" in detail) || detail.type !== ERROR_INFO) continue
+    try {
+      const reason = errorInfoReason(detail.value)
+      if (reason) return reason
+    } catch {
+      // A malformed detail carries no reason.
+    }
+  }
+  return undefined
+}
+
 /** The field of the error's first BadRequest field violation that names one. */
 function violatedField(error: ConnectError): string | undefined {
   for (const detail of error.details) {
@@ -109,6 +136,7 @@ export function toApiError(error: unknown): ApiError {
   return new ApiError(code, "Something went wrong. Try again.", violatedField(connectError), {
     cause: connectError,
     preconditionType: violatedPrecondition(connectError),
+    reason: errorReason(connectError),
   })
 }
 

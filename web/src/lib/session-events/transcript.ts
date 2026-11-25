@@ -28,6 +28,12 @@ export interface Transcript {
   readonly turnOpen: boolean
   /** The number of the latest turn that started, 0 before any. */
   readonly turnNo: number
+  /**
+   * The latest turn shows that it failed: an ERROR, or a failed RESULT's
+   * line or text. The session view adds a line of its own when the server
+   * says the turn failed and nothing here shows it (`showsTurnFailure`).
+   */
+  readonly turnFailureShown: boolean
   /** The latest workspace state the stream brought (durable or live); null before any. */
   readonly workspace: LiveWorkspace | null
   /** The latest queue reason the stream announced (live only); null before any. */
@@ -59,6 +65,17 @@ interface Internal {
   started: Map<string, number>
   /** The API message being streamed, from its message_start. */
   streaming: string | null
+  /**
+   * What the current turn's failed RESULT marked: its failure line, and the
+   * text that was its error message. A stop or an interruption recorded
+   * after the RESULT takes them back: the turn ended that way instead.
+   */
+  failedTurn: { turnNo: number; lineId: string | null; textId: string | null } | null
+  /**
+   * The messages of the ERRORs the current turn recorded ("" for one too
+   * large to keep): a failed RESULT that says the same adds no line.
+   */
+  turnErrors: string[]
   /** The workspace's latest recorded failure, shown once a later change supersedes it. */
   failure: {
     seq: number
@@ -74,6 +91,7 @@ export const emptyTranscript: Transcript = {
   events: [],
   turnOpen: false,
   turnNo: 0,
+  turnFailureShown: false,
   workspace: null,
   queue: null,
   worker: null,
@@ -87,6 +105,8 @@ export const emptyTranscript: Transcript = {
     denied: new Set(),
     started: new Map(),
     streaming: null,
+    failedTurn: null,
+    turnErrors: [],
     failure: null,
   },
 }
@@ -192,6 +212,21 @@ function isoTime(unixMs: number): string {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString()
 }
 
+/**
+ * Whether a RESULT ends its turn as failed, as the worker reports the
+ * turn's outcome: anything but a success without an error. An aborted
+ * turn (`terminal_reason` aborted_streaming, aborted_tools, …) isn't: the
+ * user stopped it or the worker cut it off, and the boundary that follows
+ * (TURN_STOPPED, TURN_INTERRUPTED) says which; one the server still counts
+ * as an error shows through the session's outcome instead.
+ */
+const resultFailed = (p: Json) =>
+  !str(p.terminal_reason).startsWith("aborted") &&
+  (p.is_error === true || (typeof p.subtype === "string" && p.subtype !== "success"))
+
+/** The CLI's internal diagnostics in a RESULT's errors, such as "[ede_diagnostic] result_type=user …". */
+const isDiagnostic = (message: string) => /^\[[a-z_]+_diagnostic\]/.test(message)
+
 const isStreaming = (e: SessionEvent) => (e.kind === "assistant_text" || e.kind === "reasoning") && e.streaming === true
 
 /** A message of a subagent (Task) belongs to its tool call, not to the main conversation. */
@@ -230,6 +265,8 @@ class Builder {
       denied: new Set(i.denied),
       started: new Map(i.started),
       streaming: i.streaming,
+      failedTurn: i.failedTurn,
+      turnErrors: i.turnErrors,
       failure: i.failure,
     }
     this.lastSeq = base.lastSeq
@@ -246,6 +283,7 @@ class Builder {
       lastSeq: this.lastSeq,
       turnOpen: this.turnOpen,
       turnNo: this.turnNo,
+      turnFailureShown: this.internal.turnErrors.length > 0 || this.internal.failedTurn !== null,
       workspace: this.workspace,
       queue: this.queue,
       worker: this.worker,
@@ -343,7 +381,10 @@ class Builder {
     if (raw.kind === "unspecified") return
     const at = isoTime(raw.tsUnixMs)
     if (raw.truncated && contentKinds.has(raw.kind)) {
-      if (raw.seq > 0) this.truncated(raw, at)
+      if (raw.seq > 0) {
+        if (raw.kind === "error") this.internal.turnErrors = [...this.internal.turnErrors, ""]
+        this.truncated(raw, at)
+      }
       return
     }
     const p = parse(raw.payloadJson) ?? {}
@@ -352,6 +393,8 @@ class Builder {
         return this.inputAccepted(p, at)
       case "turn_started": {
         this.turnOpen = true
+        this.internal.failedTurn = null
+        this.internal.turnErrors = []
         const no = Number(str(p.turn_no))
         if (Number.isSafeInteger(no) && no > this.turnNo) this.turnNo = no
         return
@@ -372,14 +415,17 @@ class Builder {
         // (its result may have been too large for the view).
         this.turnOpen = false
         this.settle(false, "no_result")
+        if (raw.seq > 0 && resultFailed(p)) this.turnFailed(p, raw.seq, at)
         return
       case "turn_stopped":
         this.turnOpen = false
+        this.retractFailure(p)
         this.settle(false)
         this.add({ kind: "turn_stopped", id: `stopped:${raw.seq}`, at })
         return
       case "turn_interrupted":
         this.turnOpen = false
+        this.retractFailure(p)
         this.settle(true)
         this.add({ kind: "turn_interrupted", id: `interrupted:${raw.seq}`, at })
         return
@@ -393,7 +439,10 @@ class Builder {
         this.add({ kind: "history_gap", id: `gap:${raw.seq}`, at })
         return
       case "error":
-        if (raw.seq > 0) this.add({ kind: "turn_error", id: `error:${raw.seq}`, at, message: str(p.message) })
+        if (raw.seq > 0) {
+          this.internal.turnErrors = [...this.internal.turnErrors, str(p.message)]
+          this.add({ kind: "turn_error", id: `error:${raw.seq}`, at, message: str(p.message) })
+        }
         return
       case "workspace":
         return this.workspaceChanged(p, raw, at)
@@ -411,6 +460,53 @@ class Builder {
         // Progress, background tasks, notices and kinds this view doesn't know.
         return
     }
+  }
+
+  /**
+   * The turn's RESULT says it failed. When its text is the turn's last
+   * assistant text (the CLI's own error, such as a rejected API key), that
+   * text is marked as the error. A failure line ends the turn, carrying
+   * the RESULT's errors (not the CLI's internal diagnostics), or its text
+   * when no assistant text showed it; none when an ERROR of the turn
+   * already said the same, or said it failed and the RESULT names nothing.
+   */
+  private turnFailed(p: Json, seq: number, at: string) {
+    const result = str(p.result).trim()
+    let textId: string | null = null
+    const { order } = this.internal
+    for (let i = order.length - 1; i >= 0; i--) {
+      const e = this.get(order[i])!
+      if (e.kind === "user_message") break
+      if (e.kind !== "assistant_text" || e.streaming) continue
+      if (result !== "" && e.text.trim() === result) {
+        textId = e.id
+        this.put({ ...e, failed: true })
+      }
+      break
+    }
+    const errors = Array.isArray(p.errors) ? p.errors.map(str).filter((m) => m !== "" && !isDiagnostic(m)) : []
+    const message = errors.length > 0 ? errors.join("\n") : textId === null ? result : ""
+    const said = this.internal.turnErrors
+    const repeats = said.length > 0 && (message === "" || said.includes(message))
+    let lineId: string | null = null
+    if (!repeats) {
+      lineId = `failed:${seq}`
+      this.add({ kind: "turn_error", id: lineId, at, message })
+    }
+    this.internal.failedTurn = { turnNo: this.turnNo, lineId, textId }
+  }
+
+  /**
+   * The turn was stopped or interrupted after a failed RESULT: it didn't
+   * fail. Only a boundary of that same turn says so.
+   */
+  private retractFailure(p: Json) {
+    const failed = this.internal.failedTurn
+    if (!failed || Number(str(p.turn_no)) !== failed.turnNo) return
+    this.internal.failedTurn = null
+    if (failed.lineId) this.remove(new Set([failed.lineId]))
+    const text = failed.textId ? this.get(failed.textId) : undefined
+    if (text?.kind === "assistant_text") this.put({ ...text, failed: undefined })
   }
 
   /**

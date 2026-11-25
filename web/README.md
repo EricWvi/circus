@@ -63,7 +63,13 @@ interrupted (`Rewrite the dotfiles installer in Go`), one is broken
 stopped a running Bash call (`Add a health check endpoint`). Every message gets a
 short scripted reply: streamed text, a Bash call and more text. A message
 containing "approve" asks for approval to run its Bash call instead, and
-runs it once approved. Stopping the turn, stopping the session and
+runs it once approved. A message containing "401" fails its turn the way
+Claude Code does when the provider rejects the key: its own "Failed to
+authenticate" text and an error result. A new session keeps the permission
+mode it was created with (`auto` when none); the mock accepts any mode, as
+the control plane does. The session header shows it as the start mode:
+Claude can leave it during the session (after a plan is approved, say),
+and no event tells the view. Stopping the turn, stopping the session and
 continuing a broken session work as on the server. For anything more
 (reconnects, a lost worker, broken transcripts on demand), run against the
 control plane with the scripted worker below.
@@ -230,11 +236,39 @@ sure that server's `public_url` is the Vite origin.
   them, and no mark once the worker handed them to the agent. A failed
   message stays with its reason and a retry, which reuses its client
   message id and text, so the server never takes it twice.
+- A turn whose RESULT is an error (anything but a success without
+  `is_error`, and not aborted: a user stop's RESULT is an error too, and
+  its TURN_STOPPED says what happened) shows as failed: the CLI's own error
+  text, when it is the turn's last text, in error styling, then a failure
+  line with the RESULT's errors (never the CLI's `[…_diagnostic]` lines),
+  unless an ERROR of the turn already said the same. A stop or
+  interruption of the same turn recorded after it takes it back. The header
+  says "Turn failed" while the session is idle and its last turn outcome is
+  an error (`viewState`; queued, running and an approval win). When the
+  stream shows nothing of that failed turn (its RESULT too large to keep, a
+  worker-side abort), the view adds the failure line itself
+  (`showsTurnFailure`), so the header and the conversation agree.
 - Session lists refetch every five seconds while the tab is visible; the
   open session's state is read again at turn and approval boundaries. The
   stream decides whether a turn runs, except that a stopped or broken
   session runs nothing and a turn the server already counts as over is over
   even when its RESULT never came (`turnRunning` in `src/lib/session-state.ts`).
+
+## Session Ledger drawer
+
+The control plane runs one read of a session's Ledger (the snapshot or a
+file's diff) per user at a time and refuses another meanwhile as busy
+(`resource_exhausted` with the ErrorInfo reason `LEDGER_BUSY`). The drawer
+sends them one after another (`oneSessionLedgerRead` in
+`src/api/hooks.ts`), gives up on one that takes over 35 seconds (aborting
+it, so the next goes), and retries only the busy reply (`isLedgerBusy`,
+which reads the reason, never the message), up to six times with backoff;
+other refusals are errors at once. The snapshot is read again on a
+KIND_LEDGER event and when
+the session shows a newer version; a merge doesn't read it at once, since
+the server is still applying it; its numbers stay in the footer until the
+snapshot holds a new open changeset. A diff belongs to one version of the
+snapshot, so it is read again only after the snapshot's new version is in.
 
 ## Ledger page
 
