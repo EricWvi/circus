@@ -212,6 +212,25 @@ describe("the agents directory lock", () => {
       expect(readFileSync(lockFile(), "utf8")).toBe(other);
     });
 
+    test("a holder taken over stops refreshing, so the new holder's lock goes stale once that one stops", async () => {
+      const holder = new AgentsLock(root, undefined, undefined, timing);
+      const other = JSON.stringify({ pid: deadPid(), host: "another-host" });
+      await holder.run(async () => {
+        // Taken over by a holder on another host, which then died: its lock
+        // is no longer refreshed.
+        rmSync(lockFile());
+        writeFileSync(lockFile(), other);
+        backdate(5_000);
+        // Several refresh periods of the first holder pass.
+        await new Promise((done) => setTimeout(done, 300));
+        expect(Date.now() - statSync(lockFile()).mtimeMs).toBeGreaterThan(4_000);
+      }, 1_000);
+      // The first holder left the file alone, and it is stale: taken over.
+      expect(readFileSync(lockFile(), "utf8")).toBe(other);
+      await expect(new AgentsLock(root, undefined, undefined, timing).run(async () => "taken", 0)).resolves.toBe("taken");
+      expect(existsSync(lockFile())).toBe(false);
+    });
+
     test("a live process of this host with the recorded start time is never taken over, however old the lock", async () => {
       const start = processStart(otherLivePid());
       expect(start).toBeTruthy();
@@ -234,7 +253,9 @@ describe("the agents directory lock", () => {
         const { writeFileSync } = await import("node:fs");
         await new AgentsLock(${JSON.stringify(root)}, undefined, undefined, { refreshMs: 100, staleMs: 500 }).run(async () => {
           writeFileSync(${JSON.stringify(marker)}, "");
-          await new Promise(() => {});
+          // A pending promise alone does not keep Node running (the lock's
+          // refresh timer is unref'd): an interval does, until it is killed.
+          await new Promise(() => setInterval(() => {}, 60_000));
         }, 10000);`;
       const child = spawn(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], { stdio: "inherit" });
       const exited = once(child, "exit");
@@ -243,6 +264,8 @@ describe("the agents directory lock", () => {
         child.kill("SIGSTOP");
         await new Promise((done) => setTimeout(done, 1_500));
         expect(Date.now() - statSync(lockFile()).mtimeMs).toBeGreaterThan(500);
+        // Still the holder, paused: not exited after writing the marker.
+        expect(readFileSync(`/proc/${child.pid}/stat`, "utf8")).toMatch(/\) T /);
         await expect(new AgentsLock(root, undefined, undefined, { refreshMs: 100, staleMs: 500 }).run(async () => "taken", 500))
           .rejects.toThrow(`locked by process ${child.pid} on ${hostname()}`);
       } finally {

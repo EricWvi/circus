@@ -198,3 +198,16 @@ func Conns(s *Service) map[string]bool {
 	}
 	return out
 }
+
+// Unsent reports whether a hint for session id is queued on a registered
+// connection and not yet built (its Nudge reasons are read when it is).
+func Unsent(s *Service, id string) bool {
+	s.mu.Lock()
+	defer s.unlock()
+	for _, c := range s.conns {
+		if c.queued[id] != nil {
+			return true
+		}
+	}
+	return false
+}

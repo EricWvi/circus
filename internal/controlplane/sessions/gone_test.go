@@ -624,7 +624,11 @@ func TestStaleEvaluationAfterReleaseKeptEntry(t *testing.T) {
 	// held may leave Nudges of INPUT sent before the release unread on ev.
 	// A Wake raising JOB, which nothing else here raises, is a marker: c's
 	// hints are sent in order, so once its Nudge arrives every earlier one
-	// has, and any later Nudge for s1 was built after it.
+	// has, and any later Nudge for s1 was built after it. A hint takes its
+	// reasons when it is built, not when it is queued, so held's hints must
+	// be built first: one still queued would carry JOB too and pass for the
+	// marker, and the marker's own Nudge, read later, for a stale one.
+	wait.For(t, func() bool { return !sessions.Unsent(f.svc, "s1") })
 	f.svc.Wake("s1", circusv1.WorkerEvent_Nudge_REASON_JOB)
 	nudge(t, ev, "s1", circusv1.WorkerEvent_Nudge_REASON_JOB)
 	f.settle()

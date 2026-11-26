@@ -11,9 +11,15 @@ import { join } from "node:path";
 // temporary directories or installs.
 //
 // Node has no flock, so the lock is a file created with O_EXCL
-// (<agents>/.lock) that records its holder: pid, host and the process's
-// start time (processStart). The holder removes it when done and, while it
-// holds it, sets the file's mtime to now every refreshMs (10 s).
+// (<agents>/.lock) that records its holder: pid, host, the process's start
+// time (processStart) and a random token. The holder removes it when done,
+// only if the file still has its record, and, while it holds it, sets the
+// file's mtime to now every refreshMs (10 s), as long as the file still has
+// its record (a holder taken over stops refreshing).
+//
+// A file is never identified by its inode alone: ext4 gives a file created
+// right after an unlink in the same directory the inode just freed, so a
+// lock or takeover file replaced meanwhile usually has the old one's inode.
 //
 // On this host, the holder process decides, never the mtime (a holder
 // paused for a while, by SIGSTOP or a suspend, is still the holder). A lock
@@ -33,12 +39,14 @@ import { join } from "node:path";
 // directory need synchronised clocks for this.
 //
 // Taking over is serialized by a second O_EXCL file (<agents>/.lock.takeover):
-// a taker holding it checks again that the lock is the same stale file
-// (same inode) before it removes it, then competes for the lock like any
-// other process. A takeover file is itself stale after staleMs.
+// a taker holding it checks again that the lock is the same file (same inode
+// and content) and still stale before it removes it, then competes for the
+// lock like any other process. A takeover file is itself stale after
+// staleMs: a taker moves it aside, removes it if it is still stale there,
+// and puts it back otherwise (another taker's fresh guard replaced it).
 
-/** A lock file as read: gone, or its inode, holder and staleness. */
-type Inspected = "gone" | { ino: number; holder?: Holder; stale: boolean };
+/** A lock file as read: gone, or its inode, content, holder and staleness. */
+type Inspected = "gone" | { ino: number; text: string; holder?: Holder; stale: boolean };
 
 export class AgentsLockBusy extends Error {
   override name = "AgentsLockBusy";
@@ -49,6 +57,8 @@ interface Holder {
   host: string;
   /** The process's start time (processStart); empty when unknown. */
   start: string;
+  /** Random, so that the record tells this holder's file from any other. */
+  token?: string;
 }
 
 export interface AgentsLockTiming {
@@ -160,28 +170,41 @@ export class AgentsLock {
     this.#local = previous.then(() => mine.promise);
     try {
       await previous;
-      const ino = await this.#acquire(waitMs, signal);
+      const record = await this.#acquire(waitMs, signal);
+      // Refreshed only while the file still has this holder's record: once
+      // the lock was taken over, touching the new holder's file would keep
+      // it fresh for other hosts after that holder died.
+      let refreshing = false;
       const refresh = setInterval(() => {
-        const now = new Date();
-        void utimes(this.path, now, now).catch(() => {});
+        if (refreshing) return;
+        refreshing = true;
+        void (async () => {
+          const text = await readFile(this.path, "utf8").catch(() => undefined);
+          if (text !== record) {
+            clearInterval(refresh);
+            return;
+          }
+          const now = new Date();
+          await utimes(this.path, now, now).catch(() => {});
+        })().finally(() => { refreshing = false; });
       }, this.#refreshMs);
       refresh.unref();
       try {
         return await fn();
       } finally {
         clearInterval(refresh);
-        await this.#release(ino);
+        await this.#release(record);
       }
     } finally {
       mine.resolve();
     }
   }
 
-  /** Takes the lock; returns the lock file's inode. */
-  async #acquire(waitMs: number, signal?: AbortSignal): Promise<number> {
+  /** Takes the lock; returns the record written to the lock file. */
+  async #acquire(waitMs: number, signal?: AbortSignal): Promise<string> {
     await mkdir(this.dir, { recursive: true, mode: 0o755 });
     const deadline = performance.now() + waitMs;
-    const me: Holder = { pid: this.pid, host: this.host, start: processStart(this.pid) ?? "" };
+    const me: Holder = { pid: this.pid, host: this.host, start: processStart(this.pid) ?? "", token: randomBytes(8).toString("hex") };
     const record = JSON.stringify(me);
     for (;;) {
       signal?.throwIfAborted();
@@ -195,9 +218,8 @@ export class AgentsLock {
           try {
             await file.writeFile(record);
             await file.sync();
-            const { ino } = await file.stat();
             held.set(this.path, me);
-            return ino;
+            return record;
           } finally {
             await file.close();
           }
@@ -210,7 +232,7 @@ export class AgentsLock {
           // A takeover blocked by another taker's guard (one left by a
           // crashed taker included) must not keep this acquirer past its
           // own deadline.
-          if (await this.#takeOver(found.ino) || performance.now() < deadline) continue;
+          if (await this.#takeOver(found) || performance.now() < deadline) continue;
         }
       }
       if (performance.now() >= deadline) {
@@ -234,22 +256,28 @@ export class AgentsLock {
       throw error;
     }
     const holder = parseHolder(text);
-    const old = Date.now() - info.mtimeMs > this.#staleMs;
-    if (!holder || holder.host !== this.host) return { ino: info.ino, holder, stale: old };
+    const found = { ino: info.ino, text, holder };
+    const old = this.#old(info.mtimeMs);
+    if (!holder || holder.host !== this.host) return { ...found, stale: old };
     // On this host the holder process decides. A lock naming this process
     // that it does not hold was left by an earlier run with the same pid
     // (held is checked by the caller).
-    if (holder.pid === this.pid || !alive(holder.pid)) return { ino: info.ino, holder, stale: true };
+    if (holder.pid === this.pid || !alive(holder.pid)) return { ...found, stale: true };
     // Without a start time the process cannot be told from a reused pid.
-    if (!holder.start) return { ino: info.ino, holder, stale: old };
-    return { ino: info.ino, holder, stale: processStart(holder.pid) !== holder.start };
+    if (!holder.start) return { ...found, stale: old };
+    return { ...found, stale: processStart(holder.pid) !== holder.start };
+  }
+
+  /** Whether a file last refreshed at mtimeMs is older than staleMs. */
+  #old(mtimeMs: number): boolean {
+    return Date.now() - mtimeMs > this.#staleMs;
   }
 
   /**
-   * Removes the stale lock with inode ino, serialized by the takeover file;
+   * Removes the stale lock file inspected, serialized by the takeover file;
    * false when another taker's guard blocked it (it then waited a little).
    */
-  async #takeOver(ino: number): Promise<boolean> {
+  async #takeOver(stale: Exclude<Inspected, "gone">): Promise<boolean> {
     let guard;
     try {
       guard = await open(this.#takeover, "wx", 0o600);
@@ -257,12 +285,14 @@ export class AgentsLock {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       // Another taker; a guard left by a crashed one goes after staleMs.
       const info = await stat(this.#takeover).catch(() => undefined);
-      if (info && Date.now() - info.mtimeMs > this.#staleMs) {
+      if (info && this.#old(info.mtimeMs)) {
         await this.#beforeGuardClear?.();
         const aside = `${this.#takeover}.${randomBytes(6).toString("hex")}`;
         if (await rename(this.#takeover, aside).then(() => true, () => false)) {
+          // The file moved may be another taker's fresh guard that replaced
+          // the stale one, with its inode: staleness, not the inode, decides.
           const moved = await stat(aside).catch(() => undefined);
-          if (moved?.ino === info.ino) await unlink(aside).catch(() => {});
+          if (!moved || this.#old(moved.mtimeMs)) await unlink(aside).catch(() => {});
           else {
             await rename(aside, this.#takeover).catch(() => {}); // Someone's fresh guard: put back.
             return false;
@@ -277,7 +307,9 @@ export class AgentsLock {
       await this.#beforeTakeover?.();
       // Still the same lock file, and still stale: remove it.
       const found = await this.#inspect();
-      if (found !== "gone" && found.ino === ino && found.stale) await unlink(this.path).catch(() => {});
+      if (found !== "gone" && found.ino === stale.ino && found.text === stale.text && found.stale) {
+        await unlink(this.path).catch(() => {});
+      }
     } finally {
       await guard.close();
       await unlink(this.#takeover).catch(() => {});
@@ -285,11 +317,12 @@ export class AgentsLock {
     return true;
   }
 
-  async #release(ino: number): Promise<void> {
+  async #release(record: string): Promise<void> {
     held.delete(this.path);
-    // Only the file this holder created: a holder that stopped refreshing
-    // for longer than staleMs may have been taken over.
-    const info = await stat(this.path).catch(() => undefined);
-    if (info?.ino === ino) await unlink(this.path).catch(() => {});
+    // Only the file this holder created, told by its record (the inode may
+    // be reused): a holder that stopped refreshing for longer than staleMs
+    // may have been taken over.
+    const text = await readFile(this.path, "utf8").catch(() => undefined);
+    if (text === record) await unlink(this.path).catch(() => {});
   }
 }
