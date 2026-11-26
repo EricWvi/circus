@@ -1,4 +1,4 @@
-package daemonservice
+package userservice
 
 import (
 	"os"
@@ -25,7 +25,7 @@ func TestServiceEnvironment(t *testing.T) {
 	if err := os.Unsetenv("ALL_PROXY"); err != nil {
 		t.Fatal(err)
 	}
-	env, skipped, err := serviceEnvironment()
+	env, skipped, err := Environment()
 	if err != nil {
 		t.Fatal(err)
 	}

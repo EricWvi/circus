@@ -1,4 +1,4 @@
-package daemonservice
+package userservice
 
 import (
 	"bytes"
@@ -49,6 +49,7 @@ case "$tool:$1" in
         if [ -f "$dir/active" ]; then : > "$dir/tried-restart"; fi
         ;;
     systemctl:show)
+        if [ -f "$dir/show-$2" ]; then /bin/cat "$dir/show-$2"; exit 0; fi
         if [ ! -f "$response.out" ]; then
             if [ -f "$dir/active" ]; then printf 'ActiveState=active\n'; else printf 'ActiveState=inactive\n'; fi
             if [ -f "$dir/enabled" ]; then printf 'UnitFileState=enabled\n'; else printf 'UnitFileState=disabled\n'; fi
@@ -191,7 +192,7 @@ func TestSystemdLifecycle(t *testing.T) {
 	saveCredential(t, credentials, credfile.RoleDaemon)
 	saveCredential(t, "", credfile.RoleDaemon)
 	f.response(t, "systemctl.is-system-running.fail", "degraded\n")
-	if err := Install(credentials, io.Discard); err != nil {
+	if err := InstallDaemon(credentials, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(f.config, "systemd", "user", "circus-daemon.service")
@@ -201,7 +202,7 @@ func TestSystemdLifecycle(t *testing.T) {
 		"Restart=on-failure\nRestartSec=5\n", "WantedBy=default.target\n",
 		`Environment="HTTPS_PROXY=http://proxy/p%%ss\"\\x"`,
 		`Environment="PATH=`+f.bin+`"`, `Environment="CIRCUS_HOME=`+filepath.Join(f.dir, "custom-home")+`"`)
-	if got := Program(); got != fakeExecutable {
+	if got := Daemon.Program(); got != fakeExecutable {
 		t.Errorf("program = %q, want %q", got, fakeExecutable)
 	}
 	installCalls := []string{"systemctl --user is-system-running", "systemctl --user daemon-reload", "systemctl --user enable " + path, "systemctl --user restart circus-daemon.service"}
@@ -209,14 +210,14 @@ func TestSystemdLifecycle(t *testing.T) {
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Install("", io.Discard); err != nil {
+	if err := InstallDaemon("", io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if data := readPrivate(t, path); strings.Contains(data, "--credentials") {
 		t.Errorf("default credentials should be implicit:\n%s", data)
 	}
 	f.checkCalls(t, slices.Insert(installCalls, 1, showCall)...)
-	for _, action := range []func() error{Start, Stop, Restart, Uninstall, Uninstall} {
+	for _, action := range []func() error{Daemon.Start, Daemon.Stop, Daemon.Restart, Daemon.Uninstall, Daemon.Uninstall} {
 		if err := action(); err != nil {
 			t.Fatal(err)
 		}
@@ -234,7 +235,7 @@ func TestLaunchdLifecycle(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://a&b<c>@proxy")
 	credentials := `device cred%"&.json`
 	saveCredential(t, credentials, credfile.RoleDaemon)
-	if err := Install(credentials, io.Discard); err != nil {
+	if err := InstallDaemon(credentials, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(f.home, "Library", "LaunchAgents", "com.github.ericwvi.circus.daemon.plist")
@@ -257,7 +258,7 @@ func TestLaunchdLifecycle(t *testing.T) {
 			break
 		}
 	}
-	if got := Program(); got != fakeExecutable {
+	if got := Daemon.Program(); got != fakeExecutable {
 		t.Errorf("program = %q, want %q", got, fakeExecutable)
 	}
 	if info, err := os.Stat(filepath.Dir(log)); err != nil || !info.IsDir() {
@@ -267,11 +268,11 @@ func TestLaunchdLifecycle(t *testing.T) {
 	target := domain + "/com.github.ericwvi.circus.daemon"
 	print, bootout, bootstrap := "launchctl print "+target, "launchctl bootout "+target, "launchctl bootstrap "+domain+" "+path
 	f.checkCalls(t, print, bootstrap)
-	if err := Install(credentials, io.Discard); err != nil {
+	if err := InstallDaemon(credentials, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	f.checkCalls(t, print, bootout, print, bootstrap)
-	for _, action := range []func() error{Start, Stop, Stop, Start, Restart, Uninstall, Uninstall} {
+	for _, action := range []func() error{Daemon.Start, Daemon.Stop, Daemon.Stop, Daemon.Start, Daemon.Restart, Daemon.Uninstall, Daemon.Uninstall} {
 		if err := action(); err != nil {
 			t.Fatal(err)
 		}
@@ -286,14 +287,14 @@ func TestNotInstalled(t *testing.T) {
 	for _, platform := range []string{"linux", "darwin"} {
 		t.Run(platform, func(t *testing.T) {
 			f := fakeService(t, platform)
-			for _, action := range []func() error{Start, Stop, Restart} {
+			for _, action := range []func() error{Daemon.Start, Daemon.Stop, Daemon.Restart} {
 				if err := action(); !errors.Is(err, ErrNotInstalled) {
 					t.Errorf("error = %v, want ErrNotInstalled", err)
 				}
 			}
-			st, err := Get()
-			if err != nil || st.Installed || st.File == "" || st.Logs == "" || Program() != "" {
-				t.Errorf("status = %+v, %v; program = %q", st, err, Program())
+			st, err := Daemon.Get()
+			if err != nil || st.Installed || st.File == "" || st.Logs == "" || Daemon.Program() != "" {
+				t.Errorf("status = %+v, %v; program = %q", st, err, Daemon.Program())
 			}
 			f.checkCalls(t)
 		})
@@ -304,15 +305,15 @@ func TestInstallRequiresDaemonCredentials(t *testing.T) {
 	for _, platform := range []string{"linux", "darwin"} {
 		t.Run(platform, func(t *testing.T) {
 			f := fakeService(t, platform)
-			if err := Install("", io.Discard); !errors.Is(err, credfile.ErrNotFound) || !strings.Contains(err.Error(), "circus join") {
+			if err := InstallDaemon("", io.Discard); !errors.Is(err, credfile.ErrNotFound) || !strings.Contains(err.Error(), "circus join") {
 				t.Errorf("missing credentials: %v", err)
 			}
 			path := filepath.Join(f.dir, "worker.json")
 			saveCredential(t, path, credfile.RoleWorker)
-			if err := Install(path, io.Discard); err == nil || !strings.Contains(err.Error(), "circus join") {
+			if err := InstallDaemon(path, io.Discard); err == nil || !strings.Contains(err.Error(), "circus join") {
 				t.Errorf("worker credentials: %v", err)
 			}
-			st, err := Get()
+			st, err := Daemon.Get()
 			if err != nil || st.Installed {
 				t.Errorf("status = %+v, %v", st, err)
 			}
@@ -323,12 +324,12 @@ func TestInstallRequiresDaemonCredentials(t *testing.T) {
 
 func TestUnsupported(t *testing.T) {
 	f := fakeService(t, "freebsd")
-	for _, action := range []func() error{func() error { return Install("", io.Discard) }, Start, Stop, Restart, Uninstall} {
+	for _, action := range []func() error{func() error { return InstallDaemon("", io.Discard) }, Daemon.Start, Daemon.Stop, Daemon.Restart, Daemon.Uninstall} {
 		if err := action(); !errors.Is(err, ErrUnsupported) || !strings.Contains(err.Error(), "run `circus daemon`") {
 			t.Errorf("unsupported platform: %v", err)
 		}
 	}
-	if _, err := Get(); !errors.Is(err, ErrUnsupported) || Program() != "" || Linger() != "" {
+	if _, err := Daemon.Get(); !errors.Is(err, ErrUnsupported) || Daemon.Program() != "" || Daemon.Linger() != "" {
 		t.Errorf("unexpected service on unsupported platform: %v", err)
 	}
 	f.checkCalls(t)
@@ -342,7 +343,7 @@ func TestInstallChecksDaemonLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := fmt.Sprintf("stop the foreground `circus daemon` (pid %d) first", os.Getpid())
-	err = Install("", io.Discard)
+	err = InstallDaemon("", io.Discard)
 	if closeErr := lock.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
@@ -355,7 +356,7 @@ func TestInstallChecksDaemonLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lock.Close()
-	if err := Install("", io.Discard); err != nil {
+	if err := InstallDaemon("", io.Discard); err != nil {
 		t.Fatalf("install with a service lock = %v", err)
 	}
 }
@@ -370,7 +371,7 @@ func TestReplacementAndEnvironmentNotices(t *testing.T) {
 			t.Setenv("SSL_CERT_FILE", "/cert/file")
 			saveCredential(t, "", credfile.RoleDaemon)
 			var out bytes.Buffer
-			if err := Install("", &out); err != nil {
+			if err := InstallDaemon("", &out); err != nil {
 				t.Fatal(err)
 			}
 			checkText(t, out.String(), `skipping environment variable "HTTP_PROXY"`)
@@ -383,7 +384,7 @@ func TestReplacementAndEnvironmentNotices(t *testing.T) {
 			newProgram := "/opt/new circus"
 			serviceExecutable = func() (string, error) { return newProgram, nil }
 			out.Reset()
-			if err := Install(credentials, &out); err != nil {
+			if err := InstallDaemon(credentials, &out); err != nil {
 				t.Fatal(err)
 			}
 			if strings.Count(out.String(), "Replacing circus daemon service:") != 1 {
@@ -393,12 +394,12 @@ func TestReplacementAndEnvironmentNotices(t *testing.T) {
 				fmt.Sprintf("program %q → %q", fakeExecutable, newProgram),
 				fmt.Sprintf("credentials %q → %q", f.dir+"/old/config/daemon.json", credentials),
 				fmt.Sprintf("CIRCUS_HOME %q → %q", f.dir+"/old", f.dir+"/new"))
-			m, err := current()
+			m, err := Daemon.current()
 			if err != nil {
 				t.Fatal(err)
 			}
 			def := m.definition([]byte(readPrivate(t, m.file())))
-			if def.credentials() != credentials || def.env["HTTP_PROXY"] != "" || def.env["SSL_CERT_DIR"] != "/cert/dir" || def.env["SSL_CERT_FILE"] != "/cert/file" {
+			if def.Credentials(credfile.RoleDaemon) != credentials || def.Env["HTTP_PROXY"] != "" || def.Env["SSL_CERT_DIR"] != "/cert/dir" || def.Env["SSL_CERT_FILE"] != "/cert/file" {
 				t.Errorf("recorded credentials or environment did not round-trip: %#v", def)
 			}
 		})
@@ -408,29 +409,29 @@ func TestReplacementAndEnvironmentNotices(t *testing.T) {
 func TestLaunchdInstallWaitsForUnloadAndRetriesBootstrap(t *testing.T) {
 	f := fakeService(t, "darwin")
 	saveCredential(t, "", credfile.RoleDaemon)
-	if err := Install("", io.Discard); err != nil {
+	if err := InstallDaemon("", io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(f.home, "Library", "LaunchAgents", label+".plist")
-	printAgent := "launchctl print " + launchTarget()
+	path := filepath.Join(f.home, "Library", "LaunchAgents", Daemon.label()+".plist")
+	printAgent := "launchctl print " + launchd{svc: Daemon}.target()
 	bootstrap := "launchctl bootstrap " + launchDomain() + " " + path
 	f.checkCalls(t, printAgent, bootstrap)
 	f.response(t, "delay-unload", "")
 	f.response(t, "launchctl.bootstrap.fail-once", "Bootstrap failed: 5: Input/output error")
-	if err := Install("", io.Discard); err != nil {
+	if err := InstallDaemon("", io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	f.checkCalls(t, printAgent, "launchctl bootout "+launchTarget(), printAgent, printAgent, bootstrap, "launchctl print "+launchDomain(), bootstrap)
+	f.checkCalls(t, printAgent, "launchctl bootout "+launchd{svc: Daemon}.target(), printAgent, printAgent, bootstrap, "launchctl print "+launchDomain(), bootstrap)
 }
 
 func TestLaunchdFirstInstallWithoutGUIDomain(t *testing.T) {
 	f := fakeService(t, "darwin")
 	saveCredential(t, "", credfile.RoleDaemon)
 	f.response(t, "launchctl.print.fail", "Bad request.\nCould not find domain for")
-	if err := Install("", io.Discard); !errors.Is(err, errNoGUIDomain) || !strings.Contains(err.Error(), "rerun `circus daemon install` on its own") {
+	if err := InstallDaemon("", io.Discard); !errors.Is(err, errNoGUIDomain) || !strings.Contains(err.Error(), "rerun `circus daemon install` on its own") {
 		t.Fatalf("install with no GUI login = %v", err)
 	}
-	m, _ := current()
+	m, _ := Daemon.current()
 	if _, err := os.Stat(m.file()); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("service file stat = %v", err)
 	}
@@ -446,10 +447,10 @@ func TestFirstInstallRollsBackFile(t *testing.T) {
 			f := fakeService(t, tc.os)
 			saveCredential(t, "", credfile.RoleDaemon)
 			f.response(t, tc.command+".fail", "Test failure")
-			if err := Install("", io.Discard); err == nil || !strings.Contains(err.Error(), "Test failure") {
+			if err := InstallDaemon("", io.Discard); err == nil || !strings.Contains(err.Error(), "Test failure") {
 				t.Fatalf("install = %v", err)
 			}
-			m, _ := current()
+			m, _ := Daemon.current()
 			for _, path := range []string{m.file(), filepath.Join(f.dir, "enabled"), filepath.Join(f.dir, "active"), filepath.Join(f.dir, "loaded")} {
 				if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 					t.Errorf("failed install left %s: %v", path, err)
@@ -464,10 +465,10 @@ func TestReinstallRollsBackFileAndServiceState(t *testing.T) {
 		t.Run(platform, func(t *testing.T) {
 			f := fakeService(t, platform)
 			saveCredential(t, "", credfile.RoleDaemon)
-			if err := Install("", io.Discard); err != nil {
+			if err := InstallDaemon("", io.Discard); err != nil {
 				t.Fatal(err)
 			}
-			m, _ := current()
+			m, _ := Daemon.current()
 			old := readPrivate(t, m.file())
 			serviceExecutable = func() (string, error) { return "/opt/new", nil }
 			if platform == "linux" {
@@ -484,7 +485,7 @@ func TestReinstallRollsBackFileAndServiceState(t *testing.T) {
                        ;;`, 1)
 				writeTestFile(t, filepath.Join(f.bin, "launchctl"), script, 0o700)
 			}
-			if err := Install("", io.Discard); err == nil || !strings.Contains(err.Error(), "Test failure") {
+			if err := InstallDaemon("", io.Discard); err == nil || !strings.Contains(err.Error(), "Test failure") {
 				t.Fatalf("reinstall = %v", err)
 			}
 			if data := readPrivate(t, m.file()); data != old {
@@ -504,16 +505,16 @@ func TestReinstallRollsBackFileAndServiceState(t *testing.T) {
 func TestSystemdUninstallToleratesUnknownUnit(t *testing.T) {
 	f := fakeService(t, "linux")
 	saveCredential(t, "", credfile.RoleDaemon)
-	if err := Install("", io.Discard); err != nil {
+	if err := InstallDaemon("", io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(f.config, "systemd", "user", unitName)
-	f.checkCalls(t, "systemctl --user is-system-running", "systemctl --user daemon-reload", "systemctl --user enable "+path, "systemctl --user restart "+unitName)
+	path := filepath.Join(f.config, "systemd", "user", Daemon.unitName())
+	f.checkCalls(t, "systemctl --user is-system-running", "systemctl --user daemon-reload", "systemctl --user enable "+path, "systemctl --user restart "+Daemon.unitName())
 	f.response(t, "systemctl.disable.fail", "Failed to disable unit: Unit circus-daemon.service does not exist")
-	if err := Uninstall(); err != nil {
+	if err := Daemon.Uninstall(); err != nil {
 		t.Fatal(err)
 	}
-	f.checkCalls(t, "systemctl --user is-system-running", "systemctl --user disable --now "+unitName, "systemctl --user daemon-reload")
+	f.checkCalls(t, "systemctl --user is-system-running", "systemctl --user disable --now "+Daemon.unitName(), "systemctl --user daemon-reload")
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("uninstall left the file: %v", err)
 	}

@@ -1,4 +1,4 @@
-package daemonservice
+package userservice
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 func TestDetachedLaunchReloadSurvivesInstallProcessGroup(t *testing.T) {
 	const installChild = "CIRCUS_TEST_INSTALL_CHILD"
 	if os.Getenv(installChild) == "1" {
-		l := launchd{home: os.Getenv("HOME")}
+		l := launchd{svc: Daemon, home: os.Getenv("HOME")}
 		if err := l.install(fakeExecutable, []string{"daemon", "--service"}, nil, []byte("previous")); err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +89,7 @@ func TestDetachedLaunchReloadSurvivesInstallProcessGroup(t *testing.T) {
 		}
 	}
 	waitForLaunchTestFile(t, ctx, filepath.Join(f.dir, "loaded"))
-	if _, err := os.Stat(filepath.Join(f.home, "Library", "LaunchAgents", label+".plist")); err != nil {
+	if _, err := os.Stat(filepath.Join(f.home, "Library", "LaunchAgents", Daemon.label()+".plist")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -110,7 +110,7 @@ func waitForLaunchTestFile(t *testing.T, ctx context.Context, path string) {
 
 func TestDetachedLaunchReloadTimeoutRestoresOriginalService(t *testing.T) {
 	f := fakeService(t, "darwin")
-	l := launchd{home: f.home}
+	l := launchd{svc: Daemon, home: f.home}
 	const original = "original plist"
 	if err := writePrivate(l.file(), original); err != nil {
 		t.Fatal(err)
@@ -138,8 +138,8 @@ func TestDetachedLaunchReloadTimeoutRestoresOriginalService(t *testing.T) {
 	if data := readPrivate(t, l.file()); data != original {
 		t.Errorf("restored plist = %q", data)
 	}
-	print := "launchctl print " + launchTarget()
-	bootout := "launchctl bootout " + launchTarget()
+	print := "launchctl print " + launchd{svc: Daemon}.target()
+	bootout := "launchctl bootout " + launchd{svc: Daemon}.target()
 	bootstrap := "launchctl bootstrap " + launchDomain() + " " + l.file()
 	f.checkCalls(t, print, bootout, print, bootstrap, print, bootout, print, bootstrap)
 }

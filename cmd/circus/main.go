@@ -1,6 +1,7 @@
 // Command circus is the circus CLI: `circus server` runs the control plane
 // and its admin subcommands, `circus join` enrolls a machine, `circus daemon`
 // runs and manages the device daemon, `circus daemon call` is its local harness,
+// `circus worker` installs and manages the worker as a service,
 // `circus call` is the worker-credential debug client, `circus ledger` changes
 // a project's ledger through changesets, `circus doctor` checks the stored
 // credentials against the control plane, `circus update` installs the latest
@@ -14,12 +15,12 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/EricWvi/circus/internal/daemonservice"
+	"github.com/EricWvi/circus/internal/userservice"
 )
 
 var version = "dev"
 
-const usage = "usage: circus <version|update|daemon|server|join|doctor|call|ledger>"
+const usage = "usage: circus <version|update|daemon|worker|server|join|doctor|call|ledger>"
 
 // init keeps the exec-guard's main goroutine on the main OS thread from the
 // start: on Linux the guard arms its death signal and forks the CLI on that
@@ -31,8 +32,8 @@ func init() {
 }
 
 func main() {
-	if runtime.GOOS == "darwin" && len(os.Args) > 1 && os.Args[1] == daemonservice.LaunchReloadFlag {
-		os.Exit(daemonservice.RunLaunchReload(os.Args[2:], os.Stderr))
+	if runtime.GOOS == "darwin" && len(os.Args) > 1 && os.Args[1] == userservice.LaunchReloadFlag {
+		os.Exit(userservice.RunLaunchReload(os.Args[2:], os.Stderr))
 	}
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, usage)
@@ -47,11 +48,13 @@ func main() {
 	case "daemon":
 		if err := daemonCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 			if errors.Is(err, errDaemonServiceStopped) {
-				os.Exit(daemonservice.LinuxTerminalExitStatus)
+				os.Exit(userservice.LinuxTerminalExitStatus)
 			}
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "worker":
+		exitOn(workerCommand(os.Args[2:], os.Stdout, os.Stderr))
 	case "call":
 		exitOn(callCommand(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	case "ledger":

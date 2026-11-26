@@ -31,6 +31,7 @@ describe("enrollCommand in a POSIX shell", () => {
       `if [ "$1" = version ]; then echo "$VERSION"; exit 0; fi
 echo "circus $*" >> "$LOG"
 if [ "$1" = join ]; then read -r link; echo "link $link" >> "$LOG"; [ "$FAIL" = join ] && exit 1; fi
+[ "$FAIL" = "$1 $2" ] && exit 1
 exit 0`,
     )
     script("task", `[ "$1" = cli ] && [ "$2" = -- ] || exit 2; shift 2; exec circus "$@"`)
@@ -94,6 +95,28 @@ exit 0`,
     const { status, calls } = run(releaseCommand, "tar")
     expect(status).not.toBe(0)
     expect(calls).toEqual([`curl ${archive}`, "tar"])
+  })
+
+  it("installs the worker service after the daemon's for both roles", () => {
+    const both = enrollCommand({ link: tricky, role: "both", serverVersion: "v0.2.0", platform: "linux-amd64" })
+    expect(run(both, "", "v0.2.0")).toEqual({
+      status: 0,
+      calls: ["circus join", `link ${tricky}`, "circus daemon install", "circus worker install"],
+    })
+    const { status, calls } = run(both, "daemon install", "v0.2.0")
+    expect(status).not.toBe(0)
+    expect(calls).toEqual(["circus join", `link ${tricky}`, "circus daemon install"])
+  })
+
+  it("installs only the worker service for a worker", () => {
+    const worker = enrollCommand({ link: tricky, role: "worker", serverVersion: "v0.2.0", platform: "linux-amd64" })
+    expect(run(worker)).toEqual({
+      status: 0,
+      calls: [`curl ${archive}`, "tar", "circus join --role worker", `link ${tricky}`, "circus worker install"],
+    })
+    const failed = run(worker, "worker install", "v0.2.0")
+    expect(failed.status).not.toBe(0)
+    expect(run(worker, "join", "v0.2.0").calls).toEqual(["circus join --role worker", `link ${tricky}`])
   })
 
   it("doesn't start the daemon when joining fails", () => {

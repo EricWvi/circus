@@ -7,20 +7,52 @@ you install Claude Code per worker from the Web UI.
 ## Install and start
 
 Each release has a package per platform, `circus-worker-<tag>-<os>-<arch>.tar.gz`
-(`linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`; listed in the
-release's `SHA256SUMS`). It needs Node.js 24 or later and the `circus` CLI
-of the same release.
+(`linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`; listed with
+their SHA-256 digests in the release's `latest.json`, under
+`worker_assets`, and in `SHA256SUMS`). It needs Node.js 24 or later and the
+`circus` CLI of the same release. The CLI installs it as a service of the
+user (a systemd user unit on Linux, a launchd agent on macOS), which is what
+the Web UI's "Add device" command does for a worker:
+
+```sh
+circus join --role worker   # paste the enrollment link
+circus worker install       # download, verify and unpack the package, install and start the service
+circus worker status        # version, Node.js, service file and log command
+```
+
+`circus worker install` downloads the package of the CLI's own version,
+verifies it against the manifest's digest and unpacks it to
+`<data>/worker/<version>/` (see `<data>` below); the service runs its
+launcher, `<data>/worker/<version>/circus-worker`, with `CIRCUS_NODE` set to
+the executable of the Node.js it found and checked (`$CIRCUS_NODE`, else
+`node` on `PATH`, as found; resolved only when it lies in a per-shell or
+temporary directory such as fnm's) and
+`CIRCUS_BIN` to the installing `circus`. It records the shell's `PATH`,
+`CIRCUS_HOME`, `HOME`, `USER`, locale, XDG directories, proxy variables,
+`NODE_EXTRA_CA_CERTS`, `NODE_USE_SYSTEM_CA` and the variables in the table
+below that are set; rerun it to change them. The
+proxy variables are stored in the service file (readable by the user only)
+as set, credentials in their URLs included. Logs go to the journal
+(`journalctl --user -u circus-worker.service -f`) or to
+`~/Library/Logs/circus/worker.log`. `circus update` moves the service to the
+new release's package and restarts a running worker; `circus worker
+uninstall` removes the service and the packages, not the agents or the
+credential. See the circus README ("Worker") for the details.
+
+To run a package by hand instead (with no service):
 
 ```sh
 tar -xzf circus-worker-<tag>-<os>-<arch>.tar.gz   # unpacks circus-worker/
-circus join --role worker                         # paste the enrollment link
 circus-worker/circus-worker
 ```
 
 `circus-worker/circus-worker` finds Node.js (`$CIRCUS_NODE`, else `node` on
-`PATH`) and fails with a clear message when it is missing or older than 24;
+`PATH`) and fails with a clear message when it is missing or older than 24,
+with the terminal status below, after writing the reason to the stop file
+(only when `CIRCUS_WORKER_STOP_FILE` is set);
 it may be symlinked onto `PATH`. The package holds the built worker and its
-production dependencies, nothing platform specific.
+production dependencies, nothing platform specific: regular files and
+directories only, as `circus worker install` accepts nothing else.
 
 Then open the worker in the Web UI and install Claude Code. The worker
 downloads the Claude Code build pinned for this worker release (see below),
@@ -35,8 +67,10 @@ pins another Claude Code version shows the old install as outdated and runs
 nothing with it until you choose "Update".
 
 `<data>` is `$CIRCUS_HOME`, else `$XDG_DATA_HOME/circus`, else
-`~/.local/share/circus`. An install interrupted by a stop or crash leaves a
-temporary directory there, removed at the next start.
+`~/.local/share/circus`; the agents go to `<data>/agents/` and the worker
+packages `circus worker install` manages to `<data>/worker/`. An agent
+install interrupted by a stop or crash leaves a temporary directory there,
+removed at the next start.
 
 From a source checkout, build and run with `npm ci`, `task worker:build` and
 `node worker/dist/main.js`; `node worker/scripts/package.mjs <tag> <out-dir>
@@ -48,7 +82,21 @@ the Claude Agent SDK and Claude Code's own tools in the session's working
 directory. It logs to stderr as JSON lines and shuts down gracefully on
 SIGTERM or SIGINT: it stops an install in progress, stops taking leases,
 closes every query, releases every lease and closes the link, within 15
-seconds. It reads the credential written by `circus join` from
+seconds. When the control plane refuses its credential (an upgrade answered 401 or
+403 that carries the control plane's `Circus-Auth: rejected` marker, or a
+rejected Hello), does not accept this worker (an incompatible Welcome), or
+the credential or a setting (`CIRCUS_NPM_REGISTRY` included) is missing or
+invalid, it writes the reason to its stop file and exits with the terminal
+status. The stop file is `$CIRCUS_WORKER_STOP_FILE` (recorded in the service
+by `circus worker install`, read by `circus worker status`), else
+`<data>/worker-state/stop.json`; it is written atomically with mode 0600,
+only its own directory is created (0700), and the worker removes it when it
+starts. A 401 or 403 without the marker (a proxy's) is retried.
+The terminal status is 78 on
+Linux, which the systemd unit of `circus worker install` does not restart
+(`RestartPreventExitStatus=78`), and 0 on macOS, since launchd's `KeepAlive`
+restarts every failed exit and cannot exempt one status. Any other failure
+exits 1 and is restarted. It reads the credential written by `circus join` from
 `$CIRCUS_HOME/config/worker.json`, or from
 `$XDG_CONFIG_HOME/circus/worker.json` with a default of
 `~/.config/circus/worker.json`. The file supplies the server URL, principal ID,
@@ -60,11 +108,12 @@ bearer token and optional CA bundle.
 | `CIRCUS_WORKER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `CIRCUS_WORKER_IDLE_SECONDS` | `300` | Integer from 1 to 86400: how long an idle session keeps its lease. An idle session releases at once when the control plane asks (`ReleaseIdle`) because a session of the same provider waits for its `max_sessions` |
 | `CIRCUS_BIN` | `circus` on `PATH` | The `circus` binary providing `internal exec-guard` |
-| `CIRCUS_HOME` | unset | Moves the credential (`config/`) and installed agents (`agents/`) under one directory |
-| `XDG_DATA_HOME` | `~/.local/share` | Installed agents go to `$XDG_DATA_HOME/circus/agents` when `CIRCUS_HOME` is unset |
+| `CIRCUS_HOME` | unset | Moves the credential (`config/`), installed agents (`agents/`) and the packages `circus worker install` manages (`worker/`) under one directory |
+| `XDG_DATA_HOME` | `~/.local/share` | Installed agents go to `$XDG_DATA_HOME/circus/agents`, and worker packages to `$XDG_DATA_HOME/circus/worker`, when `CIRCUS_HOME` is unset |
 | `CIRCUS_NPM_REGISTRY` | `https://registry.npmjs.org` | The npm registry agent packages are downloaded from (a mirror with the same layout); the digest check is the same |
 | `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` (or lowercase) | unset | Proxy for agent downloads, chosen as Go's `http.ProxyFromEnvironment` does (see "Agents") |
 | `CIRCUS_NODE` | `node` on `PATH` | The Node.js the launcher runs (24 or later) |
+| `CIRCUS_WORKER_STOP_FILE` | `<data>/worker-state/stop.json` | Absolute path of the file the worker and its launcher leave the reason of a terminal stop in; `circus worker install` records it |
 
 Claude Code runs with the environment of the worker (`CLAUDE_CONFIG_DIR` is
 left alone): with the user's own login on this machine for a session

@@ -14,7 +14,7 @@ import (
 	"github.com/EricWvi/circus/internal/selfupdate"
 )
 
-func TestShouldRestartDaemon(t *testing.T) {
+func TestRunsUpdatedBinary(t *testing.T) {
 	dir := t.TempDir()
 	updated := filepath.Join(dir, "circus")
 	other := filepath.Join(dir, "other-circus")
@@ -36,8 +36,8 @@ func TestShouldRestartDaemon(t *testing.T) {
 		{"missing updated file", symlink, updated, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := shouldRestartDaemon(tc.updated, tc.program); got != tc.want {
-				t.Errorf("shouldRestartDaemon(%q, %q) = %t, want %t", tc.updated, tc.program, got, tc.want)
+			if got := runsUpdatedBinary(tc.updated, tc.program); got != tc.want {
+				t.Errorf("runsUpdatedBinary(%q, %q) = %t, want %t", tc.updated, tc.program, got, tc.want)
 			}
 		})
 	}
@@ -51,7 +51,7 @@ func TestShouldRestartDaemon(t *testing.T) {
 	if err := os.Rename(newBinary, updated); err != nil {
 		t.Fatal(err)
 	}
-	if !shouldRestartDaemon(updated, symlink) {
+	if !runsUpdatedBinary(updated, symlink) {
 		t.Error("service symlink should still match the replaced executable")
 	}
 }
@@ -144,13 +144,11 @@ case "$2" in
     *) exit 1 ;;
 esac
 `)
-			oldUpdate := runSelfUpdate
-			t.Cleanup(func() { runSelfUpdate = oldUpdate })
-			runSelfUpdate = func(context.Context, string, bool, io.Writer) (selfupdate.Result, error) {
+			fakeSelfUpdate(t, selfupdate.Plan{Version: "v9.9.9", Path: updated, Apply: func(context.Context) (selfupdate.Result, error) {
 				next := filepath.Join(dir, "next")
 				write(next, "new executable")
-				return selfupdate.Result{Message: "Updated circus", ReplacedPath: updated}, os.Rename(next, updated)
-			}
+				return selfupdate.Result{Message: "Updated circus", ReplacedPath: updated, Version: "v9.9.9"}, os.Rename(next, updated)
+			}})
 			var out, errOut bytes.Buffer
 			if err := updateCommand(nil, &out, &errOut); err != nil {
 				t.Fatal(err)
@@ -176,7 +174,7 @@ esac
 			}
 			_, err := os.Stat(filepath.Join(dir, "restarted"))
 			wantRestarted := tc.selfStopped || tc.wantTryRestart && !tc.managerError
-			if (err == nil) != wantRestarted || strings.Contains(out.String(), "Restarted the circus device daemon service.") != wantRestarted {
+			if (err == nil) != wantRestarted || strings.Contains(out.String(), "Asked the service manager to restart the circus device daemon service.") != wantRestarted {
 				t.Errorf("restart state = %v, output = %q", err, out.String())
 			}
 			_, err = os.Stat(filepath.Join(dir, "active"))
@@ -185,4 +183,12 @@ esac
 			}
 		})
 	}
+}
+
+// fakeSelfUpdate makes `circus update` find plan.
+func fakeSelfUpdate(t *testing.T, plan selfupdate.Plan) {
+	t.Helper()
+	old := checkSelfUpdate
+	t.Cleanup(func() { checkSelfUpdate = old })
+	checkSelfUpdate = func(context.Context, string, bool, io.Writer) (selfupdate.Plan, error) { return plan, nil }
 }

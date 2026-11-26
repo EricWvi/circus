@@ -98,14 +98,17 @@ const shellQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
  * release, unless ~/.local/bin/circus already is the server's version,
  * download the matching CLI to a temporary file and unpack it there (so a
  * machine set up before skips the download, and one with another version
- * gets the server's); then join (as a worker only for the worker role) and, when
- * the link enrolls a device, install its daemon as a service of the user's
- * (started at boot or login, again when it fails, and restarted by
- * `circus update`). A development build has no download, so the chain
- * starts at the join and runs the CLI from a circus checkout with
- * `task cli --` (source build, files under .tmp/dev); that build can't be
- * a service, so it runs the daemon in the foreground. The
- * worker process itself is not started here.
+ * gets the server's); then join (as a worker only for the worker role);
+ * then, when the link enrolls a device, install its daemon as a service of
+ * the user's, and when it enrolls a worker, install the worker as one
+ * (`circus worker install` downloads the worker package of the same
+ * release and needs Node.js 24 or later). Both services start at boot or
+ * login, again when they fail, and are updated by `circus update`. A
+ * development build has no download, so the chain starts at the join and
+ * runs the CLI from a circus checkout with `task cli --` (source build,
+ * files under .tmp/dev); that build can't be a service, so it runs the
+ * daemon in the foreground and leaves the worker to be started from the
+ * checkout.
  *
  * The command starts with a space, so shells that leave such commands out
  * of their history (bash with `ignorespace`, zsh with HIST_IGNORE_SPACE)
@@ -140,6 +143,7 @@ export function enrollCommand({
   }
   steps.push(`printf '%s\\n' ${shellQuote(link)} | ${circus} join${role === "worker" ? " --role worker" : ""}`)
   if (role !== "worker") steps.push(release ? `${circus} daemon install` : `${circus} daemon`)
+  if (role !== "daemon" && release) steps.push(`${circus} worker install`)
   return steps.map((step, i) => (i === 0 ? " " : "  ") + step).join(" &&\n")
 }
 

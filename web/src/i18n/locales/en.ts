@@ -282,7 +282,9 @@ export const en = {
       runOnMachine: "Run on the machine:",
       devBuild:
         "This server is a development build ({{version}}), so there is no release to download. Run this from the root of a circus checkout (the CLI runs from source with its files under .tmp/dev):",
-      workerNote: "Start the worker process separately; it isn't released yet.",
+      workerNote:
+        "The worker needs Node.js 24 or later on the machine. The command installs it as a service of your user, from the same release as this server.",
+      workerNoteDev: "Start the worker from the checkout yourself (see worker/README.md).",
       expires: "The link works once and expires {{in}}. Don't share it.",
       expired: "This link expired",
       expiredHint: "Links work for a limited time. Generate a new one to add the device.",

@@ -152,7 +152,7 @@ describe("the add device dialog", () => {
       ].join("\n"),
     )
     expect(dialog().getByText("The link works once and expires in 1 hour. Don't share it.")).toBeTruthy()
-    expect(dialog().queryByText(/worker process/)).toBeNull()
+    expect(dialog().queryByText(/Node\.js/)).toBeNull()
     // The role belongs to the link now.
     expect(dialog().getByRole("radio", { name: /^Worker/ }).closest("fieldset")?.disabled).toBe(true)
   })
@@ -163,9 +163,16 @@ describe("the add device dialog", () => {
     fireEvent.click(dialog().getByRole("radio", { name: /^Worker/ }))
     await generate()
     expect(requested).toEqual(["worker"])
-    expect(lines()).toHaveLength(6)
-    expect(lines()[5]).toBe(`  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join --role worker`)
-    expect(dialog().getByText("Start the worker process separately; it isn't released yet.")).toBeTruthy()
+    expect(lines()).toHaveLength(7)
+    expect(lines().slice(5)).toEqual([
+      `  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join --role worker &&`,
+      "  ~/.local/bin/circus worker install",
+    ])
+    expect(
+      dialog().getByText(
+        "The worker needs Node.js 24 or later on the machine. The command installs it as a service of your user, from the same release as this server.",
+      ),
+    ).toBeTruthy()
 
     // The platform only picks the download, so it changes the command in place.
     await choosePlatform("macOS Apple Silicon")
@@ -185,10 +192,11 @@ describe("the add device dialog", () => {
     expect(requested).toEqual(["both"])
     expect(lines().slice(5)).toEqual([
       `  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join &&`,
-      "  ~/.local/bin/circus daemon install",
+      "  ~/.local/bin/circus daemon install &&",
+      "  ~/.local/bin/circus worker install",
     ])
     expect(lines()[2]).toContain("/v1.2.0-rc.1/circus-v1.2.0-rc.1-linux-amd64.tar.gz")
-    expect(dialog().getByText(/worker process/)).toBeTruthy()
+    expect(dialog().getByText(/needs Node\.js 24 or later/)).toBeTruthy()
   })
 
   it("has no download for a development build", async () => {
@@ -208,6 +216,16 @@ describe("the add device dialog", () => {
     expect(lines()[1]).toBe("  task cli -- daemon")
     // No download, so no platform to choose.
     expect(dialog().queryByRole("combobox", { name: "Platform" })).toBeNull()
+  })
+
+  it("leaves the worker to the checkout in a development build", async () => {
+    await renderPage()
+    await openDialog()
+    fireEvent.click(dialog().getByRole("radio", { name: /^Both/ }))
+    await generate()
+    expect(lines()[1]).toBe("  task cli -- daemon")
+    expect(command()).not.toContain("worker install")
+    expect(dialog().getByText("Start the worker from the checkout yourself (see worker/README.md).")).toBeTruthy()
   })
 
   it("copies the whole command", async () => {

@@ -21,7 +21,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/jobs"
 	daemonlink "github.com/EricWvi/circus/internal/daemon/link"
 	"github.com/EricWvi/circus/internal/daemonlock"
-	"github.com/EricWvi/circus/internal/daemonservice"
+	"github.com/EricWvi/circus/internal/userservice"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -43,10 +43,10 @@ func daemonCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 	}
 	switch command {
 	case "install":
-		if err := daemonservice.Install(credentials, out); err != nil {
+		if err := userservice.InstallDaemon(credentials, out); err != nil {
 			return err
 		}
-		st, err := daemonservice.GetAfterInstall()
+		st, err := userservice.Daemon.GetAfterInstall()
 		if st.Running && err == nil {
 			fmt.Fprintln(out, "✓ Installed and started the circus device daemon service.")
 		} else {
@@ -63,13 +63,13 @@ func daemonCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 		printDaemonLocation(out, st)
 		return nil
 	case "uninstall":
-		return daemonAction(out, daemonservice.Uninstall, "Removed")
+		return daemonAction(out, userservice.Daemon.Uninstall, "Removed")
 	case "start":
-		return daemonAction(out, daemonservice.Start, "Started")
+		return daemonAction(out, userservice.Daemon.Start, "Started")
 	case "stop":
-		return daemonAction(out, daemonservice.Stop, "Stopped")
+		return daemonAction(out, userservice.Daemon.Stop, "Stopped")
 	case "restart":
-		return daemonAction(out, daemonservice.Restart, "Restarted")
+		return daemonAction(out, userservice.Daemon.Restart, "Restarted")
 	case "status":
 		return daemonStatus(out)
 	default:
@@ -127,7 +127,7 @@ func daemonAction(out io.Writer, action func() error, verb string) error {
 }
 
 func daemonStatus(out io.Writer) error {
-	st, err := daemonservice.Get()
+	st, err := userservice.Daemon.Get()
 	if err != nil {
 		return err
 	}
@@ -135,6 +135,14 @@ func daemonStatus(out io.Writer) error {
 		fmt.Fprintln(out, "The circus device daemon service is not installed. Run `circus daemon install`.")
 		return nil
 	}
+	fmt.Fprintf(out, "The circus device daemon service is installed and %s.\n", runState(st))
+	printServiceState(out, st)
+	printDaemonLocation(out, st)
+	printServiceAdvice(out, st)
+	return nil
+}
+
+func runState(st userservice.Status) string {
 	state := "not running"
 	if st.Running {
 		state = "running"
@@ -142,7 +150,10 @@ func daemonStatus(out io.Writer) error {
 	if st.PID > 0 {
 		state += fmt.Sprintf(" (PID %d)", st.PID)
 	}
-	fmt.Fprintf(out, "The circus device daemon service is installed and %s.\n", state)
+	return state
+}
+
+func printServiceState(out io.Writer, st userservice.Status) {
 	if st.State != "" {
 		fmt.Fprintln(out, "  State     ", st.State)
 	}
@@ -157,17 +168,18 @@ func daemonStatus(out io.Writer) error {
 		}
 	}
 	fmt.Fprintln(out, "  Starts    ", start)
-	printDaemonLocation(out, st)
+}
+
+func printServiceAdvice(out io.Writer, st userservice.Status) {
 	if st.StoppedAfterExit {
 		fmt.Fprintf(out, "See the logs for why it stopped: %s\n", st.Logs)
 	}
 	for _, advice := range st.Advice {
 		fmt.Fprintln(out, advice)
 	}
-	return nil
 }
 
-func printDaemonLocation(out io.Writer, st daemonservice.Status) {
+func printDaemonLocation(out io.Writer, st userservice.Status) {
 	fmt.Fprintln(out, "  File      ", st.File)
 	fmt.Fprintln(out, "  Logs      ", st.Logs)
 }

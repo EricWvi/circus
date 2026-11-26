@@ -6,6 +6,9 @@ logs
 node_modules/
 /bin/
 /circus
+# `go build` run inside a command's directory
+/cmd/*/circus
+/cmd/*/circus-fakeworker
 dist/
 dist-ssr/
 /target/

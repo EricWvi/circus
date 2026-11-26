@@ -404,7 +404,11 @@ const LinkPanel = memo(function LinkPanel({
         {release ? t("devices.add.runOnMachine") : t("devices.add.devBuild", { version: link.serverVersion })}
       </p>
       <CommandBlock command={enrollCommand({ ...link, role, platform })} copyRef={copyRef} />
-      {role !== "daemon" && <p className="text-xs text-muted-foreground">{t("devices.add.workerNote")}</p>}
+      {role !== "daemon" && (
+        <p className="text-xs text-muted-foreground">
+          {release ? t("devices.add.workerNote") : t("devices.add.workerNoteDev")}
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
         {t("devices.add.expires", { in: formatTimeUntil(deadlineUnixMs, now) })}
       </p>

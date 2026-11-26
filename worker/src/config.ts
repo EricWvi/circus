@@ -38,7 +38,28 @@ export interface WorkerConfig {
   idleMs: number;
 }
 
+/**
+ * A missing or invalid credential (`credential`) or setting (`config`): the
+ * worker stops for good (exitStatus), since starting it again cannot fix it.
+ */
+export class ConfigError extends Error {
+  override name = "ConfigError";
+  constructor(message: string, readonly kind: "credential" | "config", options?: ErrorOptions) {
+    super(message, options);
+  }
+}
+
 export function loadConfig(env = process.env): WorkerConfig {
+  try {
+    return readConfig(env);
+  } catch (error) {
+    if (error instanceof ConfigError) throw error;
+    // Everything but the settings comes from reading the credential.
+    throw new ConfigError(error instanceof Error ? error.message : String(error), "credential", { cause: error });
+  }
+}
+
+function readConfig(env: NodeJS.ProcessEnv): WorkerConfig {
   const configHome = env.CIRCUS_HOME
     ? resolve(env.CIRCUS_HOME, "config")
     : join(env.XDG_CONFIG_HOME && isAbsolute(env.XDG_CONFIG_HOME)
@@ -71,16 +92,16 @@ export function loadConfig(env = process.env): WorkerConfig {
   const rawMax = env.CIRCUS_WORKER_MAX_SESSIONS ?? "4";
   const maxSessions = Number(rawMax);
   if (!/^\d+$/.test(rawMax) || maxSessions < 1 || maxSessions > 64) {
-    throw new Error("CIRCUS_WORKER_MAX_SESSIONS must be an integer from 1 to 64");
+    throw new ConfigError("CIRCUS_WORKER_MAX_SESSIONS must be an integer from 1 to 64", "config");
   }
   const rawIdle = env.CIRCUS_WORKER_IDLE_SECONDS ?? "300";
   const idleSeconds = Number(rawIdle);
   if (!/^\d+$/.test(rawIdle) || idleSeconds < 1 || idleSeconds > 86_400) {
-    throw new Error("CIRCUS_WORKER_IDLE_SECONDS must be an integer from 1 to 86400");
+    throw new ConfigError("CIRCUS_WORKER_IDLE_SECONDS must be an integer from 1 to 86400", "config");
   }
   const logLevel = env.CIRCUS_WORKER_LOG_LEVEL ?? "info";
   if (logLevel !== "debug" && logLevel !== "info" && logLevel !== "warn" && logLevel !== "error") {
-    throw new Error("CIRCUS_WORKER_LOG_LEVEL must be debug, info, warn or error");
+    throw new ConfigError("CIRCUS_WORKER_LOG_LEVEL must be debug, info, warn or error", "config");
   }
   return {
     url: credentials.control_plane_url,

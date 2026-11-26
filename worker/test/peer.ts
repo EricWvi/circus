@@ -84,7 +84,14 @@ export class Peer {
   }
 }
 
-export async function serve(statuses: number[] = []) {
+/**
+ * An upgrade answered with an HTTP status instead of the WebSocket: a
+ * number is an anonymous answer (a proxy's), `refused` is the control
+ * plane's own refusal (Circus-Auth: rejected).
+ */
+export type UpgradeAnswer = number | { refused: number };
+
+export async function serve(statuses: UpgradeAnswer[] = []) {
   const server = createServer();
   const wss = new WebSocketServer({ noServer: true });
   const peers = new Inbox<Peer>();
@@ -98,9 +105,10 @@ export async function serve(statuses: number[] = []) {
     expect(request.headers["sec-websocket-protocol"]).toBeUndefined();
     expect(request.headers["sec-websocket-extensions"]).toBeUndefined();
     attempts.push(++count);
-    const status = statuses.shift();
-    if (status) {
-      socket.end(`HTTP/1.1 ${status} Test\r\nContent-Length: 0\r\nConnection: close\r\nLocation: /trap\r\n\r\n`);
+    const answer = statuses.shift();
+    if (answer) {
+      const [status, marker] = typeof answer === "number" ? [answer, ""] : [answer.refused, "Circus-Auth: rejected\r\n"];
+      socket.end(`HTTP/1.1 ${status} Test\r\n${marker}Content-Length: 0\r\nConnection: close\r\nLocation: /trap\r\n\r\n`);
     } else {
       wss.handleUpgrade(request, socket, head, (ws) => peers.push(new Peer(ws)));
     }

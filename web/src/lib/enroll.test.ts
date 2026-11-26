@@ -70,7 +70,7 @@ describe("isReleaseVersion", () => {
 describe("enrollCommand", () => {
   const link = "https://cp.example/join#d.w"
 
-  it("downloads a release unless it is installed, joins and starts the daemon, as one chain", () => {
+  it("downloads a release unless it is installed, joins and installs the daemon and the worker, as one chain", () => {
     expect(enrollCommand({ link, role: "both", serverVersion: "v0.2.0", platform: "darwin-amd64" })).toBe(
       [
         ` [ "$(~/.local/bin/circus version 2>/dev/null)" = v0.2.0 ] || {`,
@@ -79,14 +79,34 @@ describe("enrollCommand", () => {
         `    tar -xzf "$t" -C ~/.local/bin circus && rm -f "$t"`,
         `  } &&`,
         `  printf '%s\\n' 'https://cp.example/join#d.w' | ~/.local/bin/circus join &&`,
-        "  ~/.local/bin/circus daemon install",
+        "  ~/.local/bin/circus daemon install &&",
+        "  ~/.local/bin/circus worker install",
       ].join("\n"),
     )
   })
 
-  it("joins a worker without starting a daemon", () => {
+  it("joins a worker and installs its service without a daemon", () => {
     const lines = enrollCommand({ link, role: "worker", serverVersion: "v0.2.0", platform: "linux-arm64" }).split("\n")
-    expect(lines.at(-1)).toBe("  printf '%s\\n' 'https://cp.example/join#d.w' | ~/.local/bin/circus join --role worker")
+    expect(lines.slice(-2)).toEqual([
+      "  printf '%s\\n' 'https://cp.example/join#d.w' | ~/.local/bin/circus join --role worker &&",
+      "  ~/.local/bin/circus worker install",
+    ])
+    expect(lines.join("\n")).not.toContain("daemon")
+  })
+
+  it("installs only the daemon for a device", () => {
+    const lines = enrollCommand({ link, role: "daemon", serverVersion: "v0.2.0", platform: "linux-amd64" }).split("\n")
+    expect(lines.at(-1)).toBe("  ~/.local/bin/circus daemon install")
+    expect(lines.join("\n")).not.toContain("worker")
+  })
+
+  it("leaves the worker to the checkout in a development build", () => {
+    expect(enrollCommand({ link, role: "both", serverVersion: "dev", platform: "linux-amd64" })).toBe(
+      " printf '%s\\n' 'https://cp.example/join#d.w' | task cli -- join &&\n  task cli -- daemon",
+    )
+    expect(enrollCommand({ link, role: "worker", serverVersion: "dev", platform: "linux-amd64" })).toBe(
+      " printf '%s\\n' 'https://cp.example/join#d.w' | task cli -- join --role worker",
+    )
   })
 
   it("leaves the download out for a development build", () => {

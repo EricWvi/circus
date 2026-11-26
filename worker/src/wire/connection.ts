@@ -15,8 +15,20 @@ const CLOSE_TIMEOUT_MS = 5_000;
 const MAX_QUEUED_MESSAGES = 256;
 export const MAX_UINT64 = (1n << 64n) - 1n;
 
+/** The header the control plane sets on its own link authentication refusals (`internal/wire.LinkAuthHeader`). */
+export const LINK_AUTH_HEADER = "circus-auth";
+export const LINK_AUTH_REJECTED = "rejected";
+
+/**
+ * A link failure retrying cannot fix: the control plane refused the
+ * credential (`refused`), or it does not accept this worker build
+ * (`incompatible`).
+ */
 export class TerminalLinkError extends Error {
   override name = "TerminalLinkError";
+  constructor(message: string, readonly reason: "refused" | "incompatible" = "refused") {
+    super(message);
+  }
 }
 
 interface WireOptions {
@@ -33,7 +45,7 @@ export function welcomeLimits(welcome: Welcome, principalId: string): Limits {
   const count = welcome.maxInFlightMessages || 2;
   if (welcome.negotiatedVersion !== 1 || welcome.principalId !== principalId ||
       message > BigInt(MESSAGE_BYTES) || count !== 1) {
-    throw new TerminalLinkError("incompatible worker Welcome (version, principal, message limit or in-flight count)");
+    throw new TerminalLinkError("incompatible worker Welcome (version, principal, message limit or in-flight count)", "incompatible");
   }
   const messageBytes = Number(message);
   const fragmentBytes = welcome.maxFragmentBytes || FRAGMENT_BYTES;
@@ -115,8 +127,13 @@ export class WireConnection {
     this.#socket.once("close", (code) => this.#finish(code));
     this.#socket.on("unexpected-response", (_request, response) => {
       const status = response.statusCode;
-      this.fail(status === 401 || status === 403
-        ? new TerminalLinkError(`worker upgrade HTTP ${status}`)
+      // Only the control plane's own refusal of the credential is terminal:
+      // it marks it (LINK_AUTH_HEADER). A 401 or 403 from a proxy or WAF in
+      // front of it is retried like any other failure.
+      const refused = (status === 401 || status === 403) &&
+        response.headers[LINK_AUTH_HEADER] === LINK_AUTH_REJECTED;
+      this.fail(refused
+        ? new TerminalLinkError(`worker upgrade HTTP ${status}: the control plane refused the credential`)
         : new Error(`worker upgrade HTTP ${status}`));
     });
     this.#socket.once("open", () => {

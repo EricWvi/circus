@@ -216,7 +216,7 @@ func TestUpdate(t *testing.T) {
 				if resolveErr != nil {
 					t.Fatal(resolveErr)
 				}
-				if err != nil || result.Message != "Updated circus to "+testVersion || result.ReplacedPath != resolved {
+				if err != nil || result.Message != "Updated circus to "+testVersion || result.ReplacedPath != resolved || result.Version != testVersion {
 					t.Errorf("update = %+v, %v", result, err)
 				}
 				wantBinary = newBinary
@@ -358,5 +358,57 @@ func TestExtract(t *testing.T) {
 				t.Errorf("extract error = %v, want invalid archive", err)
 			}
 		})
+	}
+}
+
+// Check downloads and verifies but changes nothing; only Apply replaces the
+// executable. `circus update` relies on it to abort with the old binary in
+// place when the worker package can't be had.
+func TestCheckChangesNothingUntilApply(t *testing.T) {
+	const assetName = "circus-" + testVersion + "-" + testTarget + ".tar.gz"
+	const assetURL = releasesURL + "download/" + testVersion + "/" + assetName
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "circus")
+	if err := os.WriteFile(bin, []byte(oldBinary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	archive := testArchive(t, "circus", tar.TypeReg, newBinary, false)
+	data, err := json.Marshal(manifest{Version: testVersion, Assets: []asset{{
+		Target: testTarget, Name: assetName, URL: assetURL, SHA256: fmt.Sprintf("%x", sha256.Sum256(archive)),
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests []string
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests = append(requests, req.URL.String())
+		body := data
+		if req.URL.String() == assetURL {
+			body = archive
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}, nil
+	})}
+	plan, err := check(t.Context(), httpDownloader(client, "v1.0.0"), "v1.0.0", testTarget, false, io.Discard, func() (string, error) { return bin, nil })
+	if err != nil || plan.UpToDate || plan.Version != testVersion || plan.Path != bin || plan.Apply == nil {
+		t.Fatalf("check = %+v, %v", plan, err)
+	}
+	if !slices.Equal(requests, []string{manifestURL, assetURL}) {
+		t.Errorf("check requested %v", requests)
+	}
+	if got, err := os.ReadFile(bin); err != nil || string(got) != oldBinary {
+		t.Fatalf("check changed the executable: %q, %v", got, err)
+	}
+	if staged, _ := filepath.Glob(filepath.Join(dir, ".circus-update-*")); len(staged) != 0 {
+		t.Errorf("check staged %v", staged)
+	}
+	result, err := plan.Apply(t.Context())
+	if err != nil || result.ReplacedPath != bin || result.Version != testVersion {
+		t.Fatalf("apply = %+v, %v", result, err)
+	}
+	if got, err := os.ReadFile(bin); err != nil || string(got) != newBinary {
+		t.Errorf("apply left %q, %v", got, err)
+	}
+	if len(requests) != 2 {
+		t.Errorf("apply downloaded again: %v", requests)
 	}
 }

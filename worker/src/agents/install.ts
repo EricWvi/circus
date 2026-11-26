@@ -10,6 +10,7 @@ import tls from "node:tls";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
+import { ConfigError } from "../config.js";
 import { bareHost, portOf, proxyConfig, proxyFor } from "./proxy.js";
 import { extractPackage } from "./tar.js";
 
@@ -29,16 +30,26 @@ const TEMP_PREFIX = ".install-";
  * ~/.local/share/circus/agents.
  */
 export function agentsDirectory(env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
-  if (env.CIRCUS_HOME) return resolve(env.CIRCUS_HOME, "agents");
+  return join(dataDirectory(env, home), "agents");
+}
+
+/** The worker's data directory: $CIRCUS_HOME, else $XDG_DATA_HOME/circus (when absolute), else ~/.local/share/circus. */
+export function dataDirectory(env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
+  if (env.CIRCUS_HOME) return resolve(env.CIRCUS_HOME);
   const data = env.XDG_DATA_HOME && isAbsolute(env.XDG_DATA_HOME) ? env.XDG_DATA_HOME : join(home, ".local", "share");
-  return join(data, "circus", "agents");
+  return join(data, "circus");
 }
 
 /** The npm registry tarballs come from: CIRCUS_NPM_REGISTRY, without a trailing slash. */
 export function registryBase(env: NodeJS.ProcessEnv = process.env): string {
   const base = (env.CIRCUS_NPM_REGISTRY || DEFAULT_REGISTRY).replace(/\/+$/, "");
-  const url = new URL(base);
-  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("CIRCUS_NPM_REGISTRY must be an http or https URL");
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    throw new ConfigError("CIRCUS_NPM_REGISTRY must be an http or https URL", "config");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new ConfigError("CIRCUS_NPM_REGISTRY must be an http or https URL", "config");
   return base;
 }
 

@@ -441,8 +441,9 @@ describe("WorkerLink reconnect", () => {
     vi.useRealTimers();
   });
 
-  it("backs off from 500 ms to 10 seconds and stops on HTTP 403", async () => {
-    const server = await serve([503, 302, 503, 503, 503, 503, 503, 403]);
+  it("backs off from 500 ms to 10 seconds and stops on the control plane's HTTP 403", async () => {
+    // A 401 or 403 without the control plane's marker (a proxy's) is retried.
+    const server = await serve([503, 302, 401, 403, 503, 503, 503, { refused: 403 }]);
     const warn = vi.fn();
     const opts = workerOptions(server.url);
     const monitored = new WorkerLink({ ...opts, log: { ...opts.log, warn } });
@@ -506,7 +507,7 @@ describe("WorkerLink reconnect", () => {
 
   it.each(["http401", "reject", "principal", "version", "count", "message size"] as const)(
     "treats %s as terminal", async (failure) => {
-      const server = await serve(failure === "http401" ? [401] : []);
+      const server = await serve(failure === "http401" ? [{ refused: 401 }] : []);
       const link = server.link();
       link.start();
       try {

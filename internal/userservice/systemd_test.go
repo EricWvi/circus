@@ -1,4 +1,4 @@
-package daemonservice
+package userservice
 
 import (
 	"os"
@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/EricWvi/circus/internal/credfile"
 )
 
 func TestSystemdVerifyGeneratedUnit(t *testing.T) {
@@ -27,8 +29,8 @@ func TestSystemdVerifyGeneratedUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 	credentials := filepath.Join(dir, `credentials % " \${TOKEN}.json`)
-	unit := filepath.Join(dir, unitName)
-	data := unitText(exe, []string{"daemon", "--service", "--credentials", credentials}, []string{`PATH=/bin:/with spaces`, `HTTPS_PROXY=http://a%b"$c`})
+	unit := filepath.Join(dir, Daemon.unitName())
+	data := systemd{svc: Daemon}.unitText(exe, []string{"daemon", "--service", "--credentials", credentials}, []string{`PATH=/bin:/with spaces`, `HTTPS_PROXY=http://a%b"$c`})
 	writeTestFile(t, unit, data, 0600)
 	for _, name := range []string{"basic", "default", "shutdown"} {
 		writeTestFile(t, filepath.Join(dir, name+".target"), "[Unit]\nDescription=Verification target\nDefaultDependencies=no\n", 0600)
@@ -40,7 +42,7 @@ func TestSystemdVerifyGeneratedUnit(t *testing.T) {
 		t.Fatalf("verify: %v\n%s", err, out)
 	}
 	d := (systemd{}).definition([]byte(data))
-	if d.program() != exe || d.credentials() != credentials || d.env["HTTPS_PROXY"] != `http://a%b"$c` {
+	if d.Program() != exe || d.Credentials(credfile.RoleDaemon) != credentials || d.Env["HTTPS_PROXY"] != `http://a%b"$c` {
 		t.Errorf("unexpected definition: %+v", d)
 	}
 	if !strings.Contains(data, "SuccessExitStatus=78\n") {
@@ -57,7 +59,7 @@ ExecStart=:"/opt/old binary%%$cash" "daemon" "--credentials" "/other/creds$$.jso
 Environment="CIRCUS_HOME=/old%%path"
 `
 	d := (systemd{}).definition([]byte(unit))
-	if d.program() != "/opt/old binary%$cash" || d.credentials() != "/other/creds$$.json" || d.env["CIRCUS_HOME"] != "/old%path" {
+	if d.Program() != "/opt/old binary%$cash" || d.Credentials(credfile.RoleDaemon) != "/other/creds$$.json" || d.Env["CIRCUS_HOME"] != "/old%path" {
 		t.Errorf("legacy definition = %+v", d)
 	}
 }

@@ -677,3 +677,60 @@ if [ "$*" != "--user restart circus-daemon.service" ]; then exit 2; fi
 		})
 	}
 }
+
+// Joining as a worker restarts a worker service that reads the replaced
+// credential, and otherwise says how to start the worker.
+func TestJoinWorkerRestartsOrAdvises(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses a systemctl fake")
+	}
+	for _, tc := range []struct {
+		name, version, serviceHome, want string
+		installed, restarted             bool
+	}{
+		{name: "matching service", version: "v1.2.3", installed: true, restarted: true, want: "Restarted the circus worker service."},
+		{name: "service of another home", version: "v1.2.3", installed: true, serviceHome: "another-home",
+			want: "The installed circus worker service reads another credential"},
+		{name: "release without a service", version: "v1.2.3", want: "Install and start the worker service with `circus worker install`."},
+		{name: "development build", version: "dev", want: "This circus is a development build: start the worker from the checkout (see worker/README.md)."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newJoinHarness(t)
+			oldVersion := version
+			t.Cleanup(func() { version = oldVersion })
+			version = tc.version
+			bin := t.TempDir()
+			t.Setenv("JOIN_TEST_DIR", bin)
+			t.Setenv("PATH", bin)
+			if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$JOIN_TEST_DIR/calls\"\n"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if tc.installed {
+				unit := filepath.Join(h.cfgDir, "systemd", "user", "circus-worker.service")
+				if err := os.MkdirAll(filepath.Dir(unit), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				home := os.Getenv("CIRCUS_HOME")
+				if tc.serviceHome != "" {
+					home = filepath.Join(h.cfgDir, tc.serviceHome)
+				}
+				definition := fmt.Sprintf("[Service]\nExecStart=/data/worker/v1.2.3/circus-worker\nEnvironment=%q\nEnvironment=%q\n",
+					"CIRCUS_HOME="+home, "XDG_CONFIG_HOME="+os.Getenv("XDG_CONFIG_HOME"))
+				if err := os.WriteFile(unit, []byte(definition), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			out, err := h.join(h.link("worker"), "--role", "worker", "--name", "box")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("join output:\n%s\nwant %q", out, tc.want)
+			}
+			calls, _ := os.ReadFile(filepath.Join(bin, "calls"))
+			if restarted := strings.Contains(string(calls), "--user restart circus-worker.service"); restarted != tc.restarted {
+				t.Errorf("systemctl calls: %q", calls)
+			}
+		})
+	}
+}

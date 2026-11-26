@@ -20,8 +20,9 @@ import (
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/credfile"
-	"github.com/EricWvi/circus/internal/daemonservice"
 	"github.com/EricWvi/circus/internal/machineid"
+	"github.com/EricWvi/circus/internal/selfupdate"
+	"github.com/EricWvi/circus/internal/userservice"
 )
 
 const joinUsage = `usage: circus join [-|<link>] [--role daemon|worker|both] [--name NAME] [--ca-file FILE] [--force]
@@ -206,13 +207,15 @@ func joinCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 		joined = append(joined, e.role)
 		if e.role == credfile.RoleDaemon {
 			restartJoinedDaemon(paths[e.role], out, errOut)
+		} else {
+			restartJoinedWorker(paths[e.role], out, errOut)
 		}
 	}
 	return nil
 }
 
 func restartJoinedDaemon(path string, out, errOut io.Writer) {
-	restarted, err := daemonservice.RestartWithCredentials(path)
+	restarted, err := userservice.Daemon.RestartWithCredentials(path)
 	switch {
 	case err != nil:
 		fmt.Fprintf(errOut, "warning: could not restart the circus device daemon service: %v\n", err)
@@ -221,6 +224,31 @@ func restartJoinedDaemon(path string, out, errOut io.Writer) {
 	default:
 		fmt.Fprintln(out, "Start the daemon with `circus daemon install` (service) or `circus daemon` (foreground).")
 	}
+}
+
+func restartJoinedWorker(path string, out, errOut io.Writer) {
+	restarted, err := userservice.Worker.RestartWithCredentials(path)
+	switch {
+	case err != nil:
+		fmt.Fprintf(errOut, "warning: could not restart the circus worker service: %v\n", err)
+	case restarted:
+		fmt.Fprintln(out, "Restarted the circus worker service.")
+	default:
+		fmt.Fprintln(out, workerJoinAdvice(path))
+	}
+}
+
+// workerJoinAdvice tells how to start the worker after a join that
+// restarted no worker service.
+func workerJoinAdvice(path string) string {
+	if d, ok, _ := userservice.Worker.Installed(); ok {
+		return fmt.Sprintf("The installed circus worker service reads another credential (%s), so it was not restarted. Run `circus worker install` here to install it for %s.",
+			d.Credentials(credfile.RoleWorker), path)
+	}
+	if !selfupdate.IsRelease(version) {
+		return "This circus is a development build: start the worker from the checkout (see worker/README.md)."
+	}
+	return "Install and start the worker service with `circus worker install`."
 }
 
 // adminNoun names a role as the server CLI does: the daemon role is a

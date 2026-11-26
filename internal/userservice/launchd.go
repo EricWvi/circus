@@ -1,4 +1,4 @@
-package daemonservice
+package userservice
 
 import (
 	"context"
@@ -13,23 +13,26 @@ import (
 	"time"
 )
 
-const label = "com.github.ericwvi.circus.daemon"
+type launchd struct {
+	home string
+	svc  *Service
+}
 
-type launchd struct{ home string }
+func (l launchd) label() string { return l.svc.label() }
 
 func (l launchd) file() string {
-	return filepath.Join(l.home, "Library", "LaunchAgents", label+".plist")
+	return filepath.Join(l.home, "Library", "LaunchAgents", l.label()+".plist")
 }
 
 func (l launchd) logFile() string {
-	return filepath.Join(l.home, "Library", "Logs", "circus", "daemon.log")
+	return filepath.Join(l.home, "Library", "Logs", "circus", l.svc.name+".log")
 }
 
 func (l launchd) logs() string { return "tail -f " + shellQuote(l.logFile()) }
 
 func launchDomain() string { return "gui/" + strconv.Itoa(os.Getuid()) }
 
-func launchTarget() string { return launchDomain() + "/" + label }
+func (l launchd) target() string { return launchDomain() + "/" + l.label() }
 
 func (l launchd) plist(exe string, args, env []string) string {
 	var b strings.Builder
@@ -42,7 +45,7 @@ func (l launchd) plist(exe string, args, env []string) string {
 <dict>
   <key>Label</key>
   `)
-	writeString(label)
+	writeString(l.label())
 	b.WriteString("  <key>ProgramArguments</key>\n  <array>\n")
 	for _, arg := range append([]string{exe}, args...) {
 		b.WriteString("    ")
@@ -58,7 +61,11 @@ func (l launchd) plist(exe string, args, env []string) string {
   </dict>
   <key>ThrottleInterval</key>
   <integer>5</integer>
-  <key>ProcessType</key>
+`)
+	if l.svc.stopTimeout > 0 {
+		fmt.Fprintf(&b, "  <key>ExitTimeOut</key>\n  <integer>%d</integer>\n", l.svc.stopTimeout)
+	}
+	b.WriteString(`  <key>ProcessType</key>
   <string>Standard</string>
   <key>StandardOutPath</key>
   `)
@@ -83,11 +90,11 @@ type plistElement struct {
 	Children []plistElement `xml:",any"`
 }
 
-func (launchd) definition(data []byte) definition {
+func (launchd) definition(data []byte) Definition {
 	var plist struct {
 		Dict plistElement `xml:"dict"`
 	}
-	d := definition{env: make(map[string]string)}
+	d := Definition{Env: make(map[string]string)}
 	if err := xml.Unmarshal(data, &plist); err != nil {
 		return d
 	}
@@ -96,11 +103,11 @@ func (launchd) definition(data []byte) definition {
 		switch key.Text {
 		case "ProgramArguments":
 			for _, arg := range value.Children {
-				d.argv = append(d.argv, arg.Text)
+				d.Argv = append(d.Argv, arg.Text)
 			}
 		case "EnvironmentVariables":
 			for j := 0; j+1 < len(value.Children); j += 2 {
-				d.env[value.Children[j].Text] = value.Children[j+1].Text
+				d.Env[value.Children[j].Text] = value.Children[j+1].Text
 			}
 		}
 	}
@@ -108,7 +115,75 @@ func (launchd) definition(data []byte) definition {
 }
 
 func (l launchd) install(exe string, args, env []string, previous []byte) error {
-	_, wasLoaded, err := launchPrint(context.Background())
+	return l.write(exe, args, env, previous)
+}
+
+// rewrite only writes the plist: launchd keeps running a loaded agent's
+// old definition until it is booted out, which RestartIfRunning does.
+func (l launchd) rewrite(exe string, args, env []string, previous []byte) error {
+	if err := os.MkdirAll(filepath.Dir(l.logFile()), 0700); err != nil {
+		return err
+	}
+	return writePrivate(l.file(), l.plist(exe, args, env))
+}
+
+// launchdRestartIfRunning restarts every installed and loaded agent of
+// requests, in order, from one detached helper started once for all of
+// them: an agent whose plist was rewritten is reloaded from it, any other
+// is restarted in place with `kickstart -k` and stays loaded. A failure of
+// the helper is reported for every agent it was to restart.
+func launchdRestartIfRunning(requests []RestartRequest, results []Restart) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		for i := range results {
+			results[i].Err = err
+		}
+		return
+	}
+	var steps []launchStep
+	var reloaded []int
+	for i, r := range requests {
+		s := r.Service
+		l := launchd{home: home, svc: s}
+		if _, err := os.Stat(l.file()); err != nil {
+			continue
+		}
+		_, loaded, err := l.print(context.Background())
+		if err != nil {
+			results[i].Err = fmt.Errorf("restart the %s: %w", s.title(), err)
+			continue
+		}
+		if loaded {
+			results[i].Requested = true
+			kind := stepKickstart
+			if r.Rewritten {
+				kind = stepReload
+			}
+			steps = append(steps, launchStep{svc: s, kind: kind})
+			reloaded = append(reloaded, i)
+		}
+	}
+	if len(steps) == 0 {
+		return
+	}
+	if _, err := reloadDetached(home, steps); err != nil {
+		if len(steps) > 1 {
+			var labels []string
+			for _, step := range steps {
+				labels = append(labels, step.svc.label())
+			}
+			err = sharedError(labels, err)
+		}
+		for _, i := range reloaded {
+			results[i] = Restart{Err: err}
+		}
+	}
+}
+
+// write writes the plist and (re)loads it. A failure restores the
+// previous plist and whether it was loaded.
+func (l launchd) write(exe string, args, env []string, previous []byte) error {
+	_, wasLoaded, err := l.print(context.Background())
 	if err != nil {
 		return err
 	}
@@ -118,7 +193,7 @@ func (l launchd) install(exe string, args, env []string, previous []byte) error 
 	if err := writePrivate(l.file(), l.plist(exe, args, env)); err != nil {
 		return err
 	}
-	bootstrapTried, err := l.reloadDetached(wasLoaded)
+	bootstrapTried, err := reloadDetached(l.home, []launchStep{loadStep(l.svc, wasLoaded)})
 	if err == nil {
 		return nil
 	}
@@ -126,13 +201,13 @@ func (l launchd) install(exe string, args, env []string, previous []byte) error 
 	if restoreErr == nil && (wasLoaded || bootstrapTried) {
 		restoreErr = l.restoreAgent(wasLoaded && previous != nil, bootstrapTried)
 	}
-	return installError(err, restoreErr)
+	return l.svc.installError(err, restoreErr)
 }
 
 // restoreAgent clears any partially loaded replacement and reloads the old
 // plist only if it was loaded before installation.
 func (l launchd) restoreAgent(wasLoaded, bootstrapTried bool) error {
-	_, loaded, err := launchPrint(context.Background())
+	_, loaded, err := l.print(context.Background())
 	if errors.Is(err, errNoGUIDomain) {
 		return nil
 	}
@@ -140,10 +215,10 @@ func (l launchd) restoreAgent(wasLoaded, bootstrapTried bool) error {
 		return err
 	}
 	if loaded && bootstrapTried {
-		if err := bootout(); err != nil {
+		if err := l.bootout(); err != nil {
 			return err
 		}
-		if err := waitForUnload(); err != nil {
+		if err := l.waitForUnload(); err != nil {
 			return err
 		}
 		loaded = false
@@ -167,42 +242,42 @@ func (l launchd) bootstrap() error {
 		return nil
 	}
 	if noGUIDomain(out) {
-		return guiDomainError(err)
+		return l.guiDomainError(err)
 	}
 	// Some launchctl versions only report a generic I/O error on bootstrap.
 	domain, domainErr := run("launchctl", "print", launchDomain())
 	if domainErr != nil && noGUIDomain(domain) {
-		return guiDomainError(err)
+		return l.guiDomainError(err)
 	}
 	return err
 }
 
 func (l launchd) start() error {
-	_, loaded, err := launchPrint(context.Background())
+	_, loaded, err := l.print(context.Background())
 	if err != nil {
 		return err
 	}
 	if !loaded {
 		return l.bootstrap()
 	}
-	_, err = run("launchctl", "kickstart", launchTarget())
+	_, err = run("launchctl", "kickstart", l.target())
 	return err
 }
 
-func bootout() error {
-	_, err := run("launchctl", "bootout", launchTarget())
+func (l launchd) bootout() error {
+	_, err := run("launchctl", "bootout", l.target())
 	return err
 }
 
-func (launchd) stop() error {
-	_, loaded, err := launchPrint(context.Background())
+func (l launchd) stop() error {
+	_, loaded, err := l.print(context.Background())
 	if errors.Is(err, errNoGUIDomain) {
 		return nil
 	}
 	if err != nil || !loaded {
 		return err
 	}
-	return bootout()
+	return l.bootout()
 }
 
 func (l launchd) restart() error {
@@ -213,35 +288,38 @@ func (l launchd) restart() error {
 	return l.bootstrap()
 }
 
-func (launchd) restartIfRunning() (bool, error) {
-	_, loaded, err := launchPrint(context.Background())
+func (l launchd) restartIfRunning() (bool, error) {
+	_, loaded, err := l.print(context.Background())
 	if err != nil || !loaded {
 		return false, err
 	}
 	// launchd owns the whole restart, so stopping the old daemon cannot
 	// interrupt the operation even if the daemon started this command.
-	_, err = run("launchctl", "kickstart", "-k", launchTarget())
+	_, err = run("launchctl", "kickstart", "-k", l.target())
 	return err == nil, err
 }
 
-const unloadTimeout = 25 * time.Second
+// unloadTimeout bounds the wait for a booted-out agent to unload: longer
+// than the largest ExitTimeOut a circus plist sets (the worker's graceful
+// stop), with a margin.
+const unloadTimeout = 45 * time.Second
 
-func waitForUnload() error {
+func (l launchd) waitForUnload() error {
 	ctx, cancel := context.WithTimeout(context.Background(), unloadTimeout)
 	defer cancel()
 	poll := time.NewTicker(100 * time.Millisecond)
 	defer poll.Stop()
 	for {
-		_, loaded, err := launchPrint(ctx)
+		_, loaded, err := l.print(ctx)
 		if ctx.Err() != nil {
-			return fmt.Errorf("wait for launchd to unload %s: %w", label, ctx.Err())
+			return fmt.Errorf("wait for launchd to unload %s: %w", l.label(), ctx.Err())
 		}
 		if err != nil || !loaded {
 			return err
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("wait for launchd to unload %s: %w", label, ctx.Err())
+			return fmt.Errorf("wait for launchd to unload %s: %w", l.label(), ctx.Err())
 		case <-poll.C:
 		}
 	}
@@ -256,15 +334,15 @@ func noGUIDomain(out string) bool {
 		strings.Contains(message, "domain does not exist")
 }
 
-func guiDomainError(err error) error {
-	return fmt.Errorf("%w. Log in to the macOS desktop as this user. Then rerun `circus daemon install` on its own: %v", errNoGUIDomain, err)
+func (l launchd) guiDomainError(err error) error {
+	return fmt.Errorf("%w. Log in to the macOS desktop as this user. Then rerun `%s` on its own: %v", errNoGUIDomain, l.svc.installCommand(), err)
 }
 
-func launchPrint(ctx context.Context) (string, bool, error) {
-	out, err := runContext(ctx, "launchctl", "print", launchTarget())
+func (l launchd) print(ctx context.Context) (string, bool, error) {
+	out, err := runContext(ctx, "launchctl", "print", l.target())
 	if err != nil {
 		if noGUIDomain(out) {
-			return "", false, guiDomainError(err)
+			return "", false, l.guiDomainError(err)
 		}
 		if strings.Contains(strings.ToLower(out), "could not find service") {
 			return "", false, nil
@@ -274,7 +352,7 @@ func launchPrint(ctx context.Context) (string, bool, error) {
 	return out, true, nil
 }
 
-func launchEnabled(ctx context.Context) (bool, error) {
+func (l launchd) enabled(ctx context.Context) (bool, error) {
 	out, err := runContext(ctx, "launchctl", "print-disabled", launchDomain())
 	if err != nil {
 		if noGUIDomain(out) {
@@ -285,7 +363,7 @@ func launchEnabled(ctx context.Context) (bool, error) {
 	}
 	for line := range strings.SplitSeq(out, "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), "=>")
-		if ok && strings.Trim(strings.TrimSpace(key), `"`) == label {
+		if ok && strings.Trim(strings.TrimSpace(key), `"`) == l.label() {
 			value = strings.TrimSpace(value)
 			return value != "disabled" && value != "true", nil
 		}
@@ -293,12 +371,12 @@ func launchEnabled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (launchd) status(ctx context.Context) (Status, error) {
-	out, loaded, err := launchPrint(ctx)
+func (l launchd) status(ctx context.Context) (Status, error) {
+	out, loaded, err := l.print(ctx)
 	if err != nil && !errors.Is(err, errNoGUIDomain) {
 		return Status{}, err
 	}
-	enabled, err := launchEnabled(ctx)
+	enabled, err := l.enabled(ctx)
 	if err != nil {
 		return Status{}, err
 	}
@@ -332,6 +410,8 @@ func (launchd) status(ctx context.Context) (Status, error) {
 		var code int
 		_, err := fmt.Sscanf(st.LastExit, "%d", &code)
 		st.StoppedAfterExit = err == nil && (code == 0 || code == LinuxTerminalExitStatus)
+		// Terminal stays false: on macOS a service stops itself for good by
+		// exiting 0, which a plain kill does as well.
 	}
 	return st, nil
 }

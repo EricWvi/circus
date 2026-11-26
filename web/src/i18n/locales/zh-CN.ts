@@ -285,7 +285,8 @@ export const zhCN = {
       runOnMachine: "在要添加的机器上运行：",
       devBuild:
         "这台服务器是开发版本（{{version}}），没有可下载的发布版。在 circus 仓库根目录运行（从源码运行 CLI，文件放在 .tmp/dev）：",
-      workerNote: "worker 进程需要另行启动，它还没有发布。",
+      workerNote: "worker 需要机器上已安装 Node.js 24 或更高版本。这条命令会把它安装为当前用户的服务，版本与这台服务器相同。",
+      workerNoteDev: "worker 需要在仓库中自行启动（见 worker/README.md）。",
       expires: "链接仅可使用一次，{{in}}过期。请勿分享。",
       expired: "链接已过期",
       expiredHint: "链接只在一段时间内有效。生成一个新链接来添加设备。",

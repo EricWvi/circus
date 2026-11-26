@@ -29,7 +29,8 @@ the Claude Agent SDK, and the `circus call` debug client.
 | `internal/daemon/jobs/` | Background job lifecycle, ownership, events and retention |
 | `internal/daemon/link/` | The daemon's single outbound control-plane connection |
 | `internal/daemon/toolcontext/` | Execution timer signal shared by dispatcher and tools |
-| `internal/daemonservice/` | Per-user systemd and launchd services for the device daemon |
+| `internal/userservice/` | Per-user systemd and launchd services for the device daemon and the worker |
+| `internal/workerservice/` | Worker release packages (download, verify, unpack) and the worker service built on them |
 | `internal/wire/` | Bounded protobuf transport over authenticated binary WebSocket, its scheduling table and the raw Hello handshake |
 | `internal/wire/wiretest/` | Bounded in-memory duplex Conn with directional faults |
 | `internal/store/` | Control-plane domain types and the Store interface |
@@ -199,7 +200,9 @@ Installation records the daemon's environment from the current shell,
 including `PATH`, proxy and TLS certificate settings, XDG directories,
 `CIRCUS_HOME`, `HOME`, `SHELL`, `USER` and locale settings. It resolves
 `CIRCUS_HOME` and any explicit credentials path to absolute paths. Rerun
-`circus daemon install` after changing the daemon's settings. Bash commands
+`circus daemon install` after changing the daemon's settings. The service file
+is readable by the user only; proxy variables are stored in it as set,
+credentials in their URLs included. Bash commands
 rebuild their environment from login Bash startup files, using the daemon's
 home, shell and `LANG`. `circus update` restarts a running service when it
 replaces the executable that service uses.
@@ -213,22 +216,138 @@ until the server is updated to identify its authentication rejections.
 The worker runs the agent of each session (today Claude Code) on a machine
 enrolled with `circus join --role worker`. It is released as a package per
 platform, `circus-worker-<tag>-<os>-<arch>.tar.gz`, that needs Node.js 24 or
-later and the `circus` CLI (for its process guard) on `PATH` or in
-`CIRCUS_BIN`:
+later and the `circus` CLI of the same release (for its process guard).
+`circus worker` installs it as a per-user service, as `circus daemon` does
+for the device daemon (the Web UI's "Add device" command runs these steps):
 
 ```sh
-tar -xzf circus-worker-vX.Y.Z-linux-amd64.tar.gz   # unpacks circus-worker/
-circus join --role worker                          # paste the enrollment link
-circus-worker/circus-worker
+circus join --role worker   # paste the enrollment link
+circus worker install       # download the package, install and start the service
+circus worker status        # version, Node.js, service file and log command
+circus worker stop          # stop until the next boot/login or start
+circus worker start
+circus worker restart
+circus worker uninstall     # stop and remove the service and the packages (the store keeps its lock file)
 ```
+
+`circus worker install` refuses without a worker credential and in a
+development build (run the worker from source there, see below). It finds
+Node.js as the package's launcher does (`CIRCUS_NODE`, else `node` on
+`PATH`), checks that it is 24 or later and records it in the service as
+found: Homebrew's `/opt/homebrew/bin/node` and system paths are links that
+follow upgrades. Only a path in a per-shell or temporary location (fnm's
+`fnm_multishells` links, `$XDG_RUNTIME_DIR`, the temporary directory) is
+resolved to the executable it links to. It never installs Node.js. A
+version-pinned path (nvm's `~/.nvm/versions/node/<version>/bin/node`) stays
+as found, so removing that version stops the worker; `circus worker status`
+then says the recorded Node.js is gone, and rerunning `circus worker
+install` records the current one. It downloads the package of its own version and platform from that
+release, checks it against the SHA-256 digest in the release's
+`latest.json` (`worker_assets`, the manifest `circus update` trusts), and
+unpacks it into a temporary directory renamed to
+`<data>/worker/<version>/` (`<data>` is `$CIRCUS_HOME`, else
+`${XDG_DATA_HOME:-~/.local/share}/circus`, as for the worker's agents). A
+version already there is checked against the digest of its files recorded at
+unpacking, and downloaded again only when they changed. Once the service runs
+the new package, `install` removes other versions. Installs, updates and
+uninstalls take a lock in that directory before they read or change the
+service file or the packages. `circus update` and `circus worker
+uninstall` work on the installation the service file records: its
+`<data>` follows from the `CIRCUS_HOME`, `XDG_DATA_HOME` and `HOME` the
+service file holds, whatever the calling shell (cron, ssh, a daemon's Bash
+tool) sets, and they refuse, saying so, when the service file runs
+anything but a package of that store (a program of your own). `circus
+worker install` uses the shell's `<data>` and leaves another store alone, so
+after changing `CIRCUS_HOME` or `XDG_DATA_HOME`, run `circus worker
+uninstall` before reinstalling; a store left behind is not removed by
+anything, and you can delete it yourself.
+
+The service runs the package's launcher with `CIRCUS_NODE` and `CIRCUS_BIN`
+(the installing `circus`) set, plus the same shell settings the daemon
+service records (`PATH`, `CIRCUS_HOME`, `HOME`, `USER`, `SHELL`, locale, XDG
+directories, TLS certificate locations and the proxy variables
+`HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` and their lowercase
+forms; the worker uses them for agent downloads, and Claude Code inherits
+them) and the worker's own settings when set
+(`CIRCUS_WORKER_MAX_SESSIONS`, `CIRCUS_WORKER_LOG_LEVEL`,
+`CIRCUS_WORKER_IDLE_SECONDS`, `CIRCUS_NPM_REGISTRY`, `CLAUDE_CONFIG_DIR`, and
+Node.js's own TLS settings `NODE_EXTRA_CA_CERTS` and `NODE_USE_SYSTEM_CA`;
+`NODE_OPTIONS` is not recorded).
+The proxy variables are stored in the service file as set, credentials in
+their URLs included; the file is readable by the user only, and nothing else
+secret is written. Rerun `circus worker install` to change any of it. It
+restarts after failures (systemd `Restart=on-failure`, launchd `KeepAlive`),
+and stopping it signals only the worker, which ends its Claude Code
+processes and releases its leases; the manager kills what is left after 30
+seconds.
+
+A worker that cannot work until something is fixed stops for good with
+the terminal status, as the daemon does: when the control plane itself
+refuses its credential (a 401 or 403 the control plane marks as its own,
+`Circus-Auth: rejected`; the same status from a proxy or WAF in front of it
+is retried), when the control plane does not accept this worker build, when
+its credential or a setting (`CIRCUS_NPM_REGISTRY` included) is missing or
+invalid, and, from the launcher, when its Node.js is missing or older than
+24. On Linux that is exit status 78, which the unit does not restart
+(`RestartPreventExitStatus=78`). launchd's `KeepAlive` can only restart on a
+failed exit (`SuccessfulExit` false) or not at all; it cannot exempt one
+status. So on macOS the terminal status is 0, as for the daemon, and every
+other failure is restarted. Before such a stop the worker (or its launcher)
+writes the reason to its stop file, which it removes when it starts:
+`circus worker install` records the file in the service as
+`CIRCUS_WORKER_STOP_FILE` (`<data>/worker-state/stop.json` of the
+installing shell), so the worker, its launcher and `circus worker status`
+use the same file whatever the service manager's own environment adds. It
+is written atomically, readable by you only, and only its own directory is
+created when missing. `circus worker status` reads it, on both systems, and
+says what to do. A worker stopped by a plain `kill` (which also exits 0 on macOS) writes
+none and is not reported as refused. `circus join --role worker` (which
+restarts the service) and `circus update` start it again.
+
+- **Linux (systemd)** writes `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/circus-worker.service`
+  (`KillMode=mixed`, `TimeoutStopSec=30`). Read logs with `journalctl --user -u circus-worker.service -f`.
+  As for the daemon, `sudo loginctl enable-linger <user>` keeps it running
+  after logout.
+- **macOS (launchd)** writes `~/Library/LaunchAgents/com.github.ericwvi.circus.worker.plist`
+  (`ExitTimeOut` 30) and logs to `~/Library/Logs/circus/worker.log`.
+
+`circus update`, when it replaces the `circus` the worker service runs
+with (`CIRCUS_BIN`), first downloads, verifies and unpacks the new
+release's worker package (under the store's lock, which it keeps until the
+end); if that fails, nothing is updated. Then it replaces the binary and
+points the worker's service file at the new package, keeping its recorded
+settings. Only once every service file is in place does it ask for the
+restarts, all at once and without waiting for them, so `circus update` run
+by a Bash tool inside the worker or the daemon, which a restart kills,
+still leaves both services on the new binary. On systemd that is one
+`systemctl --user try-restart --no-block circus-worker.service
+circus-daemon.service` (worker first; preceded by one `start --no-block`
+for a unit that stopped itself): systemctl asks for each unit's job in turn
+without waiting for any, so only one request separates them. On macOS, which has no queued restart, one helper in its
+own session, started once for both, does it: it reloads the worker from its
+new plist (bootout, a wait for the unload of up to 45 seconds, longer than
+the worker's 30-second graceful stop, then bootstrap, also after a failed
+unload) and restarts the daemon in place with `launchctl kickstart -k`, as
+before (its plist does not change). The helper logs each outcome to
+`~/Library/Logs/circus/reload.log`, since the process that started it may
+be gone. A stopped service stays stopped. `circus update` does not wait for
+the restarts: it says they were requested and to check them with `circus
+worker status` and `circus daemon status`, where a worker that stopped for
+good says why (its stop file). A request that fails is an error; one that
+covered both services is reported once, naming both. Nothing is rolled
+back, and the previous worker version stays installed until the next
+switch or install (the old worker may use it until its restart is done). A failed switch restores the service file,
+removes nothing and fails the command; when the CLI is already current but
+the worker service runs another version, `circus update` finishes the
+switch. A `circus join --role worker` restarts a worker service that reads
+the replaced credential.
 
 The worker ships without any agent. Install Claude Code on it from the Web
 UI (`MachineService.SetWorkerAgent`): the worker downloads the Claude Code
 version its release pins (the CLI version of its Agent SDK) from the npm
 registry, verifies it against the sha512 digest built into the worker from
 `package-lock.json`, and installs it under its data directory
-(`$CIRCUS_HOME/agents/claude-code/`, else
-`${XDG_DATA_HOME:-~/.local/share}/circus/agents/claude-code/`). Until then
+(`<data>/agents/claude-code/`). Until then
 its sessions wait as "agent not installed". Uninstalling is refused while
 the worker holds a lease of a session that runs the agent; it removes only
 the install directory, never `~/.claude` or `CLAUDE_CONFIG_DIR`.
@@ -813,8 +932,10 @@ Pushing a `v*` tag publishes the Linux amd64 image to GitHub Container
 Registry, and CLI archives and worker packages (see Worker) for Linux and
 macOS on amd64 and arm64 to
 [GitHub Releases](https://github.com/EricWvi/circus/releases). The release's
-`SHA256SUMS` and `latest.json` list both; `circus update` reads only the
-CLI's entries.
+`SHA256SUMS` and `latest.json` list both: `circus update` installs the CLI
+from `assets`, and `circus worker install` (also run by `circus update` for
+an installed worker service) the worker package from `worker_assets` of the
+release matching the CLI's version.
 
 The image serves the embedded Web UI, APIs, and links from one origin. Copy
 `config.example.yaml` to `config.yaml`, set `listen: "0.0.0.0:8443"` inside the
