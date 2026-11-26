@@ -199,10 +199,13 @@ var webScenarios = []scenario{
 	{"crash", func(s *liveSession) {
 		s.send("/fake crash")
 		s.await(count(pb.SessionEvent_KIND_TURN_INTERRUPTED, 1))
+		// The next scenario starts with the worker back.
+		s.awaitWorker()
 	}},
 	{"crash_recover", func(s *liveSession) {
 		s.send("/fake crash")
 		s.await(count(pb.SessionEvent_KIND_TURN_INTERRUPTED, 1))
+		s.awaitWorker()
 		s.send("after the crash")
 		s.await(count(kindResult, 1))
 	}},
@@ -370,9 +373,20 @@ func startStack(t *testing.T) *stack {
 	}
 	env.api = circusv1connect.NewSessionServiceClient(client, base)
 	env.project = project.Msg.GetProject().GetProjectId()
-	// A probe turn proves the worker attached before any scenario runs: a
-	// session queued before then would wait with QUEUE_REASON_WORKER_OFFLINE,
-	// and its KIND_QUEUE events would enter the recording.
+	env.probe(ctx, t)
+	return env
+}
+
+// probe runs a turn in a session of its own and returns once it completed,
+// which proves the worker attached: an Offer goes only to an attached
+// connection of the worker's current boot. A recorded session queued while
+// the worker is not attached would wait with QUEUE_REASON_WORKER_OFFLINE,
+// and its KIND_QUEUE events would enter the recording. That holds before
+// the first scenario and after a scripted crash, whose new boot releases
+// the old boot's leases (interrupting its turn) in its handshake, before it
+// attaches.
+func (env *stack) probe(ctx context.Context, t *testing.T) {
+	t.Helper()
 	probe, err := env.api.CreateSession(ctx, connect.NewRequest(&pb.CreateSessionRequest{ProjectId: env.project, ClientRequestId: uuid.NewString()}))
 	if err != nil {
 		t.Fatal(err)
@@ -386,11 +400,14 @@ func startStack(t *testing.T) *stack {
 			t.Fatal(err)
 		}
 		if got.Msg.GetLastTurnOutcome() == pb.TurnOutcome_TURN_OUTCOME_COMPLETED {
-			break
+			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			t.Fatal("the probe turn did not complete")
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
-	return env
 }
 
 func setupToken(t *testing.T, logs string) string {
@@ -549,6 +566,13 @@ func (s *liveSession) session() *pb.Session {
 		s.t.Fatal(err)
 	}
 	return res.Msg
+}
+
+// awaitWorker returns once the worker is attached again after a scripted
+// crash (see probe).
+func (s *liveSession) awaitWorker() {
+	s.t.Helper()
+	s.env.probe(s.ctx, s.t)
 }
 
 func (s *liveSession) awaitState(state pb.Session_State) {
