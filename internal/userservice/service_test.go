@@ -477,7 +477,7 @@ func TestReinstallRollsBackFileAndServiceState(t *testing.T) {
 				// Fail both attempts for the new file, then accept the restored one.
 				script := strings.Replace(fakeManager, `launchctl:bootstrap) : > "$dir/loaded" ;;`,
 					`launchctl:bootstrap)
-                       if /bin/cat "$3" | /bin/grep -q /opt/new; then
+                       if /bin/cat "$3" | /usr/bin/grep -q /opt/new; then
                            printf 'Test failure\n' >&2
                            exit 1
                        fi

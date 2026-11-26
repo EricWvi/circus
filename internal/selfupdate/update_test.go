@@ -367,7 +367,12 @@ func TestExtract(t *testing.T) {
 func TestCheckChangesNothingUntilApply(t *testing.T) {
 	const assetName = "circus-" + testVersion + "-" + testTarget + ".tar.gz"
 	const assetURL = releasesURL + "download/" + testVersion + "/" + assetName
-	dir := t.TempDir()
+	// Resolved, as Plan.Path is: on macOS the temporary directory is
+	// below /var, a link to /private/var.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	bin := filepath.Join(dir, "circus")
 	if err := os.WriteFile(bin, []byte(oldBinary), 0o755); err != nil {
 		t.Fatal(err)

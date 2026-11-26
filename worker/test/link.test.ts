@@ -73,7 +73,9 @@ describe("WorkerLink operations", () => {
     for (let id = 5n; id <= 67n; id++) peer.ok(id);
     await Promise.all([cancelled, next, afterReply, ...requests.slice(2)]);
     await link.close();
-    expect(peer.ws.readyState).toBe(peer.ws.CLOSED);
+    // The peer's socket closes after the link's own, which is all close()
+    // waits for.
+    await vi.waitFor(() => expect(peer.ws.readyState).toBe(peer.ws.CLOSED));
   });
 
   it("flushes same-session messages and Unwatch in FIFO order across fragments", async () => {

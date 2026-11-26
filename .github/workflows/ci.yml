@@ -22,6 +22,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --test scripts/
+      - run: node --test scripts/e2e-race-groups.test.mjs
       - uses: bufbuild/buf-setup-action@v1
         with:
           version: 1.73.0
@@ -86,3 +87,45 @@ jobs:
           version: 3.x
           repo-token: ${{ github.token }}
       - run: task race
+
+  # The packages with macOS-specific code, and the worker's tests, on macOS.
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Go tests with the race detector
+        run: >-
+          go test -race -count=1
+          ./cmd/circus/...
+          ./internal/execguard/...
+          ./internal/userservice/...
+          ./internal/workerservice/...
+          ./internal/selfupdate/...
+          ./internal/daemon/workspace/...
+          ./internal/daemon/ledgersnap/...
+          ./internal/daemon/fstools/...
+          ./internal/daemon/dirlist/...
+          ./internal/ledger/snapshot/...
+          ./internal/machineid/...
+          ./internal/daemonlock/...
+          ./internal/testutil/npmstub/...
+      # The worker's tests run even when a Go test failed.
+      - if: success() || failure()
+        run: npm -w @circus/worker run test
+      # Last: this installs the daemon and worker services as launchd agents
+      # of the runner's user, and a failed cleanup could leave them loaded
+      # for any later step; the runner itself is discarded after the job.
+      - name: Daemon and worker services under the real launchd
+        if: success() || failure()
+        env:
+          CIRCUS_REAL_LAUNCHD: "1"
+        run: go test -race -count=1 -run '^TestRealLaunchdServices$' ./cmd/circus/

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,14 +68,19 @@ func TestOpenChildDirRefusesSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	// What the walk sees when a directory is swapped for a symlink after
-	// its stat: the open itself must refuse it.
+	// its stat: the open itself must refuse it. Linux's openat2 reports
+	// ELOOP; elsewhere openChildDir is openSameDevice, whose O_DIRECTORY
+	// makes macOS report ENOTDIR. The walk treats both alike.
+	refusal := func(err error) bool {
+		return errors.Is(err, unix.ELOOP) || runtime.GOOS != "linux" && errors.Is(err, unix.ENOTDIR)
+	}
 	for _, strict := range []bool{true, false} {
 		fd, err := openChildDir(int(parent.Fd()), "link", strict)
-		if !errors.Is(err, unix.ELOOP) {
+		if !refusal(err) {
 			if err == nil {
 				_ = unix.Close(fd)
 			}
-			t.Fatalf("strict=%v: opening a symlink = %v, want ELOOP", strict, err)
+			t.Fatalf("strict=%v: opening a symlink = %v, want ELOOP (or ENOTDIR off Linux)", strict, err)
 		}
 		fd, err = openChildDir(int(parent.Fd()), "real", strict)
 		if err != nil {

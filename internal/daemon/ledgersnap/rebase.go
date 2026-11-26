@@ -242,10 +242,12 @@ func (s *Service) rebase(ctx context.Context, req *circusv1.RebaseLedgerRequest)
 		}
 		return "", current, fail(errStale, "the snapshot is already on %s and changed since; collect again. Nothing was changed", req.BaseCommit)
 	}
+	var alias aliases
 	if foldsNames {
 		if f := editCollision(base, res, req.Edits); f != nil {
 			return "", current, f
 		}
+		alias = aliased(base, res, req.Edits)
 	}
 	plan := &rebasePlan{base: base, known: known, edits: edits}
 
@@ -258,7 +260,7 @@ func (s *Service) rebase(ctx context.Context, req *circusv1.RebaseLedgerRequest)
 	}
 	var pending []*rebaseEdit
 	for _, e := range req.Edits {
-		have, err := readState(dir, e.Path)
+		have, err := alias.readState(dir, e.Path)
 		if err != nil {
 			return "", current, fsFailure("read "+e.Path, err)
 		}
@@ -276,12 +278,18 @@ func (s *Service) rebase(ctx context.Context, req *circusv1.RebaseLedgerRequest)
 		return "", current, fail(errStale, "edits do not find what they expect; collect again. Nothing was changed. Differences %s", &bad)
 	}
 
+	pending = alias.order(pending)
+	// The checks and the ordering may have outlasted the call's deadline:
+	// then nothing is changed.
+	if err := ctx.Err(); err != nil {
+		return "", current, fsFailure("start the edits (nothing was changed)", err)
+	}
 	staging, err := c.openDir(stagingDir, true)
 	if err != nil {
 		return "", current, fsFailure("open the staging directory", err)
 	}
 	defer staging.Close()
-	if changed, f := s.apply(c, dir, staging, pending); f != nil || changed != "" {
+	if changed, f := s.apply(c, dir, staging, pending, alias); f != nil || changed != "" {
 		if f != nil {
 			return "", current, f
 		}
@@ -359,9 +367,86 @@ func editCollision(base *snapshot.Manifest, res *snapshot.Result, edits []*rebas
 	return nil
 }
 
-func readState(dir *os.File, p string) (fileState, error) {
+// aliases are, where names fold, the fold keys (foldKey) that more than
+// one spelling among the snapshot's files, the scan's changes and the
+// edits share: a case-only rename (A.md to a.md) is the one such request
+// editCollision lets through. A path of such a key may open the file of
+// another spelling. It is nil where names do not fold.
+type aliases map[string]bool
+
+func aliased(base *snapshot.Manifest, res *snapshot.Result, edits []*rebaseEdit) aliases {
+	spellings := map[string]string{}
+	alias := aliases{}
+	add := func(p string) {
+		key := foldKey(p)
+		if other, ok := spellings[key]; ok && other != p {
+			alias[key] = true
+		}
+		spellings[key] = p
+	}
+	for _, e := range base.Files {
+		add(e.Path)
+	}
+	for _, c := range res.Changes {
+		add(c.Path)
+	}
+	for _, e := range edits {
+		add(e.Path)
+	}
+	return alias
+}
+
+// readState reads what p holds now. A path with aliases holds a file only
+// while its directory lists it under exactly its spelling, checked at the
+// time of the read: otherwise what the file system reaches through it,
+// whatever its size, is another spelling's file, and p is absent.
+func (alias aliases) readState(dir *os.File, p string) (fileState, error) {
+	if alias != nil && alias[foldKey(p)] {
+		listed, err := snapshot.Listed(dir, p)
+		if err != nil || !listed {
+			return fileState{}, err
+		}
+	}
 	st, err := snapshot.ReadState(dir, p)
 	return fileState{st.Exists, st.SHA256}, err
+}
+
+// order moves the deletion of a path with aliases to just before the first
+// write of another spelling of it, so that a case-only rename frees the old
+// name before the new one is written; everything else keeps the request's
+// order, so a failing edit stops the rebase before any edit after it. Each
+// fold key is computed once and the deletions are indexed by it.
+func (alias aliases) order(pending []*rebaseEdit) []*rebaseEdit {
+	if len(alias) == 0 {
+		return pending
+	}
+	keys := make([]string, len(pending))
+	deletes := map[string][]int{}
+	for i, e := range pending {
+		keys[i] = foldKey(e.Path)
+		if e.GetDeleted() && alias[keys[i]] {
+			deletes[keys[i]] = append(deletes[keys[i]], i)
+		}
+	}
+	ordered := make([]*rebaseEdit, 0, len(pending))
+	placed := make([]bool, len(pending))
+	for i, e := range pending {
+		if placed[i] {
+			continue
+		}
+		if !e.GetDeleted() && alias[keys[i]] {
+			for _, d := range deletes[keys[i]] {
+				if !placed[d] && pending[d].Path != e.Path {
+					placed[d] = true
+					ordered = append(ordered, pending[d])
+				}
+			}
+			delete(deletes, keys[i])
+		}
+		placed[i] = true
+		ordered = append(ordered, e)
+	}
+	return ordered
 }
 
 // apply applies the pending edits in order, each only if its file still
@@ -374,12 +459,12 @@ func readState(dir *os.File, p string) (fileState, error) {
 // the same request sent again finds that path neither collected nor its
 // target and is STALE, and a rebase built from the new collection
 // finishes. Directories are synced once, after the renames.
-func (s *Service) apply(c *call, dir, staging *os.File, pending []*rebaseEdit) (string, *failure) {
+func (s *Service) apply(c *call, dir, staging *os.File, pending []*rebaseEdit, alias aliases) (string, *failure) {
 	ap := snapshot.NewApplier(dir, staging, tmpName(c.id), asideName(c.id))
 	changed := ""
 	var applyErr error
 	for _, e := range pending {
-		have, err := readState(dir, e.Path)
+		have, err := alias.readState(dir, e.Path)
 		if err != nil {
 			applyErr = fmt.Errorf("read %s: %w", e.Path, err)
 			break

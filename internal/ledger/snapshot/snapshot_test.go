@@ -363,10 +363,20 @@ func TestCompareNonRegularFiles(t *testing.T) {
 func TestCompareInvalidContentAndNames(t *testing.T) {
 	root, d, m := base(t, nil)
 	put(t, root, "bad.md", "\xff\xfe")
-	put(t, root, "bad\xffname.md", "x")
 	put(t, root, "tab\tname.md", "x")
+	want := 2
+	// A file system that refuses names that are not UTF-8 (APFS, with
+	// EILSEQ) cannot hold one: that problem cannot arise there.
+	switch err := os.WriteFile(filepath.Join(root, "bad\xffname.md"), []byte("x"), 0o644); {
+	case err == nil:
+		want++
+	case errors.Is(err, unix.EILSEQ):
+		t.Logf("this file system refuses a name that is not UTF-8: %v", err)
+	default:
+		t.Fatal(err)
+	}
 	r := compare(t, d, m)
-	if len(r.Changes) != 0 || len(r.Problems) != 3 {
+	if len(r.Changes) != 0 || len(r.Problems) != want {
 		t.Fatalf("problems: %s %v", summary(r), r.Problems)
 	}
 	for _, p := range r.Problems {

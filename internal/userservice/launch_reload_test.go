@@ -118,7 +118,7 @@ func TestDetachedLaunchReloadTimeoutRestoresOriginalService(t *testing.T) {
 	f.response(t, "loaded", "")
 	script := strings.Replace(fakeManager, `launchctl:bootstrap) : > "$dir/loaded" ;;`, `launchctl:bootstrap)
         : > "$dir/loaded"
-        if ! /bin/grep -q 'original plist' "$3"; then
+        if ! /usr/bin/grep -q 'original plist' "$3"; then
             : > "$dir/replacement-bootstrapped"
             exec /bin/sleep 30
         fi

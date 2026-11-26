@@ -36,13 +36,17 @@ jobs:
         run: task seeds CIRCUS_ROUTER_SEEDS=100 CIRCUS_ROUTER_FIRST_SEED=${{ matrix.first-seed }}
 
   # Three race runs of the e2e suite in parallel, one pass each: three
-  # passes in one process outgrow go test's 10-minute timeout.
+  # passes in one process outgrow go test's 10-minute timeout. Even one
+  # pass of the whole suite does now, so each run covers one group of its
+  # tests (scripts/e2e-race-groups.mjs, which checks that every test is in
+  # exactly one group): three passes of every group.
   e2e-race:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        group: [sessions, providers, calls]
         run: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
@@ -60,5 +64,7 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ github.token }}
-      - name: race pass ${{ matrix.run }}
-        run: task e2e-race E2E_COUNT=1
+      - name: every e2e test is in exactly one group
+        run: node scripts/e2e-race-groups.mjs --check
+      - name: race pass ${{ matrix.run }} of group ${{ matrix.group }}
+        run: task e2e-race E2E_COUNT=1 E2E_RUN="$(node scripts/e2e-race-groups.mjs '${{ matrix.group }}')"

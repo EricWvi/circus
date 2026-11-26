@@ -582,17 +582,21 @@ describe("retries", () => {
     installAt("9.9.9");
     const versionDir = join(agentDir(), "9.9.9");
     chmodSync(versionDir, 0o555); // Its files cannot be removed.
-    const m = manager(goodPackage());
+    const log = captureLogger();
+    const failures = () => log.lines.filter((line) => line.message === "agent uninstall failed; retrying").length;
+    const m = manager(goodPackage(), { log });
     await m.start();
     m.want(wanted());
     await waitFor(() => state(m) === AgentStatus_State.FAILED, "FAILED uninstall");
     expect(existsSync(join(versionDir, "claude"))).toBe(true);
     // A new Attach's AgentsWanted does not stop the retries (it tries at
     // once, and fails again); only the backoff's retry can succeed after.
+    // The retries run every 20 to 40 ms, so the state is sampled only
+    // after a failure that followed the new AgentsWanted.
+    const before = failures();
     m.ready();
     m.want(wanted());
-    await new Promise((done) => setTimeout(done, 50));
-    expect(state(m)).toBe(AgentStatus_State.FAILED);
+    await waitFor(() => failures() > before && state(m) === AgentStatus_State.FAILED, "FAILED again");
     chmodSync(versionDir, 0o755);
     await waitFor(() => state(m) === AgentStatus_State.NOT_INSTALLED, "NOT_INSTALLED after a retry");
     expect(existsSync(agentDir())).toBe(false);

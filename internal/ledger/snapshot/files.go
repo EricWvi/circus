@@ -138,6 +138,38 @@ type State struct {
 	SHA256 string
 }
 
+// Listed reports whether the directory that holds p (inside dir, reached
+// without following a symlink) lists p's last element under exactly that
+// spelling now. Where the file system folds names, p may reach a file
+// listed under another spelling (a.md opening A.md); this tells them apart.
+// A missing parent, or one that is not a directory, lists nothing.
+func Listed(dir *os.File, p string) (bool, error) {
+	if !ValidPath(p) {
+		return false, ErrInvalidPath
+	}
+	fd, name, err := openParent(dir, p, false)
+	if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	parent := os.NewFile(uintptr(fd), parentPath(p))
+	defer parent.Close()
+	for {
+		names, err := parent.Readdirnames(readBatch)
+		if slices.Contains(names, name) {
+			return true, nil
+		}
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		if err != nil {
+			return false, &os.PathError{Op: "read", Path: parentPath(p), Err: err}
+		}
+	}
+}
+
 // ReadState reports what p holds inside dir, never following a symlink.
 func ReadState(dir *os.File, p string) (State, error) {
 	if !ValidPath(p) {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/EricWvi/circus/internal/daemon/bashtool"
 	"github.com/EricWvi/circus/internal/testutil/leakcheck"
 	"github.com/EricWvi/circus/internal/testutil/paritypath"
+	"golang.org/x/sys/unix"
 )
 
 type fixtureInput struct {
@@ -561,6 +563,13 @@ func TestNativeParity(t *testing.T) {
 					}
 					if err := os.Symlink(target, filepath.Join(cwd, name)); err != nil {
 						t.Fatal(err)
+					}
+					// The fixtures were captured on Linux, where a symlink's
+					// own mode is always 0777; macOS gives it the umask's.
+					if runtime.GOOS == "darwin" {
+						if err := unix.Fchmodat(unix.AT_FDCWD, filepath.Join(cwd, name), 0o777, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+							t.Fatal(err)
+						}
 					}
 				}
 				for name, target := range f.Setup.Hardlinks {

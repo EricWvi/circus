@@ -38,7 +38,17 @@
 // normalizing file system would take for one name are refused, within a
 // request, across a preparation's chunks, and for a rebase's written paths
 // against the snapshot's. Everywhere, the last chunk checks that the file
-// system holds exactly the requested paths.
+// system holds exactly the requested paths. A rebase may rename a file to
+// another spelling of its name (a case-only rename: delete A.md, write
+// a.md); such a path's state is read only while its directory lists it
+// under exactly its spelling, and the deletion is applied just before the
+// write. As for every path, an agent's change between that last check and
+// the edit itself (renaming A.md to a.md, or a parent directory to another
+// case) is not checked: the edits may then be applied in the renamed tree,
+// and the rebuilt base catches it only when a difference from the merged
+// view remains to be seen. Volumes that rewrite the names
+// they store (HFS+ decomposes them) are not supported: a rebase writing
+// such a name changes the files and then fails its rebuild.
 //
 // A rebase never makes an agent's uncollected change part of the base.
 // The request carries known, the changes against the current base that

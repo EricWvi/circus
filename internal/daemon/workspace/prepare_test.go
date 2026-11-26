@@ -334,7 +334,7 @@ func TestPrepareRemovesLeftovers(t *testing.T) {
 	keep := []string{
 		"." + projectID + "x.circus-partial-0123456789abcdef", // another workspace's leftover
 		"." + projectID + ".circus-partial-",                  // no suffix
-		"." + projectID + ".circus-partial-0123456789ABCDEF",  // not lowercase hex
+		"." + projectID + ".circus-partial-0123456789ABCDE0",  // not lowercase hex (and, on a case-insensitive file system, not the stale leftover's name)
 		"." + projectID + ".circus-partial-0123456789abcde",   // 15 digits
 		"." + projectID + ".circus-partial-0123456789abcdef0", // 17 digits
 		// A workspace named "<id>.circus-partial-x": its lock and its

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -174,4 +175,54 @@ func TestSignalsForwarded(t *testing.T) {
 			})
 		}
 	}
+}
+
+// startGroup starts the guard running script, which must print "child <pid>"
+// for a background process in its group and "ready <pid>" for itself; it
+// returns the guard, its stdin and those PIDs.
+func startGroup(t *testing.T, script string) (*exec.Cmd, io.WriteCloser, map[string]int) {
+	t.Helper()
+	root := testRoot(t)
+	cmd := guardCommand(t, root, "sh", "-c", script)
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	pids := pidLines(t, lines(out), "ready", "child")
+	t.Cleanup(func() { _ = unix.Kill(-pids["ready"], unix.SIGKILL) })
+	return cmd, in, pids
+}
+
+// TestCommandExitKillsItsGroup: once the command exits, the guard kills
+// what is left of its process group and exits with the command's status.
+func TestCommandExitKillsItsGroup(t *testing.T) {
+	cmd, in, pids := startGroup(t, `sleep 60 & echo "child $!"; echo "ready $$"; read -r line; exit 23`)
+	if _, err := io.WriteString(in, "exit\n"); err != nil {
+		t.Fatal(err)
+	}
+	if status := waitBounded(t, cmd); !status.Exited() || status.ExitStatus() != 23 {
+		t.Fatalf("status %v, want exit 23", status)
+	}
+	requireGone(t, deathLimit, map[string]int{"grandchild": pids["child"]})
+}
+
+// TestUSR1KillsTheGroup: SIGUSR1 asks the guard to tear down; it kills the
+// command's whole group with SIGKILL and reports the command killed.
+func TestUSR1KillsTheGroup(t *testing.T) {
+	cmd, _, pids := startGroup(t, `sleep 60 & echo "child $!"; echo "ready $$"; wait`)
+	if err := cmd.Process.Signal(unix.SIGUSR1); err != nil {
+		t.Fatal(err)
+	}
+	if status := waitBounded(t, cmd); !status.Exited() || status.ExitStatus() != 128+int(unix.SIGKILL) {
+		t.Fatalf("status %v, want exit %d", status, 128+int(unix.SIGKILL))
+	}
+	requireGone(t, deathLimit, map[string]int{"command": pids["ready"], "grandchild": pids["child"]})
 }

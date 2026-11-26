@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -92,10 +93,16 @@ func TestRemoveStaysOffBindMounts(t *testing.T) {
 			projects := filepath.Join(home, "circus", "projects")
 			outside := filepath.Join(root, "outside")
 			files := []string{filepath.Join(outside, "precious.txt"), filepath.Join(outside, "sub", "n.txt")}
-			if mountAt == "p/mnt" {
-				files = append(files, filepath.Join(projects, "p", "keep.txt"), filepath.Join(projects, "p", "sub", "keep.txt"))
+			// The mount's siblings: removal refuses before deleting
+			// anything, so they stay. The walk alone deletes entries in
+			// directory order until it reaches the mount, so whether they
+			// stay depends on the file system's order (tmpfs lists the
+			// mount first, ext4 by hash); only the mount's files must.
+			siblings := []string{filepath.Join(projects, "p", "keep.txt"), filepath.Join(projects, "p", "sub", "keep.txt")}
+			if mountAt != "p/mnt" {
+				siblings = nil
 			}
-			for _, file := range files {
+			for _, file := range append(slices.Clone(files), siblings...) {
 				if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 					t.Fatal(err)
 				}
@@ -125,6 +132,9 @@ func TestRemoveStaysOffBindMounts(t *testing.T) {
 			}
 			if !strings.Contains(string(out), tc.want+"\n") {
 				t.Fatalf("child output lacks %q:\n%s", tc.want, out)
+			}
+			if tc.mode == "remove" {
+				files = append(files, siblings...)
 			}
 			for _, file := range files {
 				if _, err := os.Stat(file); err != nil {

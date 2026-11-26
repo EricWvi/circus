@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/daemon/ledgersnap"
 	"github.com/EricWvi/circus/internal/ledger/snapshot"
+	"github.com/EricWvi/circus/internal/testutil/diskimage"
 )
 
 const invalid = circusv1.LedgerSnapshotError_LEDGER_SNAPSHOT_ERROR_INVALID_REQUEST
@@ -304,7 +306,14 @@ func TestPathCollisions(t *testing.T) {
 // prepared like any others.
 func TestPathCollisionsWhereNamesDoNotFold(t *testing.T) {
 	ledgersnap.SetFoldsNames(t, false)
-	f := newFixture(t, ledgersnap.Options{})
+	opts := ledgersnap.Options{}
+	if runtime.GOOS == "darwin" {
+		// macOS's own volume folds names: use one that keeps them apart.
+		volume := filepath.Join(t.TempDir(), "volume")
+		diskimage.Mount(t, "Case-sensitive HFS+", "16m", volume)
+		opts.Root = filepath.Join(volume, "ledger")
+	}
+	f := newFixture(t, opts)
 	path := f.ready(base1, "Docs/D1.md", "1", "docs/D2.md", "2", "Stra\u00dfe.md", "3", "Strasse.md", "4")
 	if got := entries(t, path); !slices.Equal(got, []string{"Docs", "Strasse.md", "Stra\u00dfe.md", "docs"}) {
 		t.Fatalf("snapshot: %v", got)

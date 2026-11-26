@@ -44,7 +44,13 @@ func useEphemeral(t *testing.T, dirs ...string) {
 }
 
 func TestFindNode(t *testing.T) {
-	dir := t.TempDir()
+	// Resolved, as FindNode resolves what it finds in an ephemeral
+	// directory: on macOS the temporary directory is below /var, a link
+	// to /private/var.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	useEphemeral(t, filepath.Join(dir, "run"))
 	// Homebrew: bin/node links into the versioned Cellar, which an upgrade
 	// replaces; the link follows it.
