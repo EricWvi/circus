@@ -234,9 +234,21 @@ type subscription interface {
 // semaphore is a counting semaphore; acquire gives up when ctx ends.
 type semaphore chan struct{}
 
+// acquire takes a permit unless ctx has ended, even when a permit and the
+// end of ctx become ready together: select picks among ready cases at
+// random, so a permit taken after ctx ended is given back. A caller that
+// cancels ctx before releasing a permit thus never sees that permit go to
+// the cancelled waiter.
 func (s semaphore) acquire(ctx context.Context) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	select {
 	case s <- struct{}{}:
+		if ctx.Err() != nil {
+			s.release()
+			return false
+		}
 		return true
 	case <-ctx.Done():
 		return false
