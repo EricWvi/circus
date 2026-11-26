@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import { DISALLOWED_TOOLS, QUESTION_INPUT_BYTES, denials } from "../../src/runner/approvals.js";
 import { rejected } from "./fake-link.js";
 import { Harness, waitFor } from "./harness.js";
-import { fixture, type Step } from "./replay.js";
+import { fixture, type ReplayQuery, type Step } from "./replay.js";
 
 // canUseTool: the worker never waits for the user. A question becomes a
 // QUESTION approval; any other call it is asked about becomes a TOOL
@@ -27,14 +27,19 @@ const questions = {
   ],
 };
 
+/** The denied fixture with its call's tool_use id replaced. */
+const deniedWith = (toolUseId: string): Step[] =>
+  JSON.parse(JSON.stringify(fixture("denied").steps).replaceAll("toolu_rec_rm", toolUseId)) as Step[];
+
 /**
  * The denied fixture with the CLI asking canUseTool instead of reporting
- * permission_denied (as it does once canUseTool exists), after the hook;
- * denials replaces the result's permission_denials.
+ * permission_denied (as it does once canUseTool exists), after the hook,
+ * about the call its assistant message carries; denials replaces the
+ * result's permission_denials.
  */
 function asked(ask: Extract<Step, { t: "canUse" }>, denialsOfResult: unknown[] = [], extra: Step[] = []): Step[] {
   const out: Step[] = [];
-  for (const step of fixture("denied").steps) {
+  for (const step of deniedWith(ask.toolUseID)) {
     if (step.t === "msg" && step.m.subtype === "permission_denied") continue;
     if (step.t === "msg" && step.m.type === "result") {
       out.push(...extra, { t: "msg", m: { ...step.m, permission_denials: denialsOfResult } });
@@ -72,6 +77,20 @@ function expectPublishedBeforeRequest(h: Harness, toolUseId: string): void {
   expect(requested).toBeGreaterThan(published);
 }
 
+/** An assistant message carrying one Bash tool_use. */
+function toolUseMessage(id: string, input: Record<string, unknown>): Step {
+  return { t: "msg", m: {
+    type: "assistant", parent_tool_use_id: null, session_id: "$SESSION", uuid: crypto.randomUUID(),
+    message: { id: `msg_${id}`, type: "message", role: "assistant", model: "claude", content: [{ type: "tool_use", id, name: "Bash", input }] },
+  } };
+}
+
+/** The result of the turn an approval's retry input starts. */
+const retryResult: Step = (() => {
+  const result = fixture("denied").steps.find((s) => s.t === "msg" && s.m.type === "result") as Extract<Step, { t: "msg" }>;
+  return { t: "msg", m: JSON.parse(JSON.stringify({ ...result.m, permission_denials: [], uuid: crypto.randomUUID() }).replaceAll("$PUSH0", "$PUSH1")) };
+})();
+
 async function finish(h: Harness): Promise<void> {
   h.runner.shutdown();
   await h.done;
@@ -98,7 +117,7 @@ describe("AskUserQuestion", () => {
     })]);
     expect(h.query.canUseResults).toEqual([{ behavior: "deny", message: denials.questionAsked }]);
     expect(h.query.canUseResults[0]).toMatchObject({ message: expect.stringContaining("shown to the user") });
-    expectPublishedBeforeRequest(h, "toolu_rec_rm");
+    expectPublishedBeforeRequest(h, "toolu_ask");
     await finish(h);
   });
 
@@ -190,12 +209,14 @@ describe("a call the permission mode asks about", () => {
     await finish(h);
   });
 
-  const hook = (id: string): Step => ({ t: "hook", input: { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: askBash.input, tool_use_id: id } });
+  // The CLI streams the call's assistant message, then runs the hook.
+  const hook = (id: string): Step[] => [toolUseMessage(id, askBash.input),
+    { t: "hook", input: { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: askBash.input, tool_use_id: id } }];
   const retry = (id: string): Extract<Step, { t: "canUse" }> => ({ ...askBash, toolUseID: id });
 
   /** The asked call, then the approval's retry turn running then. */
   async function approved(then: Step[]): Promise<Harness> {
-    const h = new Harness([[...asked(askBash), { t: "push", i: 1 }, ...then]]);
+    const h = new Harness([[...asked(askBash), { t: "push", i: 1 }, ...then, retryResult]]);
     h.link.addInput({ inputId: INPUT1, text: "go" });
     await h.start();
     await waitFor(() => ended(h).length === 1, "the first turn");
@@ -207,7 +228,7 @@ describe("a call the permission mode asks about", () => {
   }
 
   test("an approved retry an ask rule asks about after the hook allowed it is allowed; the next call is asked about", async () => {
-    const h = await approved([hook("toolu_retry"), retry("toolu_retry"), hook("toolu_next"), retry("toolu_next")]);
+    const h = await approved([...hook("toolu_retry"), retry("toolu_retry"), ...hook("toolu_next"), retry("toolu_next")]);
     expect(h.query.hookResults.slice(1)).toEqual([
       expect.objectContaining({ hookSpecificOutput: expect.objectContaining({ permissionDecision: "allow" }) }), {},
     ]);
@@ -226,6 +247,148 @@ describe("a call the permission mode asks about", () => {
     expect(h.query.canUseResults[1]).toEqual({ behavior: "allow", updatedInput: askBash.input });
     expect(h.link.ops("consumeGrant")).toMatchObject([{ tool: "Bash", device: "box", matchKey, toolUseId: "toolu_retry" }]);
     expect(h.link.approvals.map((a) => a.toolUseId)).toEqual(["toolu_rec_rm"]);
+    await finish(h);
+  });
+});
+
+describe("an approval and its call's assistant message", () => {
+  // The CLI writes the assistant message carrying a call before it asks
+  // canUseTool about the call, but the SDK calls canUseTool as soon as it
+  // reads the request, while the message may still wait in its queue for
+  // the message loop. The approval is requested only once the message is
+  // published.
+  type Ask = { tool: string; input: Record<string, unknown>; toolUseID: string; agentID?: string; decisionReason?: string };
+  const bash: Ask = { tool: "Bash", input: { command, description: "Remove" }, toolUseID: "toolu_rec_rm", decisionReason: "This command needs approval" };
+
+  /**
+   * Resolves once every pending microtask has run. With the fake link, a
+   * call's path from canUseTool to RequestApproval has no timer or I/O: a
+   * request made without waiting has reached the link by then.
+   */
+  const settled = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+  interface HeldOptions {
+    signal?: AbortSignal;
+    /** What happens while canUseTool runs with the message held; releases it by default. */
+    meanwhile?: (q: ReplayQuery, h: Harness) => void | Promise<void>;
+    /** Steps after the result of canUseTool, before the rest of the turn. */
+    after?: Step[];
+    /** The result's permission_denials. */
+    denials?: unknown[];
+  }
+
+  /**
+   * The denied fixture, its call replaced by ask's: the assistant message
+   * carrying the call is emitted but held from the runner (as in the SDK's
+   * queue) while canUseTool is called. heldAtRequest records, for each
+   * approval request, whether the message was still held.
+   */
+  function held(ask: Ask, opts: HeldOptions = {}) {
+    const heldAtRequest: boolean[] = [];
+    let harness: Harness | undefined;
+    const steps: Step[] = [];
+    for (const step of deniedWith(ask.toolUseID)) {
+      if (step.t === "hook" || (step.t === "msg" && step.m.subtype === "permission_denied")) continue;
+      if (step.t === "msg" && step.m.type === "result") {
+        steps.push({ t: "msg", m: { ...step.m, permission_denials: opts.denials ?? [] } });
+        continue;
+      }
+      if (step.t !== "msg" || step.m.type !== "assistant" || !JSON.stringify(step.m).includes(`"id":"${ask.toolUseID}"`)) {
+        steps.push(step);
+        continue;
+      }
+      const message = step.m;
+      steps.push({ t: "call", fn: async (q) => {
+        q.hold();
+        q.emit(JSON.parse(JSON.stringify(message).replaceAll("$SESSION", q.sessionId)) as Record<string, unknown>);
+        const result = q.options.canUseTool!(ask.tool, ask.input, {
+          signal: opts.signal ?? new AbortController().signal, toolUseID: ask.toolUseID, requestId: crypto.randomUUID(),
+          ...(ask.agentID ? { agentID: ask.agentID } : {}), ...(ask.decisionReason ? { decisionReason: ask.decisionReason } : {}),
+        });
+        await settled();
+        await (opts.meanwhile ?? ((q) => q.release()))(q, harness!);
+        q.canUseResults.push((await result)!);
+        q.release();
+      } }, ...(opts.after ?? []));
+    }
+    const setup = (h: Harness) => {
+      harness = h;
+      h.link.interceptors.push((call) => {
+        if (call.op.case === "requestApproval") heldAtRequest.push(h.query.isHeld);
+        return undefined;
+      });
+    };
+    return { steps, heldAtRequest, setup };
+  }
+
+  async function runHeld(ask: Ask, opts?: HeldOptions) {
+    const { steps, heldAtRequest, setup } = held(ask, opts);
+    const h = await run(steps, setup);
+    return { h, heldAtRequest };
+  }
+
+  test("a question is asked once its call's message is published", async () => {
+    const { h, heldAtRequest } = await runHeld({ tool: "AskUserQuestion", input: questions, toolUseID: "toolu_ask" });
+    expect(heldAtRequest).toEqual([false]);
+    expect(h.link.approvals).toEqual([expect.objectContaining({ kind: ApprovalKind.QUESTION, toolUseId: "toolu_ask" })]);
+    expect(h.query.canUseResults).toEqual([{ behavior: "deny", message: denials.questionAsked }]);
+    expectPublishedBeforeRequest(h, "toolu_ask");
+    await finish(h);
+  });
+
+  test("a call the permission mode asks about is asked once its message is published", async () => {
+    const { h, heldAtRequest } = await runHeld(bash);
+    expect(heldAtRequest).toEqual([false]);
+    expect(h.link.approvals).toEqual([expect.objectContaining({ kind: ApprovalKind.UNSPECIFIED, toolUseId: "toolu_rec_rm", display: command })]);
+    expect(h.query.canUseResults).toEqual([{ behavior: "deny", message: denials.toolSent }]);
+    expectPublishedBeforeRequest(h, "toolu_rec_rm");
+    await finish(h);
+  });
+
+  test("a call interrupted before its message is published asks nothing, then or later", async () => {
+    // The CLI then reports the denial again: it was handled.
+    const abort = new AbortController();
+    const permissionDenied: Step = { t: "msg", m: { type: "system", subtype: "permission_denied", tool_name: "Bash", tool_use_id: "toolu_rec_rm",
+      decision_reason_type: "mode", session_id: "$SESSION", uuid: crypto.randomUUID() } };
+    const { h } = await runHeld(bash, {
+      signal: abort.signal, meanwhile: () => abort.abort(), after: [permissionDenied],
+      denials: [{ tool_name: "Bash", tool_use_id: "toolu_rec_rm", tool_input: bash.input }],
+    });
+    expect(h.link.ops("requestApproval")).toEqual([]);
+    expect(h.query.canUseResults).toEqual([{ behavior: "deny", message: denials.toolFailed }]);
+    await finish(h);
+  });
+
+  test("a call whose message does not come in time is asked about anyway, with a warning", async () => {
+    const { steps, heldAtRequest, setup } = held(bash, {
+      meanwhile: async (_q, h) => waitFor(() => h.link.approvals.length === 1, "the request"),
+    });
+    const h = new Harness([steps], { deps: { publishWaitMs: 1 } });
+    h.link.addInput({ inputId: INPUT1, text: "go" });
+    setup(h);
+    await h.start();
+    await waitFor(() => ended(h).length === 1, "the turn");
+    expect(heldAtRequest).toEqual([true]);
+    expect(h.query.canUseResults).toEqual([{ behavior: "deny", message: denials.toolSent }]);
+    expect(h.log.lines.some((l) => l.level === "warn" && l.message.includes("not published in time"))).toBe(true);
+    await finish(h);
+  });
+
+  test("a call waiting when the query ends asks nothing", async () => {
+    const { steps, setup } = held(bash, { meanwhile: (q) => q.close() });
+    const h = new Harness([steps]);
+    h.link.addInput({ inputId: INPUT1, text: "go" });
+    setup(h);
+    await h.start();
+    await h.done;
+    expect(h.query.canUseResults).toEqual([{ behavior: "deny", message: denials.toolFailed }]);
+    expect(h.link.ops("requestApproval")).toEqual([]);
+  });
+
+  test("a subagent's call does not wait: its messages may never reach the SDK", async () => {
+    const { h, heldAtRequest } = await runHeld({ ...bash, toolUseID: "toolu_sub", agentID: "agent-1" });
+    expect(heldAtRequest).toEqual([true]);
+    expect(h.link.approvals).toEqual([expect.objectContaining({ toolUseId: "toolu_sub", agentId: "agent-1" })]);
     await finish(h);
   });
 });
@@ -298,9 +461,10 @@ describe("grants", () => {
   test("a call the hook allowed whose input changed before canUseTool is not allowed by that grant", async () => {
     const input = { command, description: "Remove" };
     const h = new Harness([[...asked({ t: "canUse", tool: "Bash", input, toolUseID: "toolu_rec_rm" }), { t: "push", i: 1 },
+      toolUseMessage("toolu_retry", input),
       { t: "hook", input: { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: input, tool_use_id: "toolu_retry" } },
       // Another hook rewrote the command after the circus hook allowed it.
-      { t: "canUse", tool: "Bash", input: { command: "rm -rf /", description: "Remove" }, toolUseID: "toolu_retry" }]]);
+      { t: "canUse", tool: "Bash", input: { command: "rm -rf /", description: "Remove" }, toolUseID: "toolu_retry" }, retryResult]]);
     h.link.addInput({ inputId: INPUT1, text: "go" });
     await h.start();
     await waitFor(() => ended(h).length === 1, "the first turn");

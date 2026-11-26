@@ -19,7 +19,7 @@ import { AgentKind } from "@circus/proto/circus/v1/agent_pb";
 import type { Logger } from "../log.js";
 import type { CliProcessesPort } from "../process.js";
 import {
-  DISALLOWED_TOOLS, QUESTION_INPUT_BYTES, QUESTION_TOOL, ToolUses, approvalReason, approvalSubject, clipUtf8, denials,
+  DISALLOWED_TOOLS, PublishedToolUses, QUESTION_INPUT_BYTES, QUESTION_TOOL, ToolUses, approvalReason, approvalSubject, clipUtf8, denials,
   questionDisplay, toolUsesOf, type ApprovalSubject,
 } from "./approvals.js";
 import {
@@ -68,6 +68,8 @@ export interface RunnerDeps {
   appendBudgetMs?: number;
   /** Retry budget of ConsumeGrant in the hook; 20 seconds. */
   grantBudgetMs?: number;
+  /** How long an approval waits for its call's message (PUBLISH_WAIT_MS). */
+  publishWaitMs?: number;
   /** The worker-wide budget of retained transcript entries; the process's by default. */
   retained?: RetainedBudget;
   /** The worker's environment, the base of a provider's CLI environment; process.env by default. */
@@ -161,6 +163,8 @@ interface Generation {
   query: Query;
   prompt: PushQueue;
   closing: boolean;
+  /** The tool uses its message loop has published, for its approvals to wait on. */
+  published: PublishedToolUses;
   done?: Promise<void>;
 }
 
@@ -648,8 +652,9 @@ export class SessionRunner {
     const prompt = new PushQueue();
     const mode = (this.#config?.permissionMode || "auto") as PermissionMode;
     const hook: HookCallback = (input, _toolUseId, { signal }) => this.#preToolUse(input, signal);
+    const published = new PublishedToolUses(undefined, this.deps.publishWaitMs);
     const canUseTool: CanUseTool = (tool, input, { toolUseID, agentID, decisionReason, signal }) =>
-      this.#canUseTool(tool, input, toolUseID, agentID ?? "", decisionReason, signal);
+      this.#canUseTool(published, tool, input, toolUseID, agentID ?? "", decisionReason, signal);
     const options: Options = {
       cwd: this.#cwd,
       settingSources: ["user", "project", "local"],
@@ -676,7 +681,7 @@ export class SessionRunner {
       ...(plan.env ? { env: plan.env } : {}),
     };
     const query = this.deps.query({ prompt, options });
-    const gen: Generation = { query, prompt, closing: false };
+    const gen: Generation = { query, prompt, closing: false, published };
     this.#gen = gen;
     // Later queries of this epoch resume what this one writes.
     this.#hasTranscript = true;
@@ -758,6 +763,8 @@ export class SessionRunner {
         if (gen.closing) break;
         try {
           await this.#onMessage(message as SDKMessage & Record<string, unknown>);
+          // Its tool uses' approvals may be requested now.
+          gen.published.published(message as Record<string, unknown>);
           // The broken turn has ended: repair while the query is still open
           // (leaving the loop would end it), then the repair closes it.
           if (this.#repair && !this.#turn && !gen.closing) {
@@ -772,6 +779,7 @@ export class SessionRunner {
     } catch (error) {
       failure = error;
     }
+    gen.published.end();
     if (handlerError !== undefined) {
       this.#fatal(handlerError);
       return;
@@ -1524,8 +1532,13 @@ export class SessionRunner {
    * so that a permission_denied for the same call does not ask again. A
    * call a grant allows (the user approved it) runs: an ask rule asks
    * even after the hook allowed it.
+   *
+   * A main-thread call is asked about only once the message loop has
+   * published the assistant message carrying its tool_use (see
+   * PublishedToolUses). A subagent's call does not wait: the CLI may never
+   * hand its messages to the SDK (a background agent's between turns).
    */
-  async #canUseTool(tool: string, input: Record<string, unknown>, toolUseId: string, agentId: string,
+  async #canUseTool(published: PublishedToolUses, tool: string, input: Record<string, unknown>, toolUseId: string, agentId: string,
     decisionReason: string | undefined, signal: AbortSignal): Promise<PermissionResult> {
     if (this.#ending) return { behavior: "deny", message: denials.ending };
     if (tool !== QUESTION_TOOL && await this.#consumeGrant(tool, input, toolUseId, signal)) {
@@ -1538,9 +1551,21 @@ export class SessionRunner {
     const question = tool === QUESTION_TOOL;
     if (question && agentId) return { behavior: "deny", message: denials.subagentQuestion };
     try {
+      if (!question) {
+        this.#toolUses.remember(toolUseId, { tool, input, agentId });
+        if (handled) return { behavior: "deny", message: denials.toolSent };
+      }
+      const waited = agentId ? "published" : await published.wait(toolUseId, signal);
+      // Interrupted, or the query closed, before the call's message was published: nothing is asked.
+      if (waited === "cancelled") return { behavior: "deny", message: question ? denials.questionFailed : denials.toolFailed };
+      // Asked as before: the card may come before its call in the view.
+      if (waited === "timed_out") {
+        this.#log.warn("the assistant message of a call asked about was not published in time; asking anyway", {
+          session_id: this.sessionId, tool: tool.slice(0, 256), tool_use_id: toolUseId.slice(0, 256),
+        });
+      }
+      if (this.#ending) return { behavior: "deny", message: denials.ending };
       if (question) return { behavior: "deny", message: await this.#askQuestion(toolUseId, input) };
-      this.#toolUses.remember(toolUseId, { tool, input, agentId });
-      if (handled) return { behavior: "deny", message: denials.toolSent };
       const asked = await this.#requestApproval(toolUseId, tool, decisionReason, agentId);
       return { behavior: "deny", message: asked ? denials.toolSent : denials.toolFailed };
     } catch (error) {

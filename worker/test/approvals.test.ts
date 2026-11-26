@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { describe, expect, test } from "vitest";
-import { approvalReason, approvalSubject, canonicalJson } from "../src/runner/approvals.js";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { PUBLISH_WAIT_MS, PublishedToolUses, approvalReason, approvalSubject, canonicalJson } from "../src/runner/approvals.js";
 
 const sha = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 const key = (tool: string, input: unknown) => approvalSubject(tool, input, "/work/project")?.matchKey;
@@ -62,4 +62,68 @@ test("a denial's reason is clipped to 1 KiB, and empty when the permission mode 
   const long = approvalReason("é".repeat(1000));
   expect(Buffer.byteLength(long)).toBeLessThanOrEqual(1024);
   expect(long).toBe("é".repeat(512));
+});
+
+describe("published tool uses", () => {
+  const assistant = (ids: string[], parent: string | null = null) => ({
+    type: "assistant", parent_tool_use_id: parent, message: { content: ids.map((id) => ({ type: "tool_use", id, name: "Bash", input: {} })) },
+  });
+  const never = new AbortController().signal;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("a wait ends when an assistant message carrying the tool use is published", async () => {
+    const published = new PublishedToolUses();
+    const waiting = published.wait("toolu_b", never);
+    published.published({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_b" }] } });
+    published.published(assistant(["toolu_a", "toolu_b"]));
+    expect(await waiting).toBe("published");
+    expect(await published.wait("toolu_a", never)).toBe("published");
+  });
+
+  test("a wait is cancelled when its signal aborts or the message loop ends", async () => {
+    const published = new PublishedToolUses();
+    const abort = new AbortController();
+    const aborted = published.wait("toolu_a", abort.signal);
+    const ended = published.wait("toolu_b", never);
+    abort.abort();
+    expect(await aborted).toBe("cancelled");
+    published.end();
+    expect(await ended).toBe("cancelled");
+    expect(await published.wait("toolu_c", never)).toBe("cancelled");
+  });
+
+  test("a wait times out after its bound", async () => {
+    vi.useFakeTimers();
+    const published = new PublishedToolUses(512, 5_000);
+    let outcome: string | undefined;
+    void published.wait("toolu_a", never).then((o) => { outcome = o; });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(outcome).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(outcome).toBe("timed_out");
+    expect(PUBLISH_WAIT_MS).toBe(5_000);
+  });
+
+  test("only the latest tool uses are kept", async () => {
+    const published = new PublishedToolUses(2);
+    published.published(assistant(["toolu_1", "toolu_2", "toolu_3"]));
+    published.end();
+    expect(await published.wait("toolu_1", never)).toBe("cancelled");
+    expect(await published.wait("toolu_3", never)).toBe("published");
+  });
+
+  test("subagents' tool uses do not evict a main-thread call still to be asked about", async () => {
+    // The main thread starts a subagent and runs Bash in one message; the
+    // subagent publishes more than the capacity before the CLI asks about Bash.
+    vi.useFakeTimers();
+    const published = new PublishedToolUses(512, 5_000);
+    published.published(assistant(["toolu_agent", "toolu_bash"]));
+    for (let i = 0; i < 520; i++) published.published(assistant([`toolu_sub_${i}`], "toolu_agent"));
+    const waiting = published.wait("toolu_bash", never);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await waiting).toBe("published");
+  });
 });

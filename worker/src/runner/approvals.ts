@@ -139,6 +139,84 @@ export function toolUsesOf(message: Record<string, unknown>): Array<{ id: string
   });
 }
 
+/**
+ * How long an approval waits for its call's message. The message is already
+ * queued when canUseTool runs, behind at most a few control-plane round trips
+ * of the message loop: 5 s is ample, and bounds the wait if it never comes.
+ */
+export const PUBLISH_WAIT_MS = 5_000;
+
+/** How a wait for a tool use's message ended. */
+export type PublishWait = "published" | "timed_out" | "cancelled";
+
+/**
+ * The main thread's tool uses whose assistant message the message loop has
+ * published, for approvals to wait on. The CLI writes the assistant message
+ * carrying a tool_use before it asks canUseTool about that call, but the SDK
+ * calls canUseTool as soon as it reads the request, while the message may
+ * still wait in the SDK's queue for the message loop. The control plane
+ * records APPROVAL_PENDING with the request: requested only once the call's
+ * message is published, the card never precedes the call in the view.
+ * Subagents' messages are not recorded: their calls do not wait, and their
+ * traffic must not evict the main thread's calls.
+ */
+export class PublishedToolUses {
+  #ids = new Set<string>();
+  #waiting = new Map<string, Set<() => void>>();
+  #ended = false;
+
+  constructor(readonly capacity = 512, readonly boundMs = PUBLISH_WAIT_MS) {}
+
+  /** Records the tool uses of a main-thread assistant message the message loop has published. */
+  published(message: Record<string, unknown>): void {
+    if (message.type !== "assistant" || message.parent_tool_use_id) return;
+    for (const { id } of toolUsesOf(message)) {
+      this.#ids.delete(id);
+      this.#ids.add(id);
+      if (this.#ids.size > this.capacity) this.#ids.delete(this.#ids.values().next().value!);
+      for (const wake of this.#waiting.get(id) ?? []) wake();
+      this.#waiting.delete(id);
+    }
+  }
+
+  /**
+   * Waits until the tool use is published, for at most boundMs; cancelled if
+   * the signal aborts or the message loop ends first.
+   */
+  async wait(toolUseId: string, signal: AbortSignal): Promise<PublishWait> {
+    if (this.#ids.has(toolUseId)) return "published";
+    if (this.#ended || signal.aborted) return "cancelled";
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const waiting = this.#waiting.get(toolUseId) ?? new Set();
+    this.#waiting.set(toolUseId, waiting);
+    const wake = () => resolve();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, this.boundMs);
+    waiting.add(wake);
+    signal.addEventListener("abort", wake, { once: true });
+    try {
+      await promise;
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", wake);
+      waiting.delete(wake);
+      if (!waiting.size && this.#waiting.get(toolUseId) === waiting) this.#waiting.delete(toolUseId);
+    }
+    if (this.#ids.has(toolUseId)) return "published";
+    return timedOut ? "timed_out" : "cancelled";
+  }
+
+  /** The message loop ended: nothing more is published, and every waiter is cancelled. */
+  end(): void {
+    this.#ended = true;
+    for (const waiting of this.#waiting.values()) for (const wake of waiting) wake();
+    this.#waiting.clear();
+  }
+}
+
 /** The tool whose calls become question approvals. */
 export const QUESTION_TOOL = "AskUserQuestion";
 /** Tools the worker removes: plan mode needs an approval flow it does not have. */

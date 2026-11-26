@@ -81,6 +81,8 @@ export class ReplayQuery {
   #finished = false;
   /** The runner is waiting for its next message: it handled every earlier one. */
   #idle = false;
+  /** Emitted messages are kept from the runner, as the SDK keeps those queued before the message loop asks. */
+  #held = false;
   #wake = new Set<() => void>();
   #chain: Promise<void> = Promise.resolve();
   #mirrorShape?: Record<string, unknown>;
@@ -238,6 +240,20 @@ export class ReplayQuery {
     });
   }
 
+  /** Keeps emitted messages from the runner until release(). */
+  hold(): void {
+    this.#held = true;
+  }
+
+  get isHeld(): boolean {
+    return this.#held;
+  }
+
+  release(): void {
+    this.#held = false;
+    this.#notify();
+  }
+
   // ---- The Query surface the runner uses ----
 
   interrupt(): Promise<Record<string, never>> {
@@ -256,7 +272,7 @@ export class ReplayQuery {
       next: async () => {
         for (;;) {
           this.#idle = false;
-          if (this.#out.length && !this.closed) return { done: false, value: this.#out.shift() };
+          if (this.#out.length && !this.closed && !this.#held) return { done: false, value: this.#out.shift() };
           if (this.closed) return { done: true, value: undefined };
           if (this.#finished) {
             if (this.error) throw this.error;
