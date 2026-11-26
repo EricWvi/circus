@@ -1,11 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { BookOpenIcon, FolderIcon, SettingsIcon } from "lucide-react"
+import { BookOpenIcon, BotOffIcon, FolderIcon, SettingsIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Trans, useTranslation } from "react-i18next"
 import { Link, Navigate, useNavigate, useParams } from "react-router"
 
 import { isApiError } from "@/api/errors"
-import { useCreateSession, useDevices, useModelProviders, useProjects, useSessionList } from "@/api/hooks"
+import { useCreateSession, useDevices, useModelProviders, useProjects, useSessionList, useWorkers } from "@/api/hooks"
 import { queryKeys } from "@/api/query-client"
 import type { Device, Location, Project, ProjectLocation, SessionSummary } from "@/api/types"
 import { InfoTip } from "@/components/info-tip"
@@ -27,6 +27,7 @@ import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { i18n } from "@/i18n/i18n"
 import { locationDirectory, pickLocation, projectErrorMessage } from "@/lib/location-form"
 import { DEFAULT_PERMISSION_MODE, type PermissionMode } from "@/lib/permission-mode"
+import { localWorker, runsAgent } from "@/lib/agents"
 import { choiceIsLocalLogin, DEFAULT_CHOICE, LOCAL_LOGIN, requestedProvider } from "@/lib/provider-choice"
 import { queueReasonText } from "@/lib/queue-reason"
 import { formatRelative } from "@/lib/time"
@@ -210,6 +211,7 @@ function ProjectHome({ project }: { project: Project }) {
                 {providers.data && choiceIsLocalLogin(providerChoice, project, providers.data) && (
                   <p className="px-2 text-xs text-muted-foreground">{t("providers.select.localLoginHint")}</p>
                 )}
+                <NoAgentNotice device={project.locations[locationIndex]!.device} />
               </>
             )}
             {error !== null && (
@@ -226,6 +228,47 @@ function ProjectHome({ project }: { project: Project }) {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Says, before a session is created in a location on `device`, that no
+ * worker can run it: the worker on the device's machine, to which the
+ * session is pinned, lacks Claude Code; or, with no such worker, none of
+ * the user's workers has it (or there is no worker). Creating the session
+ * is still allowed; it waits until a worker can take it.
+ */
+function NoAgentNotice({ device }: { device: string }) {
+  const workers = useWorkers()
+  if (!workers.data) return null
+  const pinned = localWorker(workers.data, device)
+  if (pinned ? runsAgent(pinned) : workers.data.some((w) => runsAgent(w))) return null
+  // Worker and device are usually both named after the host: name the worker only when it differs.
+  const message = pinned
+    ? pinned.name === device
+      ? "projects.noAgentLocalNotice"
+      : "projects.noAgentLocalNamedNotice"
+    : workers.data.length === 0
+      ? "projects.noWorkersNotice"
+      : "projects.noAgentNotice"
+  return (
+    <p role="status" className="flex items-start gap-2 px-2 text-xs text-muted-foreground">
+      <BotOffIcon className="mt-px size-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0">
+        <Trans
+          i18nKey={message}
+          values={pinned ? { worker: pinned.name, device } : undefined}
+          components={{
+            devices: (
+              <Link
+                to="/devices"
+                className="rounded-sm text-foreground underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
+              />
+            ),
+          }}
+        />
+      </span>
+    </p>
   )
 }
 

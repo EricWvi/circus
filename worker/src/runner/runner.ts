@@ -15,6 +15,7 @@ import {
   TakeInputsSchema, TranscriptRepairedSchema, WorkerEvent_Nudge_Reason as Reason,
   type PatchSessionState_BackgroundTask, type ReportTurn_Persisted, type SessionReply_Inputs_Input, type SessionReply_Lease,
 } from "@circus/proto/circus/v1/worker_link_pb";
+import { AgentKind } from "@circus/proto/circus/v1/agent_pb";
 import type { Logger } from "../log.js";
 import type { CliProcessesPort } from "../process.js";
 import {
@@ -48,6 +49,11 @@ export interface RunnerDeps {
   log: Logger;
   query: QueryFactory;
   processes: CliProcessesPort;
+  /**
+   * The agent's executable when it is installed at this worker's version
+   * (AgentManager.executable); undefined otherwise. Never the SDK's own.
+   */
+  agentExecutable: (agent: AgentKind) => string | undefined;
   /** Idle time before an idle release; five minutes. */
   idleMs?: number;
   /** Longest wait for running background tasks; two hours. */
@@ -456,6 +462,15 @@ export class SessionRunner {
       this.#finish({ release: ReleaseLease_Reason.ERROR });
       return;
     }
+    if (config.agent !== AgentKind.CLAUDE_CODE) {
+      this.#log.error("lease of a session for an agent this worker does not run; releasing it", {
+        session_id: this.sessionId, agent: config.agent,
+      });
+      this.#publisher.add(Kind.ERROR, errorPayload("This worker runs only Claude Code sessions."));
+      this.#finish({ release: ReleaseLease_Reason.ERROR });
+      return;
+    }
+    if (!this.#claudeExecutable()) return;
     const cwd = config.cwds.find((entry) => entry.device === config.defaultDevice)?.cwd ?? "";
     let isDirectory = false;
     try {
@@ -496,6 +511,21 @@ export class SessionRunner {
       this.#notes.push({ kind: "lost_bgtask", text: lostTaskText(task.taskId, task.toolUseId, task.description), task });
     }
     this.#kickInputs();
+  }
+
+  /**
+   * The installed Claude Code; when it is not installed at this worker's
+   * version, the session's lease is released with ERROR instead.
+   */
+  #claudeExecutable(): string | undefined {
+    const executable = this.deps.agentExecutable(AgentKind.CLAUDE_CODE);
+    if (executable) return executable;
+    this.#log.error("Claude Code is not installed on this worker at its version; releasing the session", {
+      session_id: this.sessionId,
+    });
+    this.#publisher.add(Kind.ERROR, errorPayload("Claude Code is not installed on this worker. Install it from the worker's page in the Web UI."));
+    this.#finish({ release: ReleaseLease_Reason.ERROR });
+    return undefined;
   }
 
   // ---- Errors and endings ----
@@ -603,6 +633,8 @@ export class SessionRunner {
     }
     // Stopped, lost or failed while asking: no CLI.
     if (!this.#mayStart()) return undefined;
+    const executable = this.#claudeExecutable();
+    if (!executable) return undefined;
     // The reply holds secrets: only the provider id and counts are logged.
     const plan = launchPlan(reply, this.deps.env ?? process.env);
     if (plan.skipped.length) {
@@ -637,6 +669,8 @@ export class SessionRunner {
       // worker instead of being denied, and AskUserQuestion is available.
       canUseTool,
       disallowedTools: DISALLOWED_TOOLS,
+      // The installed Claude Code: the SDK never looks for its own.
+      pathToClaudeCodeExecutable: executable,
       spawnClaudeCodeProcess: this.deps.processes.spawner(this.sessionId),
       // Local login: the worker's own environment, unchanged.
       ...(plan.env ? { env: plan.env } : {}),

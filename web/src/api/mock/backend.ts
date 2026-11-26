@@ -2,6 +2,7 @@ import { nanoid } from "nanoid"
 
 import { ApiError } from "@/api/errors"
 import type {
+  AgentKind,
   AuthState,
   CircusClient,
   EnrollRole,
@@ -33,7 +34,8 @@ import { seedLedgers } from "@/mock/ledger"
 
 import { listMockDirectory, readMockGitRemote } from "./directories"
 import { decisionOf, historyOf, ledgerOf, type MockLedgers } from "./ledger"
-import { createMockModelProviders } from "./model-providers"
+import { createMockAgents, defaultAgentTiming, type MockAgentTiming } from "./agents"
+import { createMockModelProviders, runsSessions } from "./model-providers"
 import {
   collectSessionLedger,
   deleteSessionLedger,
@@ -96,6 +98,8 @@ export interface MockBackendOptions {
   sessionTiming?: MockSessionTiming
   /** How the scripted preparation of default folders paces itself. */
   workspaceTiming?: MockWorkspaceTiming
+  /** How the simulated agent installs and uninstalls pace themselves. */
+  agentTiming?: MockAgentTiming
   /** Receives notes about what the mock does in place of the real server. */
   note?: (message: string) => void
   /** Whether an OIDC provider is configured (default true). */
@@ -129,6 +133,7 @@ export function createMockBackend({
   now = Date.now,
   sessionTiming = defaultSessionTiming,
   workspaceTiming = defaultWorkspaceTiming,
+  agentTiming = defaultAgentTiming,
   note = () => {},
   oidc = true,
   ledgers = seedLedgers(now()),
@@ -368,6 +373,31 @@ export function createMockBackend({
       if (ledger) s.ledger = ledger
     }
   }
+
+  /**
+   * The worker that holds a leased session: the one on its device's
+   * machine, else (as the mock has no record of it) the first online one,
+   * by name, that runs sessions.
+   */
+  function hostOf(s: MockSession): MockWorker | undefined {
+    const owner = ownerOf(s)
+    const workers = state.workers.filter((w) => w.owner === owner)
+    return (
+      workers.find((w) => w.localDevices.includes(s.device)) ??
+      workers
+        .filter((w) => w.online && runsSessions(w))
+        .sort((a, b) => a.name.localeCompare(b.name))[0]
+    )
+  }
+
+  const agents = createMockAgents({
+    state,
+    now,
+    timing: agentTiming,
+    // Every session runs the one agent there is.
+    holdsSession: (worker) => state.sessions.some((s) => s.leased && s.state !== "stopped" && hostOf(s) === worker),
+    installed: () => reschedule(),
+  })
 
   const runtime = createMockSessionRuntime({
     sessions: () => state.sessions,
@@ -667,6 +697,13 @@ export function createMockBackend({
         if (!worker) throw new ApiError("not_found", "Worker not found.")
         // Workers live in this tab's memory: nothing to save.
         worker.integrator = integrator
+        return publicWorker(owner, worker)
+      }),
+      setWorkerAgent: call(({ workerId, agent, install }: { workerId: string; agent: AgentKind; install: boolean }) => {
+        const owner = currentUser()
+        // Workers live in this tab's memory: nothing to save.
+        const worker = agents.set(owner, { workerId, agent, install })
+        if (!install) reschedule()
         return publicWorker(owner, worker)
       }),
       // A link that enrolls nothing: the mock has no enrollment endpoint.

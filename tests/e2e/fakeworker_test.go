@@ -583,6 +583,20 @@ func browserClients(t *testing.T, h *harness) (circusv1connect.ProjectServiceCli
 	return circusv1connect.NewProjectServiceClient(httpClient, h.base), circusv1connect.NewSessionServiceClient(httpClient, h.base)
 }
 
+// browserMachines is the Web user's MachineService.
+func browserMachines(t *testing.T, h *harness) circusv1connect.MachineServiceClient {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	must(t, err)
+	httpClient := &http.Client{Jar: jar, Transport: http.DefaultTransport.(*http.Transport).Clone()}
+	t.Cleanup(httpClient.CloseIdleConnections)
+	_, err = circusv1connect.NewAuthServiceClient(httpClient, h.base).Login(testwait.Ctx(t), connect.NewRequest(&pb.LoginRequest{
+		Email: enrollmentEmail, Password: enrollmentPassword,
+	}))
+	must(t, err)
+	return circusv1connect.NewMachineServiceClient(httpClient, h.base)
+}
+
 func browserSessionAPI(t *testing.T, h *harness) (circusv1connect.SessionServiceClient, string) {
 	t.Helper()
 	projects, sessions := browserClients(t, h)

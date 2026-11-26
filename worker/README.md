@@ -1,22 +1,55 @@
 # Circus worker
 
-Build with Node.js 24 or later and run from the repository root.
+The worker runs Claude Code sessions for the control plane in local mode,
+on a machine you enrolled with `circus join`. It ships without any agent:
+you install Claude Code per worker from the Web UI.
+
+## Install and start
+
+Each release has a package per platform, `circus-worker-<tag>-<os>-<arch>.tar.gz`
+(`linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`; listed in the
+release's `SHA256SUMS`). It needs Node.js 24 or later and the `circus` CLI
+of the same release.
 
 ```sh
-npm ci
-task worker:build
-circus join --role worker
-node worker/dist/main.js
+tar -xzf circus-worker-<tag>-<os>-<arch>.tar.gz   # unpacks circus-worker/
+circus join --role worker                         # paste the enrollment link
+circus-worker/circus-worker
 ```
 
-The worker runs Claude Code sessions in local mode: it attaches with
-`local_only`, acquires the sessions the control plane offers it (up to
-`CIRCUS_WORKER_MAX_SESSIONS`) and drives each with the Claude Agent SDK and
-Claude Code's own tools in the session's working directory. It logs to
-stderr as JSON lines and shuts down gracefully on SIGTERM or SIGINT: it stops
-taking leases, closes every query, releases every lease and closes the link,
-within 15 seconds. It reads the credential written by
-`circus join` from `$CIRCUS_HOME/config/worker.json`, or from
+`circus-worker/circus-worker` finds Node.js (`$CIRCUS_NODE`, else `node` on
+`PATH`) and fails with a clear message when it is missing or older than 24;
+it may be symlinked onto `PATH`. The package holds the built worker and its
+production dependencies, nothing platform specific.
+
+Then open the worker in the Web UI and install Claude Code. The worker
+downloads the Claude Code build pinned for this worker release (see below),
+verifies it against the sha512 digest built into the worker, and installs
+it under `<data>/agents/claude-code/<version>/`; the Web UI shows the
+progress. Until Claude Code is installed, sessions for this worker wait
+("agent not installed"). Uninstalling waits until no session the worker
+holds runs Claude Code, then removes only `<data>/agents/claude-code/`:
+your own Claude Code configuration and login (`~/.claude`,
+`CLAUDE_CONFIG_DIR`) are never touched. A worker upgraded to a release that
+pins another Claude Code version shows the old install as outdated and runs
+nothing with it until you choose "Update".
+
+`<data>` is `$CIRCUS_HOME`, else `$XDG_DATA_HOME/circus`, else
+`~/.local/share/circus`. An install interrupted by a stop or crash leaves a
+temporary directory there, removed at the next start.
+
+From a source checkout, build and run with `npm ci`, `task worker:build` and
+`node worker/dist/main.js`; `node worker/scripts/package.mjs <tag> <out-dir>
+<target>...` builds release packages (usage at the top of the script).
+
+The worker attaches with `local_only`, acquires the sessions the control
+plane offers it (up to `CIRCUS_WORKER_MAX_SESSIONS`) and drives each with
+the Claude Agent SDK and Claude Code's own tools in the session's working
+directory. It logs to stderr as JSON lines and shuts down gracefully on
+SIGTERM or SIGINT: it stops an install in progress, stops taking leases,
+closes every query, releases every lease and closes the link, within 15
+seconds. It reads the credential written by `circus join` from
+`$CIRCUS_HOME/config/worker.json`, or from
 `$XDG_CONFIG_HOME/circus/worker.json` with a default of
 `~/.config/circus/worker.json`. The file supplies the server URL, principal ID,
 bearer token and optional CA bundle.
@@ -27,18 +60,117 @@ bearer token and optional CA bundle.
 | `CIRCUS_WORKER_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `CIRCUS_WORKER_IDLE_SECONDS` | `300` | Integer from 1 to 86400: how long an idle session keeps its lease. An idle session releases at once when the control plane asks (`ReleaseIdle`) because a session of the same provider waits for its `max_sessions` |
 | `CIRCUS_BIN` | `circus` on `PATH` | The `circus` binary providing `internal exec-guard` |
+| `CIRCUS_HOME` | unset | Moves the credential (`config/`) and installed agents (`agents/`) under one directory |
+| `XDG_DATA_HOME` | `~/.local/share` | Installed agents go to `$XDG_DATA_HOME/circus/agents` when `CIRCUS_HOME` is unset |
+| `CIRCUS_NPM_REGISTRY` | `https://registry.npmjs.org` | The npm registry agent packages are downloaded from (a mirror with the same layout); the digest check is the same |
+| `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` (or lowercase) | unset | Proxy for agent downloads, chosen as Go's `http.ProxyFromEnvironment` does (see "Agents") |
+| `CIRCUS_NODE` | `node` on `PATH` | The Node.js the launcher runs (24 or later) |
 
 Claude Code runs with the environment of the worker (`CLAUDE_CONFIG_DIR` is
 left alone): with the user's own login on this machine for a session
 without a provider, with the provider's credentials otherwise (see
 "Providers and the launch environment").
 
+## Agents
+
+Attach reports every agent this worker build supports with its state on
+this machine (`AgentStatus`: not installed, installing with progress,
+installed, outdated, failed, uninstalling); later changes go in
+ReportAgents, progress at most once a second. The control plane sends the
+user's wishes in `AgentsWanted` after every Attach and whenever one
+changes, and the worker reconciles (`src/agents/manager.ts`): wanted at
+this build's version and not installed →
+install; wanted at another version → nothing; not wanted and on disk →
+uninstall once no held session runs it (a FAILED install is retried only
+on the user's request; see below). One operation per agent runs at a
+time; a wish that no longer wants a running install stops it.
+
+The pinned version and, per platform (`linux-x64`, `linux-arm64`, their
+`-musl` variants, `darwin-x64`, `darwin-arm64`), the npm package's tarball
+path and sha512 come from `package-lock.json` at build time
+(`scripts/agent-manifest.mjs` writes `src/agents/claude-code.generated.ts`);
+nothing is looked up at run time. The tarball is streamed to disk while
+hashed, unpacked by a strict reader (regular files under `package/` only)
+into a temporary directory next to the install, and renamed into place.
+A failed install removes the previous files too and reports why.
+
+A download is bounded: at most 512 MiB downloaded (the declared size is
+checked first, then the running count), at most 1 GiB unpacked (checked
+before each file is written), no more than 60 s without receiving data, 30
+minutes in all, and 5 redirects. Each bound fails the install with an error
+naming it ("download timed out (no data for 60 s)", "download took longer
+than 30 min", "download larger than 512 MiB", "package larger than 1 GiB
+unpacked", "too many redirects").
+
+Downloads use a proxy as the circus CLI does (Go's
+`http.ProxyFromEnvironment`): `HTTPS_PROXY`, else `https_proxy`, for an
+https URL, through a `CONNECT` tunnel; `HTTP_PROXY`, else `http_proxy`, for
+an http URL, as an absolute-URI request; none for `localhost` and loopback
+addresses, nor for a host `NO_PROXY` (else `no_proxy`) exempts: `*`, an IP
+address or CIDR range, `example.com` (itself and its subdomains),
+`.example.com` or `*.example.com` (subdomains only), each optionally with
+`:port` (an IPv6 address then in brackets; `[::1]` without a port matches
+nothing). Name entries never match an IP address host. A proxy without a
+scheme is `http://`; only `http://` proxies are supported (an `https://` or
+`socks5://` proxy fails the download with a clear error), with credentials
+in the URL sent as Basic authentication and never repeated in an error or
+log. `worker/test/testdata/proxy-cases.json`, written by
+`go run ./tools/proxycases`, holds Go's choices the tests compare with. Every
+redirect chooses its proxy again. The worker's link to the control plane
+never uses a proxy.
+
+Installs and uninstalls hold a lock on the agents directory
+(`<agents>/.lock`, a file created exclusively that names its holder's pid,
+host and process start time), and so does a starting worker while it
+removes interrupted installs: two worker processes sharing a data
+directory never remove each other's files. A second process waits up to
+60 s for the lock, then fails the operation naming the holder; at start it
+waits 5 s and then leaves the temporary directories alone (a takeover
+blocked by another process never makes it wait longer).
+
+On the holder's own host, the holder process decides whether a lock is
+stale: a lock naming a running process with the recorded start time is
+never taken over, however long that process is paused (a debugger, a
+suspended laptop or VM). A lock naming this process's pid that it does not
+hold (a restarted container), a process that is not running, or a pid now
+used by a process that started at another time is taken over at once. The
+start time is read from `/proc/<pid>/stat` (with the boot id) on Linux and
+from `ps -o lstart=` on macOS.
+
+For a lock naming another host, an empty or damaged file, or one without a
+start time, the file's age decides: while it holds the lock, a process sets
+the file's modification time to now every 10 s, and a lock not refreshed
+for 60 s is stale and taken over. This recovers from a holder killed in a
+container that restarts with another hostname. It compares the holder's
+clock with the waiter's, so hosts that share one data directory (a home on
+NFS, say) need synchronised clocks (NTP): a host whose clock runs 60 s or
+more ahead would take over a live lock.
+
+Reports: one ReportAgents is in flight at a time and the latest state goes
+next. A report that fails while the link is up (a refusal, the control
+plane's store unavailable, a timeout) is sent again after 1 s, doubling up
+to 30 s; one that fails because the link is down is not, since the next
+Attach carries the state. A FAILED install is never retried by the worker
+itself: each wish carries an attempt, which the control plane raises on
+every install request of the user, and the worker installs a FAILED agent
+again only for an attempt greater than the one its failure belongs to,
+whether it arrives at once, with the next Attach (asked while the worker
+was offline) or in place of the Attach's own AgentsWanted. A worker restart
+starts over from what is on disk. A failed uninstall is retried after 1 s,
+doubling up to 5 minutes, while the agent is still not wanted.
+
+Every session starts the installed binary (`pathToClaudeCodeExecutable`);
+a lease whose session is not a Claude Code session, or that arrives while
+Claude Code is not installed at this build's version, is released with
+ERROR and an error event. The SDK's own platform packages are never needed.
+
 ## Claude Agent SDK
 
-The worker pins `@anthropic-ai/claude-agent-sdk` **0.3.330**, which bundles
-Claude Code **2.1.330**, and its peers `@anthropic-ai/sdk` 1.12.0,
-`@modelcontextprotocol/sdk` 1.32.2 and `zod` 4.6.7. Attach reports both
-versions.
+The worker pins `@anthropic-ai/claude-agent-sdk` **0.3.330**, released with
+Claude Code **2.1.330** (the version the worker installs), and its peers
+`@anthropic-ai/sdk` 1.12.0, `@modelcontextprotocol/sdk` 1.32.2 and `zod`
+4.6.7. Attach reports the SDK version; the agent status carries Claude
+Code's.
 
 Each session runs one `query()` on the main thread with: `cwd` the
 `SessionConfig.cwds` entry of `default_device`; `settingSources: ['user',
@@ -47,7 +179,8 @@ describing the session's ledger snapshot appended when the lease has a
 `ledger_path` (`src/runner/ledger.ts`); the session's
 permission mode (`auto` when empty); partial messages; `sessionId`, or
 `resume` once the session has a transcript; the control-plane SessionStore
-with eager flushing; a PreToolUse hook; the CLI launcher below; and, for a
+with eager flushing; a PreToolUse hook; the installed Claude Code
+executable and the CLI launcher below; and, for a
 session with a provider, the launch environment below. No tool list, MCP
 server, alias or agent is set. The model is `SessionConfig.model`; when it
 is empty, none is passed for local login, and a session with a provider

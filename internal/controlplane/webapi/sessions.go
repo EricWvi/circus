@@ -197,7 +197,8 @@ func (s *Service) fullSession(ctx context.Context, ops store.Ops, sess store.Ses
 	if err != nil {
 		return nil, err
 	}
-	out.Config = &circusv1.SessionConfig{DefaultDevice: device, Model: sess.Model, PermissionMode: sess.PermissionMode, Local: sess.Local}
+	out.Config = &circusv1.SessionConfig{DefaultDevice: device, Model: sess.Model, PermissionMode: sess.PermissionMode, Local: sess.Local,
+		Agent: sessions.AgentKindProto(sess.Agent)}
 	for _, c := range cwds {
 		name, err := names.name(ctx, c.DeviceID)
 		if err != nil {
@@ -290,6 +291,8 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		return nil, invalidField("config.permission_mode", "plan mode is not supported")
 	case cfg.GetLocal():
 		return nil, invalidField("config.local", "local mode is decided by the server")
+	case cfg.GetAgent() != circusv1.AgentKind_AGENT_KIND_UNSPECIFIED && !knownAgent(cfg.GetAgent()):
+		return nil, invalidField("config.agent", "unknown agent")
 	case len(m.GetPinnedWorkerId()) > store.MaxIDBytes:
 		return nil, invalidField("pinned_worker_id", "worker id is too long")
 	case len(m.GetProviderId()) > store.MaxIDBytes:
@@ -314,7 +317,8 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		old, err := tx.GetSessionByClientRequestID(ctx, p.ID, m.GetClientRequestId(), now)
 		switch {
 		case err == nil:
-			if !old.MatchesCreate(m.LocationIndex, m.GetPinnedWorkerId(), cfg.GetModel(), cfg.GetPermissionMode(), m.ProviderId) {
+			if !old.MatchesCreate(m.LocationIndex, m.GetPinnedWorkerId(), cfg.GetModel(), cfg.GetPermissionMode(), m.ProviderId) ||
+				old.Agent != sessionAgent(cfg) {
 				return fieldError(connect.CodeAlreadyExists, "client_request_id", requestConflict)
 			}
 			out, err = s.fullSession(ctx, tx, old)
@@ -382,7 +386,8 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 			ID: id, UserID: u.ID, ProjectID: p.ID, ClaudeSessionID: uuid.NewString(), State: store.SessionIdle,
 			ClientRequestID: m.GetClientRequestId(), LocationIndex: uint32(index), Workspace: l.Path == "",
 			DefaultDeviceID: l.DeviceID, Model: cfg.GetModel(), PermissionMode: cfg.GetPermissionMode(),
-			PinnedWorkerID: pin, PinDerived: derived, Local: local, ProviderID: provider, CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+			PinnedWorkerID: pin, PinDerived: derived, Local: local, ProviderID: provider, Agent: sessionAgent(cfg),
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 		}
 		cwds := []store.SessionCwd{{DeviceID: l.DeviceID, Cwd: cwd, UpdatedAt: now}}
 		res, err := tx.CreateSession(ctx, sess, cwds, store.DefaultMaxSessionsPerUser)
@@ -1169,4 +1174,19 @@ func (s *Service) RecoverSession(ctx context.Context, req *connect.Request[circu
 		sessions.LogLeaseEnded(ctx, s.logger, *res.Loss, sessions.LeaseEndRecovered)
 	}
 	return connect.NewResponse(&circusv1.RecoverSessionResponse{}), nil
+}
+
+// knownAgent reports whether k names an agent sessions can run.
+func knownAgent(k circusv1.AgentKind) bool {
+	_, ok := sessions.AgentKindFromProto(k)
+	return ok
+}
+
+// sessionAgent is the agent a new session runs: the configured one,
+// Claude Code when none is (the only agent so far).
+func sessionAgent(cfg *circusv1.SessionConfig) store.AgentKind {
+	if k, ok := sessions.AgentKindFromProto(cfg.GetAgent()); ok {
+		return k
+	}
+	return store.AgentClaudeCode
 }

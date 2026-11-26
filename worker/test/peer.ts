@@ -16,7 +16,7 @@ const log = { debug() {}, info() {}, warn() {}, error() {} };
 export function workerOptions(url: string): LinkOptions {
   return {
     url, principalId: "worker", token: "A".repeat(43), bootId: "01900000-0000-7000-8000-000000000001",
-    clientVersion: "test", attach: { maxSessions: 64, sdkVersion: "", claudeVersion: "", localOnly: true }, log,
+    clientVersion: "test", attach: { maxSessions: 64, sdkVersion: "", localOnly: true }, log,
   };
 }
 

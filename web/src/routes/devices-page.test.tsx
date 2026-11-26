@@ -237,9 +237,15 @@ describe("the worker list", () => {
     expect(workerRow("devbox").getByText("linux/amd64")).toBeTruthy()
     const same = workerRow("devbox").getByRole("list", { name: "Devices on the same machine as devbox" })
     expect(within(same).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["devbox"])
-    expect(workerRow("cloud-runner").queryByRole("list")).toBeNull()
+    expect(workerRow("cloud-runner").queryByRole("list", { name: /^Devices on the same machine/ })).toBeNull()
     expect(workerRow("eric-win").getByText("Last seen 2d ago")).toBeTruthy()
-    expect(workers().queryAllByRole("button")).toEqual([])
+    // Each worker's Claude Code is installed: uninstalling it is all there is to do.
+    expect(workers().getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Uninstall Claude Code from cloud-runner",
+      "Uninstall Claude Code from devbox",
+      "Uninstall Claude Code from eric-mbp",
+      "Uninstall Claude Code from eric-win",
+    ])
   })
 
   it("says when there are none", async () => {

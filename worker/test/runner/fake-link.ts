@@ -7,6 +7,7 @@ import {
   type SessionReply_Lease, type TranscriptEntry, type WorkerEvent,
 } from "@circus/proto/circus/v1/worker_link_pb";
 import type { MessageInitShape } from "@bufbuild/protobuf";
+import { AgentKind } from "@circus/proto/circus/v1/agent_pb";
 import type { ResumeOutcome, SessionOp } from "../../src/link/index.js";
 import type { LinkPort } from "../../src/runner/ops.js";
 
@@ -97,7 +98,7 @@ export class FakeLink implements LinkPort {
   constructor(cwd: string, readonly sessionId = "sess-1", readonly claudeSessionId = "00000000-0000-4000-8000-0000000000aa") {
     this.lease = create(SessionReply_LeaseSchema, {
       claudeSessionId, hasTranscript: false, state: create(SessionStateSchema), recovery: create(RecoverySchema),
-      config: create(SessionConfigSchema, { local: true, defaultDevice: "box", cwds: [{ device: "box", cwd }] }),
+      config: create(SessionConfigSchema, { local: true, defaultDevice: "box", cwds: [{ device: "box", cwd }], agent: AgentKind.CLAUDE_CODE }),
     });
   }
 

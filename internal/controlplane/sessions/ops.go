@@ -152,7 +152,10 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 	}()
 	now := s.nowMs()
 	var res store.LeaseAcquired
-	notOffered, notLocal, unreadable := false, false, false
+	notOffered, notLocal, unreadable, noAgent := false, false, false, false
+	// agents is what the transaction read of the worker's agents, applied
+	// when it refused for them: the view that offered may be behind.
+	var agents store.WorkerAgents
 	err := c.tx(ctx, func(ctx context.Context, tx store.Ops) error {
 		sess, err := tx.GetSession(ctx, id, now)
 		if err != nil {
@@ -172,6 +175,16 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 		own := l.Live(now) && l.WorkerID == c.workerID && l.BootID == c.bootID
 		if !offered && !own {
 			notOffered = true
+			return nil
+		}
+		// Read in this transaction, so a session is never leased to a
+		// worker whose agent the user asked to uninstall meanwhile.
+		agents, err = tx.ListWorkerAgents(ctx, c.workerID)
+		if err != nil {
+			return err
+		}
+		if a, ok := agents.Get(sess.Agent); !ok || !a.Runs() {
+			noAgent = true
 			return nil
 		}
 		// The store gates a new holder by the provider's assignment and
@@ -211,14 +224,20 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 		}
 		out = append(out, s.lost(*res.Loss, c, false, reason)...)
 	}
+	if err == nil && noAgent {
+		// Committed state, ordered by its revision: the stale view stops
+		// offering the session here, and the session gets its reason.
+		s.applyAgents(c.workerID, agents)
+	}
 	providerRefused := unreadable || errors.Is(err, store.ErrProviderUnavailable) || errors.Is(err, store.ErrProviderFull)
-	if err != nil || notOffered || notLocal || unreadable || res.Released {
+	if err != nil || notOffered || notLocal || unreadable || noAgent || res.Released {
 		// Re-derive the session: an Offer to a session that is no longer
 		// queued is withdrawn, one that still is stays. One the provider
-		// refused is withdrawn, so the evaluation records why it waits.
+		// refused, or made to a worker without the session's agent, is
+		// withdrawn, so the evaluation records why it waits.
 		s.mu.Lock()
 		if e := s.entries[id]; e != nil {
-			if providerRefused && e.offered == c {
+			if (providerRefused || noAgent) && e.offered == c {
 				s.setOffer(id, e, nil, "provider_refused")
 			}
 			s.forget(id, e)
@@ -237,6 +256,8 @@ func (c *Conn) acquire(ctx context.Context, rid uint64, id string, fresh bool) (
 		return rejected(circusv1.SessionReply_Rejected_CODE_NOT_OFFERED, "no current offer to this connection"), nil
 	case notLocal:
 		return rejected(circusv1.SessionReply_Rejected_CODE_NOT_OFFERED, "not a local session; this connection runs only local sessions"), nil
+	case noAgent:
+		return rejected(circusv1.SessionReply_Rejected_CODE_NOT_OFFERED, "the session's agent is not installed on this worker, or no longer wanted"), nil
 	case errors.Is(err, store.ErrStopped):
 		return rejected(circusv1.SessionReply_Rejected_CODE_STOPPED, "session stopped"), nil
 	case errors.Is(err, store.ErrBroken), errors.Is(err, store.ErrLeaseHeld):
@@ -403,7 +424,8 @@ func (c *Conn) leaseReply(ctx context.Context, id string, epoch int64, reattache
 		if err != nil {
 			return err
 		}
-		lease.Config = &circusv1.SessionConfig{DefaultDevice: def, Model: sess.Model, PermissionMode: sess.PermissionMode, Local: sess.Local}
+		lease.Config = &circusv1.SessionConfig{DefaultDevice: def, Model: sess.Model, PermissionMode: sess.PermissionMode, Local: sess.Local,
+			Agent: AgentKindProto(sess.Agent)}
 		for _, cw := range lease.State.Cwds {
 			if cw.AgentId == "" {
 				lease.Config.Cwds = append(lease.Config.Cwds, &circusv1.SessionConfig_Cwd{Device: cw.Device, Cwd: cw.Cwd})

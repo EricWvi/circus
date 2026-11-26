@@ -40,6 +40,9 @@ type sessionLink struct {
 	svc   *sessions.Service
 	c     *wc.Client
 	epoch uint64
+	// url and worker dial more connections of the worker.
+	url    string
+	worker auth.Enrollment
 }
 
 func newSessionLink(t *testing.T, clk clock.Clock, hook func(*circusv1.WorkerDownlink) error, configure func(*workerlink.Handler)) *sessionLink {
@@ -94,14 +97,14 @@ func newSessionLink(t *testing.T, clk clock.Clock, hook func(*circusv1.WorkerDow
 	c, err := wc.Dial(wait.Ctx(t), wc.Options{URL: srv.URL, Token: worker.Token, PrincipalID: worker.Identity.ID, BootID: uuid.Must(uuid.NewV7()).String()})
 	must(t, err)
 	t.Cleanup(func() { _ = c.Close() })
-	ev, err := c.Attach(wait.Ctx(t), &circusv1.Attach{MaxSessions: 1})
+	ev, err := c.Attach(wait.Ctx(t), &circusv1.Attach{MaxSessions: 1, Agents: wc.ClaudeInstalled()})
 	must(t, err)
 	e, err := ev.Next(wait.Ctx(t))
 	must(t, err)
 	if e.GetOffer().GetSessionId() != "s1" {
 		t.Fatalf("hint %v", e)
 	}
-	return &sessionLink{st: st, svc: svc, c: c}
+	return &sessionLink{st: st, svc: svc, c: c, url: srv.URL, worker: worker}
 }
 
 // acquire takes s1's lease.
@@ -624,5 +627,58 @@ func TestRebuildDeadlineStartsAtDrop(t *testing.T) {
 	must(t, err)
 	if len(p.GetTranscriptPage().GetEntries()) != 1 {
 		t.Fatalf("page %v", p)
+	}
+}
+
+// TestLaterConnectionClaimsReports: connections are ordered as the worker
+// opened them, not as the server registers them. The worker sees the old
+// connection's Welcome, then opens a new one; the old connection's
+// registration runs late (after the new one attached), and its late Attach
+// must not take the worker's reports over from the new connection.
+func TestLaterConnectionClaimsReports(t *testing.T) {
+	var arm atomic.Bool
+	hold, entered := make(chan struct{}), make(chan struct{})
+	l := newSessionLink(t, clock.Real{}, nil, func(h *workerlink.Handler) {
+		workerlink.SetAfterWelcome(h, func() {
+			if arm.CompareAndSwap(true, false) {
+				close(entered)
+				<-hold
+			}
+		})
+	})
+	boot := uuid.Must(uuid.NewV7()).String()
+	dial := func() *wc.Client {
+		c, err := wc.Dial(wait.Ctx(t), wc.Options{URL: l.url, Token: l.worker.Token, PrincipalID: l.worker.Identity.ID, BootID: boot})
+		must(t, err)
+		t.Cleanup(func() { _ = c.Close() })
+		return c
+	}
+	notInstalled := []*circusv1.AgentStatus{wc.ClaudeCode(circusv1.AgentStatus_STATE_NOT_INSTALLED, "", "cli")}
+	arm.Store(true)
+	old := dial() // welcomed; its registration waits
+	<-entered
+	c := dial()
+	if _, err := c.Attach(wait.Ctx(t), &circusv1.Attach{MaxSessions: 1, Agents: notInstalled}); err != nil {
+		t.Fatal(err)
+	}
+	wait.For(t, func() bool {
+		wa, err := l.st.ListWorkerAgents(t.Context(), l.worker.Identity.ID)
+		return err == nil && wa.ReportedAt != 0 && len(wa.Agents) == 1 && wa.Agents[0].Status.State == store.AgentNotInstalled
+	})
+	close(hold)
+	if _, err := old.Attach(wait.Ctx(t), &circusv1.Attach{MaxSessions: 1, Agents: wc.ClaudeInstalled()}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-old.Done():
+	case <-wait.Ctx(t).Done():
+		t.Fatal("the older connection's late Attach was accepted")
+	}
+	r, err := c.ReportAgents(wait.Ctx(t), wc.ClaudeInstalled()...)
+	must(t, err)
+	reply, err := r.Wait(wait.Ctx(t))
+	must(t, err)
+	if reply.GetOk() == nil {
+		t.Fatalf("the newer connection's report: %v", reply)
 	}
 }

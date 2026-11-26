@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package circus.v1;
 
+import "circus/v1/agent.proto";
 import "circus/v1/device.proto";
 import "circus/v1/link.proto";
 import "circus/v1/session.proto";
@@ -53,6 +54,7 @@ message WorkerUplink {
     SessionRequest session = 15;
     ResumeLeases resume_leases = 16;
     ListDevices list_devices = 17;
+    ReportAgents report_agents = 18;
   }
   // Nonzero on every business payload; 0 on Hello, Heartbeat and Fragment.
   uint64 request_id = 20;
@@ -195,15 +197,20 @@ enum CallOutcome {
 // After Attach the control plane re-sends every Offer still pending for this
 // worker. Every string field, including Account's, is at most 256 bytes.
 message Attach {
+  reserved 3;
+  reserved "claude_version";
   // Required, 1..64 concurrent sessions. The stream itself holds one slot.
   uint32 max_sessions = 1;
   string sdk_version = 2;
-  string claude_version = 3;
   Account account = 4;
   AutoModeCheck auto_mode_check = 5;
   // The worker runs only local-mode sessions (SessionConfig.local) pinned to
   // it; the control plane never offers it any other session.
   bool local_only = 6;
+  // Every agent this worker build supports, with its state on this
+  // machine; at most 16, one per AgentKind. Later changes go in
+  // ReportAgents.
+  repeated AgentStatus agents = 7;
   message Account {
     string email = 1;
     string organization = 2;
@@ -227,6 +234,7 @@ message WorkerEvent {
     Nudge nudge = 2;
     LeaseRevoked lease_revoked = 3;
     ReleaseIdle release_idle = 4;
+    AgentsWanted agents_wanted = 5;
   }
   message Offer {
     string session_id = 1;
@@ -288,6 +296,32 @@ message WorkerEvent {
   message ReleaseIdle {
     string session_id = 1;
     uint64 epoch = 2;
+  }
+  // The user's wishes for this worker's agents, complete (an agent absent
+  // here is not wanted). Sent after Attach and whenever a wish changes; the
+  // worker reconciles and reports with ReportAgents:
+  // - wanted, version == its target_version, not INSTALLED and not FAILED:
+  //   install it (download for its platform, verify the built-in digest,
+  //   unpack under its data directory), replacing an OUTDATED one;
+  // - wanted as above and FAILED: install it again only when attempt is
+  //   greater than the attempt its failure belongs to (the user asked
+  //   again); a worker never retries a FAILED install by itself;
+  // - wanted with another version (the worker was upgraded since): change
+  //   nothing; the agent stays OUTDATED or NOT_INSTALLED;
+  // - not wanted and on disk: uninstall it once no session it holds runs
+  //   this agent (the control plane stops offering such sessions at once).
+  // Uninstalling removes only the installed files, never the user's own
+  // agent configuration or login (e.g. ~/.claude).
+  message AgentsWanted {
+    repeated Wanted agents = 1;
+    message Wanted {
+      AgentKind agent = 1;
+      string version = 2;
+      // Incremented by the control plane on every SetWorkerAgent install
+      // request for this agent (stored with the wish), so a worker can tell
+      // a new request from the same wish sent again after an Attach.
+      uint64 attempt = 3;
+    }
   }
 }
 
@@ -769,6 +803,14 @@ message ResumeLeases {
   }
 }
 message ListDevices {}
+
+// ReportAgents replaces the worker's reported agent states (same rules as
+// Attach.agents). Send it whenever a state changes; while INSTALLING, at
+// most once a second for progress. Answered by one SessionReply (Ok, or
+// Rejected INVALID).
+message ReportAgents {
+  repeated AgentStatus agents = 1;
+}
 
 // SessionReply ends one SessionRequest, ResumeLeases or ListDevices operation.
 // Fenced or Rejected can replace any successful result. Attach uses WorkerEvent

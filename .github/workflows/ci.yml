@@ -41,6 +41,36 @@ jobs:
       # The e2e harness builds bin/circus and the TypeScript worker.
       - run: task e2e
 
+  # The worker's release package, unpacked outside the repository (so it
+  # cannot load the repository's node_modules), installs Claude Code from a
+  # local registry stub and runs a session against a real control plane.
+  worker-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+          repo-token: ${{ github.token }}
+      - run: task worker:package
+      - name: Unpack the package into an empty directory outside the repository
+        run: |
+          dir="$RUNNER_TEMP/worker-package"
+          rm -rf "$dir"
+          mkdir -p "$dir"
+          tar -xzf .tmp/worker-package/circus-worker-v0.0.0-dev-linux-amd64.tar.gz -C "$dir"
+          echo "CIRCUS_E2E_WORKER_PACKAGE=$dir/circus-worker" >> "$GITHUB_ENV"
+      - run: go test -tags e2e ./tests/e2e/ -count=1 -run '^TestWorkerPackage$' -v
+
   # The race job runs in parallel with check: go test ./... needs neither the
   # npm nor the buf setup (gen/ is checked in), so this job stays minimal.
   race:

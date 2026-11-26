@@ -8,8 +8,8 @@
 // message is read, which releases an older boot's leases. Attach opens a
 // hint stream that holds its operation slot until Unwatch or disconnect; a
 // second Attach or one breaking its field caps closes the link. Session
-// writes, Attach and ResumeLeases are handled inline in the receive loop;
-// their one SessionReply goes to the connection's reply queue, whose one
+// writes, Attach, ResumeLeases and ReportAgents are handled inline in the
+// receive loop; their one SessionReply goes to the connection's reply queue, whose one
 // sender hands it to the link, retrying a busy send pool, so the receive
 // loop does not wait for the pool. The queue holds at most 16 MiB of encoded
 // replies (one larger alone; only then does the loop wait), and a queued
@@ -182,8 +182,8 @@ type Config struct {
 	Logger         *slog.Logger
 	Recheck        auth.RecheckPolicy
 	MaxConnections int
-	// Sessions serves Attach, SessionRequest, ResumeLeases and ListDevices
-	// and records worker boots. Nil leaves the link a call link: those
+	// Sessions serves Attach, SessionRequest, ResumeLeases, ReportAgents
+	// and ListDevices and records worker boots. Nil leaves the link a call link: those
 	// payloads close it as unexpected.
 	Sessions *sessions.Service
 }
@@ -211,6 +211,9 @@ type Handler struct {
 	// sessionSend, when set by tests, runs before each SessionReply send
 	// attempt; its error replaces the attempt's.
 	sessionSend func(m *circusv1.WorkerDownlink) error
+	// afterWelcome, when set by tests, runs after the Welcome was sent and
+	// before the connection is registered with the session service.
+	afterWelcome func()
 	// beforeSend and afterSend, when set by tests, run before each update is
 	// handed to the link and after the link accepted it.
 	beforeSend, afterSend func(context.Context, *circusv1.CallUpdate)
@@ -438,6 +441,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() { defer close(abortDone); <-ctx.Done(); _ = conn.Close() }()
 	defer func() { cancel(); <-abortDone }()
 	handshake, finish := clock.WithTimeout(ctx, h.cfg.Clock, wire.HelloTimeout)
+	var seq uint64
 	hello, opts, err := wire.AcceptHello(handshake, conn, wire.WorkerUplink, h.cfg.Wire, func(hello *circusv1.Hello) *circusv1.Welcome {
 		if len(hello.GetBootId()) > maxBootIDBytes {
 			return nil
@@ -448,6 +452,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// again and closes the link, which the worker retries.
 		if h.cfg.Sessions != nil && errors.Is(h.cfg.Sessions.CheckBoot(handshake, principal.ID, hello.GetBootId()), sessions.ErrBoot) {
 			return nil
+		}
+		if h.cfg.Sessions != nil {
+			// Numbered before the Welcome goes out: see ReserveConn.
+			seq = h.cfg.Sessions.ReserveConn()
 		}
 		return &circusv1.Welcome{PrincipalId: principal.ID, InstanceId: h.cfg.InstanceID, ServerTimeUnixMs: h.cfg.Clock.Now().UnixMilli()}
 	})
@@ -465,8 +473,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	wg.Add(1)
 	go func() { defer wg.Done(); h.recheck(ctx, cancel, principal.CredentialID) }()
 	var sc *sessions.Conn
+	if h.afterWelcome != nil {
+		h.afterWelcome()
+	}
 	if h.cfg.Sessions != nil {
-		sc, err = h.cfg.Sessions.Connect(ctx, sessions.ConnInfo{WorkerID: principal.ID, UserID: principal.UserID, BootID: hello.GetBootId(),
+		sc, err = h.cfg.Sessions.Connect(ctx, sessions.ConnInfo{WorkerID: principal.ID, UserID: principal.UserID, BootID: hello.GetBootId(), Seq: seq,
 			Fail: func(reason string) {
 				h.cfg.Logger.WarnContext(ctx, "worker session hint closed link", "reason", reason)
 				cancel()
@@ -882,6 +893,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			if op, ok := admit(rid); ok {
 				answer(rid, op, sc.Resume(op.ctx, v.ResumeLeases))
+			}
+		case *circusv1.WorkerUplink_ReportAgents:
+			if sc == nil {
+				h.cfg.Logger.WarnContext(ctx, "worker protocol error closed link", "reason", "unexpected payload")
+				return
+			}
+			if op, ok := admit(rid); ok {
+				answer(rid, op, sc.ReportAgents(op.ctx, v.ReportAgents))
 			}
 		case *circusv1.WorkerUplink_ListDevices:
 			if sc == nil {

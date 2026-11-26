@@ -6,15 +6,25 @@ import {
   LoadTranscriptSchema, PublishEventsSchema, ReleaseLeaseSchema,
   ReleaseLease_Reason, ReportTurnSchema, ReportTurn_Phase, TakeInputsSchema, WorkerEvent_Nudge_Reason,
 } from "@circus/proto/circus/v1/worker_link_pb";
+import { AgentKind, AgentStatusSchema, AgentStatus_State } from "@circus/proto/circus/v1/agent_pb";
 import { loadConfig } from "#worker/config";
-import { LinkLostError, WorkerLink, type ResumeOutcome, type SessionOp, type SessionReply } from "#worker/link/index";
+import {
+  LinkLostError, WorkerLink, type ResumeOutcome, type SessionOp, type SessionReply, type WorkerEvent,
+} from "#worker/link/index";
 import { createLogger } from "#worker/log";
 
 const [sessionId, inputId, bootId, proxyURL] = process.argv.slice(2);
 const config = loadConfig();
 const link = new WorkerLink({
   ...config, url: proxyURL, bootId, clientVersion: "e2e", log: createLogger("warn"),
-  attach: { maxSessions: 1, sdkVersion: "e2e", claudeVersion: "e2e", localOnly: true },
+  // Claude Code installed at this script's own version: the control plane
+  // offers sessions only to a worker with the session's agent installed.
+  attach: {
+    maxSessions: 1, sdkVersion: "e2e", localOnly: true,
+    agents: () => [create(AgentStatusSchema, {
+      agent: AgentKind.CLAUDE_CODE, state: AgentStatus_State.INSTALLED, installedVersion: "e2e", targetVersion: "e2e",
+    })],
+  },
 });
 
 const first = Promise.withResolvers<ResumeOutcome[]>();
@@ -31,7 +41,18 @@ const failed = new Promise<never>((_, reject) => {
   void link.closed.then(() => reject(new Error("worker link ended")), reject);
 });
 void failed.catch(() => {});
-const hints = link.hints()[Symbol.asyncIterator]();
+const allHints = link.hints()[Symbol.asyncIterator]();
+// Session hints only: the AgentsWanted the control plane sends after every
+// Attach (and on a change of wishes) is skipped.
+const hints = {
+  async next(): Promise<IteratorResult<WorkerEvent>> {
+    for (;;) {
+      const hint = await allHints.next();
+      if (hint.done || hint.value.event.case !== "agentsWanted") return hint;
+    }
+  },
+  return: () => allHints.return?.() ?? Promise.resolve({ done: true as const, value: undefined }),
+};
 link.start();
 
 type Result = Exclude<SessionReply["result"], { case: undefined }>;

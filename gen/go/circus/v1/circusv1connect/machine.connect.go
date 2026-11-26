@@ -45,6 +45,9 @@ const (
 	// MachineServiceSetWorkerGrantProcedure is the fully-qualified name of the MachineService's
 	// SetWorkerGrant RPC.
 	MachineServiceSetWorkerGrantProcedure = "/circus.v1.MachineService/SetWorkerGrant"
+	// MachineServiceSetWorkerAgentProcedure is the fully-qualified name of the MachineService's
+	// SetWorkerAgent RPC.
+	MachineServiceSetWorkerAgentProcedure = "/circus.v1.MachineService/SetWorkerAgent"
 	// MachineServiceListDirectoryProcedure is the fully-qualified name of the MachineService's
 	// ListDirectory RPC.
 	MachineServiceListDirectoryProcedure = "/circus.v1.MachineService/ListDirectory"
@@ -66,6 +69,19 @@ type MachineServiceClient interface {
 	// Turns a grant of one of the caller's workers on or off and returns the
 	// worker. NOT_FOUND for another user's or an unknown worker.
 	SetWorkerGrant(context.Context, *connect.Request[v1.SetWorkerGrantRequest]) (*connect.Response[v1.SetWorkerGrantResponse], error)
+	// Installs or uninstalls an agent on one of the caller's workers and
+	// returns the worker. The wish is stored and pushed to the worker when it
+	// is online (else at its next attach); the worker reports progress, seen
+	// in ListWorkers. install=true when the agent is INSTALLED at the
+	// worker's target version is a no-op; when it is OUTDATED, FAILED or not
+	// installed, it (re)installs the worker's target version. Errors:
+	// NOT_FOUND for another user's or an unknown worker; INVALID_ARGUMENT for
+	// AGENT_KIND_UNSPECIFIED or an agent the worker does not support (absent
+	// from its reported agents); FAILED_PRECONDITION for install=true while
+	// the worker never reported (no target version yet), and for
+	// install=false while the worker holds a lease of a session that runs
+	// this agent.
+	SetWorkerAgent(context.Context, *connect.Request[v1.SetWorkerAgentRequest]) (*connect.Response[v1.SetWorkerAgentResponse], error)
 	// Lists the subdirectories of a directory on one of the caller's devices,
 	// asking its daemon live. Errors: NOT_FOUND for an unknown device;
 	// FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
@@ -119,6 +135,12 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(machineServiceMethods.ByName("SetWorkerGrant")),
 			connect.WithClientOptions(opts...),
 		),
+		setWorkerAgent: connect.NewClient[v1.SetWorkerAgentRequest, v1.SetWorkerAgentResponse](
+			httpClient,
+			baseURL+MachineServiceSetWorkerAgentProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("SetWorkerAgent")),
+			connect.WithClientOptions(opts...),
+		),
 		listDirectory: connect.NewClient[v1.ListDirectoryRequest, v1.ListDirectoryResponse](
 			httpClient,
 			baseURL+MachineServiceListDirectoryProcedure,
@@ -140,6 +162,7 @@ type machineServiceClient struct {
 	listWorkers      *connect.Client[v1.ListWorkersRequest, v1.ListWorkersResponse]
 	createEnrollLink *connect.Client[v1.CreateEnrollLinkRequest, v1.CreateEnrollLinkResponse]
 	setWorkerGrant   *connect.Client[v1.SetWorkerGrantRequest, v1.SetWorkerGrantResponse]
+	setWorkerAgent   *connect.Client[v1.SetWorkerAgentRequest, v1.SetWorkerAgentResponse]
 	listDirectory    *connect.Client[v1.ListDirectoryRequest, v1.ListDirectoryResponse]
 	getGitRemote     *connect.Client[v1.GetGitRemoteRequest, v1.GetGitRemoteResponse]
 }
@@ -162,6 +185,11 @@ func (c *machineServiceClient) CreateEnrollLink(ctx context.Context, req *connec
 // SetWorkerGrant calls circus.v1.MachineService.SetWorkerGrant.
 func (c *machineServiceClient) SetWorkerGrant(ctx context.Context, req *connect.Request[v1.SetWorkerGrantRequest]) (*connect.Response[v1.SetWorkerGrantResponse], error) {
 	return c.setWorkerGrant.CallUnary(ctx, req)
+}
+
+// SetWorkerAgent calls circus.v1.MachineService.SetWorkerAgent.
+func (c *machineServiceClient) SetWorkerAgent(ctx context.Context, req *connect.Request[v1.SetWorkerAgentRequest]) (*connect.Response[v1.SetWorkerAgentResponse], error) {
+	return c.setWorkerAgent.CallUnary(ctx, req)
 }
 
 // ListDirectory calls circus.v1.MachineService.ListDirectory.
@@ -187,6 +215,19 @@ type MachineServiceHandler interface {
 	// Turns a grant of one of the caller's workers on or off and returns the
 	// worker. NOT_FOUND for another user's or an unknown worker.
 	SetWorkerGrant(context.Context, *connect.Request[v1.SetWorkerGrantRequest]) (*connect.Response[v1.SetWorkerGrantResponse], error)
+	// Installs or uninstalls an agent on one of the caller's workers and
+	// returns the worker. The wish is stored and pushed to the worker when it
+	// is online (else at its next attach); the worker reports progress, seen
+	// in ListWorkers. install=true when the agent is INSTALLED at the
+	// worker's target version is a no-op; when it is OUTDATED, FAILED or not
+	// installed, it (re)installs the worker's target version. Errors:
+	// NOT_FOUND for another user's or an unknown worker; INVALID_ARGUMENT for
+	// AGENT_KIND_UNSPECIFIED or an agent the worker does not support (absent
+	// from its reported agents); FAILED_PRECONDITION for install=true while
+	// the worker never reported (no target version yet), and for
+	// install=false while the worker holds a lease of a session that runs
+	// this agent.
+	SetWorkerAgent(context.Context, *connect.Request[v1.SetWorkerAgentRequest]) (*connect.Response[v1.SetWorkerAgentResponse], error)
 	// Lists the subdirectories of a directory on one of the caller's devices,
 	// asking its daemon live. Errors: NOT_FOUND for an unknown device;
 	// FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
@@ -236,6 +277,12 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithSchema(machineServiceMethods.ByName("SetWorkerGrant")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceSetWorkerAgentHandler := connect.NewUnaryHandler(
+		MachineServiceSetWorkerAgentProcedure,
+		svc.SetWorkerAgent,
+		connect.WithSchema(machineServiceMethods.ByName("SetWorkerAgent")),
+		connect.WithHandlerOptions(opts...),
+	)
 	machineServiceListDirectoryHandler := connect.NewUnaryHandler(
 		MachineServiceListDirectoryProcedure,
 		svc.ListDirectory,
@@ -258,6 +305,8 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 			machineServiceCreateEnrollLinkHandler.ServeHTTP(w, r)
 		case MachineServiceSetWorkerGrantProcedure:
 			machineServiceSetWorkerGrantHandler.ServeHTTP(w, r)
+		case MachineServiceSetWorkerAgentProcedure:
+			machineServiceSetWorkerAgentHandler.ServeHTTP(w, r)
 		case MachineServiceListDirectoryProcedure:
 			machineServiceListDirectoryHandler.ServeHTTP(w, r)
 		case MachineServiceGetGitRemoteProcedure:
@@ -285,6 +334,10 @@ func (UnimplementedMachineServiceHandler) CreateEnrollLink(context.Context, *con
 
 func (UnimplementedMachineServiceHandler) SetWorkerGrant(context.Context, *connect.Request[v1.SetWorkerGrantRequest]) (*connect.Response[v1.SetWorkerGrantResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.SetWorkerGrant is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) SetWorkerAgent(context.Context, *connect.Request[v1.SetWorkerAgentRequest]) (*connect.Response[v1.SetWorkerAgentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.SetWorkerAgent is not implemented"))
 }
 
 func (UnimplementedMachineServiceHandler) ListDirectory(context.Context, *connect.Request[v1.ListDirectoryRequest]) (*connect.Response[v1.ListDirectoryResponse], error) {

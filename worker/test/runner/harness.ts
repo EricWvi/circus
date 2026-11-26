@@ -10,6 +10,9 @@ import { SessionRunner, type RunnerDeps, type RunnerEnd } from "../../src/runner
 import { FakeLink } from "./fake-link.js";
 import { Replay, type ReplayOptions, type Step } from "./replay.js";
 
+/** The installed Claude Code the runner is given; never run (tests replace the query). */
+export const CLAUDE_EXECUTABLE = "/opt/circus/agents/claude-code/2.1.330/claude";
+
 export interface LogLine {
   level: string;
   message: string;
@@ -79,7 +82,7 @@ export class Harness {
     if (reply.result.case !== "lease") throw new Error("no lease");
     const deps: RunnerDeps = {
       link: this.link, ready: async () => {}, slots: new Semaphore(48), loadSlots: new Semaphore(1), log: this.log,
-      query: this.replay.factory, processes: this.processes, ...this.opts.deps,
+      query: this.replay.factory, processes: this.processes, agentExecutable: () => CLAUDE_EXECUTABLE, ...this.opts.deps,
     };
     this.runner = new SessionRunner(reply.result.value, this.link.sessionId, deps);
     this.done = this.runner.start();

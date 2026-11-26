@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package circus.v1;
+
+option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
+
+// The coding agents a worker can run sessions with. A worker ships with
+// none installed; the user installs and uninstalls them per worker from the
+// Web UI (MachineService.SetWorkerAgent).
+enum AgentKind {
+  AGENT_KIND_UNSPECIFIED = 0;
+  // Claude Code, driven through the Claude Agent SDK.
+  AGENT_KIND_CLAUDE_CODE = 1;
+}
+
+// AgentStatus is what a worker reports about one agent it supports.
+//
+// Each worker build pins one version per agent (target_version): for Claude
+// Code, the CLI version the worker's Agent SDK was released with. The worker
+// downloads that version for its platform, verifies it against a digest
+// built into the worker, and installs it under its own data directory. It
+// never runs another version: an install of an older version (left by a
+// previous worker build) is OUTDATED and serves no session until the user
+// installs again.
+message AgentStatus {
+  AgentKind agent = 1;
+  State state = 2;
+  // The version on disk: set for INSTALLED, OUTDATED and UNINSTALLING; at
+  // most 64 bytes.
+  string installed_version = 3;
+  // The version this worker build runs; at most 64 bytes.
+  string target_version = 4;
+  // FAILED: what went wrong (download, digest mismatch, disk, ...), at most
+  // 1024 bytes, cut at a UTF-8 boundary.
+  string error = 5;
+  // INSTALLING: bytes downloaded so far and the expected total (0 when
+  // unknown).
+  uint64 downloaded_bytes = 6;
+  uint64 total_bytes = 7;
+
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_NOT_INSTALLED = 1;
+    STATE_INSTALLING = 2;
+    // installed_version == target_version: sessions may run.
+    STATE_INSTALLED = 3;
+    // installed_version != target_version: kept on disk, runs nothing.
+    STATE_OUTDATED = 4;
+    // The last install or uninstall failed; error says why. The previous
+    // files, if any, were removed.
+    STATE_FAILED = 5;
+    STATE_UNINSTALLING = 6;
+  }
+}
+
+// WorkerAgent is one agent of a worker as the Web UI shows it.
+message WorkerAgent {
+  // The worker's last report; while the worker is offline, the last one it
+  // sent (state UNSPECIFIED when it never reported this agent).
+  AgentStatus status = 1;
+  // The user's wish, stored by the control plane: install (true) or not.
+  bool wanted = 2;
+  // When wanted: the target_version the worker reported when the user asked
+  // for the install. A worker whose target_version differs (it was upgraded
+  // since) does not install by itself; the Web UI offers "Update", which is
+  // SetWorkerAgent(install=true) again.
+  string wanted_version = 3;
+  // When status was last reported.
+  int64 reported_at_unix_ms = 4;
+}

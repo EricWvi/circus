@@ -42,7 +42,7 @@ func TestSessionTurn(t *testing.T) {
 	must(t, err)
 	defer c.Close()
 	var jobKey *circusv1.JobKey
-	ev, err := c.Attach(ctx, &circusv1.Attach{MaxSessions: 1})
+	ev, err := c.Attach(ctx, &circusv1.Attach{MaxSessions: 1, Agents: sessionclient.ClaudeInstalled()})
 	must(t, err)
 	e, err := ev.Next(ctx)
 	must(t, err)

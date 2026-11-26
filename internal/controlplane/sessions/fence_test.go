@@ -106,7 +106,7 @@ func TestReconnectOrder(t *testing.T) {
 
 	c2 := f.dial(0, "boot-a")
 	ctx := wait.Ctx(t)
-	ev2, err := c2.Attach(ctx, &circusv1.Attach{MaxSessions: 1})
+	ev2, err := c2.Attach(ctx, &circusv1.Attach{MaxSessions: 1, Agents: wc.ClaudeInstalled()})
 	must(t, err)
 	resume, err := c2.Open(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_ResumeLeases{ResumeLeases: &circusv1.ResumeLeases{
 		Leases: []*circusv1.ResumeLeases_Held{{SessionId: "s1", Epoch: epoch}, {SessionId: "nope", Epoch: 3}, {SessionId: "bad id", Epoch: 1}}}}})

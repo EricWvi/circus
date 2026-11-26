@@ -48,7 +48,7 @@ func TestSessionLogs(t *testing.T) {
 	const email = "worker-account@example.com"
 	f.session("s1", -1)
 	c := f.dial(0, "boot-a")
-	ev := f.attachWith(c, &circusv1.Attach{MaxSessions: 2, SdkVersion: "sdk", ClaudeVersion: "cli",
+	ev := f.attachWith(c, &circusv1.Attach{MaxSessions: 2, SdkVersion: "sdk", Agents: wc.ClaudeInstalled(),
 		Account: &circusv1.Attach_Account{Email: email}})
 	f.input("s1", "go", store.InputNormal)
 	offerTo(t, ev, "s1")

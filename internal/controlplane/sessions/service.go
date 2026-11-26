@@ -198,6 +198,13 @@ type Service struct {
 	// reasons, until the next fallback pass.
 	staleReads map[string]int
 	parked     map[string]reasonSet
+	// agents is each worker's agents as last read from the store (one
+	// entry per worker that reported or whose wishes changed since start),
+	// and agentRetries the workers whose read is being retried (agents.go).
+	agents       map[string]agentView
+	agentRetries map[string]bool
+	// bg is the background context Start made: it ends at Close.
+	bg context.Context
 	// maxTracked is MaxTracked (lowered by tests).
 	maxTracked int
 
@@ -242,22 +249,24 @@ func New(cfg Config) (*Service, error) {
 	}
 	return &Service{
 		cfg: cfg, clk: cfg.Clock, log: cfg.Logger, quota: q,
-		dbg:        cfg.Logger.Enabled(context.Background(), slog.LevelDebug),
-		nonce:      uuid.NewString()[:8],
-		reads:      make(chan struct{}, ReadConcurrency),
-		jobStops:   make(chan struct{}, maxJobStopCalls),
-		conns:      make(map[string]*Conn),
-		entries:    make(map[string]*entry),
-		wakes:      make(map[string]reasonSet),
-		rescan:     make(map[string]struct{}),
-		provScans:  make(map[string]string),
-		reclaims:   make(map[string]struct{}),
-		idlePage:   store.MaxPageSize,
-		staleReads: make(map[string]int),
-		parked:     make(map[string]reasonSet),
-		boots:      make(map[string]bootRec),
-		maxTracked: MaxTracked,
-		kick:       make(chan struct{}, 1),
+		dbg:          cfg.Logger.Enabled(context.Background(), slog.LevelDebug),
+		nonce:        uuid.NewString()[:8],
+		reads:        make(chan struct{}, ReadConcurrency),
+		jobStops:     make(chan struct{}, maxJobStopCalls),
+		conns:        make(map[string]*Conn),
+		entries:      make(map[string]*entry),
+		wakes:        make(map[string]reasonSet),
+		rescan:       make(map[string]struct{}),
+		provScans:    make(map[string]string),
+		reclaims:     make(map[string]struct{}),
+		idlePage:     store.MaxPageSize,
+		staleReads:   make(map[string]int),
+		parked:       make(map[string]reasonSet),
+		boots:        make(map[string]bootRec),
+		agents:       make(map[string]agentView),
+		agentRetries: make(map[string]bool),
+		maxTracked:   MaxTracked,
+		kick:         make(chan struct{}, 1),
 	}, nil
 }
 
@@ -295,7 +304,7 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	bg, stop := context.WithCancel(context.WithoutCancel(ctx))
 	s.mu.Lock()
-	s.stop = stop
+	s.stop, s.bg = stop, bg
 	s.unlock()
 	now := s.clk.Now()
 	alarm := clock.Until(s.clk, now.Add(SweepInterval))
@@ -358,7 +367,18 @@ type ConnInfo struct {
 	// Fail closes the link; the service calls it when the link broke a
 	// rule it detects asynchronously or a hint cannot be sent.
 	Fail func(reason string)
+	// Seq is the connection's number from ReserveConn, taken before the
+	// Welcome was sent; 0 takes one now.
+	Seq uint64
 }
+
+// ReserveConn numbers a connection about to be welcomed. Connections are
+// ordered by these numbers (a worker's reports belong to its latest
+// connection, AgentReporter.ConnSeq), so the link takes one before it
+// sends the Welcome: a connection the worker opened after it saw another
+// one's Welcome is then always the later one, however late the earlier
+// connection's registration (Connect) runs.
+func (s *Service) ReserveConn() uint64 { return s.seq.Add(1) }
 
 // bootRec is a worker's current boot and the sequence of the boot
 // transaction that made it current.
@@ -454,7 +474,10 @@ func (s *Service) checkOrder(ctx context.Context, ops store.Ops, workerID string
 func (s *Service) Connect(ctx context.Context, info ConnInfo) (*Conn, error) {
 	c := &Conn{s: s, workerID: info.WorkerID, userID: info.UserID, bootID: info.BootID, fail: info.Fail,
 		queued: make(map[string]*hint), kick: make(chan struct{}, 1)}
-	c.seq = s.seq.Add(1)
+	c.seq = info.Seq
+	if c.seq == 0 {
+		c.seq = s.ReserveConn()
+	}
 	c.id = s.cfg.InstanceID + "." + s.nonce + "." + strconv.FormatUint(c.seq, 10)
 	var recs []logRec
 	if info.BootID != "" {
@@ -616,6 +639,9 @@ type Conn struct {
 	// local sessions pinned to it (Attach.local_only). Until Attach it is
 	// false; nothing is offered before Attach anyway.
 	localOnly bool
+	// agentsDue: the worker's AgentsWanted is owed on this connection; the
+	// sender builds it from the worker's current agents.
+	agentsDue bool
 	// acquires remembers this connection's last AcquireLeases, for a late
 	// Unwatch (Unwatched); nextAcquire is the slot to overwrite next.
 	acquires       [maxRecentAcquires]recentAcquire
@@ -736,12 +762,31 @@ func (c *Conn) Attach(ctx context.Context, a *circusv1.Attach, send func(context
 	if a.GetMaxSessions() < 1 || a.GetMaxSessions() > MaxSessionsPerConnection {
 		return fmt.Errorf("%w: max_sessions %d outside 1..%d", ErrAttach, a.GetMaxSessions(), MaxSessionsPerConnection)
 	}
-	for _, v := range []string{a.GetSdkVersion(), a.GetClaudeVersion(), a.GetAccount().GetEmail(), a.GetAccount().GetOrganization(), a.GetAccount().GetSubscriptionType()} {
+	for _, v := range []string{a.GetSdkVersion(), a.GetAccount().GetEmail(), a.GetAccount().GetOrganization(), a.GetAccount().GetSubscriptionType()} {
 		if len(v) > maxAttachString {
 			return fmt.Errorf("%w: a field longer than %d bytes", ErrAttach, maxAttachString)
 		}
 	}
+	report, err := agentReport(a.GetAgents())
+	if err != nil {
+		return fmt.Errorf("%w: agents: %v", ErrAttach, err)
+	}
 	s := c.s
+	s.mu.Lock()
+	again := c.wasOnce || c.closed
+	s.unlock()
+	if again {
+		return fmt.Errorf("%w: at most one Attach per connection", ErrAttach)
+	}
+	// The report is stored before the connection takes Offers, so the
+	// first scan already knows which agents the worker runs. A connection
+	// of a replaced boot is refused inside that write.
+	if err := s.reportAgents(ctx, c, report, true); err != nil {
+		if errors.Is(err, store.ErrStaleReport) {
+			return fmt.Errorf("%w: not the worker's current boot", ErrAttach)
+		}
+		return fmt.Errorf("sessions: record worker agents: %w", err)
+	}
 	sctx, stop := context.WithCancel(ctx)
 	s.mu.Lock()
 	if c.wasOnce || c.closed {
@@ -750,6 +795,8 @@ func (c *Conn) Attach(ctx context.Context, a *circusv1.Attach, send func(context
 		return fmt.Errorf("%w: at most one Attach per connection", ErrAttach)
 	}
 	c.wasOnce, c.attached, c.max, c.send, c.localOnly = true, true, int(a.GetMaxSessions()), send, a.GetLocalOnly()
+	// Every Attach gets the worker's wishes first.
+	c.sendAgentsWanted()
 	c.sending, c.senderDone = stop, make(chan struct{})
 	// Nudges for leases bound here before Attach are already in the
 	// outbox (queue defers them; the sender starts now), so nothing is
@@ -769,8 +816,8 @@ func (c *Conn) Attach(ctx context.Context, a *circusv1.Attach, send func(context
 	go c.run(sctx)
 	s.write(ctx, recs)
 	s.log.InfoContext(ctx, "worker attached", "worker_id", c.workerID, "boot_id", c.bootID, "conn_id", c.id, "max_sessions", maxSessions,
-		"local_only", localOnly, "sdk_version", a.GetSdkVersion(), "claude_version", a.GetClaudeVersion(),
-		"auto_mode_check", a.GetAutoModeCheck().String())
+		"local_only", localOnly, "sdk_version", a.GetSdkVersion(),
+		"auto_mode_check", a.GetAutoModeCheck().String(), "agents", reportSummary(report))
 	if s.debug(ctx) {
 		s.log.LogAttrs(ctx, slog.LevelDebug, "worker account", slog.String("worker_id", c.workerID), slog.String("conn_id", c.id),
 			slog.String("account_email", a.GetAccount().GetEmail()))
@@ -815,6 +862,10 @@ func (c *Conn) run(ctx context.Context) {
 	for {
 		s.mu.Lock()
 		var events []*circusv1.WorkerEvent
+		if c.agentsDue {
+			c.agentsDue = false
+			events = append(events, s.agentsWantedEvent(c.workerID))
+		}
 		for len(events) == 0 && len(c.outbox) > 0 {
 			id := c.outbox[0]
 			c.outbox[0] = ""

@@ -196,6 +196,7 @@ describe("the Connect session client", () => {
           { ...queued, queueReason: QueueReason.PROVIDER_FULL },
           { ...queued, sessionId: "s2", queueReason: QueueReason.PROVIDER_SECRETS_UNREADABLE },
           { ...queued, sessionId: "s3", queueReason: 99 as QueueReason },
+          { ...queued, sessionId: "s4", queueReason: QueueReason.AGENT_NOT_INSTALLED },
         ],
         nextPageToken: "",
       }),
@@ -205,6 +206,7 @@ describe("the Connect session client", () => {
       ["prov-1", "provider_full"],
       ["prov-1", "provider_secrets_unreadable"],
       ["prov-1", "unspecified"],
+      ["prov-1", "agent_not_installed"],
     ])
   })
 

@@ -77,3 +77,7 @@ func Peers(h *Handler) int {
 	defer h.mu.Unlock()
 	return len(h.peers)
 }
+
+// SetAfterWelcome sets a hook that runs after each Welcome was sent and
+// before the connection is registered with the session service.
+func SetAfterWelcome(h *Handler, f func()) { h.afterWelcome = f }

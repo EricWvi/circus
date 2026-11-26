@@ -67,12 +67,13 @@ type holder struct {
 // on it, and every pending reason is re-sent after Attach and ResumeLeases).
 type entry struct {
 	user string
-	// local and pin are the session's local mode and pinned worker, which
-	// never change; set when the session is offered (Attach checks them
-	// before it moves an Offer) or gets a queue reason (reclaim counts a
-	// waiter only where it may run).
+	// local, pin and agent are the session's local mode, pinned worker
+	// and agent, which never change; set when the session is offered
+	// (Attach checks them before it moves an Offer) or gets a queue reason
+	// (reclaim counts a waiter only where it may run).
 	local   bool
 	pin     string
+	agent   store.AgentKind
 	holder  holder // zero when no live lease is known
 	bound   *Conn  // the live connection named by holder.conn, if any
 	offered *Conn
@@ -217,10 +218,17 @@ func (s *Service) clearReasons(id string, epoch int64, rs reasonSet, g uint64) {
 	if e == nil || e.holder.epoch != epoch {
 		return
 	}
+	had := e.reasons
 	for v := 1; v < 8; v++ {
 		if rs&(1<<v) != 0 && e.gen[v] <= g {
 			e.reasons &^= 1 << v
 		}
+	}
+	// The holder acted on the last reason: the session may be idle now, and
+	// sessions waiting for its provider need not wait for the fallback (a
+	// spurious reason raised again by a stale read is cleared here too).
+	if had != 0 && e.reasons == 0 {
+		s.wantReclaim(e.holder.provider)
 	}
 }
 
@@ -399,10 +407,11 @@ func (s *Service) releaseNeed(p string, now int64, g *gate) int {
 }
 
 // runnable reports whether waiting session e could run on a connection
-// now, provider g allowing; s.mu held.
+// now, provider g and the worker's agents allowing; s.mu held.
 func (s *Service) runnable(e *entry, g gate) bool {
 	for _, c := range s.conns {
-		if !c.closed && !s.stale(c) && c.attached && c.userID == e.user && c.runs(e.local, e.pin) && g.allows(c.workerID) {
+		if !c.closed && !s.stale(c) && c.attached && c.userID == e.user && c.runs(e.local, e.pin) && g.allows(c.workerID) &&
+			s.runsAgent(c.workerID, e.agent) {
 			return true
 		}
 	}
@@ -1075,13 +1084,21 @@ func (g gate) blocked(sess store.Session) circusv1.QueueReason {
 }
 
 // offlineReason returns why no connection can take sess behind g: none of
-// the workers that may run it is online (UNSPECIFIED when one is online
-// but busy); s.mu held.
+// the workers that may run it is online, or those online lack the
+// session's agent (UNSPECIFIED when one with the agent is online but
+// busy); s.mu held.
 func (s *Service) offlineReason(sess store.Session, g gate) circusv1.QueueReason {
+	online := false
 	for _, c := range s.conns {
 		if !c.closed && !s.stale(c) && c.attached && c.userID == sess.UserID && c.runs(sess.Local, sess.PinnedWorkerID) && g.allows(c.workerID) {
-			return 0
+			if s.runsAgent(c.workerID, sess.Agent) {
+				return 0
+			}
+			online = true
 		}
+	}
+	if online {
+		return circusv1.QueueReason_QUEUE_REASON_AGENT_NOT_INSTALLED
 	}
 	if g.provider != "" && sess.PinnedWorkerID == "" {
 		return circusv1.QueueReason_QUEUE_REASON_NO_ASSIGNED_WORKER
@@ -1108,7 +1125,7 @@ func (s *Service) queued(id string, e *entry, sess store.Session, r circusv1.Que
 		s.entries[id] = e
 	}
 	// For reclaim, which counts only waiters some connection may run.
-	e.local, e.pin = sess.Local, sess.PinnedWorkerID
+	e.local, e.pin, e.agent = sess.Local, sess.PinnedWorkerID, sess.Agent
 	s.setQueue(id, e, r, g.provider)
 	e.derivedAt = s.nowMs()
 	if g.provider != "" && g.epoch != s.provEpoch {
@@ -1164,7 +1181,7 @@ func (s *Service) offer(id string, sess store.Session, g gate) {
 		return
 	}
 	if e != nil && e.offered != nil && !e.offered.closed && !s.stale(e.offered) && e.offered.attached && now < e.offeredAt+ScheduleInterval.Milliseconds() &&
-		g.allows(e.offered.workerID) {
+		g.allows(e.offered.workerID) && s.runsAgent(e.offered.workerID, sess.Agent) {
 		s.clearQueue(id, e)
 		return
 	}
@@ -1190,7 +1207,7 @@ func (s *Service) offer(id string, sess store.Session, g gate) {
 			return
 		}
 	}
-	e.local, e.pin = sess.Local, sess.PinnedWorkerID
+	e.local, e.pin, e.agent = sess.Local, sess.PinnedWorkerID, sess.Agent
 	s.clearQueue(id, e)
 	s.setOffer(id, e, best, "offered")
 	e.offeredAt = now
@@ -1198,9 +1215,11 @@ func (s *Service) offer(id string, sess store.Session, g gate) {
 }
 
 // candidate reports whether connection c may get an Offer of sess (whose
-// entry, if tracked, is e); s.mu held.
+// entry, if tracked, is e): among others, its worker runs the session's
+// agent; s.mu held.
 func (s *Service) candidate(c *Conn, sess store.Session, e *entry) bool {
-	if c.closed || s.stale(c) || !c.attached || c.userID != sess.UserID || !c.runs(sess.Local, sess.PinnedWorkerID) {
+	if c.closed || s.stale(c) || !c.attached || c.userID != sess.UserID || !c.runs(sess.Local, sess.PinnedWorkerID) ||
+		!s.runsAgent(c.workerID, sess.Agent) {
 		return false
 	}
 	load := c.leases + c.offers

@@ -1073,6 +1073,7 @@ describe("a queued session", () => {
     ["queue-no-worker", "no_assigned_worker", "No online worker assigned to Anthropic can run this session. Open Providers"],
     ["queue-secrets", "provider_secrets_unreadable", "The key and variable values of Legacy key can't be read. Enter them again. Open Providers"],
     ["queue-offline", "worker_offline", "The worker that runs this session is offline. "],
+    ["queue-agent", "agent_not_installed", "No online worker that can run this session has Claude Code installed. Open Devices"],
     ["queue-deleted", "provider_deleted", "This session's provider was deleted. Pick another provider to go on. Change provider"],
   ])("%s says why it waits (%s)", async (id, reason, text) => {
     const state = seedState()
@@ -1081,6 +1082,14 @@ describe("a queued session", () => {
     await renderSession(`/p/${project}/s/${id}`, { state })
     expect(notice()?.getAttribute("data-queue-reason")).toBe(reason)
     expect(notice()?.textContent).toBe(text)
+  })
+
+  it("links to Devices when no worker that may run it has Claude Code", async () => {
+    const state = seedState()
+    addQueueDemo(state)
+    await renderSession("/p/palace/s/queue-agent", { state })
+    const link = within(notice() as HTMLElement).getByRole("link", { name: "Open Devices" })
+    expect(link.getAttribute("href")).toBe("/devices")
   })
 
   it.each(["error", "interrupted"] as const)(

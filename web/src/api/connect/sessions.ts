@@ -52,6 +52,7 @@ const queueReasons: Record<ProtoQueueReason, QueueReason> = {
   [ProtoQueueReason.PROVIDER_DELETED]: "provider_deleted",
   [ProtoQueueReason.PROVIDER_SECRETS_UNREADABLE]: "provider_secrets_unreadable",
   [ProtoQueueReason.WORKER_OFFLINE]: "worker_offline",
+  [ProtoQueueReason.AGENT_NOT_INSTALLED]: "agent_not_installed",
 }
 
 /** The proto kind names, lower case without `KIND_`; a newer kind reads as unspecified. */

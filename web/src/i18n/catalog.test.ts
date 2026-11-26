@@ -50,6 +50,7 @@ describe("catalogs", () => {
     // them is checked like any other.
     const chinesePhrases: Record<string, readonly string[]> = {
       "devices.lastSeen": ["ago"],
+      "devices.agents.lastReported": ["ago"],
       "devices.add.expires": ["in"],
       "folders.startFailed": ["reason"],
       "ledger.updated": ["ago"],

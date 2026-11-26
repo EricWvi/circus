@@ -219,8 +219,36 @@ func (f *fixture) dial(i int, label string) *workerclient.Client {
 	return c
 }
 
-// tryDial is dial that returns the dial error.
+// tryDial is dial that returns the dial error. Like dial, it returns once
+// the server has registered the connection (Connect), or closed it: the
+// client sees the Welcome before that, so a test that dials in a given
+// order would otherwise race the registrations (a boot change, say).
 func (f *fixture) tryDial(i int, label string) (*workerclient.Client, error) {
+	f.t.Helper()
+	before := sessions.Conns(f.svc)
+	c, err := f.dialWelcomed(i, label)
+	if err != nil {
+		return nil, err
+	}
+	wait.For(f.t, func() bool {
+		select {
+		case <-c.Done():
+			return true
+		default:
+		}
+		for id := range sessions.Conns(f.svc) {
+			if !before[id] {
+				return true
+			}
+		}
+		return false
+	})
+	return c, nil
+}
+
+// dialWelcomed is tryDial returning at the Welcome, before the server
+// registers the connection.
+func (f *fixture) dialWelcomed(i int, label string) (*workerclient.Client, error) {
 	f.t.Helper()
 	c, err := workerclient.Dial(wait.Ctx(f.t), workerclient.Options{URL: f.srv.URL, Token: f.workers[i].Token, PrincipalID: f.workers[i].Identity.ID, BootID: f.boot(label)})
 	if err != nil {
@@ -237,13 +265,13 @@ func (f *fixture) tryDial(i int, label string) (*workerclient.Client, error) {
 // and leave while this Attach is processed.
 func (f *fixture) attach(c *workerclient.Client, max uint32) workerclient.Events {
 	f.t.Helper()
-	return f.attachWith(c, &circusv1.Attach{MaxSessions: max, SdkVersion: "sdk", ClaudeVersion: "cli"})
+	return f.attachWith(c, &circusv1.Attach{MaxSessions: max, SdkVersion: "sdk", Agents: workerclient.ClaudeInstalled()})
 }
 
 // attachLocal is attach of a local-only connection (Attach.local_only).
 func (f *fixture) attachLocal(c *workerclient.Client, max uint32) workerclient.Events {
 	f.t.Helper()
-	return f.attachWith(c, &circusv1.Attach{MaxSessions: max, SdkVersion: "sdk", ClaudeVersion: "cli", LocalOnly: true})
+	return f.attachWith(c, &circusv1.Attach{MaxSessions: max, SdkVersion: "sdk", LocalOnly: true, Agents: workerclient.ClaudeInstalled()})
 }
 
 // attachWith is attach with the given Attach.

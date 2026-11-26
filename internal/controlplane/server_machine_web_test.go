@@ -313,7 +313,7 @@ func TestWebMachineOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer w.Close()
-	hints, err := w.Attach(ctx, &circusv1.Attach{MaxSessions: 2})
+	hints, err := w.Attach(ctx, &circusv1.Attach{MaxSessions: 2, Agents: wc.ClaudeInstalled()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,6 +18,7 @@ const queueEvent = (receivedAtMs: number, reason: string): RawSessionEvent => ({
 describe("queue reasons", () => {
   it("are read from KIND_QUEUE payloads; an unknown one reads as none", () => {
     expect(queueReasonFromPayload({ queue_reason: "provider_full" })).toBe("provider_full")
+    expect(queueReasonFromPayload({ queue_reason: "agent_not_installed" })).toBe("agent_not_installed")
     expect(queueReasonFromPayload({ queue_reason: "unspecified" })).toBe("unspecified")
     expect(queueReasonFromPayload({ queue_reason: "brand_new" })).toBe("unspecified")
     expect(queueReasonFromPayload({})).toBe("unspecified")
@@ -47,6 +48,9 @@ describe("queue reasons", () => {
       "Proxy already runs as many sessions as it allows. This one starts when one of them ends.",
     )
     expect(queueReasonText("no_assigned_worker", proxy)).toBe("No online worker assigned to Proxy can run this session.")
+    expect(queueReasonText("agent_not_installed", undefined)).toBe(
+      "No online worker that can run this session has Claude Code installed.",
+    )
     expect(queueReasonText("provider_deleted", undefined)).toBe(
       "This session's provider was deleted. Pick another provider to go on.",
     )

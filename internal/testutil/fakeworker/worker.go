@@ -83,6 +83,14 @@ type Options struct {
 	// synchronously and must not block.
 	Offer    func(sessionID string)
 	Acquired func(sessionID string, epoch uint64)
+	// ClaudeCode is the state of Claude Code the worker reports at start:
+	// INSTALLED at its target version by default (UNSPECIFIED); OUTDATED
+	// and UNINSTALLING have version "old" installed. AgentTarget is its
+	// target version, AgentVersion by default. The worker obeys
+	// AgentsWanted at once: a wish for the target installs it, no wish
+	// uninstalls it once no session is held.
+	ClaudeCode  pb.AgentStatus_State
+	AgentTarget string
 }
 
 // Run starts a new UUIDv7 boot and reconnects until ctx is canceled. It
@@ -123,7 +131,9 @@ func Run(ctx context.Context, o Options) error {
 	w := &worker{
 		ctx: ctx, opts: o, log: o.Logger.With("worker", o.Name),
 		changed: make(chan struct{}), sessions: make(map[string]*session), offers: make(map[string]bool),
+		agent: agentState{status: initialAgent(o)},
 	}
+	defer w.agents.Wait()
 	defer w.discardSessions(context.Canceled)
 	return w.run()
 }
@@ -138,7 +148,13 @@ type worker struct {
 	changed  chan struct{}
 	sessions map[string]*session
 	offers   map[string]bool
-	wg       sync.WaitGroup
+	agent    agentState
+	// reports are agent statuses waiting to be sent, in order.
+	reports []*pb.AgentStatus
+	wg      sync.WaitGroup
+	// agents joins the agent goroutines (uninstall, reports), which wait
+	// for connections: never joined with the sessions.
+	agents sync.WaitGroup
 }
 
 type outage int
@@ -181,7 +197,7 @@ func (w *worker) run() error {
 		connectedAt := w.opts.Clock.Now()
 		w.log.Info("worker attached", "boot_id", boot)
 		for {
-			event, err := events.Next(w.ctx)
+			event, err := events.NextEvent(w.ctx)
 			if err != nil {
 				break
 			}
@@ -227,7 +243,10 @@ func (w *worker) dial(boot string) (*connection, wc.Events, error) {
 	if err != nil {
 		return nil, wc.Events{}, err
 	}
-	events, err := c.Attach(w.ctx, &pb.Attach{MaxSessions: w.opts.MaxSessions, SdkVersion: "fake", ClaudeVersion: "fake"})
+	w.mu.Lock()
+	agents := w.attachAgents()
+	w.mu.Unlock()
+	events, err := c.Attach(w.ctx, &pb.Attach{MaxSessions: w.opts.MaxSessions, SdkVersion: "fake", Agents: agents})
 	if err != nil {
 		_ = c.Close()
 		return nil, wc.Events{}, err
@@ -371,6 +390,10 @@ func (w *worker) hint(l *connection, event *pb.WorkerEvent) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.link != l || w.ctx.Err() != nil {
+		return
+	}
+	if wanted := event.GetAgentsWanted(); wanted != nil {
+		w.wanted(wanted)
 		return
 	}
 	if revoked := event.GetLeaseRevoked(); revoked != nil {

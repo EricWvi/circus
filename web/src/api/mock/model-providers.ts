@@ -20,9 +20,13 @@ import {
 } from "@/api/provider-rules"
 import type { ModelProvider, ModelProviderInput, ProviderVersion, QueueReason, Worker } from "@/api/types"
 import { sameProjectName } from "@/api/validation"
+import { DEFAULT_AGENT, localWorker, runsAgent } from "@/lib/agents"
 
 import type { MockSession } from "./sessions"
 import type { MockProvider, MockState } from "./state"
+
+/** The worker has the sessions' agent installed at its target version. */
+export const runsSessions = (w: Pick<Worker, "agents">) => runsAgent(w, DEFAULT_AGENT)
 
 const invalid = (message: string, field: string) => new ApiError("invalid_argument", message, field)
 
@@ -214,7 +218,7 @@ export function createMockModelProviders(host: MockModelProvidersHost) {
     queueReasonOf(s: MockSession): QueueReason {
       const owner = host.ownerOf(s)
       const workers = state.workers.filter((w) => w.owner === owner)
-      const pinned = workers.find((w) => w.localDevices.includes(s.device))
+      const pinned = localWorker(workers, s.device)
       const candidates: Worker[] = pinned ? [pinned] : workers
       const provider = s.providerId ? find(owner ?? "", s.providerId) : undefined
       if (s.providerId && !provider) return "provider_deleted"
@@ -222,8 +226,9 @@ export function createMockModelProviders(host: MockModelProvidersHost) {
       const assigned = (w: Worker) => !provider || provider.workerIds.includes(w.workerId)
       if (pinned && !assigned(pinned)) return "no_assigned_worker"
       if (!candidates.some((w) => w.online)) return "worker_offline"
-      if (!provider) return "unspecified"
       if (!candidates.some((w) => w.online && assigned(w))) return "no_assigned_worker"
+      if (!candidates.some((w) => w.online && assigned(w) && runsSessions(w))) return "agent_not_installed"
+      if (!provider) return "unspecified"
       if (provider.maxSessions > 0 && leased(provider.providerId) >= provider.maxSessions) return "provider_full"
       return "unspecified"
     },

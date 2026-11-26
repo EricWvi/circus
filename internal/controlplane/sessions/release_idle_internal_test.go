@@ -83,8 +83,8 @@ func TestAskable(t *testing.T) {
 
 // TestRunnable: a waiting session counts as demand only while a live,
 // attached connection of its user and of its worker's current boot may run
-// it (pin and local mode honoured) and the provider is assigned to that
-// worker.
+// it (pin and local mode honoured, the session's agent installed and
+// wanted there) and the provider is assigned to that worker.
 func TestRunnable(t *testing.T) {
 	allowed := gate{provider: "p", workers: map[string]bool{"w1": true}}
 	cases := []struct {
@@ -102,11 +102,20 @@ func TestRunnable(t *testing.T) {
 		{"pinned elsewhere", func(_ *Service, e *entry, _ *Conn) { e.pin = "w2" }, allowed, false},
 		{"pinned here", func(_ *Service, e *entry, _ *Conn) { e.pin = "w1" }, allowed, true},
 		{"local-only connection, session not local", func(_ *Service, _ *entry, c *Conn) { c.localOnly = true }, allowed, false},
+		{"agent not installed", func(s *Service, _ *entry, _ *Conn) { s.agents["w1"] = agentView{} }, allowed, false},
+		{"agent not wanted", func(s *Service, _ *entry, _ *Conn) {
+			v := s.agents["w1"]
+			v.agents.Agents[0].Wanted = false
+			s.agents["w1"] = v
+		}, allowed, false},
 	}
 	for _, tc := range cases {
 		c := &Conn{id: "c1", workerID: "w1", bootID: "b1", userID: "u1", attached: true}
-		s := &Service{conns: map[string]*Conn{"c1": c}, boots: map[string]bootRec{"w1": {boot: "b1"}}}
-		e := &entry{user: "u1"}
+		installed := store.AgentStatus{Agent: store.AgentClaudeCode, State: store.AgentInstalled, InstalledVersion: "1", TargetVersion: "1"}
+		s := &Service{conns: map[string]*Conn{"c1": c}, boots: map[string]bootRec{"w1": {boot: "b1"}},
+			agents: map[string]agentView{"w1": {agents: store.WorkerAgents{WorkerID: "w1", Agents: []store.WorkerAgent{{
+				WorkerID: "w1", Agent: store.AgentClaudeCode, Status: installed, Wished: true, Wanted: true, WantedVersion: "1"}}}}}}
+		e := &entry{user: "u1", agent: store.AgentClaudeCode}
 		if tc.mutate != nil {
 			tc.mutate(s, e, c)
 		}

@@ -1,4 +1,4 @@
-import type { Device, Location, LoginMethods, ProviderScheme, Role, Worker } from "@/api/types"
+import type { Device, Location, LoginMethods, ProviderScheme, Role, Worker, WorkerAgent } from "@/api/types"
 import {
   projects as seedProjects,
   queueDemoSessions,
@@ -120,7 +120,8 @@ export function freshState(): MockState {
 }
 
 const MINUTE = 60_000
-const DAY = 24 * 60 * MINUTE
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
 
 /**
  * A set-up server, signed out, with the super user `eric@example.com` (who
@@ -170,9 +171,46 @@ export function seedState(now: number = Date.now()): MockState {
   return state
 }
 
+/** The Claude Code version the demo workers' builds run. */
+export const MOCK_AGENT_VERSION = "2.1.3"
+
+/** The size of the demo Claude Code download, for install progress. */
+export const MOCK_AGENT_BYTES = 74_500_000
+
+/** A demo worker's Claude Code entry; installed at the target version, reported at `reportedAtUnixMs`, unless overridden. */
+export function mockAgent(reportedAtUnixMs: number, fields: Partial<WorkerAgent> = {}): WorkerAgent {
+  return {
+    agent: "claude_code",
+    state: "installed",
+    installedVersion: MOCK_AGENT_VERSION,
+    targetVersion: MOCK_AGENT_VERSION,
+    error: "",
+    downloadedBytes: 0,
+    totalBytes: 0,
+    wanted: true,
+    wantedVersion: MOCK_AGENT_VERSION,
+    reportedAtUnixMs,
+    ...fields,
+  }
+}
+
+type SeedWorker = Omit<MockWorker, "owner" | "workerId" | "hostname" | "version" | "integrator" | "agents"> &
+  Partial<Pick<MockWorker, "integrator" | "agents">>
+
+const seedWorker = (w: SeedWorker): MockWorker => ({
+  integrator: false,
+  agents: [],
+  ...w,
+  owner: SEED_OWNER_ID,
+  workerId: `worker-${w.name}`,
+  hostname: w.name,
+  version: "0.1.0",
+})
+
 /**
  * The demo owner's workers: one beside each of three devices, and one on a
- * machine of its own, the only integrator.
+ * machine of its own, the only integrator. All have Claude Code installed
+ * (the offline one as it last reported).
  */
 export function seedWorkers(now: number = Date.now()): MockWorker[] {
   return [
@@ -180,14 +218,82 @@ export function seedWorkers(now: number = Date.now()): MockWorker[] {
     { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: ["devbox"] },
     { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64", localDevices: ["eric-mbp"] },
     { name: "eric-win", online: false, lastSeenUnixMs: now - 2 * DAY, os: "windows", arch: "amd64", localDevices: ["eric-win"] },
-  ].map((w) => ({
-    integrator: false,
-    ...w,
-    owner: SEED_OWNER_ID,
-    workerId: `worker-${w.name}`,
-    hostname: w.name,
-    version: "0.1.0",
-  }))
+  ].map((w) => seedWorker({ ...w, agents: [mockAgent(w.lastSeenUnixMs)] }))
+}
+
+/**
+ * Takes Claude Code off every worker, as reported (`?mock=noagents`): new
+ * sessions wait for a worker to have it, and the project page says so.
+ */
+export function removeAgents(state: MockState) {
+  for (const w of state.workers) {
+    w.agents = w.agents.map((a) => ({ ...a, state: "not_installed", installedVersion: "", wanted: false, wantedVersion: "" }))
+  }
+}
+
+/**
+ * Adds the agents demo (`?mock=agents`): workers on machines of their own
+ * (so no session is pinned to them) with Claude Code in every state: not
+ * installed, downloading (with and without a known size), outdated,
+ * failed, uninstalling, never reported, not supported, and offline: with a
+ * wish waiting for the worker to connect, in the middle of a download, and
+ * failed (installed again when it connects).
+ */
+export function addAgentsDemo(state: MockState, now: number = Date.now()) {
+  const online = { online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: [] }
+  const offline = (ago: number) => ({ ...online, online: false, lastSeenUnixMs: now - ago })
+  const notInstalled = { state: "not_installed" as const, installedVersion: "", wanted: false, wantedVersion: "" }
+  state.workers.push(
+    ...[
+      { ...online, name: "spare-box", agents: [mockAgent(now, notInstalled)] },
+      {
+        ...online,
+        name: "ci-runner-1",
+        agents: [
+          mockAgent(now, { state: "installing", installedVersion: "", downloadedBytes: 31_200_000, totalBytes: MOCK_AGENT_BYTES }),
+        ],
+      },
+      {
+        ...online,
+        name: "ci-runner-2",
+        arch: "arm64",
+        agents: [mockAgent(now, { state: "installing", installedVersion: "", downloadedBytes: 12_800_000 })],
+      },
+      { ...online, name: "build-mac", os: "darwin", arch: "arm64", agents: [mockAgent(now, { state: "outdated", installedVersion: "2.0.9", wantedVersion: "2.0.9" })] },
+      {
+        ...online,
+        name: "lab-pi",
+        arch: "arm64",
+        agents: [
+          mockAgent(now, {
+            state: "failed",
+            installedVersion: "",
+            error: "download failed: GET https://downloads.claude.ai/claude-code/2.1.3/linux-arm64/claude: connection reset by peer",
+          }),
+        ],
+      },
+      { ...online, name: "old-laptop", agents: [mockAgent(now, { state: "uninstalling", wanted: false, wantedVersion: "" })] },
+      { ...offline(0), lastSeenUnixMs: 0, os: "", arch: "", name: "fresh-worker" },
+      // Online, and its build doesn't support Claude Code: it reported no entry.
+      { ...online, name: "legacy-runner" },
+      // Went offline in the middle of a download.
+      {
+        ...offline(DAY),
+        name: "field-laptop",
+        agents: [
+          mockAgent(now - DAY, { state: "installing", installedVersion: "", downloadedBytes: 20_100_000, totalBytes: MOCK_AGENT_BYTES }),
+        ],
+      },
+      // Failed, still wanted: it installs again when it connects.
+      {
+        ...offline(2 * HOUR),
+        name: "kiosk",
+        agents: [mockAgent(now - 2 * HOUR, { state: "failed", installedVersion: "", error: "no space left on device" })],
+      },
+      { ...offline(3 * HOUR), name: "travel-mbp", os: "darwin", arch: "arm64", agents: [mockAgent(now - 3 * HOUR, { wanted: false, wantedVersion: "" })] },
+      { ...offline(5 * DAY), name: "nas", agents: [mockAgent(now - 5 * DAY, { ...notInstalled, wanted: true, wantedVersion: MOCK_AGENT_VERSION })] },
+    ].map(seedWorker),
+  )
 }
 
 /**
@@ -270,6 +376,30 @@ export function seedSessions(
  * each reason a session can't be leased (`?mock=queue`).
  */
 export function addQueueDemo(state: MockState, now: number = Date.now()) {
+  // A worker online without Claude Code, the only one of a provider: that
+  // provider's session waits for the agent.
+  state.workers.push(
+    seedWorker({
+      name: "gpu-box",
+      online: true,
+      lastSeenUnixMs: now,
+      os: "linux",
+      arch: "amd64",
+      localDevices: [],
+      agents: [mockAgent(now, { state: "not_installed", installedVersion: "", wanted: false, wantedVersion: "" })],
+    }),
+  )
+  const anthropic = state.providers.find((p) => p.providerId === "provider-anthropic")
+  if (anthropic) {
+    state.providers.push({
+      ...anthropic,
+      providerId: "provider-gpu",
+      name: "GPU pool",
+      key: "sk-ant-mock-gpu-pool-key-Hc4t",
+      workerIds: ["worker-gpu-box"],
+      isDefault: false,
+    })
+  }
   state.sessions.push(...seedSessions(state, now, queueDemoSessions))
   const proxy = state.providers.find((p) => p.providerId === "provider-proxy")
   if (proxy) proxy.maxSessions = 1

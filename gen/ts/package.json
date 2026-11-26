@@ -12,6 +12,10 @@
       "types": "./dist/circus/v1/link_pb.d.ts",
       "default": "./dist/circus/v1/link_pb.js"
     },
+    "./circus/v1/agent_pb": {
+      "types": "./dist/circus/v1/agent_pb.d.ts",
+      "default": "./dist/circus/v1/agent_pb.js"
+    },
     "./circus/v1/daemon_link_pb": {
       "types": "./dist/circus/v1/daemon_link_pb.d.ts",
       "default": "./dist/circus/v1/daemon_link_pb.js"

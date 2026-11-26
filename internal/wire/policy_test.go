@@ -77,7 +77,7 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 				if key != "session/"+callID {
 					t.Errorf("session ordering key for %s: %q", f.FullName(), key)
 				}
-			case "attach", "resume_leases", "list_devices", "session_reply", "worker_event":
+			case "attach", "resume_leases", "list_devices", "report_agents", "session_reply", "worker_event":
 				if key != "" {
 					t.Errorf("unexpected ordering key for %s: %q", f.FullName(), key)
 				}

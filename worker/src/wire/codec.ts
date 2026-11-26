@@ -55,15 +55,20 @@ const repeatedLimits = new Map<string, number>(Object.entries({
   "SessionReply.Devices.devices": 256,
   "SessionReply.Resumed.leases": 64,
   "SessionReply.LaunchEnv.env": 72,
+  "Attach.agents": 16,
+  "ReportAgents.agents": 16,
+  "WorkerEvent.AgentsWanted.agents": 16,
 }));
 
 const outboundStringLimits = new Map<string, number>(Object.entries({
   "Hello.boot_id": 128,
   "Attach.sdk_version": 256,
-  "Attach.claude_version": 256,
   "Attach.Account.email": 256,
   "Attach.Account.organization": 256,
   "Attach.Account.subscription_type": 256,
+  "AgentStatus.installed_version": 64,
+  "AgentStatus.target_version": 64,
+  "AgentStatus.error": 1024,
   "SessionRequest.session_id": 128,
   "ResumeLeases.Held.session_id": 128,
   "LoadTranscript.subpath": 1024,

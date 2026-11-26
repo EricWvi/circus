@@ -273,10 +273,17 @@ func closed(t *testing.T, c *wc.Client) {
 func TestAttachRules(t *testing.T) {
 	f := newFixture(t)
 	for name, a := range map[string]*circusv1.Attach{
-		"zero":   {MaxSessions: 0},
-		"65":     {MaxSessions: 65},
-		"string": {MaxSessions: 1, SdkVersion: strings.Repeat("v", 257)},
-		"email":  {MaxSessions: 1, Account: &circusv1.Attach_Account{Email: strings.Repeat("e", 257)}},
+		"zero":          {MaxSessions: 0},
+		"65":            {MaxSessions: 65},
+		"string":        {MaxSessions: 1, SdkVersion: strings.Repeat("v", 257)},
+		"email":         {MaxSessions: 1, Account: &circusv1.Attach_Account{Email: strings.Repeat("e", 257)}},
+		"agent twice":   {MaxSessions: 1, Agents: append(wc.ClaudeInstalled(), wc.ClaudeInstalled()...)},
+		"unknown agent": {MaxSessions: 1, Agents: []*circusv1.AgentStatus{{Agent: 99, State: circusv1.AgentStatus_STATE_INSTALLED}}},
+		"no agent kind": {MaxSessions: 1, Agents: []*circusv1.AgentStatus{{State: circusv1.AgentStatus_STATE_INSTALLED}}},
+		"no state":      {MaxSessions: 1, Agents: []*circusv1.AgentStatus{wc.ClaudeCode(0, "", "1")}},
+		"long version":  {MaxSessions: 1, Agents: []*circusv1.AgentStatus{wc.ClaudeCode(circusv1.AgentStatus_STATE_INSTALLED, strings.Repeat("v", 65), "1")}},
+		"long error": {MaxSessions: 1, Agents: []*circusv1.AgentStatus{{Agent: circusv1.AgentKind_AGENT_KIND_CLAUDE_CODE,
+			State: circusv1.AgentStatus_STATE_FAILED, Error: strings.Repeat("e", 1025)}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := f.dial(0, "boot-a")

@@ -224,7 +224,7 @@ Each envelope has a single `oneof payload`.
 | --- | --- |
 | `DaemonUplink` | hello 1, heartbeat 2, fragment 3, call_ack 10, result 11, call_status 12, job_event 13, job_snapshot 14, device_query_result 15 |
 | `DaemonDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, go_away 5, dispatch_call 10, cancel_call 11, call_query 12, list_jobs 13, stop_session_jobs 14, device_query 15 |
-| `WorkerUplink` | hello 1, heartbeat 2, fragment 3, submit_call 10, cancel_call 11, call_query 12, unwatch 13, attach 14, session 15, resume_leases 16, list_devices 17 |
+| `WorkerUplink` | hello 1, heartbeat 2, fragment 3, submit_call 10, cancel_call 11, call_query 12, unwatch 13, attach 14, session 15, resume_leases 16, list_devices 17, report_agents 18 |
 | `WorkerDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, call_update 10, session_reply 12, worker_event 13 (11 and `job_event` reserved) |
 
 Both worker envelopes also have `uint64 request_id = 20` beside the oneof
@@ -257,7 +257,7 @@ scheduling metadata; nothing about them is on the wire.
 | device_query, device_query_result | Data | `device_query/<request_id>` for valid IDs |
 | job_event (daemon uplink) | Data | one key for the whole boot |
 | session (worker uplink) | Data | `session/<session_id>` |
-| list_devices, session_reply, worker_event | Data | none |
+| list_devices, report_agents, session_reply, worker_event | Data | none |
 | result, call_status, job_snapshot (and hello, welcome, reject) | Data | none |
 
 Independently of the class, a message is **small** if its serialized
@@ -408,7 +408,7 @@ closing; other senders MUST NOT send what the scan would reject.
 | job_snapshot | 8 MiB (`MaxSnapshotBytes`) |
 | device_query_result | 4 MiB (`MaxDirectoryResultBytes`) |
 | fragment | F + 128 (`FrameOverhead`) |
-| everything else (hello, welcome, reject, heartbeat, go_away, cancel_call, call_query, device_query, unwatch, list_jobs, stop_session_jobs, job_event, attach, resume_leases, list_devices, worker_event) | 64 KiB (`MaxMetadataBytes`) |
+| everything else (hello, welcome, reject, heartbeat, go_away, cancel_call, call_query, device_query, unwatch, list_jobs, stop_session_jobs, job_event, attach, resume_leases, list_devices, report_agents, worker_event) | 64 KiB (`MaxMetadataBytes`) |
 
 Further size rules:
 - call_status, call_ack, call_update: envelope size minus the encoded size of
@@ -443,6 +443,7 @@ Further size rules:
 | `BashRequest.working_dirs` elements | 256 |
 | `CallUpdate.DeviceOffline.online_devices` elements | 256 |
 | `WorkerEvent.Nudge.reasons`, `GetSessionState.sections` | 5 each, unpacked enums |
+| `Attach.agents`, `ReportAgents.agents`, `WorkerEvent.AgentsWanted.agents` | 16 each |
 | `SessionConfig.cwds`, `PatchSessionState.cwds`, `SessionState.cwds` | 256 each |
 | `PatchSessionState.files`, `SessionState.files` | 4096 each |
 | `AppendTranscript.entries`, `SessionReply.TranscriptPage.entries` | 8189 each (8192 nodes minus the three containing messages); primarily byte-bounded |
@@ -1127,10 +1128,11 @@ the ID lives only on the worker envelope.
 | `SubmitCall{device, call, session_epoch, tool_use_id}` | Submit a `DeviceCall` to the user's device named `device` (1-128 bytes). `call.call_id` and `call.session_id`: 1-128 bytes of `[A-Za-z0-9_-]`; `agent_id`: empty or the same grammar; exactly one tool. | A stream of `CallUpdate`s: zero or more nonterminal updates, then one terminal update (unless the link closes or the operation is unwatched first). | At its terminal update, or at Unwatch. |
 | `CallQuery{call_id}` | Read the call's current state. | Exactly one `CallUpdate` (may be nonterminal, e.g. `unknown`, or `rejected NOT_FOUND`). | At that reply (or Unwatch). |
 | `CancelCall{call_id}` | Cancel before dispatch; after dispatch record the intent (the daemon's result wins). The intent is recorded in receive order, so it cannot overtake an earlier Submit of the same call. | Exactly one `CallUpdate`: the call's state read after the intent was recorded (the call may have finished in between). `cancelled`: cancelled before dispatch. `dispatched` or `unknown`: intent recorded, the daemon's result decides. A terminal outcome (`result`, `lost`, ...): the call had already finished; `unknown` with reason `DEVICE_OFFLINE` when it finished but its result cannot be read now. `rejected NOT_FOUND`: no such call for this user; `rejected INVALID`: invalid id. | At that reply (or Unwatch). The intent stays recorded either way. |
-| `Attach` | Advertise 1..64 session capacity, SDK/CLI/account/check metadata and `local_only`; at most once per connection, even after Unwatch. `local_only`: this connection runs only local-mode sessions pinned to its worker (Scheduling below). | WorkerEvent stream: Offer, Nudge, LeaseRevoked, ReleaseIdle, starting with every Offer still pending for this worker. Hints are level-triggered, may repeat or coalesce, and carry no authoritative state. Account is recorded only. | Unwatch or disconnect. |
+| `Attach` | Advertise 1..64 session capacity, SDK/account/check metadata, `local_only` and the state of every agent the worker supports (`agents`, at most 16, one per kind); at most once per connection, even after Unwatch. `local_only`: this connection runs only local-mode sessions pinned to its worker (Scheduling below). | WorkerEvent stream: first AgentsWanted (the user's wishes for the worker's agents, complete, each with the count of the user's install requests, `attempt`; sent again whenever they change; a worker retries a FAILED install only for a greater attempt), then Offer, Nudge, LeaseRevoked, ReleaseIdle, starting with every Offer still pending for this worker. Hints are level-triggered, may repeat or coalesce, and carry no authoritative state. Account is recorded only. | Unwatch or disconnect. |
 | `SessionRequest{session_id, epoch, op}` | One of the session operations below; Data with key `session/<session_id>`. | Exactly one SessionReply, success, Fenced or Rejected. | At that reply (or Unwatch). |
 | `ResumeLeases{leases}` | Reattach up to 64 (session_id, epoch) leases on the same worker boot before expiry, rebinding each to this connection. | One SessionReply.resumed, one outcome per requested lease, with retained epoch (and `stopped`) on success or current epoch when fenced. | At that reply (or Unwatch). |
 | `ListDevices{}` | List the user's devices. | One SessionReply.devices, at most 256 devices with name, online, os, arch, hostname, last_seen_unix_ms. | At that reply (or Unwatch). |
+| `ReportAgents{agents}` | Replace the worker's reported agent states (same rules as `Attach.agents`); sent on every change, at most once a second for install progress. A session is offered to a worker only while it reports the session's agent INSTALLED at its target version and the user still wants it. | One SessionReply: ok, or `rejected INVALID` for a field rule, a replaced boot, or a connection older than the worker's latest attached one (a late report there is older than that Attach's). An Attach of a replaced boot closes the link. | At that reply (or Unwatch). |
 | `Unwatch{}` | Stop delivery for the open operation named by `request_id` (normally a Submit; on a Query or Cancel it abandons the reply). Never cancels the call. Unknown or finished ids: no-op. | **None.** Updates already in flight may still arrive and are dropped. | Immediately. |
 
 `CallUpdate` variants:

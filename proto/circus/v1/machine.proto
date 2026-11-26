@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package circus.v1;
 
+import "circus/v1/agent.proto";
 import "circus/v1/daemon_link.proto";
 
 option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
@@ -21,6 +22,19 @@ service MachineService {
   // Turns a grant of one of the caller's workers on or off and returns the
   // worker. NOT_FOUND for another user's or an unknown worker.
   rpc SetWorkerGrant(SetWorkerGrantRequest) returns (SetWorkerGrantResponse);
+  // Installs or uninstalls an agent on one of the caller's workers and
+  // returns the worker. The wish is stored and pushed to the worker when it
+  // is online (else at its next attach); the worker reports progress, seen
+  // in ListWorkers. install=true when the agent is INSTALLED at the
+  // worker's target version is a no-op; when it is OUTDATED, FAILED or not
+  // installed, it (re)installs the worker's target version. Errors:
+  // NOT_FOUND for another user's or an unknown worker; INVALID_ARGUMENT for
+  // AGENT_KIND_UNSPECIFIED or an agent the worker does not support (absent
+  // from its reported agents); FAILED_PRECONDITION for install=true while
+  // the worker never reported (no target version yet), and for
+  // install=false while the worker holds a lease of a session that runs
+  // this agent.
+  rpc SetWorkerAgent(SetWorkerAgentRequest) returns (SetWorkerAgentResponse);
   // Lists the subdirectories of a directory on one of the caller's devices,
   // asking its daemon live. Errors: NOT_FOUND for an unknown device;
   // FAILED_PRECONDITION when the device is offline; UNAVAILABLE when its link
@@ -78,6 +92,9 @@ message Worker {
   // open, for this user's projects (LedgerChangesetService). Off by
   // default; it ends with the credential.
   bool integrator = 10;
+  // One entry per agent the worker reported or the user asked for, ordered
+  // by AgentKind.
+  repeated WorkerAgent agents = 11;
 }
 message ListWorkersRequest {}
 
@@ -86,6 +103,15 @@ message SetWorkerGrantRequest {
   bool integrator = 2;
 }
 message SetWorkerGrantResponse {
+  Worker worker = 1;
+}
+
+message SetWorkerAgentRequest {
+  string worker_id = 1;
+  AgentKind agent = 2;
+  bool install = 3;
+}
+message SetWorkerAgentResponse {
   Worker worker = 1;
 }
 message ListWorkersResponse {

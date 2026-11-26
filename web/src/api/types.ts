@@ -231,7 +231,48 @@ export interface Device {
   version: string
 }
 
-/** A worker: runs the Claude Code CLI for sessions. */
+/** A coding agent a worker can install and run sessions with, by the proto names without `AGENT_KIND_`. */
+export type AgentKind = "claude_code"
+
+/**
+ * What a worker reported about one agent, by the proto names without
+ * `STATE_`; `unknown` when it never reported it (or reported a state this
+ * client doesn't know).
+ */
+export type AgentState =
+  | "unknown"
+  | "not_installed"
+  | "installing"
+  /** At the worker's target version: sessions may run. */
+  | "installed"
+  /** On disk at another version than the worker's target: runs nothing. */
+  | "outdated"
+  /** The last install or uninstall failed; `error` says why. */
+  | "failed"
+  | "uninstalling"
+
+/** One agent of a worker: the worker's last report and the user's wish. */
+export interface WorkerAgent {
+  agent: AgentKind
+  state: AgentState
+  /** The version on disk: for `installed`, `outdated` and `uninstalling`. */
+  installedVersion: string
+  /** The version this worker build runs. */
+  targetVersion: string
+  /** For `failed`: what went wrong, as the worker said it. */
+  error: string
+  /** For `installing`: bytes downloaded so far and the expected total (0 when unknown). */
+  downloadedBytes: number
+  totalBytes: number
+  /** The user asked for it to be installed (else for it not to be). */
+  wanted: boolean
+  /** When wanted: the worker's target version when the user asked. */
+  wantedVersion: string
+  /** When the worker last reported it; 0 when it never did. */
+  reportedAtUnixMs: number
+}
+
+/** A worker: runs the coding agents (Claude Code) of sessions. */
 export interface Worker {
   workerId: string
   /** Unique among the user's workers. */
@@ -256,6 +297,8 @@ export interface Worker {
    * user's projects. Off by default.
    */
   integrator: boolean
+  /** The agents the worker reported or the user asked for, at most one per kind. */
+  agents: WorkerAgent[]
 }
 
 /** Which identities an enrollment link enrolls: a device (daemon), a worker, or both. */
@@ -366,6 +409,17 @@ export interface MachineService {
    */
   setWorkerGrant(req: { workerId: string; integrator: boolean }): Promise<Worker>
   /**
+   * Asks for an agent to be installed (or updated, or installed again) or
+   * uninstalled on one of the caller's workers and returns the worker. The
+   * wish is kept and reaches the worker when it is online, else when it
+   * next connects. Fails with `not_found` for an unknown worker or another
+   * user's, `invalid_argument` for an agent the worker doesn't support, and
+   * `failed_precondition` for an install while the worker never reported
+   * its agents, or an uninstall while the worker holds a session that runs
+   * this agent.
+   */
+  setWorkerAgent(req: { workerId: string; agent: AgentKind; install: boolean }): Promise<Worker>
+  /**
    * Issues a one-time link that enrolls machines for the caller. Fails with
    * `resource_exhausted` while the caller has too many unused links, and
    * with `failed_precondition` when the server has no public URL.
@@ -431,6 +485,8 @@ export type QueueReason =
   | "provider_secrets_unreadable"
   /** The session's worker (or every worker) is offline. */
   | "worker_offline"
+  /** A worker that may run it is online, but none has the session's agent installed. */
+  | "agent_not_installed"
 
 /** A session with where it runs, as GetSession returns it. */
 export interface SessionDetails extends SessionSummary {

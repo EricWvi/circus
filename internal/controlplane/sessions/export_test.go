@@ -179,3 +179,22 @@ func FillWakes(s *Service, n int) {
 		s.wakes[fmt.Sprintf("filler-%d", i)] = 0
 	}
 }
+
+// AgentRetrying reports whether a background read of the worker's agents
+// is pending.
+func AgentRetrying(s *Service, workerID string) bool {
+	s.mu.Lock()
+	defer s.unlock()
+	return s.agentRetries[workerID]
+}
+
+// Conns returns the ids of the registered connections.
+func Conns(s *Service) map[string]bool {
+	s.mu.Lock()
+	defer s.unlock()
+	out := make(map[string]bool, len(s.conns))
+	for id := range s.conns {
+		out[id] = true
+	}
+	return out
+}

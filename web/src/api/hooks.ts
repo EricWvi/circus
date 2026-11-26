@@ -15,12 +15,14 @@ import { useEffect, useRef } from "react"
 
 import { useShowNotice } from "@/components/notice-context"
 import { i18n } from "@/i18n/i18n"
+import { agentBusy, agentOf } from "@/lib/agents"
 import { localDeadline } from "@/lib/enroll"
 
 import { useClient } from "./context"
 import { ApiError, isApiError, isLedgerBusy } from "./errors"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
 import type {
+  AgentKind,
   ApprovalAnswer,
   CreateSessionRequest,
   Device,
@@ -393,6 +395,21 @@ export function useResolveApproval() {
 export const DEVICES_LIVE_INTERVAL_MS = 10_000
 
 /**
+ * How often a page that shows workers refetches them while one installs or
+ * uninstalls an agent (or is about to): a worker reports install progress
+ * at most once a second.
+ */
+export const AGENTS_BUSY_INTERVAL_MS = 1_000
+
+/**
+ * After this long busy without a new request, the page follows the
+ * workers every AGENTS_BUSY_SLOW_INTERVAL_MS instead: a long download, or
+ * a worker that doesn't act on a wish, costs little.
+ */
+export const AGENTS_BUSY_FAST_MS = 60_000
+export const AGENTS_BUSY_SLOW_INTERVAL_MS = 5_000
+
+/**
  * The caller's devices. `live` keeps their status fresh while the page is
  * visible: a refetch every few seconds and whenever the window regains
  * focus. Hidden tabs don't poll.
@@ -409,15 +426,132 @@ export function useDevices({ live = false }: { live?: boolean } = {}) {
 
 /**
  * The caller's workers. `live` keeps their status fresh while the page is
- * visible, as for devices.
+ * visible, as for devices, and follows an online worker's agent install
+ * or uninstall (or a request it hasn't acted on yet) every second for a
+ * minute from when that began or was last asked for, then every few
+ * seconds until it is over.
  */
 export function useWorkers({ live = false }: { live?: boolean } = {}) {
   const client = useClient()
+  const queryClient = useQueryClient()
+  const busySince = useRef<number | null>(null)
   return useQuery({
     queryKey: queryKeys.workers,
     queryFn: () => client.machines.listWorkers(),
-    refetchInterval: live ? DEVICES_LIVE_INTERVAL_MS : false,
+    refetchInterval: live
+      ? (query) => {
+          const busy = query.state.data?.some((w) =>
+            agentBusy(w, (agent) => answeredReportAt(queryClient, w.workerId, agent)),
+          )
+          if (!busy) {
+            busySince.current = null
+            return DEVICES_LIVE_INTERVAL_MS
+          }
+          const now = Date.now()
+          const requests = queryClient.getMutationCache().findAll({ mutationKey: ["workerAgent"] })
+          const lastRequest = Math.max(0, ...requests.map((m) => m.state.submittedAt))
+          busySince.current = Math.max(busySince.current ?? now, lastRequest)
+          return now - busySince.current < AGENTS_BUSY_FAST_MS ? AGENTS_BUSY_INTERVAL_MS : AGENTS_BUSY_SLOW_INTERVAL_MS
+        }
+      : false,
     refetchOnWindowFocus: live ? "always" : true,
+  })
+}
+
+/**
+ * How long a request counts as not yet acted on while the list still shows
+ * the report it was answered with. A worker that reported (failing again,
+ * say) just before the answer was made reports nothing more: after this,
+ * the report is taken as it is.
+ */
+export const AGENT_ANSWER_WAIT_MS = 30_000
+
+/**
+ * The report (its `reportedAtUnixMs`) that the latest successful change of
+ * the worker's agent was answered with, if it was made less than
+ * AGENT_ANSWER_WAIT_MS before `now`; undefined otherwise. While the list
+ * shows the same report, the worker hasn't acted on it.
+ */
+export function answeredReportAt(
+  queryClient: QueryClient,
+  workerId: string,
+  agent: AgentKind,
+  now: number = Date.now(),
+): number | undefined {
+  const changes = queryClient.getMutationCache().findAll({ mutationKey: workerAgentKey(workerId, agent), exact: true })
+  return answeredReport(changes.map((m) => m.state as MutationState<Worker, unknown, WorkerAgentRequest>), agent, now)
+}
+
+/** As answeredReportAt, from the changes' states (oldest first). */
+export function answeredReport(
+  changes: MutationState<Worker, unknown, WorkerAgentRequest>[],
+  agent: AgentKind,
+  now: number = Date.now(),
+): number | undefined {
+  const change = changes.findLast((c) => c.status === "success")
+  if (!change?.data || now - change.submittedAt >= AGENT_ANSWER_WAIT_MS) return undefined
+  return agentOf(change.data, agent)?.reportedAtUnixMs
+}
+
+/** The mutations that install or uninstall one agent of one worker. */
+export const workerAgentKey = (workerId: string, agent: AgentKind) => ["workerAgent", workerId, agent] as const
+
+/** What an agent change asks for: the worker and agent are the hook's. */
+export interface WorkerAgentRequest {
+  install: boolean
+}
+
+/**
+ * The agent changes of one worker's agent, oldest first, as kept in the
+ * mutation cache: like grant changes, they outlive the page that made them.
+ */
+export function useWorkerAgentStates(
+  workerId: string,
+  agent: AgentKind,
+): MutationState<Worker, unknown, WorkerAgentRequest>[] {
+  return useMutationState({
+    filters: { mutationKey: workerAgentKey(workerId, agent), exact: true },
+    select: (m) => m.state as MutationState<Worker, unknown, WorkerAgentRequest>,
+  })
+}
+
+/**
+ * Asks for an agent to be installed or uninstalled on a worker. The
+ * returned worker goes into the cached list (unless a newer change of the
+ * same agent was made meanwhile), and the list is read again, so its
+ * polling follows the install from then on. A worker that is gone is
+ * reported with a notice, as for grants.
+ */
+export function useSetWorkerAgent({ workerId, name }: Pick<Worker, "workerId" | "name">, agent: AgentKind) {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  const showNotice = useShowNotice()
+  return useMutation({
+    mutationKey: workerAgentKey(workerId, agent),
+    mutationFn: ({ install }: WorkerAgentRequest) => client.machines.setWorkerAgent({ workerId, agent, install }),
+    onSuccess: async (worker, request) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.workers })
+      const changes = queryClient
+        .getMutationCache()
+        .findAll({ mutationKey: workerAgentKey(workerId, agent), exact: true })
+      const own = changes.findIndex((m) => m.state.variables === request)
+      if (changes.slice(own + 1).some((m) => m.state.status !== "error")) return
+      queryClient.setQueryData<Worker[]>(queryKeys.workers, (list) =>
+        list?.map((w) => (w.workerId === worker.workerId ? worker : w)),
+      )
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workers })
+    },
+    onError: (error) => {
+      if (!isApiError(error, "not_found")) return
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workers })
+      showNotice({
+        content: () => ({
+          title: i18n.t("devices.integratorWorkerGone", { name }),
+          lines: [{ text: i18n.t("devices.agents.workerGoneHint") }],
+        }),
+        failure: true,
+      })
+    },
   })
 }
 

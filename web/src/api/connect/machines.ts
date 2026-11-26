@@ -1,5 +1,10 @@
 import { createClient, type Transport } from "@connectrpc/connect"
 import {
+  AgentKind as ProtoAgentKind,
+  AgentStatus_State as ProtoAgentState,
+  type WorkerAgent as ProtoWorkerAgent,
+} from "@circus/proto/circus/v1/agent_pb"
+import {
   DirectoryError as ProtoDirectoryError,
   GitRemoteError as ProtoGitRemoteError,
 } from "@circus/proto/circus/v1/daemon_link_pb"
@@ -9,7 +14,16 @@ import {
   type Worker as ProtoWorker,
 } from "@circus/proto/circus/v1/machine_pb"
 
-import type { DirectoryError, EnrollRole, GitRemoteError, MachineService, Worker } from "@/api/types"
+import type {
+  AgentKind,
+  AgentState,
+  DirectoryError,
+  EnrollRole,
+  GitRemoteError,
+  MachineService,
+  Worker,
+  WorkerAgent,
+} from "@/api/types"
 
 import { call, malformed } from "./call"
 
@@ -46,6 +60,45 @@ const gitRemoteErrors: Partial<Record<ProtoGitRemoteError, GitRemoteError>> = {
 const gitRemoteError = (error: ProtoGitRemoteError): GitRemoteError | undefined =>
   error === ProtoGitRemoteError.UNSPECIFIED ? undefined : (gitRemoteErrors[error] ?? "failed")
 
+const agentKinds: Partial<Record<ProtoAgentKind, AgentKind>> = {
+  [ProtoAgentKind.CLAUDE_CODE]: "claude_code",
+}
+
+const protoAgentKinds: Record<AgentKind, ProtoAgentKind> = {
+  claude_code: ProtoAgentKind.CLAUDE_CODE,
+}
+
+const agentStates: Partial<Record<ProtoAgentState, AgentState>> = {
+  [ProtoAgentState.NOT_INSTALLED]: "not_installed",
+  [ProtoAgentState.INSTALLING]: "installing",
+  [ProtoAgentState.INSTALLED]: "installed",
+  [ProtoAgentState.OUTDATED]: "outdated",
+  [ProtoAgentState.FAILED]: "failed",
+  [ProtoAgentState.UNINSTALLING]: "uninstalling",
+}
+
+/** One agent of a worker; none for an agent this client doesn't know. */
+function agentOf(a: ProtoWorkerAgent): WorkerAgent[] {
+  const status = a.status
+  const agent = status && agentKinds[status.agent]
+  if (!agent) return []
+  return [
+    {
+      agent,
+      // Never reported, or a state this client doesn't know yet.
+      state: agentStates[status.state] ?? "unknown",
+      installedVersion: status.installedVersion,
+      targetVersion: status.targetVersion,
+      error: status.error,
+      downloadedBytes: Number(status.downloadedBytes),
+      totalBytes: Number(status.totalBytes),
+      wanted: a.wanted,
+      wantedVersion: a.wantedVersion,
+      reportedAtUnixMs: Number(a.reportedAtUnixMs),
+    },
+  ]
+}
+
 const workerOf = (w: ProtoWorker): Worker => ({
   workerId: w.workerId,
   name: w.name,
@@ -57,6 +110,7 @@ const workerOf = (w: ProtoWorker): Worker => ({
   version: w.version,
   localDevices: [...w.localDevices],
   integrator: w.integrator,
+  agents: w.agents.flatMap(agentOf),
 })
 
 /** The machine service of a real control plane, over Connect. */
@@ -78,6 +132,12 @@ export function createConnectMachines(transport: Transport): MachineService {
     setWorkerGrant: ({ workerId, integrator }) =>
       call(async () => {
         const { worker } = await client.setWorkerGrant({ workerId, integrator })
+        if (!worker) throw malformed("worker")
+        return workerOf(worker)
+      }),
+    setWorkerAgent: ({ workerId, agent, install }) =>
+      call(async () => {
+        const { worker } = await client.setWorkerAgent({ workerId, agent: protoAgentKinds[agent], install })
         if (!worker) throw malformed("worker")
         return workerOf(worker)
       }),

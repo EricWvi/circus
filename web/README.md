@@ -38,7 +38,10 @@ path either way.
 In mock mode, `?mock=fresh` starts an uninitialized server (the setup link is
 printed in the browser console), `?mock=reset` restores the demo data and
 `?mock=nooidc` hides the OIDC button until the next load; they combine with
-commas. The demo accounts are `eric@example.com` (super user) and
+commas. `?mock=queue` adds sessions that wait, one for each queue reason, and
+`?mock=agents` adds workers with Claude Code in every state an agent can be
+in (for the agents on `/devices`), and `?mock=noagents` takes Claude Code off
+every worker; these last until the next load. The demo accounts are `eric@example.com` (super user) and
 `dev@example.com`, both with password `circus`.
 
 The folder picker of a location's path browses a fake folder tree, the same
@@ -51,6 +54,22 @@ misbehave: `slow` answers after two seconds, `stale-nfs` times out,
 Its git repositories have origin URLs for reading a project's repository
 URL from a location's folder: `~/src/palace` has no origin and
 `~/src/toolbox` answers after 1.5 seconds.
+
+### Mock workers and agents
+
+Workers live in the tab's memory. The demo workers all have Claude Code
+installed (the offline `eric-win` as it last reported). Installs and
+uninstalls asked for on `/devices` play out as a worker would do them
+(`src/api/mock/agents.ts`): an online worker downloads with progress reports
+once a second and then has it installed, or uninstalls it in a couple of
+seconds; an offline one keeps the wish. The mock refuses what the server
+refuses: an install on a worker that never reported its agents, or that
+reported without Claude Code (`fresh-worker` and `legacy-runner` in
+`?mock=agents`, whose rows offer no Install), and an uninstall while the
+worker holds a session's lease (`devbox` in `?mock=queue`). A session waits
+with the reason `agent_not_installed` while no online worker that may run
+it has Claude Code installed; one in a location on a device whose machine
+has a worker runs only on that worker.
 
 ### Mock sessions
 

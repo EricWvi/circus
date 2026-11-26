@@ -958,7 +958,10 @@ type Session struct {
 	Local bool
 	// ProviderID is the provider the session's CLI starts with; empty means
 	// local login. It may name a deleted provider.
-	ProviderID      string
+	ProviderID string
+	// Agent is the agent that runs the session, set at creation and never
+	// changed; CreateSession stores AgentClaudeCode for an empty one.
+	Agent           AgentKind
 	TurnCount       int64
 	LastTurnOutcome TurnOutcome // empty before the first turn ends
 	// InterruptTurnNo is the highest turn number the user asked to

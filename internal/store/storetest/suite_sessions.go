@@ -25,7 +25,7 @@ var errRollback = errors.New("storetest: rollback")
 func newSession(id string, f fixture) store.Session {
 	return store.Session{
 		ID: id, ClientRequestID: id, UserID: f.user.ID, ProjectID: "session-project", ClaudeSessionID: "claude-" + id, DefaultDeviceID: f.device.ID,
-		Model: "model", PermissionMode: "auto", CreatedAt: t0,
+		Model: "model", PermissionMode: "auto", Agent: store.AgentClaudeCode, CreatedAt: t0,
 	}
 }
 

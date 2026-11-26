@@ -35,6 +35,12 @@ jobs:
             fi
             tar -czf "dist/circus-$TAG-$target.tar.gz" -C "$dir" circus
           done
+      # The worker packages hold no Claude Code: the worker installs it on
+      # request, verified against the digest built in from package-lock.json.
+      - name: Build worker packages
+        run: |
+          npm ci
+          node worker/scripts/package.mjs "$TAG" dist linux-amd64 linux-arm64 darwin-amd64 darwin-arm64
       - name: Generate checksums
         working-directory: dist
         run: sha256sum circus-* > SHA256SUMS

@@ -1,9 +1,11 @@
 import { Code, ConnectError, createRouterTransport, type ServiceImpl } from "@connectrpc/connect"
+import { AgentKind, AgentStatus_State } from "@circus/proto/circus/v1/agent_pb"
 import { DirectoryError, GitRemoteError } from "@circus/proto/circus/v1/daemon_link_pb"
 import {
   MachineService,
   type GetGitRemoteRequest,
   type ListDirectoryRequest,
+  type SetWorkerAgentRequest,
   type SetWorkerGrantRequest,
 } from "@circus/proto/circus/v1/machine_pb"
 import { describe, expect, it } from "vitest"
@@ -183,6 +185,20 @@ describe("listWorkers", () => {
             version: "0.2.0",
             localDevices: ["devbox"],
             integrator: true,
+            agents: [
+              {
+                status: {
+                  agent: AgentKind.CLAUDE_CODE,
+                  state: AgentStatus_State.INSTALLING,
+                  targetVersion: "2.1.3",
+                  downloadedBytes: 1_500_000n,
+                  totalBytes: 74_000_000n,
+                },
+                wanted: true,
+                wantedVersion: "2.1.3",
+                reportedAtUnixMs: 1_699_999_990_000n,
+              },
+            ],
           },
         ],
       }),
@@ -199,8 +215,101 @@ describe("listWorkers", () => {
         version: "0.2.0",
         localDevices: ["devbox"],
         integrator: true,
+        agents: [
+          {
+            agent: "claude_code",
+            state: "installing",
+            installedVersion: "",
+            targetVersion: "2.1.3",
+            error: "",
+            downloadedBytes: 1_500_000,
+            totalBytes: 74_000_000,
+            wanted: true,
+            wantedVersion: "2.1.3",
+            reportedAtUnixMs: 1_699_999_990_000,
+          },
+        ],
       },
     ])
+  })
+
+  it.each([
+    [AgentStatus_State.UNSPECIFIED, "unknown"],
+    [AgentStatus_State.NOT_INSTALLED, "not_installed"],
+    [AgentStatus_State.INSTALLED, "installed"],
+    [AgentStatus_State.OUTDATED, "outdated"],
+    [AgentStatus_State.FAILED, "failed"],
+    [AgentStatus_State.UNINSTALLING, "uninstalling"],
+    // A state this client doesn't know yet.
+    [99 as AgentStatus_State, "unknown"],
+  ])("maps agent state %s to %s", async (state, mapped) => {
+    const [worker] = await machines({
+      listWorkers: () => ({
+        workers: [{ workerId: "w1", agents: [{ status: { agent: AgentKind.CLAUDE_CODE, state } }] }],
+      }),
+    }).listWorkers()
+    expect(worker.agents.map((a) => a.state)).toEqual([mapped])
+  })
+
+  it("leaves out agents this client doesn't know, and entries without a status", async () => {
+    const [worker] = await machines({
+      listWorkers: () => ({
+        workers: [
+          {
+            workerId: "w1",
+            agents: [
+              { status: { agent: 7 as AgentKind, state: AgentStatus_State.INSTALLED } },
+              { status: { agent: AgentKind.UNSPECIFIED } },
+              { wanted: true },
+              { status: { agent: AgentKind.CLAUDE_CODE, state: AgentStatus_State.FAILED, error: "disk full" } },
+            ],
+          },
+        ],
+      }),
+    }).listWorkers()
+    expect(worker.agents).toMatchObject([{ agent: "claude_code", state: "failed", error: "disk full" }])
+  })
+})
+
+describe("setWorkerAgent", () => {
+  it.each([true, false])("sends install=%s and maps the returned worker", async (install) => {
+    let received: SetWorkerAgentRequest | undefined
+    const worker = await machines({
+      setWorkerAgent: (req) => {
+        received = req
+        return {
+          worker: {
+            workerId: req.workerId,
+            name: "devbox",
+            agents: [{ status: { agent: req.agent, state: AgentStatus_State.INSTALLED }, wanted: req.install }],
+          },
+        }
+      },
+    }).setWorkerAgent({ workerId: "w1", agent: "claude_code", install })
+    expect([received?.workerId, received?.agent, received?.install]).toEqual(["w1", AgentKind.CLAUDE_CODE, install])
+    expect(worker).toMatchObject({ workerId: "w1", agents: [{ agent: "claude_code", state: "installed", wanted: install }] })
+  })
+
+  it.each([
+    [Code.NotFound, "not_found"],
+    [Code.InvalidArgument, "invalid_argument"],
+    [Code.FailedPrecondition, "failed_precondition"],
+  ] as const)("maps %s", async (code, mapped) => {
+    const error = await rejection(
+      machines({
+        setWorkerAgent: () => {
+          throw new ConnectError("refused", code)
+        },
+      }).setWorkerAgent({ workerId: "w1", agent: "claude_code", install: false }),
+    )
+    expect(error.code).toBe(mapped)
+  })
+
+  it("fails when the answer has no worker", async () => {
+    const error = await rejection(
+      machines({ setWorkerAgent: () => ({}) }).setWorkerAgent({ workerId: "w1", agent: "claude_code", install: true }),
+    )
+    expect(error).toBeInstanceOf(ApiError)
   })
 })
 

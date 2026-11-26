@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package circus.v1;
 
+import "circus/v1/agent.proto";
 import "circus/v1/ledger.proto";
 import "circus/v1/workspace.proto";
 
@@ -57,6 +58,11 @@ message SessionConfig {
   // of the session's user shares the device's machine) and never changed;
   // CreateSession refuses it set by the client.
   bool local = 5;
+  // The agent that runs the session; CreateSession sets UNSPECIFIED to
+  // AGENT_KIND_CLAUDE_CODE (the only agent so far). Never changes. Only a
+  // worker with this agent INSTALLED (at its own target version) is
+  // offered the session.
+  AgentKind agent = 6;
   message Cwd {
     // At most 128 bytes.
     string device = 1;
@@ -190,6 +196,9 @@ enum QueueReason {
   QUEUE_REASON_PROVIDER_SECRETS_UNREADABLE = 4;
   // The pinned worker (or, unpinned, every worker of the user) is offline.
   QUEUE_REASON_WORKER_OFFLINE = 5;
+  // A worker that may run it is online, but none has the session's agent
+  // installed (at its target version).
+  QUEUE_REASON_AGENT_NOT_INSTALLED = 6;
 }
 
 // SessionEvent is the user-facing view, not the authoritative transcript.

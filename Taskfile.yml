@@ -42,6 +42,13 @@ tasks:
     cmds:
       - npm -w @circus/worker run test
 
+  worker:package:
+    desc: Build the linux-amd64 worker release package into .tmp/worker-package (TAG, default v0.0.0-dev)
+    vars:
+      TAG: '{{.TAG | default "v0.0.0-dev"}}'
+    cmds:
+      - node worker/scripts/package.mjs '{{.TAG}}' .tmp/worker-package linux-amd64
+
   mutate:
     desc: Run sandboxed syntax mutations against one Go package
     cmds:

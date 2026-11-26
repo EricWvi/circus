@@ -48,7 +48,7 @@ func TestBootOrderFollowsStore(t *testing.T) {
 	f.session("s2", -1)
 	done := make(chan struct{})
 	gs.armed.Store(1)
-	go func() { defer close(done); _, _ = f.tryDial(0, "x") }()
+	go func() { defer close(done); _, _ = f.dialWelcomed(0, "x") }()
 	<-gs.entered // x's boot transaction committed; its Connect waits in its release
 	<-done       // its Welcome is out
 	gs.armed.Store(0)

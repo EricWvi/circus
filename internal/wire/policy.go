@@ -86,7 +86,7 @@ func classify(m proto.Message) (Class, string, error) {
 		return Data, "call/" + m.(*circusv1.WorkerDownlink).GetCallUpdate().GetCallId(), nil
 	case "session":
 		return Data, "session/" + m.(*circusv1.WorkerUplink).GetSession().GetSessionId(), nil
-	case "list_devices", "session_reply", "worker_event":
+	case "list_devices", "report_agents", "session_reply", "worker_event":
 		return Data, "", nil
 	case "hello", "welcome", "reject", "fragment", "result", "call_status", "job_snapshot":
 		return Data, "", nil

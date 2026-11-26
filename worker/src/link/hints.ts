@@ -17,6 +17,13 @@ export class HintQueue {
   push(message: WorkerEvent): void {
     if (this.#closed) return;
     const { event } = message;
+    if (event.case === "agentsWanted") {
+      // The latest wishes replace any not yet consumed.
+      if (!this.#events.has(event.case) && this.#events.size >= MAX_HINTS) throw new Error("worker hint queue full");
+      this.#events.set(event.case, message);
+      this.#deliver();
+      return;
+    }
     if (event.case === undefined || !validSessionId(event.value.sessionId)) {
       throw new ProtocolError("invalid worker event");
     }

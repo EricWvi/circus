@@ -148,7 +148,8 @@ export const sessions: SeedSession[] = [
 /**
  * Sessions that wait, one for each reason a session can't be leased (the
  * mock's `?mock=queue` mode). "Team proxy" is limited to one session then,
- * which `proxy-holder` holds.
+ * which `proxy-holder` holds, and "GPU pool" runs only on a worker without
+ * Claude Code.
  */
 export const queueDemoSessions: SeedSession[] = [
   {
@@ -209,6 +210,16 @@ export const queueDemoSessions: SeedSession[] = [
     device: "eric-win",
     ending: "queued",
     followUp: "Remove the unused aliases",
+  },
+  {
+    id: "queue-agent",
+    projectId: "palace",
+    title: "Profile the thumbnail pipeline",
+    minutesAgo: 10,
+    device: "palace-builder",
+    ending: "queued",
+    followUp: "Start with the JPEG decoder",
+    provider: "provider-gpu",
   },
 ]
 

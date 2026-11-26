@@ -26,6 +26,7 @@ import (
 	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/gitenv"
 	"github.com/EricWvi/circus/internal/testutil/fakemodel"
+	"github.com/EricWvi/circus/internal/testutil/npmstub"
 	testwait "github.com/EricWvi/circus/internal/testutil/wait"
 	"github.com/google/uuid"
 )
@@ -243,6 +244,13 @@ type claudeStack struct {
 	home, config, runtime string
 	workerEnv             []string
 	ctx                   context.Context
+	// launcher starts the worker: empty for node worker/dist/main.js, else
+	// a release package's circus-worker.
+	launcher string
+	// registry serves the Claude Code package the worker installs, and
+	// machines is the Web user's MachineService.
+	registry *npmstub.Server
+	machines circusv1connect.MachineServiceClient
 
 	mu sync.Mutex
 	// unrouted are requests the fake did not route to the main conversation.
@@ -252,14 +260,56 @@ type claudeStack struct {
 const fakeAPIKey = "sk-ant-api03-circus-e2e-fake-key-no-network"
 
 // newClaudeStack starts the harness and a fake model answering the main
-// conversation with main.
+// conversation with main, for workers built from this repository.
 func newClaudeStack(t *testing.T, opts fakemodel.Options, workerEnv ...string) *claudeStack {
 	t.Helper()
-	s := &claudeStack{t: t, workerEnv: workerEnv}
+	buildWorker(t)
+	return newStack(t, "", opts, workerEnv...)
+}
+
+// claudePackage is the platform package the worker installs, and a
+// verified copy of its tarball (from the npm cache, else downloaded once
+// into .tmp), found once per run.
+var claudePackage struct {
+	once sync.Once
+	pkg  npmstub.Package
+	file string
+	err  error
+}
+
+// claudeRegistry starts a local npm registry serving the Claude Code
+// package of this platform.
+func claudeRegistry(t *testing.T) *npmstub.Server {
+	t.Helper()
+	claudePackage.once.Do(func() {
+		name, err := npmstub.PlatformName()
+		if err != nil {
+			claudePackage.err = err
+			return
+		}
+		if claudePackage.pkg, err = npmstub.Lookup(filepath.Join(root, "package-lock.json"), name); err != nil {
+			claudePackage.err = err
+			return
+		}
+		claudePackage.file, claudePackage.err = npmstub.Tarball(claudePackage.pkg, filepath.Join(root, ".tmp", "npm-tarballs"))
+	})
+	if claudePackage.err != nil {
+		t.Fatalf("Claude Code package: %v", claudePackage.err)
+	}
+	reg := npmstub.Start(claudePackage.pkg, claudePackage.file)
+	t.Cleanup(reg.Close)
+	return reg
+}
+
+// newStack is newClaudeStack with the worker started by launcher (empty:
+// node worker/dist/main.js, which the caller has built).
+func newStack(t *testing.T, launcher string, opts fakemodel.Options, workerEnv ...string) *claudeStack {
+	t.Helper()
+	s := &claudeStack{t: t, workerEnv: workerEnv, launcher: launcher}
 	// Registered first, so it runs last: after the worker, the daemon and
 	// the server are stopped, nothing the test started may live on.
 	t.Cleanup(s.reapAll)
-	buildWorker(t)
+	s.registry = claudeRegistry(t)
 	opts.Logf = func(format string, args ...any) {
 		_, _ = fmt.Fprintf(&s.fakeLog, time.Now().Format("15:04:05.000 ")+format+"\n", args...)
 	}
@@ -298,6 +348,7 @@ func newClaudeStack(t *testing.T, opts fakemodel.Options, workerEnv ...string) *
 	must(t, err)
 	must(t, os.Chmod(s.runtime, 0o700))
 	projects, sessions := browserClients(t, s.h)
+	s.machines = browserMachines(t, s.h)
 	res, err := projects.CreateProject(testwait.Ctx(t), connect.NewRequest(&pb.CreateProjectRequest{
 		Name: "Claude", Locations: []*pb.Project_Location{{Device: "desk", Path: s.dir}},
 	}))
@@ -373,8 +424,86 @@ func childrenOf(parent int) []int {
 	return out
 }
 
-// startWorker starts a real worker process (node worker/dist/main.js).
+// startWorker starts a real worker process (node worker/dist/main.js, or
+// the stack's launcher) and has Claude Code installed on it the way a user
+// does: once the worker reported its agents, SetWorkerAgent unless the
+// agent is installed and wanted already (a restarted worker keeps it), and
+// a wait until the worker reports it installed (from the stack's local
+// registry).
 func (s *claudeStack) startWorker(extra ...string) *child {
+	s.t.Helper()
+	c := s.startWorkerOnly(extra...)
+	if a := s.waitAgent(func(a *pb.WorkerAgent) bool { return a.GetStatus().GetState() != pb.AgentStatus_STATE_UNSPECIFIED }); !agentRuns(a) {
+		start := time.Now()
+		s.setAgent(true)
+		a = s.waitAgent(agentRuns)
+		s.t.Logf("Claude Code %s installed in %v", a.GetStatus().GetInstalledVersion(), time.Since(start).Round(time.Millisecond))
+	}
+	return c
+}
+
+// agentRuns reports whether a is installed at the worker's target and
+// wanted: the worker may run its sessions.
+func agentRuns(a *pb.WorkerAgent) bool {
+	st := a.GetStatus()
+	return a.GetWanted() && st.GetState() == pb.AgentStatus_STATE_INSTALLED && st.GetInstalledVersion() == st.GetTargetVersion()
+}
+
+// claudeAgent returns the worker's Claude Code as ListWorkers shows it, nil
+// when it has none.
+func (s *claudeStack) claudeAgent() *pb.WorkerAgent {
+	s.t.Helper()
+	res, err := s.machines.ListWorkers(s.ctx, connect.NewRequest(&pb.ListWorkersRequest{}))
+	must(s.t, err)
+	for _, w := range res.Msg.GetWorkers() {
+		if w.GetWorkerId() != s.h.worker.PrincipalID {
+			continue
+		}
+		for _, a := range w.GetAgents() {
+			if a.GetStatus().GetAgent() == pb.AgentKind_AGENT_KIND_CLAUDE_CODE {
+				return a
+			}
+		}
+	}
+	return nil
+}
+
+// waitAgent waits until the worker's Claude Code matches, and returns it.
+func (s *claudeStack) waitAgent(match func(*pb.WorkerAgent) bool) *pb.WorkerAgent {
+	s.t.Helper()
+	var last *pb.WorkerAgent
+	deadline := time.Now().Add(agentWait)
+	for time.Now().Before(deadline) {
+		if last = s.claudeAgent(); last != nil && match(last) {
+			return last
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	s.t.Fatalf("worker's Claude Code did not reach the expected state; last %v", last)
+	return nil
+}
+
+// agentWait bounds an install (a local download, verification and unpack
+// of the package, about 400 MB unpacked) and every other agent change.
+const agentWait = 90 * time.Second
+
+// setAgent installs or uninstalls the worker's Claude Code
+// (MachineService.SetWorkerAgent).
+func (s *claudeStack) setAgent(install bool) (*pb.Worker, error) {
+	s.t.Helper()
+	res, err := s.machines.SetWorkerAgent(s.ctx, connect.NewRequest(&pb.SetWorkerAgentRequest{WorkerId: s.h.worker.PrincipalID,
+		Agent: pb.AgentKind_AGENT_KIND_CLAUDE_CODE, Install: install}))
+	if err != nil {
+		if install {
+			s.t.Fatal(err)
+		}
+		return nil, err
+	}
+	return res.Msg.GetWorker(), nil
+}
+
+// startWorkerOnly starts the worker without waiting for its agents.
+func (s *claudeStack) startWorkerOnly(extra ...string) *child {
 	s.t.Helper()
 	env := append(claudeEnv(s.h.env),
 		"HOME="+s.home,
@@ -391,10 +520,15 @@ func (s *claudeStack) startWorker(extra ...string) *child {
 		"DISABLE_ERROR_REPORTING=1",
 		"DISABLE_AUTOUPDATER=1",
 		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+		"CIRCUS_NPM_REGISTRY="+s.registry.URL,
 	)
 	env = append(append(env, s.workerEnv...), extra...)
 	cmd := exec.Command("node", filepath.Join(root, "worker/dist/main.js"))
 	cmd.Dir = root
+	if s.launcher != "" {
+		cmd = exec.Command(s.launcher)
+		cmd.Dir = filepath.Dir(s.launcher)
+	}
 	return s.h.startCommandEnv(cmd, env)
 }
 

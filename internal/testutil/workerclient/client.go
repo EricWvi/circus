@@ -276,8 +276,21 @@ func (s *Stream) Abandon() {
 // Events is an Attach stream.
 type Events struct{ *Stream }
 
-// Next returns the next WorkerEvent.
+// Next returns the next session hint (Offer, Nudge, LeaseRevoked,
+// ReleaseIdle), skipping the AgentsWanted events the control plane sends
+// after Attach and on every change of the worker's wishes; NextEvent
+// returns those too.
 func (e Events) Next(ctx context.Context) (*circusv1.WorkerEvent, error) {
+	for {
+		ev, err := e.NextEvent(ctx)
+		if err != nil || ev.GetAgentsWanted() == nil {
+			return ev, err
+		}
+	}
+}
+
+// NextEvent returns the next WorkerEvent of any kind.
+func (e Events) NextEvent(ctx context.Context) (*circusv1.WorkerEvent, error) {
 	d, err := e.Stream.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -286,6 +299,26 @@ func (e Events) Next(ctx context.Context) (*circusv1.WorkerEvent, error) {
 		return nil, fmt.Errorf("workerclient: Attach stream got %T", d.GetPayload())
 	}
 	return d.GetWorkerEvent(), nil
+}
+
+// ClaudeCode is an Attach.agents (or ReportAgents) entry for Claude Code in
+// state, installed at version when it is on disk, with target as the
+// worker's target version.
+func ClaudeCode(state circusv1.AgentStatus_State, version, target string) *circusv1.AgentStatus {
+	return &circusv1.AgentStatus{Agent: circusv1.AgentKind_AGENT_KIND_CLAUDE_CODE, State: state, InstalledVersion: version, TargetVersion: target}
+}
+
+// ClaudeInstalled reports Claude Code installed at the worker's target
+// version, the state in which a worker may be offered sessions (the
+// control plane records the wish for an agent first reported on disk).
+func ClaudeInstalled() []*circusv1.AgentStatus {
+	return []*circusv1.AgentStatus{ClaudeCode(circusv1.AgentStatus_STATE_INSTALLED, "cli", "cli")}
+}
+
+// ReportAgents sends ReportAgents without waiting for its reply.
+func (c *Client) ReportAgents(ctx context.Context, agents ...*circusv1.AgentStatus) (Reply, error) {
+	s, err := c.Open(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_ReportAgents{ReportAgents: &circusv1.ReportAgents{Agents: agents}}})
+	return Reply{s}, err
 }
 
 // Attach opens the hint stream.

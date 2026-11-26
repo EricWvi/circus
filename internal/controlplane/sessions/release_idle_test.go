@@ -15,18 +15,38 @@ import (
 
 // releaseIdle waits for a ReleaseIdle on ev and returns it; Offers and
 // Nudges in between are skipped.
-func releaseIdle(t *testing.T, ev wc.Events) *circusv1.WorkerEvent_ReleaseIdle {
-	t.Helper()
+func (f *fixture) releaseIdle(c *wc.Client, ev wc.Events) *circusv1.WorkerEvent_ReleaseIdle {
+	f.t.Helper()
 	for {
-		if r := next(t, ev).GetReleaseIdle(); r != nil {
+		e := next(f.t, ev)
+		if r := e.GetReleaseIdle(); r != nil {
 			return r
 		}
+		f.drain(c, e)
+	}
+}
+
+// drain acts on a Nudge as a worker does before it may be asked to
+// release: it takes the session's inputs (TakeInputs is idempotent, so a
+// session whose inputs a test takes later gets them again). A spurious
+// reason a stale read raised again is cleared that way, as the real
+// worker's TakeInputs clears it.
+func (f *fixture) drain(c *wc.Client, e *circusv1.WorkerEvent) {
+	f.t.Helper()
+	n := e.GetNudge()
+	if n == nil || !(hasReason(n, circusv1.WorkerEvent_Nudge_REASON_INPUT) || hasReason(n, circusv1.WorkerEvent_Nudge_REASON_APPROVAL)) {
+		return
+	}
+	l := f.lease(n.GetSessionId())
+	if l.Epoch > 0 {
+		// Fenced when another connection holds it: nothing to do then.
+		call(f.t, c, wc.TakeInputs(n.GetSessionId(), uint64(l.Epoch)))
 	}
 }
 
 // noReleaseIdle asserts that no ReleaseIdle arrives once the scheduler
 // has settled (and within a short time after); other hints are allowed.
-func (f *fixture) noReleaseIdle(ev wc.Events) {
+func (f *fixture) noReleaseIdle(c *wc.Client, ev wc.Events) {
 	f.t.Helper()
 	f.settle()
 	ctx, cancel := context.WithTimeout(f.t.Context(), 200*time.Millisecond)
@@ -39,6 +59,7 @@ func (f *fixture) noReleaseIdle(ev wc.Events) {
 		if e.GetReleaseIdle() != nil {
 			f.t.Fatalf("unexpected release request %v", e)
 		}
+		f.drain(c, e)
 	}
 }
 
@@ -66,12 +87,12 @@ func TestReleaseIdleForProviderFull(t *testing.T) {
 	c0 := f.dial(0, "b0")
 	ev0 := f.attach(c0, 8)
 	epoch := f.heldIdle(c0, ev0, "a", p.ID)
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 
 	f.providerSession("b", p.ID, -1)
 	f.input("b", "1", store.InputNormal)
 	f.waitReason("b", circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL)
-	r := releaseIdle(t, ev0)
+	r := f.releaseIdle(c0, ev0)
 	if r.GetSessionId() != "a" || r.GetEpoch() != epoch {
 		t.Fatalf("release request %v, want a at %d", r, epoch)
 	}
@@ -102,19 +123,19 @@ func TestReleaseIdleSkipsBusy(t *testing.T) {
 	f.providerSession("b", p.ID, -1)
 	f.input("b", "1", store.InputNormal)
 	f.waitReason("b", circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL)
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 	// The fallback looks again while b waits: still running.
 	sessions.Fallback(f.svc, t.Context())
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 
 	// An input arrives for a before its turn ends: after ENDED it is
 	// pending, so a is not idle.
 	f.input("a", "2", store.InputNormal)
 	call(t, c0, wc.Ended("a", epoch, 1, circusv1.TurnOutcome_TURN_OUTCOME_COMPLETED, &circusv1.ReportTurn_Persisted{InputIds: []string{ins[0].GetInputId()}}))
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 	// The holder runs it; the end of that turn asks at once.
 	turn(t, c0, "a", epoch, 2)
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
 		t.Fatalf("release request %v", r)
 	}
 }
@@ -132,7 +153,7 @@ func TestReleaseIdleInputRace(t *testing.T) {
 	epoch := f.heldIdle(c0, ev0, "a", p.ID)
 	f.providerSession("b", p.ID, -1)
 	f.input("b", "1", store.InputNormal)
-	releaseIdle(t, ev0)
+	f.releaseIdle(c0, ev0)
 
 	// The input lands; the worker had already decided to release.
 	in := f.input("a", "late", store.InputNormal)
@@ -167,13 +188,13 @@ func TestReleaseIdleInputRace(t *testing.T) {
 		// b's turn: a request queued while it runs would be for a busy
 		// session; none comes before ENDED.
 		call(t, c0, wc.Started(held, e, 1, circusv1.TurnOrigin_TURN_ORIGIN_INPUT))
-		f.noReleaseIdle(ev0)
+		f.noReleaseIdle(c0, ev0)
 		var ids []string
 		for _, x := range ins {
 			ids = append(ids, x.GetInputId())
 		}
 		call(t, c0, wc.Ended(held, e, 1, circusv1.TurnOutcome_TURN_OUTCOME_COMPLETED, &circusv1.ReportTurn_Persisted{InputIds: ids}))
-		if r := releaseIdle(t, ev0); r.GetSessionId() != held || r.GetEpoch() != e {
+		if r := f.releaseIdle(c0, ev0); r.GetSessionId() != held || r.GetEpoch() != e {
 			t.Fatalf("release request %v, want %s at %d", r, held, e)
 		}
 		wantOk(t, call(t, c0, wc.Release(held, e, circusv1.ReleaseLease_REASON_IDLE)), false)
@@ -198,26 +219,26 @@ func TestReleaseIdleAsManyAsNeeded(t *testing.T) {
 
 	f.providerSession("b1", p.ID, -1)
 	f.input("b1", "1", store.InputNormal)
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a1" || r.GetEpoch() != e1 {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a1" || r.GetEpoch() != e1 {
 		t.Fatalf("first request %v", r)
 	}
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 	// The holder ignores it (busy as far as it knows). While it is
 	// outstanding, nothing more is asked for b1.
 	f.svc.Wake("b1")
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 	f.clk.Advance(sessions.ReleaseIdleTimeout)
 	f.svc.Wake("b1")
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a2" || r.GetEpoch() != e2 {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a2" || r.GetEpoch() != e2 {
 		t.Fatalf("request after the timeout %v", r)
 	}
 	// A second waiting session: a1 again (a2's request is outstanding).
 	f.providerSession("b2", p.ID, -1)
 	f.input("b2", "1", store.InputNormal)
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a1" {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a1" {
 		t.Fatalf("request for the second waiting session %v", r)
 	}
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 	wantOk(t, call(t, c0, wc.Release("a1", e1, circusv1.ReleaseLease_REASON_IDLE)), false)
 	wantOk(t, call(t, c0, wc.Release("a2", e2, circusv1.ReleaseLease_REASON_IDLE)), false)
 	got := map[string]bool{}
@@ -251,7 +272,7 @@ func TestReleaseIdleNotForOtherProviders(t *testing.T) {
 	f.providerSession("b", p.ID, -1)
 	f.input("b", "1", store.InputNormal)
 	f.waitReason("b", circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL)
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 	wait.For(t, func() bool { return f.reason("b") == circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL })
 }
 
@@ -269,15 +290,15 @@ func TestReleaseIdleOnlyForRunnableWaiters(t *testing.T) {
 	f.providerSession("b", p.ID, 1)
 	f.input("b", "1", store.InputNormal)
 	f.waitReason("b", circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL)
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 	// Re-derived and looked at again by the fallback: still nothing.
 	f.svc.Wake("b")
 	sessions.Fallback(f.svc, t.Context())
-	f.noReleaseIdle(ev0)
+	f.noReleaseIdle(c0, ev0)
 
 	c1 := f.dial(1, "b1")
 	ev1 := f.attach(c1, 8)
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
 		t.Fatalf("release request %v", r)
 	}
 	wantOk(t, call(t, c0, wc.Release("a", epoch, circusv1.ReleaseLease_REASON_IDLE)), false)
@@ -307,10 +328,10 @@ func TestReleaseIdleWaitsForPendingReasons(t *testing.T) {
 	f.providerSession("b", p.ID, -1)
 	f.input("b", "1", store.InputNormal)
 	f.waitReason("b", circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL)
-	f.noReleaseIdle(ev1)
+	f.noReleaseIdle(c1, ev1)
 	call(t, c1, wc.State("a", epoch, circusv1.GetSessionState_SECTION_JOBS))
 	sessions.Fallback(f.svc, t.Context())
-	if r := releaseIdle(t, ev1); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
+	if r := f.releaseIdle(c1, ev1); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
 		t.Fatalf("release request %v", r)
 	}
 }
@@ -328,12 +349,12 @@ func TestReleaseIdleVoidedByTurn(t *testing.T) {
 	epoch := f.heldIdle(c0, ev0, "a", p.ID)
 	f.providerSession("b", p.ID, -1)
 	f.input("b", "1", store.InputNormal)
-	releaseIdle(t, ev0)
+	f.releaseIdle(c0, ev0)
 	f.input("a", "2", store.InputNormal)
 	// The worker answers the input's Nudge (sent once it is evaluated).
 	nudge(t, ev0, "a", circusv1.WorkerEvent_Nudge_REASON_INPUT)
 	turn(t, c0, "a", epoch, 2)
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
 		t.Fatalf("release request after the turn %v", r)
 	}
 }
@@ -355,7 +376,7 @@ func TestReleaseIdleRebindAndClose(t *testing.T) {
 	e2 := f.heldIdle(c1, ev1, "a2", p.ID)
 	f.providerSession("b", p.ID, -1)
 	f.input("b", "1", store.InputNormal)
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a1" {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a1" {
 		t.Fatalf("first request %v", r)
 	}
 	// a1 resumed on c1 while c0 is still open: asked again on c1.
@@ -363,7 +384,7 @@ func TestReleaseIdleRebindAndClose(t *testing.T) {
 		t.Fatal("resume refused")
 	}
 	f.svc.Wake("b")
-	if r := releaseIdle(t, ev1); r.GetSessionId() != "a1" || r.GetEpoch() != e1 {
+	if r := f.releaseIdle(c1, ev1); r.GetSessionId() != "a1" || r.GetEpoch() != e1 {
 		t.Fatalf("request after the resume %v", r)
 	}
 	// c1 closes with that request unanswered: a2's lease, resumed on c0,
@@ -374,7 +395,7 @@ func TestReleaseIdleRebindAndClose(t *testing.T) {
 	must(t, c1.Close())
 	wait.For(t, func() bool { return connections(f) == 1 })
 	f.svc.Wake("b")
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a2" || r.GetEpoch() != e2 {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a2" || r.GetEpoch() != e2 {
 		t.Fatalf("request after the close %v", r)
 	}
 }
@@ -401,7 +422,7 @@ func TestReleaseIdleTriggers(t *testing.T) {
 			f.providerSession("b", p.ID, -1)
 			f.input("b", "1", store.InputNormal)
 			f.waitReason("b", circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL)
-			f.noReleaseIdle(ev0)
+			f.noReleaseIdle(c0, ev0)
 			switch how {
 			case "task end":
 				call(t, c0, wc.Patch("a", epoch, &circusv1.PatchSessionState{BgtasksEnded: []string{"t1"}}))
@@ -409,14 +430,14 @@ func TestReleaseIdleTriggers(t *testing.T) {
 				l := f.lease("a")
 				must(t, f.st.PatchSessionRecords(t.Context(), store.Fence{SessionID: "a", Epoch: l.Epoch, WorkerID: l.WorkerID, BootID: l.BootID,
 					ConnID: l.ConnID, Now: ms(f)}, store.RecordsPatch{BgTasksEnded: []string{"t1"}}))
-				f.noReleaseIdle(ev0)
+				f.noReleaseIdle(c0, ev0)
 				if how == "evaluation" {
 					f.svc.Wake("a")
 				} else {
 					sessions.Fallback(f.svc, t.Context())
 				}
 			}
-			if r := releaseIdle(t, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
+			if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
 				t.Fatalf("release request %v", r)
 			}
 		})
@@ -444,7 +465,7 @@ func TestReleaseIdleWithHeldNote(t *testing.T) {
 	}
 	f.providerSession("b", p.ID, -1)
 	f.input("b", "1", store.InputNormal)
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
 		t.Fatalf("release request %v", r)
 	}
 	wantOk(t, call(t, c0, wc.Release("a", epoch, circusv1.ReleaseLease_REASON_IDLE)), false)
@@ -456,7 +477,7 @@ func TestReleaseIdleWithHeldNote(t *testing.T) {
 	turn(t, c0, "b", e2, 1)
 	// The note waits for a's next input, which takes it along.
 	f.input("a", "next", store.InputNormal)
-	releaseIdle(t, ev0)
+	f.releaseIdle(c0, ev0)
 	wantOk(t, call(t, c0, wc.Release("b", e2, circusv1.ReleaseLease_REASON_IDLE)), false)
 	offerTo(t, ev0, "a")
 	e3 := acquire(t, c0, "a")
@@ -485,12 +506,51 @@ func TestReleaseIdleReadsEveryPage(t *testing.T) {
 	e2 := f.heldIdle(c0, ev0, "a2", p.ID)
 	f.providerSession("b1", p.ID, -1)
 	f.input("b1", "1", store.InputNormal)
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a1" {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a1" {
 		t.Fatalf("first request %v", r)
 	}
 	f.providerSession("b2", p.ID, -1)
 	f.input("b2", "1", store.InputNormal)
-	if r := releaseIdle(t, ev0); r.GetSessionId() != "a2" || r.GetEpoch() != e2 {
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a2" || r.GetEpoch() != e2 {
 		t.Fatalf("request from the second page %v", r)
+	}
+}
+
+// TestReleaseIdleAfterSpuriousReason: an idle lease with a spurious INPUT
+// reason (a stale read raised it again after the holder's TakeInputs) is
+// not asked back while the reason stands; the holder's next TakeInputs,
+// which finds nothing, clears it and asks at once, without waiting for the
+// fallback.
+func TestReleaseIdleAfterSpuriousReason(t *testing.T) {
+	box := newBox(t, testKey)
+	f := newFixture(t, withSecrets(box))
+	sessions.DisableFallback(f.svc)
+	p := f.provider(box, "prov", 1, 0)
+	c0 := f.dial(0, "b0")
+	ev0 := f.attach(c0, 8)
+	epoch := f.heldIdle(c0, ev0, "a", p.ID)
+	// The spurious reason: a Wake without an input.
+	f.svc.Wake("a", circusv1.WorkerEvent_Nudge_REASON_INPUT)
+	nudge(t, ev0, "a", circusv1.WorkerEvent_Nudge_REASON_INPUT)
+	f.providerSession("b", p.ID, -1)
+	f.input("b", "1", store.InputNormal)
+	f.waitReason("b", circusv1.QueueReason_QUEUE_REASON_PROVIDER_FULL)
+	f.settle()
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	for {
+		e, err := ev0.Next(ctx)
+		if err != nil {
+			break
+		}
+		if e.GetReleaseIdle() != nil {
+			t.Fatalf("asked back with a reason pending: %v", e)
+		}
+	}
+	cancel()
+	if ins := call(t, c0, wc.TakeInputs("a", epoch)).GetInputs().GetInputs(); len(ins) != 0 {
+		t.Fatalf("inputs %v", ins)
+	}
+	if r := f.releaseIdle(c0, ev0); r.GetSessionId() != "a" || r.GetEpoch() != epoch {
+		t.Fatalf("release request %v", r)
 	}
 }

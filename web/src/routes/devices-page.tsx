@@ -7,6 +7,7 @@ import { useDevices, useProjects, useSetWorkerGrant, useWorkerGrantStates, useWo
 import { isApiError } from "@/api/errors"
 import type { Device, Project, Worker } from "@/api/types"
 import { AddDeviceDialog } from "@/components/devices/add-device-dialog"
+import { WorkerAgents } from "@/components/devices/worker-agents"
 import { InfoTip } from "@/components/info-tip"
 import { PageHeader } from "@/components/page-header"
 import { DeviceStatusDot } from "@/components/status-dot"
@@ -196,7 +197,7 @@ const DeviceRow = memo(function DeviceRow({
   )
 })
 
-/** The user's workers: status, version, the devices on the same machine, and the integrator grant. */
+/** The user's workers: status, version, the devices on the same machine, their agents, and the integrator grant. */
 const WorkersSection = memo(function WorkersSection() {
   const { t } = useTranslation()
   // Here rather than in the page, so a refetch renders only this section.
@@ -227,7 +228,12 @@ const WorkersSection = memo(function WorkersSection() {
     body = (
       <ul className="flex flex-col divide-y border">
         {workers.data.map((w) => (
-          <WorkerRow key={w.workerId} worker={w} lastSeen={lastSeenAgo(w, workers.dataUpdatedAt)} />
+          <WorkerRow
+            key={w.workerId}
+            worker={w}
+            lastSeen={lastSeenAgo(w, workers.dataUpdatedAt)}
+            reportedAgo={agentsReportedAgo(w, workers.dataUpdatedAt)}
+          />
         ))}
       </ul>
     )
@@ -245,8 +251,26 @@ const WorkersSection = memo(function WorkersSection() {
   )
 })
 
-/** Memoized, like DeviceRow. */
-const WorkerRow = memo(function WorkerRow({ worker, lastSeen }: { worker: Worker; lastSeen: string | undefined }) {
+/**
+ * How long ago an offline worker last reported its agents, as of `now`;
+ * none when it is online (its report is current) or never reported. A
+ * worker reports all its agents at once.
+ */
+function agentsReportedAgo(worker: Worker, now: number): string | undefined {
+  const at = Math.max(0, ...worker.agents.map((a) => a.reportedAtUnixMs))
+  return worker.online || at === 0 ? undefined : formatTimeAgo(at, now)
+}
+
+/** Memoized, like DeviceRow; `reportedAgo` is from agentsReportedAgo. */
+const WorkerRow = memo(function WorkerRow({
+  worker,
+  lastSeen,
+  reportedAgo,
+}: {
+  worker: Worker
+  lastSeen: string | undefined
+  reportedAgo: string | undefined
+}) {
   const { t } = useTranslation()
   const platform = [worker.os, worker.arch].filter(Boolean).join("/")
   return (
@@ -275,6 +299,7 @@ const WorkerRow = memo(function WorkerRow({ worker, lastSeen }: { worker: Worker
           </ul>
         </div>
       )}
+      <WorkerAgents worker={worker} reportedAgo={reportedAgo} />
       <IntegratorGrant worker={worker} />
     </li>
   )

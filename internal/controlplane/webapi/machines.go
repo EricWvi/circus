@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/auth"
+	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/store"
 )
 
@@ -128,6 +129,14 @@ func (s *Service) ListWorkers(ctx context.Context, _ *connect.Request[circusv1.L
 	if err != nil {
 		return nil, s.internal(ctx, "online workers", err)
 	}
+	agents, err := s.st.ListUserWorkerAgents(ctx, u.ID)
+	if err != nil {
+		return nil, s.internal(ctx, "list worker agents", err)
+	}
+	byWorker := make(map[string][]store.WorkerAgent)
+	for _, a := range agents {
+		byWorker[a.WorkerID] = append(byWorker[a.WorkerID], a)
+	}
 	byMachine := make(map[string][]string)
 	for _, d := range devices {
 		if d.MachineID != "" {
@@ -136,12 +145,14 @@ func (s *Service) ListWorkers(ctx context.Context, _ *connect.Request[circusv1.L
 	}
 	out := &circusv1.ListWorkersResponse{Workers: make([]*circusv1.Worker, 0, len(workers))}
 	for _, w := range workers {
-		out.Workers = append(out.Workers, s.workerMessage(w, online[w.ID], byMachine))
+		out.Workers = append(out.Workers, s.workerMessage(w, online[w.ID], byMachine, byWorker[w.ID]))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *Service) workerMessage(w store.Identity, online bool, byMachine map[string][]string) *circusv1.Worker {
+// workerMessage is the worker as ListWorkers shows it, with its agents
+// (ordered by AgentKind).
+func (s *Service) workerMessage(w store.Identity, online bool, byMachine map[string][]string, agents []store.WorkerAgent) *circusv1.Worker {
 	lastSeen := max(w.LastConnectedAt, w.LastDisconnectedAt)
 	if online {
 		lastSeen = s.now().UnixMilli()
@@ -150,11 +161,38 @@ func (s *Service) workerMessage(w store.Identity, online bool, byMachine map[str
 	if w.MachineID != "" {
 		local = byMachine[w.MachineID]
 	}
-	return &circusv1.Worker{
+	out := &circusv1.Worker{
 		WorkerId: w.ID, Name: w.Name, Online: online, LastSeenUnixMs: lastSeen,
 		Os: w.OS, Arch: w.Arch, Hostname: w.Hostname, Version: w.ClientVersion, LocalDevices: local,
 		Integrator: w.Integrator,
 	}
+	for _, a := range agents {
+		out.Agents = append(out.Agents, sessions.WorkerAgentProto(a))
+	}
+	return out
+}
+
+// oneWorker is the caller's worker w as ListWorkers shows it.
+func (s *Service) oneWorker(ctx context.Context, userID string, w store.Identity) (*circusv1.Worker, error) {
+	devices, err := s.st.ListIdentities(ctx, store.KindDevice, userID)
+	if err != nil {
+		return nil, s.internal(ctx, "list devices", err)
+	}
+	online, err := s.onlineWorkers(ctx, userID)
+	if err != nil {
+		return nil, s.internal(ctx, "online workers", err)
+	}
+	agents, err := s.st.ListWorkerAgents(ctx, w.ID)
+	if err != nil {
+		return nil, s.internal(ctx, "list worker agents", err)
+	}
+	byMachine := make(map[string][]string)
+	for _, d := range devices {
+		if d.MachineID != "" && d.MachineID == w.MachineID {
+			byMachine[d.MachineID] = append(byMachine[d.MachineID], d.Name)
+		}
+	}
+	return s.workerMessage(w, online[w.ID], byMachine, agents.Agents), nil
 }
 
 // SetWorkerGrant turns the integrator grant of one of the caller's
@@ -176,19 +214,102 @@ func (s *Service) SetWorkerGrant(ctx context.Context, req *connect.Request[circu
 		return nil, s.internal(ctx, "set worker grant", err)
 	}
 	s.logger.InfoContext(ctx, "worker grant changed", "user_id", u.ID, "worker_id", w.ID, "integrator", w.Integrator)
-	devices, err := s.st.ListIdentities(ctx, store.KindDevice, u.ID)
+	out, err := s.oneWorker(ctx, u.ID, w)
 	if err != nil {
-		return nil, s.internal(ctx, "list devices", err)
+		return nil, err
 	}
-	online, err := s.onlineWorkers(ctx, u.ID)
+	return connect.NewResponse(&circusv1.SetWorkerGrantResponse{Worker: out}), nil
+}
+
+// SetWorkerAgent records the caller's wish to install or uninstall an agent
+// on one of their workers and returns the worker. Installing wants the
+// worker's reported target version. Every install request is counted (the
+// wish's attempt grows), which the worker ignores while the agent is
+// installed at that version or being installed; otherwise it cancels an
+// uninstall the worker has not started, and has the worker try again after
+// a failed install (a worker retries a FAILED install only for a newer
+// attempt). Uninstalling is refused
+// while the worker holds a live lease of a session that runs the agent; the
+// check and the wish are one transaction, and AcquireLease reads the wish
+// in its own, so no session of the agent is leased to the worker after it.
+// A changed wish reaches the worker at once when it is online (the
+// scheduler pushes AgentsWanted), else at its next Attach.
+func (s *Service) SetWorkerAgent(ctx context.Context, req *connect.Request[circusv1.SetWorkerAgentRequest]) (*connect.Response[circusv1.SetWorkerAgentResponse], error) {
+	u, err := user(ctx)
 	if err != nil {
-		return nil, s.internal(ctx, "online workers", err)
+		return nil, err
 	}
-	byMachine := make(map[string][]string)
-	for _, d := range devices {
-		if d.MachineID != "" && d.MachineID == w.MachineID {
-			byMachine[d.MachineID] = append(byMachine[d.MachineID], d.Name)
+	id := req.Msg.GetWorkerId()
+	if store.CheckID("worker id", id) != nil {
+		return nil, invalidField("worker_id", "invalid worker id")
+	}
+	kind, ok := sessions.AgentKindFromProto(req.Msg.GetAgent())
+	if !ok {
+		return nil, invalidField("agent", "unknown agent")
+	}
+	install := req.Msg.GetInstall()
+	var w store.Identity
+	var changed bool
+	var version string
+	err = s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+		var err error
+		w, err = tx.GetIdentity(ctx, store.KindWorker, id)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && (w.UserID != u.ID || w.DeletedAt != 0)) {
+			return connect.NewError(connect.CodeNotFound, errors.New("worker not found"))
+		}
+		if err != nil {
+			return err
+		}
+		agents, err := tx.ListWorkerAgents(ctx, id)
+		if err != nil {
+			return err
+		}
+		a, known := agents.Get(kind)
+		reported := known && a.Status.State != ""
+		if install {
+			if agents.ReportedAt == 0 || (reported && a.Status.TargetVersion == "") {
+				return connect.NewError(connect.CodeFailedPrecondition, errors.New("the worker has not reported its agents yet"))
+			}
+			if !reported {
+				return invalidField("agent", "the worker does not support this agent")
+			}
+			version = a.Status.TargetVersion
+			changed, err = tx.SetWorkerAgentWish(ctx, id, kind, true, version)
+			return err
+		}
+		if agents.ReportedAt != 0 && !reported && !a.Wanted {
+			return invalidField("agent", "the worker does not support this agent")
+		}
+		held, err := tx.HasAgentLease(ctx, id, kind, s.now().UnixMilli())
+		if err != nil {
+			return err
+		}
+		if held {
+			return connect.NewError(connect.CodeFailedPrecondition, errors.New("a session running this agent holds a lease on the worker; stop it or wait until it is released"))
+		}
+		changed, err = tx.SetWorkerAgentWish(ctx, id, kind, false, "")
+		return err
+	})
+	if err != nil {
+		var ce *connect.Error
+		if errors.As(err, &ce) {
+			return nil, ce
+		}
+		return nil, s.internal(ctx, "set worker agent", err)
+	}
+	if changed {
+		s.logger.InfoContext(ctx, "worker agent wish set", "user_id", u.ID, "worker_id", id, "agent", string(kind),
+			"install", install, "version", version, "changed", changed)
+		if err := s.scheduler.RefreshWorkerAgents(ctx, id); err != nil {
+			// Stored; the scheduler keeps reading it in the background
+			// with backoff, and the worker gets it at its next Attach at
+			// the latest.
+			s.logger.WarnContext(ctx, "pushing worker agent wishes failed; retrying", "worker_id", id, "error", err)
 		}
 	}
-	return connect.NewResponse(&circusv1.SetWorkerGrantResponse{Worker: s.workerMessage(w, online[w.ID], byMachine)}), nil
+	out, err := s.oneWorker(ctx, u.ID, w)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&circusv1.SetWorkerAgentResponse{Worker: out}), nil
 }

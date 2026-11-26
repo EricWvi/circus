@@ -4,6 +4,8 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { AgentKind, WorkerAgent } from "./agent_pb.js";
+import { file_circus_v1_agent } from "./agent_pb.js";
 import type { GitRemoteResult, ListDirectoryResult } from "./daemon_link_pb.js";
 import { file_circus_v1_daemon_link } from "./daemon_link_pb.js";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/machine.proto.
  */
 export const file_circus_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UivAEKBldvcmtlchIRCgl3b3JrZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZvbmxpbmUYAyABKAgSGQoRbGFzdF9zZWVuX3VuaXhfbXMYBCABKAMSCgoCb3MYBSABKAkSDAoEYXJjaBgGIAEoCRIQCghob3N0bmFtZRgHIAEoCRIPCgd2ZXJzaW9uGAggASgJEhUKDWxvY2FsX2RldmljZXMYCSADKAkSEgoKaW50ZWdyYXRvchgKIAEoCCIUChJMaXN0V29ya2Vyc1JlcXVlc3QiPgoVU2V0V29ya2VyR3JhbnRSZXF1ZXN0EhEKCXdvcmtlcl9pZBgBIAEoCRISCgppbnRlZ3JhdG9yGAIgASgIIjsKFlNldFdvcmtlckdyYW50UmVzcG9uc2USIQoGd29ya2VyGAEgASgLMhEuY2lyY3VzLnYxLldvcmtlciI5ChNMaXN0V29ya2Vyc1Jlc3BvbnNlEiIKB3dvcmtlcnMYASADKAsyES5jaXJjdXMudjEuV29ya2VyIj4KF0NyZWF0ZUVucm9sbExpbmtSZXF1ZXN0EiMKBHJvbGUYASABKA4yFS5jaXJjdXMudjEuRW5yb2xsUm9sZSJZChhDcmVhdGVFbnJvbGxMaW5rUmVzcG9uc2USDAoEbGluaxgBIAEoCRIXCg9leHBpcmVzX3VuaXhfbXMYAiABKAMSFgoOc2VydmVyX3ZlcnNpb24YAyABKAkiTAoUTGlzdERpcmVjdG9yeVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJEgwKBHBhdGgYAiABKAkSFgoOaW5jbHVkZV9oaWRkZW4YAyABKAgiRwoVTGlzdERpcmVjdG9yeVJlc3BvbnNlEi4KBnJlc3VsdBgBIAEoCzIeLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzdWx0IjMKE0dldEdpdFJlbW90ZVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJEgwKBHBhdGgYAiABKAkiQgoUR2V0R2l0UmVtb3RlUmVzcG9uc2USKgoGcmVzdWx0GAEgASgLMhouY2lyY3VzLnYxLkdpdFJlbW90ZVJlc3VsdCpvCgpFbnJvbGxSb2xlEhsKF0VOUk9MTF9ST0xFX1VOU1BFQ0lGSUVEEAASFgoSRU5ST0xMX1JPTEVfREFFTU9OEAESFgoSRU5ST0xMX1JPTEVfV09SS0VSEAISFAoQRU5ST0xMX1JPTEVfQk9USBADMoUECg5NYWNoaW5lU2VydmljZRJMCgtMaXN0RGV2aWNlcxIdLmNpcmN1cy52MS5MaXN0RGV2aWNlc1JlcXVlc3QaHi5jaXJjdXMudjEuTGlzdERldmljZXNSZXNwb25zZRJMCgtMaXN0V29ya2VycxIdLmNpcmN1cy52MS5MaXN0V29ya2Vyc1JlcXVlc3QaHi5jaXJjdXMudjEuTGlzdFdvcmtlcnNSZXNwb25zZRJbChBDcmVhdGVFbnJvbGxMaW5rEiIuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXF1ZXN0GiMuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXNwb25zZRJVCg5TZXRXb3JrZXJHcmFudBIgLmNpcmN1cy52MS5TZXRXb3JrZXJHcmFudFJlcXVlc3QaIS5jaXJjdXMudjEuU2V0V29ya2VyR3JhbnRSZXNwb25zZRJSCg1MaXN0RGlyZWN0b3J5Eh8uY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXF1ZXN0GiAuY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXNwb25zZRJPCgxHZXRHaXRSZW1vdGUSHi5jaXJjdXMudjEuR2V0R2l0UmVtb3RlUmVxdWVzdBofLmNpcmN1cy52MS5HZXRHaXRSZW1vdGVSZXNwb25zZUI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw", [file_circus_v1_daemon_link]);
+  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2Ui5AEKBldvcmtlchIRCgl3b3JrZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZvbmxpbmUYAyABKAgSGQoRbGFzdF9zZWVuX3VuaXhfbXMYBCABKAMSCgoCb3MYBSABKAkSDAoEYXJjaBgGIAEoCRIQCghob3N0bmFtZRgHIAEoCRIPCgd2ZXJzaW9uGAggASgJEhUKDWxvY2FsX2RldmljZXMYCSADKAkSEgoKaW50ZWdyYXRvchgKIAEoCBImCgZhZ2VudHMYCyADKAsyFi5jaXJjdXMudjEuV29ya2VyQWdlbnQiFAoSTGlzdFdvcmtlcnNSZXF1ZXN0Ij4KFVNldFdvcmtlckdyYW50UmVxdWVzdBIRCgl3b3JrZXJfaWQYASABKAkSEgoKaW50ZWdyYXRvchgCIAEoCCI7ChZTZXRXb3JrZXJHcmFudFJlc3BvbnNlEiEKBndvcmtlchgBIAEoCzIRLmNpcmN1cy52MS5Xb3JrZXIiYAoVU2V0V29ya2VyQWdlbnRSZXF1ZXN0EhEKCXdvcmtlcl9pZBgBIAEoCRIjCgVhZ2VudBgCIAEoDjIULmNpcmN1cy52MS5BZ2VudEtpbmQSDwoHaW5zdGFsbBgDIAEoCCI7ChZTZXRXb3JrZXJBZ2VudFJlc3BvbnNlEiEKBndvcmtlchgBIAEoCzIRLmNpcmN1cy52MS5Xb3JrZXIiOQoTTGlzdFdvcmtlcnNSZXNwb25zZRIiCgd3b3JrZXJzGAEgAygLMhEuY2lyY3VzLnYxLldvcmtlciI+ChdDcmVhdGVFbnJvbGxMaW5rUmVxdWVzdBIjCgRyb2xlGAEgASgOMhUuY2lyY3VzLnYxLkVucm9sbFJvbGUiWQoYQ3JlYXRlRW5yb2xsTGlua1Jlc3BvbnNlEgwKBGxpbmsYASABKAkSFwoPZXhwaXJlc191bml4X21zGAIgASgDEhYKDnNlcnZlcl92ZXJzaW9uGAMgASgJIkwKFExpc3REaXJlY3RvcnlSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCRIMCgRwYXRoGAIgASgJEhYKDmluY2x1ZGVfaGlkZGVuGAMgASgIIkcKFUxpc3REaXJlY3RvcnlSZXNwb25zZRIuCgZyZXN1bHQYASABKAsyHi5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3VsdCIzChNHZXRHaXRSZW1vdGVSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCRIMCgRwYXRoGAIgASgJIkIKFEdldEdpdFJlbW90ZVJlc3BvbnNlEioKBnJlc3VsdBgBIAEoCzIaLmNpcmN1cy52MS5HaXRSZW1vdGVSZXN1bHQqbwoKRW5yb2xsUm9sZRIbChdFTlJPTExfUk9MRV9VTlNQRUNJRklFRBAAEhYKEkVOUk9MTF9ST0xFX0RBRU1PThABEhYKEkVOUk9MTF9ST0xFX1dPUktFUhACEhQKEEVOUk9MTF9ST0xFX0JPVEgQAzLcBAoOTWFjaGluZVNlcnZpY2USTAoLTGlzdERldmljZXMSHS5jaXJjdXMudjEuTGlzdERldmljZXNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVzcG9uc2USTAoLTGlzdFdvcmtlcnMSHS5jaXJjdXMudjEuTGlzdFdvcmtlcnNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3RXb3JrZXJzUmVzcG9uc2USWwoQQ3JlYXRlRW5yb2xsTGluaxIiLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVxdWVzdBojLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVzcG9uc2USVQoOU2V0V29ya2VyR3JhbnQSIC5jaXJjdXMudjEuU2V0V29ya2VyR3JhbnRSZXF1ZXN0GiEuY2lyY3VzLnYxLlNldFdvcmtlckdyYW50UmVzcG9uc2USVQoOU2V0V29ya2VyQWdlbnQSIC5jaXJjdXMudjEuU2V0V29ya2VyQWdlbnRSZXF1ZXN0GiEuY2lyY3VzLnYxLlNldFdvcmtlckFnZW50UmVzcG9uc2USUgoNTGlzdERpcmVjdG9yeRIfLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVxdWVzdBogLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzcG9uc2USTwoMR2V0R2l0UmVtb3RlEh4uY2lyY3VzLnYxLkdldEdpdFJlbW90ZVJlcXVlc3QaHy5jaXJjdXMudjEuR2V0R2l0UmVtb3RlUmVzcG9uc2VCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM", [file_circus_v1_agent, file_circus_v1_daemon_link]);
 
 /**
  * @generated from message circus.v1.Device
@@ -165,6 +167,14 @@ export type Worker = Message<"circus.v1.Worker"> & {
    * @generated from field: bool integrator = 10;
    */
   integrator: boolean;
+
+  /**
+   * One entry per agent the worker reported or the user asked for, ordered
+   * by AgentKind.
+   *
+   * @generated from field: repeated circus.v1.WorkerAgent agents = 11;
+   */
+  agents: WorkerAgent[];
 };
 
 /**
@@ -227,6 +237,50 @@ export const SetWorkerGrantResponseSchema: GenMessage<SetWorkerGrantResponse> = 
   messageDesc(file_circus_v1_machine, 6);
 
 /**
+ * @generated from message circus.v1.SetWorkerAgentRequest
+ */
+export type SetWorkerAgentRequest = Message<"circus.v1.SetWorkerAgentRequest"> & {
+  /**
+   * @generated from field: string worker_id = 1;
+   */
+  workerId: string;
+
+  /**
+   * @generated from field: circus.v1.AgentKind agent = 2;
+   */
+  agent: AgentKind;
+
+  /**
+   * @generated from field: bool install = 3;
+   */
+  install: boolean;
+};
+
+/**
+ * Describes the message circus.v1.SetWorkerAgentRequest.
+ * Use `create(SetWorkerAgentRequestSchema)` to create a new message.
+ */
+export const SetWorkerAgentRequestSchema: GenMessage<SetWorkerAgentRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 7);
+
+/**
+ * @generated from message circus.v1.SetWorkerAgentResponse
+ */
+export type SetWorkerAgentResponse = Message<"circus.v1.SetWorkerAgentResponse"> & {
+  /**
+   * @generated from field: circus.v1.Worker worker = 1;
+   */
+  worker?: Worker | undefined;
+};
+
+/**
+ * Describes the message circus.v1.SetWorkerAgentResponse.
+ * Use `create(SetWorkerAgentResponseSchema)` to create a new message.
+ */
+export const SetWorkerAgentResponseSchema: GenMessage<SetWorkerAgentResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 8);
+
+/**
  * @generated from message circus.v1.ListWorkersResponse
  */
 export type ListWorkersResponse = Message<"circus.v1.ListWorkersResponse"> & {
@@ -241,7 +295,7 @@ export type ListWorkersResponse = Message<"circus.v1.ListWorkersResponse"> & {
  * Use `create(ListWorkersResponseSchema)` to create a new message.
  */
 export const ListWorkersResponseSchema: GenMessage<ListWorkersResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 7);
+  messageDesc(file_circus_v1_machine, 9);
 
 /**
  * @generated from message circus.v1.CreateEnrollLinkRequest
@@ -260,7 +314,7 @@ export type CreateEnrollLinkRequest = Message<"circus.v1.CreateEnrollLinkRequest
  * Use `create(CreateEnrollLinkRequestSchema)` to create a new message.
  */
 export const CreateEnrollLinkRequestSchema: GenMessage<CreateEnrollLinkRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 8);
+  messageDesc(file_circus_v1_machine, 10);
 
 /**
  * @generated from message circus.v1.CreateEnrollLinkResponse
@@ -293,7 +347,7 @@ export type CreateEnrollLinkResponse = Message<"circus.v1.CreateEnrollLinkRespon
  * Use `create(CreateEnrollLinkResponseSchema)` to create a new message.
  */
 export const CreateEnrollLinkResponseSchema: GenMessage<CreateEnrollLinkResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 9);
+  messageDesc(file_circus_v1_machine, 11);
 
 /**
  * @generated from message circus.v1.ListDirectoryRequest
@@ -325,7 +379,7 @@ export type ListDirectoryRequest = Message<"circus.v1.ListDirectoryRequest"> & {
  * Use `create(ListDirectoryRequestSchema)` to create a new message.
  */
 export const ListDirectoryRequestSchema: GenMessage<ListDirectoryRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 10);
+  messageDesc(file_circus_v1_machine, 12);
 
 /**
  * @generated from message circus.v1.ListDirectoryResponse
@@ -344,7 +398,7 @@ export type ListDirectoryResponse = Message<"circus.v1.ListDirectoryResponse"> &
  * Use `create(ListDirectoryResponseSchema)` to create a new message.
  */
 export const ListDirectoryResponseSchema: GenMessage<ListDirectoryResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 11);
+  messageDesc(file_circus_v1_machine, 13);
 
 /**
  * @generated from message circus.v1.GetGitRemoteRequest
@@ -370,7 +424,7 @@ export type GetGitRemoteRequest = Message<"circus.v1.GetGitRemoteRequest"> & {
  * Use `create(GetGitRemoteRequestSchema)` to create a new message.
  */
 export const GetGitRemoteRequestSchema: GenMessage<GetGitRemoteRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 12);
+  messageDesc(file_circus_v1_machine, 14);
 
 /**
  * @generated from message circus.v1.GetGitRemoteResponse
@@ -389,7 +443,7 @@ export type GetGitRemoteResponse = Message<"circus.v1.GetGitRemoteResponse"> & {
  * Use `create(GetGitRemoteResponseSchema)` to create a new message.
  */
 export const GetGitRemoteResponseSchema: GenMessage<GetGitRemoteResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 13);
+  messageDesc(file_circus_v1_machine, 15);
 
 /**
  * @generated from enum circus.v1.EnrollRole
@@ -472,6 +526,27 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof SetWorkerGrantRequestSchema;
     output: typeof SetWorkerGrantResponseSchema;
+  },
+  /**
+   * Installs or uninstalls an agent on one of the caller's workers and
+   * returns the worker. The wish is stored and pushed to the worker when it
+   * is online (else at its next attach); the worker reports progress, seen
+   * in ListWorkers. install=true when the agent is INSTALLED at the
+   * worker's target version is a no-op; when it is OUTDATED, FAILED or not
+   * installed, it (re)installs the worker's target version. Errors:
+   * NOT_FOUND for another user's or an unknown worker; INVALID_ARGUMENT for
+   * AGENT_KIND_UNSPECIFIED or an agent the worker does not support (absent
+   * from its reported agents); FAILED_PRECONDITION for install=true while
+   * the worker never reported (no target version yet), and for
+   * install=false while the worker holds a lease of a session that runs
+   * this agent.
+   *
+   * @generated from rpc circus.v1.MachineService.SetWorkerAgent
+   */
+  setWorkerAgent: {
+    methodKind: "unary";
+    input: typeof SetWorkerAgentRequestSchema;
+    output: typeof SetWorkerAgentResponseSchema;
   },
   /**
    * Lists the subdirectories of a directory on one of the caller's devices,

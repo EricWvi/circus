@@ -5,8 +5,9 @@ user's own machines through a small Go daemon; a Go control plane relays
 calls between them, with Protobuf messages shared by Go and TypeScript.
 Built so far: the device daemon (tool layer, dispatcher, jobs,
 outbound link), the control plane server (enrollment, daemon and worker
-links, call routing with at-most-once execution), and the `circus call`
-debug client. The TypeScript worker is planned for M3 and not built yet.
+links, call routing with at-most-once execution, sessions and the Web UI),
+the TypeScript worker (`worker/`), which runs Claude Code sessions through
+the Claude Agent SDK, and the `circus call` debug client.
 
 | Path | Purpose |
 | --- | --- |
@@ -206,6 +207,38 @@ On Linux, `circus update` may start a service that stopped itself with exit
 status 78, even after a subsequent `circus daemon stop`.
 A daemon newer than its control plane keeps retrying a revoked credential
 until the server is updated to identify its authentication rejections.
+
+## Worker
+
+The worker runs the agent of each session (today Claude Code) on a machine
+enrolled with `circus join --role worker`. It is released as a package per
+platform, `circus-worker-<tag>-<os>-<arch>.tar.gz`, that needs Node.js 24 or
+later and the `circus` CLI (for its process guard) on `PATH` or in
+`CIRCUS_BIN`:
+
+```sh
+tar -xzf circus-worker-vX.Y.Z-linux-amd64.tar.gz   # unpacks circus-worker/
+circus join --role worker                          # paste the enrollment link
+circus-worker/circus-worker
+```
+
+The worker ships without any agent. Install Claude Code on it from the Web
+UI (`MachineService.SetWorkerAgent`): the worker downloads the Claude Code
+version its release pins (the CLI version of its Agent SDK) from the npm
+registry, verifies it against the sha512 digest built into the worker from
+`package-lock.json`, and installs it under its data directory
+(`$CIRCUS_HOME/agents/claude-code/`, else
+`${XDG_DATA_HOME:-~/.local/share}/circus/agents/claude-code/`). Until then
+its sessions wait as "agent not installed". Uninstalling is refused while
+the worker holds a lease of a session that runs the agent; it removes only
+the install directory, never `~/.claude` or `CLAUDE_CONFIG_DIR`.
+`CIRCUS_NPM_REGISTRY` replaces the registry (default
+`https://registry.npmjs.org`), and `HTTPS_PROXY` / `NO_PROXY` apply to the
+download. See `worker/README.md` for every setting.
+
+From source, `task worker:build` builds `worker/dist` (run it with
+`node worker/dist/main.js`), and `task worker:package` builds the
+linux-amd64 package into `.tmp/worker-package/`.
 
 ## Development CLI
 
@@ -777,8 +810,11 @@ one per user, within the four `LedgerService` requests.
 ## Releases and deployment
 
 Pushing a `v*` tag publishes the Linux amd64 image to GitHub Container
-Registry and CLI archives for Linux and macOS on amd64 and arm64 to
-[GitHub Releases](https://github.com/EricWvi/circus/releases).
+Registry, and CLI archives and worker packages (see Worker) for Linux and
+macOS on amd64 and arm64 to
+[GitHub Releases](https://github.com/EricWvi/circus/releases). The release's
+`SHA256SUMS` and `latest.json` list both; `circus update` reads only the
+CLI's entries.
 
 The image serves the embedded Web UI, APIs, and links from one origin. Copy
 `config.example.yaml` to `config.yaml`, set `listen: "0.0.0.0:8443"` inside the
@@ -825,6 +861,7 @@ to install an older release when GitHub's latest release is older than yours.
 | Unit | `task test` | every push/PR (CI `check` job) |
 | Race | `task race` | every push/PR (parallel CI `race` job) |
 | Process e2e | `task e2e` (`-count=1`) | every push/PR (CI `check` job) |
+| Worker package e2e | `task worker:package`, unpacked outside the repository, then `CIRCUS_E2E_WORKER_PACKAGE=<dir>/circus-worker go test -tags e2e -run '^TestWorkerPackage$' ./tests/e2e/` | every push/PR (CI `worker-package` job) |
 | E2e race | `task e2e-race` (`-count=3`) | nightly |
 | Router seed sweep | `task seeds` (500 seeds) | nightly, 5 × 100-seed segments |
 | Fuzz targets | `task fuzz` (FUZZTIME, default 30s) | local, on demand |

@@ -5,7 +5,8 @@ import {
 } from "@circus/proto/circus/v1/worker_link_pb";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, test } from "vitest";
-import { SessionPool, type Runner } from "../src/pool.js";
+import { AgentKind } from "@circus/proto/circus/v1/agent_pb";
+import { SessionPool, type PoolOptions, type Runner } from "../src/pool.js";
 import type { RunnerEnd } from "../src/runner/runner.js";
 import { FakeLink, rejected } from "./runner/fake-link.js";
 import { FakeProcesses, captureLogger, waitFor } from "./runner/harness.js";
@@ -41,18 +42,19 @@ class StubRunner implements Runner {
   end(how: RunnerEnd) { this.#end.resolve(how); }
 }
 
-function setup(maxSessions = 4) {
+function setup(maxSessions = 4, extra: Partial<PoolOptions> = {}) {
   const link = new FakeLink("/");
   const runners: StubRunner[] = [];
   const processes = new FakeProcesses();
   const log = captureLogger();
   const pool = new SessionPool({
-    link, maxSessions, log, processes, runner: { query: () => { throw new Error("unused"); } },
+    link, maxSessions, log, processes, runner: { query: () => { throw new Error("unused"); }, agentExecutable: () => undefined },
     createRunner: (lease, id) => {
       const runner = new StubRunner(lease, id);
       runners.push(runner);
       return runner;
     },
+    ...extra,
   });
   const hint = (event: MessageInitShape<typeof WorkerEventSchema>["event"]) => pool.hint(create(WorkerEventSchema, { event }));
   const offer = (sessionId: string) => hint({ case: "offer", value: { sessionId } });
@@ -61,6 +63,25 @@ function setup(maxSessions = 4) {
 }
 
 describe("SessionPool", () => {
+  test("routes AgentsWanted and tells which held sessions run an agent", async () => {
+    const wanted: unknown[] = [];
+    let changes = 0;
+    const { pool, runners, hint, offer } = setup(4, {
+      agentsWanted: (value) => wanted.push(value), sessionsChanged: () => changes++,
+    });
+    hint({ case: "agentsWanted", value: { agents: [{ agent: AgentKind.CLAUDE_CODE, version: "2.1.330" }] } });
+    expect(wanted).toMatchObject([{ agents: [{ agent: AgentKind.CLAUDE_CODE, version: "2.1.330" }] }]);
+    expect(pool.runs(AgentKind.CLAUDE_CODE)).toBe(false);
+    offer("s1");
+    await waitFor(() => runners.length === 1, "runner");
+    expect(pool.runs(AgentKind.CLAUDE_CODE)).toBe(true);
+    expect(pool.runs(AgentKind.UNSPECIFIED)).toBe(false);
+    expect(changes).toBe(1);
+    runners[0].end("released");
+    await waitFor(() => changes === 2, "session end");
+    expect(pool.runs(AgentKind.CLAUDE_CODE)).toBe(false);
+  });
+
   test("an Offer is acquired fresh, once, ignoring hints while the acquisition is in flight", async () => {
     const { link, runners, hint, offer, acquires } = setup();
     let release!: () => void;

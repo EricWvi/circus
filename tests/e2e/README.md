@@ -2,7 +2,8 @@
 
 Run on Linux with Go, Bash, the usual coreutils and Node.js 24 or later installed.
 Run `npm ci` from the repository root before running the suite (it installs
-the Agent SDK and the Claude Code CLI for this platform).
+the Agent SDK, and leaves the Claude Code package for this platform in npm's
+cache, where the tests' local registry finds it).
 
 ```sh
 go test -tags e2e ./tests/e2e/ -count=1
@@ -104,10 +105,25 @@ metadata, marker files or bounded polling; no sleep establishes test ordering.
 
 ## Real worker against a fake model
 
+`TestWorkerPackage` runs the worker from its release package instead:
+`task worker:package`, unpacked into an empty directory outside the
+repository, named by `CIRCUS_E2E_WORKER_PACKAGE` (the package's
+`circus-worker` directory; the test skips without it). The worker attaches
+with Claude Code not installed; an install from the registry serving a
+corrupt tarball fails its digest check and leaves no files; the install
+from the real tarball runs one session turn; the uninstall, once the idle
+lease is released, removes the install directory.
+
 The `TestClaude*` tests run the real worker (`node worker/dist/main.js`)
-with the Claude Code CLI
-the Agent SDK bundles, a real control plane and a real daemon on one
-machine, in local mode. The model is `internal/testutil/fakemodel`, an
+with a real control plane and a real daemon on one machine, in local mode.
+Each stack installs Claude Code on its worker the way a user does: once the
+worker reported its agents, `MachineService.SetWorkerAgent`, and a wait
+until the worker reports it installed. The worker downloads the package
+from a local npm registry (`internal/testutil/npmstub`, its
+`CIRCUS_NPM_REGISTRY`) that serves the tarball `package-lock.json` pins,
+taken from npm's cache (else downloaded once into `.tmp/npm-tarballs/` and
+verified against the lockfile's digest), into the test's
+`XDG_DATA_HOME`; a restarted worker finds it installed. The model is `internal/testutil/fakemodel`, an
 in-process fake Messages API that each test scripts with a Go closure;
 the worker gets `ANTHROPIC_BASE_URL` pointing at it, a fake
 `ANTHROPIC_API_KEY`, `CIRCUS_BIN` pointing at the built `circus` (for

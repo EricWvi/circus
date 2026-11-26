@@ -535,7 +535,7 @@ func (x SessionReply_Rejected_Code) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SessionReply_Rejected_Code.Descriptor instead.
 func (SessionReply_Rejected_Code) EnumDescriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 2, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 2, 0}
 }
 
 type SessionReply_Inputs_Input_Kind int32
@@ -601,7 +601,7 @@ func (x SessionReply_Inputs_Input_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SessionReply_Inputs_Input_Kind.Descriptor instead.
 func (SessionReply_Inputs_Input_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 6, 0, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 6, 0, 0}
 }
 
 // WorkerUplink is the worker-to-control-plane envelope.
@@ -635,6 +635,7 @@ type WorkerUplink struct {
 	//	*WorkerUplink_Session
 	//	*WorkerUplink_ResumeLeases
 	//	*WorkerUplink_ListDevices
+	//	*WorkerUplink_ReportAgents
 	Payload isWorkerUplink_Payload `protobuf_oneof:"payload"`
 	// Nonzero on every business payload; 0 on Hello, Heartbeat and Fragment.
 	RequestId     uint64 `protobuf:"varint,20,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -778,6 +779,15 @@ func (x *WorkerUplink) GetListDevices() *ListDevices {
 	return nil
 }
 
+func (x *WorkerUplink) GetReportAgents() *ReportAgents {
+	if x != nil {
+		if x, ok := x.Payload.(*WorkerUplink_ReportAgents); ok {
+			return x.ReportAgents
+		}
+	}
+	return nil
+}
+
 func (x *WorkerUplink) GetRequestId() uint64 {
 	if x != nil {
 		return x.RequestId
@@ -849,6 +859,10 @@ type WorkerUplink_ListDevices struct {
 	ListDevices *ListDevices `protobuf:"bytes,17,opt,name=list_devices,json=listDevices,proto3,oneof"`
 }
 
+type WorkerUplink_ReportAgents struct {
+	ReportAgents *ReportAgents `protobuf:"bytes,18,opt,name=report_agents,json=reportAgents,proto3,oneof"`
+}
+
 func (*WorkerUplink_Hello) isWorkerUplink_Payload() {}
 
 func (*WorkerUplink_Heartbeat) isWorkerUplink_Payload() {}
@@ -870,6 +884,8 @@ func (*WorkerUplink_Session) isWorkerUplink_Payload() {}
 func (*WorkerUplink_ResumeLeases) isWorkerUplink_Payload() {}
 
 func (*WorkerUplink_ListDevices) isWorkerUplink_Payload() {}
+
+func (*WorkerUplink_ReportAgents) isWorkerUplink_Payload() {}
 
 // WorkerDownlink carries replies and hints for open worker operations.
 type WorkerDownlink struct {
@@ -1364,12 +1380,15 @@ type Attach struct {
 	// Required, 1..64 concurrent sessions. The stream itself holds one slot.
 	MaxSessions   uint32               `protobuf:"varint,1,opt,name=max_sessions,json=maxSessions,proto3" json:"max_sessions,omitempty"`
 	SdkVersion    string               `protobuf:"bytes,2,opt,name=sdk_version,json=sdkVersion,proto3" json:"sdk_version,omitempty"`
-	ClaudeVersion string               `protobuf:"bytes,3,opt,name=claude_version,json=claudeVersion,proto3" json:"claude_version,omitempty"`
 	Account       *Attach_Account      `protobuf:"bytes,4,opt,name=account,proto3" json:"account,omitempty"`
 	AutoModeCheck Attach_AutoModeCheck `protobuf:"varint,5,opt,name=auto_mode_check,json=autoModeCheck,proto3,enum=circus.v1.Attach_AutoModeCheck" json:"auto_mode_check,omitempty"`
 	// The worker runs only local-mode sessions (SessionConfig.local) pinned to
 	// it; the control plane never offers it any other session.
-	LocalOnly     bool `protobuf:"varint,6,opt,name=local_only,json=localOnly,proto3" json:"local_only,omitempty"`
+	LocalOnly bool `protobuf:"varint,6,opt,name=local_only,json=localOnly,proto3" json:"local_only,omitempty"`
+	// Every agent this worker build supports, with its state on this
+	// machine; at most 16, one per AgentKind. Later changes go in
+	// ReportAgents.
+	Agents        []*AgentStatus `protobuf:"bytes,7,rep,name=agents,proto3" json:"agents,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1418,13 +1437,6 @@ func (x *Attach) GetSdkVersion() string {
 	return ""
 }
 
-func (x *Attach) GetClaudeVersion() string {
-	if x != nil {
-		return x.ClaudeVersion
-	}
-	return ""
-}
-
 func (x *Attach) GetAccount() *Attach_Account {
 	if x != nil {
 		return x.Account
@@ -1446,6 +1458,13 @@ func (x *Attach) GetLocalOnly() bool {
 	return false
 }
 
+func (x *Attach) GetAgents() []*AgentStatus {
+	if x != nil {
+		return x.Agents
+	}
+	return nil
+}
+
 // WorkerEvent contains level-triggered hints, not authoritative session data.
 // Hints may be coalesced or repeated; fetch state rather than counting hints.
 // An Offer or Nudge for a session this worker does not hold means: send
@@ -1459,6 +1478,7 @@ type WorkerEvent struct {
 	//	*WorkerEvent_Nudge_
 	//	*WorkerEvent_LeaseRevoked_
 	//	*WorkerEvent_ReleaseIdle_
+	//	*WorkerEvent_AgentsWanted_
 	Event         isWorkerEvent_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1537,6 +1557,15 @@ func (x *WorkerEvent) GetReleaseIdle() *WorkerEvent_ReleaseIdle {
 	return nil
 }
 
+func (x *WorkerEvent) GetAgentsWanted() *WorkerEvent_AgentsWanted {
+	if x != nil {
+		if x, ok := x.Event.(*WorkerEvent_AgentsWanted_); ok {
+			return x.AgentsWanted
+		}
+	}
+	return nil
+}
+
 type isWorkerEvent_Event interface {
 	isWorkerEvent_Event()
 }
@@ -1557,6 +1586,10 @@ type WorkerEvent_ReleaseIdle_ struct {
 	ReleaseIdle *WorkerEvent_ReleaseIdle `protobuf:"bytes,4,opt,name=release_idle,json=releaseIdle,proto3,oneof"`
 }
 
+type WorkerEvent_AgentsWanted_ struct {
+	AgentsWanted *WorkerEvent_AgentsWanted `protobuf:"bytes,5,opt,name=agents_wanted,json=agentsWanted,proto3,oneof"`
+}
+
 func (*WorkerEvent_Offer_) isWorkerEvent_Event() {}
 
 func (*WorkerEvent_Nudge_) isWorkerEvent_Event() {}
@@ -1564,6 +1597,8 @@ func (*WorkerEvent_Nudge_) isWorkerEvent_Event() {}
 func (*WorkerEvent_LeaseRevoked_) isWorkerEvent_Event() {}
 
 func (*WorkerEvent_ReleaseIdle_) isWorkerEvent_Event() {}
+
+func (*WorkerEvent_AgentsWanted_) isWorkerEvent_Event() {}
 
 // SessionRequest is Data ordered by session/<session_id>. Each request opens
 // one operation with exactly one SessionReply and carries exactly one op; a
@@ -3250,6 +3285,54 @@ func (*ListDevices) Descriptor() ([]byte, []int) {
 	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{27}
 }
 
+// ReportAgents replaces the worker's reported agent states (same rules as
+// Attach.agents). Send it whenever a state changes; while INSTALLING, at
+// most once a second for progress. Answered by one SessionReply (Ok, or
+// Rejected INVALID).
+type ReportAgents struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Agents        []*AgentStatus         `protobuf:"bytes,1,rep,name=agents,proto3" json:"agents,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportAgents) Reset() {
+	*x = ReportAgents{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportAgents) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportAgents) ProtoMessage() {}
+
+func (x *ReportAgents) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportAgents.ProtoReflect.Descriptor instead.
+func (*ReportAgents) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ReportAgents) GetAgents() []*AgentStatus {
+	if x != nil {
+		return x.Agents
+	}
+	return nil
+}
+
 // SessionReply ends one SessionRequest, ResumeLeases or ListDevices operation.
 // Fenced or Rejected can replace any successful result. Attach uses WorkerEvent
 // instead. Replies are Data without ordering keys, correlated by request_id.
@@ -3278,7 +3361,7 @@ type SessionReply struct {
 
 func (x *SessionReply) Reset() {
 	*x = SessionReply{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[28]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3290,7 +3373,7 @@ func (x *SessionReply) String() string {
 func (*SessionReply) ProtoMessage() {}
 
 func (x *SessionReply) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[28]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3303,7 +3386,7 @@ func (x *SessionReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply.ProtoReflect.Descriptor instead.
 func (*SessionReply) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SessionReply) GetResult() isSessionReply_Result {
@@ -3536,7 +3619,7 @@ type CallUpdate_Accepted struct {
 
 func (x *CallUpdate_Accepted) Reset() {
 	*x = CallUpdate_Accepted{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[29]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3548,7 +3631,7 @@ func (x *CallUpdate_Accepted) String() string {
 func (*CallUpdate_Accepted) ProtoMessage() {}
 
 func (x *CallUpdate_Accepted) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[29]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3575,7 +3658,7 @@ type CallUpdate_Dispatched struct {
 
 func (x *CallUpdate_Dispatched) Reset() {
 	*x = CallUpdate_Dispatched{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[30]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3587,7 +3670,7 @@ func (x *CallUpdate_Dispatched) String() string {
 func (*CallUpdate_Dispatched) ProtoMessage() {}
 
 func (x *CallUpdate_Dispatched) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[30]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3613,7 +3696,7 @@ type CallUpdate_DeviceOffline struct {
 
 func (x *CallUpdate_DeviceOffline) Reset() {
 	*x = CallUpdate_DeviceOffline{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[31]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3625,7 +3708,7 @@ func (x *CallUpdate_DeviceOffline) String() string {
 func (*CallUpdate_DeviceOffline) ProtoMessage() {}
 
 func (x *CallUpdate_DeviceOffline) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[31]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3658,7 +3741,7 @@ type CallUpdate_Unknown struct {
 
 func (x *CallUpdate_Unknown) Reset() {
 	*x = CallUpdate_Unknown{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[32]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3670,7 +3753,7 @@ func (x *CallUpdate_Unknown) String() string {
 func (*CallUpdate_Unknown) ProtoMessage() {}
 
 func (x *CallUpdate_Unknown) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[32]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3703,7 +3786,7 @@ type CallUpdate_Lost struct {
 
 func (x *CallUpdate_Lost) Reset() {
 	*x = CallUpdate_Lost{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[33]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3715,7 +3798,7 @@ func (x *CallUpdate_Lost) String() string {
 func (*CallUpdate_Lost) ProtoMessage() {}
 
 func (x *CallUpdate_Lost) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[33]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3749,7 +3832,7 @@ type CallUpdate_Rejected struct {
 
 func (x *CallUpdate_Rejected) Reset() {
 	*x = CallUpdate_Rejected{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[34]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3761,7 +3844,7 @@ func (x *CallUpdate_Rejected) String() string {
 func (*CallUpdate_Rejected) ProtoMessage() {}
 
 func (x *CallUpdate_Rejected) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[34]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3801,7 +3884,7 @@ type CallUpdate_Cancelled struct {
 
 func (x *CallUpdate_Cancelled) Reset() {
 	*x = CallUpdate_Cancelled{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[35]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3813,7 +3896,7 @@ func (x *CallUpdate_Cancelled) String() string {
 func (*CallUpdate_Cancelled) ProtoMessage() {}
 
 func (x *CallUpdate_Cancelled) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[35]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3840,7 +3923,7 @@ type Attach_Account struct {
 
 func (x *Attach_Account) Reset() {
 	*x = Attach_Account{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[36]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3852,7 +3935,7 @@ func (x *Attach_Account) String() string {
 func (*Attach_Account) ProtoMessage() {}
 
 func (x *Attach_Account) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[36]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3898,7 +3981,7 @@ type WorkerEvent_Offer struct {
 
 func (x *WorkerEvent_Offer) Reset() {
 	*x = WorkerEvent_Offer{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[37]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3910,7 +3993,7 @@ func (x *WorkerEvent_Offer) String() string {
 func (*WorkerEvent_Offer) ProtoMessage() {}
 
 func (x *WorkerEvent_Offer) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[37]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3954,7 +4037,7 @@ type WorkerEvent_Nudge struct {
 
 func (x *WorkerEvent_Nudge) Reset() {
 	*x = WorkerEvent_Nudge{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[38]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3966,7 +4049,7 @@ func (x *WorkerEvent_Nudge) String() string {
 func (*WorkerEvent_Nudge) ProtoMessage() {}
 
 func (x *WorkerEvent_Nudge) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[38]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4013,7 +4096,7 @@ type WorkerEvent_LeaseRevoked struct {
 
 func (x *WorkerEvent_LeaseRevoked) Reset() {
 	*x = WorkerEvent_LeaseRevoked{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[39]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4025,7 +4108,7 @@ func (x *WorkerEvent_LeaseRevoked) String() string {
 func (*WorkerEvent_LeaseRevoked) ProtoMessage() {}
 
 func (x *WorkerEvent_LeaseRevoked) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[39]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4092,7 +4175,7 @@ type WorkerEvent_ReleaseIdle struct {
 
 func (x *WorkerEvent_ReleaseIdle) Reset() {
 	*x = WorkerEvent_ReleaseIdle{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[40]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4104,7 +4187,7 @@ func (x *WorkerEvent_ReleaseIdle) String() string {
 func (*WorkerEvent_ReleaseIdle) ProtoMessage() {}
 
 func (x *WorkerEvent_ReleaseIdle) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[40]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4134,6 +4217,129 @@ func (x *WorkerEvent_ReleaseIdle) GetEpoch() uint64 {
 	return 0
 }
 
+// The user's wishes for this worker's agents, complete (an agent absent
+// here is not wanted). Sent after Attach and whenever a wish changes; the
+// worker reconciles and reports with ReportAgents:
+//   - wanted, version == its target_version, not INSTALLED and not FAILED:
+//     install it (download for its platform, verify the built-in digest,
+//     unpack under its data directory), replacing an OUTDATED one;
+//   - wanted as above and FAILED: install it again only when attempt is
+//     greater than the attempt its failure belongs to (the user asked
+//     again); a worker never retries a FAILED install by itself;
+//   - wanted with another version (the worker was upgraded since): change
+//     nothing; the agent stays OUTDATED or NOT_INSTALLED;
+//   - not wanted and on disk: uninstall it once no session it holds runs
+//     this agent (the control plane stops offering such sessions at once).
+//
+// Uninstalling removes only the installed files, never the user's own
+// agent configuration or login (e.g. ~/.claude).
+type WorkerEvent_AgentsWanted struct {
+	state         protoimpl.MessageState             `protogen:"open.v1"`
+	Agents        []*WorkerEvent_AgentsWanted_Wanted `protobuf:"bytes,1,rep,name=agents,proto3" json:"agents,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkerEvent_AgentsWanted) Reset() {
+	*x = WorkerEvent_AgentsWanted{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerEvent_AgentsWanted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerEvent_AgentsWanted) ProtoMessage() {}
+
+func (x *WorkerEvent_AgentsWanted) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerEvent_AgentsWanted.ProtoReflect.Descriptor instead.
+func (*WorkerEvent_AgentsWanted) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{6, 4}
+}
+
+func (x *WorkerEvent_AgentsWanted) GetAgents() []*WorkerEvent_AgentsWanted_Wanted {
+	if x != nil {
+		return x.Agents
+	}
+	return nil
+}
+
+type WorkerEvent_AgentsWanted_Wanted struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Agent   AgentKind              `protobuf:"varint,1,opt,name=agent,proto3,enum=circus.v1.AgentKind" json:"agent,omitempty"`
+	Version string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	// Incremented by the control plane on every SetWorkerAgent install
+	// request for this agent (stored with the wish), so a worker can tell
+	// a new request from the same wish sent again after an Attach.
+	Attempt       uint64 `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkerEvent_AgentsWanted_Wanted) Reset() {
+	*x = WorkerEvent_AgentsWanted_Wanted{}
+	mi := &file_circus_v1_worker_link_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkerEvent_AgentsWanted_Wanted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkerEvent_AgentsWanted_Wanted) ProtoMessage() {}
+
+func (x *WorkerEvent_AgentsWanted_Wanted) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_worker_link_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkerEvent_AgentsWanted_Wanted.ProtoReflect.Descriptor instead.
+func (*WorkerEvent_AgentsWanted_Wanted) Descriptor() ([]byte, []int) {
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{6, 4, 0}
+}
+
+func (x *WorkerEvent_AgentsWanted_Wanted) GetAgent() AgentKind {
+	if x != nil {
+		return x.Agent
+	}
+	return AgentKind_AGENT_KIND_UNSPECIFIED
+}
+
+func (x *WorkerEvent_AgentsWanted_Wanted) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *WorkerEvent_AgentsWanted_Wanted) GetAttempt() uint64 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
 // Persisted marks are idempotent; marking an unknown or already persisted
 // item is a no-op. Ids are at most 128 bytes.
 type ReportTurn_Persisted struct {
@@ -4155,7 +4361,7 @@ type ReportTurn_Persisted struct {
 
 func (x *ReportTurn_Persisted) Reset() {
 	*x = ReportTurn_Persisted{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[41]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4167,7 +4373,7 @@ func (x *ReportTurn_Persisted) String() string {
 func (*ReportTurn_Persisted) ProtoMessage() {}
 
 func (x *ReportTurn_Persisted) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[41]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4232,7 +4438,7 @@ type PatchSessionState_Cwd struct {
 
 func (x *PatchSessionState_Cwd) Reset() {
 	*x = PatchSessionState_Cwd{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[42]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4244,7 +4450,7 @@ func (x *PatchSessionState_Cwd) String() string {
 func (*PatchSessionState_Cwd) ProtoMessage() {}
 
 func (x *PatchSessionState_Cwd) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[42]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4296,7 +4502,7 @@ type PatchSessionState_FileRecord struct {
 
 func (x *PatchSessionState_FileRecord) Reset() {
 	*x = PatchSessionState_FileRecord{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[43]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4308,7 +4514,7 @@ func (x *PatchSessionState_FileRecord) String() string {
 func (*PatchSessionState_FileRecord) ProtoMessage() {}
 
 func (x *PatchSessionState_FileRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[43]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4367,7 +4573,7 @@ type PatchSessionState_BackgroundTask struct {
 
 func (x *PatchSessionState_BackgroundTask) Reset() {
 	*x = PatchSessionState_BackgroundTask{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[44]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4379,7 +4585,7 @@ func (x *PatchSessionState_BackgroundTask) String() string {
 func (*PatchSessionState_BackgroundTask) ProtoMessage() {}
 
 func (x *PatchSessionState_BackgroundTask) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[44]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4444,7 +4650,7 @@ type SessionState_Job struct {
 
 func (x *SessionState_Job) Reset() {
 	*x = SessionState_Job{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[45]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4456,7 +4662,7 @@ func (x *SessionState_Job) String() string {
 func (*SessionState_Job) ProtoMessage() {}
 
 func (x *SessionState_Job) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[45]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4560,7 +4766,7 @@ type SessionState_Call struct {
 
 func (x *SessionState_Call) Reset() {
 	*x = SessionState_Call{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[46]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4572,7 +4778,7 @@ func (x *SessionState_Call) String() string {
 func (*SessionState_Call) ProtoMessage() {}
 
 func (x *SessionState_Call) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[46]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4666,7 +4872,7 @@ type SessionState_Grant struct {
 
 func (x *SessionState_Grant) Reset() {
 	*x = SessionState_Grant{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[47]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4678,7 +4884,7 @@ func (x *SessionState_Grant) String() string {
 func (*SessionState_Grant) ProtoMessage() {}
 
 func (x *SessionState_Grant) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[47]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4733,7 +4939,7 @@ type PublishEvents_Event struct {
 
 func (x *PublishEvents_Event) Reset() {
 	*x = PublishEvents_Event{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[48]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4745,7 +4951,7 @@ func (x *PublishEvents_Event) String() string {
 func (*PublishEvents_Event) ProtoMessage() {}
 
 func (x *PublishEvents_Event) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[48]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4792,7 +4998,7 @@ type ResumeLeases_Held struct {
 
 func (x *ResumeLeases_Held) Reset() {
 	*x = ResumeLeases_Held{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[49]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4804,7 +5010,7 @@ func (x *ResumeLeases_Held) String() string {
 func (*ResumeLeases_Held) ProtoMessage() {}
 
 func (x *ResumeLeases_Held) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[49]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4843,7 +5049,7 @@ type SessionReply_Ok struct {
 
 func (x *SessionReply_Ok) Reset() {
 	*x = SessionReply_Ok{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[50]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4855,7 +5061,7 @@ func (x *SessionReply_Ok) String() string {
 func (*SessionReply_Ok) ProtoMessage() {}
 
 func (x *SessionReply_Ok) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[50]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4868,7 +5074,7 @@ func (x *SessionReply_Ok) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Ok.ProtoReflect.Descriptor instead.
 func (*SessionReply_Ok) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 0}
 }
 
 func (x *SessionReply_Ok) GetDeduplicated() bool {
@@ -4888,7 +5094,7 @@ type SessionReply_Fenced struct {
 
 func (x *SessionReply_Fenced) Reset() {
 	*x = SessionReply_Fenced{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[51]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4900,7 +5106,7 @@ func (x *SessionReply_Fenced) String() string {
 func (*SessionReply_Fenced) ProtoMessage() {}
 
 func (x *SessionReply_Fenced) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[51]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4913,7 +5119,7 @@ func (x *SessionReply_Fenced) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Fenced.ProtoReflect.Descriptor instead.
 func (*SessionReply_Fenced) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 1}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 1}
 }
 
 func (x *SessionReply_Fenced) GetEpoch() uint64 {
@@ -4934,7 +5140,7 @@ type SessionReply_Rejected struct {
 
 func (x *SessionReply_Rejected) Reset() {
 	*x = SessionReply_Rejected{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[52]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4946,7 +5152,7 @@ func (x *SessionReply_Rejected) String() string {
 func (*SessionReply_Rejected) ProtoMessage() {}
 
 func (x *SessionReply_Rejected) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[52]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4959,7 +5165,7 @@ func (x *SessionReply_Rejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Rejected.ProtoReflect.Descriptor instead.
 func (*SessionReply_Rejected) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 2}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 2}
 }
 
 func (x *SessionReply_Rejected) GetCode() SessionReply_Rejected_Code {
@@ -5009,7 +5215,7 @@ type SessionReply_Lease struct {
 
 func (x *SessionReply_Lease) Reset() {
 	*x = SessionReply_Lease{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[53]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5021,7 +5227,7 @@ func (x *SessionReply_Lease) String() string {
 func (*SessionReply_Lease) ProtoMessage() {}
 
 func (x *SessionReply_Lease) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[53]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5034,7 +5240,7 @@ func (x *SessionReply_Lease) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Lease.ProtoReflect.Descriptor instead.
 func (*SessionReply_Lease) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 3}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 3}
 }
 
 func (x *SessionReply_Lease) GetEpoch() uint64 {
@@ -5112,7 +5318,7 @@ type SessionReply_TranscriptPage struct {
 
 func (x *SessionReply_TranscriptPage) Reset() {
 	*x = SessionReply_TranscriptPage{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[54]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5124,7 +5330,7 @@ func (x *SessionReply_TranscriptPage) String() string {
 func (*SessionReply_TranscriptPage) ProtoMessage() {}
 
 func (x *SessionReply_TranscriptPage) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[54]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5137,7 +5343,7 @@ func (x *SessionReply_TranscriptPage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_TranscriptPage.ProtoReflect.Descriptor instead.
 func (*SessionReply_TranscriptPage) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 4}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 4}
 }
 
 func (x *SessionReply_TranscriptPage) GetEntries() []*TranscriptEntry {
@@ -5170,7 +5376,7 @@ type SessionReply_TranscriptKeys struct {
 
 func (x *SessionReply_TranscriptKeys) Reset() {
 	*x = SessionReply_TranscriptKeys{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[55]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5182,7 +5388,7 @@ func (x *SessionReply_TranscriptKeys) String() string {
 func (*SessionReply_TranscriptKeys) ProtoMessage() {}
 
 func (x *SessionReply_TranscriptKeys) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[55]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5195,7 +5401,7 @@ func (x *SessionReply_TranscriptKeys) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_TranscriptKeys.ProtoReflect.Descriptor instead.
 func (*SessionReply_TranscriptKeys) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 5}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 5}
 }
 
 func (x *SessionReply_TranscriptKeys) GetSubpaths() []string {
@@ -5214,7 +5420,7 @@ type SessionReply_Inputs struct {
 
 func (x *SessionReply_Inputs) Reset() {
 	*x = SessionReply_Inputs{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[56]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5226,7 +5432,7 @@ func (x *SessionReply_Inputs) String() string {
 func (*SessionReply_Inputs) ProtoMessage() {}
 
 func (x *SessionReply_Inputs) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[56]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5239,7 +5445,7 @@ func (x *SessionReply_Inputs) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Inputs.ProtoReflect.Descriptor instead.
 func (*SessionReply_Inputs) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 6}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 6}
 }
 
 func (x *SessionReply_Inputs) GetInputs() []*SessionReply_Inputs_Input {
@@ -5259,7 +5465,7 @@ type SessionReply_Turn struct {
 
 func (x *SessionReply_Turn) Reset() {
 	*x = SessionReply_Turn{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[57]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5271,7 +5477,7 @@ func (x *SessionReply_Turn) String() string {
 func (*SessionReply_Turn) ProtoMessage() {}
 
 func (x *SessionReply_Turn) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[57]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5284,7 +5490,7 @@ func (x *SessionReply_Turn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Turn.ProtoReflect.Descriptor instead.
 func (*SessionReply_Turn) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 7}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 7}
 }
 
 func (x *SessionReply_Turn) GetTurnNo() uint64 {
@@ -5303,7 +5509,7 @@ type SessionReply_SessionStateReply struct {
 
 func (x *SessionReply_SessionStateReply) Reset() {
 	*x = SessionReply_SessionStateReply{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[58]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5315,7 +5521,7 @@ func (x *SessionReply_SessionStateReply) String() string {
 func (*SessionReply_SessionStateReply) ProtoMessage() {}
 
 func (x *SessionReply_SessionStateReply) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[58]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5328,7 +5534,7 @@ func (x *SessionReply_SessionStateReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_SessionStateReply.ProtoReflect.Descriptor instead.
 func (*SessionReply_SessionStateReply) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 8}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 8}
 }
 
 func (x *SessionReply_SessionStateReply) GetState() *SessionState {
@@ -5349,7 +5555,7 @@ type SessionReply_Approval struct {
 
 func (x *SessionReply_Approval) Reset() {
 	*x = SessionReply_Approval{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[59]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5361,7 +5567,7 @@ func (x *SessionReply_Approval) String() string {
 func (*SessionReply_Approval) ProtoMessage() {}
 
 func (x *SessionReply_Approval) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[59]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5374,7 +5580,7 @@ func (x *SessionReply_Approval) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Approval.ProtoReflect.Descriptor instead.
 func (*SessionReply_Approval) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 9}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 9}
 }
 
 func (x *SessionReply_Approval) GetApprovalId() string {
@@ -5400,7 +5606,7 @@ type SessionReply_Grant struct {
 
 func (x *SessionReply_Grant) Reset() {
 	*x = SessionReply_Grant{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[60]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5412,7 +5618,7 @@ func (x *SessionReply_Grant) String() string {
 func (*SessionReply_Grant) ProtoMessage() {}
 
 func (x *SessionReply_Grant) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[60]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5425,7 +5631,7 @@ func (x *SessionReply_Grant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Grant.ProtoReflect.Descriptor instead.
 func (*SessionReply_Grant) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 10}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 10}
 }
 
 func (x *SessionReply_Grant) GetAllowed() bool {
@@ -5444,7 +5650,7 @@ type SessionReply_Devices struct {
 
 func (x *SessionReply_Devices) Reset() {
 	*x = SessionReply_Devices{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[61]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5456,7 +5662,7 @@ func (x *SessionReply_Devices) String() string {
 func (*SessionReply_Devices) ProtoMessage() {}
 
 func (x *SessionReply_Devices) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[61]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5469,7 +5675,7 @@ func (x *SessionReply_Devices) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Devices.ProtoReflect.Descriptor instead.
 func (*SessionReply_Devices) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 11}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 11}
 }
 
 func (x *SessionReply_Devices) GetDevices() []*SessionReply_Devices_Device {
@@ -5497,7 +5703,7 @@ type SessionReply_LaunchEnv struct {
 
 func (x *SessionReply_LaunchEnv) Reset() {
 	*x = SessionReply_LaunchEnv{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[62]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5509,7 +5715,7 @@ func (x *SessionReply_LaunchEnv) String() string {
 func (*SessionReply_LaunchEnv) ProtoMessage() {}
 
 func (x *SessionReply_LaunchEnv) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[62]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5522,7 +5728,7 @@ func (x *SessionReply_LaunchEnv) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_LaunchEnv.ProtoReflect.Descriptor instead.
 func (*SessionReply_LaunchEnv) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 12}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 12}
 }
 
 func (x *SessionReply_LaunchEnv) GetLocalLogin() bool {
@@ -5555,7 +5761,7 @@ type SessionReply_Resumed struct {
 
 func (x *SessionReply_Resumed) Reset() {
 	*x = SessionReply_Resumed{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[63]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5567,7 +5773,7 @@ func (x *SessionReply_Resumed) String() string {
 func (*SessionReply_Resumed) ProtoMessage() {}
 
 func (x *SessionReply_Resumed) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[63]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5580,7 +5786,7 @@ func (x *SessionReply_Resumed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Resumed.ProtoReflect.Descriptor instead.
 func (*SessionReply_Resumed) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 13}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 13}
 }
 
 func (x *SessionReply_Resumed) GetLeases() []*SessionReply_Resumed_Outcome {
@@ -5608,7 +5814,7 @@ type SessionReply_Inputs_Input struct {
 
 func (x *SessionReply_Inputs_Input) Reset() {
 	*x = SessionReply_Inputs_Input{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[64]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5620,7 +5826,7 @@ func (x *SessionReply_Inputs_Input) String() string {
 func (*SessionReply_Inputs_Input) ProtoMessage() {}
 
 func (x *SessionReply_Inputs_Input) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[64]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5633,7 +5839,7 @@ func (x *SessionReply_Inputs_Input) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Inputs_Input.ProtoReflect.Descriptor instead.
 func (*SessionReply_Inputs_Input) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 6, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 6, 0}
 }
 
 func (x *SessionReply_Inputs_Input) GetInputId() string {
@@ -5686,7 +5892,7 @@ type SessionReply_Devices_Device struct {
 
 func (x *SessionReply_Devices_Device) Reset() {
 	*x = SessionReply_Devices_Device{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[65]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5698,7 +5904,7 @@ func (x *SessionReply_Devices_Device) String() string {
 func (*SessionReply_Devices_Device) ProtoMessage() {}
 
 func (x *SessionReply_Devices_Device) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[65]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5711,7 +5917,7 @@ func (x *SessionReply_Devices_Device) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Devices_Device.ProtoReflect.Descriptor instead.
 func (*SessionReply_Devices_Device) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 11, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 11, 0}
 }
 
 func (x *SessionReply_Devices_Device) GetName() string {
@@ -5766,7 +5972,7 @@ type SessionReply_LaunchEnv_Var struct {
 
 func (x *SessionReply_LaunchEnv_Var) Reset() {
 	*x = SessionReply_LaunchEnv_Var{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[66]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5778,7 +5984,7 @@ func (x *SessionReply_LaunchEnv_Var) String() string {
 func (*SessionReply_LaunchEnv_Var) ProtoMessage() {}
 
 func (x *SessionReply_LaunchEnv_Var) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[66]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5791,7 +5997,7 @@ func (x *SessionReply_LaunchEnv_Var) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_LaunchEnv_Var.ProtoReflect.Descriptor instead.
 func (*SessionReply_LaunchEnv_Var) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 12, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 12, 0}
 }
 
 func (x *SessionReply_LaunchEnv_Var) GetName() string {
@@ -5822,7 +6028,7 @@ type SessionReply_Resumed_Outcome struct {
 
 func (x *SessionReply_Resumed_Outcome) Reset() {
 	*x = SessionReply_Resumed_Outcome{}
-	mi := &file_circus_v1_worker_link_proto_msgTypes[67]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5834,7 +6040,7 @@ func (x *SessionReply_Resumed_Outcome) String() string {
 func (*SessionReply_Resumed_Outcome) ProtoMessage() {}
 
 func (x *SessionReply_Resumed_Outcome) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_worker_link_proto_msgTypes[67]
+	mi := &file_circus_v1_worker_link_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5847,7 +6053,7 @@ func (x *SessionReply_Resumed_Outcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionReply_Resumed_Outcome.ProtoReflect.Descriptor instead.
 func (*SessionReply_Resumed_Outcome) Descriptor() ([]byte, []int) {
-	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{28, 13, 0}
+	return file_circus_v1_worker_link_proto_rawDescGZIP(), []int{29, 13, 0}
 }
 
 func (x *SessionReply_Resumed_Outcome) GetSessionId() string {
@@ -5882,7 +6088,7 @@ var File_circus_v1_worker_link_proto protoreflect.FileDescriptor
 
 const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcircus/v1/worker_link.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\x1a\x17circus/v1/session.proto\"\x87\x05\n" +
+	"\x1bcircus/v1/worker_link.proto\x12\tcircus.v1\x1a\x15circus/v1/agent.proto\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\x1a\x17circus/v1/session.proto\"\xc7\x05\n" +
 	"\fWorkerUplink\x12(\n" +
 	"\x05hello\x18\x01 \x01(\v2\x10.circus.v1.HelloH\x00R\x05hello\x124\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x14.circus.v1.HeartbeatH\x00R\theartbeat\x121\n" +
@@ -5898,7 +6104,8 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\x06attach\x18\x0e \x01(\v2\x11.circus.v1.AttachH\x00R\x06attach\x125\n" +
 	"\asession\x18\x0f \x01(\v2\x19.circus.v1.SessionRequestH\x00R\asession\x12>\n" +
 	"\rresume_leases\x18\x10 \x01(\v2\x17.circus.v1.ResumeLeasesH\x00R\fresumeLeases\x12;\n" +
-	"\flist_devices\x18\x11 \x01(\v2\x16.circus.v1.ListDevicesH\x00R\vlistDevices\x12\x1d\n" +
+	"\flist_devices\x18\x11 \x01(\v2\x16.circus.v1.ListDevicesH\x00R\vlistDevices\x12>\n" +
+	"\rreport_agents\x18\x12 \x01(\v2\x17.circus.v1.ReportAgentsH\x00R\freportAgents\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x14 \x01(\x04R\trequestIdB\t\n" +
 	"\apayload\"\xc8\x03\n" +
@@ -5960,16 +6167,16 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\x13CODE_SESSION_FENCED\x10\b\x12\x18\n" +
 	"\x14CODE_SESSION_STOPPED\x10\t\x1a\v\n" +
 	"\tCancelledB\b\n" +
-	"\x06update\"\xf4\x03\n" +
+	"\x06update\"\x93\x04\n" +
 	"\x06Attach\x12!\n" +
 	"\fmax_sessions\x18\x01 \x01(\rR\vmaxSessions\x12\x1f\n" +
 	"\vsdk_version\x18\x02 \x01(\tR\n" +
-	"sdkVersion\x12%\n" +
-	"\x0eclaude_version\x18\x03 \x01(\tR\rclaudeVersion\x123\n" +
+	"sdkVersion\x123\n" +
 	"\aaccount\x18\x04 \x01(\v2\x19.circus.v1.Attach.AccountR\aaccount\x12G\n" +
 	"\x0fauto_mode_check\x18\x05 \x01(\x0e2\x1f.circus.v1.Attach.AutoModeCheckR\rautoModeCheck\x12\x1d\n" +
 	"\n" +
-	"local_only\x18\x06 \x01(\bR\tlocalOnly\x1ap\n" +
+	"local_only\x18\x06 \x01(\bR\tlocalOnly\x12.\n" +
+	"\x06agents\x18\a \x03(\v2\x16.circus.v1.AgentStatusR\x06agents\x1ap\n" +
 	"\aAccount\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\"\n" +
 	"\forganization\x18\x02 \x01(\tR\forganization\x12+\n" +
@@ -5977,12 +6184,13 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\rAutoModeCheck\x12\x1f\n" +
 	"\x1bAUTO_MODE_CHECK_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19AUTO_MODE_CHECK_AVAILABLE\x10\x01\x12\x1f\n" +
-	"\x1bAUTO_MODE_CHECK_UNAVAILABLE\x10\x02\"\xe0\x05\n" +
+	"\x1bAUTO_MODE_CHECK_UNAVAILABLE\x10\x02J\x04\b\x03\x10\x04R\x0eclaude_version\"\xeb\a\n" +
 	"\vWorkerEvent\x124\n" +
 	"\x05offer\x18\x01 \x01(\v2\x1c.circus.v1.WorkerEvent.OfferH\x00R\x05offer\x124\n" +
 	"\x05nudge\x18\x02 \x01(\v2\x1c.circus.v1.WorkerEvent.NudgeH\x00R\x05nudge\x12J\n" +
 	"\rlease_revoked\x18\x03 \x01(\v2#.circus.v1.WorkerEvent.LeaseRevokedH\x00R\fleaseRevoked\x12G\n" +
-	"\frelease_idle\x18\x04 \x01(\v2\".circus.v1.WorkerEvent.ReleaseIdleH\x00R\vreleaseIdle\x1a&\n" +
+	"\frelease_idle\x18\x04 \x01(\v2\".circus.v1.WorkerEvent.ReleaseIdleH\x00R\vreleaseIdle\x12J\n" +
+	"\ragents_wanted\x18\x05 \x01(\v2#.circus.v1.WorkerEvent.AgentsWantedH\x00R\fagentsWanted\x1a&\n" +
 	"\x05Offer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x1a\x95\x02\n" +
@@ -6006,7 +6214,13 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\vReleaseIdle\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
-	"\x05epoch\x18\x02 \x01(\x04R\x05epochB\a\n" +
+	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\x1a\xbc\x01\n" +
+	"\fAgentsWanted\x12B\n" +
+	"\x06agents\x18\x01 \x03(\v2*.circus.v1.WorkerEvent.AgentsWanted.WantedR\x06agents\x1ah\n" +
+	"\x06Wanted\x12*\n" +
+	"\x05agent\x18\x01 \x01(\x0e2\x14.circus.v1.AgentKindR\x05agent\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x18\n" +
+	"\aattempt\x18\x03 \x01(\x04R\aattemptB\a\n" +
 	"\x05event\"\xff\a\n" +
 	"\x0eSessionRequest\x12\x1d\n" +
 	"\n" +
@@ -6187,7 +6401,9 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\"\r\n" +
-	"\vListDevices\"\xef\x17\n" +
+	"\vListDevices\">\n" +
+	"\fReportAgents\x12.\n" +
+	"\x06agents\x18\x01 \x03(\v2\x16.circus.v1.AgentStatusR\x06agents\"\xef\x17\n" +
 	"\fSessionReply\x12,\n" +
 	"\x02ok\x18\x01 \x01(\v2\x1a.circus.v1.SessionReply.OkH\x00R\x02ok\x128\n" +
 	"\x06fenced\x18\x02 \x01(\v2\x1e.circus.v1.SessionReply.FencedH\x00R\x06fenced\x12>\n" +
@@ -6320,7 +6536,7 @@ func file_circus_v1_worker_link_proto_rawDescGZIP() []byte {
 }
 
 var file_circus_v1_worker_link_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_circus_v1_worker_link_proto_msgTypes = make([]protoimpl.MessageInfo, 68)
+var file_circus_v1_worker_link_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
 var file_circus_v1_worker_link_proto_goTypes = []any{
 	(CallOutcome)(0),                         // 0: circus.v1.CallOutcome
 	(CallUpdate_Rejected_Code)(0),            // 1: circus.v1.CallUpdate.Rejected.Code
@@ -6359,172 +6575,183 @@ var file_circus_v1_worker_link_proto_goTypes = []any{
 	(*GetLaunchEnv)(nil),                     // 34: circus.v1.GetLaunchEnv
 	(*ResumeLeases)(nil),                     // 35: circus.v1.ResumeLeases
 	(*ListDevices)(nil),                      // 36: circus.v1.ListDevices
-	(*SessionReply)(nil),                     // 37: circus.v1.SessionReply
-	(*CallUpdate_Accepted)(nil),              // 38: circus.v1.CallUpdate.Accepted
-	(*CallUpdate_Dispatched)(nil),            // 39: circus.v1.CallUpdate.Dispatched
-	(*CallUpdate_DeviceOffline)(nil),         // 40: circus.v1.CallUpdate.DeviceOffline
-	(*CallUpdate_Unknown)(nil),               // 41: circus.v1.CallUpdate.Unknown
-	(*CallUpdate_Lost)(nil),                  // 42: circus.v1.CallUpdate.Lost
-	(*CallUpdate_Rejected)(nil),              // 43: circus.v1.CallUpdate.Rejected
-	(*CallUpdate_Cancelled)(nil),             // 44: circus.v1.CallUpdate.Cancelled
-	(*Attach_Account)(nil),                   // 45: circus.v1.Attach.Account
-	(*WorkerEvent_Offer)(nil),                // 46: circus.v1.WorkerEvent.Offer
-	(*WorkerEvent_Nudge)(nil),                // 47: circus.v1.WorkerEvent.Nudge
-	(*WorkerEvent_LeaseRevoked)(nil),         // 48: circus.v1.WorkerEvent.LeaseRevoked
-	(*WorkerEvent_ReleaseIdle)(nil),          // 49: circus.v1.WorkerEvent.ReleaseIdle
-	(*ReportTurn_Persisted)(nil),             // 50: circus.v1.ReportTurn.Persisted
-	(*PatchSessionState_Cwd)(nil),            // 51: circus.v1.PatchSessionState.Cwd
-	(*PatchSessionState_FileRecord)(nil),     // 52: circus.v1.PatchSessionState.FileRecord
-	(*PatchSessionState_BackgroundTask)(nil), // 53: circus.v1.PatchSessionState.BackgroundTask
-	(*SessionState_Job)(nil),                 // 54: circus.v1.SessionState.Job
-	(*SessionState_Call)(nil),                // 55: circus.v1.SessionState.Call
-	(*SessionState_Grant)(nil),               // 56: circus.v1.SessionState.Grant
-	(*PublishEvents_Event)(nil),              // 57: circus.v1.PublishEvents.Event
-	(*ResumeLeases_Held)(nil),                // 58: circus.v1.ResumeLeases.Held
-	(*SessionReply_Ok)(nil),                  // 59: circus.v1.SessionReply.Ok
-	(*SessionReply_Fenced)(nil),              // 60: circus.v1.SessionReply.Fenced
-	(*SessionReply_Rejected)(nil),            // 61: circus.v1.SessionReply.Rejected
-	(*SessionReply_Lease)(nil),               // 62: circus.v1.SessionReply.Lease
-	(*SessionReply_TranscriptPage)(nil),      // 63: circus.v1.SessionReply.TranscriptPage
-	(*SessionReply_TranscriptKeys)(nil),      // 64: circus.v1.SessionReply.TranscriptKeys
-	(*SessionReply_Inputs)(nil),              // 65: circus.v1.SessionReply.Inputs
-	(*SessionReply_Turn)(nil),                // 66: circus.v1.SessionReply.Turn
-	(*SessionReply_SessionStateReply)(nil),   // 67: circus.v1.SessionReply.SessionStateReply
-	(*SessionReply_Approval)(nil),            // 68: circus.v1.SessionReply.Approval
-	(*SessionReply_Grant)(nil),               // 69: circus.v1.SessionReply.Grant
-	(*SessionReply_Devices)(nil),             // 70: circus.v1.SessionReply.Devices
-	(*SessionReply_LaunchEnv)(nil),           // 71: circus.v1.SessionReply.LaunchEnv
-	(*SessionReply_Resumed)(nil),             // 72: circus.v1.SessionReply.Resumed
-	(*SessionReply_Inputs_Input)(nil),        // 73: circus.v1.SessionReply.Inputs.Input
-	(*SessionReply_Devices_Device)(nil),      // 74: circus.v1.SessionReply.Devices.Device
-	(*SessionReply_LaunchEnv_Var)(nil),       // 75: circus.v1.SessionReply.LaunchEnv.Var
-	(*SessionReply_Resumed_Outcome)(nil),     // 76: circus.v1.SessionReply.Resumed.Outcome
-	(*Hello)(nil),                            // 77: circus.v1.Hello
-	(*Heartbeat)(nil),                        // 78: circus.v1.Heartbeat
-	(*Fragment)(nil),                         // 79: circus.v1.Fragment
-	(*CancelCall)(nil),                       // 80: circus.v1.CancelCall
-	(*CallQuery)(nil),                        // 81: circus.v1.CallQuery
-	(*Welcome)(nil),                          // 82: circus.v1.Welcome
-	(*Reject)(nil),                           // 83: circus.v1.Reject
-	(*DeviceCall)(nil),                       // 84: circus.v1.DeviceCall
-	(*DeviceResult)(nil),                     // 85: circus.v1.DeviceResult
-	(TurnOrigin)(0),                          // 86: circus.v1.TurnOrigin
-	(TurnOutcome)(0),                         // 87: circus.v1.TurnOutcome
-	(ApprovalKind)(0),                        // 88: circus.v1.ApprovalKind
-	(JobEvent_State)(0),                      // 89: circus.v1.JobEvent.State
-	(SessionEvent_Kind)(0),                   // 90: circus.v1.SessionEvent.Kind
-	(*SessionConfig)(nil),                    // 91: circus.v1.SessionConfig
-	(InputPriority)(0),                       // 92: circus.v1.InputPriority
+	(*ReportAgents)(nil),                     // 37: circus.v1.ReportAgents
+	(*SessionReply)(nil),                     // 38: circus.v1.SessionReply
+	(*CallUpdate_Accepted)(nil),              // 39: circus.v1.CallUpdate.Accepted
+	(*CallUpdate_Dispatched)(nil),            // 40: circus.v1.CallUpdate.Dispatched
+	(*CallUpdate_DeviceOffline)(nil),         // 41: circus.v1.CallUpdate.DeviceOffline
+	(*CallUpdate_Unknown)(nil),               // 42: circus.v1.CallUpdate.Unknown
+	(*CallUpdate_Lost)(nil),                  // 43: circus.v1.CallUpdate.Lost
+	(*CallUpdate_Rejected)(nil),              // 44: circus.v1.CallUpdate.Rejected
+	(*CallUpdate_Cancelled)(nil),             // 45: circus.v1.CallUpdate.Cancelled
+	(*Attach_Account)(nil),                   // 46: circus.v1.Attach.Account
+	(*WorkerEvent_Offer)(nil),                // 47: circus.v1.WorkerEvent.Offer
+	(*WorkerEvent_Nudge)(nil),                // 48: circus.v1.WorkerEvent.Nudge
+	(*WorkerEvent_LeaseRevoked)(nil),         // 49: circus.v1.WorkerEvent.LeaseRevoked
+	(*WorkerEvent_ReleaseIdle)(nil),          // 50: circus.v1.WorkerEvent.ReleaseIdle
+	(*WorkerEvent_AgentsWanted)(nil),         // 51: circus.v1.WorkerEvent.AgentsWanted
+	(*WorkerEvent_AgentsWanted_Wanted)(nil),  // 52: circus.v1.WorkerEvent.AgentsWanted.Wanted
+	(*ReportTurn_Persisted)(nil),             // 53: circus.v1.ReportTurn.Persisted
+	(*PatchSessionState_Cwd)(nil),            // 54: circus.v1.PatchSessionState.Cwd
+	(*PatchSessionState_FileRecord)(nil),     // 55: circus.v1.PatchSessionState.FileRecord
+	(*PatchSessionState_BackgroundTask)(nil), // 56: circus.v1.PatchSessionState.BackgroundTask
+	(*SessionState_Job)(nil),                 // 57: circus.v1.SessionState.Job
+	(*SessionState_Call)(nil),                // 58: circus.v1.SessionState.Call
+	(*SessionState_Grant)(nil),               // 59: circus.v1.SessionState.Grant
+	(*PublishEvents_Event)(nil),              // 60: circus.v1.PublishEvents.Event
+	(*ResumeLeases_Held)(nil),                // 61: circus.v1.ResumeLeases.Held
+	(*SessionReply_Ok)(nil),                  // 62: circus.v1.SessionReply.Ok
+	(*SessionReply_Fenced)(nil),              // 63: circus.v1.SessionReply.Fenced
+	(*SessionReply_Rejected)(nil),            // 64: circus.v1.SessionReply.Rejected
+	(*SessionReply_Lease)(nil),               // 65: circus.v1.SessionReply.Lease
+	(*SessionReply_TranscriptPage)(nil),      // 66: circus.v1.SessionReply.TranscriptPage
+	(*SessionReply_TranscriptKeys)(nil),      // 67: circus.v1.SessionReply.TranscriptKeys
+	(*SessionReply_Inputs)(nil),              // 68: circus.v1.SessionReply.Inputs
+	(*SessionReply_Turn)(nil),                // 69: circus.v1.SessionReply.Turn
+	(*SessionReply_SessionStateReply)(nil),   // 70: circus.v1.SessionReply.SessionStateReply
+	(*SessionReply_Approval)(nil),            // 71: circus.v1.SessionReply.Approval
+	(*SessionReply_Grant)(nil),               // 72: circus.v1.SessionReply.Grant
+	(*SessionReply_Devices)(nil),             // 73: circus.v1.SessionReply.Devices
+	(*SessionReply_LaunchEnv)(nil),           // 74: circus.v1.SessionReply.LaunchEnv
+	(*SessionReply_Resumed)(nil),             // 75: circus.v1.SessionReply.Resumed
+	(*SessionReply_Inputs_Input)(nil),        // 76: circus.v1.SessionReply.Inputs.Input
+	(*SessionReply_Devices_Device)(nil),      // 77: circus.v1.SessionReply.Devices.Device
+	(*SessionReply_LaunchEnv_Var)(nil),       // 78: circus.v1.SessionReply.LaunchEnv.Var
+	(*SessionReply_Resumed_Outcome)(nil),     // 79: circus.v1.SessionReply.Resumed.Outcome
+	(*Hello)(nil),                            // 80: circus.v1.Hello
+	(*Heartbeat)(nil),                        // 81: circus.v1.Heartbeat
+	(*Fragment)(nil),                         // 82: circus.v1.Fragment
+	(*CancelCall)(nil),                       // 83: circus.v1.CancelCall
+	(*CallQuery)(nil),                        // 84: circus.v1.CallQuery
+	(*Welcome)(nil),                          // 85: circus.v1.Welcome
+	(*Reject)(nil),                           // 86: circus.v1.Reject
+	(*DeviceCall)(nil),                       // 87: circus.v1.DeviceCall
+	(*DeviceResult)(nil),                     // 88: circus.v1.DeviceResult
+	(*AgentStatus)(nil),                      // 89: circus.v1.AgentStatus
+	(TurnOrigin)(0),                          // 90: circus.v1.TurnOrigin
+	(TurnOutcome)(0),                         // 91: circus.v1.TurnOutcome
+	(ApprovalKind)(0),                        // 92: circus.v1.ApprovalKind
+	(AgentKind)(0),                           // 93: circus.v1.AgentKind
+	(JobEvent_State)(0),                      // 94: circus.v1.JobEvent.State
+	(SessionEvent_Kind)(0),                   // 95: circus.v1.SessionEvent.Kind
+	(*SessionConfig)(nil),                    // 96: circus.v1.SessionConfig
+	(InputPriority)(0),                       // 97: circus.v1.InputPriority
 }
 var file_circus_v1_worker_link_proto_depIdxs = []int32{
-	77,  // 0: circus.v1.WorkerUplink.hello:type_name -> circus.v1.Hello
-	78,  // 1: circus.v1.WorkerUplink.heartbeat:type_name -> circus.v1.Heartbeat
-	79,  // 2: circus.v1.WorkerUplink.fragment:type_name -> circus.v1.Fragment
+	80,  // 0: circus.v1.WorkerUplink.hello:type_name -> circus.v1.Hello
+	81,  // 1: circus.v1.WorkerUplink.heartbeat:type_name -> circus.v1.Heartbeat
+	82,  // 2: circus.v1.WorkerUplink.fragment:type_name -> circus.v1.Fragment
 	12,  // 3: circus.v1.WorkerUplink.submit_call:type_name -> circus.v1.SubmitCall
-	80,  // 4: circus.v1.WorkerUplink.cancel_call:type_name -> circus.v1.CancelCall
-	81,  // 5: circus.v1.WorkerUplink.call_query:type_name -> circus.v1.CallQuery
+	83,  // 4: circus.v1.WorkerUplink.cancel_call:type_name -> circus.v1.CancelCall
+	84,  // 5: circus.v1.WorkerUplink.call_query:type_name -> circus.v1.CallQuery
 	11,  // 6: circus.v1.WorkerUplink.unwatch:type_name -> circus.v1.Unwatch
 	14,  // 7: circus.v1.WorkerUplink.attach:type_name -> circus.v1.Attach
 	16,  // 8: circus.v1.WorkerUplink.session:type_name -> circus.v1.SessionRequest
 	35,  // 9: circus.v1.WorkerUplink.resume_leases:type_name -> circus.v1.ResumeLeases
 	36,  // 10: circus.v1.WorkerUplink.list_devices:type_name -> circus.v1.ListDevices
-	82,  // 11: circus.v1.WorkerDownlink.welcome:type_name -> circus.v1.Welcome
-	83,  // 12: circus.v1.WorkerDownlink.reject:type_name -> circus.v1.Reject
-	78,  // 13: circus.v1.WorkerDownlink.heartbeat:type_name -> circus.v1.Heartbeat
-	79,  // 14: circus.v1.WorkerDownlink.fragment:type_name -> circus.v1.Fragment
-	13,  // 15: circus.v1.WorkerDownlink.call_update:type_name -> circus.v1.CallUpdate
-	37,  // 16: circus.v1.WorkerDownlink.session_reply:type_name -> circus.v1.SessionReply
-	15,  // 17: circus.v1.WorkerDownlink.worker_event:type_name -> circus.v1.WorkerEvent
-	84,  // 18: circus.v1.SubmitCall.call:type_name -> circus.v1.DeviceCall
-	38,  // 19: circus.v1.CallUpdate.accepted:type_name -> circus.v1.CallUpdate.Accepted
-	39,  // 20: circus.v1.CallUpdate.dispatched:type_name -> circus.v1.CallUpdate.Dispatched
-	85,  // 21: circus.v1.CallUpdate.result:type_name -> circus.v1.DeviceResult
-	40,  // 22: circus.v1.CallUpdate.offline:type_name -> circus.v1.CallUpdate.DeviceOffline
-	41,  // 23: circus.v1.CallUpdate.unknown:type_name -> circus.v1.CallUpdate.Unknown
-	42,  // 24: circus.v1.CallUpdate.lost:type_name -> circus.v1.CallUpdate.Lost
-	43,  // 25: circus.v1.CallUpdate.rejected:type_name -> circus.v1.CallUpdate.Rejected
-	44,  // 26: circus.v1.CallUpdate.cancelled:type_name -> circus.v1.CallUpdate.Cancelled
-	45,  // 27: circus.v1.Attach.account:type_name -> circus.v1.Attach.Account
-	2,   // 28: circus.v1.Attach.auto_mode_check:type_name -> circus.v1.Attach.AutoModeCheck
-	46,  // 29: circus.v1.WorkerEvent.offer:type_name -> circus.v1.WorkerEvent.Offer
-	47,  // 30: circus.v1.WorkerEvent.nudge:type_name -> circus.v1.WorkerEvent.Nudge
-	48,  // 31: circus.v1.WorkerEvent.lease_revoked:type_name -> circus.v1.WorkerEvent.LeaseRevoked
-	49,  // 32: circus.v1.WorkerEvent.release_idle:type_name -> circus.v1.WorkerEvent.ReleaseIdle
-	17,  // 33: circus.v1.SessionRequest.acquire_lease:type_name -> circus.v1.AcquireLease
-	18,  // 34: circus.v1.SessionRequest.release_lease:type_name -> circus.v1.ReleaseLease
-	19,  // 35: circus.v1.SessionRequest.load_transcript:type_name -> circus.v1.LoadTranscript
-	20,  // 36: circus.v1.SessionRequest.list_transcript_keys:type_name -> circus.v1.ListTranscriptKeys
-	21,  // 37: circus.v1.SessionRequest.append_transcript:type_name -> circus.v1.AppendTranscript
-	23,  // 38: circus.v1.SessionRequest.take_inputs:type_name -> circus.v1.TakeInputs
-	24,  // 39: circus.v1.SessionRequest.report_turn:type_name -> circus.v1.ReportTurn
-	26,  // 40: circus.v1.SessionRequest.patch_state:type_name -> circus.v1.PatchSessionState
-	27,  // 41: circus.v1.SessionRequest.get_state:type_name -> circus.v1.GetSessionState
-	30,  // 42: circus.v1.SessionRequest.publish_events:type_name -> circus.v1.PublishEvents
-	31,  // 43: circus.v1.SessionRequest.request_approval:type_name -> circus.v1.RequestApproval
-	32,  // 44: circus.v1.SessionRequest.consume_grant:type_name -> circus.v1.ConsumeGrant
-	33,  // 45: circus.v1.SessionRequest.transcript_repaired:type_name -> circus.v1.TranscriptRepaired
-	34,  // 46: circus.v1.SessionRequest.get_launch_env:type_name -> circus.v1.GetLaunchEnv
-	4,   // 47: circus.v1.ReleaseLease.reason:type_name -> circus.v1.ReleaseLease.Reason
-	22,  // 48: circus.v1.AppendTranscript.entries:type_name -> circus.v1.TranscriptEntry
-	5,   // 49: circus.v1.ReportTurn.phase:type_name -> circus.v1.ReportTurn.Phase
-	86,  // 50: circus.v1.ReportTurn.origin:type_name -> circus.v1.TurnOrigin
-	87,  // 51: circus.v1.ReportTurn.outcome:type_name -> circus.v1.TurnOutcome
-	50,  // 52: circus.v1.ReportTurn.persisted:type_name -> circus.v1.ReportTurn.Persisted
-	51,  // 53: circus.v1.PatchSessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
-	52,  // 54: circus.v1.PatchSessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
-	53,  // 55: circus.v1.PatchSessionState.bgtasks_started:type_name -> circus.v1.PatchSessionState.BackgroundTask
-	25,  // 56: circus.v1.PatchSessionState.handed_jobs:type_name -> circus.v1.JobKey
-	50,  // 57: circus.v1.PatchSessionState.persisted:type_name -> circus.v1.ReportTurn.Persisted
-	6,   // 58: circus.v1.GetSessionState.sections:type_name -> circus.v1.GetSessionState.Section
-	51,  // 59: circus.v1.SessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
-	52,  // 60: circus.v1.SessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
-	54,  // 61: circus.v1.SessionState.jobs:type_name -> circus.v1.SessionState.Job
-	55,  // 62: circus.v1.SessionState.calls:type_name -> circus.v1.SessionState.Call
-	56,  // 63: circus.v1.SessionState.grants:type_name -> circus.v1.SessionState.Grant
-	55,  // 64: circus.v1.Recovery.calls:type_name -> circus.v1.SessionState.Call
-	53,  // 65: circus.v1.Recovery.lost_bgtasks:type_name -> circus.v1.PatchSessionState.BackgroundTask
-	57,  // 66: circus.v1.PublishEvents.events:type_name -> circus.v1.PublishEvents.Event
-	88,  // 67: circus.v1.RequestApproval.kind:type_name -> circus.v1.ApprovalKind
-	58,  // 68: circus.v1.ResumeLeases.leases:type_name -> circus.v1.ResumeLeases.Held
-	59,  // 69: circus.v1.SessionReply.ok:type_name -> circus.v1.SessionReply.Ok
-	60,  // 70: circus.v1.SessionReply.fenced:type_name -> circus.v1.SessionReply.Fenced
-	61,  // 71: circus.v1.SessionReply.rejected:type_name -> circus.v1.SessionReply.Rejected
-	62,  // 72: circus.v1.SessionReply.lease:type_name -> circus.v1.SessionReply.Lease
-	63,  // 73: circus.v1.SessionReply.transcript_page:type_name -> circus.v1.SessionReply.TranscriptPage
-	64,  // 74: circus.v1.SessionReply.transcript_keys:type_name -> circus.v1.SessionReply.TranscriptKeys
-	65,  // 75: circus.v1.SessionReply.inputs:type_name -> circus.v1.SessionReply.Inputs
-	66,  // 76: circus.v1.SessionReply.turn:type_name -> circus.v1.SessionReply.Turn
-	67,  // 77: circus.v1.SessionReply.state:type_name -> circus.v1.SessionReply.SessionStateReply
-	68,  // 78: circus.v1.SessionReply.approval:type_name -> circus.v1.SessionReply.Approval
-	69,  // 79: circus.v1.SessionReply.grant:type_name -> circus.v1.SessionReply.Grant
-	70,  // 80: circus.v1.SessionReply.devices:type_name -> circus.v1.SessionReply.Devices
-	72,  // 81: circus.v1.SessionReply.resumed:type_name -> circus.v1.SessionReply.Resumed
-	71,  // 82: circus.v1.SessionReply.launch_env:type_name -> circus.v1.SessionReply.LaunchEnv
-	1,   // 83: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
-	3,   // 84: circus.v1.WorkerEvent.Nudge.reasons:type_name -> circus.v1.WorkerEvent.Nudge.Reason
-	25,  // 85: circus.v1.ReportTurn.Persisted.jobs:type_name -> circus.v1.JobKey
-	25,  // 86: circus.v1.SessionState.Job.key:type_name -> circus.v1.JobKey
-	89,  // 87: circus.v1.SessionState.Job.state:type_name -> circus.v1.JobEvent.State
-	0,   // 88: circus.v1.SessionState.Call.outcome:type_name -> circus.v1.CallOutcome
-	1,   // 89: circus.v1.SessionState.Call.rejected_code:type_name -> circus.v1.CallUpdate.Rejected.Code
-	90,  // 90: circus.v1.PublishEvents.Event.kind:type_name -> circus.v1.SessionEvent.Kind
-	7,   // 91: circus.v1.SessionReply.Rejected.code:type_name -> circus.v1.SessionReply.Rejected.Code
-	28,  // 92: circus.v1.SessionReply.Lease.state:type_name -> circus.v1.SessionState
-	29,  // 93: circus.v1.SessionReply.Lease.recovery:type_name -> circus.v1.Recovery
-	91,  // 94: circus.v1.SessionReply.Lease.config:type_name -> circus.v1.SessionConfig
-	22,  // 95: circus.v1.SessionReply.TranscriptPage.entries:type_name -> circus.v1.TranscriptEntry
-	73,  // 96: circus.v1.SessionReply.Inputs.inputs:type_name -> circus.v1.SessionReply.Inputs.Input
-	28,  // 97: circus.v1.SessionReply.SessionStateReply.state:type_name -> circus.v1.SessionState
-	74,  // 98: circus.v1.SessionReply.Devices.devices:type_name -> circus.v1.SessionReply.Devices.Device
-	75,  // 99: circus.v1.SessionReply.LaunchEnv.env:type_name -> circus.v1.SessionReply.LaunchEnv.Var
-	76,  // 100: circus.v1.SessionReply.Resumed.leases:type_name -> circus.v1.SessionReply.Resumed.Outcome
-	8,   // 101: circus.v1.SessionReply.Inputs.Input.kind:type_name -> circus.v1.SessionReply.Inputs.Input.Kind
-	92,  // 102: circus.v1.SessionReply.Inputs.Input.priority:type_name -> circus.v1.InputPriority
-	103, // [103:103] is the sub-list for method output_type
-	103, // [103:103] is the sub-list for method input_type
-	103, // [103:103] is the sub-list for extension type_name
-	103, // [103:103] is the sub-list for extension extendee
-	0,   // [0:103] is the sub-list for field type_name
+	37,  // 11: circus.v1.WorkerUplink.report_agents:type_name -> circus.v1.ReportAgents
+	85,  // 12: circus.v1.WorkerDownlink.welcome:type_name -> circus.v1.Welcome
+	86,  // 13: circus.v1.WorkerDownlink.reject:type_name -> circus.v1.Reject
+	81,  // 14: circus.v1.WorkerDownlink.heartbeat:type_name -> circus.v1.Heartbeat
+	82,  // 15: circus.v1.WorkerDownlink.fragment:type_name -> circus.v1.Fragment
+	13,  // 16: circus.v1.WorkerDownlink.call_update:type_name -> circus.v1.CallUpdate
+	38,  // 17: circus.v1.WorkerDownlink.session_reply:type_name -> circus.v1.SessionReply
+	15,  // 18: circus.v1.WorkerDownlink.worker_event:type_name -> circus.v1.WorkerEvent
+	87,  // 19: circus.v1.SubmitCall.call:type_name -> circus.v1.DeviceCall
+	39,  // 20: circus.v1.CallUpdate.accepted:type_name -> circus.v1.CallUpdate.Accepted
+	40,  // 21: circus.v1.CallUpdate.dispatched:type_name -> circus.v1.CallUpdate.Dispatched
+	88,  // 22: circus.v1.CallUpdate.result:type_name -> circus.v1.DeviceResult
+	41,  // 23: circus.v1.CallUpdate.offline:type_name -> circus.v1.CallUpdate.DeviceOffline
+	42,  // 24: circus.v1.CallUpdate.unknown:type_name -> circus.v1.CallUpdate.Unknown
+	43,  // 25: circus.v1.CallUpdate.lost:type_name -> circus.v1.CallUpdate.Lost
+	44,  // 26: circus.v1.CallUpdate.rejected:type_name -> circus.v1.CallUpdate.Rejected
+	45,  // 27: circus.v1.CallUpdate.cancelled:type_name -> circus.v1.CallUpdate.Cancelled
+	46,  // 28: circus.v1.Attach.account:type_name -> circus.v1.Attach.Account
+	2,   // 29: circus.v1.Attach.auto_mode_check:type_name -> circus.v1.Attach.AutoModeCheck
+	89,  // 30: circus.v1.Attach.agents:type_name -> circus.v1.AgentStatus
+	47,  // 31: circus.v1.WorkerEvent.offer:type_name -> circus.v1.WorkerEvent.Offer
+	48,  // 32: circus.v1.WorkerEvent.nudge:type_name -> circus.v1.WorkerEvent.Nudge
+	49,  // 33: circus.v1.WorkerEvent.lease_revoked:type_name -> circus.v1.WorkerEvent.LeaseRevoked
+	50,  // 34: circus.v1.WorkerEvent.release_idle:type_name -> circus.v1.WorkerEvent.ReleaseIdle
+	51,  // 35: circus.v1.WorkerEvent.agents_wanted:type_name -> circus.v1.WorkerEvent.AgentsWanted
+	17,  // 36: circus.v1.SessionRequest.acquire_lease:type_name -> circus.v1.AcquireLease
+	18,  // 37: circus.v1.SessionRequest.release_lease:type_name -> circus.v1.ReleaseLease
+	19,  // 38: circus.v1.SessionRequest.load_transcript:type_name -> circus.v1.LoadTranscript
+	20,  // 39: circus.v1.SessionRequest.list_transcript_keys:type_name -> circus.v1.ListTranscriptKeys
+	21,  // 40: circus.v1.SessionRequest.append_transcript:type_name -> circus.v1.AppendTranscript
+	23,  // 41: circus.v1.SessionRequest.take_inputs:type_name -> circus.v1.TakeInputs
+	24,  // 42: circus.v1.SessionRequest.report_turn:type_name -> circus.v1.ReportTurn
+	26,  // 43: circus.v1.SessionRequest.patch_state:type_name -> circus.v1.PatchSessionState
+	27,  // 44: circus.v1.SessionRequest.get_state:type_name -> circus.v1.GetSessionState
+	30,  // 45: circus.v1.SessionRequest.publish_events:type_name -> circus.v1.PublishEvents
+	31,  // 46: circus.v1.SessionRequest.request_approval:type_name -> circus.v1.RequestApproval
+	32,  // 47: circus.v1.SessionRequest.consume_grant:type_name -> circus.v1.ConsumeGrant
+	33,  // 48: circus.v1.SessionRequest.transcript_repaired:type_name -> circus.v1.TranscriptRepaired
+	34,  // 49: circus.v1.SessionRequest.get_launch_env:type_name -> circus.v1.GetLaunchEnv
+	4,   // 50: circus.v1.ReleaseLease.reason:type_name -> circus.v1.ReleaseLease.Reason
+	22,  // 51: circus.v1.AppendTranscript.entries:type_name -> circus.v1.TranscriptEntry
+	5,   // 52: circus.v1.ReportTurn.phase:type_name -> circus.v1.ReportTurn.Phase
+	90,  // 53: circus.v1.ReportTurn.origin:type_name -> circus.v1.TurnOrigin
+	91,  // 54: circus.v1.ReportTurn.outcome:type_name -> circus.v1.TurnOutcome
+	53,  // 55: circus.v1.ReportTurn.persisted:type_name -> circus.v1.ReportTurn.Persisted
+	54,  // 56: circus.v1.PatchSessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
+	55,  // 57: circus.v1.PatchSessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
+	56,  // 58: circus.v1.PatchSessionState.bgtasks_started:type_name -> circus.v1.PatchSessionState.BackgroundTask
+	25,  // 59: circus.v1.PatchSessionState.handed_jobs:type_name -> circus.v1.JobKey
+	53,  // 60: circus.v1.PatchSessionState.persisted:type_name -> circus.v1.ReportTurn.Persisted
+	6,   // 61: circus.v1.GetSessionState.sections:type_name -> circus.v1.GetSessionState.Section
+	54,  // 62: circus.v1.SessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
+	55,  // 63: circus.v1.SessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
+	57,  // 64: circus.v1.SessionState.jobs:type_name -> circus.v1.SessionState.Job
+	58,  // 65: circus.v1.SessionState.calls:type_name -> circus.v1.SessionState.Call
+	59,  // 66: circus.v1.SessionState.grants:type_name -> circus.v1.SessionState.Grant
+	58,  // 67: circus.v1.Recovery.calls:type_name -> circus.v1.SessionState.Call
+	56,  // 68: circus.v1.Recovery.lost_bgtasks:type_name -> circus.v1.PatchSessionState.BackgroundTask
+	60,  // 69: circus.v1.PublishEvents.events:type_name -> circus.v1.PublishEvents.Event
+	92,  // 70: circus.v1.RequestApproval.kind:type_name -> circus.v1.ApprovalKind
+	61,  // 71: circus.v1.ResumeLeases.leases:type_name -> circus.v1.ResumeLeases.Held
+	89,  // 72: circus.v1.ReportAgents.agents:type_name -> circus.v1.AgentStatus
+	62,  // 73: circus.v1.SessionReply.ok:type_name -> circus.v1.SessionReply.Ok
+	63,  // 74: circus.v1.SessionReply.fenced:type_name -> circus.v1.SessionReply.Fenced
+	64,  // 75: circus.v1.SessionReply.rejected:type_name -> circus.v1.SessionReply.Rejected
+	65,  // 76: circus.v1.SessionReply.lease:type_name -> circus.v1.SessionReply.Lease
+	66,  // 77: circus.v1.SessionReply.transcript_page:type_name -> circus.v1.SessionReply.TranscriptPage
+	67,  // 78: circus.v1.SessionReply.transcript_keys:type_name -> circus.v1.SessionReply.TranscriptKeys
+	68,  // 79: circus.v1.SessionReply.inputs:type_name -> circus.v1.SessionReply.Inputs
+	69,  // 80: circus.v1.SessionReply.turn:type_name -> circus.v1.SessionReply.Turn
+	70,  // 81: circus.v1.SessionReply.state:type_name -> circus.v1.SessionReply.SessionStateReply
+	71,  // 82: circus.v1.SessionReply.approval:type_name -> circus.v1.SessionReply.Approval
+	72,  // 83: circus.v1.SessionReply.grant:type_name -> circus.v1.SessionReply.Grant
+	73,  // 84: circus.v1.SessionReply.devices:type_name -> circus.v1.SessionReply.Devices
+	75,  // 85: circus.v1.SessionReply.resumed:type_name -> circus.v1.SessionReply.Resumed
+	74,  // 86: circus.v1.SessionReply.launch_env:type_name -> circus.v1.SessionReply.LaunchEnv
+	1,   // 87: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
+	3,   // 88: circus.v1.WorkerEvent.Nudge.reasons:type_name -> circus.v1.WorkerEvent.Nudge.Reason
+	52,  // 89: circus.v1.WorkerEvent.AgentsWanted.agents:type_name -> circus.v1.WorkerEvent.AgentsWanted.Wanted
+	93,  // 90: circus.v1.WorkerEvent.AgentsWanted.Wanted.agent:type_name -> circus.v1.AgentKind
+	25,  // 91: circus.v1.ReportTurn.Persisted.jobs:type_name -> circus.v1.JobKey
+	25,  // 92: circus.v1.SessionState.Job.key:type_name -> circus.v1.JobKey
+	94,  // 93: circus.v1.SessionState.Job.state:type_name -> circus.v1.JobEvent.State
+	0,   // 94: circus.v1.SessionState.Call.outcome:type_name -> circus.v1.CallOutcome
+	1,   // 95: circus.v1.SessionState.Call.rejected_code:type_name -> circus.v1.CallUpdate.Rejected.Code
+	95,  // 96: circus.v1.PublishEvents.Event.kind:type_name -> circus.v1.SessionEvent.Kind
+	7,   // 97: circus.v1.SessionReply.Rejected.code:type_name -> circus.v1.SessionReply.Rejected.Code
+	28,  // 98: circus.v1.SessionReply.Lease.state:type_name -> circus.v1.SessionState
+	29,  // 99: circus.v1.SessionReply.Lease.recovery:type_name -> circus.v1.Recovery
+	96,  // 100: circus.v1.SessionReply.Lease.config:type_name -> circus.v1.SessionConfig
+	22,  // 101: circus.v1.SessionReply.TranscriptPage.entries:type_name -> circus.v1.TranscriptEntry
+	76,  // 102: circus.v1.SessionReply.Inputs.inputs:type_name -> circus.v1.SessionReply.Inputs.Input
+	28,  // 103: circus.v1.SessionReply.SessionStateReply.state:type_name -> circus.v1.SessionState
+	77,  // 104: circus.v1.SessionReply.Devices.devices:type_name -> circus.v1.SessionReply.Devices.Device
+	78,  // 105: circus.v1.SessionReply.LaunchEnv.env:type_name -> circus.v1.SessionReply.LaunchEnv.Var
+	79,  // 106: circus.v1.SessionReply.Resumed.leases:type_name -> circus.v1.SessionReply.Resumed.Outcome
+	8,   // 107: circus.v1.SessionReply.Inputs.Input.kind:type_name -> circus.v1.SessionReply.Inputs.Input.Kind
+	97,  // 108: circus.v1.SessionReply.Inputs.Input.priority:type_name -> circus.v1.InputPriority
+	109, // [109:109] is the sub-list for method output_type
+	109, // [109:109] is the sub-list for method input_type
+	109, // [109:109] is the sub-list for extension type_name
+	109, // [109:109] is the sub-list for extension extendee
+	0,   // [0:109] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_worker_link_proto_init() }
@@ -6532,6 +6759,7 @@ func file_circus_v1_worker_link_proto_init() {
 	if File_circus_v1_worker_link_proto != nil {
 		return
 	}
+	file_circus_v1_agent_proto_init()
 	file_circus_v1_device_proto_init()
 	file_circus_v1_link_proto_init()
 	file_circus_v1_session_proto_init()
@@ -6547,6 +6775,7 @@ func file_circus_v1_worker_link_proto_init() {
 		(*WorkerUplink_Session)(nil),
 		(*WorkerUplink_ResumeLeases)(nil),
 		(*WorkerUplink_ListDevices)(nil),
+		(*WorkerUplink_ReportAgents)(nil),
 	}
 	file_circus_v1_worker_link_proto_msgTypes[1].OneofWrappers = []any{
 		(*WorkerDownlink_Welcome)(nil),
@@ -6572,6 +6801,7 @@ func file_circus_v1_worker_link_proto_init() {
 		(*WorkerEvent_Nudge_)(nil),
 		(*WorkerEvent_LeaseRevoked_)(nil),
 		(*WorkerEvent_ReleaseIdle_)(nil),
+		(*WorkerEvent_AgentsWanted_)(nil),
 	}
 	file_circus_v1_worker_link_proto_msgTypes[7].OneofWrappers = []any{
 		(*SessionRequest_AcquireLease)(nil),
@@ -6589,7 +6819,7 @@ func file_circus_v1_worker_link_proto_init() {
 		(*SessionRequest_TranscriptRepaired)(nil),
 		(*SessionRequest_GetLaunchEnv)(nil),
 	}
-	file_circus_v1_worker_link_proto_msgTypes[28].OneofWrappers = []any{
+	file_circus_v1_worker_link_proto_msgTypes[29].OneofWrappers = []any{
 		(*SessionReply_Ok_)(nil),
 		(*SessionReply_Fenced_)(nil),
 		(*SessionReply_Rejected_)(nil),
@@ -6605,14 +6835,14 @@ func file_circus_v1_worker_link_proto_init() {
 		(*SessionReply_Resumed_)(nil),
 		(*SessionReply_LaunchEnv_)(nil),
 	}
-	file_circus_v1_worker_link_proto_msgTypes[46].OneofWrappers = []any{}
+	file_circus_v1_worker_link_proto_msgTypes[49].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_worker_link_proto_rawDesc), len(file_circus_v1_worker_link_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   68,
+			NumMessages:   71,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

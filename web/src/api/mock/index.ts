@@ -6,7 +6,7 @@ import { createMockBackend, type MockBackend } from "./backend"
 import { stressLedgers } from "@/mock/ledger"
 
 import { parsePersisted, serialize, STORAGE_KEY } from "./persist"
-import { addQueueDemo, addWorkerDemo, freshState, seedState, type MockState } from "./state"
+import { addAgentsDemo, addQueueDemo, addWorkerDemo, freshState, removeAgents, seedState, type MockState } from "./state"
 
 export type { MockBackend } from "./backend"
 
@@ -38,7 +38,10 @@ function save(state: MockState) {
  * and one to `web-vite`'s Ledger changes;
  * `?mock=queue` adds sessions that wait for each reason a session can, and
  * `?mock=worker` sessions whose worker lost its connection (it doesn't come
- * back: their leases end a minute later).
+ * back: their leases end a minute later), and `?mock=agents` workers with
+ * Claude Code in every state an agent can be in (see `agents.ts` for the
+ * simulated installs and uninstalls); `?mock=noagents` takes Claude Code
+ * off every worker.
  * Modes combine with commas (`?mock=reset,nooidc`); the query parameter is
  * removed afterwards. Sessions live in this tab's memory only. A message
  * that mentions a "ledger" or "decision" makes the agent add a new
@@ -64,6 +67,8 @@ export function startMockBackend(): MockBackend {
   save(state)
   if (modes.has("queue")) addQueueDemo(state)
   if (modes.has("worker")) addWorkerDemo(state)
+  if (modes.has("noagents")) removeAgents(state)
+  if (modes.has("agents")) addAgentsDemo(state)
 
   if (state.setupToken !== null && !state.users.some((u) => u.role === "super")) {
     const link = new URL(`/setup?token=${encodeURIComponent(state.setupToken)}`, url.origin)

@@ -58,6 +58,8 @@ type Ops interface {
 	ProjectOps
 	// ProviderOps holds the provider operations (providers.go).
 	ProviderOps
+	// AgentOps holds the worker agent operations (agents.go).
+	AgentOps
 	// SessionOps holds the session operations (sessions.go). They are part
 	// of Ops so a session write and a call write can share one Tx.
 	SessionOps

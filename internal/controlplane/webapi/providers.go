@@ -42,13 +42,19 @@ type Scheduler interface {
 	// ProviderChanged re-evaluates the queued sessions of a provider that
 	// changed or was deleted.
 	ProviderChanged(userID, providerID string)
+	// RefreshWorkerAgents applies a change of the user's wishes for a
+	// worker's agents: the worker gets them at once (AgentsWanted) and its
+	// sessions are offered or withdrawn as its agents now allow; a failed
+	// read is retried in the background.
+	RefreshWorkerAgents(ctx context.Context, workerID string) error
 }
 
 type noScheduler struct{}
 
-func (noScheduler) QueueReason(string) circusv1.QueueReason { return 0 }
-func (noScheduler) WorkerDisconnectedAt(string) int64       { return 0 }
-func (noScheduler) ProviderChanged(string, string)          {}
+func (noScheduler) QueueReason(string) circusv1.QueueReason           { return 0 }
+func (noScheduler) WorkerDisconnectedAt(string) int64                 { return 0 }
+func (noScheduler) ProviderChanged(string, string)                    {}
+func (noScheduler) RefreshWorkerAgents(context.Context, string) error { return nil }
 
 // providerIDArg checks a request's provider id. An empty one is NOT_FOUND
 // like any other unknown id.

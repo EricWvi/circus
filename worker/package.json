@@ -7,9 +7,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "npm -w @circus/proto run build && tsc -p tsconfig.json",
-    "typecheck": "npm -w @circus/proto run build && tsc --noEmit -p tsconfig.test.json",
-    "test": "npm -w @circus/proto run build && vitest run"
+    "manifest": "node scripts/agent-manifest.mjs",
+    "build": "npm -w @circus/proto run build && node scripts/agent-manifest.mjs && tsc -p tsconfig.json",
+    "typecheck": "npm -w @circus/proto run build && node scripts/agent-manifest.mjs && tsc --noEmit -p tsconfig.test.json",
+    "test": "npm -w @circus/proto run build && node scripts/agent-manifest.mjs && vitest run"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.330",

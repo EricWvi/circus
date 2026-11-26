@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen } from "@testing-library/react"
+import { cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -547,5 +547,87 @@ describe("the provider of a new session", () => {
     await renderProject("circus", state)
     const dot = screen.getByText("Add a dark mode screenshot test").closest("a")!.querySelector("[title]")!
     expect(dot.getAttribute("title")).toMatch(/^Queued: Team proxy already runs as many sessions/)
+  })
+})
+
+describe("a new session without a worker that runs Claude Code", () => {
+  const notice = () => screen.queryByRole("status")
+  const notInstalled = (state: MockState, name: string) => {
+    const agent = state.workers.find((w) => w.name === name)!.agents[0]
+    Object.assign(agent, { state: "not_installed", installedVersion: "", wanted: false, wantedVersion: "" })
+  }
+
+  it("names the worker of the location's machine when that one lacks it, links to Devices, and still creates the session", async () => {
+    // circus starts on eric-mbp, whose machine has its own worker: the
+    // session is pinned to it, whatever the other workers have.
+    const state = seedState()
+    notInstalled(state, "eric-mbp")
+    const { router } = await renderProject("circus", state)
+    expect(notice()?.textContent).toBe(
+      "The worker on the machine of eric-mbp doesn't have Claude Code installed, so new sessions here wait until it does. Install it on Devices",
+    )
+    expect(within(notice()!).getByRole("link", { name: "Install it on Devices" }).getAttribute("href")).toBe("/devices")
+
+    const before = new Set(state.sessions.map((s) => s.sessionId))
+    fireEvent.change(composer(), { target: { value: "Start anyway" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }))
+    await advance(500)
+    const created = state.sessions.filter((s) => !before.has(s.sessionId))
+    expect(created).toHaveLength(1)
+    expect(created[0].device).toBe("eric-mbp")
+    expect(router.state.location.pathname).toBe(`/p/circus/s/${created[0].sessionId}`)
+    expect(created[0].queueReason).toBe("agent_not_installed")
+  })
+
+  it("names the location's worker when its name differs from the device's", async () => {
+    const state = seedState()
+    notInstalled(state, "eric-mbp")
+    state.workers.find((w) => w.name === "eric-mbp")!.name = "mbp-runner"
+    await renderProject("circus", state)
+    expect(notice()?.textContent).toBe(
+      "The worker on the machine of eric-mbp (mbp-runner) doesn't have Claude Code installed, so new sessions here wait until it does. Install it on Devices",
+    )
+  })
+
+  it("says nothing when the location's own worker has it, whatever the others have", async () => {
+    const state = seedState()
+    for (const name of ["cloud-runner", "devbox", "eric-win"]) notInstalled(state, name)
+    await renderProject("circus", state)
+    expect(notice()).toBeNull()
+  })
+
+  it("looks at every worker for a device without one of its own", async () => {
+    // palace-builder has no worker of its own: any may run its sessions.
+    const state = seedState()
+    state.projects.find((p) => p.projectId === "palace")!.lastUsedLocation = 0
+    for (const name of ["devbox", "eric-mbp", "eric-win"]) notInstalled(state, name)
+    await renderProject("palace", state)
+    expect(notice()).toBeNull()
+
+    cleanup()
+    notInstalled(state, "cloud-runner")
+    await renderProject("palace", state)
+    expect(notice()?.textContent).toBe(
+      "None of your workers has Claude Code installed, so new sessions wait until one does. Install it on Devices",
+    )
+  })
+
+  it("says the user has no worker at all", async () => {
+    const state = seedState()
+    state.workers = []
+    await renderProject("circus", state)
+    expect(notice()?.textContent).toBe(
+      "You have no workers yet, so new sessions wait until one runs Claude Code. Add one on Devices",
+    )
+  })
+
+  it("reads in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    const state = seedState()
+    notInstalled(state, "eric-mbp")
+    await renderProject("circus", state)
+    expect(notice()?.textContent).toBe(
+      "eric-mbp 所在机器上的 worker 没有安装 Claude Code，这里的新会话会一直等到它安装为止。去设备页安装",
+    )
   })
 })

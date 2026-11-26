@@ -507,7 +507,7 @@ function KeepBottomOnShrink() {
 /**
  * Why the session waits for a worker, and what to do about it: the
  * Providers page for a provider's limit, workers or secrets, another
- * provider for a deleted one.
+ * provider for a deleted one, the Devices page for a missing agent.
  */
 function QueueNotice({
   reason,
@@ -529,6 +529,11 @@ function QueueNotice({
         {fixedOnProvidersPage(reason) && (
           <Link to="/providers" className={action}>
             {t("session.queue.openProviders")}
+          </Link>
+        )}
+        {reason === "agent_not_installed" && (
+          <Link to="/devices" className={action}>
+            {t("session.queue.openDevices")}
           </Link>
         )}
         {reason === "provider_deleted" && onChangeProvider && (

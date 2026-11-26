@@ -189,6 +189,23 @@ type recordingScheduler struct {
 	reasons map[string]circusv1.QueueReason
 	gone    map[string]int64
 	changed []string
+	// refreshed records RefreshWorkerAgents calls by worker id.
+	refreshed []string
+}
+
+func (r *recordingScheduler) RefreshWorkerAgents(_ context.Context, workerID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.refreshed = append(r.refreshed, workerID)
+	return nil
+}
+
+func (r *recordingScheduler) takeRefreshed() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.refreshed
+	r.refreshed = nil
+	return out
 }
 
 func (r *recordingScheduler) QueueReason(id string) circusv1.QueueReason {

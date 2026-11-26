@@ -11,6 +11,7 @@ const REASONS: ReadonlySet<QueueReason> = new Set<QueueReason>([
   "provider_deleted",
   "provider_secrets_unreadable",
   "worker_offline",
+  "agent_not_installed",
 ])
 
 /** The reason a KIND_QUEUE payload carries; one this client doesn't know reads as none. */
@@ -64,6 +65,8 @@ export function queueReasonText(reason: QueueReason, provider: Pick<ModelProvide
       return i18n.t("session.queue.provider_secrets_unreadable", { provider: name })
     case "worker_offline":
       return i18n.t("session.queue.worker_offline")
+    case "agent_not_installed":
+      return i18n.t("session.queue.agent_not_installed")
     default:
       return i18n.t("session.queued")
   }

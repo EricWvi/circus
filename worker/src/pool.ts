@@ -3,6 +3,8 @@ import {
   AcquireLeaseSchema, ReleaseLeaseSchema, ReleaseLease_Reason, SessionReply_Rejected_Code as Code,
   type SessionReply_Lease,
 } from "@circus/proto/circus/v1/worker_link_pb";
+import { AgentKind } from "@circus/proto/circus/v1/agent_pb";
+import type { WorkerEvent_AgentsWanted as AgentsWanted } from "@circus/proto/circus/v1/worker_link_pb";
 import { LinkLostError, type ResumeOutcome, type WorkerEvent } from "./link/index.js";
 import type { Logger } from "./log.js";
 import type { CliProcessesPort } from "./process.js";
@@ -35,6 +37,10 @@ export interface PoolOptions {
   processes: CliProcessesPort;
   runner: Omit<RunnerDeps, "link" | "ready" | "slots" | "loadSlots" | "log" | "processes">;
   createRunner?: RunnerFactory;
+  /** AgentsWanted from the control plane. */
+  agentsWanted?: (wanted: AgentsWanted) => void;
+  /** A held session started or ended (agents wait for theirs to end before an uninstall). */
+  sessionsChanged?: () => void;
 }
 
 /**
@@ -67,6 +73,8 @@ export class SessionPool {
   readonly #slots = new Semaphore(SESSION_OP_SLOTS);
   readonly #loadSlots = new Semaphore(1);
   readonly #runners = new Map<string, Runner>();
+  /** The agent each held session runs (its lease's SessionConfig.agent). */
+  readonly #agents = new Map<string, AgentKind>();
   readonly #acquiring = new Set<string>();
   readonly #offers = new Map<string, number>();
   readonly #reoffered = new Set<string>();
@@ -83,6 +91,12 @@ export class SessionPool {
 
   get held(): number {
     return this.#runners.size + this.#acquiring.size;
+  }
+
+  /** Whether a held session runs this agent. */
+  runs(agent: AgentKind): boolean {
+    for (const [id, kind] of this.#agents) if (kind === agent && this.#runners.has(id)) return true;
+    return false;
   }
 
   has(sessionId: string): boolean {
@@ -107,6 +121,10 @@ export class SessionPool {
 
   hint(message: WorkerEvent): void {
     const { event } = message;
+    if (event.case === "agentsWanted") {
+      this.#opts.agentsWanted?.(event.value);
+      return;
+    }
     if (event.case === "leaseRevoked") {
       const runner = this.#runners.get(event.value.sessionId);
       if (runner && runner.epoch === event.value.epoch) runner.lose("lease revoked");
@@ -199,6 +217,8 @@ export class SessionPool {
     };
     const runner = (this.#opts.createRunner ?? ((l, s, d) => new SessionRunner(l, s, d)))(lease, id, deps);
     this.#runners.set(id, runner);
+    this.#agents.set(id, lease.config?.agent ?? AgentKind.UNSPECIFIED);
+    this.#opts.sessionsChanged?.();
     this.#opts.link.setHeld(id, lease.epoch);
     this.#log.info("session lease acquired", { session_id: id, epoch: Number(lease.epoch), reattached: lease.reattached });
     const ended = runner.start().then(
@@ -280,6 +300,8 @@ export class SessionPool {
   #end(id: string, runner: Runner, end: RunnerEnd): void {
     if (this.#runners.get(id) !== runner) return;
     this.#runners.delete(id);
+    this.#agents.delete(id);
+    this.#opts.sessionsChanged?.();
     this.#opts.link.setHeld(id, null);
     try {
       this.#opts.processes.cleanup(id);

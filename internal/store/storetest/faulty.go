@@ -19,7 +19,7 @@ var ErrCrashed = errors.New("storetest: store crashed")
 //
 // A write point is each call of a mutating Ops method (every method except
 // the Get*, List*, LookupCredential, CheckFence, AdmitSessionCall,
-// LedgerProjectName, LoadTranscript, HasTranscriptUUID, HasUserIdentityAtIssuer, CountProviderLeases and ReadEvents reads), inside or
+// LedgerProjectName, LoadTranscript, HasTranscriptUUID, HasUserIdentityAtIssuer, CountProviderLeases, HasAgentLease and ReadEvents reads), inside or
 // outside a Tx, and
 // each Tx commit (reached when fn returns nil). Points are numbered from 1
 // in the order they happen; Writes reports how many have happened.

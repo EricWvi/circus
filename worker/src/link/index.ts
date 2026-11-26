@@ -22,12 +22,13 @@
 // so the runner needs its own budget for concurrent reads and writes.
 import { create } from "@bufbuild/protobuf";
 import {
-  AttachSchema, GetSessionState_Section, ResumeLeasesSchema, SessionReply_Rejected_Code, SessionRequestSchema, UnwatchSchema,
-  WorkerUplinkSchema,
+  AttachSchema, GetSessionState_Section, ReportAgentsSchema, ResumeLeasesSchema, SessionReply_Rejected_Code, SessionRequestSchema,
+  UnwatchSchema, WorkerUplinkSchema,
   type Attach, type SessionReply, type SessionReply_Resumed_Outcome, type SessionRequest,
   type WorkerEvent, type WorkerUplink,
 } from "@circus/proto/circus/v1/worker_link_pb";
 import { readBoundedFile } from "../config.js";
+import type { AgentStatus } from "@circus/proto/circus/v1/agent_pb";
 import type { Logger } from "../log.js";
 import { METADATA_BYTES, ProtocolError, TRANSCRIPT_BATCH_BYTES, encodeUplink } from "../wire/codec.js";
 import { MAX_UINT64, TerminalLinkError, WireConnection } from "../wire/connection.js";
@@ -50,9 +51,10 @@ export interface LinkOptions {
   attach: {
     maxSessions: number;
     sdkVersion: string;
-    claudeVersion: string;
     account?: { email: string; organization: string; subscriptionType: string };
     localOnly: boolean;
+    /** The agents' states, read for each connection's Attach. */
+    agents?: () => AgentStatus[];
   };
   log: Logger;
 }
@@ -254,7 +256,6 @@ class Connection {
 export class WorkerLink {
   #opts: LinkOptions;
   #endpoint: URL;
-  #attach: Attach;
   #held = new Map<string, bigint>();
   #hints = new HintQueue();
   #listeners = new Set<(outcomes: ResumeOutcome[]) => void>();
@@ -283,9 +284,8 @@ export class WorkerLink {
     }
     this.#opts = { ...opts };
     this.#endpoint = workerEndpoint(opts.url);
-    this.#attach = create(AttachSchema, opts.attach);
     encodeUplink(create(WorkerUplinkSchema, {
-      requestId: 1n, payload: { case: "attach", value: this.#attach },
+      requestId: 1n, payload: { case: "attach", value: this.#attachMessage() },
     }), METADATA_BYTES);
     // Allow a caller to finish consuming hints before observing terminal failure.
     void this.closed.catch(() => {});
@@ -341,6 +341,22 @@ export class WorkerLink {
       acquire ? sessionId : undefined);
   }
 
+  /**
+   * ReportAgents on the ready connection: resolves when the control plane
+   * accepted it. Rejects with LinkLostError when the link is not ready
+   * (the next Attach carries the states instead).
+   */
+  async reportAgents(agents: AgentStatus[], signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    const connection = this.#active;
+    if (!connection?.wire.active) throw new LinkLostError("worker link is disconnected or resuming");
+    const reply = await connection.request({ case: "reportAgents", value: create(ReportAgentsSchema, { agents }) }, "ok", signal);
+    if (reply.result.case === "rejected") {
+      const { code, message } = reply.result.value;
+      throw new Error(`ReportAgents rejected (code ${SessionReply_Rejected_Code[code] ?? code}): ${message.slice(0, 512)}`);
+    }
+  }
+
   setHeld(sessionId: string, epoch: bigint | null): void {
     if (!validSessionId(sessionId) || (epoch !== null && (epoch <= 0n || epoch > MAX_UINT64))) {
       throw new RangeError("invalid held session ID or epoch");
@@ -359,6 +375,11 @@ export class WorkerLink {
     this.#current?.wire.close();
     if (!this.#started) this.#finish();
     await this.closed.catch(() => {});
+  }
+
+  #attachMessage(): Attach {
+    const { agents, ...attach } = this.#opts.attach;
+    return create(AttachSchema, { ...attach, agents: agents?.() ?? [] });
   }
 
   #finish(error?: unknown): void {
@@ -381,7 +402,7 @@ export class WorkerLink {
         this.#current = connection;
         await connection.wire.ready;
         if (!this.#stop.signal.aborted && connection.wire.active) {
-          connection.attach(this.#attach);
+          connection.attach(this.#attachMessage());
           const resumed = await this.#resume(connection);
           if (connection.wire.active && !this.#stop.signal.aborted) {
             this.#active = connection;

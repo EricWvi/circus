@@ -329,7 +329,7 @@ func TestProviderChangesAndLeases(t *testing.T) {
 	c, err := workerclient.Dial(ctx, workerclient.Options{URL: w.h.base, Token: gamma.Token, PrincipalID: gamma.PrincipalID, BootID: uuid.Must(uuid.NewV7()).String()})
 	must(t, err)
 	t.Cleanup(func() { _ = c.Close() })
-	hints, err := c.Attach(ctx, &pb.Attach{MaxSessions: 1})
+	hints, err := c.Attach(ctx, &pb.Attach{MaxSessions: 1, Agents: workerclient.ClaudeInstalled()})
 	must(t, err)
 	scripted := w.session(t, proto.String(onGamma.GetProviderId()))
 	scripted.send("hello gamma", pb.InputPriority_INPUT_PRIORITY_NORMAL)
