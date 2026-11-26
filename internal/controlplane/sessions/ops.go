@@ -11,6 +11,7 @@ import (
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/providers"
+	"github.com/EricWvi/circus/internal/controlplane/questions"
 	"github.com/EricWvi/circus/internal/identifier"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/google/uuid"
@@ -654,6 +655,8 @@ func (c *Conn) take(ctx context.Context, f store.Fence) *circusv1.SessionReply {
 			kind = circusv1.SessionReply_Inputs_Input_KIND_APPROVAL
 		case store.InputNote:
 			kind = circusv1.SessionReply_Inputs_Input_KIND_NOTE
+		case store.InputAnswer:
+			kind = circusv1.SessionReply_Inputs_Input_KIND_ANSWER
 		}
 		prio := circusv1.InputPriority_INPUT_PRIORITY_NORMAL
 		if in.Priority == store.InputNow {
@@ -871,11 +874,39 @@ func (c *Conn) requestApproval(ctx context.Context, f store.Fence, r *circusv1.R
 	if err := store.CheckID("tool use id", r.GetToolUseId()); err != nil {
 		return invalidReply("tool_use_id is required, at most 128 bytes")
 	}
+	a := store.Approval{SessionID: f.SessionID, ToolUseID: r.GetToolUseId(), AgentID: r.GetAgentId(), Tool: r.GetTool(),
+		MatchKey: r.GetMatchKey(), Display: r.GetDisplay(), Reason: r.GetReason(), CreatedAt: f.Now}
+	switch r.GetKind() {
+	case circusv1.ApprovalKind_APPROVAL_KIND_UNSPECIFIED, circusv1.ApprovalKind_APPROVAL_KIND_TOOL:
+		if r.GetInputJson() != "" {
+			return invalidReply("input_json is for question approvals only")
+		}
+		a.Kind, a.ExpiresAt = store.ApprovalTool, f.Now+ApprovalLifetime.Milliseconds()
+	case circusv1.ApprovalKind_APPROVAL_KIND_QUESTION:
+		switch {
+		case r.GetTool() != questions.Tool:
+			return invalidReply("a question approval's tool is " + questions.Tool)
+		case r.GetDevice() != "" || r.GetMatchKey() != "" || r.GetReason() != "":
+			return invalidReply("a question approval has no device, match_key or reason")
+		case r.GetAgentId() != "":
+			return invalidReply("only the main conversation asks questions: agent_id must be empty")
+		case r.GetInputJson() == "" || len(r.GetInputJson()) > store.MaxQuestionInputBytes:
+			return invalidReply("input_json is required, at most " + strconv.Itoa(store.MaxQuestionInputBytes) + " bytes")
+		}
+		if _, err := questions.Parse(r.GetInputJson()); err != nil {
+			return invalidReply("input_json: " + err.Error())
+		}
+		a.Kind, a.InputJSON = store.ApprovalQuestion, r.GetInputJson()
+	default:
+		return invalidReply("kind must be TOOL or QUESTION")
+	}
 	approvalID, err := uuid.NewV7()
 	if err != nil {
 		return c.s.failure(ctx, "approval", err)
 	}
+	a.ApprovalID = approvalID.String()
 	var res store.ApprovalRequested
+	var seq int64
 	err = c.tx(ctx, func(ctx context.Context, tx store.Ops) error {
 		if _, err := tx.CheckFence(ctx, f); err != nil {
 			return err
@@ -884,17 +915,42 @@ func (c *Conn) requestApproval(ctx context.Context, f store.Fence, r *circusv1.R
 		if err != nil {
 			return err
 		}
-		dev, err := newDevices(tx, sess.UserID).id(ctx, r.GetDevice())
-		if err != nil {
+		if a.Kind == store.ApprovalTool {
+			if a.DeviceID, err = newDevices(tx, sess.UserID).id(ctx, r.GetDevice()); err != nil {
+				return err
+			}
+		}
+		if res, err = tx.RequestApproval(ctx, f, a); err != nil {
 			return err
 		}
-		res, err = tx.RequestApproval(ctx, f, store.Approval{ApprovalID: approvalID.String(), SessionID: f.SessionID, ToolUseID: r.GetToolUseId(),
-			AgentID: r.GetAgentId(), Tool: r.GetTool(), DeviceID: dev, MatchKey: r.GetMatchKey(), Display: r.GetDisplay(), Reason: r.GetReason(),
-			CreatedAt: f.Now, ExpiresAt: f.Now + ApprovalLifetime.Milliseconds()})
+		if !res.Created {
+			return nil // deduplicated: its events are recorded already
+		}
+		for _, old := range res.Superseded {
+			n, err := AppendApprovalResolvedEvent(ctx, tx, f.SessionID, ApprovalResolvedPayload{
+				ApprovalID: old.ApprovalID, Kind: string(store.ApprovalQuestion), State: string(store.ApprovalSuperseded),
+			}, f.Now, c.s.cfg.MaxViewBytes)
+			if err != nil {
+				return err
+			}
+			seq = max(seq, n)
+		}
+		pending := ApprovalPendingPayload{ApprovalID: res.Approval.ApprovalID, Kind: string(res.Approval.Kind), Tool: res.Approval.Tool,
+			ToolUseID: res.Approval.ToolUseID, Display: res.Approval.Display, Reason: res.Approval.Reason}
+		if a.Kind == store.ApprovalQuestion {
+			pending.InputJSON = &res.Approval.InputJSON
+		} else {
+			pending.Device = r.GetDevice()
+		}
+		n, err := appendJSONEvent(ctx, tx, f.SessionID, store.EventKindApprovalPending, pending, f.Now, c.s.cfg.MaxViewBytes)
+		seq = max(seq, n)
 		return err
 	})
 	if err != nil {
 		return c.failed(ctx, f, "approval", err)
+	}
+	if seq > 0 {
+		c.s.cfg.Bus.Durable(f.SessionID, uint64(seq))
 	}
 	return &circusv1.SessionReply{Result: &circusv1.SessionReply_Approval_{Approval: &circusv1.SessionReply_Approval{
 		ApprovalId: res.Approval.ApprovalID, Deduplicated: !res.Created}}}
@@ -1198,15 +1254,17 @@ func (s *Service) turnLog(ctx context.Context, f store.Fence, tr store.TurnRepor
 }
 
 // inputKinds counts inputs per kind, as "user=2,approval=1", with
-// ",note=1" when there are notes.
+// ",note=1" when there are notes and ",answer=1" when there are answers.
 func inputKinds(inputs []store.Input) string {
-	var user, approval, note int
+	var user, approval, note, answer int
 	for _, in := range inputs {
 		switch in.Kind {
 		case store.InputApproval:
 			approval++
 		case store.InputNote:
 			note++
+		case store.InputAnswer:
+			answer++
 		default:
 			user++
 		}
@@ -1214,6 +1272,9 @@ func inputKinds(inputs []store.Input) string {
 	out := "user=" + strconv.Itoa(user) + ",approval=" + strconv.Itoa(approval)
 	if note > 0 {
 		out += ",note=" + strconv.Itoa(note)
+	}
+	if answer > 0 {
+		out += ",answer=" + strconv.Itoa(answer)
 	}
 	return out
 }

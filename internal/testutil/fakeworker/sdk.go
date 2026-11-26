@@ -58,6 +58,9 @@ const (
 	noteJobNotice               = "job_notice"
 	noteLostBgtask              = "lost_bgtask"
 	noteHistoryMissing          = "history_missing"
+	// noteQuestionAnswer is the user's answers to a question (an input of
+	// KIND_ANSWER), pushed as an ordinary user message.
+	noteQuestionAnswer = "question_answer"
 	// noteLedgerProblems is the category of a control-plane note (an
 	// input of KIND_NOTE) about a ledger collection's problems; such a
 	// note keeps the category the control plane gave it.
@@ -427,13 +430,6 @@ func jsonString(payload any) string {
 
 func turnStartedPayload(turnNo uint64, origin string) object {
 	return object{"turn_no": strconv.FormatUint(turnNo, 10), "origin": origin}
-}
-
-func approvalPendingPayload(approvalID, tool, device, toolUseID, display, reason string) object {
-	return object{
-		"approval_id": approvalID, "tool": tool, "device": device,
-		"tool_use_id": toolUseID, "display": display, "reason": reason,
-	}
 }
 
 func errorPayload(message string) object { return object{"message": message} }

@@ -140,10 +140,12 @@ import "context"
 //     MaxSessionJobs (ErrLimit), ended and persisted ones purged by
 //     PurgeSessionJobs; session_bgtasks ≤ MaxSessionBgTasks (ErrLimit).
 //   - session_approvals: pending ≤ MaxPendingApprovals per session, the
-//     oldest pending one expiring to make room; resolved ones: the newest
-//     KeptResolvedApprovals. With 64-hex-digit match keys and 1 KiB display
-//     and reason, an approval is at most about 2.6 KiB, so a session's
-//     approvals stay under about 250 KiB. session_grants: unconsumed ones ≤
+//     oldest pending tool approval expiring to make room, at most one of
+//     them a question; resolved ones: the newest KeptResolvedApprovals.
+//     With 64-hex-digit match keys and 1 KiB display and reason, an
+//     approval is at most about 2.6 KiB, plus up to MaxQuestionInputBytes
+//     of input for the pending question (dropped once it is resolved), so
+//     a session's approvals stay under about 290 KiB. session_grants: unconsumed ones ≤
 //     MaxSessionGrants per session, the one expiring first dropped to make
 //     room; consumed ones (kept until they expire, for the replay of
 //     ConsumeGrant) ≤ MaxSessionGrants, the oldest consumption dropped. A
@@ -281,8 +283,10 @@ type SessionOps interface {
 	// short code, at most MaxCodeBytes) and returns it with its lease as it
 	// stands. The lease is not released: the caller tells the holder to
 	// stop, and the holder's final transcript appends and turn reports
-	// still pass the fence; the holder then calls ReleaseLease. Idempotent:
-	// a stopped session is returned unchanged with changed false.
+	// still pass the fence; the holder then calls ReleaseLease. The
+	// session's pending question approvals expire in the same transaction
+	// (as they do when AppendTranscript stops it). Idempotent: a stopped
+	// session is returned unchanged with changed false.
 	// ErrNotFound if absent.
 	StopSession(ctx context.Context, sessionID string, at int64, reason string) (s Session, lease Lease, changed bool, err error)
 	// InterruptSession records an interrupt of the running turn: it sets
@@ -459,8 +463,9 @@ type SessionOps interface {
 	// LastActivityAt and session id). A session is idle when its state is
 	// SessionIdle and it has no input taken or pending (a deferred note
 	// pending does not count: it waits for the next input, and stays
-	// pending across a release), no approval
-	// pending and unexpired at now, no job whose notice is owed (ended and
+	// pending across a release), no tool approval
+	// pending and unexpired at now (a pending question does not count: its
+	// answers are an input, which queues the session again), no job whose notice is owed (ended and
 	// not handed) or handed and not yet persisted, no background task
 	// recorded at the lease's epoch, and no merge or discard its ledger
 	// snapshot still has to apply (a ready snapshot with Pending work that
@@ -704,20 +709,28 @@ type SessionOps interface {
 	// Approvals and grants.
 
 	// RequestApproval records a pending approval, fenced. Dedup: a pending
-	// approval with the same (tool, device, match key) is returned with
-	// Created false. ErrStopped on a stopped session, ErrBroken on a
-	// broken one. With MaxPendingApprovals pending already, the oldest
-	// pending one is set to expired in the same transaction and returned as
+	// tool approval with the same (tool, device, match key) that has not
+	// expired at f.Now (one that has is set to expired first, as
+	// ExpireApprovals would), or a question
+	// with the same tool use id in any state, is returned with Created
+	// false. A new question supersedes the session's pending question in
+	// the same transaction (returned as Superseded). ErrStopped on a
+	// stopped session, ErrBroken on a broken one. With MaxPendingApprovals
+	// pending already (questions included), the oldest pending tool
+	// approval is set to expired in the same transaction and returned as
 	// Expired. Resolved approvals past the newest KeptResolvedApprovals are
 	// deleted.
 	RequestApproval(ctx context.Context, f Fence, a Approval) (ApprovalRequested, error)
 	// ResolveApproval approves or denies a pending approval at r.At.
-	// Approving, in one transaction: the approval becomes approved, a grant
-	// with the approval's key and r.GrantExpiresAt is written (the grant
-	// expiring first is dropped past MaxSessionGrants), and r.Input is
-	// submitted as kind approval under client message id
+	// Approving a tool approval, in one transaction: the approval becomes
+	// approved, a grant with the approval's key and r.GrantExpiresAt is
+	// written (the grant expiring first is dropped past MaxSessionGrants),
+	// and r.Input is submitted as kind approval under client message id
 	// "approval:<approval id>" with SubmitInput's checks and state change.
-	// Denying: the approval becomes denied. A pending approval whose
+	// Denying: the approval becomes denied. Approving a question (the
+	// caller validated the answers r.Input carries) makes it answered and
+	// submits r.Input as kind answer under the same client message id,
+	// without a grant; denying makes it dismissed. A pending approval whose
 	// ExpiresAt ≤ r.At is set to expired instead and returned with Changed
 	// false. An approval no longer pending is returned unchanged with
 	// Changed false, whatever r asks. ErrStopped on a stopped session,

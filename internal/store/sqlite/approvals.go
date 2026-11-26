@@ -9,16 +9,16 @@ import (
 	"github.com/EricWvi/circus/internal/store"
 )
 
-const approvalCols = `approval_id, session_id, user_id, tool_use_id, agent_id, tool, device_id, match_key, display,
-	reason, state, created_at, expires_at, resolved_at`
+const approvalCols = `approval_id, session_id, user_id, kind, tool_use_id, agent_id, tool, device_id, match_key, display,
+	reason, input_json, state, created_at, expires_at, resolved_at`
 
 func scanApproval(s scanner) (store.Approval, error) {
 	var a store.Approval
-	var state string
-	err := s.Scan(&a.ApprovalID, &a.SessionID, &a.UserID, nullStr{&a.ToolUseID}, nullStr{&a.AgentID}, &a.Tool,
-		&a.DeviceID, &a.MatchKey, nullStr{&a.Display}, nullStr{&a.Reason}, &state, &a.CreatedAt, &a.ExpiresAt,
-		nullInt{&a.ResolvedAt})
-	a.State = store.ApprovalState(state)
+	var state, kind string
+	err := s.Scan(&a.ApprovalID, &a.SessionID, &a.UserID, &kind, nullStr{&a.ToolUseID}, nullStr{&a.AgentID}, &a.Tool,
+		nullStr{&a.DeviceID}, nullStr{&a.MatchKey}, nullStr{&a.Display}, nullStr{&a.Reason}, nullStr{&a.InputJSON}, &state,
+		&a.CreatedAt, nullInt{&a.ExpiresAt}, nullInt{&a.ResolvedAt})
+	a.State, a.Kind = store.ApprovalState(state), store.ApprovalKind(kind)
 	return a, mapErr(err)
 }
 
@@ -34,8 +34,8 @@ func (o *ops) getApproval(ctx context.Context, id string) (store.Approval, error
 	return scanApproval(o.q.QueryRow(ctx, `SELECT `+approvalCols+` FROM session_approvals WHERE approval_id = ?`, id))
 }
 
-// trimResolved keeps the session's newest KeptResolvedApprovals approved,
-// denied or expired approvals.
+// trimResolved keeps the session's newest KeptResolvedApprovals resolved
+// approvals.
 func (o *ops) trimResolved(ctx context.Context, sessionID string) error {
 	_, err := o.exec(ctx, `DELETE FROM session_approvals WHERE approval_id IN (
 		SELECT approval_id FROM session_approvals WHERE session_id = ? AND state <> 'pending'
@@ -43,11 +43,19 @@ func (o *ops) trimResolved(ctx context.Context, sessionID string) error {
 	return err
 }
 
-func checkApproval(a store.Approval) error {
-	if err := store.CheckID("approval id", a.ApprovalID); err != nil {
+// endQuestions expires the session's pending questions (at most one): its
+// session stopped at at.
+func (o *ops) endQuestions(ctx context.Context, sessionID string, at int64) error {
+	_, err := o.exec(ctx, `UPDATE session_approvals SET state = 'expired', resolved_at = ?, input_json = NULL
+		WHERE session_id = ? AND kind = 'question' AND state = 'pending'`, at, sessionID)
+	if err != nil {
 		return err
 	}
-	if err := (store.GrantKey{Tool: a.Tool, DeviceID: a.DeviceID, MatchKey: a.MatchKey}).Check(); err != nil {
+	return o.trimResolved(ctx, sessionID)
+}
+
+func checkApproval(a store.Approval) error {
+	if err := store.CheckID("approval id", a.ApprovalID); err != nil {
 		return err
 	}
 	for _, c := range []struct{ what, v string }{{"tool use id", a.ToolUseID}, {"agent id", a.AgentID}} {
@@ -60,13 +68,43 @@ func checkApproval(a store.Approval) error {
 			return err
 		}
 	}
-	if a.CreatedAt == 0 || a.ExpiresAt <= a.CreatedAt {
-		return invalid("approval needs a creation time and a later expiry")
+	if a.CreatedAt == 0 {
+		return invalid("approval needs a creation time")
+	}
+	switch a.Kind {
+	case store.ApprovalTool:
+		if err := (store.GrantKey{Tool: a.Tool, DeviceID: a.DeviceID, MatchKey: a.MatchKey}).Check(); err != nil {
+			return err
+		}
+		if a.InputJSON != "" {
+			return invalid("a tool approval has no input")
+		}
+		if a.ExpiresAt <= a.CreatedAt {
+			return invalid("a tool approval needs an expiry after its creation")
+		}
+	case store.ApprovalQuestion:
+		if err := store.CheckText("tool", a.Tool, store.MaxToolBytes, false); err != nil {
+			return err
+		}
+		if a.ToolUseID == "" {
+			return invalid("a question needs a tool use id")
+		}
+		if a.DeviceID != "" || a.MatchKey != "" || a.ExpiresAt != 0 {
+			return invalid("a question has no device, match key or expiry")
+		}
+		if a.InputJSON == "" || len(a.InputJSON) > store.MaxQuestionInputBytes {
+			return invalid("a question's input must be 1..%d bytes", store.MaxQuestionInputBytes)
+		}
+	default:
+		return invalid("unknown approval kind %q", a.Kind)
 	}
 	return nil
 }
 
 func (o *ops) RequestApproval(ctx context.Context, f store.Fence, a store.Approval) (store.ApprovalRequested, error) {
+	if a.Kind == "" {
+		a.Kind = store.ApprovalTool
+	}
 	if err := checkApproval(a); err != nil {
 		return store.ApprovalRequested{}, err
 	}
@@ -82,9 +120,23 @@ func (o *ops) RequestApproval(ctx context.Context, f store.Fence, a store.Approv
 		if err := s.State.Refusal(); err != nil {
 			return fmt.Errorf("%w: session %q", err, f.SessionID)
 		}
-		old, err := scanApproval(tx.q.QueryRow(ctx, `SELECT `+approvalCols+` FROM session_approvals
-			WHERE session_id = ? AND tool = ? AND device_id = ? AND match_key = ? AND state = 'pending'`,
-			f.SessionID, a.Tool, a.DeviceID, a.MatchKey))
+		var old store.Approval
+		if a.Kind == store.ApprovalQuestion {
+			old, err = scanApproval(tx.q.QueryRow(ctx, `SELECT `+approvalCols+` FROM session_approvals
+				WHERE session_id = ? AND kind = 'question' AND tool_use_id = ?`, f.SessionID, a.ToolUseID))
+		} else {
+			// A pending approval of the key that expired (the sweep has not
+			// run yet) takes no more requests: it is expired here, as the
+			// sweep would, so that the new one is created.
+			if _, err := tx.exec(ctx, `UPDATE session_approvals SET state = 'expired', resolved_at = ?1
+				WHERE session_id = ?2 AND kind = 'tool' AND tool = ?3 AND device_id = ?4 AND match_key = ?5 AND state = 'pending'
+					AND expires_at <= ?1`, f.Now, f.SessionID, a.Tool, a.DeviceID, a.MatchKey); err != nil {
+				return err
+			}
+			old, err = scanApproval(tx.q.QueryRow(ctx, `SELECT `+approvalCols+` FROM session_approvals
+				WHERE session_id = ? AND kind = 'tool' AND tool = ? AND device_id = ? AND match_key = ? AND state = 'pending'`,
+				f.SessionID, a.Tool, a.DeviceID, a.MatchKey))
+		}
 		if err == nil {
 			out.Approval = old
 			return nil
@@ -92,23 +144,36 @@ func (o *ops) RequestApproval(ctx context.Context, f store.Fence, a store.Approv
 		if !isNotFound(err) {
 			return err
 		}
+		if a.Kind == store.ApprovalQuestion {
+			rows, err := tx.q.QueryContext(ctx, `UPDATE session_approvals SET state = 'superseded', resolved_at = ?, input_json = NULL
+				WHERE session_id = ? AND kind = 'question' AND state = 'pending' RETURNING `+approvalCols, a.CreatedAt, f.SessionID)
+			if err != nil {
+				return mapErr(err)
+			}
+			if out.Superseded, err = collect(rows, scanApproval); err != nil {
+				return err
+			}
+		}
 		n, err := tx.count(ctx, `SELECT COUNT(*) FROM session_approvals WHERE session_id = ? AND state = 'pending'`, f.SessionID)
 		if err != nil {
 			return err
 		}
 		if n >= store.MaxPendingApprovals {
+			// At most one pending approval is a question, so the cap
+			// always finds a tool approval to expire.
 			oldest, err := scanApproval(tx.q.QueryRow(ctx, `UPDATE session_approvals SET state = 'expired', resolved_at = ?
 				WHERE approval_id = (SELECT approval_id FROM session_approvals WHERE session_id = ? AND state = 'pending'
-					ORDER BY created_at, approval_id LIMIT 1) RETURNING `+approvalCols, a.CreatedAt, f.SessionID))
+					AND kind = 'tool' ORDER BY created_at, approval_id LIMIT 1) RETURNING `+approvalCols, a.CreatedAt, f.SessionID))
 			if err != nil {
 				return err
 			}
 			out.Expired = &oldest
 		}
-		if _, err := tx.exec(ctx, `INSERT INTO session_approvals (approval_id, session_id, user_id, tool_use_id, agent_id,
-			tool, device_id, match_key, display, reason, state, created_at, expires_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?)`, a.ApprovalID, f.SessionID, s.UserID, nstr(a.ToolUseID),
-			nstr(a.AgentID), a.Tool, a.DeviceID, a.MatchKey, nstr(a.Display), nstr(a.Reason), a.CreatedAt, a.ExpiresAt); err != nil {
+		if _, err := tx.exec(ctx, `INSERT INTO session_approvals (approval_id, session_id, user_id, kind, tool_use_id, agent_id,
+			tool, device_id, match_key, display, reason, input_json, state, created_at, expires_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)`, a.ApprovalID, f.SessionID, s.UserID, string(a.Kind), nstr(a.ToolUseID),
+			nstr(a.AgentID), a.Tool, nstr(a.DeviceID), nstr(a.MatchKey), nstr(a.Display), nstr(a.Reason), nstr(a.InputJSON),
+			a.CreatedAt, nint(a.ExpiresAt)); err != nil {
 			return err
 		}
 		if err := tx.trimResolved(ctx, f.SessionID); err != nil {
@@ -131,27 +196,31 @@ func (o *ops) ResolveApproval(ctx context.Context, r store.ApprovalResolution) (
 	if r.At == 0 {
 		return store.ApprovalResolved{}, invalid("ResolveApproval needs a time")
 	}
-	if r.Approve && r.GrantExpiresAt <= r.At {
-		return store.ApprovalResolved{}, invalid("approving needs a grant expiry after the resolution")
-	}
 	var out store.ApprovalResolved
 	err := o.unit(ctx, func(tx *ops) error {
 		a, err := tx.getApproval(ctx, r.ApprovalID)
 		if err != nil {
 			return err
 		}
-		var in store.Input
-		if r.Approve {
-			in = r.Input
-			in.SessionID, in.ClientMsgID, in.Kind, in.Priority = a.SessionID, approvalMsgPrefix+a.ApprovalID, store.InputApproval, store.InputNormal
-			if in.CreatedAt == 0 {
-				in.CreatedAt = r.At
-			}
-			if err := checkInput(in); err != nil {
-				return err
-			}
-		}
+		question := a.Kind == store.ApprovalQuestion
 		if a.State == store.ApprovalPending {
+			var in store.Input
+			if r.Approve {
+				if !question && r.GrantExpiresAt <= r.At {
+					return invalid("approving needs a grant expiry after the resolution")
+				}
+				in = r.Input
+				in.SessionID, in.ClientMsgID, in.Kind, in.Priority = a.SessionID, approvalMsgPrefix+a.ApprovalID, store.InputApproval, store.InputNormal
+				if question {
+					in.Kind = store.InputAnswer
+				}
+				if in.CreatedAt == 0 {
+					in.CreatedAt = r.At
+				}
+				if err := checkInput(in); err != nil {
+					return err
+				}
+			}
 			s, err := tx.getSession(ctx, a.SessionID, r.At)
 			if err != nil {
 				return err
@@ -159,16 +228,22 @@ func (o *ops) ResolveApproval(ctx context.Context, r store.ApprovalResolution) (
 			if s.State == store.SessionStopped {
 				return fmt.Errorf("%w: session %q", store.ErrStopped, a.SessionID)
 			}
-			state := store.ApprovalDenied
+			var state store.ApprovalState
 			switch {
-			case a.ExpiresAt <= r.At:
+			case a.Expired(r.At):
 				// Past its expiry, the requester has given up: the sweep
 				// had not run yet.
 				state = store.ApprovalExpired
+			case question && r.Approve:
+				state = store.ApprovalAnswered
+			case question:
+				state = store.ApprovalDismissed
 			case r.Approve:
 				state = store.ApprovalApproved
+			default:
+				state = store.ApprovalDenied
 			}
-			if _, err := tx.exec(ctx, `UPDATE session_approvals SET state = ?, resolved_at = ? WHERE approval_id = ?`,
+			if _, err := tx.exec(ctx, `UPDATE session_approvals SET state = ?, resolved_at = ?, input_json = NULL WHERE approval_id = ?`,
 				string(state), r.At, r.ApprovalID); err != nil {
 				return err
 			}
@@ -186,6 +261,8 @@ func (o *ops) ResolveApproval(ctx context.Context, r store.ApprovalResolution) (
 					a.SessionID, store.MaxSessionGrants); err != nil {
 					return err
 				}
+			}
+			if state == store.ApprovalApproved || state == store.ApprovalAnswered {
 				sub, err := tx.submitInput(ctx, in)
 				if err != nil {
 					return err

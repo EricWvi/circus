@@ -4,9 +4,15 @@ import type { WorkspaceStatus } from "@/api/types"
 // reducer in `session-events/` builds them from the control plane's raw
 // session events; the components never see the wire format.
 
+/**
+ * `awaiting_approval`: approvals or questions wait for the user (all a
+ * session list knows); `awaiting_answer`: only questions do, as the
+ * session's own view tells.
+ */
 export type SessionState =
   | "running"
   | "awaiting_approval"
+  | "awaiting_answer"
   | "queued"
   | "idle"
   | "interrupted"
@@ -115,6 +121,72 @@ export interface ToolCallEvent extends EventBase {
   approval?: ApprovalRequest
 }
 
+/** One option of an AskUserQuestion question. */
+export interface QuestionOption {
+  label: string
+  description: string
+  /** Text to show while the option is focused or chosen (code, a mockup); empty when none. */
+  preview: string
+}
+
+/** One question of the model's AskUserQuestion call, as the model wrote it. */
+export interface Question {
+  question: string
+  /** A short label, shown as a chip. */
+  header: string
+  options: QuestionOption[]
+  multiSelect: boolean
+}
+
+/** The user's answer to one question: chosen option labels, their own text, or both. */
+export interface QuestionAnswer {
+  question: string
+  selected: string[]
+  other: string
+}
+
+/**
+ * Where a question stands:
+ * - `asked`: the model asked; the request to the user hasn't arrived (yet).
+ * - `pending`: the user can answer or dismiss it.
+ * - `answered`, `dismissed`: the user did.
+ * - `superseded`: a newer question of the session replaced it.
+ * - `expired`: the session stopped while it waited.
+ * - `not_sent`: the turn ended without it reaching the user.
+ */
+export type QuestionStatus =
+  | "asked"
+  | "pending"
+  | "answered"
+  | "dismissed"
+  | "superseded"
+  | "expired"
+  | "not_sent"
+
+/** The model's AskUserQuestion call: questions for the user, answered in the Web UI. */
+export interface QuestionEvent extends EventBase {
+  kind: "question"
+  questions: Question[]
+  status: QuestionStatus
+  /** The control plane's approval id, for ResolveApproval; set from `pending` on. */
+  approvalId?: string
+  /** Set once `answered`, one per question in order. */
+  answers?: QuestionAnswer[]
+  /** For `not_sent`: what the tool result told Claude, when there was one. */
+  agentText?: string
+}
+
+/**
+ * The message that carried the user's answers to the agent. `answers` are
+ * those of the question it answered, when the view knows them; otherwise
+ * `text` is what the agent was sent.
+ */
+export interface QuestionAnswerEvent extends EventBase {
+  kind: "question_answer"
+  answers: QuestionAnswer[] | null
+  text: string
+}
+
 /** The user stopped the turn; what was shown stays. */
 export interface TurnStoppedEvent extends EventBase {
   kind: "turn_stopped"
@@ -199,6 +271,8 @@ export type SessionEvent =
   | AssistantTextEvent
   | ReasoningEvent
   | ToolCallEvent
+  | QuestionEvent
+  | QuestionAnswerEvent
   | TurnStoppedEvent
   | TurnInterruptedEvent
   | TurnErrorEvent

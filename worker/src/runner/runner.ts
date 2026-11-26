@@ -3,9 +3,10 @@ import { statSync } from "node:fs";
 import { isMainThread } from "node:worker_threads";
 import { create } from "@bufbuild/protobuf";
 import {
-  type HookCallback, type HookJSONOutput, type Options, type PermissionMode, type Query, type SDKMessage, type SDKUserMessage,
+  type CanUseTool, type HookCallback, type HookJSONOutput, type Options, type PermissionMode, type PermissionResult, type Query,
+  type SDKMessage, type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { InputPriority, TurnOrigin, TurnOutcome, type SessionConfig } from "@circus/proto/circus/v1/session_pb";
+import { ApprovalKind, InputPriority, TurnOrigin, TurnOutcome, type SessionConfig } from "@circus/proto/circus/v1/session_pb";
 import {
   ConsumeGrantSchema, GetLaunchEnvSchema, GetSessionStateSchema, GetSessionState_Section, PatchSessionStateSchema,
   PatchSessionState_BackgroundTaskSchema, ReleaseLeaseSchema, ReleaseLease_Reason, ReportTurnSchema,
@@ -17,11 +18,12 @@ import {
 import type { Logger } from "../log.js";
 import type { CliProcessesPort } from "../process.js";
 import {
-  ToolUses, approvalReason, approvalSubject, clipUtf8, toolUsesOf, type ApprovalSubject,
+  DISALLOWED_TOOLS, QUESTION_INPUT_BYTES, QUESTION_TOOL, ToolUses, approvalReason, approvalSubject, clipUtf8, denials,
+  questionDisplay, toolUsesOf, type ApprovalSubject,
 } from "./approvals.js";
 import {
-  EventPublisher, Kind, approvalPendingPayload, errorPayload, gapDetectedPayload, lostTaskPayload, sdkEvent,
-  turnStartedPayload, userMessagePayload, type NoteKind, type TurnOriginName,
+  EventPublisher, Kind, QUESTION_ANSWER_NOTE, errorPayload, gapDetectedPayload, lostTaskPayload, sdkEvent, turnStartedPayload,
+  userMessagePayload, type NoteKind, type TurnOriginName,
 } from "./events.js";
 import {
   historyMissingText, lostTaskSummary, lostTaskText, previousTurnInterruptedText, systemReminder, undeliveredTaskText,
@@ -85,7 +87,8 @@ const MAX_HELD_TASK_EVENT = 64 << 10;
 const GRANT_BUDGET_MS = 20_000;
 const MAX_TRACKED = 256;
 const USAGE_BYTES = 4096;
-const permissionModes = new Set<PermissionMode>(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"]);
+// "plan" is not offered: ExitPlanMode is disallowed until plan approval exists.
+const permissionModes = new Set<PermissionMode>(["default", "acceptEdits", "bypassPermissions", "dontAsk", "auto"]);
 
 class LeaseLost extends Error {
   override name = "LeaseLost";
@@ -247,6 +250,11 @@ export class SessionRunner {
   #toolUses = new ToolUses();
   #handledDenials = new Set<string>();
   #grants = new Map<string, true>();
+  /**
+   * Tool uses a grant allowed. An ask rule still sends such a call to
+   * canUseTool after the hook allowed it; canUseTool then allows it too.
+   */
+  #granted = new Map<string, string>();
   #inputsBusy = false;
   #inputsAgain = false;
   /** A turn's ENDED is being reported and its marks applied. */
@@ -608,6 +616,8 @@ export class SessionRunner {
     const prompt = new PushQueue();
     const mode = (this.#config?.permissionMode || "auto") as PermissionMode;
     const hook: HookCallback = (input, _toolUseId, { signal }) => this.#preToolUse(input, signal);
+    const canUseTool: CanUseTool = (tool, input, { toolUseID, agentID, decisionReason, signal }) =>
+      this.#canUseTool(tool, input, toolUseID, agentID ?? "", decisionReason, signal);
     const options: Options = {
       cwd: this.#cwd,
       settingSources: ["user", "project", "local"],
@@ -623,6 +633,10 @@ export class SessionRunner {
       sessionStore: this.#store,
       sessionStoreFlush: "eager",
       hooks: { PreToolUse: [{ hooks: [hook] }] },
+      // With canUseTool, a call the permission mode asks about reaches the
+      // worker instead of being denied, and AskUserQuestion is available.
+      canUseTool,
+      disallowedTools: DISALLOWED_TOOLS,
       spawnClaudeCodeProcess: this.deps.processes.spawner(this.sessionId),
       // Local login: the worker's own environment, unchanged.
       ...(plan.env ? { env: plan.env } : {}),
@@ -1006,7 +1020,7 @@ export class SessionRunner {
     for (const denial of Array.isArray(result.permission_denials) ? result.permission_denials as Array<Record<string, unknown>> : []) {
       const toolUseId = typeof denial.tool_use_id === "string" ? denial.tool_use_id : "";
       const tool = typeof denial.tool_name === "string" ? denial.tool_name : "";
-      if (!toolUseId || !tool || this.#handledDenials.has(toolUseId)) continue;
+      if (!toolUseId || !tool || tool === QUESTION_TOOL || this.#handledDenials.has(toolUseId)) continue;
       this.#trackDenial(toolUseId);
       this.#toolUses.remember(toolUseId, { tool, input: denial.tool_input, agentId: this.#toolUses.get(toolUseId)?.agentId ?? "" });
       await this.#requestApproval(toolUseId, tool, undefined);
@@ -1343,13 +1357,17 @@ export class SessionRunner {
     // A control-plane note keeps its category as given, empty included. A
     // ledger note goes to the CLI as an ordinary user message; its view
     // event still names its category, so the view shows it as a note.
+    // The user's answers to a question are the user's message too: an
+    // ordinary user message, its view event naming it.
     const isNote = input.kind === InputKind.NOTE;
+    const answer = input.kind === InputKind.ANSWER;
     const ledger = isNote && ledgerNoteKinds.has(input.note);
     const synthetic = isNote && !ledger;
-    const note: string | undefined = input.kind === InputKind.APPROVAL ? "approval_retry" : isNote ? input.note : undefined;
+    const note: string | undefined = input.kind === InputKind.APPROVAL ? "approval_retry" : isNote ? input.note
+      : answer ? QUESTION_ANSWER_NOTE : undefined;
     events.push({
       kind: Kind.USER,
-      payload: userMessagePayload(this.#claudeSessionId, input.inputId, input.text, note, timestamp, note !== undefined && !ledger),
+      payload: userMessagePayload(this.#claudeSessionId, input.inputId, input.text, note, timestamp, note !== undefined && !ledger && !answer),
     });
     const content = notes.length
       ? [...notes.map((n) => ({ type: "text" as const, text: systemReminder(n.text) })), { type: "text" as const, text: input.text }]
@@ -1409,35 +1427,52 @@ export class SessionRunner {
     if (this.#ending) {
       return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "The session is ending." } };
     }
-    if (this.#broken) return {};
-    const subject = approvalSubject(input.tool_name, input.tool_input, this.#cwd);
-    if (!subject || !this.#grants.has(`${subject.tool}\n${subject.matchKey}`)) return {};
+    if (!(await this.#consumeGrant(input.tool_name, input.tool_input, input.tool_use_id, signal))) return {};
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "The user approved this call once.",
+      },
+    };
+  }
+
+  /**
+   * Consumes a grant for the tool use if the worker knows of one matching
+   * it; true when the call may run. A tool use that consumed one already
+   * stays allowed.
+   */
+  async #consumeGrant(tool: string, toolInput: unknown, toolUseId: string, signal: AbortSignal): Promise<boolean> {
+    const subject = approvalSubject(tool, toolInput, this.#cwd);
+    if (!subject) return false;
+    const key = `${subject.tool}\n${subject.matchKey}`;
+    // Allowed already, for the same tool and input (another hook may have
+    // rewritten the input since).
+    if (this.#granted.has(toolUseId)) return this.#granted.get(toolUseId) === key;
+    if (this.#broken || !this.#grants.has(key)) return false;
     try {
       const reply = await this.ops.call({
         case: "consumeGrant",
         value: create(ConsumeGrantSchema, {
-          tool: subject.tool, device: this.#device, matchKey: subject.matchKey, toolUseId: input.tool_use_id,
+          tool: subject.tool, device: this.#device, matchKey: subject.matchKey, toolUseId,
         }),
       }, { budgetMs: this.deps.grantBudgetMs ?? GRANT_BUDGET_MS });
-      if (!reply.allowed || signal.aborted) return {};
-      this.#grants.delete(`${subject.tool}\n${subject.matchKey}`);
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "The user approved this call once.",
-        },
-      };
+      if (!reply.allowed || signal.aborted) return false;
+      this.#grants.delete(key);
+      this.#granted.set(toolUseId, key);
+      if (this.#granted.size > MAX_TRACKED) this.#granted.delete(this.#granted.keys().next().value!);
+      return true;
     } catch (error) {
       if (error instanceof BrokenError) this.#broken = true;
       else if (error instanceof FencedError || error instanceof StoppedError) this.#fatal(error);
       else if (!isLeaseAbort(error)) this.#log.warn("ConsumeGrant failed", { session_id: this.sessionId, error: String(error).slice(0, 512) });
-      return {};
+      return false;
     }
   }
 
   async #denied(message: Record<string, unknown>): Promise<void> {
     const toolUseId = typeof message.tool_use_id === "string" ? message.tool_use_id : "";
     const tool = typeof message.tool_name === "string" ? message.tool_name : "";
-    if (!toolUseId || !tool || this.#handledDenials.has(toolUseId)) return;
+    // A question is never a tool approval: canUseTool asks it, or it was refused.
+    if (!toolUseId || !tool || tool === QUESTION_TOOL || this.#handledDenials.has(toolUseId)) return;
     this.#trackDenial(toolUseId);
     // Explicit deny rules and hooks decided on purpose; only the permission
     // mode (auto's classifier, dontAsk, ...) is asked about.
@@ -1446,35 +1481,104 @@ export class SessionRunner {
     await this.#requestApproval(toolUseId, tool, reason, typeof message.agent_id === "string" ? message.agent_id : undefined);
   }
 
-  async #requestApproval(toolUseId: string, tool: string, reason: string | undefined, agentId?: string): Promise<void> {
-    if (this.#broken) return;
+  /**
+   * The SDK's permission callback. Every call reaching it is denied, the
+   * worker never waits for the user: AskUserQuestion on the main thread
+   * becomes a question approval whose answers start the next turn; a
+   * subagent's is refused; any other call (one the permission mode or an
+   * ask rule asks about) gets the approval request #denied makes, tracked
+   * so that a permission_denied for the same call does not ask again. A
+   * call a grant allows (the user approved it) runs: an ask rule asks
+   * even after the hook allowed it.
+   */
+  async #canUseTool(tool: string, input: Record<string, unknown>, toolUseId: string, agentId: string,
+    decisionReason: string | undefined, signal: AbortSignal): Promise<PermissionResult> {
+    if (this.#ending) return { behavior: "deny", message: denials.ending };
+    if (tool !== QUESTION_TOOL && await this.#consumeGrant(tool, input, toolUseId, signal)) {
+      return { behavior: "allow", updatedInput: input };
+    }
+    // The turn's result lists this denial again (permission_denials): it
+    // is handled here, once.
+    const handled = this.#handledDenials.has(toolUseId);
+    this.#trackDenial(toolUseId);
+    const question = tool === QUESTION_TOOL;
+    if (question && agentId) return { behavior: "deny", message: denials.subagentQuestion };
+    try {
+      if (question) return { behavior: "deny", message: await this.#askQuestion(toolUseId, input) };
+      this.#toolUses.remember(toolUseId, { tool, input, agentId });
+      if (handled) return { behavior: "deny", message: denials.toolSent };
+      const asked = await this.#requestApproval(toolUseId, tool, decisionReason, agentId);
+      return { behavior: "deny", message: asked ? denials.toolSent : denials.toolFailed };
+    } catch (error) {
+      // As for a failure in the message loop: fenced, stopped or a worker failure.
+      this.#fatal(error);
+      return { behavior: "deny", message: question ? denials.questionFailed : denials.toolFailed };
+    }
+  }
+
+  /** Asks the user the model's questions; returns what the model is told. */
+  async #askQuestion(toolUseId: string, input: Record<string, unknown>): Promise<string> {
+    const inputJson = JSON.stringify(input);
+    if (Buffer.byteLength(inputJson) > QUESTION_INPUT_BYTES) {
+      this.#log.warn("AskUserQuestion input too large; not asked", { session_id: this.sessionId, bytes: Buffer.byteLength(inputJson) });
+      return denials.questionTooLarge;
+    }
+    if (this.#broken) return denials.questionFailed;
+    const display = questionDisplay(input);
+    try {
+      // The control plane records APPROVAL_PENDING with the approval: the
+      // call's tool_use goes to the view first.
+      await this.#publisher.flush();
+      await this.ops.call({
+        case: "requestApproval",
+        value: create(RequestApprovalSchema, { kind: ApprovalKind.QUESTION, toolUseId, tool: QUESTION_TOOL, display, inputJson }),
+      });
+      return denials.questionAsked;
+    } catch (error) {
+      if (error instanceof BrokenError) {
+        this.#broken = true;
+        return denials.questionFailed;
+      }
+      if (!(error instanceof RejectedError)) throw error;
+      this.#log.warn("RequestApproval rejected", { session_id: this.sessionId, error: error.message.slice(0, 512) });
+      this.#publisher.add(Kind.ERROR, errorPayload(`Asking the user the model's questions failed: ${error.message.slice(0, 512)}`));
+      // A question the control plane found malformed may be asked again, corrected.
+      return error.code === RejectCode.INVALID ? denials.questionInvalid(error.message.replace(/^INVALID: /, "")) : denials.questionFailed;
+    }
+  }
+
+  /** Requests a tool approval; false when none was requested. */
+  async #requestApproval(toolUseId: string, tool: string, reason: string | undefined, agentId?: string): Promise<boolean> {
+    if (this.#broken) return false;
     const use = this.#toolUses.get(toolUseId);
     const subject: ApprovalSubject | undefined = use ? approvalSubject(tool, use.input, this.#cwd) : undefined;
     if (!subject) {
       this.#log.warn("denied tool use without a known input; no approval requested", { session_id: this.sessionId, tool: tool.slice(0, 256) });
-      return;
+      return false;
     }
     const why = approvalReason(reason);
     try {
-      const reply = await this.ops.call({
+      // The control plane records APPROVAL_PENDING with the approval (a
+      // grant exists only once the user approves): what the CLI reported of
+      // the call goes to the view first.
+      await this.#publisher.flush();
+      await this.ops.call({
         case: "requestApproval",
         value: create(RequestApprovalSchema, {
           toolUseId, agentId: agentId ?? use?.agentId ?? "", tool: subject.tool, device: this.#device,
           matchKey: subject.matchKey, display: subject.display, reason: why,
         }),
       });
-      // A grant exists only once the user approves (Lease.state.grants or a refresh).
-      this.#publisher.add(Kind.APPROVAL_PENDING, approvalPendingPayload({
-        approvalId: reply.approvalId, tool: subject.tool, device: this.#device, toolUseId, display: subject.display, reason: why,
-      }));
+      return true;
     } catch (error) {
       if (error instanceof BrokenError) {
         this.#broken = true;
-        return;
+        return false;
       }
       if (!(error instanceof RejectedError)) throw error;
       this.#log.warn("RequestApproval rejected", { session_id: this.sessionId, error: error.message.slice(0, 512) });
       this.#publisher.add(Kind.ERROR, errorPayload(`Asking for approval of ${tool} failed: ${error.message.slice(0, 512)}`));
+      return false;
     }
   }
 

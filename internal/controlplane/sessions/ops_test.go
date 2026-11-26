@@ -183,6 +183,7 @@ func TestEventAndTranscriptRules(t *testing.T) {
 	// consumes its sequence; the next one continues.
 	for i, bad := range []*circusv1.PublishEvents_Event{
 		{Kind: circusv1.SessionEvent_KIND_TURN_STOPPED, Json: `{}`},
+		{Kind: circusv1.SessionEvent_KIND_APPROVAL_PENDING, Json: `{}`},
 		{Kind: circusv1.SessionEvent_KIND_TURN_INTERRUPTED, Json: `{}`, Ephemeral: true},
 		{Kind: circusv1.SessionEvent_KIND_UNSPECIFIED, Json: `{}`},
 		{Kind: circusv1.SessionEvent_Kind(99), Json: `{}`, Ephemeral: true},
@@ -195,7 +196,7 @@ func TestEventAndTranscriptRules(t *testing.T) {
 		wantRejected(t, call(t, c, wc.Publish("s1", epoch, seq, assistant, bad)), circusv1.SessionReply_Rejected_CODE_INVALID)
 		wantOk(t, call(t, c, wc.Publish("s1", epoch, seq, assistant)), true)
 	}
-	if len(f.bus.live()) != 0 || f.get("s1").DroppedEventBatches != 8 {
+	if len(f.bus.live()) != 0 || f.get("s1").DroppedEventBatches != 9 {
 		t.Fatal("a dropped batch published")
 	}
 
@@ -208,6 +209,9 @@ func TestEventAndTranscriptRules(t *testing.T) {
 	if k := call(t, c, wc.Op("s1", epoch, &circusv1.ListTranscriptKeys{})).GetTranscriptKeys().GetSubpaths(); len(k) != 1 || k[0] != "agent-1" {
 		t.Fatalf("keys %v", k)
 	}
+	// A pending question, which the stop ends.
+	q := call(t, c, wc.Op("s1", epoch, &circusv1.RequestApproval{Kind: circusv1.ApprovalKind_APPROVAL_KIND_QUESTION, ToolUseId: "tu-q",
+		Tool: "AskUserQuestion", InputJson: askInput})).GetApproval().GetApprovalId()
 	// Past the session quota: TRANSCRIPT_FULL, the session stops, its
 	// holder is nudged and its jobs are stopped.
 	wantRejected(t, call(t, c, wc.Append("s1", epoch, "", 1, &circusv1.TranscriptEntry{Json: strings.Repeat("x", 2000)})), circusv1.SessionReply_Rejected_CODE_TRANSCRIPT_FULL)
@@ -215,10 +219,13 @@ func TestEventAndTranscriptRules(t *testing.T) {
 	if sess.State != store.SessionStopped {
 		t.Fatal("not stopped")
 	}
-	// The stop's view event, recorded with the stop and announced.
-	page, err := f.st.ReadEvents(t.Context(), store.EventFilter{SessionID: "s1", AfterSeq: sess.LastEventSeq - 1, Limit: 1, MaxBytes: 1 << 20})
+	// The stop's view events, recorded with the stop and announced: the
+	// question's end, then the stop.
+	page, err := f.st.ReadEvents(t.Context(), store.EventFilter{SessionID: "s1", AfterSeq: sess.LastEventSeq - 2, Limit: 2, MaxBytes: 1 << 20})
 	must(t, err)
-	if len(page.Events) != 1 || page.Events[0].Kind != store.EventKindSessionState || string(page.Events[0].Payload) != `{"state":"stopped","reason":"transcript_full"}` ||
+	if len(page.Events) != 2 || page.Events[0].Kind != store.EventKindApprovalResolved ||
+		string(page.Events[0].Payload) != `{"approval_id":"`+q+`","kind":"question","state":"expired"}` ||
+		page.Events[1].Kind != store.EventKindSessionState || string(page.Events[1].Payload) != `{"state":"stopped","reason":"transcript_full"}` ||
 		f.bus.seq("s1") != uint64(sess.LastEventSeq) {
 		t.Fatalf("stop event %+v, announced %d", page.Events, f.bus.seq("s1"))
 	}

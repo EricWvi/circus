@@ -138,3 +138,35 @@ export function toolUsesOf(message: Record<string, unknown>): Array<{ id: string
       ? [{ id: b.id, name: b.name, input: b.input }] : [];
   });
 }
+
+/** The tool whose calls become question approvals. */
+export const QUESTION_TOOL = "AskUserQuestion";
+/** Tools the worker removes: plan mode needs an approval flow it does not have. */
+export const DISALLOWED_TOOLS = ["EnterPlanMode", "ExitPlanMode"];
+/** The largest AskUserQuestion input the control plane stores. */
+export const QUESTION_INPUT_BYTES = 32 * 1024;
+
+/** A question approval's display: its first question, clipped; empty when there is none. */
+export function questionDisplay(input: Record<string, unknown>): string {
+  const questions = input.questions;
+  const first = Array.isArray(questions) ? (questions[0] as { question?: unknown } | undefined)?.question : undefined;
+  return typeof first === "string" ? clipUtf8(first, DISPLAY_BYTES) : "";
+}
+
+/** What canUseTool tells the model when it denies a call. */
+export const denials = {
+  subagentQuestion: "Only the main conversation can ask the user questions; AskUserQuestion is not available to subagents. " +
+    "Continue without asking, and say in your result what you would have asked.",
+  questionAsked: "Your questions were shown to the user. End your turn now, without guessing the answers: " +
+    "the user's answers will arrive as the next user message.",
+  questionTooLarge: `Your questions were not shown to the user: their input is larger than ${QUESTION_INPUT_BYTES / 1024} KiB. ` +
+    "Ask again with shorter questions and options.",
+  questionInvalid: (why: string) => `Your questions were not shown to the user: ${why.slice(0, 512)}. ` +
+    "Ask again with a corrected AskUserQuestion call.",
+  questionFailed: "Your questions could not be shown to the user. Continue without the answers, and tell the user what you wanted to ask.",
+  toolSent: "This call was sent to the user for approval. Do not retry it until the user approves it: " +
+    "if they do, you will be told to retry it.",
+  toolFailed: "This call was not allowed, and asking the user for approval failed. Do not retry it; " +
+    "continue with work that does not need it, and tell the user it was not run.",
+  ending: "The session is ending.",
+} as const;

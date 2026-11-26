@@ -769,9 +769,12 @@ const (
 	MaxPatchItems = 1024
 	// MaxPendingApprovals bounds a session's pending approvals.
 	MaxPendingApprovals = 32
-	// KeptResolvedApprovals is how many approved, denied or expired
-	// approvals a session keeps.
+	// KeptResolvedApprovals is how many resolved (approved, denied,
+	// expired, answered, dismissed or superseded) approvals a session
+	// keeps.
 	KeptResolvedApprovals = 64
+	// MaxQuestionInputBytes bounds a question approval's InputJSON.
+	MaxQuestionInputBytes = 32 << 10
 	// MaxSessionGrants bounds a session's unconsumed grants.
 	MaxSessionGrants = 32
 	// MaxTranscriptSubpaths bounds a session's transcript subpaths.
@@ -1315,6 +1318,8 @@ const (
 	// InputNote is a note the control plane writes for the model, such as
 	// the problems of a ledger collection; Input.Note names its category.
 	InputNote InputKind = "note"
+	// InputAnswer carries the user's answers to a question approval.
+	InputAnswer InputKind = "answer"
 )
 
 // InputPriority is how the worker pushes an input to the CLI.
@@ -1651,10 +1656,11 @@ const (
 )
 
 // Other kinds only the control plane records: a new user input
-// (SendMessage), a resolved approval, and a session state change such as a
-// stop.
+// (SendMessage), a new and a resolved approval, and a session state change
+// such as a stop.
 const (
 	EventKindInputAccepted    = "INPUT_ACCEPTED"
+	EventKindApprovalPending  = "APPROVAL_PENDING"
 	EventKindApprovalResolved = "APPROVAL_RESOLVED"
 	EventKindSessionState     = "SESSION_STATE"
 	EventKindWorkspace        = "WORKSPACE"
@@ -1676,7 +1682,7 @@ const (
 func ControlPlaneOnlyKind(kind string) bool {
 	switch kind {
 	case EventKindTranscriptGapAccepted, EventKindTurnInterrupted, EventKindTurnStopped,
-		EventKindInputAccepted, EventKindApprovalResolved, EventKindSessionState, EventKindWorkspace, EventKindLedger,
+		EventKindInputAccepted, EventKindApprovalPending, EventKindApprovalResolved, EventKindSessionState, EventKindWorkspace, EventKindLedger,
 		EventKindQueue, EventKindWorker:
 		return true
 	}
@@ -1742,25 +1748,55 @@ const (
 	ApprovalPending  ApprovalState = "pending"
 	ApprovalApproved ApprovalState = "approved"
 	ApprovalDenied   ApprovalState = "denied"
-	ApprovalExpired  ApprovalState = "expired"
+	// ApprovalExpired: a tool approval past its expiry (or pushed out by
+	// the pending cap), or a question of a session that stopped.
+	ApprovalExpired ApprovalState = "expired"
+	// ApprovalAnswered, ApprovalDismissed and ApprovalSuperseded end
+	// question approvals only.
+	ApprovalAnswered   ApprovalState = "answered"
+	ApprovalDismissed  ApprovalState = "dismissed"
+	ApprovalSuperseded ApprovalState = "superseded"
 )
 
 // Valid reports whether s is a known state.
 func (s ApprovalState) Valid() bool {
 	switch s {
-	case ApprovalPending, ApprovalApproved, ApprovalDenied, ApprovalExpired:
+	case ApprovalPending, ApprovalApproved, ApprovalDenied, ApprovalExpired, ApprovalAnswered, ApprovalDismissed, ApprovalSuperseded:
 		return true
 	}
 	return false
 }
 
-// Approval is one request for a one-time approval of a denied device tool
-// call. (Tool, DeviceID, MatchKey) is the grant key: the command for bash,
-// the path for write and edit.
+// ApprovalKind is what an approval asks the user for.
+type ApprovalKind string
+
+const (
+	// ApprovalTool asks to allow a tool call the permission mode did not
+	// allow; approving writes a one-off grant.
+	ApprovalTool ApprovalKind = "tool"
+	// ApprovalQuestion carries the model's AskUserQuestion; answering
+	// writes an input with the answers.
+	ApprovalQuestion ApprovalKind = "question"
+)
+
+// Approval is one request for the user: a one-time approval of a denied
+// device tool call (ApprovalTool), or the model's questions
+// (ApprovalQuestion).
+//
+// A tool approval has (Tool, DeviceID, MatchKey), the grant key (the
+// command for bash, the path for write and edit), and ExpiresAt; its
+// InputJSON is empty.
+//
+// A question approval has a ToolUseID, while pending InputJSON (at most
+// MaxQuestionInputBytes; dropped once resolved), and no DeviceID, MatchKey
+// or expiry (ExpiresAt 0): it stays pending until answered, dismissed, superseded by the
+// session's next question, or its session stops (then it expires). A
+// session has at most one pending question.
 type Approval struct {
 	ApprovalID string
 	SessionID  string
-	UserID     string // the session's user, set by the store
+	UserID     string       // the session's user, set by the store
+	Kind       ApprovalKind // empty means ApprovalTool on input
 	ToolUseID  string
 	AgentID    string
 	Tool       string // at most MaxToolBytes
@@ -1768,39 +1804,47 @@ type Approval struct {
 	MatchKey   string // MatchKeyHexDigits lowercase hex digits
 	Display    string // at most MaxDescriptionBytes
 	Reason     string // at most MaxDescriptionBytes
+	InputJSON  string
 	State      ApprovalState
 	CreatedAt  int64
-	ExpiresAt  int64
+	ExpiresAt  int64 // 0: does not expire
 	ResolvedAt int64
 }
 
+// Expired reports whether a pending approval has expired at now.
+func (a Approval) Expired(now int64) bool { return a.ExpiresAt != 0 && a.ExpiresAt <= now }
+
 // ApprovalSize is an approval's page size in ListApprovals.
 func ApprovalSize(a Approval) int64 {
-	return int64(len(a.ApprovalID) + len(a.SessionID) + len(a.UserID) + len(a.ToolUseID) + len(a.AgentID) +
-		len(a.Tool) + len(a.DeviceID) + len(a.MatchKey) + len(a.Display) + len(a.Reason) + rowOverhead)
+	return int64(len(a.ApprovalID) + len(a.SessionID) + len(a.UserID) + len(a.Kind) + len(a.ToolUseID) + len(a.AgentID) +
+		len(a.Tool) + len(a.DeviceID) + len(a.MatchKey) + len(a.Display) + len(a.Reason) + len(a.InputJSON) + rowOverhead)
 }
 
 // ApprovalRequested is RequestApproval's result. Expired is the oldest
-// pending approval expired to make room, if any.
+// pending tool approval expired to make room, if any. Superseded are the
+// session's pending questions a new question replaced.
 type ApprovalRequested struct {
-	Approval Approval
-	Created  bool
-	Expired  *Approval
+	Approval   Approval
+	Created    bool
+	Expired    *Approval
+	Superseded []Approval
 }
 
 // ApprovalResolution is one ResolveApproval. On approval, Input supplies
-// InputID, Text and CreatedAt (= At when zero) of the retry message; its
-// other fields are set by the store.
+// InputID, Text and CreatedAt (= At when zero) of the input it writes: the
+// retry message of a tool approval, the answers of a question; its other
+// fields are set by the store.
 type ApprovalResolution struct {
 	ApprovalID     string
 	Approve        bool
 	At             int64
-	GrantExpiresAt int64 // required when Approve
+	GrantExpiresAt int64 // required when approving a tool approval
 	Input          Input
 }
 
 // ApprovalResolved is ResolveApproval's result. Input is the submitted
-// retry message on approval. Session and Lease are as after the call.
+// retry message or answers on approval. Session and Lease are as after the
+// call.
 type ApprovalResolved struct {
 	Approval Approval
 	Changed  bool

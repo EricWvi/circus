@@ -18,6 +18,7 @@ function Glyph({ state }: { state: SessionState }) {
         </>
       )
     case "awaiting_approval":
+    case "awaiting_answer":
       return (
         <span className="size-[7px] rotate-45 bg-foreground ring-[3px] ring-foreground/20" />
       )
@@ -67,20 +68,26 @@ export function StatusDot({
   )
 }
 
+/**
+ * A session's state in its header. On narrow screens only its mark shows,
+ * as the folder's badge does; its words stay for assistive technology and
+ * on hover.
+ */
 export function StatusBadge({ state }: { state: SessionState }) {
   const { t } = useTranslation()
   return (
     <span
+      title={t(`status.${state}`)}
       className={cn(
-        "inline-flex h-6 shrink-0 items-center gap-1.5 border px-2 text-xs whitespace-nowrap",
+        "inline-flex h-6 shrink-0 items-center gap-1.5 border px-1.5 text-xs whitespace-nowrap sm:px-2",
         state === "broken" || state === "failed"
           ? "border-destructive/40 text-destructive"
           : "text-muted-foreground",
-        state === "awaiting_approval" && "border-foreground text-foreground",
+        (state === "awaiting_approval" || state === "awaiting_answer") && "border-foreground text-foreground",
       )}
     >
       <StatusDot state={state} label={false} />
-      {t(`status.${state}`)}
+      <span className="max-sm:sr-only">{t(`status.${state}`)}</span>
     </span>
   )
 }

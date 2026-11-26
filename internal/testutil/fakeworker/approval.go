@@ -2,6 +2,7 @@ package fakeworker
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -63,9 +64,9 @@ func sdkDenialResult(sessionID, id, toolID string) sdkMessage {
 }
 
 // denyApproval denies a tool use the way the real worker reports it: the
-// permission denial, then the approval request (published before Claude
-// Code's tool_result that carries the denial to the model), then that
-// tool_result.
+// permission denial, then the approval request (whose APPROVAL_PENDING the
+// control plane records, before Claude Code's tool_result that carries the
+// denial to the model), then that tool_result.
 func (s *session) denyApproval(t *turn, toolID, command string, input object) error {
 	s.events = append(s.events, sdkPermissionDenied(s.sdkID, uuid.NewString(), toolID).event())
 	t.denials = append(t.denials, object{"tool_name": approvalTool, "tool_use_id": toolID, "tool_input": input})
@@ -84,8 +85,6 @@ func (s *session) denyApproval(t *turn, toolID, command string, input object) er
 	if r.GetApproval().GetApprovalId() == "" {
 		return fmt.Errorf("approval: %v", r)
 	}
-	s.queue(pb.SessionEvent_KIND_APPROVAL_PENDING, approvalPendingPayload(
-		r.GetApproval().GetApprovalId(), approvalTool, s.device, toolID, display, approvalReason))
 	if err := s.record(sdkDenialResult(s.sdkID, uuid.NewString(), toolID)); err != nil {
 		return err
 	}
@@ -110,4 +109,65 @@ func (s *session) retryApproval(t *turn, text string) error {
 		command = full
 	}
 	return s.tool(t, "approved-bash", command)
+}
+
+// questionTool is the tool a question approval names.
+const questionTool = "AskUserQuestion"
+
+// askInputJSON is the AskUserQuestion input of `/fake ask`, as the real
+// worker sends it (in the order of Claude Code's own schema): two
+// questions, the second multiSelect.
+const askInputJSON = `{"questions":[{"question":"Which color should the button be?","header":"Color",` +
+	`"options":[{"label":"Red","description":"A warm color"},{"label":"Blue","description":"A cool color"}],"multiSelect":false},` +
+	`{"question":"Which features do you want?","header":"Features","options":[{"label":"Dark mode","description":"A dark theme"},` +
+	`{"label":"Search","description":"Full-text search"},{"label":"Export","description":"CSV export"}],"multiSelect":true}]}`
+
+// questionAskedText is what the real worker's canUseTool tells the model
+// when it turns AskUserQuestion into a question approval
+// (worker/src/runner/approvals.ts).
+const questionAskedText = "Your questions were shown to the user. End your turn now, without guessing the answers: " +
+	"the user's answers will arrive as the next user message."
+
+// sdkQuestionDenied is the tool_result Claude Code records for a call
+// canUseTool denied.
+func sdkQuestionDenied(sessionID, id, toolID string) sdkMessage {
+	return sdkToolResult(sessionID, id, toolID, questionAskedText, true, "Error: "+questionAskedText, object{
+		"id": toolID, "non_execution_kind": "permission-rule",
+		"permission_decision": object{"decision": "reject", "source": "user_reject"},
+	})
+}
+
+// ask makes the model's AskUserQuestion call the way the real worker
+// handles it: the tool use, the question approval (recorded by the control
+// plane before
+// Claude Code's tool_result that carries the denial to the model), that
+// tool_result, and a closing text that ends the turn. The answers arrive
+// as the next turn's input.
+func (s *session) ask(t *turn) error {
+	var input object
+	if err := json.Unmarshal([]byte(askInputJSON), &input); err != nil {
+		return err
+	}
+	u := toolCall{id: "toolu_" + uuid.NewString(), name: questionTool, input: input}
+	if err := s.announce(t, u); err != nil {
+		return err
+	}
+	const display = "Which color should the button be?"
+	r, err := s.request(wc.Op(s.id, s.epoch, &pb.RequestApproval{
+		Kind: pb.ApprovalKind_APPROVAL_KIND_QUESTION, Tool: questionTool, ToolUseId: u.id, Display: display, InputJson: askInputJSON,
+	}))
+	if err != nil {
+		return err
+	}
+	if r.GetApproval().GetApprovalId() == "" {
+		return fmt.Errorf("question approval: %v", r)
+	}
+	t.denials = append(t.denials, object{"tool_name": questionTool, "tool_use_id": u.id, "tool_input": input})
+	if err := s.record(sdkQuestionDenied(s.sdkID, uuid.NewString(), u.id)); err != nil {
+		return err
+	}
+	if err := s.flush(); err != nil {
+		return err
+	}
+	return s.stream(t, "I asked you two questions.", s.w.opts.StreamDelay, plainText)
 }

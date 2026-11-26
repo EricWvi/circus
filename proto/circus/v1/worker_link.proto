@@ -263,9 +263,10 @@ message WorkerEvent {
   // provider waits as PROVIDER_FULL and a connection of a worker that may
   // run it is live. The control plane sends it only for a lease bound to
   // this connection whose session it finds idle (state IDLE; no input
-  // pending or taken; no pending approval; no ended job whose notice is
-  // not yet persisted; no background task recorded in this epoch; no
-  // ledger merge or discard still to apply), and only while no Nudge
+  // pending or taken; no pending TOOL approval, a pending question not
+  // counting; no ended job whose notice is not yet persisted; no
+  // background task recorded in this epoch; no ledger merge or discard
+  // still to apply), and only while no Nudge
   // reason is pending for it (the holder acknowledges each reason as the
   // hint table says, JOB included). The holder checks again on its side
   // (no turn running, starting or still being reported; no input being
@@ -657,9 +658,10 @@ message PublishEvents {
   // consumed one is acknowledged with deduplicated=true and no write; one
   // beyond the last plus one is INVALID and consumes nothing. ok consumes it;
   // so does a batch at the next sequence that fails validation (an over-cap
-  // field, or a kind only the control plane records: APPROVAL_RESOLVED,
-  // TURN_INTERRUPTED, SESSION_STATE, TRANSCRIPT_GAP_ACCEPTED, TURN_STOPPED or
-  // INPUT_ACCEPTED, kinds 8, 9, 10, 15, 17 and 18): it is recorded as dropped
+  // field, or a kind only the control plane records: APPROVAL_PENDING,
+  // APPROVAL_RESOLVED, TURN_INTERRUPTED, SESSION_STATE,
+  // TRANSCRIPT_GAP_ACCEPTED, TURN_STOPPED or INPUT_ACCEPTED, kinds 7, 8, 9,
+  // 10, 15, 17 and 18): it is recorded as dropped
   // and answered INVALID, and the worker continues with the next sequence. A worker treats every
   // INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
   // and Fenced consume nothing. Retrying must preserve content.
@@ -671,9 +673,23 @@ message PublishEvents {
   }
 }
 
-// RequestApproval merges pending requests by (session, tool, device, match_key).
-// Display, reason and tool_use_id do not change the matching key. There are
-// at most 32 pending requests per session, expiring in ten minutes.
+// RequestApproval of kind TOOL merges pending requests by (session, tool,
+// device, match_key). Display, reason and tool_use_id do not change the
+// matching key. There are at most 32 pending requests per session; TOOL
+// requests expire in ten minutes.
+//
+// Kind QUESTION (from canUseTool for AskUserQuestion on the main thread):
+// tool is "AskUserQuestion"; device, match_key and reason are empty;
+// input_json is required; display is a short summary (the first question).
+// Repeating the same tool_use_id returns the same approval
+// (deduplicated=true); a new one supersedes the session's other pending
+// QUESTION requests. It does not expire. An input_json that is not a valid
+// AskUserQuestion input (1-4 questions, 2-4 options each) is INVALID.
+//
+// A request that creates an approval records its APPROVAL_PENDING view event
+// in the same transaction (and a superseding question the APPROVAL_RESOLVED
+// events of the questions it replaces); the worker does not publish
+// APPROVAL_PENDING. A deduplicated request records nothing.
 message RequestApproval {
   // Model tool_use id, opaque, 1-128 bytes.
   string tool_use_id = 1;
@@ -692,6 +708,12 @@ message RequestApproval {
   // Empty when the permission mode gave no reason of its own; clients then
   // say that the permission mode denied the tool.
   string reason = 7;
+  // Unspecified means TOOL. PLAN is refused (INVALID) until plan approval
+  // exists.
+  ApprovalKind kind = 8;
+  // QUESTION only: the tool input as canUseTool received it, at most
+  // 32 KiB. See SessionApproval.input_json.
+  string input_json = 9;
 }
 
 // ConsumeGrant atomically finds and consumes one unexpired matching grant for
@@ -866,6 +888,11 @@ message SessionReply {
         // starts a turn when the session is idle; merged and discarded
         // notes are held and taken with the next input that starts a turn.
         KIND_NOTE = 3;
+        // The user's answers to an AskUserQuestion (a QUESTION approval
+        // answered with ResolveApproval). Pushed as an ordinary user
+        // message; its view event carries circus_note "question_answer".
+        // It needs no grant refresh.
+        KIND_ANSWER = 4;
       }
     }
   }

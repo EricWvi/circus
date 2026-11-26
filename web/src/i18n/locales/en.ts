@@ -151,6 +151,7 @@ export const en = {
   status: {
     running: "Running",
     awaiting_approval: "Needs approval",
+    awaiting_answer: "Needs an answer",
     queued: "Queued",
     idle: "Idle",
     interrupted: "Interrupted",
@@ -681,6 +682,34 @@ export const en = {
       expired: "This approval request expired.",
       // An approval whose denial gave no reason of its own.
       modeDenied: "The permission mode denied {{tool}}",
+    },
+    // The model's AskUserQuestion: questions the user answers here.
+    question: {
+      title_one: "Claude has a question",
+      title_other: "Claude has {{count}} questions",
+      chooseAny: "Choose any",
+      other: "Other",
+      otherPlaceholder: "Your own answer",
+      preview: "Preview of {{option}}",
+      submit: "Send answers",
+      dismiss: "Dismiss",
+      unanswered: "Answer every question first.",
+      notReady: "The questions haven't reached you yet.",
+      unshowable: "These questions couldn't be shown here. You can dismiss them.",
+      otherFor: "Your own answer to: {{question}}",
+      otherTooLong: "Your own answer is too long (at most 4 KiB).",
+      // While the answers or the dismissal are on their way to the server.
+      sending: "Sending…",
+      answered: "Answered",
+      dismissed: "Dismissed",
+      superseded: "Replaced by a newer question",
+      expired: "Ended when the session stopped",
+      // Answering or dismissing a question the server no longer waits on.
+      noLongerPending: "This question no longer waits for an answer.",
+      notSent: "Didn't reach you",
+      toldClaude: "Told Claude",
+      // The user's answer message, for assistive technology.
+      yourAnswer: "Your answer",
     },
     reasoning: {
       thinking: "Thinking…",

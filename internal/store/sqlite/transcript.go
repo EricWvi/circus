@@ -70,6 +70,9 @@ func (o *ops) AppendTranscript(ctx context.Context, f store.Fence, b store.Trans
 				return err
 			}
 			out = store.TranscriptAppended{LastSeq: lastSeq, SessionBytes: s.TranscriptBytes, Full: true, FullReason: reason, Stopped: n > 0}
+			if n > 0 {
+				return tx.endQuestions(ctx, f.SessionID, f.Now)
+			}
 			return nil
 		}
 		seen := map[string]bool{}

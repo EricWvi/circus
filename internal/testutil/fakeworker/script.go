@@ -18,8 +18,9 @@ func (s *session) script(t *turn, in *input) error {
 	switch in.GetKind() {
 	case pb.SessionReply_Inputs_Input_KIND_APPROVAL:
 		return s.retryApproval(t, text)
-	case pb.SessionReply_Inputs_Input_KIND_NOTE:
-		// The control plane's note is answered as text, never run as a script.
+	case pb.SessionReply_Inputs_Input_KIND_NOTE, pb.SessionReply_Inputs_Input_KIND_ANSWER:
+		// The control plane's note and the user's answers are answered as
+		// text, never run as a script.
 		return s.stream(t, quote(text), s.w.opts.StreamDelay, plainText)
 	}
 	command, arg, _ := strings.Cut(strings.TrimPrefix(text, "/fake "), " ")
@@ -30,6 +31,8 @@ func (s *session) script(t *turn, in *input) error {
 				return fmt.Errorf("/fake %s requires an argument", command)
 			}
 			return s.tool(t, command, arg)
+		case "ask":
+			return s.ask(t)
 		case "ledger-path":
 			return s.stream(t, "ledger path: "+cmp.Or(s.ledgerPath, "none"), s.w.opts.StreamDelay, plainText)
 		case "ledger":

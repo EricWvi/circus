@@ -139,7 +139,6 @@ func TestWorkerEventPayloads(t *testing.T) {
 	events := []named{
 		{"turn_started", pb.SessionEvent_KIND_TURN_STARTED, turnStartedPayload(18446744073709551615, "input")},
 		{"turn_started_cli", pb.SessionEvent_KIND_TURN_STARTED, turnStartedPayload(2, "cli")},
-		{"approval_pending", pb.SessionEvent_KIND_APPROVAL_PENDING, approvalPendingPayload(eventID, "Bash", "box", "toolu_fake", "echo hi", approvalReason)},
 		{"error", pb.SessionEvent_KIND_ERROR, errorPayload("scripted worker error")},
 		{"gap_detected", pb.SessionEvent_KIND_TRANSCRIPT_GAP_DETECTED, gapDetectedPayload("", []string{eventID, inputID})},
 		{"lost_task", pb.SessionEvent_KIND_BGTASK_ENDED, lostTaskPayload(sessionID, eventID,
@@ -154,6 +153,8 @@ func TestWorkerEventPayloads(t *testing.T) {
 		{"note_history_missing", pb.SessionEvent_KIND_USER, user(eventID, "Part of the conversation history is missing.", noteHistoryMissing)},
 		// A ledger note is not synthetic; its view event names it.
 		{"note_ledger_problems", pb.SessionEvent_KIND_USER, ledgerNote(inputID, "[circus ledger] The ledger collection found problems.", noteLedgerProblems)},
+		// The user's answers are not synthetic either; the view event names them.
+		{"note_question_answer", pb.SessionEvent_KIND_USER, ledgerNote(inputID, `The user answered your questions: "Which color?"="Red". Continue with these answers in mind.`, noteQuestionAnswer)},
 		// Held notes, published each with its own event before the input
 		// whose message carried them.
 		{"note_ledger_merged", pb.SessionEvent_KIND_USER, ledgerNote(eventID, "[circus ledger] Your ledger changes were merged.", "ledger_merged")},

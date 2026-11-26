@@ -4,6 +4,7 @@ import type { SessionState } from "./types"
 // project and the order of attention in the sidebar.
 const urgency: Record<SessionState, number> = {
   awaiting_approval: 0,
+  awaiting_answer: 0,
   broken: 1,
   running: 2,
   queued: 3,

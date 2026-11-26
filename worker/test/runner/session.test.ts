@@ -554,8 +554,10 @@ describe("approvals", () => {
       approvalId: "approval-1", toolUseId: "toolu_rec_rm", agentId: "", tool: "Bash", device: "box", matchKey,
       display: command, reason: "fake classifier: destructive command",
     }].map((a) => expect.objectContaining(a)));
-    const pending = h.link.durable().find((e) => e.kind === Kind.APPROVAL_PENDING)!.payload;
-    expect(pending).toEqual({ approval_id: "approval-1", tool: "Bash", device: "box", tool_use_id: "toolu_rec_rm", display: command, reason: "fake classifier: destructive command" });
+    // The control plane records APPROVAL_PENDING; the denial is published before the request.
+    expect(h.link.durable().some((e) => e.kind === Kind.APPROVAL_PENDING)).toBe(false);
+    expect(h.link.indexOf((c) => c.op.case === "requestApproval")).toBeGreaterThan(h.link.indexOf((c) => c.op.case === "publishEvents" &&
+      (c.op.value as { events: Array<{ kind: Kind }> }).events.some((e) => e.kind === Kind.PERMISSION_DENIED)));
     expect(h.link.durable().some((e) => e.kind === Kind.PERMISSION_DENIED && e.payload.tool_use_id === "toolu_rec_rm")).toBe(true);
     // The first call found no grant.
     expect(h.query.hookResults[0]).toEqual({});

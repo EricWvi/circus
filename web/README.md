@@ -171,6 +171,7 @@ behaviors.
 | `/fake bash <command>` | Run Bash in the session's working directory. |
 | `/fake read <path>` | Read a file on the device. Relative paths use the session's working directory. |
 | `/fake approve <command>` | Request approval after denying Bash. An approval retries Bash in the active turn or starts a turn if idle. |
+| `/fake ask` | Ask two questions (one multi-select) and end the turn. Answering them starts the next turn, which quotes the answers. |
 | `/fake slow <seconds>` | Stretch the reply to exercise Interrupt and NOW input. |
 | `/fake think` | Emit a thinking block before the reply. |
 | `/fake crash` | Drop all local sessions mid-turn. After two seconds, start a new boot. The server records the interrupted turn. |

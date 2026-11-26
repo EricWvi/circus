@@ -350,6 +350,9 @@ func TestCreateSessionLocations(t *testing.T) {
 	wantField(t, err, connect.CodeInvalidArgument, "config.model")
 	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "permission-mode", ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{PermissionMode: strings.Repeat("m", 129)}})
 	wantField(t, err, connect.CodeInvalidArgument, "config.permission_mode")
+	// Plan mode is refused: its ExitPlanMode is disallowed.
+	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "plan-mode", ProjectId: p.ProjectId, Config: &circusv1.SessionConfig{PermissionMode: "plan"}})
+	wantField(t, err, connect.CodeInvalidArgument, "config.permission_mode")
 	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "unknown-worker", ProjectId: p.ProjectId, PinnedWorkerId: new("nobody")})
 	wantField(t, err, connect.CodeInvalidArgument, "pinned_worker_id")
 	_, err = super.createSession(t, &circusv1.CreateSessionRequest{ClientRequestId: "long-worker", ProjectId: p.ProjectId, PinnedWorkerId: new(strings.Repeat("w", 129))})

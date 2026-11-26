@@ -1273,7 +1273,7 @@ them on the user-side API.
   beyond the requests still outstanding (30 seconds; a request queued on
   a connection that closes or detaches no longer counts), least recent activity first, only for a lease bound to the
   holder's live connection with no Nudge reason pending. Idle there means
-  state IDLE, no input pending or taken, no pending approval, no ended
+  state IDLE, no input pending or taken, no pending TOOL approval (a pending question does not count), no ended
   job whose notice is not yet persisted, no background task recorded at
   the lease's epoch and no ledger merge or discard still to apply. It asks
   when a session is found waiting, when a held session's turn or
@@ -1483,7 +1483,7 @@ reason withdraws an Offer the session no longer needs.
 | Offer, session not held | AcquireLease, with `fresh` when the worker has no local state for the session. If the session is being released, remember the Offer and act on it after the ReleaseLease reply. |
 | Nudge, session not held | AcquireLease with `fresh` (NOT_OFFERED unless this boot still holds the lease). |
 | Any hint, AcquireLease in flight | Ignore it until the reply arrives; the session counts as held. |
-| Nudge INPUT or APPROVAL | TakeInputs (an approved request arrives as a `KIND_APPROVAL` input). |
+| Nudge INPUT or APPROVAL | TakeInputs (an approved request arrives as a `KIND_APPROVAL` input, an answered question as a `KIND_ANSWER` input after a Nudge INPUT). |
 | Nudge JOB | GetSessionState with `SECTION_JOBS`. The control plane registers a session call's background job with the session (`SessionState.jobs`) when the call's result reports it (`BashResult.job_id`), or, for a call settled lost without its result, when it is settled lost (from the job already stored for the call's device and boot), when a late result arrives, or when a JobEvent or snapshot entry of the job from that device and boot names the call; only calls admitted under the session's lease (`tool_use_id`) of the session's own user register. Its end, by event or snapshot, sends Nudge JOB (only when the session is one of the reporting daemon's user) to the holder, or offers the session when no lease is held (an ended job whose notice was not handed is pending work). The job's description is filled only when the call's request is still held at the result. |
 | Nudge INTERRUPT | Interrupt the current turn only if its `turn_no` ≤ `Nudge.interrupt_turn_no`. If STARTED has not been answered yet, wait for its `turn_no`, then compare. |
 | Nudge STOP | Stopping is permanent, so the hint suffices: flush, close the query, ReleaseLease with `REASON_STOPPED`. |
@@ -1531,7 +1531,7 @@ the worker then releases with `REASON_STOPPED` rather than dropping entries.
 | PatchSessionState | ok | Idempotent upserts/marks. Cwd by (agent_id, device), files by (device, path), CLI tasks by task_id. Empty sha256 forgets a file. Mark returned calls as soon as MCP returns, handed jobs when delivered to the SDK; `persisted` and `awaiting_call_ids` below. |
 | GetSessionState | state | Empty sections = all; otherwise at most five distinct sections (cwds, files, jobs, calls, grants), or `SECTION_NONE` alone for no data. `stopped` and `interrupt_turn_no` always. Metadata only; use CallQuery for call output. |
 | PublishEvents | ok | At most 128 per batch, normally every 100 ms; shared SessionEvent.Kind with json and ephemeral. `batch_seq` per epoch, retry rules as AppendTranscript. |
-| RequestApproval | approval | Merge pending requests by (session, tool, device, match_key); reply includes approval_id and deduplicated. `match_key` is the SHA-256, in 64 lowercase hex digits, of the bash command verbatim or of the write/edit path; display, reason and tool_use_id do not change it. |
+| RequestApproval | approval | TOOL: merge pending requests by (session, tool, device, match_key); reply includes approval_id and deduplicated. `match_key` is the SHA-256, in 64 lowercase hex digits, of the bash command verbatim or of the write/edit path; display, reason and tool_use_id do not change it. QUESTION: merge by tool_use_id; a new one supersedes the session's pending question (an `APPROVAL_RESOLVED` `superseded` event each). |
 | ConsumeGrant | grant | Atomically find and consume one matching unexpired grant for `tool_use_id`. Repeating with the same tool_use_id and the same (tool, device, match_key) while that grant would still be unexpired replays `allowed = true` without consuming another; the same tool_use_id with another key gets `allowed = false`. Only allowed=true permits a hook to allow. |
 | TranscriptRepaired | ok | BROKEN → IDLE, or QUEUED with pending work; never touches the gap mark `transcript_gap_turn_no`. Idempotent; ok without change in any other state. |
 
@@ -1738,7 +1738,9 @@ A `USER` event for a message the worker wrote for the model, rather than
 the user's input or a tool result, adds a top-level `circus_note` string
 naming its kind. The field is part of the view event only and is not
 written to the transcript. Kinds: `approval_retry` (the input an approval
-creates), `user_interrupt` (the annotation of a user's Interrupt),
+creates), `question_answer` (the user's answers to a question approval, a
+`KIND_ANSWER` input; pushed as an ordinary user message, so its view event
+carries `circus_note` without `isSynthetic`), `user_interrupt` (the annotation of a user's Interrupt),
 `previous_turn_interrupted`, `recovered_call` (a call result returned on
 recovery), `call_notice` (a late call's completion), `job_notice` (a device
 background job's completion), `lost_bgtask` (an SDK background task lost
@@ -1783,11 +1785,33 @@ the real worker; for a tool interrupted by NOW it infers the same
 
 **APPROVAL_PENDING**
 
+Recorded by the control plane only, in the RequestApproval transaction that
+creates the approval (a deduplicated request records nothing), so it comes
+before every `APPROVAL_RESOLVED` of the same approval and is never lost when
+the worker dies after the request. The worker does not publish it.
+
+Its place relative to the call's own events is best effort. The worker
+publishes what it holds of the call before it requests the approval, so the
+card normally follows the `ASSISTANT` event with its `tool_use`; but the CLI
+asks `canUseTool` independently of the message stream, and when the worker's
+message loop lags (back-pressure, an earlier message's RPC) the card can come
+first. Clients key cards by `tool_use_id` and accept either order.
+
+A TOOL request merged into a pending approval of the same (tool, device,
+match_key) records no new `APPROVAL_PENDING`: a later call of the same
+command denied while the first approval is pending (in the same message or a
+later turn) has no card of its own, only its error result ("sent to the user
+for approval"); the earlier card's approval covers it (one grant, one
+retry). A pending approval past its expiry does not merge: the request
+expires it and creates a new one with its own card.
+
 | Field | Type and meaning |
 | --- | --- |
 | `approval_id` | String from RequestApproval |
-| `tool`, `device`, `tool_use_id` | Strings identifying the denied device tool use; `tool` is the SDK tool name |
-| `display`, `reason` | Strings shown in the approval prompt; `reason` is empty when the permission mode gave none, and clients then say that the permission mode denied the tool |
+| `kind` | `tool` (a denied tool call) or `question` (the model's AskUserQuestion) |
+| `tool`, `device`, `tool_use_id` | Strings identifying the denied device tool use; `tool` is the SDK tool name. A question's `tool` is `AskUserQuestion` and its `device` is empty |
+| `display`, `reason` | Strings shown in the approval prompt; `reason` is empty when the permission mode gave none, and clients then say that the permission mode denied the tool. A question's `display` is its first question and its `reason` is empty |
+| `input_json` | Question only: the AskUserQuestion input, as `SessionApproval.input_json` |
 
 **PERMISSION_DENIED**
 
@@ -1805,6 +1829,30 @@ approval. The current turn can finish while approval is pending. An
 approved input joins an active turn or starts one while idle. It asks the
 model to retry with a new tool-use ID. The worker only permits that retry
 when ConsumeGrant returns `allowed`.
+
+The worker registers `canUseTool` and disallows `EnterPlanMode` and
+`ExitPlanMode` (and refuses permission mode `plan`). A call the permission
+mode or an ask rule asks about reaches `canUseTool` instead of producing
+`permission_denied`: the worker publishes what it holds of the call,
+requests a TOOL approval as above (the control plane records
+`APPROVAL_PENDING`), and denies the call,
+telling the model it was sent to the user and must not be retried until
+the user approves it. Classifier, `dontAsk` and rule denials still arrive
+as `permission_denied`. The model's `AskUserQuestion` on the main thread
+becomes a QUESTION approval: the worker denies the call, telling the model
+the questions were shown to the user and to end its turn without guessing
+the answers, which arrive as the next user message (`question_answer`). The
+control plane writes that input when the user answers: `The user answered
+your questions: "<question>"="<answer>", .... Continue with these answers
+in mind.`, each question and answer a JSON string, an answer being its
+selected labels and then the user's own text joined with `, `. A
+subagent's `AskUserQuestion` is denied without an approval; an input over
+32 KiB is denied without asking, and one the control plane refuses as
+INVALID is denied with the reason (the user sees an `ERROR` event); the
+model is told it may ask again with a corrected call. In `dontAsk` mode the
+CLI denies `AskUserQuestion` itself, before `canUseTool`: no question is
+asked, and that denial (a `permission_denied`, then a result denial) never
+becomes an approval.
 
 **BGTASK_STARTED**
 
@@ -2103,9 +2151,11 @@ transaction of the change, with JSON payloads:
 | RPC | Kind | Payload |
 | --- | --- | --- |
 | SendMessage, new input | `KIND_INPUT_ACCEPTED` | `{"input_id","client_msg_id","priority":"normal"\|"now","text"}`, encoded without HTML escaping; not a boundary, so a filled view drops it and event_seq is 0 |
-| ResolveApproval of a pending approval | `KIND_APPROVAL_RESOLVED` (boundary) | `{"approval_id","state":"approved"\|"denied"\|"expired"}`; expired when it expired before the resolution (the call then answers FAILED_PRECONDITION) |
+| RequestApproval that creates an approval (worker link) | `KIND_APPROVAL_PENDING` (boundary) | `{"approval_id","kind":"tool"\|"question","tool","device","tool_use_id","display","reason"}`, plus `"input_json"` for a question (see APPROVAL_PENDING above); a deduplicated request records nothing |
+| ResolveApproval of a pending approval | `KIND_APPROVAL_RESOLVED` (boundary) | `{"approval_id","state":"approved"\|"denied"\|"expired"}`; expired when it expired before the resolution (the call then answers FAILED_PRECONDITION). A QUESTION approval records `{"approval_id","kind":"question","state":"answered","answers":[{"question","selected","other"}],"input_id"}`, where `input_id` is the `KIND_ANSWER` input written in the same transaction (the worker pushes it with that uuid, so the answer's `USER` view event has `uuid` = `input_id`), or `{"approval_id","kind":"question","state":"dismissed"}`. Answering a question that is no longer pending and was not answered (dismissed, superseded, or ended by a stop) answers FAILED_PRECONDITION and records nothing; repeating an answer or a dismissal, or dismissing an answered question, is an idempotent no-op |
+| RequestApproval of a QUESTION that supersedes pending ones | `KIND_APPROVAL_RESOLVED` (boundary), one per superseded approval, before the new one's `APPROVAL_PENDING` | `{"approval_id","kind":"question","state":"superseded"}` |
 | Workspace preparation changed state | `KIND_WORKSPACE` (boundary) | `{"state","waiting","device","path","repo_url","background","action","error","error_detail"}`. Changes limited to the waiting reason or background flag are ephemeral. Each event timestamp equals the workspace version reported by `WorkspaceStatus.updated_at_unix_ms`. |
-| StopSession that stopped the session | `KIND_SESSION_STATE` (boundary) | `{"state":"stopped","reason":"user"}`; a stop by the transcript quota (worker link) records `{"state":"stopped","reason":"transcript_full"}` |
+| StopSession that stopped the session | `KIND_SESSION_STATE` (boundary) | `{"state":"stopped","reason":"user"}`; a stop by the transcript quota (worker link) records `{"state":"stopped","reason":"transcript_full"}`. Either stop first records `KIND_APPROVAL_RESOLVED` `{"approval_id","kind":"question","state":"expired"}` for the pending question it ends |
 
 These kinds (with `TURN_INTERRUPTED`, `TURN_STOPPED` and
 `TRANSCRIPT_GAP_ACCEPTED`, and the live-only `KIND_QUEUE` and `KIND_WORKER`

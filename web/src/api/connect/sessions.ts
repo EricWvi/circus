@@ -1,5 +1,6 @@
 import { createClient, type Transport } from "@connectrpc/connect"
 import {
+  ApprovalKind as ProtoApprovalKind,
   InputPriority as ProtoInputPriority,
   QueueReason as ProtoQueueReason,
   SessionEvent_Kind,
@@ -12,6 +13,7 @@ import {
 } from "@circus/proto/circus/v1/session_pb"
 
 import type {
+  ApprovalKind,
   QueueReason,
   RawSessionEvent,
   SessionDetails,
@@ -108,6 +110,13 @@ export function toRawEvent(event: ProtoEvent): RawSessionEvent {
   }
 }
 
+const approvalKinds: Record<ProtoApprovalKind, ApprovalKind> = {
+  [ProtoApprovalKind.UNSPECIFIED]: "tool",
+  [ProtoApprovalKind.TOOL]: "tool",
+  [ProtoApprovalKind.QUESTION]: "question",
+  [ProtoApprovalKind.PLAN]: "plan",
+}
+
 const toApproval = (a: ProtoApproval) => ({
   approvalId: a.approvalId,
   sessionId: a.sessionId,
@@ -117,6 +126,8 @@ const toApproval = (a: ProtoApproval) => ({
   display: a.display,
   reason: a.reason,
   expiresAtUnixMs: Number(a.expiresAtUnixMs),
+  kind: approvalKinds[a.kind] ?? "tool",
+  inputJson: a.inputJson,
 })
 
 /** A user has at most 1000 sessions, which one page can hold. */
@@ -164,7 +175,15 @@ export function createConnectSessions(transport: Transport): SessionService {
     interrupt: (req) => call(async () => void (await client.interrupt(req))),
     stopSession: (req) => call(async () => void (await client.stopSession(req))),
     listApprovals: (req) => call(async () => (await client.listApprovals(req)).approvals.map(toApproval)),
-    resolveApproval: (req) => call(async () => void (await client.resolveApproval(req))),
+    resolveApproval: (req) =>
+      call(
+        async () =>
+          void (await client.resolveApproval({
+            approvalId: req.approvalId,
+            approve: req.approve,
+            answers: req.answers ?? [],
+          })),
+      ),
     deleteSession: (req) =>
       call(
         async () =>

@@ -2,13 +2,15 @@
 // scripted reply, emitted as the raw events the control plane streams (the
 // Claude Agent SDK message shapes the Go fake worker publishes), so the
 // pages and the transcript reducer run the same code as against a server:
-// streamed text, one Bash call, and an approval when the message asks for
-// one ("approve" anywhere in it).
+// streamed text, one Bash call, an approval when the message asks for one
+// ("approve" anywhere in it), and AskUserQuestion questions when it asks
+// for those ("question" anywhere in it).
 
 import { nanoid } from "nanoid"
 
 import { ApiError } from "@/api/errors"
 import type {
+  ApprovalAnswer,
   QueueReason,
   RawSessionEvent,
   SessionApproval,
@@ -19,6 +21,7 @@ import type {
 } from "@/api/types"
 import { sessionPermissionMode } from "@/lib/permission-mode"
 import { viewState, type ServerSessionState, type TurnOutcome } from "@/lib/session-state"
+import { answerLine, MAX_OTHER_BYTES, utf8Length } from "@/lib/questions"
 import { titleFromMessage } from "@/lib/title"
 import type { SeedSession } from "@/mock/data"
 
@@ -28,9 +31,22 @@ import { workspaceStatus, type MockWorkspace } from "./workspaces"
 export interface MockApproval {
   approvalId: string
   toolUseId: string
+  /** A tool approval's command; a question's first question. */
   command: string
-  state: "pending" | "approved" | "denied"
+  state: "pending" | "approved" | "denied" | "answered" | "dismissed" | "superseded" | "expired"
   createdAtUnixMs: number
+  /** Set for a question: the AskUserQuestion input. */
+  question?: MockQuestionInput
+}
+
+/** An AskUserQuestion input, as the model writes it. */
+export interface MockQuestionInput {
+  questions: {
+    question: string
+    header: string
+    options: { label: string; description: string; preview?: string }[]
+    multiSelect: boolean
+  }[]
 }
 
 export interface MockSession {
@@ -46,8 +62,8 @@ export interface MockSession {
   /** Durable events, in seq order. */
   events: RawSessionEvent[]
   approvals: MockApproval[]
-  /** Inputs not yet taken by a turn. */
-  queue: { inputId: string; text: string; approval: boolean }[]
+  /** Inputs not yet taken by a turn; `answer`: the answers to a question. */
+  queue: { inputId: string; text: string; approval: boolean; answer?: boolean }[]
   turns: number
   /** The request that created the session, for retries of it; forgotten with the session. */
   created?: { clientRequestId: string; locationIndex: number; providerId?: string; permissionMode: string }
@@ -97,11 +113,14 @@ const INTERRUPTED_TOOL =
 // Usage, costs and timings are placeholders.
 
 const envelope = (type: string, uuid: string) => ({ type, uuid, session_id: "mock", parent_tool_use_id: null })
-/** A user message; `note` names the kind of one the worker wrote for the model (docs/wire.md). */
-const userMessage = (uuid: string, content: unknown, note?: "approval_retry" | "user_interrupt") => ({
+/**
+ * A user message; `note` names the kind of one the worker wrote for the
+ * model (docs/wire.md). Answers to a question are an ordinary user message.
+ */
+const userMessage = (uuid: string, content: unknown, note?: "approval_retry" | "user_interrupt" | "question_answer") => ({
   ...envelope("user", uuid),
   message: { role: "user", content },
-  ...(note ? { isSynthetic: true, circus_note: note } : {}),
+  ...(note === "question_answer" ? { circus_note: note } : note ? { isSynthetic: true, circus_note: note } : {}),
 })
 const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
 /** The user message that started a turn, named by its first response and first block. */
@@ -156,6 +175,69 @@ const messageDelta = (messageId: string, stopReason: "end_turn" | "tool_use" | n
   )
 const textBlock = (text: string) => ({ type: "text", text })
 const toolUse = (id: string, command: string) => ({ type: "tool_use", id, name: "Bash", input: { command } })
+
+/** What the mock asks when a message asks for questions. */
+export const MOCK_QUESTIONS: MockQuestionInput = {
+  questions: [
+    {
+      question: "Which layout should the settings page use?",
+      header: "Layout",
+      options: [
+        {
+          label: "Tabs",
+          description: "One tab per section; only one section shows at a time.",
+          preview: "┌ General ┬ Devices ┬ Providers ┐\n│ Theme      [System ▾]        │\n│ Language   [English ▾]       │\n└──────────────────────────────┘",
+        },
+        {
+          label: "Single page",
+          description: "All sections on one scrolling page, with headings.",
+          preview: "General\n  Theme      [System ▾]\n  Language   [English ▾]\nDevices\n  devbox     online\nProviders\n  anthropic  default",
+        },
+        { label: "Sidebar", description: "Sections listed on the left, the chosen one on the right." },
+      ],
+      multiSelect: false,
+    },
+    {
+      question: "Which checks should run before merging?",
+      header: "Checks",
+      options: [
+        { label: "Unit tests", description: "Go and Vitest." },
+        { label: "Lint", description: "golangci-lint and oxlint." },
+        { label: "E2E", description: "The browser tests against the fake worker." },
+      ],
+      multiSelect: true,
+    },
+  ],
+}
+const askToolUse = (id: string, input: MockQuestionInput) => ({ type: "tool_use", id, name: "AskUserQuestion", input })
+/** What the worker's denial of AskUserQuestion tells the model. */
+const QUESTIONS_SENT =
+  "The questions were sent to the user, who answers them in the Web UI. End your turn now; their answers arrive as the next message."
+const questionsSentResult = (id: string) =>
+  toolResult(nanoid(), id, QUESTIONS_SENT, true, `Error: ${QUESTIONS_SENT}`, {
+    permission_decision: { decision: "reject", reason_type: "other", source: "sdk" },
+  })
+/** The message that takes the user's answers to the model, as the control plane writes it (docs/wire.md). */
+export const answerText = (answers: readonly ApprovalAnswer[]) =>
+  "The user answered your questions: " +
+  answers.map((a) => `${JSON.stringify(a.question)}=${JSON.stringify(answerLine(a))}`).join(", ") +
+  ". Continue with these answers in mind."
+
+/**
+ * Why answers don't fit a question's input (as the server checks them); null when they do.
+ */
+function invalidAnswers(input: MockQuestionInput, answers: readonly ApprovalAnswer[]): string | null {
+  if (answers.length !== input.questions.length) return "One answer per question is needed."
+  for (const [i, q] of input.questions.entries()) {
+    const a = answers[i]
+    if (a.question !== q.question) return "An answer names another question."
+    if (a.selected.length === 0 && a.other === "") return "An answer is empty."
+    if (a.selected.length > 1 && !q.multiSelect) return "Only one option can be chosen."
+    if (a.selected.some((label) => !q.options.some((o) => o.label === label))) return "An answer chose no option of its question."
+    if (utf8Length(a.other) > MAX_OTHER_BYTES) return "An answer's own text is too long."
+  }
+  return null
+}
 /** A tool's result: its text, Claude Code's own record of it and how the call was let run (or why not). */
 const toolResult = (uuid: string, id: string, content: string, isError: boolean, useResult: unknown, meta: object) => ({
   ...userMessage(uuid, [{ type: "tool_result", tool_use_id: id, content, is_error: isError }]),
@@ -379,7 +461,7 @@ export function seedSession(seed: SeedSession, cwd: string, loadedAt: number): M
       r.durable("permission_denied", permissionDenied(toolId))
       const approvalId = nanoid()
       session.approvals.push({ approvalId, toolUseId: toolId, command, state: "pending", createdAtUnixMs: clock })
-      r.durable("approval_pending", { approval_id: approvalId, tool: "Bash", device: seed.device, tool_use_id: toolId, display: command, reason: APPROVAL_REASON })
+      r.durable("approval_pending", { approval_id: approvalId, tool: "Bash", kind: "tool", device: seed.device, tool_use_id: toolId, display: command, reason: APPROVAL_REASON })
       r.durable("user", denialResult(toolId))
       r.text("I need your approval to push the branch.")
       r.durable("result", result("I need your approval to push the branch.", inputId))
@@ -654,10 +736,38 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
     }
     const start = () => {
       r.turnStarted()
-      r.durable("user", userMessage(input.inputId, input.text, input.approval ? "approval_retry" : undefined))
+      const note = input.approval ? "approval_retry" : input.answer ? "question_answer" : undefined
+      r.durable("user", userMessage(input.inputId, input.text, note))
     }
     let steps: (() => number | void)[]
-    if (input.approval) {
+    if (input.answer) {
+      steps = [start, ...streamSteps(s, current, "Thanks, I'll go with your answers."), finish("Thanks.")]
+    } else if (/question/i.test(input.text)) {
+      const toolId = `toolu_${nanoid()}`
+      steps = [
+        start,
+        ...streamSteps(s, current, "A few questions before I start."),
+        () => {
+          r.durable("assistant", assistantMessage(`msg_${nanoid()}`, askToolUse(toolId, MOCK_QUESTIONS)))
+        },
+        () => {
+          // A new question replaces the ones still pending; then the
+          // request, and the denial that tells the model to end its turn.
+          for (const a of s.approvals) {
+            if (a.question && a.state === "pending") {
+              a.state = "superseded"
+              r.durable("approval_resolved", { approval_id: a.approvalId, kind: "question", state: "superseded" })
+            }
+          }
+          const approvalId = nanoid()
+          const first = MOCK_QUESTIONS.questions[0].question
+          s.approvals.push({ approvalId, toolUseId: toolId, command: first, state: "pending", createdAtUnixMs: host.now(), question: MOCK_QUESTIONS })
+          r.durable("approval_pending", { approval_id: approvalId, kind: "question", tool: "AskUserQuestion", device: "", tool_use_id: toolId, display: first, reason: "", input_json: JSON.stringify(MOCK_QUESTIONS) })
+          r.durable("user", questionsSentResult(toolId))
+        },
+        finish(""),
+      ]
+    } else if (input.approval) {
       const command = input.text
       steps = [
         start,
@@ -689,7 +799,7 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
           r.durable("permission_denied", permissionDenied(toolId))
           const approvalId = nanoid()
           s.approvals.push({ approvalId, toolUseId: toolId, command, state: "pending", createdAtUnixMs: host.now() })
-          r.durable("approval_pending", { approval_id: approvalId, tool: "Bash", device: s.device, tool_use_id: toolId, display: command, reason: APPROVAL_REASON })
+          r.durable("approval_pending", { approval_id: approvalId, tool: "Bash", kind: "tool", device: s.device, tool_use_id: toolId, display: command, reason: APPROVAL_REASON })
           r.durable("user", denialResult(toolId))
         },
         ...streamSteps(s, current, "I need your approval to push this branch."),
@@ -826,7 +936,16 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       turns.delete(s.sessionId)
       s.state = "stopped"
       s.queue = []
-      for (const a of s.approvals) if (a.state === "pending") a.state = "denied"
+      for (const a of s.approvals) {
+        if (a.state !== "pending") continue
+        if (!a.question) {
+          a.state = "denied"
+          continue
+        }
+        // The stop ends the pending question, recorded before the stop itself.
+        a.state = "expired"
+        recorder(s).durable("approval_resolved", { approval_id: a.approvalId, kind: "question", state: "expired" })
+      }
       recorder(s).durable("session_state", { state: "stopped", reason: "user" })
       // The lease ends here (its live announcements first), then the turn.
       host.stopped?.(s)
@@ -841,26 +960,66 @@ export function createMockSessionRuntime(host: MockSessionHost): MockSessionRunt
       return s.approvals
         .filter((a) => a.state === "pending")
         .map(
-          (a): SessionApproval => ({
-            approvalId: a.approvalId,
-            sessionId,
-            toolUseId: a.toolUseId,
-            tool: "Bash",
-            device: s.device,
-            display: a.command,
-            reason: APPROVAL_REASON,
-            expiresAtUnixMs: a.createdAtUnixMs + 10 * MINUTE,
-          }),
+          (a): SessionApproval =>
+            a.question
+              ? {
+                  approvalId: a.approvalId,
+                  sessionId,
+                  toolUseId: a.toolUseId,
+                  tool: "AskUserQuestion",
+                  device: "",
+                  display: a.command,
+                  reason: "",
+                  expiresAtUnixMs: 0,
+                  kind: "question",
+                  inputJson: JSON.stringify(a.question),
+                }
+              : {
+                  approvalId: a.approvalId,
+                  sessionId,
+                  toolUseId: a.toolUseId,
+                  tool: "Bash",
+                  device: s.device,
+                  display: a.command,
+                  reason: APPROVAL_REASON,
+                  expiresAtUnixMs: a.createdAtUnixMs + 10 * MINUTE,
+                  kind: "tool",
+                  inputJson: "",
+                },
         )
     },
-    resolveApproval: async ({ approvalId, approve }) => {
+    resolveApproval: async ({ approvalId, approve, answers = [] }) => {
       await host.delay()
       const s = host.sessions().find((x) => x.approvals.some((a) => a.approvalId === approvalId))
       if (!s) throw new ApiError("not_found", "Approval not found.")
       host.own(s.sessionId)
       const approval = s.approvals.find((a) => a.approvalId === approvalId)!
-      if (approval.state !== "pending") return
+      if (approval.state !== "pending") {
+        // Answering a question that ended unanswered changes nothing; repeats are no-ops.
+        if (approval.question && approve && approval.state !== "answered") {
+          throw new ApiError("failed_precondition", "The question is no longer pending.")
+        }
+        return
+      }
       if (s.state === "stopped") throw new ApiError("failed_precondition", "The session is stopped.")
+      if (approval.question) {
+        if (!approve) {
+          approval.state = "dismissed"
+          recorder(s).durable("approval_resolved", { approval_id: approvalId, kind: "question", state: "dismissed" })
+          return
+        }
+        const invalid = invalidAnswers(approval.question, answers)
+        if (invalid) throw new ApiError("invalid_argument", invalid, "answers")
+        approval.state = "answered"
+        // The answer input is pushed to the model under its id, which the event names.
+        const inputId = nanoid()
+        recorder(s).durable("approval_resolved", { approval_id: approvalId, kind: "question", state: "answered", answers, input_id: inputId })
+        s.queue.push({ inputId, text: answerText(answers), approval: false, answer: true })
+        if (s.state === "idle") s.state = "queued"
+        startNext(s)
+        return
+      }
+      if (answers.length > 0) throw new ApiError("invalid_argument", "A tool approval takes no answers.", "answers")
       approval.state = approve ? "approved" : "denied"
       recorder(s).durable("approval_resolved", { approval_id: approvalId, state: approval.state })
       if (approve) {

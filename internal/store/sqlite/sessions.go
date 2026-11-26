@@ -61,7 +61,7 @@ const sessionCols = `session_id, user_id, claude_session_id, state, default_devi
 	view_truncated, last_event_seq, dropped_event_batches, reason, created_at, updated_at, stopped_at,
 	project_id, client_request_id, location_index, title, last_activity_at, workspace, local, pin_derived, provider_id, ` + workspaceBlocked + `,
 	(SELECT COUNT(*) FROM session_approvals a WHERE a.session_id = sessions.session_id
-		AND a.state = 'pending' AND a.expires_at > ?1)`
+		AND a.state = 'pending' AND (a.expires_at IS NULL OR a.expires_at > ?1))`
 
 func scanSession(s scanner) (store.Session, error) {
 	var x store.Session
@@ -337,6 +337,9 @@ func (o *ops) StopSession(ctx context.Context, sessionID string, at int64, reaso
 		if s.State != store.SessionStopped {
 			if _, err := tx.exec(ctx, `UPDATE sessions SET state = 'stopped', stopped_at = ?, reason = ?, updated_at = ?
 				WHERE session_id = ?`, at, nstr(reason), at, sessionID); err != nil {
+				return err
+			}
+			if err := tx.endQuestions(ctx, sessionID, at); err != nil {
 				return err
 			}
 			changed = true
@@ -1310,7 +1313,7 @@ func (o *ops) ListIdleLeases(ctx context.Context, providerID string, now int64, 
 		WHERE l.provider_id = ?1 AND l.holder_worker_id IS NOT NULL AND l.expires_at > ?2 AND s.state = 'idle'
 		AND NOT EXISTS (SELECT 1 FROM session_inputs i WHERE i.session_id = l.session_id
 			AND (i.state = 'taken' OR (i.state = 'pending' AND i.deferred = 0)))
-		AND NOT EXISTS (SELECT 1 FROM session_approvals a WHERE a.session_id = l.session_id AND a.state = 'pending' AND a.expires_at > ?2)
+		AND NOT EXISTS (SELECT 1 FROM session_approvals a WHERE a.session_id = l.session_id AND a.state = 'pending' AND a.kind = 'tool' AND a.expires_at > ?2)
 		AND NOT EXISTS (SELECT 1 FROM session_jobs sj WHERE sj.session_id = l.session_id AND (sj.notice = 'handed'
 			OR (sj.notice = 'no' AND EXISTS (SELECT 1 FROM jobs j WHERE j.device_id = sj.device_id AND j.boot_id = sj.boot_id
 				AND j.job_id = sj.job_id AND j.state <> 'running' AND j.user_id = s.user_id))))

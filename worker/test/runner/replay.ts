@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
-import type { HookCallback, HookJSONOutput, Options, Query, SDKUserMessage, SessionStore } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  HookCallback, HookJSONOutput, Options, PermissionResult, Query, SDKUserMessage, SessionStore,
+} from "@anthropic-ai/claude-agent-sdk";
 import type { QueryFactory } from "../../src/runner/runner.js";
 
 // Replays SDK message sequences recorded from the real SDK and CLI (see
@@ -16,6 +18,9 @@ export type Step =
   // follows is what the CLI does as it exits.
   | { t: "exit" }
   | { t: "hook"; input: Record<string, unknown> }
+  // The CLI asks canUseTool, as it does for a call the permission mode
+  // asks about and for AskUserQuestion.
+  | { t: "canUse"; tool: string; input: Record<string, unknown>; toolUseID: string; agentID?: string; decisionReason?: string }
   | { t: "push"; i: number; priority?: string }
   | { t: "interrupt" }
   | { t: "mirror_error_shape"; m: Record<string, unknown> }
@@ -63,6 +68,7 @@ export class Replay {
 export class ReplayQuery {
   readonly pushed: SDKUserMessage[] = [];
   readonly hookResults: HookJSONOutput[] = [];
+  readonly canUseResults: PermissionResult[] = [];
   readonly appendErrors: unknown[] = [];
   /** The entries of every append call the SDK made (each once, not per attempt). */
   readonly appended: Array<Array<Record<string, unknown>>> = [];
@@ -160,6 +166,14 @@ export class ReplayQuery {
             const input = this.#subst(step.input);
             this.hookResults.push(await hook({ session_id: this.sessionId, transcript_path: "", cwd: this.options.cwd ?? "", ...input } as never,
               input.tool_use_id as string, { signal: new AbortController().signal }));
+            break;
+          }
+          case "canUse": {
+            const canUse = this.options.canUseTool!;
+            this.canUseResults.push((await canUse(step.tool, this.#subst(step.input), {
+              signal: new AbortController().signal, toolUseID: step.toolUseID, requestId: crypto.randomUUID(),
+              ...(step.agentID ? { agentID: step.agentID } : {}), ...(step.decisionReason ? { decisionReason: step.decisionReason } : {}),
+            }))!);
             break;
           }
           case "push":

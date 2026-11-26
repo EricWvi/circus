@@ -46,7 +46,7 @@ func checkInput(in store.Input) error {
 		return err
 	}
 	maxClient := store.MaxIDBytes
-	if in.Kind == store.InputApproval {
+	if in.Kind == store.InputApproval || in.Kind == store.InputAnswer {
 		maxClient += len(approvalMsgPrefix)
 	}
 	if err := store.CheckText("client message id", in.ClientMsgID, maxClient, false); err != nil {
@@ -55,7 +55,7 @@ func checkInput(in store.Input) error {
 	if in.CreatedAt == 0 {
 		return invalid("input needs a creation time")
 	}
-	if in.Kind != store.InputUser && in.Kind != store.InputApproval && in.Kind != store.InputNote {
+	if in.Kind != store.InputUser && in.Kind != store.InputApproval && in.Kind != store.InputNote && in.Kind != store.InputAnswer {
 		return invalid("unknown input kind %q", in.Kind)
 	}
 	if (in.Kind == store.InputNote) != (in.Note != "") || !validNote(in.Note) {
@@ -130,7 +130,8 @@ func (o *ops) submitInput(ctx context.Context, in store.Input) (store.InputSubmi
 			return out, err
 		}
 		out.Created = true
-		if in.Kind == store.InputUser {
+		// The user's answers are the user's activity too.
+		if in.Kind == store.InputUser || in.Kind == store.InputAnswer {
 			if _, err := o.exec(ctx, `UPDATE sessions SET last_activity_at = max(last_activity_at, ?) WHERE session_id = ?`, in.CreatedAt, in.SessionID); err != nil {
 				return out, err
 			}

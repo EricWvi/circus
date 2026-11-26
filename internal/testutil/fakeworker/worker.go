@@ -3,12 +3,15 @@
 //
 // The following inputs select a script. Other input, and every note the
 // control plane pushes (KIND_NOTE, a user message whose view event names it
-// in circus_note, synthetic unless it is a ledger note), gets a streamed
-// Markdown reply quoting the input.
+// in circus_note, synthetic unless it is a ledger note) or answer
+// (KIND_ANSWER), gets a streamed Markdown reply quoting the input.
 //
 //	/fake bash <command>     Run Bash on the session's default device and cwd.
 //	/fake read <path>        Read a file on that device, relative to the session cwd.
 //	/fake approve <command> Deny Bash and request a grant. Approval retries Bash.
+//	/fake ask               Ask two questions (AskUserQuestion, one multiSelect)
+//	                        and end the turn; the answers start the next turn,
+//	                        which quotes them.
 //	/fake slow <seconds>    Stretch a streamed reply for testing interruption.
 //	/fake think             Emit a thinking block before replying.
 //	/fake crash             Drop the process mid-turn and return with a new boot.

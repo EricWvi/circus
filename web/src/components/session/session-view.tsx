@@ -18,7 +18,7 @@ import {
   useStopSession,
 } from "@/api/hooks"
 import type { ModelProvider, Project, QueueReason, SessionDetails, WorkspaceStatus } from "@/api/types"
-import type { ApprovalRequest } from "@/lib/types"
+import type { ApprovalRequest, QuestionAnswer, QuestionEvent, SessionEvent, SessionState } from "@/lib/types"
 import {
   Conversation,
   ConversationContent,
@@ -90,9 +90,12 @@ export function SessionView({ project, session }: { project: Project; session: S
   }
   // The last action that failed, shown until the next one.
   const [actionError, setActionError] = useState<unknown>(null)
-  const act = <Req,>(mutation: { mutate: (req: Req, options: { onError: (e: unknown) => void }) => void }, req: Req) => {
+  // Each call settles on its own promise: a mutation's per-call callbacks
+  // fire only for its latest call, so a failure followed by another call
+  // (deciding another approval meanwhile) would go unseen.
+  const act = <Req,>(mutation: { mutateAsync: (req: Req) => Promise<unknown> }, req: Req) => {
     setActionError(null)
-    mutation.mutate(req, { onError: setActionError })
+    mutation.mutateAsync(req).catch(setActionError)
   }
 
   useSessionLedgerFollows(sessionId, session.ledger?.updatedAtUnixMs ?? 0)
@@ -115,12 +118,21 @@ export function SessionView({ project, session }: { project: Project; session: S
     outbox.send(sessionId, text).catch(() => {})
   }
 
+  // Approvals that can't be decided any more: the session stopped, or the
+  // request lapsed (`approvalLapsed`; the server records no event for that).
+  const pendingApprovals = events.some((e) => e.kind === "tool_call" && e.status === "awaiting_approval")
+  const now = useNow(pendingApprovals ? 15_000 : null)
+  const lapsed = (approval: ApprovalRequest) => approvalLapsed(approval, session, now)
+
   const busy = turnRunning(transcript, session)
-  // A pending approval is what the user has to act on, whatever runs.
-  const state = busy && session.state !== "awaiting_approval" ? "running" : session.state
+  // A pending approval or question is what the user has to act on, whatever runs.
+  const state =
+    busy && session.state !== "awaiting_approval" ? "running" : waitingFor(session.state, events, lapsed)
   const last = events.at(-1)
   const streamingText = last?.kind === "assistant_text" && last.streaming && last.text !== ""
-  const lastIsTool = last?.kind === "tool_call" && (last.status === "running" || last.status === "awaiting_approval")
+  const lastIsTool =
+    (last?.kind === "tool_call" && (last.status === "running" || last.status === "awaiting_approval")) ||
+    (last?.kind === "question" && (last.status === "asked" || last.status === "pending"))
   const showWorking = busy && !streamingText && !lastIsTool
   // The folder isn't ready: no turn runs, messages wait. The latest of
   // GetSession and the stream says how far it is.
@@ -153,13 +165,28 @@ export function SessionView({ project, session }: { project: Project; session: S
   // A change that became disallowed while the menu was open closes it.
   if (providerOpen && (providerBlocked !== null || stopped || watch.gone)) setProviderOpen(false)
 
-  // Approvals that can't be decided any more: the session stopped, or the
-  // request lapsed (`approvalLapsed`; the server records no event for that).
-  const pendingApprovals = events.some((e) => e.kind === "tool_call" && e.status === "awaiting_approval")
-  const now = useNow(pendingApprovals ? 15_000 : null)
   const approvalBlocked = (approval: ApprovalRequest) => {
     if (stopped) return t("session.approval.sessionStopped")
-    if (approvalLapsed(approval, session, now)) return t("session.approval.expired")
+    if (lapsed(approval)) return t("session.approval.expired")
+    return disconnected
+  }
+  // Questions whose answers or dismissal are on their way: their cards stay
+  // disabled until the stream says how they ended, or the call fails.
+  const [resolving, setResolving] = useState<ReadonlySet<string>>(() => new Set())
+  const resolveQuestion = (approvalId: string, answers: QuestionAnswer[] | null) => {
+    setActionError(null)
+    setResolving((ids) => new Set(ids).add(approvalId))
+    resolveApproval
+      .mutateAsync({ sessionId, approvalId, approve: answers !== null, ...(answers ? { answers } : {}) })
+      .catch((error: unknown) => {
+        setActionError(new QuestionResolveError(error))
+        setResolving((ids) => new Set([...ids].filter((id) => id !== approvalId)))
+      })
+  }
+  // Questions don't expire.
+  const questionBlocked = (question: QuestionEvent) => {
+    if (stopped) return t("session.approval.sessionStopped")
+    if (question.approvalId && resolving.has(question.approvalId)) return t("session.question.sending")
     return disconnected
   }
 
@@ -297,6 +324,7 @@ export function SessionView({ project, session }: { project: Project; session: S
                 deviceName={session.device}
                 actionsDisabledReason={disconnected}
                 approvalDisabledReason={approvalBlocked}
+                questionDisabledReason={questionBlocked}
                 interruptedActions={
                   event.id === interruptId
                     ? {
@@ -317,6 +345,7 @@ export function SessionView({ project, session }: { project: Project; session: S
                   outbox.retry(clientMsgId).catch(() => {})
                 }}
                 onDecide={(approvalId, approve) => act(resolveApproval, { sessionId, approvalId, approve })}
+                onResolveQuestion={resolveQuestion}
               />
             ))
           )}
@@ -389,6 +418,23 @@ function useWorkspaceAnnouncement(workspace: WorkspaceStatus | undefined, waits:
   return ""
 }
 
+/**
+ * What a session waiting for the user waits for, as its view tells: an
+ * answer when only questions wait (the server's count includes both).
+ */
+function waitingFor(
+  state: SessionState,
+  events: readonly SessionEvent[],
+  lapsed: (approval: ApprovalRequest) => boolean,
+): SessionState {
+  if (state !== "awaiting_approval") return state
+  const tools = events.some(
+    (e) => e.kind === "tool_call" && e.status === "awaiting_approval" && !(e.approval && lapsed(e.approval)),
+  )
+  const questions = events.some((e) => e.kind === "question" && e.status === "pending")
+  return questions && !tools ? "awaiting_answer" : state
+}
+
 /** The time, read again every `intervalMs` while that is set. */
 function useNow(intervalMs: number | null): number {
   const [now, tick] = useReducer(() => Date.now(), 0, () => Date.now())
@@ -408,8 +454,20 @@ class ProviderChangeError extends Error {
   }
 }
 
+/** A failed answer or dismissal of a question, told apart from other actions. */
+class QuestionResolveError extends Error {
+  constructor(readonly error: unknown) {
+    super("question resolve failed")
+  }
+}
+
 /** Why a session action failed, by the server's answer and whether the session is stopped now. */
 function actionErrorMessage(error: unknown, stopped: boolean): string {
+  if (error instanceof QuestionResolveError) {
+    // Dismissed elsewhere, superseded, or ended by a stop: the stream will say which.
+    if (isApiError(error.error, "failed_precondition")) return i18n.t("session.question.noLongerPending")
+    return actionErrorMessage(error.error, stopped)
+  }
   if (error instanceof ProviderChangeError) {
     const cause = error.error
     if (isApiError(cause, "failed_precondition")) {

@@ -502,6 +502,13 @@ export interface RawSessionEvent {
 
 export type InputPriority = "normal" | "now"
 
+/**
+ * What a pending approval asks the user for: a tool call the permission
+ * mode didn't allow (`tool`, also for an unspecified kind), or the model's
+ * AskUserQuestion (`question`). `plan` is reserved.
+ */
+export type ApprovalKind = "tool" | "question" | "plan"
+
 /** A pending, unexpired approval. */
 export interface SessionApproval {
   approvalId: string
@@ -511,7 +518,21 @@ export interface SessionApproval {
   device: string
   display: string
   reason: string
+  /** Zero for kinds that don't expire (questions). */
   expiresAtUnixMs: number
+  kind: ApprovalKind
+  /** For a question: the AskUserQuestion input as JSON; empty otherwise. */
+  inputJson: string
+}
+
+/** The user's answer to one question of a QUESTION approval. */
+export interface ApprovalAnswer {
+  /** The question's text, verbatim. */
+  question: string
+  /** Chosen option labels; more than one only for a multi-select question. */
+  selected: string[]
+  /** The user's own answer; not empty when nothing is selected. */
+  other: string
 }
 
 export interface CreateSessionRequest {
@@ -564,7 +585,11 @@ export interface SessionService {
   /** Ends the session for good. */
   stopSession(req: { sessionId: string }): Promise<void>
   listApprovals(req: { sessionId: string }): Promise<SessionApproval[]>
-  resolveApproval(req: { approvalId: string; approve: boolean }): Promise<void>
+  /**
+   * Approves or denies a tool call, or answers (`approve` with one answer
+   * per question, in order) or dismisses a question.
+   */
+  resolveApproval(req: { approvalId: string; approve: boolean; answers?: ApprovalAnswer[] }): Promise<void>
   /** Lets a broken session go on without the part of its history that was lost. */
   recoverSession(req: { sessionId: string }): Promise<void>
   /**

@@ -46,7 +46,9 @@ message SessionConfig {
   // default alias, which the provider's ANTHROPIC_DEFAULT_*_MODEL variables
   // may map to a model id.
   string model = 3;
-  // SDK permission mode, at most 128 bytes; empty selects auto.
+  // SDK permission mode, at most 128 bytes; empty selects auto. "plan" is
+  // refused (INVALID_ARGUMENT at CreateSession): plan mode needs a plan
+  // approval, which does not exist yet.
   string permission_mode = 4;
   // Local mode: the session is pinned to a worker on the same machine as
   // default_device, and the worker runs Claude Code's built-in tools there
@@ -197,7 +199,7 @@ message SessionEvent {
   uint64 seq = 1;
   int64 ts_unix_ms = 2;
   // Shared with worker-published events. TURN_STARTED payload includes origin.
-  // Kinds 8, 9, 10, 15, 17, 18, 19, 20, 21 and 22 are recorded by the
+  // Kinds 7, 8, 9, 10, 15, 17, 18, 19, 20, 21 and 22 are recorded by the
   // control plane only: a worker event batch containing one of them is dropped as
   // INVALID.
   enum Kind {
@@ -210,9 +212,15 @@ message SessionEvent {
     KIND_TOOL_PROGRESS = 4;
     KIND_RESULT = 5;
     KIND_PERMISSION_DENIED = 6;
+    // Recorded by the control plane only, in the RequestApproval
+    // transaction that creates the approval (a deduplicated request records
+    // nothing): {"approval_id","kind":"tool"|"question","tool","device",
+    // "tool_use_id","display","reason"}, plus "input_json" for a question.
+    // It therefore precedes every APPROVAL_RESOLVED of the approval.
     KIND_APPROVAL_PENDING = 7;
     // Recorded by the control plane only, when the user resolves an
-    // approval.
+    // approval, when a newer question supersedes a pending one, and when a
+    // stop ends a pending question ("state":"expired").
     KIND_APPROVAL_RESOLVED = 8;
     // Control-plane-only durable boundary for a turn ending INTERRUPTED.
     // payload_json: {"turn_no":"<uint64>","outcome":"interrupted"}.
@@ -360,12 +368,32 @@ message UpdateSessionRequest {
   optional string provider_id = 3;
 }
 
-// Approval requests merge while pending by (session, tool, device, match_key),
-// ignoring display, reason and tool_use_id. match_key is the SHA-256 of the
-// matched command or path in 64 lowercase hexadecimal digits, so display is
-// what a user reads (at most 1024 bytes, as reason). Pending requests and
-// unused grants each have a cap of 32 per session and expire after ten
-// minutes.
+// What a pending approval asks the user for.
+enum ApprovalKind {
+  APPROVAL_KIND_UNSPECIFIED = 0;
+  // A tool call the permission mode did not allow: approving creates a
+  // one-off grant and an input asking the model to retry.
+  APPROVAL_KIND_TOOL = 1;
+  // The model's AskUserQuestion call. The worker denied the call and told
+  // the model to end its turn; answering writes an input carrying the
+  // answers, which starts the next turn. No grant, device or match_key.
+  APPROVAL_KIND_QUESTION = 2;
+  // Reserved for the model's ExitPlanMode call (plan approval); not
+  // requested yet.
+  APPROVAL_KIND_PLAN = 3;
+}
+
+// TOOL approval requests merge while pending by (session, tool, device,
+// match_key), ignoring display, reason and tool_use_id. match_key is the
+// SHA-256 of the matched command or path in 64 lowercase hexadecimal digits,
+// so display is what a user reads (at most 1024 bytes, as reason). Pending
+// requests and unused grants each have a cap of 32 per session; TOOL
+// requests and grants expire after ten minutes.
+//
+// QUESTION (and PLAN) requests merge by tool_use_id only and do not expire:
+// one stays pending until it is answered, dismissed, superseded by a newer
+// request of the same kind in the session, or the session stops. They count
+// toward the 32 pending requests and pending_approval_count.
 message SessionApproval {
   string approval_id = 1;
   string session_id = 2;
@@ -377,7 +405,13 @@ message SessionApproval {
   string display = 8;
   string reason = 9;
   int64 created_at_unix_ms = 10;
+  // Zero for kinds that do not expire.
   int64 expires_at_unix_ms = 11;
+  ApprovalKind kind = 12;
+  // QUESTION: the AskUserQuestion input as the CLI gave it to canUseTool
+  // ({"questions":[{"question","header","options":[{"label","description",
+  // "preview"?}],"multiSelect"}]}), at most 32 KiB. Empty for TOOL.
+  string input_json = 13;
 }
 message ListApprovalsRequest {
   string session_id = 1;
@@ -387,11 +421,36 @@ message ListApprovalsResponse {
   repeated SessionApproval approvals = 1;
 }
 // Resolving an already resolved approval is idempotent and creates no additional
-// grant or input. Approval of a stopped session is refused. Approving atomically
-// creates one grant and an approval input asking the model to retry.
+// grant or input. Approval of a stopped session is refused.
+//
+// TOOL: approving atomically creates one grant and an approval input asking
+// the model to retry; answers must be empty.
+//
+// QUESTION: approve=true answers and requires exactly one answer per
+// question, in the questions' order, each naming its question verbatim;
+// selected labels must be the question's option labels (more than one only
+// when multiSelect), and selected and other may not both be empty. It
+// atomically writes one input of kind ANSWER carrying the answers (no
+// grant).
+// approve=false dismisses the question and writes no input.
+// A question that is no longer pending: answering it again after it was
+// answered, or dismissing it again after it was dismissed, is idempotent;
+// dismissing an answered (or superseded) question is a no-op; answering a
+// question that was dismissed, superseded by a newer one or ended by a stop
+// is FAILED_PRECONDITION, as is any resolution of an expired approval.
 message ResolveApprovalRequest {
   string approval_id = 1;
   bool approve = 2;
+  // QUESTION only; at most 4.
+  repeated QuestionAnswer answers = 3;
+}
+message QuestionAnswer {
+  // The question text, verbatim; at most 4 KiB.
+  string question = 1;
+  // Chosen option labels; at most 4.
+  repeated string selected = 2;
+  // The user's own answer ("Other"); at most 4 KiB.
+  string other = 3;
 }
 message ResolveApprovalResponse {}
 // Interrupt requests an abort without stopping the session: it raises

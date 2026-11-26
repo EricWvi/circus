@@ -281,6 +281,7 @@
      "approval_id": "00000000-0000-4000-8000-000000000015",
      "device": "box",
      "display": "echo late",
+     "kind": "tool",
      "reason": "Scripted Bash approval required",
      "tool": "Bash",
      "tool_use_id": "toolu_00000000-0000-4000-8000-000000000006"
@@ -985,6 +986,7 @@
      "approval_id": "00000000-0000-4000-8000-000000000015",
      "device": "box",
      "display": "echo approved",
+     "kind": "tool",
      "reason": "Scripted Bash approval required",
      "tool": "Bash",
      "tool_use_id": "toolu_00000000-0000-4000-8000-000000000006"
@@ -2044,6 +2046,1939 @@
       "00000000-0000-4000-8000-000000000029"
      ],
      "uuid": "00000000-0000-4000-8000-000000000052"
+    }
+   }
+  ]
+ },
+ "ask": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake ask"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake ask",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000004",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message",
+       "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+       }
+      },
+      "type": "message_start"
+     },
+     "owed_rows": [],
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "thinking_display": "updates",
+     "ttft_ms": 0,
+     "type": "stream_event",
+     "user_message_uuid": "00000000-0000-4000-8000-000000000001",
+     "user_message_uuids": [
+      "00000000-0000-4000-8000-000000000001"
+     ],
+     "uuid": "00000000-0000-4000-8000-000000000005"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "content_block": {
+       "id": "toolu_00000000-0000-4000-8000-000000000006",
+       "input": {},
+       "name": "AskUserQuestion",
+       "type": "tool_use"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "delta": {
+       "partial_json": "{\"questions\":[{\"header\":\"Color\",\"multiSelect\":false,\"options\":[{\"description\":\"A warm color\",\"label\":\"Red\"},{\"description\":\"A cool color\",\"label\":\"Blue\"}],\"question\":\"Which color should the button be?\"},{\"header\":\"Features\"",
+       "type": "input_json_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "delta": {
+       "partial_json": ",\"multiSelect\":true,\"options\":[{\"description\":\"A dark theme\",\"label\":\"Dark mode\"},{\"description\":\"Full-text search\",\"label\":\"Search\"},{\"description\":\"CSV export\",\"label\":\"Export\"}],\"question\":\"Which features do you want?\"}]}",
+       "type": "input_json_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000006",
+        "input": {
+         "questions": [
+          {
+           "header": "Color",
+           "multiSelect": false,
+           "options": [
+            {
+             "description": "A warm color",
+             "label": "Red"
+            },
+            {
+             "description": "A cool color",
+             "label": "Blue"
+            }
+           ],
+           "question": "Which color should the button be?"
+          },
+          {
+           "header": "Features",
+           "multiSelect": true,
+           "options": [
+            {
+             "description": "A dark theme",
+             "label": "Dark mode"
+            },
+            {
+             "description": "Full-text search",
+             "label": "Search"
+            },
+            {
+             "description": "CSV export",
+             "label": "Export"
+            }
+           ],
+           "question": "Which features do you want?"
+          }
+         ]
+        },
+        "name": "AskUserQuestion",
+        "type": "tool_use"
+       }
+      ],
+      "context_management": null,
+      "id": "msg_00000000-0000-4000-8000-000000000004",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "input_tokens": 0,
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "type": "assistant",
+     "user_message_uuid": "00000000-0000-4000-8000-000000000001",
+     "user_message_uuids": [
+      "00000000-0000-4000-8000-000000000001"
+     ],
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "delta": {
+       "safeguard_results": [
+        {
+         "status": {
+          "tool_uses": {},
+          "type": "available"
+         },
+         "type": "dangerous_tool_use"
+        }
+       ],
+       "stop_reason": "tool_use",
+       "stop_sequence": null
+      },
+      "type": "message_delta",
+      "usage": {
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_APPROVAL_PENDING",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000014",
+     "device": "",
+     "display": "Which color should the button be?",
+     "input_json": "{\"questions\":[{\"question\":\"Which color should the button be?\",\"header\":\"Color\",\"options\":[{\"label\":\"Red\",\"description\":\"A warm color\"},{\"label\":\"Blue\",\"description\":\"A cool color\"}],\"multiSelect\":false},{\"question\":\"Which features do you want?\",\"header\":\"Features\",\"options\":[{\"label\":\"Dark mode\",\"description\":\"A dark theme\"},{\"label\":\"Search\",\"description\":\"Full-text search\"},{\"label\":\"Export\",\"description\":\"CSV export\"}],\"multiSelect\":true}]}",
+     "kind": "question",
+     "reason": "",
+     "tool": "AskUserQuestion",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": "Your questions were shown to the user. End your turn now, without guessing the answers: the user's answers will arrive as the next user message.",
+        "is_error": true,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000006",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "tool_result_meta": [
+      {
+       "id": "toolu_00000000-0000-4000-8000-000000000006",
+       "non_execution_kind": "permission-rule",
+       "permission_decision": {
+        "decision": "reject",
+        "source": "user_reject"
+       }
+      }
+     ],
+     "tool_use_result": "Error: Your questions were shown to the user. End your turn now, without guessing the answers: the user's answers will arrive as the next user message.",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000016",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message",
+       "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+       }
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "thinking_display": "updates",
+     "ttft_ms": 0,
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "content_block": {
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "text": "I aske",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "text": "d you t",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000020"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "text": "wo que",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000021"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "text": "stions.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000022"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "text": "I asked you two questions.",
+        "type": "text"
+       }
+      ],
+      "context_management": null,
+      "id": "msg_00000000-0000-4000-8000-000000000016",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "input_tokens": 0,
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000023"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000024"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "safeguard_results": [
+        {
+         "status": {
+          "tool_uses": {},
+          "type": "available"
+         },
+         "type": "dangerous_tool_use"
+        }
+       ],
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta",
+      "usage": {
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000025"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000026"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "api_error_status": null,
+     "begun_message_ids": [
+      "msg_00000000-0000-4000-8000-000000000004",
+      "msg_00000000-0000-4000-8000-000000000016"
+     ],
+     "duration_api_ms": 0,
+     "duration_ms": 0,
+     "fast_mode_disabled_reason": "sdk_opt_in_required",
+     "fast_mode_state": "off",
+     "first_content_frame_ms": 0,
+     "first_request_cache_read_input_tokens": 0,
+     "first_request_input_tokens": 27,
+     "is_error": false,
+     "modelUsage": {
+      "claude-sonnet-4-6": {
+       "cacheCreationEphemeral1hInputTokens": 0,
+       "cacheCreationEphemeral5mInputTokens": 0,
+       "cacheCreationInputTokens": 0,
+       "cacheReadInputTokens": 0,
+       "canonicalModel": "<string>",
+       "contextWindow": 0,
+       "costBasis": "<string>",
+       "costUSD": 0,
+       "inputTokens": 0,
+       "maxOutputTokens": 0,
+       "outputTokens": 0,
+       "provider": "<string>",
+       "thinkingTokens": 0,
+       "webSearchRequests": 0
+      }
+     },
+     "model_usage_since_last_result": {
+      "claude-sonnet-4-6": {
+       "cacheCreationEphemeral1hInputTokens": 0,
+       "cacheCreationEphemeral5mInputTokens": 0,
+       "cacheCreationInputTokens": 0,
+       "cacheReadInputTokens": 0,
+       "canonicalModel": "claude-sonnet-4-6",
+       "contextWindow": 200000,
+       "costBasis": "list",
+       "costUSD": 0,
+       "inputTokens": 0,
+       "maxOutputTokens": 64000,
+       "outputTokens": 0,
+       "provider": "firstParty",
+       "thinkingTokens": 0,
+       "webSearchRequests": 0
+      }
+     },
+     "num_turns": 2,
+     "permission_denials": [
+      {
+       "tool_input": {
+        "questions": [
+         {
+          "header": "Color",
+          "multiSelect": false,
+          "options": [
+           {
+            "description": "A warm color",
+            "label": "Red"
+           },
+           {
+            "description": "A cool color",
+            "label": "Blue"
+           }
+          ],
+          "question": "Which color should the button be?"
+         },
+         {
+          "header": "Features",
+          "multiSelect": true,
+          "options": [
+           {
+            "description": "A dark theme",
+            "label": "Dark mode"
+           },
+           {
+            "description": "Full-text search",
+            "label": "Search"
+           },
+           {
+            "description": "CSV export",
+            "label": "Export"
+           }
+          ],
+          "question": "Which features do you want?"
+         }
+        ]
+       },
+       "tool_name": "AskUserQuestion",
+       "tool_use_id": "toolu_00000000-0000-4000-8000-000000000006"
+      }
+     ],
+     "queued_turn_count": 0,
+     "request_sent_wall_ms": 0,
+     "result": "I asked you two questions.",
+     "result_index": 0,
+     "safety_stops": 0,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subagent_stats": {
+      "by_type": {},
+      "completed": 0,
+      "failed": 0,
+      "killed": {
+       "parent": 0,
+       "system": 0,
+       "user": 0
+      },
+      "max_depth": 0,
+      "refused": {
+       "budget": 0,
+       "concurrency_limit": 0,
+       "depth_limit": 0
+      },
+      "requested": {
+       "background": 0,
+       "foreground": 0,
+       "unset": 0
+      },
+      "spawned": 0,
+      "spawned_by_subagents": 0,
+      "started_in_background": 0
+     },
+     "subtype": "success",
+     "terminal_reason": "completed",
+     "time_to_request_ms": 0,
+     "total_cost_usd": 0,
+     "ttft_ms": 0,
+     "ttft_stream_ms": 0,
+     "type": "result",
+     "usage": {
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "fallback_credit": null,
+      "inference_geo": "<string>",
+      "input_tokens": 0,
+      "iterations": [],
+      "output_tokens": 0,
+      "output_tokens_details": {
+       "thinking_tokens": 0
+      },
+      "server_tool_use": {
+       "web_fetch_requests": 0,
+       "web_search_requests": 0
+      },
+      "service_tier": "<string>",
+      "speed": "<string>"
+     },
+     "user_message_uuid": "00000000-0000-4000-8000-000000000001",
+     "user_message_uuids": [
+      "00000000-0000-4000-8000-000000000001"
+     ],
+     "uuid": "00000000-0000-4000-8000-000000000027"
+    }
+   },
+   {
+    "seq": 9,
+    "kind": "KIND_APPROVAL_RESOLVED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "answers": [
+      {
+       "other": "",
+       "question": "Which color should the button be?",
+       "selected": [
+        "Blue"
+       ]
+      },
+      {
+       "other": "and \"keyboard\" shortcuts",
+       "question": "Which features do you want?",
+       "selected": [
+        "Dark mode",
+        "Export"
+       ]
+      }
+     ],
+     "approval_id": "00000000-0000-4000-8000-000000000014",
+     "input_id": "00000000-0000-4000-8000-000000000028",
+     "kind": "question",
+     "state": "answered"
+    }
+   },
+   {
+    "seq": 10,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "2"
+    }
+   },
+   {
+    "seq": 11,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "circus_note": "question_answer",
+     "message": {
+      "content": "The user answered your questions: \"Which color should the button be?\"=\"Blue\", \"Which features do you want?\"=\"Dark mode, Export, and \\\"keyboard\\\" shortcuts\". Continue with these answers in mind.",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000028"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000029",
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000029",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message",
+       "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+       }
+      },
+      "type": "message_start"
+     },
+     "owed_rows": [],
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "thinking_display": "updates",
+     "ttft_ms": 0,
+     "type": "stream_event",
+     "user_message_uuid": "00000000-0000-4000-8000-000000000028",
+     "user_message_uuids": [
+      "00000000-0000-4000-8000-000000000028"
+     ],
+     "uuid": "00000000-0000-4000-8000-000000000030"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000029",
+     "event": {
+      "content_block": {
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000031"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000029",
+     "event": {
+      "delta": {
+       "text": "You said:\n\n> The user answered your questions: \"Whi",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000032"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000029",
+     "event": {
+      "delta": {
+       "text": "ch color should the button be?\"=\"Blue\", \"Which featu",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000033"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000029",
+     "event": {
+      "delta": {
+       "text": "res do you want?\"=\"Dark mode, Export, and \\\"keyboar",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000034"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000029",
+     "event": {
+      "delta": {
+       "text": "d\\\" shortcuts\". Continue with these answers in mind.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000035"
+    }
+   },
+   {
+    "seq": 12,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "text": "You said:\n\n> The user answered your questions: \"Which color should the button be?\"=\"Blue\", \"Which features do you want?\"=\"Dark mode, Export, and \\\"keyboard\\\" shortcuts\". Continue with these answers in mind.",
+        "type": "text"
+       }
+      ],
+      "context_management": null,
+      "id": "msg_00000000-0000-4000-8000-000000000029",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "input_tokens": 0,
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "type": "assistant",
+     "user_message_uuid": "00000000-0000-4000-8000-000000000028",
+     "user_message_uuids": [
+      "00000000-0000-4000-8000-000000000028"
+     ],
+     "uuid": "00000000-0000-4000-8000-000000000036"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000029",
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000037"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000029",
+     "event": {
+      "delta": {
+       "safeguard_results": [
+        {
+         "status": {
+          "tool_uses": {},
+          "type": "available"
+         },
+         "type": "dangerous_tool_use"
+        }
+       ],
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta",
+      "usage": {
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000038"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000029",
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000039"
+    }
+   },
+   {
+    "seq": 13,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "api_error_status": null,
+     "begun_message_ids": [
+      "msg_00000000-0000-4000-8000-000000000029"
+     ],
+     "duration_api_ms": 0,
+     "duration_ms": 0,
+     "fast_mode_disabled_reason": "sdk_opt_in_required",
+     "fast_mode_state": "off",
+     "first_content_frame_ms": 0,
+     "first_request_cache_read_input_tokens": 0,
+     "first_request_input_tokens": 73,
+     "is_error": false,
+     "modelUsage": {
+      "claude-sonnet-4-6": {
+       "cacheCreationEphemeral1hInputTokens": 0,
+       "cacheCreationEphemeral5mInputTokens": 0,
+       "cacheCreationInputTokens": 0,
+       "cacheReadInputTokens": 0,
+       "canonicalModel": "<string>",
+       "contextWindow": 0,
+       "costBasis": "<string>",
+       "costUSD": 0,
+       "inputTokens": 0,
+       "maxOutputTokens": 0,
+       "outputTokens": 0,
+       "provider": "<string>",
+       "thinkingTokens": 0,
+       "webSearchRequests": 0
+      }
+     },
+     "model_usage_since_last_result": {
+      "claude-sonnet-4-6": {
+       "cacheCreationEphemeral1hInputTokens": 0,
+       "cacheCreationEphemeral5mInputTokens": 0,
+       "cacheCreationInputTokens": 0,
+       "cacheReadInputTokens": 0,
+       "canonicalModel": "claude-sonnet-4-6",
+       "contextWindow": 200000,
+       "costBasis": "list",
+       "costUSD": 0,
+       "inputTokens": 0,
+       "maxOutputTokens": 64000,
+       "outputTokens": 0,
+       "provider": "firstParty",
+       "thinkingTokens": 0,
+       "webSearchRequests": 0
+      }
+     },
+     "num_turns": 1,
+     "permission_denials": [],
+     "queued_turn_count": 0,
+     "request_sent_wall_ms": 0,
+     "result": "You said:\n\n> The user answered your questions: \"Which color should the button be?\"=\"Blue\", \"Which features do you want?\"=\"Dark mode, Export, and \\\"keyboard\\\" shortcuts\". Continue with these answers in mind.",
+     "result_index": 1,
+     "safety_stops": 0,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subagent_stats": {
+      "by_type": {},
+      "completed": 0,
+      "failed": 0,
+      "killed": {
+       "parent": 0,
+       "system": 0,
+       "user": 0
+      },
+      "max_depth": 0,
+      "refused": {
+       "budget": 0,
+       "concurrency_limit": 0,
+       "depth_limit": 0
+      },
+      "requested": {
+       "background": 0,
+       "foreground": 0,
+       "unset": 0
+      },
+      "spawned": 0,
+      "spawned_by_subagents": 0,
+      "started_in_background": 0
+     },
+     "subtype": "success",
+     "terminal_reason": "completed",
+     "time_to_request_ms": 0,
+     "total_cost_usd": 0,
+     "ttft_ms": 0,
+     "ttft_stream_ms": 0,
+     "type": "result",
+     "usage": {
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "fallback_credit": null,
+      "inference_geo": "<string>",
+      "input_tokens": 0,
+      "iterations": [],
+      "output_tokens": 0,
+      "output_tokens_details": {
+       "thinking_tokens": 0
+      },
+      "server_tool_use": {
+       "web_fetch_requests": 0,
+       "web_search_requests": 0
+      },
+      "service_tier": "<string>",
+      "speed": "<string>"
+     },
+     "user_message_uuid": "00000000-0000-4000-8000-000000000028",
+     "user_message_uuids": [
+      "00000000-0000-4000-8000-000000000028"
+     ],
+     "uuid": "00000000-0000-4000-8000-000000000040"
+    }
+   }
+  ]
+ },
+ "ask_dismiss": {
+  "final": {
+   "state": "STATE_IDLE",
+   "lastTurnOutcome": "TURN_OUTCOME_COMPLETED",
+   "pendingApprovalCount": 0
+  },
+  "events": [
+   {
+    "seq": 1,
+    "kind": "KIND_INPUT_ACCEPTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "client_msg_id": "00000000-0000-4000-8000-000000000002",
+     "input_id": "00000000-0000-4000-8000-000000000001",
+     "priority": "normal",
+     "text": "/fake ask"
+    }
+   },
+   {
+    "seq": 2,
+    "kind": "KIND_TURN_STARTED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "origin": "input",
+     "turn_no": "1"
+    }
+   },
+   {
+    "seq": 3,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": "/fake ask",
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000001"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000004",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message",
+       "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+       }
+      },
+      "type": "message_start"
+     },
+     "owed_rows": [],
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "thinking_display": "updates",
+     "ttft_ms": 0,
+     "type": "stream_event",
+     "user_message_uuid": "00000000-0000-4000-8000-000000000001",
+     "user_message_uuids": [
+      "00000000-0000-4000-8000-000000000001"
+     ],
+     "uuid": "00000000-0000-4000-8000-000000000005"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "content_block": {
+       "id": "toolu_00000000-0000-4000-8000-000000000006",
+       "input": {},
+       "name": "AskUserQuestion",
+       "type": "tool_use"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000007"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "delta": {
+       "partial_json": "{\"questions\":[{\"header\":\"Color\",\"multiSelect\":false,\"options\":[{\"description\":\"A warm color\",\"label\":\"Red\"},{\"description\":\"A cool color\",\"label\":\"Blue\"}],\"question\":\"Which color should the button be?\"},{\"header\":\"Features\"",
+       "type": "input_json_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000008"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "delta": {
+       "partial_json": ",\"multiSelect\":true,\"options\":[{\"description\":\"A dark theme\",\"label\":\"Dark mode\"},{\"description\":\"Full-text search\",\"label\":\"Search\"},{\"description\":\"CSV export\",\"label\":\"Export\"}],\"question\":\"Which features do you want?\"}]}",
+       "type": "input_json_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000009"
+    }
+   },
+   {
+    "seq": 4,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "id": "toolu_00000000-0000-4000-8000-000000000006",
+        "input": {
+         "questions": [
+          {
+           "header": "Color",
+           "multiSelect": false,
+           "options": [
+            {
+             "description": "A warm color",
+             "label": "Red"
+            },
+            {
+             "description": "A cool color",
+             "label": "Blue"
+            }
+           ],
+           "question": "Which color should the button be?"
+          },
+          {
+           "header": "Features",
+           "multiSelect": true,
+           "options": [
+            {
+             "description": "A dark theme",
+             "label": "Dark mode"
+            },
+            {
+             "description": "Full-text search",
+             "label": "Search"
+            },
+            {
+             "description": "CSV export",
+             "label": "Export"
+            }
+           ],
+           "question": "Which features do you want?"
+          }
+         ]
+        },
+        "name": "AskUserQuestion",
+        "type": "tool_use"
+       }
+      ],
+      "context_management": null,
+      "id": "msg_00000000-0000-4000-8000-000000000004",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "input_tokens": 0,
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "type": "assistant",
+     "user_message_uuid": "00000000-0000-4000-8000-000000000001",
+     "user_message_uuids": [
+      "00000000-0000-4000-8000-000000000001"
+     ],
+     "uuid": "00000000-0000-4000-8000-000000000010"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000011"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "delta": {
+       "safeguard_results": [
+        {
+         "status": {
+          "tool_uses": {},
+          "type": "available"
+         },
+         "type": "dangerous_tool_use"
+        }
+       ],
+       "stop_reason": "tool_use",
+       "stop_sequence": null
+      },
+      "type": "message_delta",
+      "usage": {
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000012"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000004",
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000013"
+    }
+   },
+   {
+    "seq": 5,
+    "kind": "KIND_APPROVAL_PENDING",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000014",
+     "device": "",
+     "display": "Which color should the button be?",
+     "input_json": "{\"questions\":[{\"question\":\"Which color should the button be?\",\"header\":\"Color\",\"options\":[{\"label\":\"Red\",\"description\":\"A warm color\"},{\"label\":\"Blue\",\"description\":\"A cool color\"}],\"multiSelect\":false},{\"question\":\"Which features do you want?\",\"header\":\"Features\",\"options\":[{\"label\":\"Dark mode\",\"description\":\"A dark theme\"},{\"label\":\"Search\",\"description\":\"Full-text search\"},{\"label\":\"Export\",\"description\":\"CSV export\"}],\"multiSelect\":true}]}",
+     "kind": "question",
+     "reason": "",
+     "tool": "AskUserQuestion",
+     "tool_use_id": "toolu_00000000-0000-4000-8000-000000000006"
+    }
+   },
+   {
+    "seq": 6,
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "content": "Your questions were shown to the user. End your turn now, without guessing the answers: the user's answers will arrive as the next user message.",
+        "is_error": true,
+        "tool_use_id": "toolu_00000000-0000-4000-8000-000000000006",
+        "type": "tool_result"
+       }
+      ],
+      "role": "user"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "tool_result_meta": [
+      {
+       "id": "toolu_00000000-0000-4000-8000-000000000006",
+       "non_execution_kind": "permission-rule",
+       "permission_decision": {
+        "decision": "reject",
+        "source": "user_reject"
+       }
+      }
+     ],
+     "tool_use_result": "Error: Your questions were shown to the user. End your turn now, without guessing the answers: the user's answers will arrive as the next user message.",
+     "type": "user",
+     "uuid": "00000000-0000-4000-8000-000000000015"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "message": {
+       "content": [],
+       "id": "msg_00000000-0000-4000-8000-000000000016",
+       "model": "claude-sonnet-4-6",
+       "role": "assistant",
+       "stop_reason": null,
+       "stop_sequence": null,
+       "type": "message",
+       "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+       }
+      },
+      "type": "message_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "thinking_display": "updates",
+     "ttft_ms": 0,
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000017"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "content_block": {
+       "text": "",
+       "type": "text"
+      },
+      "index": 0,
+      "type": "content_block_start"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000018"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "text": "I aske",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000019"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "text": "d you t",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000020"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "text": "wo que",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000021"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "text": "stions.",
+       "type": "text_delta"
+      },
+      "index": 0,
+      "type": "content_block_delta"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000022"
+    }
+   },
+   {
+    "seq": 7,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "message": {
+      "content": [
+       {
+        "text": "I asked you two questions.",
+        "type": "text"
+       }
+      ],
+      "context_management": null,
+      "id": "msg_00000000-0000-4000-8000-000000000016",
+      "model": "claude-sonnet-4-6",
+      "role": "assistant",
+      "stop_reason": null,
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+       "cache_creation_input_tokens": 0,
+       "cache_read_input_tokens": 0,
+       "input_tokens": 0,
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "timestamp": "<string>",
+     "type": "assistant",
+     "uuid": "00000000-0000-4000-8000-000000000023"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "index": 0,
+      "type": "content_block_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000024"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "delta": {
+       "safeguard_results": [
+        {
+         "status": {
+          "tool_uses": {},
+          "type": "available"
+         },
+         "type": "dangerous_tool_use"
+        }
+       ],
+       "stop_reason": "end_turn",
+       "stop_sequence": null
+      },
+      "type": "message_delta",
+      "usage": {
+       "output_tokens": 0
+      }
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000025"
+    }
+   },
+   {
+    "seq": 0,
+    "kind": "KIND_ASSISTANT",
+    "ephemeral": true,
+    "truncated": false,
+    "payload": {
+     "api_message_id": "msg_00000000-0000-4000-8000-000000000016",
+     "event": {
+      "type": "message_stop"
+     },
+     "parent_tool_use_id": null,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "type": "stream_event",
+     "uuid": "00000000-0000-4000-8000-000000000026"
+    }
+   },
+   {
+    "seq": 8,
+    "kind": "KIND_RESULT",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "api_error_status": null,
+     "begun_message_ids": [
+      "msg_00000000-0000-4000-8000-000000000004",
+      "msg_00000000-0000-4000-8000-000000000016"
+     ],
+     "duration_api_ms": 0,
+     "duration_ms": 0,
+     "fast_mode_disabled_reason": "sdk_opt_in_required",
+     "fast_mode_state": "off",
+     "first_content_frame_ms": 0,
+     "first_request_cache_read_input_tokens": 0,
+     "first_request_input_tokens": 27,
+     "is_error": false,
+     "modelUsage": {
+      "claude-sonnet-4-6": {
+       "cacheCreationEphemeral1hInputTokens": 0,
+       "cacheCreationEphemeral5mInputTokens": 0,
+       "cacheCreationInputTokens": 0,
+       "cacheReadInputTokens": 0,
+       "canonicalModel": "<string>",
+       "contextWindow": 0,
+       "costBasis": "<string>",
+       "costUSD": 0,
+       "inputTokens": 0,
+       "maxOutputTokens": 0,
+       "outputTokens": 0,
+       "provider": "<string>",
+       "thinkingTokens": 0,
+       "webSearchRequests": 0
+      }
+     },
+     "model_usage_since_last_result": {
+      "claude-sonnet-4-6": {
+       "cacheCreationEphemeral1hInputTokens": 0,
+       "cacheCreationEphemeral5mInputTokens": 0,
+       "cacheCreationInputTokens": 0,
+       "cacheReadInputTokens": 0,
+       "canonicalModel": "claude-sonnet-4-6",
+       "contextWindow": 200000,
+       "costBasis": "list",
+       "costUSD": 0,
+       "inputTokens": 0,
+       "maxOutputTokens": 64000,
+       "outputTokens": 0,
+       "provider": "firstParty",
+       "thinkingTokens": 0,
+       "webSearchRequests": 0
+      }
+     },
+     "num_turns": 2,
+     "permission_denials": [
+      {
+       "tool_input": {
+        "questions": [
+         {
+          "header": "Color",
+          "multiSelect": false,
+          "options": [
+           {
+            "description": "A warm color",
+            "label": "Red"
+           },
+           {
+            "description": "A cool color",
+            "label": "Blue"
+           }
+          ],
+          "question": "Which color should the button be?"
+         },
+         {
+          "header": "Features",
+          "multiSelect": true,
+          "options": [
+           {
+            "description": "A dark theme",
+            "label": "Dark mode"
+           },
+           {
+            "description": "Full-text search",
+            "label": "Search"
+           },
+           {
+            "description": "CSV export",
+            "label": "Export"
+           }
+          ],
+          "question": "Which features do you want?"
+         }
+        ]
+       },
+       "tool_name": "AskUserQuestion",
+       "tool_use_id": "toolu_00000000-0000-4000-8000-000000000006"
+      }
+     ],
+     "queued_turn_count": 0,
+     "request_sent_wall_ms": 0,
+     "result": "I asked you two questions.",
+     "result_index": 0,
+     "safety_stops": 0,
+     "session_id": "00000000-0000-4000-8000-000000000003",
+     "stop_reason": "end_turn",
+     "subagent_stats": {
+      "by_type": {},
+      "completed": 0,
+      "failed": 0,
+      "killed": {
+       "parent": 0,
+       "system": 0,
+       "user": 0
+      },
+      "max_depth": 0,
+      "refused": {
+       "budget": 0,
+       "concurrency_limit": 0,
+       "depth_limit": 0
+      },
+      "requested": {
+       "background": 0,
+       "foreground": 0,
+       "unset": 0
+      },
+      "spawned": 0,
+      "spawned_by_subagents": 0,
+      "started_in_background": 0
+     },
+     "subtype": "success",
+     "terminal_reason": "completed",
+     "time_to_request_ms": 0,
+     "total_cost_usd": 0,
+     "ttft_ms": 0,
+     "ttft_stream_ms": 0,
+     "type": "result",
+     "usage": {
+      "cache_creation": {
+       "ephemeral_1h_input_tokens": 0,
+       "ephemeral_5m_input_tokens": 0
+      },
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "fallback_credit": null,
+      "inference_geo": "<string>",
+      "input_tokens": 0,
+      "iterations": [],
+      "output_tokens": 0,
+      "output_tokens_details": {
+       "thinking_tokens": 0
+      },
+      "server_tool_use": {
+       "web_fetch_requests": 0,
+       "web_search_requests": 0
+      },
+      "service_tier": "<string>",
+      "speed": "<string>"
+     },
+     "user_message_uuid": "00000000-0000-4000-8000-000000000001",
+     "user_message_uuids": [
+      "00000000-0000-4000-8000-000000000001"
+     ],
+     "uuid": "00000000-0000-4000-8000-000000000027"
+    }
+   },
+   {
+    "seq": 9,
+    "kind": "KIND_APPROVAL_RESOLVED",
+    "ephemeral": false,
+    "truncated": false,
+    "payload": {
+     "approval_id": "00000000-0000-4000-8000-000000000014",
+     "kind": "question",
+     "state": "dismissed"
     }
    }
   ]
@@ -4082,6 +6017,7 @@
      "approval_id": "00000000-0000-4000-8000-000000000015",
      "device": "box",
      "display": "echo denied",
+     "kind": "tool",
      "reason": "Scripted Bash approval required",
      "tool": "Bash",
      "tool_use_id": "toolu_00000000-0000-4000-8000-000000000006"

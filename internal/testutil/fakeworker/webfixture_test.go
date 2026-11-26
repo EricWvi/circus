@@ -161,6 +161,21 @@ var webScenarios = []scenario{
 		s.resolve(false, nil)
 		s.await(count(kindResolved, 1))
 	}},
+	{"ask", func(s *liveSession) {
+		s.send("/fake ask")
+		s.await(count(kindResult, 1))
+		s.answer([]*pb.QuestionAnswer{
+			{Question: "Which color should the button be?", Selected: []string{"Blue"}},
+			{Question: "Which features do you want?", Selected: []string{"Dark mode", "Export"}, Other: `and "keyboard" shortcuts`},
+		})
+		s.await(count(kindResult, 2))
+	}},
+	{"ask_dismiss", func(s *liveSession) {
+		s.send("/fake ask")
+		s.await(count(kindResult, 1))
+		s.resolve(false, nil)
+		s.await(count(kindResolved, 1))
+	}},
 	{"interrupt", func(s *liveSession) {
 		s.send("/fake slow 20")
 		s.await(textDelta)
@@ -539,6 +554,17 @@ func (s *liveSession) sendWith(text string, priority pb.InputPriority) {
 // resolve answers the session's latest pending approval; expected accepts an error the call may return.
 func (s *liveSession) resolve(approve bool, expected func(error) bool) {
 	s.t.Helper()
+	s.resolveWith(approve, nil, expected)
+}
+
+// answer answers the session's last question approval.
+func (s *liveSession) answer(answers []*pb.QuestionAnswer) {
+	s.t.Helper()
+	s.resolveWith(true, answers, nil)
+}
+
+func (s *liveSession) resolveWith(approve bool, answers []*pb.QuestionAnswer, expected func(error) bool) {
+	s.t.Helper()
 	s.mu.Lock()
 	var id string
 	for _, e := range s.events {
@@ -553,7 +579,7 @@ func (s *liveSession) resolve(approve bool, expected func(error) bool) {
 		}
 	}
 	s.mu.Unlock()
-	_, err := s.api.ResolveApproval(s.ctx, connect.NewRequest(&pb.ResolveApprovalRequest{ApprovalId: id, Approve: approve}))
+	_, err := s.api.ResolveApproval(s.ctx, connect.NewRequest(&pb.ResolveApprovalRequest{ApprovalId: id, Approve: approve, Answers: answers}))
 	if err != nil && (expected == nil || !expected(err)) {
 		s.t.Fatal(err)
 	}

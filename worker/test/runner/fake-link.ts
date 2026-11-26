@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { SessionConfigSchema } from "@circus/proto/circus/v1/session_pb";
+import { SessionConfigSchema, type ApprovalKind } from "@circus/proto/circus/v1/session_pb";
 import {
   RecoverySchema, ReportTurn_Phase, SessionReplySchema, SessionReply_Inputs_InputSchema, SessionReply_Inputs_Input_Kind, SessionReply_LeaseSchema,
   SessionReply_Rejected_Code as Code, SessionStateSchema, SessionState_GrantSchema, WorkerEventSchema,
@@ -82,7 +82,10 @@ export class FakeLink implements LinkPort {
   #eventSeq = 0n;
   transcripts = new Map<string, { seq: bigint; epoch: bigint; entries: TranscriptEntry[]; uuids: Set<string> }>();
   #eventEpoch = 0n;
-  approvals: Array<{ approvalId: string; tool: string; device: string; matchKey: string; toolUseId: string; display: string; reason: string }> = [];
+  approvals: Array<{
+    approvalId: string; kind: ApprovalKind; tool: string; device: string; matchKey: string; toolUseId: string; agentId: string; display: string;
+    reason: string; inputJson: string;
+  }> = [];
   grants: Array<{ tool: string; device: string; matchKey: string }> = [];
   consumed = new Map<string, string>();
   released: number[] = [];

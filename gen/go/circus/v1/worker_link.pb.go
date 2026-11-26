@@ -552,6 +552,11 @@ const (
 	// starts a turn when the session is idle; merged and discarded
 	// notes are held and taken with the next input that starts a turn.
 	SessionReply_Inputs_Input_KIND_NOTE SessionReply_Inputs_Input_Kind = 3
+	// The user's answers to an AskUserQuestion (a QUESTION approval
+	// answered with ResolveApproval). Pushed as an ordinary user
+	// message; its view event carries circus_note "question_answer".
+	// It needs no grant refresh.
+	SessionReply_Inputs_Input_KIND_ANSWER SessionReply_Inputs_Input_Kind = 4
 )
 
 // Enum value maps for SessionReply_Inputs_Input_Kind.
@@ -561,12 +566,14 @@ var (
 		1: "KIND_USER",
 		2: "KIND_APPROVAL",
 		3: "KIND_NOTE",
+		4: "KIND_ANSWER",
 	}
 	SessionReply_Inputs_Input_Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
 		"KIND_USER":        1,
 		"KIND_APPROVAL":    2,
 		"KIND_NOTE":        3,
+		"KIND_ANSWER":      4,
 	}
 )
 
@@ -2794,9 +2801,10 @@ type PublishEvents struct {
 	// consumed one is acknowledged with deduplicated=true and no write; one
 	// beyond the last plus one is INVALID and consumes nothing. ok consumes it;
 	// so does a batch at the next sequence that fails validation (an over-cap
-	// field, or a kind only the control plane records: APPROVAL_RESOLVED,
-	// TURN_INTERRUPTED, SESSION_STATE, TRANSCRIPT_GAP_ACCEPTED, TURN_STOPPED or
-	// INPUT_ACCEPTED, kinds 8, 9, 10, 15, 17 and 18): it is recorded as dropped
+	// field, or a kind only the control plane records: APPROVAL_PENDING,
+	// APPROVAL_RESOLVED, TURN_INTERRUPTED, SESSION_STATE,
+	// TRANSCRIPT_GAP_ACCEPTED, TURN_STOPPED or INPUT_ACCEPTED, kinds 7, 8, 9,
+	// 10, 15, 17 and 18): it is recorded as dropped
 	// and answered INVALID, and the worker continues with the next sequence. A worker treats every
 	// INVALID as consumed: a gap only follows from a worker bug. STORE_UNAVAILABLE
 	// and Fenced consume nothing. Retrying must preserve content.
@@ -2849,9 +2857,23 @@ func (x *PublishEvents) GetBatchSeq() uint64 {
 	return 0
 }
 
-// RequestApproval merges pending requests by (session, tool, device, match_key).
-// Display, reason and tool_use_id do not change the matching key. There are
-// at most 32 pending requests per session, expiring in ten minutes.
+// RequestApproval of kind TOOL merges pending requests by (session, tool,
+// device, match_key). Display, reason and tool_use_id do not change the
+// matching key. There are at most 32 pending requests per session; TOOL
+// requests expire in ten minutes.
+//
+// Kind QUESTION (from canUseTool for AskUserQuestion on the main thread):
+// tool is "AskUserQuestion"; device, match_key and reason are empty;
+// input_json is required; display is a short summary (the first question).
+// Repeating the same tool_use_id returns the same approval
+// (deduplicated=true); a new one supersedes the session's other pending
+// QUESTION requests. It does not expire. An input_json that is not a valid
+// AskUserQuestion input (1-4 questions, 2-4 options each) is INVALID.
+//
+// A request that creates an approval records its APPROVAL_PENDING view event
+// in the same transaction (and a superseding question the APPROVAL_RESOLVED
+// events of the questions it replaces); the worker does not publish
+// APPROVAL_PENDING. A deduplicated request records nothing.
 type RequestApproval struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Model tool_use id, opaque, 1-128 bytes.
@@ -2870,7 +2892,13 @@ type RequestApproval struct {
 	Display string `protobuf:"bytes,6,opt,name=display,proto3" json:"display,omitempty"`
 	// Empty when the permission mode gave no reason of its own; clients then
 	// say that the permission mode denied the tool.
-	Reason        string `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
+	Reason string `protobuf:"bytes,7,opt,name=reason,proto3" json:"reason,omitempty"`
+	// Unspecified means TOOL. PLAN is refused (INVALID) until plan approval
+	// exists.
+	Kind ApprovalKind `protobuf:"varint,8,opt,name=kind,proto3,enum=circus.v1.ApprovalKind" json:"kind,omitempty"`
+	// QUESTION only: the tool input as canUseTool received it, at most
+	// 32 KiB. See SessionApproval.input_json.
+	InputJson     string `protobuf:"bytes,9,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2950,6 +2978,20 @@ func (x *RequestApproval) GetDisplay() string {
 func (x *RequestApproval) GetReason() string {
 	if x != nil {
 		return x.Reason
+	}
+	return ""
+}
+
+func (x *RequestApproval) GetKind() ApprovalKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ApprovalKind_APPROVAL_KIND_UNSPECIFIED
+}
+
+func (x *RequestApproval) GetInputJson() string {
+	if x != nil {
+		return x.InputJson
 	}
 	return ""
 }
@@ -4018,9 +4060,10 @@ func (x *WorkerEvent_LeaseRevoked) GetEpoch() uint64 {
 // provider waits as PROVIDER_FULL and a connection of a worker that may
 // run it is live. The control plane sends it only for a lease bound to
 // this connection whose session it finds idle (state IDLE; no input
-// pending or taken; no pending approval; no ended job whose notice is
-// not yet persisted; no background task recorded in this epoch; no
-// ledger merge or discard still to apply), and only while no Nudge
+// pending or taken; no pending TOOL approval, a pending question not
+// counting; no ended job whose notice is not yet persisted; no
+// background task recorded in this epoch; no ledger merge or discard
+// still to apply), and only while no Nudge
 // reason is pending for it (the holder acknowledges each reason as the
 // hint table says, JOB included). The holder checks again on its side
 // (no turn running, starting or still being reported; no input being
@@ -6119,7 +6162,7 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\x05Event\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.circus.v1.SessionEvent.KindR\x04kind\x12\x12\n" +
 	"\x04json\x18\x02 \x01(\tR\x04json\x12\x1c\n" +
-	"\tephemeral\x18\x03 \x01(\bR\tephemeral\"\xc7\x01\n" +
+	"\tephemeral\x18\x03 \x01(\bR\tephemeral\"\x93\x02\n" +
 	"\x0fRequestApproval\x12\x1e\n" +
 	"\vtool_use_id\x18\x01 \x01(\tR\ttoolUseId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x12\n" +
@@ -6127,7 +6170,10 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\x06device\x18\x04 \x01(\tR\x06device\x12\x1b\n" +
 	"\tmatch_key\x18\x05 \x01(\tR\bmatchKey\x12\x18\n" +
 	"\adisplay\x18\x06 \x01(\tR\adisplay\x12\x16\n" +
-	"\x06reason\x18\a \x01(\tR\x06reason\"w\n" +
+	"\x06reason\x18\a \x01(\tR\x06reason\x12+\n" +
+	"\x04kind\x18\b \x01(\x0e2\x17.circus.v1.ApprovalKindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"input_json\x18\t \x01(\tR\tinputJson\"w\n" +
 	"\fConsumeGrant\x12\x12\n" +
 	"\x04tool\x18\x01 \x01(\tR\x04tool\x12\x16\n" +
 	"\x06device\x18\x02 \x01(\tR\x06device\x12\x1b\n" +
@@ -6141,7 +6187,7 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\"\r\n" +
-	"\vListDevices\"\xde\x17\n" +
+	"\vListDevices\"\xef\x17\n" +
 	"\fSessionReply\x12,\n" +
 	"\x02ok\x18\x01 \x01(\v2\x1a.circus.v1.SessionReply.OkH\x00R\x02ok\x128\n" +
 	"\x06fenced\x18\x02 \x01(\v2\x1e.circus.v1.SessionReply.FencedH\x00R\x06fenced\x12>\n" +
@@ -6198,20 +6244,21 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\bnext_seq\x18\x02 \x01(\x04R\anextSeq\x12\x12\n" +
 	"\x04done\x18\x03 \x01(\bR\x04done\x1a,\n" +
 	"\x0eTranscriptKeys\x12\x1a\n" +
-	"\bsubpaths\x18\x01 \x03(\tR\bsubpaths\x1a\xd7\x02\n" +
+	"\bsubpaths\x18\x01 \x03(\tR\bsubpaths\x1a\xe8\x02\n" +
 	"\x06Inputs\x12<\n" +
-	"\x06inputs\x18\x01 \x03(\v2$.circus.v1.SessionReply.Inputs.InputR\x06inputs\x1a\x8e\x02\n" +
+	"\x06inputs\x18\x01 \x03(\v2$.circus.v1.SessionReply.Inputs.InputR\x06inputs\x1a\x9f\x02\n" +
 	"\x05Input\x12\x19\n" +
 	"\binput_id\x18\x01 \x01(\tR\ainputId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).circus.v1.SessionReply.Inputs.Input.KindR\x04kind\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x124\n" +
 	"\bpriority\x18\x04 \x01(\x0e2\x18.circus.v1.InputPriorityR\bpriority\x12\x12\n" +
-	"\x04note\x18\x05 \x01(\tR\x04note\"M\n" +
+	"\x04note\x18\x05 \x01(\tR\x04note\"^\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tKIND_USER\x10\x01\x12\x11\n" +
 	"\rKIND_APPROVAL\x10\x02\x12\r\n" +
-	"\tKIND_NOTE\x10\x03\x1a\x1f\n" +
+	"\tKIND_NOTE\x10\x03\x12\x0f\n" +
+	"\vKIND_ANSWER\x10\x04\x1a\x1f\n" +
 	"\x04Turn\x12\x17\n" +
 	"\aturn_no\x18\x01 \x01(\x04R\x06turnNo\x1aB\n" +
 	"\x11SessionStateReply\x12-\n" +
@@ -6363,10 +6410,11 @@ var file_circus_v1_worker_link_proto_goTypes = []any{
 	(*DeviceResult)(nil),                     // 85: circus.v1.DeviceResult
 	(TurnOrigin)(0),                          // 86: circus.v1.TurnOrigin
 	(TurnOutcome)(0),                         // 87: circus.v1.TurnOutcome
-	(JobEvent_State)(0),                      // 88: circus.v1.JobEvent.State
-	(SessionEvent_Kind)(0),                   // 89: circus.v1.SessionEvent.Kind
-	(*SessionConfig)(nil),                    // 90: circus.v1.SessionConfig
-	(InputPriority)(0),                       // 91: circus.v1.InputPriority
+	(ApprovalKind)(0),                        // 88: circus.v1.ApprovalKind
+	(JobEvent_State)(0),                      // 89: circus.v1.JobEvent.State
+	(SessionEvent_Kind)(0),                   // 90: circus.v1.SessionEvent.Kind
+	(*SessionConfig)(nil),                    // 91: circus.v1.SessionConfig
+	(InputPriority)(0),                       // 92: circus.v1.InputPriority
 }
 var file_circus_v1_worker_link_proto_depIdxs = []int32{
 	77,  // 0: circus.v1.WorkerUplink.hello:type_name -> circus.v1.Hello
@@ -6436,46 +6484,47 @@ var file_circus_v1_worker_link_proto_depIdxs = []int32{
 	55,  // 64: circus.v1.Recovery.calls:type_name -> circus.v1.SessionState.Call
 	53,  // 65: circus.v1.Recovery.lost_bgtasks:type_name -> circus.v1.PatchSessionState.BackgroundTask
 	57,  // 66: circus.v1.PublishEvents.events:type_name -> circus.v1.PublishEvents.Event
-	58,  // 67: circus.v1.ResumeLeases.leases:type_name -> circus.v1.ResumeLeases.Held
-	59,  // 68: circus.v1.SessionReply.ok:type_name -> circus.v1.SessionReply.Ok
-	60,  // 69: circus.v1.SessionReply.fenced:type_name -> circus.v1.SessionReply.Fenced
-	61,  // 70: circus.v1.SessionReply.rejected:type_name -> circus.v1.SessionReply.Rejected
-	62,  // 71: circus.v1.SessionReply.lease:type_name -> circus.v1.SessionReply.Lease
-	63,  // 72: circus.v1.SessionReply.transcript_page:type_name -> circus.v1.SessionReply.TranscriptPage
-	64,  // 73: circus.v1.SessionReply.transcript_keys:type_name -> circus.v1.SessionReply.TranscriptKeys
-	65,  // 74: circus.v1.SessionReply.inputs:type_name -> circus.v1.SessionReply.Inputs
-	66,  // 75: circus.v1.SessionReply.turn:type_name -> circus.v1.SessionReply.Turn
-	67,  // 76: circus.v1.SessionReply.state:type_name -> circus.v1.SessionReply.SessionStateReply
-	68,  // 77: circus.v1.SessionReply.approval:type_name -> circus.v1.SessionReply.Approval
-	69,  // 78: circus.v1.SessionReply.grant:type_name -> circus.v1.SessionReply.Grant
-	70,  // 79: circus.v1.SessionReply.devices:type_name -> circus.v1.SessionReply.Devices
-	72,  // 80: circus.v1.SessionReply.resumed:type_name -> circus.v1.SessionReply.Resumed
-	71,  // 81: circus.v1.SessionReply.launch_env:type_name -> circus.v1.SessionReply.LaunchEnv
-	1,   // 82: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
-	3,   // 83: circus.v1.WorkerEvent.Nudge.reasons:type_name -> circus.v1.WorkerEvent.Nudge.Reason
-	25,  // 84: circus.v1.ReportTurn.Persisted.jobs:type_name -> circus.v1.JobKey
-	25,  // 85: circus.v1.SessionState.Job.key:type_name -> circus.v1.JobKey
-	88,  // 86: circus.v1.SessionState.Job.state:type_name -> circus.v1.JobEvent.State
-	0,   // 87: circus.v1.SessionState.Call.outcome:type_name -> circus.v1.CallOutcome
-	1,   // 88: circus.v1.SessionState.Call.rejected_code:type_name -> circus.v1.CallUpdate.Rejected.Code
-	89,  // 89: circus.v1.PublishEvents.Event.kind:type_name -> circus.v1.SessionEvent.Kind
-	7,   // 90: circus.v1.SessionReply.Rejected.code:type_name -> circus.v1.SessionReply.Rejected.Code
-	28,  // 91: circus.v1.SessionReply.Lease.state:type_name -> circus.v1.SessionState
-	29,  // 92: circus.v1.SessionReply.Lease.recovery:type_name -> circus.v1.Recovery
-	90,  // 93: circus.v1.SessionReply.Lease.config:type_name -> circus.v1.SessionConfig
-	22,  // 94: circus.v1.SessionReply.TranscriptPage.entries:type_name -> circus.v1.TranscriptEntry
-	73,  // 95: circus.v1.SessionReply.Inputs.inputs:type_name -> circus.v1.SessionReply.Inputs.Input
-	28,  // 96: circus.v1.SessionReply.SessionStateReply.state:type_name -> circus.v1.SessionState
-	74,  // 97: circus.v1.SessionReply.Devices.devices:type_name -> circus.v1.SessionReply.Devices.Device
-	75,  // 98: circus.v1.SessionReply.LaunchEnv.env:type_name -> circus.v1.SessionReply.LaunchEnv.Var
-	76,  // 99: circus.v1.SessionReply.Resumed.leases:type_name -> circus.v1.SessionReply.Resumed.Outcome
-	8,   // 100: circus.v1.SessionReply.Inputs.Input.kind:type_name -> circus.v1.SessionReply.Inputs.Input.Kind
-	91,  // 101: circus.v1.SessionReply.Inputs.Input.priority:type_name -> circus.v1.InputPriority
-	102, // [102:102] is the sub-list for method output_type
-	102, // [102:102] is the sub-list for method input_type
-	102, // [102:102] is the sub-list for extension type_name
-	102, // [102:102] is the sub-list for extension extendee
-	0,   // [0:102] is the sub-list for field type_name
+	88,  // 67: circus.v1.RequestApproval.kind:type_name -> circus.v1.ApprovalKind
+	58,  // 68: circus.v1.ResumeLeases.leases:type_name -> circus.v1.ResumeLeases.Held
+	59,  // 69: circus.v1.SessionReply.ok:type_name -> circus.v1.SessionReply.Ok
+	60,  // 70: circus.v1.SessionReply.fenced:type_name -> circus.v1.SessionReply.Fenced
+	61,  // 71: circus.v1.SessionReply.rejected:type_name -> circus.v1.SessionReply.Rejected
+	62,  // 72: circus.v1.SessionReply.lease:type_name -> circus.v1.SessionReply.Lease
+	63,  // 73: circus.v1.SessionReply.transcript_page:type_name -> circus.v1.SessionReply.TranscriptPage
+	64,  // 74: circus.v1.SessionReply.transcript_keys:type_name -> circus.v1.SessionReply.TranscriptKeys
+	65,  // 75: circus.v1.SessionReply.inputs:type_name -> circus.v1.SessionReply.Inputs
+	66,  // 76: circus.v1.SessionReply.turn:type_name -> circus.v1.SessionReply.Turn
+	67,  // 77: circus.v1.SessionReply.state:type_name -> circus.v1.SessionReply.SessionStateReply
+	68,  // 78: circus.v1.SessionReply.approval:type_name -> circus.v1.SessionReply.Approval
+	69,  // 79: circus.v1.SessionReply.grant:type_name -> circus.v1.SessionReply.Grant
+	70,  // 80: circus.v1.SessionReply.devices:type_name -> circus.v1.SessionReply.Devices
+	72,  // 81: circus.v1.SessionReply.resumed:type_name -> circus.v1.SessionReply.Resumed
+	71,  // 82: circus.v1.SessionReply.launch_env:type_name -> circus.v1.SessionReply.LaunchEnv
+	1,   // 83: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
+	3,   // 84: circus.v1.WorkerEvent.Nudge.reasons:type_name -> circus.v1.WorkerEvent.Nudge.Reason
+	25,  // 85: circus.v1.ReportTurn.Persisted.jobs:type_name -> circus.v1.JobKey
+	25,  // 86: circus.v1.SessionState.Job.key:type_name -> circus.v1.JobKey
+	89,  // 87: circus.v1.SessionState.Job.state:type_name -> circus.v1.JobEvent.State
+	0,   // 88: circus.v1.SessionState.Call.outcome:type_name -> circus.v1.CallOutcome
+	1,   // 89: circus.v1.SessionState.Call.rejected_code:type_name -> circus.v1.CallUpdate.Rejected.Code
+	90,  // 90: circus.v1.PublishEvents.Event.kind:type_name -> circus.v1.SessionEvent.Kind
+	7,   // 91: circus.v1.SessionReply.Rejected.code:type_name -> circus.v1.SessionReply.Rejected.Code
+	28,  // 92: circus.v1.SessionReply.Lease.state:type_name -> circus.v1.SessionState
+	29,  // 93: circus.v1.SessionReply.Lease.recovery:type_name -> circus.v1.Recovery
+	91,  // 94: circus.v1.SessionReply.Lease.config:type_name -> circus.v1.SessionConfig
+	22,  // 95: circus.v1.SessionReply.TranscriptPage.entries:type_name -> circus.v1.TranscriptEntry
+	73,  // 96: circus.v1.SessionReply.Inputs.inputs:type_name -> circus.v1.SessionReply.Inputs.Input
+	28,  // 97: circus.v1.SessionReply.SessionStateReply.state:type_name -> circus.v1.SessionState
+	74,  // 98: circus.v1.SessionReply.Devices.devices:type_name -> circus.v1.SessionReply.Devices.Device
+	75,  // 99: circus.v1.SessionReply.LaunchEnv.env:type_name -> circus.v1.SessionReply.LaunchEnv.Var
+	76,  // 100: circus.v1.SessionReply.Resumed.leases:type_name -> circus.v1.SessionReply.Resumed.Outcome
+	8,   // 101: circus.v1.SessionReply.Inputs.Input.kind:type_name -> circus.v1.SessionReply.Inputs.Input.Kind
+	92,  // 102: circus.v1.SessionReply.Inputs.Input.priority:type_name -> circus.v1.InputPriority
+	103, // [103:103] is the sub-list for method output_type
+	103, // [103:103] is the sub-list for method input_type
+	103, // [103:103] is the sub-list for extension type_name
+	103, // [103:103] is the sub-list for extension extendee
+	0,   // [0:103] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_worker_link_proto_init() }

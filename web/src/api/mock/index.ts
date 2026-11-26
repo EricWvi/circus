@@ -44,7 +44,8 @@ function save(state: MockState) {
  * that mentions a "ledger" or "decision" makes the agent add a new
  * decision to the session's Ledger snapshot, and one that mentions a
  * "discard" discards its open changes as an integrator would (see
- * `session-ledger.ts`).
+ * `session-ledger.ts`); one that mentions a "question" makes the agent ask
+ * AskUserQuestion questions (see `sessions.ts`).
  */
 export function startMockBackend(): MockBackend {
   const url = new URL(window.location.href)

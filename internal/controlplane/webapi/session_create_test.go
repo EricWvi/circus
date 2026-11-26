@@ -108,7 +108,7 @@ func TestCreateSessionConflicts(t *testing.T) {
 		{"location", func(r *circusv1.CreateSessionRequest) { r.LocationIndex = new(uint32(0)) }},
 		{"out of range location", func(r *circusv1.CreateSessionRequest) { r.LocationIndex = new(uint32(99)) }},
 		{"model", func(r *circusv1.CreateSessionRequest) { r.Config.Model = "sonnet" }},
-		{"permission mode", func(r *circusv1.CreateSessionRequest) { r.Config.PermissionMode = "plan" }},
+		{"permission mode", func(r *circusv1.CreateSessionRequest) { r.Config.PermissionMode = "default" }},
 		{"worker", func(r *circusv1.CreateSessionRequest) { r.PinnedWorkerId = new("unknown") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

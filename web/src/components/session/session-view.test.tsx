@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { Profiler } from "react"
 import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -79,7 +79,8 @@ function scriptedStream() {
   }
   return { control, watchSession }
 }
-const composer = () => screen.getByRole<HTMLTextAreaElement>("textbox")
+// A question card has text fields of its own.
+const composer = () => document.querySelector("textarea")!
 async function type(text: string) {
   fireEvent.change(composer(), { target: { value: text } })
   fireEvent.click(screen.getByRole("button", { name: "Submit" }))
@@ -254,6 +255,230 @@ describe("approvals", () => {
     expect(screen.queryByRole("button", { name: "Approve" })).toBeNull()
     // The retried call ran.
     expect(screen.getByText(/Pushed\. The branch is on the remote now\./)).toBeTruthy()
+  })
+})
+
+describe("questions", () => {
+  const resolvedBy = (resolved: unknown[]) =>
+    withSessions((mock) => ({
+      resolveApproval: (req) => {
+        resolved.push(req)
+        return mock.resolveApproval(req)
+      },
+    }))
+  const card = () => screen.getByRole("region", { name: "Claude has 2 questions" })
+
+  it("asks, takes the answers to the server, and shows them", async () => {
+    const resolved: unknown[] = []
+    await renderSession("/p/circus/s/web-vite", { wrapClient: resolvedBy(resolved) })
+    await type("Ask me a question first")
+    await advance(5_000)
+    expect(screen.getByText("Needs an answer")).toBeTruthy()
+    const form = within(card())
+    const submit = form.getByRole("button", { name: "Send answers" })
+    expect(submit).toHaveProperty("disabled", true)
+    fireEvent.click(form.getByRole("radio", { name: /^Tabs/ }))
+    // The chosen option's preview shows.
+    expect(form.getByLabelText("Preview of Tabs").textContent).toContain("General")
+    fireEvent.click(form.getByRole("checkbox", { name: /^Unit tests/ }))
+    fireEvent.click(form.getByRole("checkbox", { name: /^Lint/ }))
+    fireEvent.change(form.getByRole("textbox", { name: "Your own answer to: Which checks should run before merging?" }), {
+      target: { value: "and e2e" },
+    })
+    expect(submit).toHaveProperty("disabled", false)
+    fireEvent.click(submit)
+    await advance(5_000)
+    expect(resolved).toEqual([
+      {
+        approvalId: expect.any(String),
+        approve: true,
+        answers: [
+          { question: "Which layout should the settings page use?", selected: ["Tabs"], other: "" },
+          { question: "Which checks should run before merging?", selected: ["Unit tests", "Lint"], other: "and e2e" },
+        ],
+      },
+    ])
+    const summary = within(card())
+    expect(summary.getByText("Answered")).toBeTruthy()
+    expect(summary.getByText("Unit tests, Lint, and e2e")).toBeTruthy()
+    expect(summary.queryByRole("button")).toBeNull()
+    // The answers went to Claude as the user's message, which started its turn.
+    const answer = within(screen.getByRole("group", { name: "Your answer" }))
+    expect(answer.getByText("Tabs")).toBeTruthy()
+    expect(screen.getByText(/Thanks, I'll go with your answers\./)).toBeTruthy()
+    expect(screen.queryByText("Needs an answer")).toBeNull()
+  })
+
+  it("dismisses the questions", async () => {
+    const resolved: unknown[] = []
+    await renderSession("/p/circus/s/web-vite", { wrapClient: resolvedBy(resolved) })
+    await type("Any question?")
+    await advance(5_000)
+    fireEvent.click(within(card()).getByRole("button", { name: "Dismiss" }))
+    await advance(1_000)
+    expect(resolved).toEqual([{ approvalId: expect.any(String), approve: false }])
+    expect(within(card()).getByText("Dismissed")).toBeTruthy()
+    expect(screen.queryByRole("group", { name: "Your answer" })).toBeNull()
+  })
+
+  it("replaces a question still pending with a newer one", async () => {
+    await renderSession("/p/circus/s/web-vite")
+    await type("A question")
+    await advance(5_000)
+    await type("Another question")
+    await advance(5_000)
+    const cards = screen.getAllByRole("region", { name: "Claude has 2 questions" })
+    expect(cards.map((c) => c.getAttribute("data-question"))).toEqual(["superseded", "pending"])
+    expect(within(cards[0]).getByText("Replaced by a newer question")).toBeTruthy()
+  })
+
+  it("stays disabled while its answers are on their way, and comes back when they fail", async () => {
+    const calls: unknown[] = []
+    let fail = true
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions((mock) => ({
+        resolveApproval: async (req) => {
+          calls.push(req)
+          // The first call fails after a while; the server never got it.
+          await new Promise((resolve) => setTimeout(resolve, 1_000))
+          if (fail) throw new ApiError("unavailable", "The server is unreachable.")
+          return mock.resolveApproval(req)
+        },
+      })),
+    })
+    await type("A question")
+    await advance(5_000)
+    const form = within(card())
+    fireEvent.click(form.getByRole("radio", { name: /^Tabs/ }))
+    fireEvent.click(form.getByRole("checkbox", { name: /^Lint/ }))
+    fireEvent.click(form.getByRole("button", { name: "Send answers" }))
+    await advance(100)
+    // A second answer, or a dismissal, can't follow the first one.
+    expect(form.getByRole("button", { name: "Send answers" })).toHaveProperty("disabled", true)
+    expect(form.getByRole("button", { name: "Dismiss" })).toHaveProperty("disabled", true)
+    expect(form.getByRole("radio", { name: /^Sidebar/ })).toHaveProperty("disabled", true)
+    fireEvent.click(form.getByRole("button", { name: "Dismiss" }))
+    expect(calls).toHaveLength(1)
+    await advance(1_000)
+    expect(screen.getByRole("alert").textContent).toBe("Can't reach the server. Try again.")
+    expect(form.getByRole("button", { name: "Send answers" })).toHaveProperty("disabled", false)
+
+    fail = false
+    fireEvent.click(form.getByRole("button", { name: "Send answers" }))
+    await advance(500)
+    // Sent: still disabled until the stream says it was answered.
+    expect(form.getByRole("button", { name: "Send answers" })).toHaveProperty("disabled", true)
+    await advance(5_000)
+    expect(card().getAttribute("data-question")).toBe("answered")
+    expect(calls).toHaveLength(2)
+  })
+})
+
+describe("recorded questions", () => {
+  const ask = fakeWorkerEvents("ask")
+  const pendingAt = ask.findIndex((e) => e.kind === "approval_pending")
+  const waiting = { serverState: "running", state: "awaiting_approval", pendingApprovalCount: 1, turnCount: 1 } as const
+
+  it("shows a pending question in the header, not Working… under the card", async () => {
+    await renderRecorded("ask", { upTo: pendingAt + 1, startMs: Date.now(), session: waiting })
+    expect(screen.getByText("Needs an answer")).toBeTruthy()
+    expect(screen.queryByText("Working…")).toBeNull()
+    expect(screen.getByRole("radio", { name: /^Red/ })).toBeTruthy()
+  })
+
+  it("can't be answered once the session is stopped", async () => {
+    const resolved = ask.findIndex((e) => e.kind === "approval_resolved")
+    await renderRecorded("ask", { upTo: resolved, session: { serverState: "stopped", state: "stopped" } })
+    const form = within(screen.getByRole("region", { name: "Claude has 2 questions" }))
+    expect(form.getByRole("button", { name: "Dismiss" })).toHaveProperty("disabled", true)
+    expect(form.getByRole("radio", { name: /^Red/ })).toHaveProperty("disabled", true)
+  })
+
+  /** A tool approval and then a question pending together, the approval requested at `approvalAtMs`. */
+  async function renderBoth(approvalAtMs: number, resolveApproval?: SessionService["resolveApproval"]) {
+    const approve = fakeWorkerEvents("approve", approvalAtMs)
+    const tool = approve.slice(0, approve.findIndex((e) => e.kind === "approval_pending") + 1)
+    const offset = tool.at(-1)!.seq
+    const question = fakeWorkerEvents("ask", Date.now())
+      .slice(3, pendingAt + 1)
+      // Both scenarios number their tool use alike: the question's gets an id of its own.
+      .map((e) => ({ ...e, payloadJson: e.payloadJson.replaceAll(/toolu_[0-9a-f-]+/g, "toolu_question") }))
+      .map((e) => (e.seq > 0 ? { ...e, seq: e.seq + offset } : e))
+    const events = [...tool, ...question]
+    await renderSession("/p/circus/s/web-vite", {
+      wrapClient: withSessions((mock) => ({
+        watchSession: ({ signal }) => replayStream(events, signal),
+        getSession: async (req) => ({ ...(await mock.getSession(req)), ...waiting, pendingApprovalCount: 2 }),
+        ...(resolveApproval ? { resolveApproval } : {}),
+      })),
+    })
+  }
+
+  /** Resolves approvals as `outcome` says for each call, after `ms`, recording the calls. */
+  function resolver(outcome: (req: { approve: boolean; answers?: unknown[] }) => { ms: number; error?: ApiError }) {
+    const calls: string[] = []
+    const resolve: SessionService["resolveApproval"] = async (req) => {
+      calls.push(req.answers ? "answers" : `decide:${req.approve}`)
+      const { ms, error } = outcome(req)
+      await new Promise((done) => setTimeout(done, ms))
+      if (error) throw error
+    }
+    return { calls, resolve }
+  }
+  const unreachable = new ApiError("unavailable", "The server is unreachable.")
+  const stale = new ApiError("failed_precondition", "The approval expired.")
+  const answerAndDeny = async () => {
+    const form = within(screen.getByRole("region", { name: "Claude has 2 questions" }))
+    fireEvent.click(form.getByRole("radio", { name: /^Blue/ }))
+    fireEvent.click(form.getByRole("checkbox", { name: /^Export/ }))
+    return form
+  }
+
+  it("shows a failure of the answers and takes the card back, though a tool decision came in between", async () => {
+    const { calls, resolve } = resolver((req) => (req.answers ? { ms: 1_000, error: unreachable } : { ms: 0 }))
+    await renderBoth(Date.now(), resolve)
+    const form = await answerAndDeny()
+    fireEvent.click(form.getByRole("button", { name: "Send answers" }))
+    await advance(100)
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }))
+    await advance(3_000)
+    expect(calls).toEqual(["answers", "decide:false"])
+    expect(screen.getByText("Can't reach the server. Try again.")).toBeTruthy()
+    expect(form.getByRole("button", { name: "Send answers" })).toHaveProperty("disabled", false)
+  })
+
+  it("says a question no longer waits when the server refuses its answers as stale", async () => {
+    const { resolve } = resolver(() => ({ ms: 0, error: stale }))
+    await renderBoth(Date.now(), resolve)
+    const form = await answerAndDeny()
+    fireEvent.click(form.getByRole("button", { name: "Send answers" }))
+    await advance(100)
+    expect(screen.getByText("This question no longer waits for an answer.")).toBeTruthy()
+    expect(form.getByRole("button", { name: "Send answers" })).toHaveProperty("disabled", false)
+  })
+
+  it("shows a failure of a tool decision, though answers were sent after it", async () => {
+    const { calls, resolve } = resolver((req) => (req.answers ? { ms: 0 } : { ms: 1_000, error: stale }))
+    await renderBoth(Date.now(), resolve)
+    const form = await answerAndDeny()
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }))
+    await advance(100)
+    fireEvent.click(form.getByRole("button", { name: "Send answers" }))
+    await advance(3_000)
+    expect(calls).toEqual(["decide:false", "answers"])
+    expect(screen.getByText("That no longer applies; the session moved on.")).toBeTruthy()
+    // The answers went through: their card waits for the stream to say so.
+    expect(form.getByRole("button", { name: "Send answers" })).toHaveProperty("disabled", true)
+  })
+
+  it("says it needs approval while a tool approval waits beside a question", async () => {
+    await renderBoth(Date.now())
+    expect(screen.getByText("Needs approval")).toBeTruthy()
+  })
+
+  it("says it needs an answer once the tool approval beside the question lapsed", async () => {
+    await renderBoth(Date.now() - 16 * 60_000)
+    expect(screen.getByText("Needs an answer")).toBeTruthy()
   })
 })
 

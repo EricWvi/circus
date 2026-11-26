@@ -1,6 +1,7 @@
 import { BinaryWriter, WireType } from "@bufbuild/protobuf/wire"
 import { Code, ConnectError, createRouterTransport, type ServiceImpl } from "@connectrpc/connect"
 import {
+  ApprovalKind,
   InputPriority,
   QueueReason,
   SessionEvent_Kind,
@@ -316,6 +317,15 @@ describe("the Connect session client", () => {
             reason: "needs a remote",
             expiresAtUnixMs: 9_000n,
           },
+          {
+            approvalId: "a2",
+            sessionId: "s1",
+            toolUseId: "t2",
+            tool: "AskUserQuestion",
+            display: "Which color?",
+            kind: ApprovalKind.QUESTION,
+            inputJson: '{"questions":[]}',
+          },
         ],
       }),
     })
@@ -329,7 +339,46 @@ describe("the Connect session client", () => {
         display: "git push",
         reason: "needs a remote",
         expiresAtUnixMs: 9_000,
+        // An unspecified kind is a tool approval.
+        kind: "tool",
+        inputJson: "",
       },
+      {
+        approvalId: "a2",
+        sessionId: "s1",
+        toolUseId: "t2",
+        tool: "AskUserQuestion",
+        device: "",
+        display: "Which color?",
+        reason: "",
+        expiresAtUnixMs: 0,
+        kind: "question",
+        inputJson: '{"questions":[]}',
+      },
+    ])
+  })
+
+  it("resolves approvals, with a question's answers", async () => {
+    const seen: { approvalId: string; approve: boolean; answers: { question: string; selected: string[]; other: string }[] }[] = []
+    const client = sessions({
+      resolveApproval: (req) => {
+        seen.push({
+          approvalId: req.approvalId,
+          approve: req.approve,
+          answers: req.answers.map((a) => ({ question: a.question, selected: [...a.selected], other: a.other })),
+        })
+        return {}
+      },
+    })
+    await client.resolveApproval({ approvalId: "a1", approve: true })
+    await client.resolveApproval({
+      approvalId: "a2",
+      approve: true,
+      answers: [{ question: "Which color?", selected: ["Red"], other: "" }],
+    })
+    expect(seen).toEqual([
+      { approvalId: "a1", approve: true, answers: [] },
+      { approvalId: "a2", approve: true, answers: [{ question: "Which color?", selected: ["Red"], other: "" }] },
     ])
   })
 

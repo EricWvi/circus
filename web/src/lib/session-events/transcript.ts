@@ -9,11 +9,13 @@ import type { RawSessionEvent, WorkspaceStatus } from "@/api/types"
 import { queueReasonFromPayload, type LiveQueueReason } from "@/lib/queue-reason"
 import { workerDisconnectedAtFromPayload, type LiveWorkerLink } from "@/lib/worker-link"
 import { workspaceFromPayload, type LiveWorkspace } from "@/lib/workspace"
+import { ASK_USER_QUESTION, parseAnswers, parseQuestions } from "@/lib/questions"
 
 import { settleEvents, type SettleReason } from "../settle"
 import type {
   AssistantTextEvent,
   NoteKind,
+  QuestionEvent,
   ReasoningEvent,
   SessionEvent,
   ToolCallEvent,
@@ -58,8 +60,14 @@ interface Internal {
    * ends the run; a live-only one, which a reload does not replay, does not.
    */
   notesBefore: string[]
-  /** Approval id → the tool call's event id. */
+  /** Approval id → the tool call's or question's event id. */
   approvals: Map<string, string>
+  /**
+   * The answer input id of each answered question (APPROVAL_RESOLVED's
+   * `input_id`) → the question's event id: the answer message, pushed
+   * under that id, shows that question's answers.
+   */
+  answerInputs: Map<string, string>
   /**
    * API message id → its durable blocks seen so far, not counting
    * truncated ones: a replay can't tell which message a truncated block
@@ -110,6 +118,7 @@ export const emptyTranscript: Transcript = {
     inputs: new Map(),
     notesBefore: [],
     approvals: new Map(),
+    answerInputs: new Map(),
     blocks: new Map(),
     skipped: new Map(),
     denied: new Set(),
@@ -284,6 +293,7 @@ class Builder {
       inputs: new Map(i.inputs),
       notesBefore: i.notesBefore,
       approvals: new Map(i.approvals),
+      answerInputs: new Map(i.answerInputs),
       blocks: new Map(i.blocks),
       skipped: new Map(i.skipped),
       denied: new Set(i.denied),
@@ -391,7 +401,10 @@ class Builder {
       if (e.kind === "reasoning" && e.streaming) return { ...e, streaming: false }
       return e
     })
-    settleEvents(marked, reason).forEach((e, i) => {
+    settleEvents(marked, reason).forEach((settled, i) => {
+      // A question the turn ended under without asking the user won't reach them now.
+      const e: SessionEvent =
+        settled.kind === "question" && settled.status === "asked" ? { ...settled, status: "not_sent" } : settled
       if (e !== events[i]) this.put(e)
     })
     this.internal.streaming = null
@@ -504,7 +517,7 @@ class Builder {
     const { order } = this.internal
     for (let i = order.length - 1; i >= 0; i--) {
       const e = this.get(order[i])!
-      if (e.kind === "user_message") break
+      if (e.kind === "user_message" || e.kind === "question_answer") break
       if (e.kind !== "assistant_text" || e.streaming) continue
       if (result !== "" && e.text.trim() === result) {
         textId = e.id
@@ -664,6 +677,7 @@ class Builder {
     if (hiddenNotes.has(note)) return
     const uuid = str(p.uuid)
     if (!uuid && seq <= 0) return
+    if (note === "question_answer") return this.questionAnswer(uuid, seq, at, content)
     const id = uuid ? `note:${uuid}` : `note:${seq}`
     this.add({
       kind: "note",
@@ -704,11 +718,31 @@ class Builder {
     this.changed = true
   }
 
+  /**
+   * The message that took the user's answers to the agent, pushed under the
+   * answer input's id (`uuid`). It shows the answers of the question that
+   * input answered; without one in the view, the message's text.
+   */
+  private questionAnswer(uuid: string, seq: number, at: string, content: unknown) {
+    const id = uuid ? `answer:${uuid}` : `answer:${seq}`
+    if (this.get(id)) return
+    const questionId = uuid ? this.internal.answerInputs.get(uuid) : undefined
+    const question = questionId ? this.get(questionId) : undefined
+    const answers = question?.kind === "question" && question.answers ? question.answers : null
+    this.add({ kind: "question_answer", id, at, answers, text: contentText(content) })
+  }
+
   /** `stopped`: the ids of the calls the user stopped, from the message's `tool_result_meta`. */
   private toolResult(block: Json, stopped: ReadonlySet<string>) {
     const toolUseId = str(block.tool_use_id)
     const id = toolEventId(toolUseId)
     const event = this.get(id)
+    if (event?.kind === "question") {
+      // The worker denied the call and told Claude the questions went to
+      // the user; the card says it. Kept for a question that never got there.
+      if (event.status === "asked") this.put({ ...event, agentText: contentText(block.content) })
+      return
+    }
     if (event?.kind !== "tool_call") return
     // The permission system's rejection is for the agent; the approval says it.
     if (this.internal.denied.has(id)) return
@@ -794,7 +828,23 @@ class Builder {
         case "tool_use": {
           if (streamed) this.remove(new Set([blockId]))
           const id = toolEventId(str(block.id))
-          if (this.get(id)) break
+          const questions = block.name === ASK_USER_QUESTION ? parseQuestions(block.input) : null
+          const existing = this.get(id)
+          if (existing) {
+            // A question whose request came first, without its questions.
+            if (existing.kind === "question" && existing.questions.length === 0 && questions) {
+              this.put({ ...existing, questions })
+            }
+            // A tool call whose approval came first: the card had only the request's display.
+            if (existing.kind === "tool_call" && isObject(block.input)) {
+              this.put({ ...existing, tool: str(block.name) || existing.tool, input: block.input })
+            }
+            break
+          }
+          if (questions) {
+            this.add({ kind: "question", id, at, questions, status: "asked" })
+            break
+          }
           this.add({
             kind: "tool_call",
             id,
@@ -824,6 +874,7 @@ class Builder {
     if (!approvalId) return
     const toolUseId = str(p.tool_use_id)
     const id = toolEventId(toolUseId || approvalId)
+    if (p.kind === "question") return this.questionPending(p, id, approvalId, at)
     const approval = { approvalId, reason: str(p.reason), display: str(p.display), requestedAtUnixMs: ts }
     const event = this.get(id)
     this.internal.approvals.set(approvalId, id)
@@ -831,6 +882,19 @@ class Builder {
     if (event?.kind === "tool_call") {
       if (event.approval?.decision) return
       this.put({ ...event, status: "awaiting_approval", error: undefined, approval })
+      return
+    }
+    if (event?.kind === "question") {
+      // An AskUserQuestion call the permission mode asks about: a tool approval like any other.
+      this.put({
+        kind: "tool_call",
+        id,
+        at: event.at,
+        tool: str(p.tool),
+        input: { questions: event.questions },
+        status: "awaiting_approval",
+        approval,
+      })
       return
     }
     // The tool use itself isn't in the view (it was dropped as too large).
@@ -845,9 +909,39 @@ class Builder {
     })
   }
 
+  /**
+   * A question reached the user. Its card shows the questions of the tool
+   * use (an asked card always has them), else of the request's
+   * `input_json`; a card without them (neither could be read) is filled in
+   * by a tool use that comes later, and can only be dismissed until then.
+   */
+  private questionPending(p: Json, id: string, approvalId: string, at: string) {
+    this.internal.approvals.set(approvalId, id)
+    const event = this.get(id)
+    if (event?.kind === "question") {
+      if (event.status !== "asked" && event.status !== "not_sent") return
+      this.put({ ...event, status: "pending", approvalId, agentText: undefined })
+      return
+    }
+    const questions = parseQuestions(p.input_json) ?? []
+    const question: QuestionEvent = { kind: "question", id, at, questions, status: "pending", approvalId }
+    if (event) this.put({ ...question, at: event.at })
+    else this.add(question)
+  }
+
   private approvalResolved(p: Json) {
     const id = this.internal.approvals.get(str(p.approval_id))
     const event = id ? this.get(id) : undefined
+    if (event?.kind === "question") {
+      if (p.state === "answered") {
+        this.put({ ...event, status: "answered", answers: parseAnswers(p.answers) })
+        const inputId = str(p.input_id)
+        if (inputId) this.internal.answerInputs.set(inputId, event.id)
+      } else if (p.state === "dismissed" || p.state === "superseded" || p.state === "expired") {
+        this.put({ ...event, status: p.state })
+      }
+      return
+    }
     if (event?.kind !== "tool_call" || !event.approval) return
     const state = p.state
     if (state !== "approved" && state !== "denied" && state !== "expired") return

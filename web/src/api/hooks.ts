@@ -21,6 +21,7 @@ import { useClient } from "./context"
 import { ApiError, isApiError, isLedgerBusy } from "./errors"
 import { announceAuthChange, queryKeys, resetAuth, type CachedAuth } from "./query-client"
 import type {
+  ApprovalAnswer,
   CreateSessionRequest,
   Device,
   DirectoryListing,
@@ -382,8 +383,8 @@ export function useRetryWorkspace() {
 export function useResolveApproval() {
   const client = useClient()
   return useSessionAction(
-    (req: { sessionId: string; approvalId: string; approve: boolean }) =>
-      client.sessions.resolveApproval({ approvalId: req.approvalId, approve: req.approve }),
+    (req: { sessionId: string; approvalId: string; approve: boolean; answers?: ApprovalAnswer[] }) =>
+      client.sessions.resolveApproval({ approvalId: req.approvalId, approve: req.approve, answers: req.answers }),
     (r) => r.sessionId,
   )
 }

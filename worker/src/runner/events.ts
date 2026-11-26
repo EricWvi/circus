@@ -13,15 +13,12 @@ export { Kind };
 /** circus_note kinds of messages the worker writes for the model (docs/wire.md). */
 export type NoteKind = "approval_retry" | "user_interrupt" | "previous_turn_interrupted" | "lost_bgtask" | "history_missing";
 
+/** circus_note of the user's answers to a question (a KIND_ANSWER input), pushed as an ordinary user message. */
+export const QUESTION_ANSWER_NOTE = "question_answer";
+
 export type TurnOriginName = "input" | "notification" | "cli";
 
 export const turnStartedPayload = (turnNo: bigint, origin: TurnOriginName) => ({ turn_no: turnNo.toString(), origin });
-
-export const approvalPendingPayload = (a: {
-  approvalId: string; tool: string; device: string; toolUseId: string; display: string; reason: string;
-}) => ({
-  approval_id: a.approvalId, tool: a.tool, device: a.device, tool_use_id: a.toolUseId, display: a.display, reason: a.reason,
-});
 
 export const errorPayload = (message: string) => ({ message });
 

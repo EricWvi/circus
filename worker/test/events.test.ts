@@ -3,7 +3,7 @@ import { SessionEvent_Kind as Kind } from "@circus/proto/circus/v1/session_pb";
 import { SessionReply_Rejected_Code as Code } from "@circus/proto/circus/v1/worker_link_pb";
 import { describe, expect, test } from "vitest";
 import {
-  EventPublisher, MAX_BATCH_EVENTS, approvalPendingPayload, errorPayload, gapDetectedPayload, lostTaskPayload, sdkEvent,
+  EventPublisher, MAX_BATCH_EVENTS, errorPayload, gapDetectedPayload, lostTaskPayload, sdkEvent,
   turnStartedPayload, userMessagePayload,
 } from "../src/runner/events.js";
 import { Semaphore, SessionOps } from "../src/runner/ops.js";
@@ -31,9 +31,6 @@ describe("event payloads equal the Go fake worker's", () => {
   const built: Record<string, [Kind, object]> = {
     turn_started: [Kind.TURN_STARTED, turnStartedPayload(18446744073709551615n, "input")],
     turn_started_cli: [Kind.TURN_STARTED, turnStartedPayload(2n, "cli")],
-    approval_pending: [Kind.APPROVAL_PENDING, approvalPendingPayload({
-      approvalId: EVENT, tool: "Bash", device: "box", toolUseId: "toolu_fake", display: "echo hi", reason: "Scripted Bash approval required",
-    })],
     error: [Kind.ERROR, errorPayload("scripted worker error")],
     gap_detected: [Kind.TRANSCRIPT_GAP_DETECTED, gapDetectedPayload("", [EVENT, INPUT])],
     lost_task: [Kind.BGTASK_ENDED, lostTaskPayload(SESSION, EVENT, { taskId: "task-1", toolUseId: "toolu_fake" }, "Background task task-1 was lost.")],
@@ -47,6 +44,8 @@ describe("event payloads equal the Go fake worker's", () => {
     // A control-plane note (a KIND_NOTE input) keeps its category; a ledger
     // note is not synthetic.
     note_ledger_problems: [Kind.USER, userMessagePayload(SESSION, INPUT, "[circus ledger] The ledger collection found problems.", "ledger_problems", STAMP, false)],
+    // The user's answers are not synthetic either.
+    note_question_answer: [Kind.USER, userMessagePayload(SESSION, INPUT, 'The user answered your questions: "Which color?"="Red". Continue with these answers in mind.', "question_answer", STAMP, false)],
     // Held notes, published each with its own event before the input whose message carried them.
     note_ledger_merged: [Kind.USER, userMessagePayload(SESSION, EVENT, "[circus ledger] Your ledger changes were merged.", "ledger_merged", STAMP, false)],
     note_ledger_discarded: [Kind.USER, userMessagePayload(SESSION, EVENT, "[circus ledger] Your ledger changes were discarded.", "ledger_discarded", STAMP, false)],

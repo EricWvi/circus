@@ -6,6 +6,7 @@ import { applyEvents, emptyTranscript } from "@/lib/session-events/transcript"
 import { fakeWorkerEvents, type Scenario } from "@/test/fake-worker-events"
 
 import { createMockBackend } from "./backend"
+import { answerText, MOCK_QUESTIONS } from "./sessions"
 import { addWorkerDemo, SEED_OWNER_ID, seedState, type MockState } from "./state"
 
 function mock(state: MockState = seedState()) {
@@ -104,6 +105,94 @@ describe("mock sessions", () => {
     expect(tools.at(-2)).toMatchObject({ approval: { decision: "approved" } })
     expect(tools.at(-1)).toMatchObject({ status: "completed", input: { command: "git push -u origin HEAD" } })
     expect((await client.sessions.getSession({ sessionId: "web-vite" })).state).toBe("idle")
+  })
+
+  it("asks questions, refuses answers that don't fit them, and takes the answers to the model", async () => {
+    const { client } = mock()
+    await client.sessions.sendMessage({ sessionId: "web-vite", clientMsgId: "c", text: "a question first" })
+    await watchUntil(client, "web-vite", has("result", 2))
+    const [approval] = await client.sessions.listApprovals({ sessionId: "web-vite" })
+    expect(approval).toMatchObject({ kind: "question", tool: "AskUserQuestion", device: "", expiresAtUnixMs: 0 })
+    expect(JSON.parse(approval.inputJson)).toEqual(MOCK_QUESTIONS)
+    expect((await client.sessions.getSession({ sessionId: "web-vite" })).pendingApprovalCount).toBe(1)
+
+    const [layout, checks] = MOCK_QUESTIONS.questions
+    const resolve = (answers: { question: string; selected: string[]; other: string }[]) =>
+      client.sessions.resolveApproval({ approvalId: approval.approvalId, approve: true, answers })
+    const invalid = { code: "invalid_argument", field: "answers" }
+    await expect(resolve([{ question: layout.question, selected: ["Tabs"], other: "" }])).rejects.toMatchObject(invalid)
+    await expect(
+      resolve([
+        { question: layout.question, selected: ["Tabs", "Sidebar"], other: "" },
+        { question: checks.question, selected: ["Lint"], other: "" },
+      ]),
+    ).rejects.toMatchObject(invalid)
+    await expect(
+      resolve([
+        { question: layout.question, selected: [], other: "" },
+        { question: checks.question, selected: ["Lint"], other: "" },
+      ]),
+    ).rejects.toMatchObject(invalid)
+
+    // The user's own text is at most 4 KiB in UTF-8.
+    await expect(
+      resolve([
+        { question: layout.question, selected: [], other: "答".repeat(1366) },
+        { question: checks.question, selected: ["Lint"], other: "" },
+      ]),
+    ).rejects.toMatchObject(invalid)
+
+    const answers = [
+      { question: layout.question, selected: [], other: "Accordion" },
+      { question: checks.question, selected: ["Unit tests", "Lint"], other: "" },
+    ]
+    await resolve(answers)
+    const events = await watchUntil(client, "web-vite", has("result", 3))
+    const t = view(events)
+    expect(t.events.find((e) => e.kind === "question")).toMatchObject({ status: "answered", answers })
+    expect(t.events.find((e) => e.kind === "question_answer")).toMatchObject({ answers, text: answerText(answers) })
+    expect((await client.sessions.getSession({ sessionId: "web-vite" })).pendingApprovalCount).toBe(0)
+  })
+
+  it("dismisses a question without a turn, and supersedes a pending one with a newer one", async () => {
+    const { client } = mock()
+    await client.sessions.sendMessage({ sessionId: "web-vite", clientMsgId: "c1", text: "question one" })
+    await watchUntil(client, "web-vite", has("result", 2))
+    await client.sessions.sendMessage({ sessionId: "web-vite", clientMsgId: "c2", text: "question two" })
+    const events = await watchUntil(client, "web-vite", has("result", 3))
+    const questions = view(events).events.filter((e) => e.kind === "question")
+    expect(questions.map((q) => q.status)).toEqual(["superseded", "pending"])
+    const [approval] = await client.sessions.listApprovals({ sessionId: "web-vite" })
+    await client.sessions.resolveApproval({ approvalId: approval.approvalId, approve: false })
+    const after = await watchUntil(client, "web-vite", has("approval_resolved", 2))
+    expect(view(after).events.filter((e) => e.kind === "question").map((q) => q.status)).toEqual(["superseded", "dismissed"])
+    expect(after.filter((e) => e.kind === "result")).toHaveLength(3)
+    expect((await client.sessions.getSession({ sessionId: "web-vite" })).state).toBe("idle")
+  })
+
+  it("ends a pending question when the session stops, and refuses its answers afterwards", async () => {
+    const { client } = mock()
+    await client.sessions.sendMessage({ sessionId: "web-vite", clientMsgId: "c", text: "a question" })
+    await watchUntil(client, "web-vite", has("result", 2))
+    const [approval] = await client.sessions.listApprovals({ sessionId: "web-vite" })
+    await client.sessions.stopSession({ sessionId: "web-vite" })
+    const events = await watchUntil(client, "web-vite", has("session_state"))
+    const kinds = events.map((e) => e.kind)
+    expect(kinds.indexOf("approval_resolved")).toBeLessThan(kinds.indexOf("session_state"))
+    expect(view(events).events.find((e) => e.kind === "question")).toMatchObject({ status: "expired" })
+    const [layout, checks] = MOCK_QUESTIONS.questions
+    await expect(
+      client.sessions.resolveApproval({
+        approvalId: approval.approvalId,
+        approve: true,
+        answers: [
+          { question: layout.question, selected: ["Tabs"], other: "" },
+          { question: checks.question, selected: ["Lint"], other: "" },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "failed_precondition" })
+    // Dismissing it again changes nothing either, without an error.
+    await client.sessions.resolveApproval({ approvalId: approval.approvalId, approve: false })
   })
 
   it("publishes the real worker's event order and shapes", async () => {

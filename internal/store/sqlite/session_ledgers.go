@@ -294,7 +294,7 @@ func (o *ops) CountNotesSinceUserInput(ctx context.Context, sessionID string) (i
 		return 0, err
 	}
 	return o.count(ctx, `SELECT COUNT(*) FROM session_inputs WHERE session_id = ?1 AND kind = 'note' AND deferred = 0
-		AND created_at > COALESCE((SELECT MAX(created_at) FROM session_inputs WHERE session_id = ?1 AND kind = 'user'), 0)`, sessionID)
+		AND created_at > COALESCE((SELECT MAX(created_at) FROM session_inputs WHERE session_id = ?1 AND kind IN ('user', 'answer')), 0)`, sessionID)
 }
 
 func (o *ops) ListOrphanSessionChangesets(ctx context.Context, after string, limit int) ([]store.LedgerChangeset, error) {

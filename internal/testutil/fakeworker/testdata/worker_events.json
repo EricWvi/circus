@@ -18,19 +18,6 @@
     }
   },
   {
-    "name": "approval_pending",
-    "kind": "KIND_APPROVAL_PENDING",
-    "ephemeral": false,
-    "payload": {
-      "approval_id": "018f0000-0000-7000-8000-000000000003",
-      "device": "box",
-      "display": "echo hi",
-      "reason": "Scripted Bash approval required",
-      "tool": "Bash",
-      "tool_use_id": "toolu_fake"
-    }
-  },
-  {
     "name": "error",
     "kind": "KIND_ERROR",
     "ephemeral": false,
@@ -202,6 +189,23 @@
       "circus_note": "ledger_problems",
       "message": {
         "content": "[circus ledger] The ledger collection found problems.",
+        "role": "user"
+      },
+      "parent_tool_use_id": null,
+      "session_id": "018f0000-0000-7000-8000-000000000001",
+      "timestamp": "2026-01-02T03:04:05.006Z",
+      "type": "user",
+      "uuid": "018f0000-0000-7000-8000-000000000002"
+    }
+  },
+  {
+    "name": "note_question_answer",
+    "kind": "KIND_USER",
+    "ephemeral": false,
+    "payload": {
+      "circus_note": "question_answer",
+      "message": {
+        "content": "The user answered your questions: \"Which color?\"=\"Red\". Continue with these answers in mind.",
         "role": "user"
       },
       "parent_tool_use_id": null,

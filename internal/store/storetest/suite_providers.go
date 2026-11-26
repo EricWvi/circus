@@ -277,7 +277,8 @@ func testProviderLeases(t *testing.T, b Backend) {
 
 // testIdleLeases: ListIdleLeases lists the live leases of a provider whose
 // sessions are idle, least recent activity first and in pages, and leaves
-// out every session with work, a running turn, a pending approval, an owed
+// out every session with work, a running turn, a pending tool approval (a
+// pending question does not count), an owed
 // or handed job notice, a background task of the lease's epoch or a ledger
 // merge or discard still to apply (one problems stop does not count).
 func testIdleLeases(t *testing.T, b Backend) {
@@ -303,7 +304,7 @@ func testIdleLeases(t *testing.T, b Backend) {
 		}
 		mustEqual(t, "idle leases", strings.Join(got, " "), strings.Join(want, " "))
 	}
-	ids := []string{"idle", "input", "taken", "running", "approval", "bgtask", "ledger", "problems", "jobowed", "jobhanded", "jobrunning", "other"}
+	ids := []string{"idle", "input", "taken", "running", "approval", "bgtask", "ledger", "problems", "jobowed", "jobhanded", "jobrunning", "question", "other"}
 	fences := map[string]store.Fence{}
 	for i, id := range ids {
 		prov := "p1"
@@ -318,7 +319,7 @@ func testIdleLeases(t *testing.T, b Backend) {
 	}
 	// A session without a lease is never listed.
 	sessionWithProvider(t, s, f, "unleased", "p1")
-	all := []string{"jobrunning", "jobhanded", "jobowed", "problems", "ledger", "bgtask", "approval", "running", "taken", "input", "idle"}
+	all := []string{"question", "jobrunning", "jobhanded", "jobowed", "problems", "ledger", "bgtask", "approval", "running", "taken", "input", "idle"}
 	idle(t0+20, all...)
 	// Pages: each strictly after the last lease of the one before.
 	var paged []string
@@ -348,6 +349,11 @@ func testIdleLeases(t *testing.T, b Backend) {
 	_, err = s.RequestApproval(ctx, at(fences["approval"], t0+20), store.Approval{ApprovalID: "a1", Tool: "bash", DeviceID: f.device.ID,
 		MatchKey: mk("ls"), CreatedAt: t0 + 20, ExpiresAt: t0 + 100})
 	must(t, err)
+	// A pending question never expires, and does not keep the lease: its
+	// answers are an input, which queues the session again.
+	_, err = s.RequestApproval(ctx, at(fences["question"], t0+20), newQuestion("q1", "tu-q1", t0+20))
+	must(t, err)
+	mustEqual(t, "the question is pending", getSessionAt(t, s, "question", t0+21).PendingApprovalCount, uint32(1))
 	must(t, s.PatchSessionRecords(ctx, at(fences["bgtask"], t0+20), store.RecordsPatch{BgTasksStarted: []store.BgTask{{TaskID: "t1", Kind: "agent"}}}))
 	for i, id := range []string{"ledger", "problems"} {
 		l := newSessionLedger(id, f)
@@ -385,19 +391,19 @@ func testIdleLeases(t *testing.T, b Backend) {
 		}
 		must(t, s.PatchSessionRecords(ctx, at(fences[j.session], t0+20), patch))
 	}
-	idle(t0+21, "jobrunning", "problems", "idle")
+	idle(t0+21, "question", "jobrunning", "problems", "idle")
 
 	// An expired approval no longer counts; the running turn's end and a
 	// persisted input make their sessions idle again.
-	idle(t0+100, "jobrunning", "problems", "approval", "idle")
+	idle(t0+100, "question", "jobrunning", "problems", "approval", "idle")
 	report(t, s, at(fences["running"], t0+21), store.TurnReport{LocalSeq: 1, Phase: store.TurnEnded})
-	idle(t0+100, "jobrunning", "problems", "approval", "running", "idle")
+	idle(t0+100, "question", "jobrunning", "problems", "approval", "running", "idle")
 	// The background task of an earlier epoch is lost, not running: a new
 	// epoch's session is idle.
 	_, err = s.ReleaseLease(ctx, at(fences["bgtask"], t0+22))
 	must(t, err)
 	acquire(t, s, "bgtask", "w1", "b1", t0+23)
-	idle(t0+100, "jobrunning", "problems", "bgtask", "approval", "running", "idle")
+	idle(t0+100, "question", "jobrunning", "problems", "bgtask", "approval", "running", "idle")
 	// The limit and an expired lease.
 	mustEqual(t, "limited", len(list(t0+100, nil, 1)), 1)
 	// Released, the note is still pending, and the session idle.

@@ -704,6 +704,25 @@ func testApprovalRules(t *testing.T, b Backend) {
 	must(t, err)
 	mustEqual(t, "no grant", ok, false)
 
+	// Dedup merges only into an approval that has not expired: one past its
+	// expiry, not yet swept, is expired with the new request, which is
+	// created (the pending key stays unique).
+	stale := newApproval("stale", "stale-cmd")
+	stale.ExpiresAt = t0 + 50
+	_, err = s.RequestApproval(ctx, fence, stale)
+	must(t, err)
+	live := newApproval("stale-again", "stale-cmd")
+	live.CreatedAt, live.ExpiresAt = t0+50, t0+50+600_000
+	merged, err := s.RequestApproval(ctx, at(fence, t0+50), live)
+	must(t, err)
+	mustEqual(t, "a new approval", []any{merged.Created, merged.Approval.ApprovalID, merged.Approval.State}, []any{true, "stale-again", store.ApprovalPending})
+	old, err := s.GetApproval(ctx, "stale")
+	must(t, err)
+	mustEqual(t, "the stale one expired", []any{old.State, old.ResolvedAt}, []any{store.ApprovalExpired, t0 + 50})
+	again, err := s.RequestApproval(ctx, at(fence, t0+51), newApproval("stale-third", "stale-cmd"))
+	must(t, err)
+	mustEqual(t, "a live one merges", []any{again.Created, again.Approval.ApprovalID}, []any{false, "stale-again"})
+
 	// Dedup needs the whole key: another device is another approval.
 	a1 := newApproval("a1", "make")
 	_, err = s.RequestApproval(ctx, fence, a1)

@@ -162,6 +162,7 @@ func Run(t *testing.T, b Backend) {
 		{"StringCaps", testStringCaps},
 		{"RecordsPaging", testRecordsPaging},
 		{"ApprovalRules", testApprovalRules},
+		{"QuestionApprovals", testQuestionApprovals},
 		{"SettleSession", testSettleSession},
 		{"InputDedupPriority", testInputDedupPriority},
 		{"LeaseLossRace", testLeaseLossRace},

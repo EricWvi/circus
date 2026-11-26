@@ -26,6 +26,8 @@ import type {
   LedgerEvent,
   NoteEvent,
   NoteKind,
+  QuestionAnswer,
+  QuestionEvent,
   SendFailure,
   SessionEvent,
   UserMessageEvent,
@@ -35,6 +37,7 @@ import { workspaceEventText } from "@/lib/workspace"
 
 import { ApprovalCard } from "./approval-card"
 import { NoteDisclosure } from "./note-disclosure"
+import { QuestionAnswerMessage, QuestionCard } from "./question-card"
 import { ToolCall } from "./tool-call"
 
 /** The end of a turn that failed: with the worker's or CLI's message, when there is one. */
@@ -228,9 +231,11 @@ export function EventItem({
   deviceName,
   actionsDisabledReason = null,
   approvalDisabledReason = () => actionsDisabledReason,
+  questionDisabledReason = () => actionsDisabledReason,
   interruptedActions,
   onRetrySend,
   onDecide,
+  onResolveQuestion,
 }: {
   event: SessionEvent
   /** The session's project, whose Ledger decisions it links to. */
@@ -241,11 +246,16 @@ export function EventItem({
   actionsDisabledReason?: string | null
   /** Why this approval can't be decided (any more); null when it can. */
   approvalDisabledReason?: (approval: ApprovalRequest) => string | null
+  /** Why this question can't be answered or dismissed (any more); null when it can. */
+  questionDisabledReason?: (question: QuestionEvent) => string | null
   /** Only for the latest interrupted turn, while the session is interrupted. */
   interruptedActions?: InterruptedTurnActions
   /** Sends a failed message again. */
   onRetrySend: (clientMsgId: string) => void
+  /** Decides a tool approval. */
   onDecide: (approvalId: string, approve: boolean) => void
+  /** Answers a question, or dismisses it (`answers` null). */
+  onResolveQuestion: (approvalId: string, answers: QuestionAnswer[] | null) => void
 }) {
   const { t } = useTranslation()
   switch (event.kind) {
@@ -355,5 +365,18 @@ export function EventItem({
       }
       return <ToolCall event={event} />
     }
+    case "question": {
+      const approvalId = event.approvalId ?? ""
+      return (
+        <QuestionCard
+          event={event}
+          disabledReason={questionDisabledReason(event)}
+          onAnswer={(answers) => onResolveQuestion(approvalId, answers)}
+          onDismiss={() => onResolveQuestion(approvalId, null)}
+        />
+      )
+    }
+    case "question_answer":
+      return <QuestionAnswerMessage event={event} />
   }
 }

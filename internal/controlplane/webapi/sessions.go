@@ -16,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/controlplane/ledgersnaps"
+	"github.com/EricWvi/circus/internal/controlplane/questions"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/store"
@@ -258,10 +259,6 @@ type (
 		Priority    string `json:"priority"`
 		Text        string `json:"text"`
 	}
-	approvalEventPayload struct {
-		ApprovalID string `json:"approval_id"`
-		State      string `json:"state"`
-	}
 )
 
 func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circusv1.CreateSessionRequest]) (*connect.Response[circusv1.CreateSessionResponse], error) {
@@ -287,6 +284,10 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[circus
 		return nil, invalidField("config.model", "model is longer than 128 bytes")
 	case len(cfg.GetPermissionMode()) > store.MaxIDBytes:
 		return nil, invalidField("config.permission_mode", "permission mode is longer than 128 bytes")
+	case cfg.GetPermissionMode() == "plan":
+		// Its ExitPlanMode is disallowed until plan approval exists: the
+		// session could never leave plan mode.
+		return nil, invalidField("config.permission_mode", "plan mode is not supported")
 	case cfg.GetLocal():
 		return nil, invalidField("config.local", "local mode is decided by the server")
 	case len(m.GetPinnedWorkerId()) > store.MaxIDBytes:
@@ -804,10 +805,14 @@ func (s *Service) UpdateSession(ctx context.Context, req *connect.Request[circus
 }
 
 func protoApproval(a store.Approval, device string) *circusv1.SessionApproval {
+	kind := circusv1.ApprovalKind_APPROVAL_KIND_TOOL
+	if a.Kind == store.ApprovalQuestion {
+		kind = circusv1.ApprovalKind_APPROVAL_KIND_QUESTION
+	}
 	return &circusv1.SessionApproval{
 		ApprovalId: a.ApprovalID, SessionId: a.SessionID, ToolUseId: a.ToolUseID, AgentId: a.AgentID, Tool: a.Tool,
 		Device: device, MatchKey: a.MatchKey, Display: a.Display, Reason: a.Reason,
-		CreatedAtUnixMs: a.CreatedAt, ExpiresAtUnixMs: a.ExpiresAt,
+		CreatedAtUnixMs: a.CreatedAt, ExpiresAtUnixMs: a.ExpiresAt, Kind: kind, InputJson: a.InputJSON,
 	}
 }
 
@@ -837,7 +842,7 @@ func (s *Service) ListApprovals(ctx context.Context, req *connect.Request[circus
 		}
 		names := newDeviceNames(tx)
 		for _, a := range list {
-			if a.ExpiresAt <= now {
+			if a.Expired(now) {
 				continue
 			}
 			device, err := names.name(ctx, a.DeviceID)
@@ -871,6 +876,23 @@ func (s *Service) ResolveApproval(ctx context.Context, req *connect.Request[circ
 		return nil, invalidField("approval_id", "approval id is too long")
 	case id == "":
 		return nil, connect.NewError(connect.CodeNotFound, errApprovalNotFound)
+	case len(req.Msg.GetAnswers()) > questions.MaxQuestions:
+		return nil, invalidField("answers", fmt.Sprintf("at most %d answers", questions.MaxQuestions))
+	}
+	for i, a := range req.Msg.GetAnswers() {
+		switch {
+		case len(a.GetQuestion()) > questions.MaxQuestionBytes:
+			return nil, invalidField(fmt.Sprintf("answers[%d].question", i), fmt.Sprintf("the question is longer than %d bytes", questions.MaxQuestionBytes))
+		case len(a.GetSelected()) > questions.MaxOptions:
+			return nil, invalidField(fmt.Sprintf("answers[%d].selected", i), fmt.Sprintf("at most %d selected options", questions.MaxOptions))
+		case len(a.GetOther()) > questions.MaxOtherBytes:
+			return nil, invalidField(fmt.Sprintf("answers[%d].other", i), fmt.Sprintf("the answer is longer than %d bytes", questions.MaxOtherBytes))
+		}
+		for j, label := range a.GetSelected() {
+			if len(label) > questions.MaxLabelBytes {
+				return nil, invalidField(fmt.Sprintf("answers[%d].selected[%d]", i, j), fmt.Sprintf("a label is at most %d bytes", questions.MaxLabelBytes))
+			}
+		}
 	}
 	inputID, err := newID()
 	if err != nil {
@@ -894,23 +916,43 @@ func (s *Service) ResolveApproval(ctx context.Context, req *connect.Request[circ
 			}
 			return err
 		}
-		device, err := newDeviceNames(tx).name(ctx, a.DeviceID)
-		if err != nil {
-			return err
+		r := store.ApprovalResolution{ApprovalID: id, Approve: req.Msg.GetApprove(), At: at}
+		var event sessions.ApprovalResolvedPayload
+		if a.Kind == store.ApprovalQuestion {
+			if r, event, err = resolveQuestion(a, req.Msg, r); err != nil {
+				return err
+			}
+			r.Input = store.Input{InputID: inputID, Text: r.Input.Text, CreatedAt: at}
+		} else {
+			if len(req.Msg.GetAnswers()) > 0 {
+				return invalidField("answers", "only a question approval takes answers")
+			}
+			device, err := newDeviceNames(tx).name(ctx, a.DeviceID)
+			if err != nil {
+				return err
+			}
+			r.GrantExpiresAt = now.Add(approvalGrantLifetime).UnixMilli()
+			r.Input = store.Input{InputID: inputID, Text: approvalText(a, device), CreatedAt: at}
 		}
-		res, err = tx.ResolveApproval(ctx, store.ApprovalResolution{
-			ApprovalID: id, Approve: req.Msg.GetApprove(), At: at,
-			GrantExpiresAt: now.Add(approvalGrantLifetime).UnixMilli(),
-			Input:          store.Input{InputID: inputID, Text: approvalText(a, device), CreatedAt: at},
-		})
+		res, err = tx.ResolveApproval(ctx, r)
 		if err != nil {
 			return err
 		}
 		if a.State != store.ApprovalPending {
-			return nil // already resolved: idempotent, nothing recorded
+			// Already resolved: idempotent, nothing recorded; but answers
+			// to a question that was not answered reach nobody.
+			if a.Kind == store.ApprovalQuestion && req.Msg.GetApprove() && a.State != store.ApprovalAnswered && a.State != store.ApprovalExpired {
+				return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("the question was %s: its answers would reach nobody", a.State))
+			}
+			return nil
 		}
-		seq, err = appendEvent(ctx, tx, a.SessionID, circusv1.SessionEvent_KIND_APPROVAL_RESOLVED,
-			approvalEventPayload{ApprovalID: id, State: string(res.Approval.State)}, at, true)
+		event.ApprovalID, event.State = id, string(res.Approval.State)
+		if res.Approval.State != store.ApprovalAnswered {
+			event.Answers = nil
+		} else if res.Input != nil {
+			event.InputID = res.Input.InputID
+		}
+		seq, err = sessions.AppendApprovalResolvedEvent(ctx, tx, a.SessionID, event, at, store.DefaultMaxViewBytes)
 		return err
 	})
 	if err != nil {
@@ -920,10 +962,13 @@ func (s *Service) ResolveApproval(ctx context.Context, req *connect.Request[circ
 		return nil, s.sessionError(ctx, "resolve approval", err)
 	}
 	s.bus.Durable(res.Approval.SessionID, uint64(seq))
-	if res.Changed && res.Approval.State == store.ApprovalApproved {
-		s.waker.Wake(res.Approval.SessionID, circusv1.WorkerEvent_Nudge_REASON_APPROVAL)
-	}
 	if res.Changed {
+		switch res.Approval.State {
+		case store.ApprovalApproved:
+			s.waker.Wake(res.Approval.SessionID, circusv1.WorkerEvent_Nudge_REASON_APPROVAL)
+		case store.ApprovalAnswered:
+			s.waker.Wake(res.Approval.SessionID, circusv1.WorkerEvent_Nudge_REASON_INPUT)
+		}
 		s.logger.LogAttrs(ctx, slog.LevelInfo, "approval resolved", slog.String("session_id", res.Approval.SessionID),
 			slog.String("approval_id", id), slog.String("decision", string(res.Approval.State)))
 	}
@@ -934,6 +979,39 @@ func (s *Service) ResolveApproval(ctx context.Context, req *connect.Request[circ
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("the approval has expired"))
 	}
 	return connect.NewResponse(&circusv1.ResolveApprovalResponse{}), nil
+}
+
+// resolveQuestion checks a resolution of the question approval a: answers
+// are checked against its questions while it is pending and approve is
+// set (they must be empty to dismiss), and the answers input text and the
+// event payload's kind and answers are filled in. A question no longer
+// pending only gets the shape checks (the resolution is a no-op).
+func resolveQuestion(a store.Approval, m *circusv1.ResolveApprovalRequest, r store.ApprovalResolution) (store.ApprovalResolution, sessions.ApprovalResolvedPayload, error) {
+	event := sessions.ApprovalResolvedPayload{Kind: string(store.ApprovalQuestion)}
+	if !m.GetApprove() {
+		if len(m.GetAnswers()) > 0 {
+			return r, event, invalidField("answers", "dismissing a question takes no answers")
+		}
+		return r, event, nil
+	}
+	if a.State != store.ApprovalPending {
+		return r, event, nil
+	}
+	qs, err := questions.Parse(a.InputJSON)
+	if err != nil {
+		// The control plane checked the input when the worker asked.
+		return r, event, fmt.Errorf("stored question approval %s: %w", a.ApprovalID, err)
+	}
+	if err := questions.CheckAnswers(qs, m.GetAnswers()); err != nil {
+		return r, event, invalidField("answers", err.Error())
+	}
+	r.Input.Text = questions.AnswerText(m.GetAnswers())
+	for _, ans := range m.GetAnswers() {
+		event.Answers = append(event.Answers, sessions.QuestionAnswerEvent{
+			Question: ans.GetQuestion(), Selected: append([]string{}, ans.GetSelected()...), Other: ans.GetOther(),
+		})
+	}
+	return r, event, nil
 }
 
 func (s *Service) Interrupt(ctx context.Context, req *connect.Request[circusv1.InterruptRequest]) (*connect.Response[circusv1.InterruptResponse], error) {

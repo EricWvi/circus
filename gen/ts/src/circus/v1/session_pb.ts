@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/session.proto.
  */
 export const file_circus_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvc2Vzc2lvbi5wcm90bxIJY2lyY3VzLnYxIq4BCg1TZXNzaW9uQ29uZmlnEhYKDmRlZmF1bHRfZGV2aWNlGAEgASgJEioKBGN3ZHMYAiADKAsyHC5jaXJjdXMudjEuU2Vzc2lvbkNvbmZpZy5Dd2QSDQoFbW9kZWwYAyABKAkSFwoPcGVybWlzc2lvbl9tb2RlGAQgASgJEg0KBWxvY2FsGAUgASgIGiIKA0N3ZBIOCgZkZXZpY2UYASABKAkSCwoDY3dkGAIgASgJIsoFCgdTZXNzaW9uEhIKCnNlc3Npb25faWQYASABKAkSJwoFc3RhdGUYAiABKA4yGC5jaXJjdXMudjEuU2Vzc2lvbi5TdGF0ZRIxChFsYXN0X3R1cm5fb3V0Y29tZRgDIAEoDjIWLmNpcmN1cy52MS5UdXJuT3V0Y29tZRISCgp0dXJuX2NvdW50GAQgASgEEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgFIAEoAxIaChJzdG9wcGVkX2F0X3VuaXhfbXMYBiABKAMSKAoGY29uZmlnGAcgASgLMhguY2lyY3VzLnYxLlNlc3Npb25Db25maWcSFgoOdmlld190cnVuY2F0ZWQYCCABKAgSGAoQcGlubmVkX3dvcmtlcl9pZBgJIAEoCRISCgpwcm9qZWN0X2lkGAogASgJEg0KBXRpdGxlGAsgASgJEiAKGGxhc3RfYWN0aXZpdHlfYXRfdW5peF9tcxgMIAEoAxIeChZwZW5kaW5nX2FwcHJvdmFsX2NvdW50GA0gASgNEi0KCXdvcmtzcGFjZRgOIAEoCzIaLmNpcmN1cy52MS5Xb3Jrc3BhY2VTdGF0dXMSEwoLcHJvdmlkZXJfaWQYDyABKAkSLAoMcXVldWVfcmVhc29uGBAgASgOMhYuY2lyY3VzLnYxLlF1ZXVlUmVhc29uEiYKHndvcmtlcl9kaXNjb25uZWN0ZWRfYXRfdW5peF9tcxgRIAEoAxIuCgZsZWRnZXIYEiABKAsyHi5jaXJjdXMudjEuU2Vzc2lvbkxlZGdlclN0YXR1cyJ4CgVTdGF0ZRIVChFTVEFURV9VTlNQRUNJRklFRBAAEg4KClNUQVRFX0lETEUQARIQCgxTVEFURV9RVUVVRUQQAhIRCg1TVEFURV9SVU5OSU5HEAMSEQoNU1RBVEVfU1RPUFBFRBAEEhAKDFNUQVRFX0JST0tFThAFIroFCgxTZXNzaW9uRXZlbnQSCwoDc2VxGAEgASgEEhIKCnRzX3VuaXhfbXMYAiABKAMSKgoEa2luZBgDIAEoDjIcLmNpcmN1cy52MS5TZXNzaW9uRXZlbnQuS2luZBIUCgxwYXlsb2FkX2pzb24YBCABKAkSEQoJZXBoZW1lcmFsGAUgASgIEhEKCXRydW5jYXRlZBgGIAEoCCKgBAoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASFQoRS0lORF9UVVJOX1NUQVJURUQQARISCg5LSU5EX0FTU0lTVEFOVBACEg0KCUtJTkRfVVNFUhADEhYKEktJTkRfVE9PTF9QUk9HUkVTUxAEEg8KC0tJTkRfUkVTVUxUEAUSGgoWS0lORF9QRVJNSVNTSU9OX0RFTklFRBAGEhkKFUtJTkRfQVBQUk9WQUxfUEVORElORxAHEhoKFktJTkRfQVBQUk9WQUxfUkVTT0xWRUQQCBIZChVLSU5EX1RVUk5fSU5URVJSVVBURUQQCRIWChJLSU5EX1NFU1NJT05fU1RBVEUQChIXChNLSU5EX0JHVEFTS19TVEFSVEVEEAsSFQoRS0lORF9CR1RBU0tfRU5ERUQQDBIfChtLSU5EX05PVElGSUNBVElPTl9ERUxJVkVSRUQQDRIOCgpLSU5EX0VSUk9SEA4SIAocS0lORF9UUkFOU0NSSVBUX0dBUF9BQ0NFUFRFRBAPEiAKHEtJTkRfVFJBTlNDUklQVF9HQVBfREVURUNURUQQEBIVChFLSU5EX1RVUk5fU1RPUFBFRBAREhcKE0tJTkRfSU5QVVRfQUNDRVBURUQQEhISCg5LSU5EX1dPUktTUEFDRRATEg4KCktJTkRfUVVFVUUQFBIPCgtLSU5EX1dPUktFUhAVEg8KC0tJTkRfTEVER0VSEBYi/QEKFENyZWF0ZVNlc3Npb25SZXF1ZXN0EigKBmNvbmZpZxgBIAEoCzIYLmNpcmN1cy52MS5TZXNzaW9uQ29uZmlnEh0KEHBpbm5lZF93b3JrZXJfaWQYAiABKAlIAIgBARISCgpwcm9qZWN0X2lkGAMgASgJEhsKDmxvY2F0aW9uX2luZGV4GAQgASgNSAGIAQESGQoRY2xpZW50X3JlcXVlc3RfaWQYBSABKAkSGAoLcHJvdmlkZXJfaWQYBiABKAlIAogBAUITChFfcGlubmVkX3dvcmtlcl9pZEIRCg9fbG9jYXRpb25faW5kZXhCDgoMX3Byb3ZpZGVyX2lkIjwKFUNyZWF0ZVNlc3Npb25SZXNwb25zZRIjCgdzZXNzaW9uGAEgASgLMhIuY2lyY3VzLnYxLlNlc3Npb24ieQoSU2VuZE1lc3NhZ2VSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSFQoNY2xpZW50X21zZ19pZBgCIAEoCRIMCgR0ZXh0GAMgASgJEioKCHByaW9yaXR5GAQgASgOMhguY2lyY3VzLnYxLklucHV0UHJpb3JpdHkiOgoTU2VuZE1lc3NhZ2VSZXNwb25zZRIQCghpbnB1dF9pZBgBIAEoCRIRCglldmVudF9zZXEYAiABKAQiPAoTV2F0Y2hTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhEKCWFmdGVyX3NlcRgCIAEoBCJQChNMaXN0U2Vzc2lvbnNSZXF1ZXN0EhEKCXBhZ2Vfc2l6ZRgBIAEoDRISCgpwYWdlX3Rva2VuGAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkiVQoUTGlzdFNlc3Npb25zUmVzcG9uc2USJAoIc2Vzc2lvbnMYASADKAsyEi5jaXJjdXMudjEuU2Vzc2lvbhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiJwoRR2V0U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSJyChRVcGRhdGVTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhIKBXRpdGxlGAIgASgJSACIAQESGAoLcHJvdmlkZXJfaWQYAyABKAlIAYgBAUIICgZfdGl0bGVCDgoMX3Byb3ZpZGVyX2lkIusBCg9TZXNzaW9uQXBwcm92YWwSEwoLYXBwcm92YWxfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRITCgt0b29sX3VzZV9pZBgDIAEoCRIQCghhZ2VudF9pZBgEIAEoCRIMCgR0b29sGAUgASgJEg4KBmRldmljZRgGIAEoCRIRCgltYXRjaF9rZXkYByABKAkSDwoHZGlzcGxheRgIIAEoCRIOCgZyZWFzb24YCSABKAkSGgoSY3JlYXRlZF9hdF91bml4X21zGAogASgDEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgLIAEoAyIqChRMaXN0QXBwcm92YWxzUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIkYKFUxpc3RBcHByb3ZhbHNSZXNwb25zZRItCglhcHByb3ZhbHMYASADKAsyGi5jaXJjdXMudjEuU2Vzc2lvbkFwcHJvdmFsIj4KFlJlc29sdmVBcHByb3ZhbFJlcXVlc3QSEwoLYXBwcm92YWxfaWQYASABKAkSDwoHYXBwcm92ZRgCIAEoCCIZChdSZXNvbHZlQXBwcm92YWxSZXNwb25zZSImChBJbnRlcnJ1cHRSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiEwoRSW50ZXJydXB0UmVzcG9uc2UiKAoSU3RvcFNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiFQoTU3RvcFNlc3Npb25SZXNwb25zZSJKChREZWxldGVTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEh4KFmRpc2NhcmRfbGVkZ2VyX2NoYW5nZXMYAiABKAgiFwoVRGVsZXRlU2Vzc2lvblJlc3BvbnNlIkoKFVJlY292ZXJTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEh0KFWFjY2VwdF90cmFuc2NyaXB0X2dhcBgCIAEoCCIYChZSZWNvdmVyU2Vzc2lvblJlc3BvbnNlIisKFVJldHJ5V29ya3NwYWNlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIkcKFlJldHJ5V29ya3NwYWNlUmVzcG9uc2USLQoJd29ya3NwYWNlGAEgASgLMhouY2lyY3VzLnYxLldvcmtzcGFjZVN0YXR1cypiCg1JbnB1dFByaW9yaXR5Eh4KGklOUFVUX1BSSU9SSVRZX1VOU1BFQ0lGSUVEEAASGQoVSU5QVVRfUFJJT1JJVFlfTk9STUFMEAESFgoSSU5QVVRfUFJJT1JJVFlfTk9XEAIqcwoKVHVybk9yaWdpbhIbChdUVVJOX09SSUdJTl9VTlNQRUNJRklFRBAAEhUKEVRVUk5fT1JJR0lOX0lOUFVUEAESHAoYVFVSTl9PUklHSU5fTk9USUZJQ0FUSU9OEAISEwoPVFVSTl9PUklHSU5fQ0xJEAMqlwEKC1R1cm5PdXRjb21lEhwKGFRVUk5fT1VUQ09NRV9VTlNQRUNJRklFRBAAEhoKFlRVUk5fT1VUQ09NRV9DT01QTEVURUQQARIcChhUVVJOX09VVENPTUVfSU5URVJSVVBURUQQAhIWChJUVVJOX09VVENPTUVfRVJST1IQAxIYChRUVVJOX09VVENPTUVfU1RPUFBFRBAEKuIBCgtRdWV1ZVJlYXNvbhIcChhRVUVVRV9SRUFTT05fVU5TUEVDSUZJRUQQABIeChpRVUVVRV9SRUFTT05fUFJPVklERVJfRlVMTBABEiMKH1FVRVVFX1JFQVNPTl9OT19BU1NJR05FRF9XT1JLRVIQAhIhCh1RVUVVRV9SRUFTT05fUFJPVklERVJfREVMRVRFRBADEiwKKFFVRVVFX1JFQVNPTl9QUk9WSURFUl9TRUNSRVRTX1VOUkVBREFCTEUQBBIfChtRVUVVRV9SRUFTT05fV09SS0VSX09GRkxJTkUQBTKaCAoOU2Vzc2lvblNlcnZpY2USUgoNQ3JlYXRlU2Vzc2lvbhIfLmNpcmN1cy52MS5DcmVhdGVTZXNzaW9uUmVxdWVzdBogLmNpcmN1cy52MS5DcmVhdGVTZXNzaW9uUmVzcG9uc2USTAoLU2VuZE1lc3NhZ2USHS5jaXJjdXMudjEuU2VuZE1lc3NhZ2VSZXF1ZXN0Gh4uY2lyY3VzLnYxLlNlbmRNZXNzYWdlUmVzcG9uc2USSQoMV2F0Y2hTZXNzaW9uEh4uY2lyY3VzLnYxLldhdGNoU2Vzc2lvblJlcXVlc3QaFy5jaXJjdXMudjEuU2Vzc2lvbkV2ZW50MAESTwoMTGlzdFNlc3Npb25zEh4uY2lyY3VzLnYxLkxpc3RTZXNzaW9uc1JlcXVlc3QaHy5jaXJjdXMudjEuTGlzdFNlc3Npb25zUmVzcG9uc2USPgoKR2V0U2Vzc2lvbhIcLmNpcmN1cy52MS5HZXRTZXNzaW9uUmVxdWVzdBoSLmNpcmN1cy52MS5TZXNzaW9uEkQKDVVwZGF0ZVNlc3Npb24SHy5jaXJjdXMudjEuVXBkYXRlU2Vzc2lvblJlcXVlc3QaEi5jaXJjdXMudjEuU2Vzc2lvbhJSCg1MaXN0QXBwcm92YWxzEh8uY2lyY3VzLnYxLkxpc3RBcHByb3ZhbHNSZXF1ZXN0GiAuY2lyY3VzLnYxLkxpc3RBcHByb3ZhbHNSZXNwb25zZRJYCg9SZXNvbHZlQXBwcm92YWwSIS5jaXJjdXMudjEuUmVzb2x2ZUFwcHJvdmFsUmVxdWVzdBoiLmNpcmN1cy52MS5SZXNvbHZlQXBwcm92YWxSZXNwb25zZRJGCglJbnRlcnJ1cHQSGy5jaXJjdXMudjEuSW50ZXJydXB0UmVxdWVzdBocLmNpcmN1cy52MS5JbnRlcnJ1cHRSZXNwb25zZRJMCgtTdG9wU2Vzc2lvbhIdLmNpcmN1cy52MS5TdG9wU2Vzc2lvblJlcXVlc3QaHi5jaXJjdXMudjEuU3RvcFNlc3Npb25SZXNwb25zZRJSCg1EZWxldGVTZXNzaW9uEh8uY2lyY3VzLnYxLkRlbGV0ZVNlc3Npb25SZXF1ZXN0GiAuY2lyY3VzLnYxLkRlbGV0ZVNlc3Npb25SZXNwb25zZRJVCg5SZWNvdmVyU2Vzc2lvbhIgLmNpcmN1cy52MS5SZWNvdmVyU2Vzc2lvblJlcXVlc3QaIS5jaXJjdXMudjEuUmVjb3ZlclNlc3Npb25SZXNwb25zZRJVCg5SZXRyeVdvcmtzcGFjZRIgLmNpcmN1cy52MS5SZXRyeVdvcmtzcGFjZVJlcXVlc3QaIS5jaXJjdXMudjEuUmV0cnlXb3Jrc3BhY2VSZXNwb25zZUI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw", [file_circus_v1_ledger, file_circus_v1_workspace]);
+  fileDesc("ChdjaXJjdXMvdjEvc2Vzc2lvbi5wcm90bxIJY2lyY3VzLnYxIq4BCg1TZXNzaW9uQ29uZmlnEhYKDmRlZmF1bHRfZGV2aWNlGAEgASgJEioKBGN3ZHMYAiADKAsyHC5jaXJjdXMudjEuU2Vzc2lvbkNvbmZpZy5Dd2QSDQoFbW9kZWwYAyABKAkSFwoPcGVybWlzc2lvbl9tb2RlGAQgASgJEg0KBWxvY2FsGAUgASgIGiIKA0N3ZBIOCgZkZXZpY2UYASABKAkSCwoDY3dkGAIgASgJIsoFCgdTZXNzaW9uEhIKCnNlc3Npb25faWQYASABKAkSJwoFc3RhdGUYAiABKA4yGC5jaXJjdXMudjEuU2Vzc2lvbi5TdGF0ZRIxChFsYXN0X3R1cm5fb3V0Y29tZRgDIAEoDjIWLmNpcmN1cy52MS5UdXJuT3V0Y29tZRISCgp0dXJuX2NvdW50GAQgASgEEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgFIAEoAxIaChJzdG9wcGVkX2F0X3VuaXhfbXMYBiABKAMSKAoGY29uZmlnGAcgASgLMhguY2lyY3VzLnYxLlNlc3Npb25Db25maWcSFgoOdmlld190cnVuY2F0ZWQYCCABKAgSGAoQcGlubmVkX3dvcmtlcl9pZBgJIAEoCRISCgpwcm9qZWN0X2lkGAogASgJEg0KBXRpdGxlGAsgASgJEiAKGGxhc3RfYWN0aXZpdHlfYXRfdW5peF9tcxgMIAEoAxIeChZwZW5kaW5nX2FwcHJvdmFsX2NvdW50GA0gASgNEi0KCXdvcmtzcGFjZRgOIAEoCzIaLmNpcmN1cy52MS5Xb3Jrc3BhY2VTdGF0dXMSEwoLcHJvdmlkZXJfaWQYDyABKAkSLAoMcXVldWVfcmVhc29uGBAgASgOMhYuY2lyY3VzLnYxLlF1ZXVlUmVhc29uEiYKHndvcmtlcl9kaXNjb25uZWN0ZWRfYXRfdW5peF9tcxgRIAEoAxIuCgZsZWRnZXIYEiABKAsyHi5jaXJjdXMudjEuU2Vzc2lvbkxlZGdlclN0YXR1cyJ4CgVTdGF0ZRIVChFTVEFURV9VTlNQRUNJRklFRBAAEg4KClNUQVRFX0lETEUQARIQCgxTVEFURV9RVUVVRUQQAhIRCg1TVEFURV9SVU5OSU5HEAMSEQoNU1RBVEVfU1RPUFBFRBAEEhAKDFNUQVRFX0JST0tFThAFIroFCgxTZXNzaW9uRXZlbnQSCwoDc2VxGAEgASgEEhIKCnRzX3VuaXhfbXMYAiABKAMSKgoEa2luZBgDIAEoDjIcLmNpcmN1cy52MS5TZXNzaW9uRXZlbnQuS2luZBIUCgxwYXlsb2FkX2pzb24YBCABKAkSEQoJZXBoZW1lcmFsGAUgASgIEhEKCXRydW5jYXRlZBgGIAEoCCKgBAoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASFQoRS0lORF9UVVJOX1NUQVJURUQQARISCg5LSU5EX0FTU0lTVEFOVBACEg0KCUtJTkRfVVNFUhADEhYKEktJTkRfVE9PTF9QUk9HUkVTUxAEEg8KC0tJTkRfUkVTVUxUEAUSGgoWS0lORF9QRVJNSVNTSU9OX0RFTklFRBAGEhkKFUtJTkRfQVBQUk9WQUxfUEVORElORxAHEhoKFktJTkRfQVBQUk9WQUxfUkVTT0xWRUQQCBIZChVLSU5EX1RVUk5fSU5URVJSVVBURUQQCRIWChJLSU5EX1NFU1NJT05fU1RBVEUQChIXChNLSU5EX0JHVEFTS19TVEFSVEVEEAsSFQoRS0lORF9CR1RBU0tfRU5ERUQQDBIfChtLSU5EX05PVElGSUNBVElPTl9ERUxJVkVSRUQQDRIOCgpLSU5EX0VSUk9SEA4SIAocS0lORF9UUkFOU0NSSVBUX0dBUF9BQ0NFUFRFRBAPEiAKHEtJTkRfVFJBTlNDUklQVF9HQVBfREVURUNURUQQEBIVChFLSU5EX1RVUk5fU1RPUFBFRBAREhcKE0tJTkRfSU5QVVRfQUNDRVBURUQQEhISCg5LSU5EX1dPUktTUEFDRRATEg4KCktJTkRfUVVFVUUQFBIPCgtLSU5EX1dPUktFUhAVEg8KC0tJTkRfTEVER0VSEBYi/QEKFENyZWF0ZVNlc3Npb25SZXF1ZXN0EigKBmNvbmZpZxgBIAEoCzIYLmNpcmN1cy52MS5TZXNzaW9uQ29uZmlnEh0KEHBpbm5lZF93b3JrZXJfaWQYAiABKAlIAIgBARISCgpwcm9qZWN0X2lkGAMgASgJEhsKDmxvY2F0aW9uX2luZGV4GAQgASgNSAGIAQESGQoRY2xpZW50X3JlcXVlc3RfaWQYBSABKAkSGAoLcHJvdmlkZXJfaWQYBiABKAlIAogBAUITChFfcGlubmVkX3dvcmtlcl9pZEIRCg9fbG9jYXRpb25faW5kZXhCDgoMX3Byb3ZpZGVyX2lkIjwKFUNyZWF0ZVNlc3Npb25SZXNwb25zZRIjCgdzZXNzaW9uGAEgASgLMhIuY2lyY3VzLnYxLlNlc3Npb24ieQoSU2VuZE1lc3NhZ2VSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSFQoNY2xpZW50X21zZ19pZBgCIAEoCRIMCgR0ZXh0GAMgASgJEioKCHByaW9yaXR5GAQgASgOMhguY2lyY3VzLnYxLklucHV0UHJpb3JpdHkiOgoTU2VuZE1lc3NhZ2VSZXNwb25zZRIQCghpbnB1dF9pZBgBIAEoCRIRCglldmVudF9zZXEYAiABKAQiPAoTV2F0Y2hTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhEKCWFmdGVyX3NlcRgCIAEoBCJQChNMaXN0U2Vzc2lvbnNSZXF1ZXN0EhEKCXBhZ2Vfc2l6ZRgBIAEoDRISCgpwYWdlX3Rva2VuGAIgASgJEhIKCnByb2plY3RfaWQYAyABKAkiVQoUTGlzdFNlc3Npb25zUmVzcG9uc2USJAoIc2Vzc2lvbnMYASADKAsyEi5jaXJjdXMudjEuU2Vzc2lvbhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiJwoRR2V0U2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSJyChRVcGRhdGVTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEhIKBXRpdGxlGAIgASgJSACIAQESGAoLcHJvdmlkZXJfaWQYAyABKAlIAYgBAUIICgZfdGl0bGVCDgoMX3Byb3ZpZGVyX2lkIqYCCg9TZXNzaW9uQXBwcm92YWwSEwoLYXBwcm92YWxfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRITCgt0b29sX3VzZV9pZBgDIAEoCRIQCghhZ2VudF9pZBgEIAEoCRIMCgR0b29sGAUgASgJEg4KBmRldmljZRgGIAEoCRIRCgltYXRjaF9rZXkYByABKAkSDwoHZGlzcGxheRgIIAEoCRIOCgZyZWFzb24YCSABKAkSGgoSY3JlYXRlZF9hdF91bml4X21zGAogASgDEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgLIAEoAxIlCgRraW5kGAwgASgOMhcuY2lyY3VzLnYxLkFwcHJvdmFsS2luZBISCgppbnB1dF9qc29uGA0gASgJIioKFExpc3RBcHByb3ZhbHNSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiRgoVTGlzdEFwcHJvdmFsc1Jlc3BvbnNlEi0KCWFwcHJvdmFscxgBIAMoCzIaLmNpcmN1cy52MS5TZXNzaW9uQXBwcm92YWwiagoWUmVzb2x2ZUFwcHJvdmFsUmVxdWVzdBITCgthcHByb3ZhbF9pZBgBIAEoCRIPCgdhcHByb3ZlGAIgASgIEioKB2Fuc3dlcnMYAyADKAsyGS5jaXJjdXMudjEuUXVlc3Rpb25BbnN3ZXIiQwoOUXVlc3Rpb25BbnN3ZXISEAoIcXVlc3Rpb24YASABKAkSEAoIc2VsZWN0ZWQYAiADKAkSDQoFb3RoZXIYAyABKAkiGQoXUmVzb2x2ZUFwcHJvdmFsUmVzcG9uc2UiJgoQSW50ZXJydXB0UmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhMKEUludGVycnVwdFJlc3BvbnNlIigKElN0b3BTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIhUKE1N0b3BTZXNzaW9uUmVzcG9uc2UiSgoURGVsZXRlU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIeChZkaXNjYXJkX2xlZGdlcl9jaGFuZ2VzGAIgASgIIhcKFURlbGV0ZVNlc3Npb25SZXNwb25zZSJKChVSZWNvdmVyU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIdChVhY2NlcHRfdHJhbnNjcmlwdF9nYXAYAiABKAgiGAoWUmVjb3ZlclNlc3Npb25SZXNwb25zZSIrChVSZXRyeVdvcmtzcGFjZVJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSJHChZSZXRyeVdvcmtzcGFjZVJlc3BvbnNlEi0KCXdvcmtzcGFjZRgBIAEoCzIaLmNpcmN1cy52MS5Xb3Jrc3BhY2VTdGF0dXMqYgoNSW5wdXRQcmlvcml0eRIeChpJTlBVVF9QUklPUklUWV9VTlNQRUNJRklFRBAAEhkKFUlOUFVUX1BSSU9SSVRZX05PUk1BTBABEhYKEklOUFVUX1BSSU9SSVRZX05PVxACKnMKClR1cm5PcmlnaW4SGwoXVFVSTl9PUklHSU5fVU5TUEVDSUZJRUQQABIVChFUVVJOX09SSUdJTl9JTlBVVBABEhwKGFRVUk5fT1JJR0lOX05PVElGSUNBVElPThACEhMKD1RVUk5fT1JJR0lOX0NMSRADKpcBCgtUdXJuT3V0Y29tZRIcChhUVVJOX09VVENPTUVfVU5TUEVDSUZJRUQQABIaChZUVVJOX09VVENPTUVfQ09NUExFVEVEEAESHAoYVFVSTl9PVVRDT01FX0lOVEVSUlVQVEVEEAISFgoSVFVSTl9PVVRDT01FX0VSUk9SEAMSGAoUVFVSTl9PVVRDT01FX1NUT1BQRUQQBCriAQoLUXVldWVSZWFzb24SHAoYUVVFVUVfUkVBU09OX1VOU1BFQ0lGSUVEEAASHgoaUVVFVUVfUkVBU09OX1BST1ZJREVSX0ZVTEwQARIjCh9RVUVVRV9SRUFTT05fTk9fQVNTSUdORURfV09SS0VSEAISIQodUVVFVUVfUkVBU09OX1BST1ZJREVSX0RFTEVURUQQAxIsCihRVUVVRV9SRUFTT05fUFJPVklERVJfU0VDUkVUU19VTlJFQURBQkxFEAQSHwobUVVFVUVfUkVBU09OX1dPUktFUl9PRkZMSU5FEAUqeQoMQXBwcm92YWxLaW5kEh0KGUFQUFJPVkFMX0tJTkRfVU5TUEVDSUZJRUQQABIWChJBUFBST1ZBTF9LSU5EX1RPT0wQARIaChZBUFBST1ZBTF9LSU5EX1FVRVNUSU9OEAISFgoSQVBQUk9WQUxfS0lORF9QTEFOEAMymggKDlNlc3Npb25TZXJ2aWNlElIKDUNyZWF0ZVNlc3Npb24SHy5jaXJjdXMudjEuQ3JlYXRlU2Vzc2lvblJlcXVlc3QaIC5jaXJjdXMudjEuQ3JlYXRlU2Vzc2lvblJlc3BvbnNlEkwKC1NlbmRNZXNzYWdlEh0uY2lyY3VzLnYxLlNlbmRNZXNzYWdlUmVxdWVzdBoeLmNpcmN1cy52MS5TZW5kTWVzc2FnZVJlc3BvbnNlEkkKDFdhdGNoU2Vzc2lvbhIeLmNpcmN1cy52MS5XYXRjaFNlc3Npb25SZXF1ZXN0GhcuY2lyY3VzLnYxLlNlc3Npb25FdmVudDABEk8KDExpc3RTZXNzaW9ucxIeLmNpcmN1cy52MS5MaXN0U2Vzc2lvbnNSZXF1ZXN0Gh8uY2lyY3VzLnYxLkxpc3RTZXNzaW9uc1Jlc3BvbnNlEj4KCkdldFNlc3Npb24SHC5jaXJjdXMudjEuR2V0U2Vzc2lvblJlcXVlc3QaEi5jaXJjdXMudjEuU2Vzc2lvbhJECg1VcGRhdGVTZXNzaW9uEh8uY2lyY3VzLnYxLlVwZGF0ZVNlc3Npb25SZXF1ZXN0GhIuY2lyY3VzLnYxLlNlc3Npb24SUgoNTGlzdEFwcHJvdmFscxIfLmNpcmN1cy52MS5MaXN0QXBwcm92YWxzUmVxdWVzdBogLmNpcmN1cy52MS5MaXN0QXBwcm92YWxzUmVzcG9uc2USWAoPUmVzb2x2ZUFwcHJvdmFsEiEuY2lyY3VzLnYxLlJlc29sdmVBcHByb3ZhbFJlcXVlc3QaIi5jaXJjdXMudjEuUmVzb2x2ZUFwcHJvdmFsUmVzcG9uc2USRgoJSW50ZXJydXB0EhsuY2lyY3VzLnYxLkludGVycnVwdFJlcXVlc3QaHC5jaXJjdXMudjEuSW50ZXJydXB0UmVzcG9uc2USTAoLU3RvcFNlc3Npb24SHS5jaXJjdXMudjEuU3RvcFNlc3Npb25SZXF1ZXN0Gh4uY2lyY3VzLnYxLlN0b3BTZXNzaW9uUmVzcG9uc2USUgoNRGVsZXRlU2Vzc2lvbhIfLmNpcmN1cy52MS5EZWxldGVTZXNzaW9uUmVxdWVzdBogLmNpcmN1cy52MS5EZWxldGVTZXNzaW9uUmVzcG9uc2USVQoOUmVjb3ZlclNlc3Npb24SIC5jaXJjdXMudjEuUmVjb3ZlclNlc3Npb25SZXF1ZXN0GiEuY2lyY3VzLnYxLlJlY292ZXJTZXNzaW9uUmVzcG9uc2USVQoOUmV0cnlXb3Jrc3BhY2USIC5jaXJjdXMudjEuUmV0cnlXb3Jrc3BhY2VSZXF1ZXN0GiEuY2lyY3VzLnYxLlJldHJ5V29ya3NwYWNlUmVzcG9uc2VCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM", [file_circus_v1_ledger, file_circus_v1_workspace]);
 
 /**
  * SessionConfig is reused unchanged when creating a session and acquiring it.
@@ -49,7 +49,9 @@ export type SessionConfig = Message<"circus.v1.SessionConfig"> & {
   model: string;
 
   /**
-   * SDK permission mode, at most 128 bytes; empty selects auto.
+   * SDK permission mode, at most 128 bytes; empty selects auto. "plan" is
+   * refused (INVALID_ARGUMENT at CreateSession): plan mode needs a plan
+   * approval, which does not exist yet.
    *
    * @generated from field: string permission_mode = 4;
    */
@@ -363,7 +365,7 @@ export const SessionEventSchema: GenMessage<SessionEvent> = /*@__PURE__*/
 
 /**
  * Shared with worker-published events. TURN_STARTED payload includes origin.
- * Kinds 8, 9, 10, 15, 17, 18, 19, 20, 21 and 22 are recorded by the
+ * Kinds 7, 8, 9, 10, 15, 17, 18, 19, 20, 21 and 22 are recorded by the
  * control plane only: a worker event batch containing one of them is dropped as
  * INVALID.
  *
@@ -409,13 +411,20 @@ export enum SessionEvent_Kind {
   PERMISSION_DENIED = 6,
 
   /**
+   * Recorded by the control plane only, in the RequestApproval
+   * transaction that creates the approval (a deduplicated request records
+   * nothing): {"approval_id","kind":"tool"|"question","tool","device",
+   * "tool_use_id","display","reason"}, plus "input_json" for a question.
+   * It therefore precedes every APPROVAL_RESOLVED of the approval.
+   *
    * @generated from enum value: KIND_APPROVAL_PENDING = 7;
    */
   APPROVAL_PENDING = 7,
 
   /**
    * Recorded by the control plane only, when the user resolves an
-   * approval.
+   * approval, when a newer question supersedes a pending one, and when a
+   * stop ends a pending question ("state":"expired").
    *
    * @generated from enum value: KIND_APPROVAL_RESOLVED = 8;
    */
@@ -832,12 +841,17 @@ export const UpdateSessionRequestSchema: GenMessage<UpdateSessionRequest> = /*@_
   messageDesc(file_circus_v1_session, 11);
 
 /**
- * Approval requests merge while pending by (session, tool, device, match_key),
- * ignoring display, reason and tool_use_id. match_key is the SHA-256 of the
- * matched command or path in 64 lowercase hexadecimal digits, so display is
- * what a user reads (at most 1024 bytes, as reason). Pending requests and
- * unused grants each have a cap of 32 per session and expire after ten
- * minutes.
+ * TOOL approval requests merge while pending by (session, tool, device,
+ * match_key), ignoring display, reason and tool_use_id. match_key is the
+ * SHA-256 of the matched command or path in 64 lowercase hexadecimal digits,
+ * so display is what a user reads (at most 1024 bytes, as reason). Pending
+ * requests and unused grants each have a cap of 32 per session; TOOL
+ * requests and grants expire after ten minutes.
+ *
+ * QUESTION (and PLAN) requests merge by tool_use_id only and do not expire:
+ * one stays pending until it is answered, dismissed, superseded by a newer
+ * request of the same kind in the session, or the session stops. They count
+ * toward the 32 pending requests and pending_approval_count.
  *
  * @generated from message circus.v1.SessionApproval
  */
@@ -893,9 +907,25 @@ export type SessionApproval = Message<"circus.v1.SessionApproval"> & {
   createdAtUnixMs: bigint;
 
   /**
+   * Zero for kinds that do not expire.
+   *
    * @generated from field: int64 expires_at_unix_ms = 11;
    */
   expiresAtUnixMs: bigint;
+
+  /**
+   * @generated from field: circus.v1.ApprovalKind kind = 12;
+   */
+  kind: ApprovalKind;
+
+  /**
+   * QUESTION: the AskUserQuestion input as the CLI gave it to canUseTool
+   * ({"questions":[{"question","header","options":[{"label","description",
+   * "preview"?}],"multiSelect"}]}), at most 32 KiB. Empty for TOOL.
+   *
+   * @generated from field: string input_json = 13;
+   */
+  inputJson: string;
 };
 
 /**
@@ -943,8 +973,23 @@ export const ListApprovalsResponseSchema: GenMessage<ListApprovalsResponse> = /*
 
 /**
  * Resolving an already resolved approval is idempotent and creates no additional
- * grant or input. Approval of a stopped session is refused. Approving atomically
- * creates one grant and an approval input asking the model to retry.
+ * grant or input. Approval of a stopped session is refused.
+ *
+ * TOOL: approving atomically creates one grant and an approval input asking
+ * the model to retry; answers must be empty.
+ *
+ * QUESTION: approve=true answers and requires exactly one answer per
+ * question, in the questions' order, each naming its question verbatim;
+ * selected labels must be the question's option labels (more than one only
+ * when multiSelect), and selected and other may not both be empty. It
+ * atomically writes one input of kind ANSWER carrying the answers (no
+ * grant).
+ * approve=false dismisses the question and writes no input.
+ * A question that is no longer pending: answering it again after it was
+ * answered, or dismissing it again after it was dismissed, is idempotent;
+ * dismissing an answered (or superseded) question is a no-op; answering a
+ * question that was dismissed, superseded by a newer one or ended by a stop
+ * is FAILED_PRECONDITION, as is any resolution of an expired approval.
  *
  * @generated from message circus.v1.ResolveApprovalRequest
  */
@@ -958,6 +1003,13 @@ export type ResolveApprovalRequest = Message<"circus.v1.ResolveApprovalRequest">
    * @generated from field: bool approve = 2;
    */
   approve: boolean;
+
+  /**
+   * QUESTION only; at most 4.
+   *
+   * @generated from field: repeated circus.v1.QuestionAnswer answers = 3;
+   */
+  answers: QuestionAnswer[];
 };
 
 /**
@@ -966,6 +1018,39 @@ export type ResolveApprovalRequest = Message<"circus.v1.ResolveApprovalRequest">
  */
 export const ResolveApprovalRequestSchema: GenMessage<ResolveApprovalRequest> = /*@__PURE__*/
   messageDesc(file_circus_v1_session, 15);
+
+/**
+ * @generated from message circus.v1.QuestionAnswer
+ */
+export type QuestionAnswer = Message<"circus.v1.QuestionAnswer"> & {
+  /**
+   * The question text, verbatim; at most 4 KiB.
+   *
+   * @generated from field: string question = 1;
+   */
+  question: string;
+
+  /**
+   * Chosen option labels; at most 4.
+   *
+   * @generated from field: repeated string selected = 2;
+   */
+  selected: string[];
+
+  /**
+   * The user's own answer ("Other"); at most 4 KiB.
+   *
+   * @generated from field: string other = 3;
+   */
+  other: string;
+};
+
+/**
+ * Describes the message circus.v1.QuestionAnswer.
+ * Use `create(QuestionAnswerSchema)` to create a new message.
+ */
+export const QuestionAnswerSchema: GenMessage<QuestionAnswer> = /*@__PURE__*/
+  messageDesc(file_circus_v1_session, 16);
 
 /**
  * @generated from message circus.v1.ResolveApprovalResponse
@@ -978,7 +1063,7 @@ export type ResolveApprovalResponse = Message<"circus.v1.ResolveApprovalResponse
  * Use `create(ResolveApprovalResponseSchema)` to create a new message.
  */
 export const ResolveApprovalResponseSchema: GenMessage<ResolveApprovalResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 16);
+  messageDesc(file_circus_v1_session, 17);
 
 /**
  * Interrupt requests an abort without stopping the session: it raises
@@ -999,7 +1084,7 @@ export type InterruptRequest = Message<"circus.v1.InterruptRequest"> & {
  * Use `create(InterruptRequestSchema)` to create a new message.
  */
 export const InterruptRequestSchema: GenMessage<InterruptRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 17);
+  messageDesc(file_circus_v1_session, 18);
 
 /**
  * @generated from message circus.v1.InterruptResponse
@@ -1012,7 +1097,7 @@ export type InterruptResponse = Message<"circus.v1.InterruptResponse"> & {
  * Use `create(InterruptResponseSchema)` to create a new message.
  */
 export const InterruptResponseSchema: GenMessage<InterruptResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 18);
+  messageDesc(file_circus_v1_session, 19);
 
 /**
  * StopSession is idempotent, prevents new turns and stops the session's jobs.
@@ -1032,7 +1117,7 @@ export type StopSessionRequest = Message<"circus.v1.StopSessionRequest"> & {
  * Use `create(StopSessionRequestSchema)` to create a new message.
  */
 export const StopSessionRequestSchema: GenMessage<StopSessionRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 19);
+  messageDesc(file_circus_v1_session, 20);
 
 /**
  * @generated from message circus.v1.StopSessionResponse
@@ -1045,7 +1130,7 @@ export type StopSessionResponse = Message<"circus.v1.StopSessionResponse"> & {
  * Use `create(StopSessionResponseSchema)` to create a new message.
  */
 export const StopSessionResponseSchema: GenMessage<StopSessionResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 20);
+  messageDesc(file_circus_v1_session, 21);
 
 /**
  * DeleteSession deletes a session and everything recorded for it. It is
@@ -1079,7 +1164,7 @@ export type DeleteSessionRequest = Message<"circus.v1.DeleteSessionRequest"> & {
  * Use `create(DeleteSessionRequestSchema)` to create a new message.
  */
 export const DeleteSessionRequestSchema: GenMessage<DeleteSessionRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 21);
+  messageDesc(file_circus_v1_session, 22);
 
 /**
  * @generated from message circus.v1.DeleteSessionResponse
@@ -1092,7 +1177,7 @@ export type DeleteSessionResponse = Message<"circus.v1.DeleteSessionResponse"> &
  * Use `create(DeleteSessionResponseSchema)` to create a new message.
  */
 export const DeleteSessionResponseSchema: GenMessage<DeleteSessionResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 22);
+  messageDesc(file_circus_v1_session, 23);
 
 /**
  * RecoverSession accepts a gap in a broken session's transcript. Allowed only
@@ -1134,7 +1219,7 @@ export type RecoverSessionRequest = Message<"circus.v1.RecoverSessionRequest"> &
  * Use `create(RecoverSessionRequestSchema)` to create a new message.
  */
 export const RecoverSessionRequestSchema: GenMessage<RecoverSessionRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 23);
+  messageDesc(file_circus_v1_session, 24);
 
 /**
  * @generated from message circus.v1.RecoverSessionResponse
@@ -1147,7 +1232,7 @@ export type RecoverSessionResponse = Message<"circus.v1.RecoverSessionResponse">
  * Use `create(RecoverSessionResponseSchema)` to create a new message.
  */
 export const RecoverSessionResponseSchema: GenMessage<RecoverSessionResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 24);
+  messageDesc(file_circus_v1_session, 25);
 
 /**
  * RetryWorkspace starts the session's workspace over after a failure:
@@ -1169,7 +1254,7 @@ export type RetryWorkspaceRequest = Message<"circus.v1.RetryWorkspaceRequest"> &
  * Use `create(RetryWorkspaceRequestSchema)` to create a new message.
  */
 export const RetryWorkspaceRequestSchema: GenMessage<RetryWorkspaceRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 25);
+  messageDesc(file_circus_v1_session, 26);
 
 /**
  * @generated from message circus.v1.RetryWorkspaceResponse
@@ -1186,7 +1271,7 @@ export type RetryWorkspaceResponse = Message<"circus.v1.RetryWorkspaceResponse">
  * Use `create(RetryWorkspaceResponseSchema)` to create a new message.
  */
 export const RetryWorkspaceResponseSchema: GenMessage<RetryWorkspaceResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_session, 26);
+  messageDesc(file_circus_v1_session, 27);
 
 /**
  * InputPriority controls input delivery even while a turn is running.
@@ -1350,6 +1435,49 @@ export enum QueueReason {
  */
 export const QueueReasonSchema: GenEnum<QueueReason> = /*@__PURE__*/
   enumDesc(file_circus_v1_session, 3);
+
+/**
+ * What a pending approval asks the user for.
+ *
+ * @generated from enum circus.v1.ApprovalKind
+ */
+export enum ApprovalKind {
+  /**
+   * @generated from enum value: APPROVAL_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A tool call the permission mode did not allow: approving creates a
+   * one-off grant and an input asking the model to retry.
+   *
+   * @generated from enum value: APPROVAL_KIND_TOOL = 1;
+   */
+  TOOL = 1,
+
+  /**
+   * The model's AskUserQuestion call. The worker denied the call and told
+   * the model to end its turn; answering writes an input carrying the
+   * answers, which starts the next turn. No grant, device or match_key.
+   *
+   * @generated from enum value: APPROVAL_KIND_QUESTION = 2;
+   */
+  QUESTION = 2,
+
+  /**
+   * Reserved for the model's ExitPlanMode call (plan approval); not
+   * requested yet.
+   *
+   * @generated from enum value: APPROVAL_KIND_PLAN = 3;
+   */
+  PLAN = 3,
+}
+
+/**
+ * Describes the enum circus.v1.ApprovalKind.
+ */
+export const ApprovalKindSchema: GenEnum<ApprovalKind> = /*@__PURE__*/
+  enumDesc(file_circus_v1_session, 4);
 
 /**
  * SessionService is the user-facing session API. Every call authenticates a
