@@ -23,6 +23,7 @@ import (
 	"github.com/EricWvi/circus/internal/store/sqlite/sqlitetest"
 	"github.com/EricWvi/circus/internal/testutil/fakeworker"
 	"github.com/EricWvi/circus/internal/testutil/wait"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // TestFakeWorkerAgents: started without Claude Code, the fake worker
@@ -39,7 +40,11 @@ func TestFakeWorkerAgents(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	logs := &syncBuffer{}
-	srv, err := controlplane.New(ctx, st, controlplane.Config{Listen: "127.0.0.1:0", DevInsecure: true, LogOutput: logs})
+	// The whole test runs within wait.Timeout; the production bcrypt cost
+	// alone (the dummy hash at New, the user's at Setup) takes most of it
+	// under the race detector, and all of it on a loaded runner.
+	srv, err := controlplane.New(ctx, st, controlplane.Config{Listen: "127.0.0.1:0", DevInsecure: true, LogOutput: logs,
+		BcryptCost: bcrypt.MinCost})
 	if err != nil {
 		t.Fatal(err)
 	}

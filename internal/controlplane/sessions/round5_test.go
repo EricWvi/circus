@@ -45,7 +45,10 @@ func TestUnwatchRingRemembersSeveral(t *testing.T) {
 	ev := f.attach(c, 2)
 	f.input("s1", "go", store.InputNormal)
 	f.input("s2", "go", store.InputNormal)
-	offerTo(t, ev, "s1")
+	// A worker acquires only what it was offered: s2's Offer may come
+	// after s1's lease reply (the scheduler evaluates s2 later), and in
+	// either order relative to s1's.
+	offers(t, ev, "s1", "s2")
 	first, err := c.Send(wait.Ctx(t), wc.Acquire("s1", true))
 	must(t, err)
 	if r, err := first.Wait(wait.Ctx(t)); err != nil || r.GetLease() == nil {
