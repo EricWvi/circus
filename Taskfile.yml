@@ -180,6 +180,25 @@ tasks:
         fi
         CIRCUS_BIN="$CIRCUS_HOME/bin/circus" exec node worker/dist/main.js
 
+  # The daemon keeps its credential and state under .tmp/dev-daemon, apart
+  # from an installed daemon service's.
+  web:dev:daemon:
+    desc: Build, enroll and run the device daemon from source for a Web UI account (USER_EMAIL=<email>)
+    requires:
+      vars: [USER_EMAIL]
+    env:
+      CIRCUS_DEV_USER_EMAIL: "{{.USER_EMAIL}}"
+    cmds:
+      - |
+        export CIRCUS_HOME="$PWD/.tmp/dev-daemon"
+        mkdir -p "$CIRCUS_HOME/bin"
+        go build -o "$CIRCUS_HOME/bin/circus" ./cmd/circus
+        if [ ! -f "$CIRCUS_HOME/config/daemon.json" ]; then
+          daemon_join_link="$("$CIRCUS_HOME/bin/circus" server enroll-token create --config web/dev.server.yaml --user "$CIRCUS_DEV_USER_EMAIL" --role daemon --url http://127.0.0.1:8443)"
+          printf '%s\n' "$daemon_join_link" | "$CIRCUS_HOME/bin/circus" join --role daemon --name web-dev-daemon
+        fi
+        exec "$CIRCUS_HOME/bin/circus" daemon
+
   cli:
     desc: Run the circus CLI from source with its files under .tmp/dev (task cli -- <args>)
     env:
