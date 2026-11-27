@@ -682,7 +682,7 @@ export function createMockBackend({
         return state.devices
           .filter((d) => d.owner === owner)
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map(({ owner: _, deviceId: __, ...device }) => device)
+          .map(({ owner: _, ...device }) => device)
       }),
       listWorkers: call(() => {
         const owner = currentUser()
@@ -706,11 +706,34 @@ export function createMockBackend({
         if (!install) reschedule()
         return publicWorker(owner, worker)
       }),
+      deleteDevice: call(({ deviceId }: { deviceId: string }) => {
+        const owner = currentUser()
+        const device = state.devices.find((d) => d.owner === owner && d.deviceId === deviceId)
+        if (!device) throw new ApiError("not_found", "Device not found.")
+        state.devices = state.devices.filter((d) => d !== device)
+        changed()
+      }),
+      deleteWorker: call(({ workerId }: { workerId: string }) => {
+        const owner = currentUser()
+        const worker = state.workers.find((w) => w.owner === owner && w.workerId === workerId)
+        if (!worker) throw new ApiError("not_found", "Worker not found.")
+        // Workers and providers live in this tab's memory: nothing to save.
+        state.workers = state.workers.filter((w) => w !== worker)
+        for (const p of state.providers) p.workerIds = p.workerIds.filter((id) => id !== workerId)
+      }),
       // A link that enrolls nothing: the mock has no enrollment endpoint.
-      createEnrollLink: call(({ role }: { role: EnrollRole }) => {
-        currentUser()
+      createEnrollLink: call(({ role, replaceId }: { role: EnrollRole; replaceId?: string }) => {
+        const owner = currentUser()
         const tokens = { daemon: 1, worker: 1, both: 2 }[role]
         if (!tokens) throw invalid("role must be daemon, worker or both", "role")
+        if (replaceId) {
+          if (role === "both") throw invalid("a rejoin link enrolls one role", "role")
+          const known =
+            role === "daemon"
+              ? state.devices.some((d) => d.owner === owner && d.deviceId === replaceId)
+              : state.workers.some((w) => w.owner === owner && w.workerId === replaceId)
+          if (!known) throw new ApiError("not_found", "The identity to replace was not found.")
+        }
         const origin = globalThis.location?.origin ?? "http://localhost:5173"
         const fragment = Array.from({ length: tokens }, () => nanoid(43)).join(".")
         return { link: `${origin}/join#${fragment}`, expiresUnixMs: now() + 3_600_000, serverVersion: "dev" }

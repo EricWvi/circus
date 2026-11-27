@@ -279,17 +279,44 @@ describe("devices over Connect", () => {
         service(MachineService, {
           listDevices: () => ({
             devices: [
-              { name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000n, os: "linux", arch: "amd64", version: "0.1.0" },
-              { name: "new", online: false, lastSeenUnixMs: 0n, os: "", arch: "", version: "" },
+              { deviceId: "d-box", name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000n, os: "linux", arch: "amd64", version: "0.1.0" },
+              { deviceId: "d-new", name: "new", online: false, lastSeenUnixMs: 0n, os: "", arch: "", version: "" },
             ],
           }),
         }),
       ),
     )
     expect(await client.listDevices()).toEqual([
-      { name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000, os: "linux", arch: "amd64", version: "0.1.0" },
-      { name: "new", online: false, lastSeenUnixMs: 0, os: "", arch: "", version: "" },
+      { deviceId: "d-box", name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000, os: "linux", arch: "amd64", version: "0.1.0" },
+      { deviceId: "d-new", name: "new", online: false, lastSeenUnixMs: 0, os: "", arch: "", version: "" },
     ])
+  })
+
+  it("asks for a rejoin link and deletes devices and workers", async () => {
+    const seen: string[] = []
+    const client = createConnectMachines(
+      createRouterTransport(({ service }) =>
+        service(MachineService, {
+          createEnrollLink: (req) => {
+            seen.push(`link ${req.role} ${req.replaceId}`)
+            return { link: "https://cp/join#t", expiresUnixMs: 1n, serverVersion: "v1.0.0" }
+          },
+          deleteDevice: (req) => {
+            seen.push(`device ${req.deviceId}`)
+            return {}
+          },
+          deleteWorker: (req) => {
+            seen.push(`worker ${req.workerId}`)
+            return {}
+          },
+        }),
+      ),
+    )
+    await client.createEnrollLink({ role: "worker", replaceId: "w1" })
+    await client.createEnrollLink({ role: "daemon" })
+    await client.deleteDevice({ deviceId: "d1" })
+    await client.deleteWorker({ workerId: "w1" })
+    expect(seen).toEqual([`link ${EnrollRole.WORKER} w1`, `link ${EnrollRole.DAEMON} `, "device d1", "worker w1"])
   })
 
   it.each([

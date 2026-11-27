@@ -18,15 +18,25 @@ export const MAX_UINT64 = (1n << 64n) - 1n;
 /** The header the control plane sets on its own link authentication refusals (`internal/wire.LinkAuthHeader`). */
 export const LINK_AUTH_HEADER = "circus-auth";
 export const LINK_AUTH_REJECTED = "rejected";
+export const LINK_AUTH_REVOKED = "revoked";
+export const LINK_PRINCIPAL_HEADER = "circus-principal";
 
 /**
  * A link failure retrying cannot fix: the control plane refused the
  * credential (`refused`), or it does not accept this worker build
- * (`incompatible`).
+ * (`incompatible`). `revokedPrincipal` is set only when the control plane
+ * proved it knows the credential and revoked it (403 with Circus-Auth:
+ * revoked): the identity id it names. An unknown credential's refusal
+ * (Circus-Auth: rejected) proves nothing: the control plane may be running
+ * on another or an older database.
  */
 export class TerminalLinkError extends Error {
   override name = "TerminalLinkError";
-  constructor(message: string, readonly reason: "refused" | "incompatible" = "refused") {
+  constructor(
+    message: string,
+    readonly reason: "refused" | "incompatible" = "refused",
+    readonly revokedPrincipal = "",
+  ) {
     super(message);
   }
 }
@@ -130,11 +140,16 @@ export class WireConnection {
       // Only the control plane's own refusal of the credential is terminal:
       // it marks it (LINK_AUTH_HEADER). A 401 or 403 from a proxy or WAF in
       // front of it is retried like any other failure.
-      const refused = (status === 401 || status === 403) &&
-        response.headers[LINK_AUTH_HEADER] === LINK_AUTH_REJECTED;
-      this.fail(refused
-        ? new TerminalLinkError(`worker upgrade HTTP ${status}: the control plane refused the credential`)
-        : new Error(`worker upgrade HTTP ${status}`));
+      const mark = status === 401 || status === 403 ? response.headers[LINK_AUTH_HEADER] : undefined;
+      const principal = response.headers[LINK_PRINCIPAL_HEADER];
+      if (mark === LINK_AUTH_REVOKED && typeof principal === "string" && principal !== "") {
+        this.fail(new TerminalLinkError(`worker upgrade HTTP ${status}: the control plane revoked the credential (worker ${principal})`,
+          "refused", principal));
+      } else if (mark === LINK_AUTH_REJECTED || mark === LINK_AUTH_REVOKED) {
+        this.fail(new TerminalLinkError(`worker upgrade HTTP ${status}: the control plane refused the credential`));
+      } else {
+        this.fail(new Error(`worker upgrade HTTP ${status}`));
+      }
     });
     this.#socket.once("open", () => {
       if (this.#ended) return;

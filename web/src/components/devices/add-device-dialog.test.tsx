@@ -32,6 +32,7 @@ async function renderPage({
   listDevices,
 }: { state?: MockState; issue?: Issue; listDevices?: (real: ListDevices) => ListDevices } = {}) {
   const requested: EnrollRole[] = []
+  const replaced: (string | undefined)[] = []
   const router = createMemoryRouter(
     [
       {
@@ -52,13 +53,14 @@ async function renderPage({
       listDevices: listDevices ? listDevices(client.machines.listDevices) : client.machines.listDevices,
       createEnrollLink: (req) => {
         requested.push(req.role)
+        replaced.push(req.replaceId)
         return issue ? issue(req.role) : client.machines.createEnrollLink(req)
       },
     },
   })
   const result = await renderWithBackend(<RouterProvider router={router} />, { state, wrapClient })
   await advance(50)
-  return { ...result, requested }
+  return { ...result, requested, replaced }
 }
 
 /** When the last link was issued, by the client's clock. */
@@ -116,6 +118,9 @@ const device = (name: string, online = true): MockDevice => ({
 
 const waiting = () => dialog().queryByText("Waiting for the device to join…")
 
+const nameInput = () => dialog().getByRole<HTMLInputElement>("textbox", { name: "Name (optional)" })
+const typeName = (name: string) => fireEvent.change(nameInput(), { target: { value: name } })
+
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
@@ -155,6 +160,63 @@ describe("the add device dialog", () => {
     expect(dialog().queryByText(/Node\.js/)).toBeNull()
     // The role belongs to the link now.
     expect(dialog().getByRole("radio", { name: /^Worker/ }).closest("fieldset")?.disabled).toBe(true)
+  })
+
+  it("takes an optional name, checked as it is typed", async () => {
+    const { requested } = await renderPage({ issue: release() })
+    await openDialog()
+    expect(nameInput().value).toBe("")
+    expect(dialog().getByText(/^Leave empty to use the machine's host name\./)).toBeTruthy()
+    expect(nameInput().getAttribute("aria-invalid")).toBeNull()
+
+    for (const [name, problem] of [
+      ["bad name", `Use only letters, digits, ".", "_" and "-", and start with a letter or digit.`],
+      ["box ", "Remove the spaces before or after the name."],
+      ["-box", `Use only letters, digits, ".", "_" and "-", and start with a letter or digit.`],
+      ["x".repeat(64), "Names are at most 63 characters."],
+    ]) {
+      typeName(name)
+      await advance(0)
+      expect(dialog().getByRole("alert").textContent).toBe(problem)
+      expect(nameInput().getAttribute("aria-invalid")).toBe("true")
+      // The error is read before the hint.
+      expect(nameInput().getAttribute("aria-describedby")?.split(" ")[0]).toBe(dialog().getByRole("alert").id)
+    }
+    // An invalid name issues no link: Generate, which a pointer still
+    // reaches, sends the user to the name; so does Enter.
+    const button = dialog().getByRole("button", { name: "Generate link" })
+    expect(button.getAttribute("aria-disabled")).toBe("true")
+    expect(button.className).not.toContain("aria-disabled:pointer-events-none")
+    fireEvent.click(button)
+    await advance(10)
+    expect(requested).toEqual([])
+    expect(document.activeElement).toBe(nameInput())
+    fireEvent.keyDown(nameInput(), { key: "Enter" })
+    await advance(10)
+    expect(requested).toEqual([])
+
+    typeName("Box-1.a_b")
+    await advance(0)
+    expect(dialog().queryByRole("alert")).toBeNull()
+    expect(nameInput().getAttribute("aria-invalid")).toBeNull()
+    // Enter in the field generates the link.
+    fireEvent.keyDown(nameInput(), { key: "Enter" })
+    await advance(10)
+    expect(requested).toEqual(["daemon"])
+    expect(lines().at(-2)).toBe(`  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join --name 'Box-1.a_b' &&`)
+    // Like the role, the name belongs to the link now.
+    expect(nameInput().disabled).toBe(true)
+
+    // Emptied again, the command joins under the host name.
+    cleanup()
+    await renderPage({ issue: release() })
+    await openDialog()
+    typeName("box")
+    typeName("")
+    await advance(0)
+    expect(dialog().queryByRole("alert")).toBeNull()
+    await generate()
+    expect(command()).not.toContain("--name")
   })
 
   it("follows the role and the platform", async () => {
@@ -491,12 +553,180 @@ describe("the add device dialog", () => {
       expect(waiting()).toBeTruthy()
     })
 
+    it("recognizes a device replaced under its name by its new id, and only that", async () => {
+      const { state } = await renderPage({ issue: release() })
+      await openDialog()
+      await generate()
+      // Devices that keep their id don't count, whatever they do.
+      const devbox = state.devices.find((d) => d.name === "devbox")!
+      devbox.online = false
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      devbox.online = true
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(waiting()).toBeTruthy()
+      // A join that replaces eric-win: same name, new id, the old one gone.
+      state.devices = state.devices.filter((d) => d.name !== "eric-win")
+      state.devices.push(device("eric-win"))
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(screen.getByRole("dialog", { name: "eric-win is connected" })).toBeTruthy()
+    })
+
+    it("follows the workers for a worker link", async () => {
+      const { state } = await renderPage({ issue: release() })
+      await openDialog()
+      fireEvent.click(dialog().getByRole("radio", { name: /^Worker/ }))
+      await generate()
+      expect(dialog().getByText("Waiting for the worker to join…")).toBeTruthy()
+      // A device joining doesn't count for a worker link.
+      state.devices.push(device("new-box"))
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(dialog().getByText("Waiting for the worker to join…")).toBeTruthy()
+      state.workers.push({ ...state.workers[0], workerId: "worker-new", name: "new-box", online: false, lastSeenUnixMs: 0 })
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(screen.getByRole("dialog", { name: "new-box joined" })).toBeTruthy()
+      expect(dialog().getByText("Start the worker on it to bring it online.")).toBeTruthy()
+    })
+
+    it("says what to do when the worker of a both-role link doesn't join", async () => {
+      const { state } = await renderPage({ issue: release() })
+      await openDialog()
+      fireEvent.click(dialog().getByRole("radio", { name: /^Both/ }))
+      await generate()
+      state.devices.push(device("new-box"))
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(screen.getByRole("dialog", { name: "new-box is connected" })).toBeTruthy()
+      expect(dialog().getByText("Waiting for the worker…")).toBeTruthy()
+      expect(dialog().getByText(/run this on the machine to enroll the worker alone with the same link/)).toBeTruthy()
+      // A command to copy: the same link, the worker role, then its service.
+      expect(command()!.split("\n").slice(-2)).toEqual([
+        `  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join --role worker &&`,
+        "  ~/.local/bin/circus worker install",
+      ])
+      state.workers.push({ ...state.workers[0], workerId: "worker-new", name: "new-box" })
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(dialog().getByText("Worker new-box joined too.")).toBeTruthy()
+      expect(dialog().queryByText("Waiting for the worker…")).toBeNull()
+    })
+
+    it("stops offering the worker command once the link expires", async () => {
+      const { state } = await renderPage({ issue: release() })
+      await openDialog()
+      fireEvent.click(dialog().getByRole("radio", { name: /^Both/ }))
+      await generate()
+      await advanceTo(50 * MINUTE)
+      state.devices.push(device("new-box"))
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(screen.getByRole("dialog", { name: "new-box is connected" })).toBeTruthy()
+      expect(command()).toContain("--role worker")
+      expect(dialog().getByText(/a taken name: add --name with another one/)).toBeTruthy()
+      // Past the deadline the command is gone: a new link is needed.
+      await advanceTo(HOUR + SECOND)
+      expect(command()).toBeNull()
+      expect(dialog().getByText(/then generate a link for Worker and run its command on the machine/)).toBeTruthy()
+      expect(dialog().getByText("Waiting for the worker…")).toBeTruthy()
+    })
+
+    it("takes only the name an add link was issued for", async () => {
+      const { state } = await renderPage({ issue: release() })
+      await openDialog()
+      typeName("lab-1")
+      await generate()
+      state.devices.push(device("other-box"))
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(waiting()).toBeTruthy()
+      state.devices.push(device("LAB-1"))
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(screen.getByRole("dialog", { name: "LAB-1 is connected" })).toBeTruthy()
+    })
+
     it("doesn't wait when the link enrolls only a worker", async () => {
       await renderPage({ issue: release() })
       await openDialog()
       fireEvent.click(dialog().getByRole("radio", { name: /^Worker/ }))
       await generate()
       expect(waiting()).toBeNull()
+    })
+  })
+
+  describe("rejoining", () => {
+    const openRejoin = async (name: string, kind: "devices" | "workers" = "devices") => {
+      const list = document.querySelector<HTMLElement>(`section[aria-labelledby="${kind}-heading"]`)!
+      fireEvent.pointerDown(within(list).getByRole("button", { name: `Actions for ${name}` }), { button: 0, ctrlKey: false })
+      await advance(0)
+      fireEvent.click(screen.getByRole("menuitem", { name: "Rejoin…" }))
+      await advance(0)
+    }
+
+    it("joins the machine again as an offline device, with --force, and sees it replaced", async () => {
+      const { state, requested, replaced } = await renderPage({ issue: release() })
+      await openRejoin("eric-win")
+      expect(screen.getByRole("dialog", { name: "Rejoin eric-win" })).toBeTruthy()
+      expect(dialog().getByText(/When it joins, the old eric-win is revoked/)).toBeTruthy()
+      // The role and the name are the device's.
+      expect(dialog().getAllByRole("radio").map((r) => r.getAttribute("value"))).toEqual(["daemon"])
+      // The name is shown as text: nothing to edit or select.
+      expect(dialog().queryByRole("textbox")).toBeNull()
+      expect(dialog().getByRole("term").textContent).toBe("Name")
+      expect(dialog().getByRole("definition").textContent).toBe("eric-win")
+      expect(dialog().getByText("The new identity keeps this name.")).toBeTruthy()
+      await generate()
+      expect(requested).toEqual(["daemon"])
+      expect(replaced).toEqual(["device-eric-win"])
+      expect(lines().at(-2)).toBe(`  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join --force &&`)
+      expect(dialog().getByText(/Run it on the machine that was eric-win\..*passes --force to circus join/)).toBeTruthy()
+      // Another machine joining meanwhile (another link) is not this one.
+      state.devices.push(device("other-box"))
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(waiting()).toBeTruthy()
+      state.devices = state.devices.filter((d) => d.name !== "eric-win")
+      state.devices.push(device("eric-win"))
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      expect(screen.getByRole("dialog", { name: "eric-win rejoined and is connected" })).toBeTruthy()
+      expect(dialog().getByText("The old identity was revoked.")).toBeTruthy()
+    })
+
+    it("returns focus to the row's menu when it closes, after its exit animation", async () => {
+      await renderPage({ issue: release() })
+      await openRejoin("eric-win")
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+      // Still the rejoin dialog while it closes.
+      expect(screen.queryByRole("dialog", { name: "Add device" })).toBeNull()
+      await advance(300)
+      expect(screen.queryByRole("dialog")).toBeNull()
+      const list = document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
+      expect(document.activeElement).toBe(within(list).getByRole("button", { name: "Actions for eric-win" }))
+    })
+
+    it("returns focus to the new identity's row after a rejoin", async () => {
+      const { state } = await renderPage({ issue: release() })
+      await openRejoin("eric-win")
+      await generate()
+      state.devices = state.devices.filter((d) => d.name !== "eric-win")
+      state.devices.push(device("eric-win"))
+      await advance(DEVICES_LIVE_INTERVAL_MS)
+      fireEvent.click(dialog().getAllByRole("button", { name: "Close" }).at(-1)!)
+      await advance(300)
+      expect(screen.queryByRole("dialog")).toBeNull()
+      const list = document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
+      expect(document.activeElement).toBe(within(list).getByRole("button", { name: "Actions for eric-win" }))
+    })
+
+    it("joins a worker again as a worker", async () => {
+      const { replaced } = await renderPage({ issue: release() })
+      await openRejoin("eric-win", "workers")
+      expect(dialog().getAllByRole("radio").map((r) => r.getAttribute("value"))).toEqual(["worker"])
+      await generate()
+      expect(replaced).toEqual(["worker-eric-win"])
+      expect(lines().at(-2)).toBe(`  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join --role worker --force &&`)
+    })
+
+    it("is offered only for an offline device or worker", async () => {
+      await renderPage({ issue: release() })
+      const list = document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
+      fireEvent.pointerDown(within(list).getByRole("button", { name: "Actions for devbox" }), { button: 0, ctrlKey: false })
+      await advance(0)
+      expect(screen.queryByRole("menuitem", { name: "Rejoin…" })).toBeNull()
+      expect(screen.getByRole("menuitem", { name: "Delete…" })).toBeTruthy()
     })
   })
 
@@ -564,6 +794,13 @@ describe("the add device dialog", () => {
     expect(zh.getByText("在要添加的机器上运行一条命令，安装 circus 并把它加入你的账户。")).toBeTruthy()
     expect(zh.getByRole("radio", { name: /^设备/ })).toBeTruthy()
     expect(zh.getByText("在该机器上为你的会话运行工具（circus daemon）。")).toBeTruthy()
+    expect(zh.getByRole("textbox", { name: "名称（可选）" })).toBeTruthy()
+    expect(zh.getByText(/^留空则使用该机器的主机名。/)).toBeTruthy()
+    fireEvent.change(zh.getByRole("textbox", { name: "名称（可选）" }), { target: { value: "名字" } })
+    await advance(0)
+    expect(zh.getByRole("alert").textContent).toBe("只能使用字母、数字以及 . _ - 三种符号，且须以字母或数字开头。")
+    fireEvent.change(zh.getByRole("textbox", { name: "名称（可选）" }), { target: { value: "" } })
+    await advance(0)
     fireEvent.click(zh.getByRole("button", { name: "生成链接" }))
     await advance(10)
     expect(zh.getByText("在要添加的机器上运行：")).toBeTruthy()

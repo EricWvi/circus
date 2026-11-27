@@ -120,6 +120,7 @@ export function createConnectMachines(transport: Transport): MachineService {
     listDevices: () =>
       call(async () =>
         (await client.listDevices({})).devices.map((d) => ({
+          deviceId: d.deviceId,
           name: d.name,
           online: d.online,
           lastSeenUnixMs: Number(d.lastSeenUnixMs),
@@ -141,9 +142,17 @@ export function createConnectMachines(transport: Transport): MachineService {
         if (!worker) throw malformed("worker")
         return workerOf(worker)
       }),
-    createEnrollLink: ({ role }) =>
+    deleteDevice: ({ deviceId }) =>
       call(async () => {
-        const res = await client.createEnrollLink({ role: enrollRoles[role] })
+        await client.deleteDevice({ deviceId })
+      }),
+    deleteWorker: ({ workerId }) =>
+      call(async () => {
+        await client.deleteWorker({ workerId })
+      }),
+    createEnrollLink: ({ role, replaceId }) =>
+      call(async () => {
+        const res = await client.createEnrollLink({ role: enrollRoles[role], replaceId: replaceId ?? "" })
         if (res.link === "") throw malformed("enrollment link")
         return {
           link: res.link,

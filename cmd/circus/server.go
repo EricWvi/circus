@@ -25,13 +25,16 @@ import (
 
 const serverUsage = `usage:
   circus server [--config config.yaml] [--debug]
-  circus server enroll-token create --user <email> --role daemon|worker|both [--ttl 1h] [--url https://host:port] [--config config.yaml]
+  circus server enroll-token create --user <email> --role daemon|worker|both [--replace <name>] [--ttl 1h] [--url https://host:port] [--config config.yaml]
   circus server device|worker list [--config config.yaml]
   circus server device|worker revoke --user <email> <name> [--config config.yaml]
 
 All server settings, including worker_connections and the database path,
 are read from the YAML file. See config.example.yaml. Admin commands open
-only an existing database. Revoke frees the identity's name for a new join.`
+only an existing database. Revoke frees the identity's name for a new join.
+--replace issues a rejoin link: the user's device (--role daemon) or worker
+(--role worker) of that name is revoked when the machine joins with the
+link, and the new identity takes its name.`
 
 // defaultListen is the default listen address and the port enroll-token
 // create assumes without --url.
@@ -128,6 +131,7 @@ func enrollTokenCreate(args []string, out, errOut io.Writer) error {
 	role := fs.String("role", "", "role the link enrolls: daemon, worker or both (one token per role)")
 	ttl := fs.Duration("ttl", auth.DefaultEnrollTTL, "token lifetime")
 	base := fs.String("url", "", "public base URL of the control plane (default https://<hostname>:"+defaultPort+")")
+	replace := fs.String("replace", "", "rejoin: name of the user's device (--role daemon) or worker (--role worker) the joining machine replaces")
 	pos, err := parseArgs(fs, args)
 	if err != nil {
 		return err
@@ -145,6 +149,9 @@ func enrollTokenCreate(args []string, out, errOut io.Writer) error {
 	case "worker":
 		kinds = []store.PrincipalKind{store.KindWorker}
 	case "both":
+		if *replace != "" {
+			return errors.New("--replace needs --role daemon or --role worker: a rejoin link replaces one identity")
+		}
 		kinds = []store.PrincipalKind{store.KindDevice, store.KindWorker}
 	case "":
 		return errors.New("--role is required: daemon, worker or both")
@@ -187,8 +194,26 @@ func enrollTokenCreate(args []string, out, errOut io.Writer) error {
 	// the daemon token first (see joinLink in join.go).
 	var tokens []string
 	var expires int64
+	var replaced store.Identity
 	for _, kind := range kinds {
-		token, rec, err := auth.CreateEnrollToken(ctx, st, user.ID, kind, *ttl, now)
+		var token string
+		var rec store.EnrollToken
+		if *replace != "" {
+			err = st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
+				var err error
+				replaced, err = tx.GetIdentityByName(ctx, kind, user.ID, *replace)
+				if errors.Is(err, store.ErrNotFound) {
+					return fmt.Errorf("--replace: %s has no %s named %q (see `circus server %s list`)", user.Email, auth.AdminNoun(kind), *replace, auth.AdminNoun(kind))
+				}
+				if err != nil {
+					return err
+				}
+				token, rec, err = auth.CreateRejoinToken(ctx, tx, user.ID, kind, replaced.ID, *ttl, now)
+				return err
+			})
+		} else {
+			token, rec, err = auth.CreateEnrollToken(ctx, st, user.ID, kind, *ttl, now)
+		}
 		if err != nil {
 			return err
 		}
@@ -200,6 +225,12 @@ func enrollTokenCreate(args []string, out, errOut io.Writer) error {
 	hint := "circus join"
 	if *role == "worker" {
 		hint = "circus join --role worker"
+	}
+	if *replace != "" {
+		// The machine still holds the old credential of the role.
+		hint += " --force"
+		fmt.Fprintf(errOut, "Joining with it replaces %s %q (%s): that one is revoked, and the new one takes its name. "+
+			"The join is refused while it is online.\n", auth.AdminNoun(replaced.Kind), replaced.Name, replaced.ID)
 	}
 	fmt.Fprintf(errOut, "One-time %s enrollment link above, valid until %s. On the machine, run\n  %s\nand paste the link when asked (or pipe it in).\n",
 		*role, time.UnixMilli(expires).Format(time.RFC3339), hint)

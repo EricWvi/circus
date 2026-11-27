@@ -607,7 +607,11 @@ func TestProjectValidation(t *testing.T) {
 	if _, err := super.create(t, long[:64], mbp("/src")); err != nil {
 		t.Fatal(err)
 	}
-	ok := super.mustCreate(t, "ok", mbp("/src/a/"), win(`D:\work`), win("c:/src/app"), win("//server/share/"), loc("plain", "/"), mbp("/src/b"))
+	// Device names are compared ignoring ASCII case; the project lists the
+	// stored name, and "MBP" is the same device as "mbp".
+	ok := super.mustCreate(t, "ok", mbp("/src/a/"), win(`D:\work`), loc("Eric-Win", "c:/src/app"), win("//server/share/"), loc("PLAIN", "/"), mbp("/src/b"))
+	_, err = super.create(t, "dup", mbp("/src/a"), loc("MBP", "/src/a/"))
+	wantField(t, err, connect.CodeInvalidArgument, "locations[1].path")
 	var paths []string
 	for _, l := range ok.Locations {
 		paths = append(paths, l.Device+":"+l.Path)

@@ -266,7 +266,9 @@ func TestDeleteProjectWorkspaceRemovals(t *testing.T) {
 		_, err := browser.projects.DeleteProject(t.Context(), connect.NewRequest(&pb.DeleteProjectRequest{ProjectId: p.ProjectId, RemoveWorkspacesOn: names}))
 		wantCode(t, err, connect.CodeInvalidArgument)
 	}
-	names := []string{"removed", "offline", "pending", "no-row", "failed", "old", "absent", "removed", "missing"}
+	// "REMOVED" is "removed" again (names ignore ASCII case): one removal,
+	// reported under the first spelling.
+	names := []string{"removed", "offline", "pending", "no-row", "failed", "old", "absent", "REMOVED", "missing"}
 	type answer struct {
 		res *connect.Response[pb.DeleteProjectResponse]
 		err error
@@ -298,6 +300,7 @@ func TestDeleteProjectWorkspaceRemovals(t *testing.T) {
 	}
 	for i, name := range names {
 		r := results[i]
+		name = strings.ToLower(name)
 		want := pb.WorkspaceRemoval_OUTCOME_KEPT
 		switch name {
 		case "removed", "absent":

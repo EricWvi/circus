@@ -552,6 +552,15 @@ func TestNeverConnectedInvalidAndUnknownDevice(t *testing.T) {
 	if u.GetRejected().GetCode() != circusv1.CallUpdate_Rejected_CODE_UNKNOWN_DEVICE {
 		t.Fatal(u)
 	}
+	// Device names are compared ignoring ASCII case: "DESK" is the
+	// offline device "desk".
+	s, err = f.router.Submit(f.ctx, "u", "DESK", call("other-case"))
+	must(t, err)
+	u, err = s.Next(f.ctx)
+	must(t, err)
+	if u.GetOffline() == nil {
+		t.Fatal(u)
+	}
 }
 func TestPendingAdmissionLimits(t *testing.T) {
 	for _, name := range []string{"bytes", "count"} {

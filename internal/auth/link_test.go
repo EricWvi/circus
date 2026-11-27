@@ -189,21 +189,26 @@ func (stubAuth) Valid(context.Context, string) (bool, error) { return true, nil 
 func TestAdmitStatusMapping(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	worker := auth.Principal{Kind: store.KindWorker, ID: "w"}
+	// Only a revoked credential is marked revoked, with its identity's id:
+	// the one refusal that proves the identity was deleted or replaced.
 	for _, tc := range []struct {
-		a      stubAuth
-		status int
-		body   string
+		a         stubAuth
+		status    int
+		body      string
+		mark      string
+		principal string
 	}{
-		{stubAuth{err: auth.ErrUnauthenticated}, 401, "unauthenticated"},
-		{stubAuth{err: auth.ErrRevoked}, 403, "revoked"},
-		{stubAuth{err: errors.New("store down")}, 503, "unavailable"},
-		{stubAuth{p: worker}, 403, "use a daemon credential"},
-		{stubAuth{p: auth.Principal{Kind: store.KindDevice, ID: "d"}}, 200, ""},
+		{stubAuth{err: auth.ErrUnauthenticated}, 401, "unauthenticated", "rejected", ""},
+		{stubAuth{p: auth.Principal{Kind: store.KindDevice, ID: "gone"}, err: auth.ErrRevoked}, 403, "revoked", "revoked", "gone"},
+		{stubAuth{err: errors.New("store down")}, 503, "unavailable", "", ""},
+		{stubAuth{p: worker}, 403, "use a daemon credential", "rejected", ""},
+		{stubAuth{p: auth.Principal{Kind: store.KindDevice, ID: "d"}}, 200, "", "", ""},
 	} {
 		rec := httptest.NewRecorder()
 		p, ok := auth.Admit(rec, httptest.NewRequest("GET", "/v1/link/daemon", nil), tc.a, logger, store.KindDevice)
-		if got := rec.Result().Header.Get("Circus-Auth"); (got == "rejected") != (tc.status == 401 || tc.status == 403) {
-			t.Errorf("status %d: unexpected Circus-Auth %q", tc.status, got)
+		h := rec.Result().Header
+		if h.Get("Circus-Auth") != tc.mark || h.Get("Circus-Principal") != tc.principal {
+			t.Errorf("status %d: Circus-Auth %q, Circus-Principal %q", tc.status, h.Get("Circus-Auth"), h.Get("Circus-Principal"))
 		}
 
 		if tc.status == 200 {

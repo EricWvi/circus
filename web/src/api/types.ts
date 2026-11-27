@@ -223,6 +223,8 @@ export interface ProjectService {
 }
 
 export interface Device {
+  /** The device identity's id: a device that rejoins under its name gets a new one. */
+  deviceId: string
   name: string
   online: boolean
   lastSeenUnixMs: number
@@ -422,9 +424,20 @@ export interface MachineService {
   /**
    * Issues a one-time link that enrolls machines for the caller. Fails with
    * `resource_exhausted` while the caller has too many unused links, and
-   * with `failed_precondition` when the server has no public URL.
+   * with `failed_precondition` when the server has no public URL. With
+   * `replaceId` (a device for role daemon, a worker for role worker) the
+   * link rejoins as that identity: the enrollment revokes it and takes its
+   * name; `not_found` when it is not one of the caller's.
    */
-  createEnrollLink(req: { role: EnrollRole }): Promise<EnrollLink>
+  createEnrollLink(req: { role: EnrollRole; replaceId?: string }): Promise<EnrollLink>
+  /**
+   * Deletes one of the caller's devices, as `circus server device revoke`
+   * does. Fails with `not_found` for an unknown, deleted or another
+   * user's device.
+   */
+  deleteDevice(req: { deviceId: string }): Promise<void>
+  /** Deletes one of the caller's workers; fails as `deleteDevice`. */
+  deleteWorker(req: { workerId: string }): Promise<void>
 }
 
 /** A session as lists show it. */

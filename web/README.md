@@ -175,7 +175,7 @@ task cli -- daemon
 Alternatively, sign in as that user and use **Add device** on `/devices`.
 The dev server is a development build, so the dialog prints only the join
 and daemon lines, already as `task cli --` commands; run them from the
-repository root. Its link
+repository root. A name typed in the dialog goes to `join --name`. Its link
 points at `public_url`, the Vite origin, so the machine reaches the server
 through the Vite proxy.
 

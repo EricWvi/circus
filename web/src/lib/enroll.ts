@@ -4,6 +4,7 @@
 
 import { errorMessage, isApiError } from "@/api/errors"
 import type { EnrollRole } from "@/api/types"
+import { sameIdentityName } from "@/api/validation"
 import { i18n } from "@/i18n/i18n"
 
 /** Release targets of the circus CLI (`.github/workflows/release.yml`). */
@@ -98,7 +99,10 @@ const shellQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
  * release, unless ~/.local/bin/circus already is the server's version,
  * download the matching CLI to a temporary file and unpack it there (so a
  * machine set up before skips the download, and one with another version
- * gets the server's); then join (as a worker only for the worker role);
+ * gets the server's); then join (as a worker only for the worker role,
+ * under `name` when one is given, else the machine's host name, and with
+ * `--force` for a rejoin link, `force`: the machine still holds the
+ * credential of the identity it replaces);
  * then, when the link enrolls a device, install its daemon as a service of
  * the user's, and when it enrolls a worker, install the worker as one
  * (`circus worker install` downloads the worker package of the same
@@ -120,11 +124,17 @@ export function enrollCommand({
   role,
   serverVersion,
   platform,
+  name = "",
+  force = false,
 }: {
   link: string
   role: EnrollRole
   serverVersion: string
   platform: Platform
+  /** The identity name for `join --name`, checked by `checkIdentityName`; empty for the host name. */
+  name?: string
+  /** `join --force`, for a rejoin link. */
+  force?: boolean
 }): string {
   const release = isReleaseVersion(serverVersion)
   const circus = release ? "~/.local/bin/circus" : "task cli --"
@@ -141,10 +151,30 @@ export function enrollCommand({
       ].join("\n"),
     )
   }
-  steps.push(`printf '%s\\n' ${shellQuote(link)} | ${circus} join${role === "worker" ? " --role worker" : ""}`)
+  const flags =
+    (role === "worker" ? " --role worker" : "") + (name ? ` --name ${shellQuote(name)}` : "") + (force ? " --force" : "")
+  steps.push(`printf '%s\\n' ${shellQuote(link)} | ${circus} join${flags}`)
   if (role !== "worker") steps.push(release ? `${circus} daemon install` : `${circus} daemon`)
   if (role !== "daemon" && release) steps.push(`${circus} worker install`)
   return steps.map((step, i) => (i === 0 ? " " : "  ") + step).join(" &&\n")
+}
+
+/**
+ * The device or worker that joined with a link: one listed whose id was not
+ * listed when the link was issued (`known`). A join that rejoins as an
+ * identity, or one revoked and enrolled again, keeps the name but has a new
+ * id. A link whose name is known (`name`: a rejoin's target, or the name an
+ * add link was issued for) enrolls under that name only, so only a new id
+ * under it (ignoring ASCII case) counts: another machine joining meanwhile
+ * with another link is not this one.
+ */
+export function joinedWith<T extends { name: string }>(
+  known: ReadonlySet<string>,
+  listed: readonly T[],
+  id: (item: T) => string,
+  name: string,
+): T | undefined {
+  return listed.find((item) => !known.has(id(item)) && (name === "" || sameIdentityName(item.name, name)))
 }
 
 /** A one-line message for a link that couldn't be issued. */

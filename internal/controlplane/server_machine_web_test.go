@@ -519,3 +519,118 @@ func TestWebMachineIdentityLimits(t *testing.T) {
 		}
 	}
 }
+
+// A signed-in user deletes, and issues rejoin links for, only their own
+// devices and workers: another user's identity is NOT_FOUND and stays.
+// Deleting revokes as `circus server device revoke` does; a rejoin link
+// enrolls under the replaced identity's name; ListDevices shows the new
+// id.
+func TestWebDeleteAndRejoin(t *testing.T) {
+	h := newServer(t, controlplane.Config{PublicURL: testPublicURL, BcryptCost: bcrypt.MinCost}, nil)
+	ctx := wait.Ctx(t)
+	admin, _ := h.machineBrowser(t, true)
+	bob, _ := h.machineBrowser(t, false)
+	adminAPI := circusv1connect.NewMachineServiceClient(admin, h.base)
+	bobAPI := circusv1connect.NewMachineServiceClient(bob, h.base)
+	enroll := func(api circusv1connect.MachineServiceClient, req *circusv1.CreateEnrollLinkRequest, role circusv1.Role, name string) *circusv1.EnrollResponse {
+		t.Helper()
+		link, err := api.CreateEnrollLink(ctx, connect.NewRequest(req))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := h.enrollClient().Enroll(ctx, enrollReq(linkTokens(t, link.Msg.GetLink())[0], role, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg
+	}
+	desk := enroll(adminAPI, &circusv1.CreateEnrollLinkRequest{Role: daemonRole}, circusv1.Role_ROLE_DAEMON, "desk")
+	deskWorker := enroll(adminAPI, &circusv1.CreateEnrollLinkRequest{Role: workerRole}, circusv1.Role_ROLE_WORKER, "desk")
+	devices := func(api circusv1connect.MachineServiceClient) []*circusv1.Device {
+		t.Helper()
+		res, err := api.ListDevices(ctx, connect.NewRequest(&circusv1.ListDevicesRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Msg.GetDevices()
+	}
+	if d := devices(adminAPI); len(d) != 1 || d[0].GetDeviceId() != desk.GetPrincipalId() {
+		t.Fatalf("devices = %v", d)
+	}
+
+	// Another user's identities: not found, untouched.
+	_, err := bobAPI.DeleteDevice(ctx, connect.NewRequest(&circusv1.DeleteDeviceRequest{DeviceId: desk.GetPrincipalId()}))
+	wantCode(t, err, connect.CodeNotFound)
+	_, err = bobAPI.DeleteWorker(ctx, connect.NewRequest(&circusv1.DeleteWorkerRequest{WorkerId: deskWorker.GetPrincipalId()}))
+	wantCode(t, err, connect.CodeNotFound)
+	_, err = bobAPI.CreateEnrollLink(ctx, connect.NewRequest(&circusv1.CreateEnrollLinkRequest{Role: daemonRole, ReplaceId: desk.GetPrincipalId()}))
+	wantCode(t, err, connect.CodeNotFound)
+	// The id of the other kind, a link for both roles, a bad id.
+	_, err = adminAPI.CreateEnrollLink(ctx, connect.NewRequest(&circusv1.CreateEnrollLinkRequest{Role: workerRole, ReplaceId: desk.GetPrincipalId()}))
+	wantCode(t, err, connect.CodeNotFound)
+	_, err = adminAPI.CreateEnrollLink(ctx, connect.NewRequest(&circusv1.CreateEnrollLinkRequest{Role: bothRoles, ReplaceId: desk.GetPrincipalId()}))
+	wantCode(t, err, connect.CodeInvalidArgument)
+	_, err = adminAPI.DeleteDevice(ctx, connect.NewRequest(&circusv1.DeleteDeviceRequest{DeviceId: ""}))
+	wantCode(t, err, connect.CodeInvalidArgument)
+	if _, err := h.st.GetIdentityByName(ctx, store.KindDevice, deskOwner(t, h, desk), "desk"); err != nil {
+		t.Fatalf("admin's device after bob's attempts: %v", err)
+	}
+
+	// Rejoin: the link's enrollment takes the replaced device's name and
+	// revokes it.
+	rejoined := enroll(adminAPI, &circusv1.CreateEnrollLinkRequest{Role: daemonRole, ReplaceId: desk.GetPrincipalId()}, circusv1.Role_ROLE_DAEMON, "")
+	if rejoined.GetName() != "desk" || rejoined.GetReplaced().GetPrincipalId() != desk.GetPrincipalId() {
+		t.Fatalf("rejoin = %v", rejoined)
+	}
+	if d := devices(adminAPI); len(d) != 1 || d[0].GetDeviceId() != rejoined.GetPrincipalId() || d[0].GetName() != "desk" {
+		t.Fatalf("devices after rejoin = %v", d)
+	}
+	if s, _ := h.get(t, "/v1/whoami", desk.GetLongTermToken()); s != http.StatusForbidden {
+		t.Fatalf("replaced credential: %d", s)
+	}
+
+	// Delete: as the admin command, and only once.
+	if _, err := adminAPI.DeleteDevice(ctx, connect.NewRequest(&circusv1.DeleteDeviceRequest{DeviceId: rejoined.GetPrincipalId()})); err != nil {
+		t.Fatal(err)
+	}
+	_, err = adminAPI.DeleteDevice(ctx, connect.NewRequest(&circusv1.DeleteDeviceRequest{DeviceId: rejoined.GetPrincipalId()}))
+	wantCode(t, err, connect.CodeNotFound)
+	if d := devices(adminAPI); len(d) != 0 {
+		t.Fatalf("devices after delete = %v", d)
+	}
+	if s, _ := h.get(t, "/v1/whoami", rejoined.GetLongTermToken()); s != http.StatusForbidden {
+		t.Fatalf("deleted device's credential: %d", s)
+	}
+	// The worker on the same machine is untouched, until deleted itself.
+	if s, _ := h.get(t, "/v1/whoami", deskWorker.GetLongTermToken()); s != http.StatusOK {
+		t.Fatalf("worker after device delete: %d", s)
+	}
+	if _, err := adminAPI.DeleteWorker(ctx, connect.NewRequest(&circusv1.DeleteWorkerRequest{WorkerId: deskWorker.GetPrincipalId()})); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := h.get(t, "/v1/whoami", deskWorker.GetLongTermToken()); s != http.StatusForbidden {
+		t.Fatalf("deleted worker's credential: %d", s)
+	}
+	// A rejoin link for a deleted identity is not issued.
+	_, err = adminAPI.CreateEnrollLink(ctx, connect.NewRequest(&circusv1.CreateEnrollLinkRequest{Role: workerRole, ReplaceId: deskWorker.GetPrincipalId()}))
+	wantCode(t, err, connect.CodeNotFound)
+	if !strings.Contains(h.logs.String(), `"msg":"identity deleted"`) {
+		t.Fatalf("no deletion log line:\n%s", h.logs.String())
+	}
+}
+
+func deskOwner(t *testing.T, h *harness, en *circusv1.EnrollResponse) string {
+	t.Helper()
+	id, err := h.st.GetIdentity(t.Context(), store.KindDevice, en.GetPrincipalId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id.UserID
+}
+
+func wantCode(t *testing.T, err error, code connect.Code) {
+	t.Helper()
+	if connect.CodeOf(err) != code {
+		t.Fatalf("error %v, want %v", err, code)
+	}
+}

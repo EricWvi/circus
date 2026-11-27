@@ -125,7 +125,7 @@ type Identity struct {
 	Kind          PrincipalKind
 	ID            string
 	UserID        string
-	Name          string // unique per user and kind among rows not deleted
+	Name          string // unique per user and kind among rows not deleted, ignoring ASCII case (IdentityNameKey)
 	MachineID     string // links a machine's device and worker identities
 	OS            string
 	Arch          string
@@ -141,6 +141,23 @@ type Identity struct {
 	// Integrator is a worker's integrator grant (SetWorkerIntegrator);
 	// always false for a device. CreateIdentity ignores it.
 	Integrator bool
+}
+
+// IdentityNameKey is the form identity names are compared in: ASCII
+// letters in lower case, every other byte as it is. Two live identities of
+// one user and kind never share a key, and every lookup by name compares
+// keys, so "Box" finds the identity named "box". Identity names are ASCII
+// (auth.ValidateName); unlike ProjectNameKey it folds no other letters, so a
+// non-ASCII name never matches an ASCII one. It equals SQLite's built-in
+// lower(), which the migration that added the keys used.
+func IdentityNameKey(name string) string {
+	b := []byte(name)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
 }
 
 // HelloMetadata is the mutable identity metadata reported during link handshakes.
@@ -188,6 +205,10 @@ type EnrollToken struct {
 	// UsedBy is a free-form audit value recorded by UseEnrollToken, normally
 	// the machine id of the enrolling machine.
 	UsedBy string
+	// ReplaceID, when set, is the identity of the token's single kind that
+	// the enrollment replaces (a rejoin): it revokes that identity and takes
+	// its name. Empty for a plain enrollment.
+	ReplaceID string
 }
 
 // EncodeKinds returns the canonical text form of a kind set ("device",

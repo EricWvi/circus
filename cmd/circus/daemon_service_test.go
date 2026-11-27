@@ -75,6 +75,9 @@ func TestDaemonServiceTerminalExit(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("CIRCUS_HOME", t.TempDir())
+			// No service is installed for this user: nothing to remove.
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			t.Setenv("HOME", t.TempDir())
 			var attempts atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if attempts.Add(1) == 1 && tc.retry {
@@ -110,6 +113,134 @@ func TestDaemonServiceTerminalExit(t *testing.T) {
 			}
 			if !tc.retry && strings.Count(out, "\n") != 1 {
 				t.Errorf("expected one log line, got %q", out)
+			}
+		})
+	}
+}
+
+const fakeSystemctl = `#!/bin/sh
+printf '%s\n' "$*" >> "$SYSTEMCTL_CALLS"
+case "$2" in
+    disable)
+        if [ "$3" = --now ]; then echo "disable --now kills the caller" >&2; exit 1; fi ;;
+    stop|kill) echo "stopping from inside kills the caller" >&2; exit 1 ;;
+esac
+exit 0
+`
+
+// A daemon running as the installed service removes the service and its
+// credential only when the control plane proves it revoked this very
+// credential's identity (403, Circus-Auth: revoked, the principal id), on
+// Linux without stopping its own unit; and only while the unit still reads
+// that credential file, the file still holds that credential, and it runs
+// as the service. An unknown credential (401, Circus-Auth: rejected: the
+// control plane may run on an empty or old database) only stops it.
+func TestDaemonServiceRemovesItselfWhenRejected(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the fake systemctl is for Linux; macOS runs the real launchd test in CI")
+	}
+	for _, tc := range []struct {
+		name    string
+		answer  string // "unknown", or the principal id the control plane revoked
+		service bool
+		other   bool // the unit reads another credential
+		rejoin  bool // a join wrote a new credential to the path before the answer
+		removed bool
+		log     string
+	}{
+		{"revoked", "device", true, false, false, true, "the service and the credential file were removed"},
+		{"unknown credential", "unknown", true, false, false, false, "HTTP 401 authentication rejected; the control plane does not know"},
+		{"another identity revoked", "other-device", true, false, false, false, `revoked "other-device", not this credential's "device"`},
+		{"another credential's service", "device", true, true, false, false, "no longer reads"},
+		{"replaced by a rejoin", "device", true, false, true, false, "another join replaced it"},
+		{"foreground", "device", false, false, false, false, "HTTP 403 credential revoked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			home := filepath.Join(dir, "circus home")
+			t.Setenv("CIRCUS_HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+			t.Setenv("HOME", filepath.Join(dir, "user"))
+			calls := filepath.Join(dir, "calls")
+			t.Setenv("SYSTEMCTL_CALLS", calls)
+			bin := filepath.Join(dir, "bin")
+			if err := os.MkdirAll(bin, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte(fakeSystemctl), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			path, err := credfile.Path(credfile.RoleDaemon)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rejoined credfile.File
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.rejoin {
+					// The rejoin's join wrote its credential after this
+					// daemon read the old one.
+					rejoined = credfile.File{Role: credfile.RoleDaemon, Token: "new", PrincipalID: "device-2", ControlPlaneURL: "http://" + r.Host}
+					if err := credfile.Save(path, rejoined); err != nil {
+						t.Error(err)
+					}
+				}
+				if tc.answer == "unknown" {
+					w.Header().Set("Circus-Auth", "rejected")
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				w.Header().Set("Circus-Auth", "revoked")
+				w.Header().Set("Circus-Principal", tc.answer)
+				w.WriteHeader(http.StatusForbidden)
+			}))
+			defer server.Close()
+			if err := credfile.Save(path, credfile.File{Role: credfile.RoleDaemon, Token: "test", PrincipalID: "device", ControlPlaneURL: server.URL}); err != nil {
+				t.Fatal(err)
+			}
+			unit := filepath.Join(dir, "config", "systemd", "user", "circus-daemon.service")
+			execStart := `ExecStart="/opt/circus" "daemon" "--service"`
+			if tc.other {
+				execStart += ` "--credentials" "` + filepath.Join(dir, "rejoined.json") + `"`
+			}
+			if err := os.MkdirAll(filepath.Dir(unit), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(unit, []byte("[Service]\n"+execStart+"\nEnvironment=\"CIRCUS_HOME="+home+"\"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var args []string
+			if tc.service {
+				args = append(args, "--service")
+			}
+			out, code := runDaemonCLI(t, "", args...)
+			wantCode := 1
+			if tc.service {
+				wantCode = serviceExitCode()
+			}
+			if code != wantCode || !strings.Contains(out, tc.log) {
+				t.Fatalf("status %d, want %d; want the log to say %q:\n%s", code, wantCode, tc.log, out)
+			}
+			_, unitErr := os.Stat(unit)
+			_, credErr := os.Stat(path)
+			if gone := errors.Is(unitErr, os.ErrNotExist) && errors.Is(credErr, os.ErrNotExist); gone != tc.removed {
+				t.Fatalf("unit %v, credential %v; want removed %v\n%s", unitErr, credErr, tc.removed, out)
+			}
+			if !tc.removed && (unitErr != nil || credErr != nil) {
+				t.Fatalf("unit %v, credential %v kept only in part\n%s", unitErr, credErr, out)
+			}
+			if tc.rejoin {
+				if got, err := credfile.Load(path); err != nil || got.Token != rejoined.Token {
+					t.Fatalf("the rejoin's credential is gone: %+v, %v", got, err)
+				}
+			}
+			data, _ := os.ReadFile(calls)
+			want := ""
+			if tc.removed {
+				want = "--user is-system-running\n--user disable circus-daemon.service\n--user daemon-reload\n"
+			}
+			if string(data) != want {
+				t.Fatalf("systemctl calls:\n%s\nwant:\n%s", data, want)
 			}
 		})
 	}

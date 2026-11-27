@@ -59,13 +59,18 @@ export function loadConfig(env = process.env): WorkerConfig {
   }
 }
 
-function readConfig(env: NodeJS.ProcessEnv): WorkerConfig {
+/** The worker credential file: worker.json in the circus config directory of env. */
+export function credentialPath(env: NodeJS.ProcessEnv = process.env): string {
   const configHome = env.CIRCUS_HOME
     ? resolve(env.CIRCUS_HOME, "config")
     : join(env.XDG_CONFIG_HOME && isAbsolute(env.XDG_CONFIG_HOME)
       ? env.XDG_CONFIG_HOME
       : join(homedir(), ".config"), "circus");
-  const path = join(configHome, "worker.json");
+  return join(configHome, "worker.json");
+}
+
+function readConfig(env: NodeJS.ProcessEnv): WorkerConfig {
+  const path = credentialPath(env);
   let data: Buffer;
   try {
     data = readBoundedFile(path, MAX_CREDENTIAL_BYTES, true);

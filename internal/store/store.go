@@ -72,16 +72,17 @@ type Ops interface {
 	GetUser(ctx context.Context, id string) (User, error)
 
 	// CreateIdentity inserts a device or worker, by id.Kind. ErrExists if the
-	// id is taken or the user already has a live identity of that kind with
-	// that name; ErrNotFound if the user does not exist.
+	// id is taken or the user already has a live identity of that kind whose
+	// name has the same IdentityNameKey; ErrNotFound if the user does not
+	// exist.
 	CreateIdentity(ctx context.Context, id Identity) error
 	// UpdateHelloMetadata updates only nonempty metadata on a live identity.
 	// It reports whether a row changed. Missing, deleted and unchanged rows are no-ops.
 	UpdateHelloMetadata(ctx context.Context, kind PrincipalKind, id string, metadata HelloMetadata) (bool, error)
 	// GetIdentity returns the identity, deleted or not, or ErrNotFound.
 	GetIdentity(ctx context.Context, kind PrincipalKind, id string) (Identity, error)
-	// GetIdentityByName returns the user's live identity with this name, or
-	// ErrNotFound.
+	// GetIdentityByName returns the user's live identity whose name has the
+	// same IdentityNameKey as name, or ErrNotFound.
 	GetIdentityByName(ctx context.Context, kind PrincipalKind, userID, name string) (Identity, error)
 	// ListIdentities returns the user's live identities of this kind, by name.
 	ListIdentities(ctx context.Context, kind PrincipalKind, userID string) ([]Identity, error)
@@ -131,7 +132,8 @@ type Ops interface {
 	// credentials clears its integrator grant.
 	RevokeCredentials(ctx context.Context, kind PrincipalKind, principalID string, at int64) (int, error)
 
-	// CreateEnrollToken inserts a one-time token. ErrExists if the id or
+	// CreateEnrollToken inserts a one-time token; one with a ReplaceID must
+	// have exactly one kind (ErrInvalid). ErrExists if the id or
 	// hash is taken; ErrNotFound if the user does not exist.
 	CreateEnrollToken(ctx context.Context, t EnrollToken) error
 	// CountUnusedEnrollTokens counts the user's unused tokens with expiry

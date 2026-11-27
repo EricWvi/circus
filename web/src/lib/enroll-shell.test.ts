@@ -119,6 +119,34 @@ exit 0`,
     expect(run(worker, "join", "v0.2.0").calls).toEqual(["circus join --role worker", `link ${tricky}`])
   })
 
+  it("passes the name to join", () => {
+    const named = (role: "daemon" | "worker" | "both", serverVersion: string) =>
+      enrollCommand({ link: tricky, role, serverVersion, platform: "linux-amd64", name: "Box-1" })
+    expect(run(named("both", "v0.2.0"), "", "v0.2.0").calls).toEqual([
+      "circus join --name Box-1",
+      `link ${tricky}`,
+      "circus daemon install",
+      "circus worker install",
+    ])
+    expect(run(named("worker", "v0.2.0"), "", "v0.2.0").calls).toEqual([
+      "circus join --role worker --name Box-1",
+      `link ${tricky}`,
+      "circus worker install",
+    ])
+    expect(run(named("daemon", "dev")).calls).toEqual(["circus join --name Box-1", `link ${tricky}`, "circus daemon"])
+  })
+
+  it("passes --force to a rejoin link's join", () => {
+    const rejoin = (role: "daemon" | "worker") =>
+      enrollCommand({ link: tricky, role, serverVersion: "v0.2.0", platform: "linux-amd64", force: true })
+    expect(run(rejoin("daemon"), "", "v0.2.0").calls).toEqual(["circus join --force", `link ${tricky}`, "circus daemon install"])
+    expect(run(rejoin("worker"), "", "v0.2.0").calls).toEqual([
+      "circus join --role worker --force",
+      `link ${tricky}`,
+      "circus worker install",
+    ])
+  })
+
   it("doesn't start the daemon when joining fails", () => {
     const link = "https://cp.example/join#d.w"
     const dev = enrollCommand({ link, role: "both", serverVersion: "dev", platform: "linux-amd64" })

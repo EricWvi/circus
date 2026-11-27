@@ -229,6 +229,11 @@ func (d *DB) migrate(ctx context.Context) error {
 			return fmt.Errorf("sqlite: database schema version %d is newer than this binary's %d", current, len(ms))
 		}
 		for _, m := range ms[current:] {
+			if check := migrationChecks[m.version]; check != nil {
+				if err := check(ctx, q); err != nil {
+					return fmt.Errorf("sqlite: migration %s cannot be applied: %w", m.name, err)
+				}
+			}
 			if _, err := q.ExecContext(ctx, m.sql); err != nil {
 				return fmt.Errorf("sqlite: apply migration %s: %w", m.name, mapErr(err))
 			}
@@ -239,6 +244,47 @@ func (d *DB) migrate(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+// migrationChecks run before the migration of their version, in its
+// transaction, and refuse it with an error that says what to fix.
+var migrationChecks = map[int]func(context.Context, querier) error{
+	25: identityNameCollisions,
+}
+
+// identityNameCollisions refuses the migration that makes identity names
+// unique ignoring ASCII case while a user has live devices, or live
+// workers, whose names differ only in case. The error lists each such
+// group with its owner and says how to free the names.
+func identityNameCollisions(ctx context.Context, q querier) error {
+	var groups []string
+	for _, kind := range []string{"device", "worker"} {
+		rows, err := q.QueryContext(ctx, `SELECT COALESCE(u.email, u.name, m.user_id), group_concat(m.name, ', ')
+			FROM `+kind+`s m LEFT JOIN users u ON u.id = m.user_id
+			WHERE m.deleted_at IS NULL GROUP BY m.user_id, lower(m.name) HAVING count(*) > 1
+			ORDER BY 1, 2`)
+		if err != nil {
+			return mapErr(err)
+		}
+		for rows.Next() {
+			var owner, names string
+			if err := rows.Scan(&owner, &names); err != nil {
+				rows.Close()
+				return mapErr(err)
+			}
+			groups = append(groups, fmt.Sprintf("%ss %s of %s", kind, names, owner))
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return mapErr(err)
+		}
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	return fmt.Errorf("names of live devices, and of live workers, must differ in more than letter case, but these do not: %s. "+
+		"With the circus release this database last ran with, revoke all but one of each group "+
+		"(`circus server device revoke --user <email> <name>` or `circus server worker revoke ...`), then start this one again",
+		strings.Join(groups, "; "))
 }
 
 // SQLite primary result codes and the extended constraint codes mapErr

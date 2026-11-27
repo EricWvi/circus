@@ -415,3 +415,119 @@ func TestMachineOwnershipMigrationRetiresLegacyIdentities(t *testing.T) {
 		t.Fatalf("unexpected super user: %v", err)
 	}
 }
+
+// migrateWithIdentities applies the migrations before the identity name
+// keys, inserts the given devices (id, name, deleted_at or 0) of user u,
+// and opens the store, which applies the rest.
+func migrateWithIdentities(t *testing.T, devices [][3]any) (*DB, error) {
+	t.Helper()
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), dbName)
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	ms, err := migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const before = 24 // 0025 adds the name keys
+	if !strings.Contains(ms[before].name, "identity_name_keys") {
+		t.Fatalf("migration %d is %s", before+1, ms[before].name)
+	}
+	if _, err := raw.ExecContext(ctx, `PRAGMA foreign_keys = ON; CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT`); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms[:before] {
+		if _, err := raw.ExecContext(ctx, m.sql); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := raw.ExecContext(ctx, `INSERT INTO schema_migrations VALUES (?, 1)`, m.version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := raw.ExecContext(ctx, `INSERT INTO users(id,name,created_at) VALUES('u','user',1)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range devices {
+		if _, err := raw.ExecContext(ctx, `INSERT INTO devices(id,user_id,name,machine_id,created_at,deleted_at) VALUES(?,'u',?,'m',1,NULLIF(?,0))`,
+			d[0], d[1], d[2]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return Open(ctx, path, Options{})
+}
+
+// The name key migration fills name_key for existing rows, deleted ones
+// included, so lookups ignore case at once.
+func TestIdentityNameKeyMigration(t *testing.T) {
+	ctx := t.Context()
+	d, err := migrateWithIdentities(t, [][3]any{{"live", "Desk-1", 0}, {"gone", "desk-1", 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	got, err := d.GetIdentityByName(ctx, store.KindDevice, "u", "DESK-1")
+	if err != nil || got.ID != "live" || got.Name != "Desk-1" {
+		t.Fatalf("lookup after migration: %+v, %v", got, err)
+	}
+	var keys []string
+	rows, err := d.sqldb.QueryContext(ctx, `SELECT name_key FROM devices ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, k)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(keys, []string{"desk-1", "desk-1"}) {
+		t.Fatalf("name keys = %q", keys)
+	}
+	if err := d.CreateIdentity(ctx, store.Identity{Kind: store.KindDevice, ID: "new", UserID: "u", Name: "DESK-1", MachineID: "m", CreatedAt: 9}); !errors.Is(err, store.ErrExists) {
+		t.Fatalf("name differing in case only: %v", err)
+	}
+	// The triggers keep the key equal to lower(name) for writers that
+	// bypass CreateIdentity.
+	for _, stmt := range []string{
+		`INSERT INTO devices(id,user_id,name,machine_id,created_at,name_key) VALUES('x','u','Other','m',1,'Other')`,
+		`INSERT INTO devices(id,user_id,name,machine_id,created_at) VALUES('x','u','other','m',1)`,
+		`INSERT INTO workers(id,user_id,name,machine_id,created_at,name_key) VALUES('x','u','Other','m',1,'x')`,
+		`UPDATE devices SET name = 'Renamed' WHERE id = 'live'`,
+		`UPDATE devices SET name_key = 'x' WHERE id = 'gone'`,
+	} {
+		if _, err := d.sqldb.ExecContext(ctx, stmt); err == nil || !strings.Contains(err.Error(), "name_key must be lower(name)") {
+			t.Errorf("%s: %v", stmt, err)
+		}
+	}
+}
+
+// Two live identities whose names differ only in case cannot both keep
+// their names: the migration fails, says which and how to fix it, and
+// leaves the schema as it was.
+func TestIdentityNameKeyMigrationRefusesCollisions(t *testing.T) {
+	d, err := migrateWithIdentities(t, [][3]any{{"a", "Box", 0}, {"b", "box", 0}, {"c", "BOX", 7}, {"d", "other", 0}})
+	if err == nil {
+		d.Close()
+		t.Fatal("migration accepted two live names differing only in case")
+	}
+	// The error names the migration, the colliding live names and their
+	// owner, and what to run; a deleted identity is not listed.
+	for _, want := range []string{"0025_identity_name_keys.sql", "devices Box, box of user", "circus server device revoke --user <email> <name>"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error lacks %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "BOX") || strings.Contains(err.Error(), "other") {
+		t.Fatalf("error lists more than the collision: %v", err)
+	}
+}

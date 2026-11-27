@@ -141,9 +141,9 @@ func joinCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 			return err
 		}
 		if _, err := os.Stat(path); err == nil && !*force {
-			return fmt.Errorf("%s already exists: this machine has joined as %s. To join again pass --force; "+
-				"to keep the same name, first have an administrator run `circus server %s revoke --user <email> <name>` (it frees the name), "+
-				"otherwise choose another --name", path, e.role, adminNoun(e.role))
+			return fmt.Errorf("%s already exists: this machine has joined as %s. To join again as the same %s, use a rejoin link "+
+				"(\"Rejoin…\" on it in the Web UI) with --force; --force with any other link enrolls a new %s and leaves the earlier one enrolled",
+				path, e.role, e.role, e.role)
 		}
 		paths[e.role] = path
 	}
@@ -157,11 +157,13 @@ func joinCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 		return err
 	}
 	hostname, _ := os.Hostname()
-	if *name == "" {
-		*name = auth.DefaultName(hostname)
-	}
-	if err := auth.ValidateName(*name); err != nil {
-		return err
+	// Without --name the control plane picks the name: the first label of
+	// the hostname, or, for a rejoin link, the name of the identity it
+	// replaces.
+	if *name != "" {
+		if err := auth.ValidateName(*name); err != nil {
+			return err
+		}
 	}
 	machine, err := machineid.Get()
 	if err != nil {
@@ -183,13 +185,11 @@ func joinCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 			Os: runtime.GOOS, Arch: runtime.GOARCH, ClientVersion: version,
 		}))
 		if err != nil {
-			taken := connect.CodeOf(err) == connect.CodeAlreadyExists
-			err = joinError(err, e.role)
-			if taken {
-				// For the MACHINE column of `circus server device list`.
-				err = fmt.Errorf("%w\nThis machine's id begins with %s.", err, machine[:min(12, len(machine))])
-			}
-			return partial(joined, e.role, err)
+			return partial(joined, e.role, joinError(err, e.role), connect.CodeOf(err))
+		}
+		joinedName := resp.Msg.GetName()
+		if joinedName == "" {
+			joinedName = *name
 		}
 		f := credfile.File{
 			ControlPlaneURL: link.base, Role: e.role, PrincipalID: resp.Msg.GetPrincipalId(),
@@ -197,13 +197,16 @@ func joinCommand(args []string, in io.Reader, out, errOut io.Writer) error {
 		}
 		if err := credfile.Save(paths[e.role], f); err != nil {
 			return partial(joined, e.role, fmt.Errorf("enrolled as %s %q (%s), but saving the credential failed: %w; "+
-				"have an administrator run `circus server %s revoke --user <email> %s` (it frees the name), then join again with a new link",
-				e.role, *name, f.PrincipalID, err, adminNoun(e.role), *name))
+				"fix that, then join again with a rejoin link for it (\"Rejoin…\" on it in the Web UI)",
+				e.role, joinedName, f.PrincipalID, err), connect.CodeUnknown)
 		}
 		if u := resp.Msg.GetControlPlaneUrl(); u != "" && u != link.base {
 			fmt.Fprintf(errOut, "note: the control plane calls itself %s; this machine keeps using %s from the link\n", u, link.base)
 		}
-		fmt.Fprintf(out, "Joined as %s %q (%s).\nCredential saved to %s.\n", e.role, *name, f.PrincipalID, paths[e.role])
+		if r := resp.Msg.GetReplaced(); r != nil {
+			fmt.Fprintf(out, "Replaced this machine's earlier %s %q (%s).\n", e.role, r.GetName(), r.GetPrincipalId())
+		}
+		fmt.Fprintf(out, "Joined as %s %q (%s).\nCredential saved to %s.\n", e.role, joinedName, f.PrincipalID, paths[e.role])
 		joined = append(joined, e.role)
 		if e.role == credfile.RoleDaemon {
 			restartJoinedDaemon(paths[e.role], out, errOut)
@@ -251,22 +254,21 @@ func workerJoinAdvice(path string) string {
 	return "Install and start the worker service with `circus worker install`."
 }
 
-// adminNoun names a role as the server CLI does: the daemon role is a
-// "device" (`circus server device revoke`).
-func adminNoun(r credfile.Role) string {
-	if r == credfile.RoleDaemon {
-		return "device"
-	}
-	return string(r)
-}
-
 // partial reports the failure of role's enrollment, naming the roles that
-// joined before it and keep their credentials.
-func partial(joined []credfile.Role, role credfile.Role, err error) error {
+// joined before it and keep their credentials, and how to enroll role on
+// its own: with the same link's token for it when the control plane
+// refused the request but not the token (code), else with a new link.
+func partial(joined []credfile.Role, role credfile.Role, err error, code connect.Code) error {
 	if len(joined) == 0 {
 		return err
 	}
-	return fmt.Errorf("joined as %v, but enrolling the %s role failed (the %v credential is kept): %w", joined, role, joined, err)
+	next := fmt.Sprintf("get a new %s link (Add device → %s in the Web UI) and run `circus join --role %s` with it", role, role, role)
+	if code != connect.CodeUnauthenticated && code != connect.CodeUnknown {
+		next = fmt.Sprintf("fix that, then run `circus join --role %s` with this same link (its %s token is still unused), or %s",
+			role, role, next)
+	}
+	return fmt.Errorf("joined as %v, but enrolling the %s role failed (the %v credential is kept): %w\nTo enroll the %s: %s",
+		joined, role, joined, err, role, next)
 }
 
 // parseJoinLink parses https://host:port/join#<token> or
@@ -309,7 +311,7 @@ func joinError(err error, role credfile.Role) error {
 	switch connect.CodeOf(err) {
 	case connect.CodeUnauthenticated:
 		return fmt.Errorf("the control plane refused the link: it is unknown, already used, expired, or not issued for role %s; ask for a new link", role)
-	case connect.CodeAlreadyExists, connect.CodeInvalidArgument, connect.CodeResourceExhausted:
+	case connect.CodeAlreadyExists, connect.CodeInvalidArgument, connect.CodeResourceExhausted, connect.CodeFailedPrecondition:
 		var ce *connect.Error
 		if errors.As(err, &ce) {
 			return errors.New(ce.Message())

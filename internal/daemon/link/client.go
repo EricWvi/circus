@@ -185,7 +185,7 @@ type Client struct {
 // New validates credentials/TLS policy and creates a fresh UUIDv7 boot.
 func New(o Options) (*Client, error) {
 	if o.Credentials.Role != credfile.RoleDaemon || o.Credentials.Token == "" || o.Credentials.PrincipalID == "" {
-		return nil, &terminalError{"daemon link: daemon credentials required"}
+		return nil, &terminalError{message: "daemon link: daemon credentials required"}
 	}
 	endpoint, httpClient, err := loopback.Link(o.Credentials.ControlPlaneURL, o.Credentials.CAFile, "/v1/link/daemon")
 	if err != nil {
@@ -362,9 +362,28 @@ func (c *Client) send(a *connection, m *circusv1.DaemonUplink) {
 // detach makes a no longer receive callback notifications.
 func (c *Client) detach(a *connection) { c.live.CompareAndSwap(a, nil) }
 
-type terminalError struct{ message string }
+type terminalError struct {
+	message string
+	// revokedPrincipal is the identity id of the control plane's proof that
+	// it revoked the credential (403 with Circus-Auth: revoked).
+	revokedPrincipal string
+}
 
 func (e *terminalError) Error() string { return e.message }
+
+// RevokedPrincipal returns the identity id when err is the control plane's
+// answer that it knows the credential and has revoked it (the identity was
+// deleted or replaced): 403 with Circus-Auth: revoked. Any other refusal,
+// an unknown credential's 401 included (the control plane may be running
+// on another database), and any network, proxy or transient failure
+// returns false.
+func RevokedPrincipal(err error) (string, bool) {
+	var terminal *terminalError
+	if errors.As(err, &terminal) && terminal.revokedPrincipal != "" {
+		return terminal.revokedPrincipal, true
+	}
+	return "", false
+}
 
 // IsTerminal reports whether retrying the link requires a configuration or
 // protocol change. Run returns these errors without reconnecting.
@@ -375,9 +394,9 @@ func IsTerminal(err error) bool {
 
 func rejectError(r *circusv1.Reject) error {
 	if r.Code == circusv1.Reject_CODE_VERSION_UNSUPPORTED {
-		return &terminalError{fmt.Sprintf("daemon link: protocol version unsupported; server supports %d..%d", r.MinVersion, r.MaxVersion)}
+		return &terminalError{message: fmt.Sprintf("daemon link: protocol version unsupported; server supports %d..%d", r.MinVersion, r.MaxVersion)}
 	}
-	return &terminalError{fmt.Sprintf("daemon link: handshake rejected (%s); check daemon credentials", r.Code)}
+	return &terminalError{message: fmt.Sprintf("daemon link: handshake rejected (%s); check daemon credentials", r.Code)}
 }
 
 // Run maintains the link until ctx cancellation or a terminal rejection.
@@ -438,9 +457,17 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 	defer cancel()
 	raw, response, err := c.opts.Dial(handshake, c.endpoint, &websocket.DialOptions{HTTPClient: c.http, HTTPHeader: http.Header{"Authorization": []string{"Bearer " + c.opts.Credentials.Token}}})
 	if err != nil {
-		if response != nil && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) &&
-			response.Header.Get(wire.LinkAuthHeader) == wire.LinkAuthRejected {
-			return nil, &terminalError{fmt.Sprintf("daemon link: HTTP %d authentication rejected; rejoin or replace revoked credentials", response.StatusCode)}
+		if response != nil && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) {
+			switch response.Header.Get(wire.LinkAuthHeader) {
+			case wire.LinkAuthRevoked:
+				principal := response.Header.Get(wire.LinkPrincipalHeader)
+				return nil, &terminalError{message: fmt.Sprintf("daemon link: HTTP %d credential revoked (device %q was deleted or replaced); "+
+					"join again with a new link, or rejoin as it (\"Rejoin…\" in the Web UI)", response.StatusCode, principal), revokedPrincipal: principal}
+			case wire.LinkAuthRejected:
+				return nil, &terminalError{message: fmt.Sprintf("daemon link: HTTP %d authentication rejected; the control plane does not know "+
+					"this credential (if it runs on the wrong or a restored database, fix that and start the daemon again; "+
+					"otherwise join again)", response.StatusCode)}
+			}
 		}
 		return nil, err
 	}
@@ -458,7 +485,7 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 	case errors.As(err, &rejected):
 		return nil, rejectError(rejected.Reject)
 	case errors.Is(err, wire.ErrIncompatible):
-		return nil, &terminalError{"daemon link: " + err.Error()}
+		return nil, &terminalError{message: "daemon link: " + err.Error()}
 	case err != nil:
 		return nil, err
 	}

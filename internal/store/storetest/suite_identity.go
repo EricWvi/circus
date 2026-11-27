@@ -143,6 +143,64 @@ func testIdentities(t *testing.T, b Backend) {
 	mustIs(t, err, store.ErrInvalid)
 }
 
+// testIdentityNamesIgnoreCase checks that identity names are unique per
+// user and kind ignoring ASCII case, that a lookup by name ignores ASCII
+// case too, and that the stored name keeps its casing.
+func testIdentityNamesIgnoreCase(t *testing.T, b Backend) {
+	s, _ := open(t, b)
+	ctx := t.Context()
+	f := seed(t, s) // device and worker "laptop" of u1
+	must(t, s.CreateUser(ctx, store.User{ID: "u2", Name: "other", CreatedAt: t0}))
+	for _, want := range []store.Identity{f.device, f.worker} {
+		k := want.Kind
+		for _, name := range []string{"LAPTOP", "Laptop", "laptoP"} {
+			got, err := s.GetIdentityByName(ctx, k, "u1", name)
+			must(t, err)
+			mustEqual(t, label("GetIdentityByName "+name+" ", k), got, want)
+			dup := want
+			dup.ID, dup.Name = want.ID+"-"+name, name
+			mustIs(t, s.CreateIdentity(ctx, dup), store.ErrExists)
+		}
+		// Only ASCII letters fold: "ｌaptop" (fullwidth l) is another name.
+		_, err := s.GetIdentityByName(ctx, k, "u1", "\uff4captop")
+		mustIs(t, err, store.ErrNotFound)
+
+		// Another user and the other kind are separate, as before.
+		other := want
+		other.ID, other.UserID, other.Name = want.ID+"-u2", "u2", "LapTop"
+		must(t, s.CreateIdentity(ctx, other))
+
+		// A deleted identity frees the name for every casing, and the new
+		// identity keeps the casing it was created with.
+		deleted, err := s.DeleteIdentity(ctx, k, want.ID, t0+1)
+		must(t, err)
+		mustEqual(t, "deleted", deleted, true)
+		upper := want
+		upper.ID, upper.Name = want.ID+"-upper", "LAPTOP"
+		must(t, s.CreateIdentity(ctx, upper))
+		got, err := s.GetIdentityByName(ctx, k, "u1", "laptop")
+		must(t, err)
+		mustEqual(t, label("renamed by case ", k), got, upper)
+		list, err := s.ListIdentities(ctx, k, "u1")
+		must(t, err)
+		mustEqual(t, label("ListIdentities ", k), list, []store.Identity{upper})
+	}
+}
+
+func testIdentityNameKey(t *testing.T, _ Backend) {
+	for in, want := range map[string]string{
+		"":          "",
+		"box":       "box",
+		"Box-1.A_Z": "box-1.a_z",
+		"ÄBC":       "Äbc",
+		"\u212a":    "\u212a", // the Kelvin sign is not an ASCII letter
+		"\xffAB":    "\xffab",
+		"@[`{":      "@[`{",
+	} {
+		mustEqual(t, fmt.Sprintf("IdentityNameKey(%q)", in), store.IdentityNameKey(in), want)
+	}
+}
+
 func testCredentials(t *testing.T, b Backend) {
 	s, _ := open(t, b)
 	ctx := t.Context()
@@ -238,6 +296,17 @@ func testEnrollTokens(t *testing.T, b Backend) {
 	}
 	bad.Kinds, bad.UserID = []store.PrincipalKind{store.KindDevice}, "ghost"
 	mustIs(t, s.CreateEnrollToken(ctx, bad), store.ErrNotFound)
+	// A token that replaces an identity has one kind, and reads give back
+	// what it replaces.
+	bad.UserID, bad.Kinds, bad.ReplaceID = "u1", []store.PrincipalKind{store.KindDevice, store.KindWorker}, "d1"
+	mustIs(t, s.CreateEnrollToken(ctx, bad), store.ErrInvalid)
+	rejoin := store.EnrollToken{ID: "e-rejoin", UserID: "u1", TokenHash: hash("rejoin"), CreatedAt: t0, ExpiresAt: t0 + 10,
+		Kinds: []store.PrincipalKind{store.KindDevice}, ReplaceID: "d1"}
+	must(t, s.CreateEnrollToken(ctx, rejoin))
+	got, err := s.UseEnrollToken(ctx, hash("rejoin"), t0+1, "m1")
+	must(t, err)
+	rejoin.UsedAt, rejoin.UsedBy = t0+1, "m1"
+	mustEqual(t, "rejoin token", got, rejoin)
 
 	// A failed enrollment transaction does not burn the token.
 	errAbort := errors.New("abort")

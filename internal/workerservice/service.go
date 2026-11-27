@@ -36,6 +36,11 @@ var Settings = []string{
 	"CIRCUS_NPM_REGISTRY", "CLAUDE_CONFIG_DIR", "NODE_EXTRA_CA_CERTS", "NODE_USE_SYSTEM_CA",
 }
 
+// ServiceArgs are the launcher's arguments in the service file: --service
+// tells the worker it runs as the installed service, which it removes
+// (RemoveRejected) when the control plane refuses its credential for good.
+var ServiceArgs = []string{"--service"}
+
 // ProxyVariables are the proxy settings a service file records verbatim.
 var ProxyVariables = []string{
 	"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY",
@@ -100,7 +105,7 @@ func Install(ctx context.Context, version string, opts Options) (Node, error) {
 		return Node{}, err
 	}
 	env = withPrograms(env, node.Path, opts.Circus, stop)
-	if err := userservice.Worker.Install(s.launcher(version), nil, env, opts.Out); err != nil {
+	if err := userservice.Worker.Install(s.launcher(version), ServiceArgs, env, opts.Out); err != nil {
 		return Node{}, err
 	}
 	if err := s.prune(version); err != nil {
@@ -287,7 +292,7 @@ func (w *Switch) Apply() error {
 	if w.installed.Version == w.version {
 		return nil
 	}
-	if err := userservice.Worker.Rewrite(w.store.launcher(w.version), nil, userservice.EnvironmentList(w.installed.Definition.Env)); err != nil {
+	if err := userservice.Worker.Rewrite(w.store.launcher(w.version), ServiceArgs, userservice.EnvironmentList(w.installed.Definition.Env)); err != nil {
 		return err
 	}
 	if err := w.store.prune(w.version, w.installed.Version); err != nil {
@@ -431,4 +436,22 @@ func NodeGone(i Installed) bool {
 	}
 	_, err := os.Stat(i.Node)
 	return err != nil
+}
+
+// RemoveRejected removes the worker service and its credential file at
+// path after the control plane proved it revoked the credential rejected,
+// as userservice.RemoveRejected does, under the package store's lock, the
+// one `circus worker install` and `uninstall` take, so no install changes
+// the service file between the check and the removal. The worker packages
+// and installed agents stay. pid is the worker process, the service's own.
+func RemoveRejected(ctx context.Context, path string, rejected userservice.Rejected, pid int, out io.Writer) (bool, error) {
+	_, unlock, _, ok, err := lockInstalled(ctx, out)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	if !ok {
+		return false, nil
+	}
+	return userservice.Worker.RemoveRejected(path, rejected, pid)
 }

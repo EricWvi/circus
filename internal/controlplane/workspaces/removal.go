@@ -37,7 +37,7 @@ func (m *Manager) PauseProject(projectID string) func() {
 }
 
 type removalResult struct {
-	name  string
+	key   string // store.IdentityNameKey of the device name
 	final bool
 	out   *circusv1.WorkspaceRemoval
 }
@@ -56,23 +56,25 @@ func (m *Manager) BeforeDelete(ctx context.Context, userID, projectID string, na
 		defer close(cancelled)
 		m.cancelAttempts(ctx, userID, projectID)
 	})
+	// By store.IdentityNameKey: names differing only in case are one device.
 	byName := make(map[string]*circusv1.WorkspaceRemoval, len(names))
 	for _, name := range names {
-		if byName[name] != nil {
+		key := store.IdentityNameKey(name)
+		if byName[key] != nil {
 			continue
 		}
-		byName[name] = kept(name, "")
+		byName[key] = kept(name, "")
 		wg.Go(func() {
 			out := m.remove(ctx, userID, projectID, name, func(path string) {
-				results <- removalResult{name: name, out: kept(name, path)}
+				results <- removalResult{key: key, out: kept(name, path)}
 			})
-			results <- removalResult{name: name, final: true, out: out}
+			results <- removalResult{key: key, final: true, out: out}
 		})
 	}
 	for pending := len(byName); pending > 0; {
 		select {
 		case r := <-results:
-			byName[r.name] = r.out
+			byName[r.key] = r.out
 			if r.final {
 				pending--
 			}
@@ -88,13 +90,13 @@ func (m *Manager) BeforeDelete(ctx context.Context, userID, projectID string, na
 	for range 2 * len(byName) {
 		select {
 		case r := <-results:
-			byName[r.name] = r.out
+			byName[r.key] = r.out
 		default:
 		}
 	}
 	out := make([]*circusv1.WorkspaceRemoval, 0, len(names))
 	for _, name := range names {
-		out = append(out, byName[name])
+		out = append(out, byName[store.IdentityNameKey(name)])
 	}
 	return out
 }

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/enroll.proto.
  */
 export const file_circus_v1_enroll: GenFile = /*@__PURE__*/
-  fileDesc("ChZjaXJjdXMvdjEvZW5yb2xsLnByb3RvEgljaXJjdXMudjEirAEKDUVucm9sbFJlcXVlc3QSFgoOb25lX3RpbWVfdG9rZW4YASABKAkSHQoEcm9sZRgCIAEoDjIPLmNpcmN1cy52MS5Sb2xlEgwKBG5hbWUYAyABKAkSEAoIaG9zdG5hbWUYBCABKAkSEgoKbWFjaGluZV9pZBgFIAEoCRIKCgJvcxgGIAEoCRIMCgRhcmNoGAcgASgJEhYKDmNsaWVudF92ZXJzaW9uGAggASgJIloKDkVucm9sbFJlc3BvbnNlEhQKDHByaW5jaXBhbF9pZBgBIAEoCRIXCg9sb25nX3Rlcm1fdG9rZW4YAiABKAkSGQoRY29udHJvbF9wbGFuZV91cmwYAyABKAkqPgoEUm9sZRIUChBST0xFX1VOU1BFQ0lGSUVEEAASDwoLUk9MRV9EQUVNT04QARIPCgtST0xFX1dPUktFUhACMk4KDUVucm9sbFNlcnZpY2USPQoGRW5yb2xsEhguY2lyY3VzLnYxLkVucm9sbFJlcXVlc3QaGS5jaXJjdXMudjEuRW5yb2xsUmVzcG9uc2VCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM");
+  fileDesc("ChZjaXJjdXMvdjEvZW5yb2xsLnByb3RvEgljaXJjdXMudjEirAEKDUVucm9sbFJlcXVlc3QSFgoOb25lX3RpbWVfdG9rZW4YASABKAkSHQoEcm9sZRgCIAEoDjIPLmNpcmN1cy52MS5Sb2xlEgwKBG5hbWUYAyABKAkSEAoIaG9zdG5hbWUYBCABKAkSEgoKbWFjaGluZV9pZBgFIAEoCRIKCgJvcxgGIAEoCRIMCgRhcmNoGAcgASgJEhYKDmNsaWVudF92ZXJzaW9uGAggASgJIt4BCg5FbnJvbGxSZXNwb25zZRIUCgxwcmluY2lwYWxfaWQYASABKAkSFwoPbG9uZ190ZXJtX3Rva2VuGAIgASgJEhkKEWNvbnRyb2xfcGxhbmVfdXJsGAMgASgJEjwKCHJlcGxhY2VkGAQgASgLMiouY2lyY3VzLnYxLkVucm9sbFJlc3BvbnNlLlJlcGxhY2VkSWRlbnRpdHkSDAoEbmFtZRgFIAEoCRo2ChBSZXBsYWNlZElkZW50aXR5EhQKDHByaW5jaXBhbF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJKj4KBFJvbGUSFAoQUk9MRV9VTlNQRUNJRklFRBAAEg8KC1JPTEVfREFFTU9OEAESDwoLUk9MRV9XT1JLRVIQAjJOCg1FbnJvbGxTZXJ2aWNlEj0KBkVucm9sbBIYLmNpcmN1cy52MS5FbnJvbGxSZXF1ZXN0GhkuY2lyY3VzLnYxLkVucm9sbFJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z");
 
 /**
  * EnrollRequest exchanges one role-bound token for one machine-role identity.
@@ -31,6 +31,10 @@ export type EnrollRequest = Message<"circus.v1.EnrollRequest"> & {
   role: Role;
 
   /**
+   * The identity name; empty for the first label of hostname, or, with a
+   * token issued to replace an identity, for that identity's name. A token
+   * that replaces an identity refuses any other name (INVALID_ARGUMENT).
+   *
    * @generated from field: string name = 3;
    */
   name: string;
@@ -94,6 +98,25 @@ export type EnrollResponse = Message<"circus.v1.EnrollResponse"> & {
    * @generated from field: string control_plane_url = 3;
    */
   controlPlaneUrl: string;
+
+  /**
+   * The identity this enrollment replaced: set when the one-time token was
+   * issued to rejoin as an identity of the user (a "Rejoin" link, or
+   * `circus server enroll-token create --replace`). That identity was
+   * revoked, as deleting it would, in the transaction that created the new
+   * one, which took its name. Unset for a plain enrollment.
+   *
+   * @generated from field: circus.v1.EnrollResponse.ReplacedIdentity replaced = 4;
+   */
+  replaced?: EnrollResponse_ReplacedIdentity | undefined;
+
+  /**
+   * The name the identity was enrolled under: the request's name, the
+   * hostname's first label without one, or the replaced identity's name.
+   *
+   * @generated from field: string name = 5;
+   */
+  name: string;
 };
 
 /**
@@ -102,6 +125,30 @@ export type EnrollResponse = Message<"circus.v1.EnrollResponse"> & {
  */
 export const EnrollResponseSchema: GenMessage<EnrollResponse> = /*@__PURE__*/
   messageDesc(file_circus_v1_enroll, 1);
+
+/**
+ * ReplacedIdentity is the revoked identity, as it was named.
+ *
+ * @generated from message circus.v1.EnrollResponse.ReplacedIdentity
+ */
+export type EnrollResponse_ReplacedIdentity = Message<"circus.v1.EnrollResponse.ReplacedIdentity"> & {
+  /**
+   * @generated from field: string principal_id = 1;
+   */
+  principalId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message circus.v1.EnrollResponse.ReplacedIdentity.
+ * Use `create(EnrollResponse_ReplacedIdentitySchema)` to create a new message.
+ */
+export const EnrollResponse_ReplacedIdentitySchema: GenMessage<EnrollResponse_ReplacedIdentity> = /*@__PURE__*/
+  messageDesc(file_circus_v1_enroll, 1, 0);
 
 /**
  * Role identifies an independently credentialed principal on a machine.

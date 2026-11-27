@@ -11,11 +11,13 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/store"
 )
 
-// The Web UI runs the rules in rules.go before it sends anything (see
+// The Web UI runs the rules in rules.go (and auth.ValidateName for device
+// and worker names) before it sends anything (see
 // web/src/api/validation.ts and git-url.ts). TestWebParityFixture keeps the
 // two in step: it writes what the Go rules return for webParityInputs to
 // web/src/api/validation-parity.json, which the Web's parity test runs
@@ -446,6 +448,44 @@ var webParityInputs = []webParityInput{
 	{"sameProjectName", []string{"\u13a0", "\uab70"}},
 	{"sameProjectName", []string{"\u00ff", "\u0178"}},
 	{"sameProjectName", []string{"a", "ab"}},
+	// Device and worker names (auth.ValidateName), which the Web's add
+	// device dialog checks before it puts one in the join command.
+	{"checkIdentityName", []string{"box"}},
+	{"checkIdentityName", []string{"Box"}},
+	{"checkIdentityName", []string{"a"}},
+	{"checkIdentityName", []string{"0"}},
+	{"checkIdentityName", []string{"9lives"}},
+	{"checkIdentityName", []string{"laptop.local"}},
+	{"checkIdentityName", []string{"a-b_c.d"}},
+	{"checkIdentityName", []string{"MiXeD-Case"}},
+	{"checkIdentityName", []string{"host-01"}},
+	{"checkIdentityName", []string{"a."}},
+	{"checkIdentityName", []string{"a-"}},
+	{"checkIdentityName", []string{"a_"}},
+	{"checkIdentityName", []string{"z..z"}},
+	{"checkIdentityName", []string{"ZZ"}},
+	{"checkIdentityName", []string{strings.Repeat("x", 63)}},
+	{"checkIdentityName", []string{"9" + strings.Repeat("-", 62)}},
+	{"checkIdentityName", []string{""}},
+	{"checkIdentityName", []string{strings.Repeat("x", 64)}},
+	{"checkIdentityName", []string{"-x"}},
+	{"checkIdentityName", []string{".x"}},
+	{"checkIdentityName", []string{"_x"}},
+	{"checkIdentityName", []string{"a b"}},
+	{"checkIdentityName", []string{" box"}},
+	{"checkIdentityName", []string{"box "}},
+	{"checkIdentityName", []string{"a/b"}},
+	{"checkIdentityName", []string{"a:b"}},
+	{"checkIdentityName", []string{"a@b"}},
+	{"checkIdentityName", []string{"a'b"}},
+	{"checkIdentityName", []string{"a$b"}},
+	{"checkIdentityName", []string{"a\u0009b"}},
+	{"checkIdentityName", []string{"a\u0000"}},
+	{"checkIdentityName", []string{"\u540d\u5b57"}},
+	{"checkIdentityName", []string{"caf\u00e9"}},
+	{"checkIdentityName", []string{"\uff41"}},
+	{"checkIdentityName", []string{"a\u212a"}},
+	{"checkIdentityName", []string{strings.Repeat("\u00e9", 32)}},
 }
 
 type webParityCase struct {
@@ -480,6 +520,13 @@ func runWebParityCase(t *testing.T, fn string, args []string) webParityCase {
 	case "sameProjectName":
 		a := arg(2)
 		c.Result = fmt.Sprint(store.ProjectNameKey(jsTrim(a[0])) == store.ProjectNameKey(jsTrim(a[1])))
+	case "checkIdentityName":
+		raw := arg(1)[0]
+		problem := ""
+		if err := auth.ValidateName(raw); err != nil {
+			problem = err.Error()
+		}
+		checked(raw, problem)
 	case "checkBaseURL":
 		raw := arg(1)[0]
 		checked(raw, checkBaseURL(raw))

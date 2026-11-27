@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -35,12 +36,16 @@ const (
 	// stepKickstart restarts a loaded agent's process in place
 	// (`launchctl kickstart -k`): it stays loaded, for an unchanged plist.
 	stepKickstart = "kickstart"
+	// stepUnload, as unload:<pid>, waits for process pid to exit and boots
+	// the agent out for good: its plist was removed (RemoveRejected).
+	stepUnload = "unload"
 )
 
 // launchStep is one agent the detached helper restarts.
 type launchStep struct {
 	svc  *Service
 	kind string
+	pid  int // for stepUnload
 }
 
 func loadStep(svc *Service, wasLoaded bool) launchStep {
@@ -106,7 +111,8 @@ func reloadDetached(home string, steps []launchStep) (bool, error) {
 }
 
 // RunLaunchReload runs the detached helper: its arguments are the home
-// directory and, per agent in order, <service>=<load|reload|kickstart>.
+// directory and, per agent in order, <service>=<load|reload|kickstart> or
+// <service>=unload:<pid>.
 // Every agent is handled even when one fails, and a failed unload does not
 // skip the bootstrap: bootstrapping an agent that is still loaded fails
 // harmlessly, while skipping it would leave one that did unload stopped
@@ -122,11 +128,14 @@ func RunLaunchReload(args []string, errOut io.Writer) int {
 	var steps []launchStep
 	for _, arg := range args[1:] {
 		name, kind, _ := strings.Cut(arg, "=")
-		if serviceNamed(name) == nil || (kind != stepLoad && kind != stepReload && kind != stepKickstart) {
+		kind, pidText, hasPID := strings.Cut(kind, ":")
+		pid, pidErr := strconv.Atoi(pidText)
+		if serviceNamed(name) == nil || (kind != stepLoad && kind != stepReload && kind != stepKickstart && kind != stepUnload) ||
+			hasPID != (kind == stepUnload) || hasPID && pidErr != nil {
 			fmt.Fprintln(errOut, "invalid launchd reload arguments")
 			return reloadUnloadFailure
 		}
-		steps = append(steps, launchStep{svc: serviceNamed(name), kind: kind})
+		steps = append(steps, launchStep{svc: serviceNamed(name), kind: kind, pid: pid})
 	}
 	home := args[0]
 	log := reloadLog(home, errOut)
@@ -134,6 +143,19 @@ func RunLaunchReload(args []string, errOut io.Writer) int {
 	for _, step := range steps {
 		l := launchd{svc: step.svc, home: home}
 		switch step.kind {
+		case stepUnload:
+			waitForExit(step.pid)
+			err := l.bootout()
+			if err == nil {
+				err = l.waitForUnload()
+			}
+			if err != nil {
+				log("%s: unload: %v", l.label(), err)
+				code = max(code, reloadUnloadFailure)
+				continue
+			}
+			log("%s: removed", l.label())
+			continue
 		case stepKickstart:
 			if _, err := run("launchctl", "kickstart", "-k", l.target()); err != nil {
 				log("%s: kickstart: %v", l.label(), err)

@@ -46,7 +46,7 @@ export function WorkerAgents({ worker, reportedAgo }: { worker: Worker; reported
   const { t } = useTranslation()
   const reportedAt = lastReportedAt(worker)
   return (
-    <div className="col-span-2 col-start-2 flex min-w-0 flex-col gap-1 pt-0.5">
+    <div className="col-span-3 col-start-2 flex min-w-0 flex-col gap-1 pt-0.5">
       <ul aria-label={t("devices.agents.listLabel", { worker: worker.name })} className="flex min-w-0 flex-col gap-2">
         {AGENT_KINDS.map((kind) => {
           const entry = agentOf(worker, kind)

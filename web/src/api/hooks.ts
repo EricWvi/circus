@@ -771,15 +771,62 @@ export function useDirectory(req: { device: string; path: string; includeHidden:
  * time), so nothing keeps it after the dialog closes. `deadlineUnixMs` is
  * when it expires by this browser's clock (see `localDeadline`).
  */
+/**
+ * What a link is issued for: the role, the name the paste command joins
+ * under (empty for the machine's host name; kept here only, the link does
+ * not carry it), and for a rejoin the identity it replaces.
+ */
+export interface EnrollLinkRequest {
+  role: EnrollRole
+  name: string
+  replaceId?: string
+}
+
 export function useCreateEnrollLink() {
   const client = useClient()
   return useMutation({
-    mutationFn: async (role: EnrollRole): Promise<EnrollLink & { deadlineUnixMs: number }> => {
-      const link = await client.machines.createEnrollLink({ role })
+    mutationFn: async ({ role, replaceId }: EnrollLinkRequest): Promise<EnrollLink & { deadlineUnixMs: number }> => {
+      const link = await client.machines.createEnrollLink(replaceId ? { role, replaceId } : { role })
       return { ...link, deadlineUnixMs: localDeadline(link.expiresUnixMs, Date.now()) }
     },
     gcTime: 0,
   })
+}
+
+/** A device or a worker to delete. */
+export type MachineIdentity = { kind: "device"; id: string } | { kind: "worker"; id: string }
+
+/**
+ * Deletes one of the user's devices or workers. Either way the lists
+ * refetch (one already gone reads as deleted: the list catches up), and
+ * so do the projects, whose locations on a deleted device read as removed.
+ */
+export function useDeleteMachine() {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ kind, id }: MachineIdentity) =>
+      kind === "device" ? client.machines.deleteDevice({ deviceId: id }) : client.machines.deleteWorker({ workerId: id }),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.devices }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.workers }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects }),
+      ]),
+  })
+}
+
+/** The worker list, fetched now (not from the cache), for comparing against later. */
+export function useFetchWorkers(): () => Promise<Worker[]> {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  return () =>
+    queryClient.fetchQuery({
+      queryKey: queryKeys.workers,
+      queryFn: () => client.machines.listWorkers(),
+      staleTime: 0,
+      retry: false,
+    })
 }
 
 export function useLogin() {

@@ -310,8 +310,10 @@ func TestRevoke(t *testing.T) {
 	if err != nil || n != 1 || id.ID != dev.Identity.ID {
 		t.Fatalf("RevokeByName = %+v, %d, %v", id, n, err)
 	}
-	if _, err := a.Authenticate(ctx, bearer(dev.Token)); err != auth.ErrRevoked { //nolint:errorlint
-		t.Fatalf("Authenticate revoked = %v", err)
+	// The refusal names the revoked identity, and only that.
+	if p, err := a.Authenticate(ctx, bearer(dev.Token)); err != auth.ErrRevoked || //nolint:errorlint
+		p != (auth.Principal{Kind: store.KindDevice, ID: dev.Identity.ID}) {
+		t.Fatalf("Authenticate revoked = %+v, %v", p, err)
 	}
 	if ok, err := a.Valid(ctx, dev.CredentialID); ok || err != nil {
 		t.Fatalf("Valid after revoke = %v, %v", ok, err)

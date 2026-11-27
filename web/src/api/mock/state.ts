@@ -60,7 +60,7 @@ export interface MockProject {
 export type MockLocation = Location & { deviceId: string }
 
 /** An enrolled device. `deviceId` is unique; a name can be enrolled again. */
-export type MockDevice = Device & { owner: string; deviceId: string }
+export type MockDevice = Device & { owner: string }
 
 /** A stored model provider, secrets in the clear (the mock has nothing to protect). */
 export interface MockProvider {

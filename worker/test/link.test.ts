@@ -507,13 +507,13 @@ describe("WorkerLink reconnect", () => {
     }
   });
 
-  it.each(["http401", "reject", "principal", "version", "count", "message size"] as const)(
+  it.each(["http401", "revoked", "reject", "principal", "version", "count", "message size"] as const)(
     "treats %s as terminal", async (failure) => {
-      const server = await serve(failure === "http401" ? [{ refused: 401 }] : []);
+      const server = await serve(failure === "http401" ? [{ refused: 401 }] : failure === "revoked" ? [{ revoked: "worker" }] : []);
       const link = server.link();
       link.start();
       try {
-        if (failure !== "http401") {
+        if (failure !== "http401" && failure !== "revoked") {
           const peer = await server.peers.take();
           await hello(peer);
           if (failure === "reject") peer.send({ case: "reject", value: { code: 4 } });
@@ -524,7 +524,11 @@ describe("WorkerLink reconnect", () => {
             maxMessageBytes: failure === "message size" ? (64n << 20n) + 1n : 0n,
           });
         }
-        await expect(link.closed).rejects.toBeInstanceOf(TerminalLinkError);
+        const error = await link.closed.then(() => undefined, (failed: unknown) => failed);
+        expect(error).toBeInstanceOf(TerminalLinkError);
+        // Only the control plane's proof of a revocation names the identity:
+        // an unknown credential's refusal does not.
+        expect((error as TerminalLinkError).revokedPrincipal).toBe(failure === "revoked" ? "worker" : "");
         await vi.advanceTimersByTimeAsync(45_000);
         expect(server.count).toBe(1);
       } finally {

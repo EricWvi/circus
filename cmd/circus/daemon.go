@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"os/signal"
 	"runtime"
 	"strings"
@@ -380,10 +381,38 @@ func daemonRun(path string, service bool, errOut io.Writer) error {
 		return err
 	}
 	err = client.Run(ctx)
+	if revoked, ok := daemonlink.RevokedPrincipal(err); service && ok {
+		removeRevokedService(userservice.Daemon, path, file, revoked, errOut)
+	}
 	if service && daemonlink.IsTerminal(err) {
 		return logServiceExit(errOut, err)
 	}
 	return err
+}
+
+// removeRevokedService removes svc, the running service, and its
+// credential file at path after the control plane proved it revoked the
+// identity revoked: only when that is file's own identity, the installed
+// service still reads path and path still holds file
+// (userservice.RemoveRejected). It says what it did on errOut, the
+// service's log; without an installed service it does nothing.
+func removeRevokedService(svc *userservice.Service, path string, file credfile.File, revoked string, errOut io.Writer) {
+	if _, installed, err := svc.Installed(); err == nil && !installed {
+		return
+	}
+	if revoked != file.PrincipalID {
+		fmt.Fprintf(errOut, "circus: the control plane revoked %q, not this credential's %q; the service and %s are kept\n", revoked, file.PrincipalID, path)
+		return
+	}
+	removed, err := svc.RemoveRejected(path, userservice.RejectedCredential(file), os.Getpid())
+	switch {
+	case err != nil:
+		fmt.Fprintf(errOut, "circus: could not fully remove the service and its credential %s after the control plane revoked it: %v\n", path, err)
+	case removed:
+		fmt.Fprintf(errOut, "circus: the control plane revoked the credential %s, so the service and the credential file were removed\n", path)
+	default:
+		fmt.Fprintf(errOut, "circus: the installed service no longer reads %s, or another join replaced it; the service and the file are kept\n", path)
+	}
 }
 
 func acquireDaemonLock(ctx context.Context, mode daemonlock.Mode) (*daemonlock.Lock, error) {

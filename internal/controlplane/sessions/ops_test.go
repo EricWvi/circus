@@ -97,14 +97,15 @@ func TestApprovalsAndGrants(t *testing.T) {
 }
 
 // TestPatchAndState: patches round-trip through GetSessionState with
-// device names, and their refusals write nothing.
+// device names, which they may spell in any ASCII case (reads give the
+// stored one), and their refusals write nothing.
 func TestPatchAndState(t *testing.T) {
 	f := newFixture(t)
 	c, _, epoch := held(t, f)
 	sha := strings.Repeat("ab", 32)
 	p := &circusv1.PatchSessionState{
-		Cwds:           []*circusv1.PatchSessionState_Cwd{{AgentId: "agent", Device: "desk", Cwd: "/sub"}},
-		Files:          []*circusv1.PatchSessionState_FileRecord{{Device: "desk", Path: "/a", Sha256: sha, MtimeUnixMs: 7}},
+		Cwds:           []*circusv1.PatchSessionState_Cwd{{AgentId: "agent", Device: "Desk", Cwd: "/sub"}},
+		Files:          []*circusv1.PatchSessionState_FileRecord{{Device: "DESK", Path: "/a", Sha256: sha, MtimeUnixMs: 7}},
 		BgtasksStarted: []*circusv1.PatchSessionState_BackgroundTask{{TaskId: "task", ToolUseId: "tu", Kind: "agent", Description: "d"}},
 	}
 	wantOk(t, call(t, c, wc.Patch("s1", epoch, p)), false)

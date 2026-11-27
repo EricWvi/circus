@@ -1,17 +1,24 @@
-import { FolderIcon, InfoIcon, MonitorSmartphoneIcon, MonitorIcon, PlusIcon } from "lucide-react"
-import { memo, useCallback, useId, useState } from "react"
+import { EllipsisIcon, FolderIcon, InfoIcon, MonitorSmartphoneIcon, MonitorIcon, PlusIcon } from "lucide-react"
+import { memo, useCallback, useId, useRef, useState, type Ref } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router"
 
 import { useDevices, useProjects, useSetWorkerGrant, useWorkerGrantStates, useWorkers } from "@/api/hooks"
 import { isApiError } from "@/api/errors"
 import type { Device, Project, Worker } from "@/api/types"
-import { AddDeviceDialog } from "@/components/devices/add-device-dialog"
+import { AddDeviceDialog, type RejoinTarget } from "@/components/devices/add-device-dialog"
+import { DeleteMachineDialog, type DeleteTarget } from "@/components/devices/delete-machine-dialog"
 import { WorkerAgents } from "@/components/devices/worker-agents"
 import { InfoTip } from "@/components/info-tip"
 import { PageHeader } from "@/components/page-header"
 import { DeviceStatusDot } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Empty,
   EmptyContent,
@@ -22,7 +29,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
+import { useMenuFocus } from "@/hooks/use-menu-focus"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
+import { i18n } from "@/i18n/i18n"
+import { lastInputWasKeyboard } from "@/lib/input-modality"
 import { formatDateTime, formatTimeAgo } from "@/lib/time"
 import { projectPath } from "@/lib/tree"
 import { cn } from "@/lib/utils"
@@ -34,16 +44,55 @@ export function DevicesPage() {
   // page renders again only when the devices change.
   const devices = useDevices({ live: true })
   const [adding, setAdding] = useState(false)
+  // The device or worker a Rejoin… or Delete… of a row is for. Each stays
+  // set until its dialog has closed (its exit animation shows it), and is
+  // replaced when one opens.
+  const [rejoin, setRejoin] = useState<RejoinTarget | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState<DeleteTarget | null>(null)
   const focus = useOverlayFocus()
   // Stable, like `focus`, for the memoized sections and dialog.
   const { onOpenChange } = focus
+  // The Add device button (the header's, or the empty list's).
+  const addRef = useRef<HTMLButtonElement>(null)
+  // Where focus goes when a dialog a row's menu opened closes: that menu's
+  // trigger; once that row is gone, the menu of the row now under its name
+  // (a rejoin's new identity), else (deleted) the Add device button.
+  const rowFocus = useRef<{ returnTo: HTMLElement | null; keyboard: boolean; row: RejoinTarget | null }>({
+    returnTo: null,
+    keyboard: false,
+    row: null,
+  })
   const setAddOpen = useCallback(
     (open: boolean) => {
       onOpenChange(open)
       setAdding(open)
+      if (open) setRejoin(null)
     },
     [onOpenChange],
   )
+  const onAction = useCallback((action: RowAction) => {
+    rowFocus.current = { returnTo: action.trigger, keyboard: lastInputWasKeyboard(), row: action.target }
+    if (action.kind === "rejoin") {
+      setRejoin(action.target)
+      setAdding(true)
+    } else {
+      setDeleting(action.target)
+      setDeleteOpen(true)
+    }
+  }, [])
+  const rowCloseAutoFocus = useCallback((event: Event) => {
+    event.preventDefault()
+    const { returnTo, keyboard, row } = rowFocus.current
+    const target = returnTo?.isConnected ? returnTo : (row && rowTrigger(row)) || addRef.current
+    target?.focus({ preventScroll: true, focusVisible: keyboard || lastInputWasKeyboard() } as FocusOptions)
+    setRejoin(null)
+    setDeleting(null)
+  }, [])
+  const onDeleted = useCallback(() => {
+    rowFocus.current.returnTo = null
+    rowFocus.current.row = null
+  }, [])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -51,7 +100,7 @@ export function DevicesPage() {
         actions={
           // With no devices, the empty state's own button is the only one.
           devices.data && devices.data.length > 0 ? (
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+            <Button ref={addRef} variant="outline" size="sm" onClick={() => setAddOpen(true)}>
               <PlusIcon />
               {t("devices.addDevice")}
             </Button>
@@ -62,11 +111,26 @@ export function DevicesPage() {
       </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-4 py-8">
-          <DevicesSection onAdd={setAddOpen} />
-          <WorkersSection />
+          <DevicesSection onAdd={setAddOpen} onAction={onAction} addRef={addRef} />
+          <WorkersSection onAction={onAction} />
         </div>
       </div>
-      <AddDeviceDialog open={adding} onOpenChange={setAddOpen} onCloseAutoFocus={focus.onCloseAutoFocus} />
+      <AddDeviceDialog
+        // A new dialog for each target: its state is the link's. The key
+        // changes only as one opens (the target is cleared once closed).
+        key={rejoin ? `${rejoin.kind}:${rejoin.id}` : "add"}
+        open={adding}
+        onOpenChange={setAddOpen}
+        onCloseAutoFocus={rejoin ? rowCloseAutoFocus : focus.onCloseAutoFocus}
+        rejoin={rejoin ?? undefined}
+      />
+      <DeleteMachineDialog
+        open={deleteOpen}
+        target={deleting}
+        onOpenChange={setDeleteOpen}
+        onDeleted={onDeleted}
+        onCloseAutoFocus={rowCloseAutoFocus}
+      />
     </div>
   )
 }
@@ -76,7 +140,15 @@ export function DevicesPage() {
  * renders this section (its last seen times move) and not the page.
  * `onAdd(true)` opens the add-device dialog.
  */
-const DevicesSection = memo(function DevicesSection({ onAdd }: { onAdd: (open: boolean) => void }) {
+const DevicesSection = memo(function DevicesSection({
+  onAdd,
+  onAction,
+  addRef,
+}: {
+  onAdd: (open: boolean) => void
+  onAction: (action: RowAction) => void
+  addRef: Ref<HTMLButtonElement>
+}) {
   const { t } = useTranslation()
   const devices = useDevices({ live: true })
   const projects = useProjects()
@@ -95,14 +167,15 @@ const DevicesSection = memo(function DevicesSection({ onAdd }: { onAdd: (open: b
   } else if (!devices.data) {
     body = <LoadingList />
   } else if (devices.data.length === 0) {
-    body = <NoDevices onAdd={() => onAdd(true)} />
+    body = <NoDevices onAdd={() => onAdd(true)} addRef={addRef} />
   } else {
     body = (
       <ul className="flex flex-col divide-y border">
         {devices.data.map((device) => (
           <DeviceRow
-            key={device.name}
+            key={device.deviceId}
             device={device}
+            onAction={onAction}
             projects={projects.data}
             // Relative times count from the last fetch, so each refetch
             // (every few seconds) also moves "last seen" along.
@@ -155,8 +228,10 @@ const DeviceRow = memo(function DeviceRow({
   device,
   projects: allProjects,
   lastSeen,
+  onAction,
 }: {
   device: Device
+  onAction: (action: RowAction) => void
   /** All the user's projects; the row shows those on its device. */
   projects: Project[] | undefined
   lastSeen: string | undefined
@@ -165,12 +240,13 @@ const DeviceRow = memo(function DeviceRow({
   const platform = platformOf(device)
   const projects = projectsOn(device, allProjects)
   return (
-    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
+    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
       <DeviceStatusDot online={device.online} />
       <span className="truncate text-sm font-medium">{device.name}</span>
       <LinkState device={device} lastSeen={lastSeen} />
+      <RowMenu kind="device" id={device.deviceId} name={device.name} online={device.online} onAction={onAction} />
       {(platform || device.version) && (
-        <p className="col-span-2 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
+        <p className="col-span-3 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
           {platform && <span>{platform}</span>}
           {device.version && <span>{t("devices.daemonVersion", { version: device.version })}</span>}
         </p>
@@ -178,7 +254,7 @@ const DeviceRow = memo(function DeviceRow({
       {projects.length > 0 && (
         <ul
           aria-label={t("devices.projectsOn", { device: device.name })}
-          className="col-span-2 col-start-2 flex min-w-0 flex-wrap gap-1.5 pt-0.5"
+          className="col-span-3 col-start-2 flex min-w-0 flex-wrap gap-1.5 pt-0.5"
         >
           {projects.map((p) => (
             <li key={p.projectId} className="min-w-0">
@@ -198,7 +274,7 @@ const DeviceRow = memo(function DeviceRow({
 })
 
 /** The user's workers: status, version, the devices on the same machine, their agents, and the integrator grant. */
-const WorkersSection = memo(function WorkersSection() {
+const WorkersSection = memo(function WorkersSection({ onAction }: { onAction: (action: RowAction) => void }) {
   const { t } = useTranslation()
   // Here rather than in the page, so a refetch renders only this section.
   const workers = useWorkers({ live: true })
@@ -231,6 +307,7 @@ const WorkersSection = memo(function WorkersSection() {
           <WorkerRow
             key={w.workerId}
             worker={w}
+            onAction={onAction}
             lastSeen={lastSeenAgo(w, workers.dataUpdatedAt)}
             reportedAgo={agentsReportedAgo(w, workers.dataUpdatedAt)}
           />
@@ -266,26 +343,29 @@ const WorkerRow = memo(function WorkerRow({
   worker,
   lastSeen,
   reportedAgo,
+  onAction,
 }: {
   worker: Worker
+  onAction: (action: RowAction) => void
   lastSeen: string | undefined
   reportedAgo: string | undefined
 }) {
   const { t } = useTranslation()
   const platform = [worker.os, worker.arch].filter(Boolean).join("/")
   return (
-    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
+    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
       <DeviceStatusDot online={worker.online} />
       <span className="truncate text-sm font-medium">{worker.name}</span>
       <LinkState device={worker} lastSeen={lastSeen} />
+      <RowMenu kind="worker" id={worker.workerId} name={worker.name} online={worker.online} onAction={onAction} />
       {(platform || worker.version) && (
-        <p className="col-span-2 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
+        <p className="col-span-3 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
           {platform && <span>{platform}</span>}
           {worker.version && <span>{t("devices.workerVersion", { version: worker.version })}</span>}
         </p>
       )}
       {worker.localDevices.length > 0 && (
-        <div className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-center gap-1.5 pt-0.5">
+        <div className="col-span-3 col-start-2 flex min-w-0 flex-wrap items-center gap-1.5 pt-0.5">
           <span className="text-xs text-muted-foreground" aria-hidden>
             {t("devices.sameMachine")}
           </span>
@@ -328,7 +408,7 @@ function IntegratorGrant({ worker }: { worker: Worker }) {
     !isApiError(latest.error, "not_found") &&
     latest.variables!.integrator !== worker.integrator
   return (
-    <div className="col-span-2 col-start-2 flex min-w-0 flex-col gap-1 pt-0.5">
+    <div className="col-span-3 col-start-2 flex min-w-0 flex-col gap-1 pt-0.5">
       <div className="flex min-w-0 items-center gap-2">
         <Switch
           id={`${id}-switch`}
@@ -363,6 +443,70 @@ function IntegratorGrant({ worker }: { worker: Worker }) {
         </p>
       )}
     </div>
+  )
+}
+
+/** The menu trigger of the device's or worker's row now listed under `row`'s name, if any. */
+function rowTrigger(row: RejoinTarget): HTMLElement | null {
+  const section = document.querySelector(`section[aria-labelledby="${row.kind === "device" ? "devices" : "workers"}-heading"]`)
+  const label = i18n.t("devices.actions", { name: row.name })
+  return [...(section?.querySelectorAll<HTMLElement>("button[aria-label]") ?? [])].find((b) => b.getAttribute("aria-label") === label) ?? null
+}
+
+/** What a row's menu asks the page to do; `trigger` is the menu's button, where focus returns. */
+type RowAction = ({ kind: "rejoin"; target: RejoinTarget } | { kind: "delete"; target: DeleteTarget }) & {
+  trigger: HTMLElement | null
+}
+
+/**
+ * A device's or worker's actions: Rejoin… (only while it is offline: a
+ * rejoin is refused while the old one is online) and Delete….
+ */
+function RowMenu({
+  kind,
+  id,
+  name,
+  online,
+  onAction,
+}: {
+  kind: "device" | "worker"
+  id: string
+  name: string
+  online: boolean
+  onAction: (action: RowAction) => void
+}) {
+  const { t } = useTranslation()
+  const menuFocus = useMenuFocus()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild {...menuFocus.trigger}>
+        <Button
+          ref={triggerRef}
+          variant="ghost"
+          size="icon-sm"
+          className="-my-1 size-7"
+          aria-label={t("devices.actions", { name })}
+        >
+          <EllipsisIcon />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-auto min-w-36" {...menuFocus.content}>
+        {!online && (
+          <DropdownMenuItem
+            onSelect={() => onAction({ kind: "rejoin", target: { kind, id, name }, trigger: triggerRef.current })}
+          >
+            {t("devices.rejoinAction")}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={() => onAction({ kind: "delete", target: { kind, id, name, online }, trigger: triggerRef.current })}
+        >
+          {t("devices.deleteAction")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -412,7 +556,7 @@ function LoadingList() {
 }
 
 /** No devices: what one is, and the way to add one. */
-function NoDevices({ onAdd }: { onAdd: () => void }) {
+function NoDevices({ onAdd, addRef }: { onAdd: () => void; addRef: Ref<HTMLButtonElement> }) {
   const { t } = useTranslation()
   return (
     <Empty className="border border-dashed px-4 py-8 sm:px-6 sm:py-10">
@@ -423,7 +567,7 @@ function NoDevices({ onAdd }: { onAdd: () => void }) {
         <EmptyTitle>{t("devices.emptyTitle")}</EmptyTitle>
       </EmptyHeader>
       <EmptyContent>
-        <Button onClick={onAdd}>
+        <Button ref={addRef} onClick={onAdd}>
           <PlusIcon />
           {t("devices.addDevice")}
         </Button>

@@ -94,7 +94,43 @@ circus server enroll-token create --user owner@example.com --role both \
 
 # Enroll this machine as both roles (paste the link, or pipe it in).
 circus join --name desk
+```
 
+Without `--name` a machine joins under its short host name. Names are 1–63
+characters of `A–Z a–z 0–9 . _ -`, starting with a letter or digit, and are
+unique per user among live devices, and separately among live workers,
+ignoring ASCII case: `Desk` and `desk` are the same name, which keeps the
+casing it was joined with, and every command or tool call that names a
+device (`circus call --device`, `revoke`, the Web UI) finds it in any case.
+
+A join under a taken name is refused, whichever machine holds it: choose
+another `--name`. To join a machine again as one of your devices or
+workers (a reinstall, a lost credential, another `CIRCUS_HOME`), rejoin
+instead:
+
+- In the Web UI, **Rejoin…** in the row's menu of an offline device or
+  worker opens the add dialog for that one role, with its name fixed. Its
+  command runs `circus join --force` (the machine still holds the old
+  credential of that role).
+- An administrator can issue the same link with `circus server
+  enroll-token create --user <email> --role daemon --replace <name>` (or
+  `--role worker`; not `both`).
+
+Joining with a rejoin link replaces that device or worker in one
+transaction: it is revoked exactly as deleting it would (see below), and
+the new identity takes its name; `circus join` prints `Replaced this
+machine's earlier daemon "desk" (<id>).` The join is refused while the old
+one is online (stop it, or delete it, first), when it was deleted since the
+link was issued, and when the join passes another `--name`. Nothing the
+machine reports (its machine id, its host name) decides what is replaced:
+only the link does.
+
+On a both-role link each role is enrolled on its own. When the daemon joins
+and the worker does not, `circus join` says how to enroll the worker alone:
+`circus join --role worker` with the same link (its worker token is still
+unused unless the link itself was refused), or with a new worker link.
+
+```sh
 # Start the device daemon in the foreground. It reconnects after network
 # and server failures. It exits if the server refuses its credential
 # (HTTP 401/403) or rejects its handshake (such as an unsupported version).
@@ -156,7 +192,30 @@ circus doctor
 `circus server device list --config config.yaml` and `circus server worker list
 --config config.yaml` show each machine's owner email. Use `circus server device
 revoke --user <email> <name> --config config.yaml` or the corresponding
-`worker revoke` command to revoke an identity and free its name for that user.
+`worker revoke` command to revoke an identity and free its name for that user;
+the name matches ignoring ASCII case. Signed-in users do the same for their
+own devices and workers with **Delete…** in the row's menu on the Web UI's
+devices page (`MachineService.DeleteDevice` and `DeleteWorker`). Deleting,
+like revoking, revokes the credential (a live link closes at its next
+credential check, within seconds, and sessions running on it fail), frees
+the name, makes project locations on a device read as removed, and takes a
+worker out of every provider it was assigned to, with its integrator grant;
+the other role on the same machine is untouched.
+
+When the control plane proves it revoked a credential that way (a 403
+marked `Circus-Auth: revoked` that names the revoked identity in
+`Circus-Principal`), a daemon or worker running as the installed user
+service removes itself: it removes its systemd unit or launchd agent and
+deletes its credential file, then stops with its terminal status. It does
+so only when the named identity is its own, the installed service still
+reads that credential file, and the file still holds the credential it ran
+with: after a rejoin's `join --force` wrote a new one there, the service
+and the file are the new credential's and stay. The worker packages and
+installed agents stay; `circus worker uninstall` removes them. A foreground
+daemon or worker only stops. A credential the control plane does not know
+(401, `Circus-Auth: rejected`, as when it runs on an empty, another or a
+restored database) only stops the service, which removes nothing: fix the
+control plane and start the service again.
 The daemon's local harness also works without a server, reading
 one protojson `DeviceCall` per line from stdin:
 
@@ -284,8 +343,8 @@ seconds.
 A worker that cannot work until something is fixed stops for good with
 the terminal status, as the daemon does: when the control plane itself
 refuses its credential (a 401 or 403 the control plane marks as its own,
-`Circus-Auth: rejected`; the same status from a proxy or WAF in front of it
-is retried), when the control plane does not accept this worker build, when
+`Circus-Auth: rejected` or `revoked`; the same status from a proxy or WAF
+in front of it is retried), when the control plane does not accept this worker build, when
 its credential or a setting (`CIRCUS_NPM_REGISTRY` included) is missing or
 invalid, and, from the launcher, when its Node.js is missing or older than
 24. On Linux that is exit status 78, which the unit does not restart
@@ -447,6 +506,12 @@ below); `ListWorkers` shows it. The grant ends when the worker is revoked.
 Machines joined before this version must join again using a link issued for
 their Web account. Run `circus join --force` to replace the machine's old
 credentials.
+The Web UI's **Add device** dialog takes an optional name, checked as it is
+typed with the server's rules; the command it prints then joins with
+`--name <name>`, and without one under the machine's host name.
+`CreateEnrollLink` with `replace_id` issues a rejoin link for one of the
+caller's devices (role daemon) or workers (role worker); `ListDevices`
+reports each device's id.
 A project belongs to one Web user and has a name (trimmed, 1–64 characters,
 unique per user ignoring case), an optional git repository URL and 0–16
 locations. A location is a device and, optionally, an absolute path

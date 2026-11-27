@@ -27,6 +27,7 @@ import {
 } from "./location-form"
 
 const device = (name: string, os: string, online = true): Device => ({
+  deviceId: `device-${name}`,
   name,
   os,
   online,

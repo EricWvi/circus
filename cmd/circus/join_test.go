@@ -82,11 +82,19 @@ func newJoinHarness(t *testing.T, options ...func(*joinHarness, *controlplane.Co
 // database and returns the printed link.
 func (h *joinHarness) link(role string) string {
 	h.t.Helper()
-	var out, errOut bytes.Buffer
-	if err := enrollTokenCreate([]string{"--user", enrollmentEmail, "--role", role, "--url", h.base, "--config", h.config}, &out, &errOut); err != nil {
+	link, _, err := h.linkWith(role)
+	if err != nil {
 		h.t.Fatalf("enroll-token create --role %s: %v", role, err)
 	}
-	return strings.TrimSpace(out.String())
+	return link
+}
+
+// linkWith runs `circus server enroll-token create` with more arguments
+// and returns the link and what it printed on stderr.
+func (h *joinHarness) linkWith(role string, args ...string) (string, string, error) {
+	var out, errOut bytes.Buffer
+	err := enrollTokenCreate(append([]string{"--user", enrollmentEmail, "--role", role, "--url", h.base, "--config", h.config}, args...), &out, &errOut)
+	return strings.TrimSpace(out.String()), errOut.String(), err
 }
 
 func (h *joinHarness) join(args ...string) (string, error) {
@@ -172,12 +180,12 @@ func TestJoinBothRolesFromOneLink(t *testing.T) {
 // names the worker role and join fails.
 func TestJoinBothPartialFailure(t *testing.T) {
 	h := newJoinHarness(t)
-	// A worker named "box" already exists for this user.
+	// A worker named "BOX" already exists for this user.
 	tok, _, err := auth.CreateEnrollToken(context.Background(), h.st, mustUser(t, h.st).ID, store.KindWorker, time.Hour, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := auth.Enroll(context.Background(), h.st, auth.EnrollRequest{Token: tok, Kind: store.KindWorker, Name: "box", MachineID: "other"}, time.Now()); err != nil {
+	if _, err := auth.Enroll(context.Background(), h.st, auth.EnrollRequest{Token: tok, Kind: store.KindWorker, Name: "BOX", MachineID: "other"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	out, err := h.join(h.link("both"), "--name", "box")
@@ -185,8 +193,15 @@ func TestJoinBothPartialFailure(t *testing.T) {
 		t.Fatalf("join succeeded:\n%s", out)
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "enrolling the worker role failed") || !strings.Contains(msg, "[daemon]") || !strings.Contains(msg, "--name") {
+	if !strings.Contains(msg, "enrolling the worker role failed") || !strings.Contains(msg, "[daemon]") || !strings.Contains(msg, "--name") ||
+		!strings.Contains(msg, `a worker named "BOX" already exists`) {
 		t.Fatalf("error does not say which role failed: %v", err)
+	}
+	// It says how to enroll the worker on its own: the same link still
+	// holds an unused worker token.
+	if !strings.Contains(msg, "To enroll the worker: fix that, then run `circus join --role worker` with this same link (its worker token is still unused)") ||
+		!strings.Contains(msg, "get a new worker link") {
+		t.Fatalf("error does not say what to do next: %v", err)
 	}
 	d, ok := h.cred(credfile.RoleDaemon)
 	if !ok {
@@ -309,8 +324,8 @@ func TestJoinReadsLinkFromStdin(t *testing.T) {
 	}
 }
 
-// M-1 end to end through the CLI: revoke frees the name, list shows it gone,
-// and the machine joins again under the same name.
+// End to end through the CLI: revoke frees the name (found ignoring case),
+// list shows it gone, and the machine joins again under the same name.
 func TestRejoinSameNameAfterRevoke(t *testing.T) {
 	h := newJoinHarness(t)
 	if _, err := h.join(h.link("daemon"), "--name", "laptop"); err != nil {
@@ -325,28 +340,91 @@ func TestRejoinSameNameAfterRevoke(t *testing.T) {
 	if out, _, _ := h.admin("worker", "list"); strings.Contains(out, "laptop") {
 		t.Fatalf("worker list shows the device:\n%s", out)
 	}
-
-	// While live, the same name is refused even with --force.
-	machine, _ := machineid.Get()
-	if _, err := h.join(h.link("daemon"), "--name", "laptop", "--force"); err == nil ||
-		!strings.Contains(err.Error(), "circus server device list") || !strings.Contains(err.Error(), "revoke --user <email> laptop") ||
-		!strings.Contains(err.Error(), "This machine's id begins with "+machine[:12]) {
-		t.Fatalf("same name while live: %v", err)
-	}
-	if out, _, err := h.admin("device", "revoke", "--user", enrollmentEmail, "laptop"); err != nil || !strings.Contains(out, "can join again") {
+	if out, _, err := h.admin("device", "revoke", "--user", enrollmentEmail, "LAPTOP"); err != nil ||
+		!strings.Contains(out, `device "laptop" (`+old.PrincipalID+")") || !strings.Contains(out, "can join again") {
 		t.Fatalf("revoke: %v %q", err, out)
 	}
 	if out, _, _ := h.admin("device", "list"); strings.Contains(out, "laptop") {
 		t.Fatalf("revoked device still listed:\n%s", out)
 	}
-	if _, err := h.joinStdin(h.link("daemon"), "--name", "laptop", "--force"); err != nil {
+	if _, _, err := h.admin("device", "revoke", "--user", enrollmentEmail, "laptop"); err == nil || !strings.Contains(err.Error(), `no device named "laptop"`) {
+		t.Fatalf("second revoke: %v", err)
+	}
+	out, err = h.joinStdin(h.link("daemon"), "--name", "laptop", "--force")
+	if err != nil {
 		t.Fatalf("rejoin after revoke: %v", err)
+	}
+	if strings.Contains(out, "Replaced") {
+		t.Fatalf("rejoin after revoke reports a replacement:\n%s", out)
 	}
 	fresh, _ := h.cred(credfile.RoleDaemon)
 	if fresh.PrincipalID == old.PrincipalID {
 		t.Fatal("rejoin kept the old identity")
 	}
 	h.authenticates(fresh)
+}
+
+// A plain join never replaces anything: a taken name is refused with a
+// pointer to a rejoin link. A rejoin link (enroll-token create --replace)
+// replaces the named identity under its name and says so; it refuses
+// another --name. The replaced credential no longer authenticates.
+func TestJoinRejoinLink(t *testing.T) {
+	h := newJoinHarness(t)
+	if _, err := h.join(h.link("daemon"), "--name", "box"); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := h.cred(credfile.RoleDaemon)
+	if _, err := h.join(h.link("both"), "--name", "Box", "--force"); err == nil ||
+		!strings.Contains(err.Error(), `a daemon named "box" already exists`) || !strings.Contains(err.Error(), "--replace <name>") {
+		t.Fatalf("plain join under a taken name: %v", err)
+	}
+
+	// --replace: one role, and an identity of the user of that kind.
+	for args, want := range map[string]string{
+		"both":   "--replace needs --role daemon or --role worker",
+		"worker": `has no worker named "box"`,
+		"daemon": `has no device named "nope"`,
+	} {
+		name := "box"
+		if args == "daemon" {
+			name = "nope"
+		}
+		if _, _, err := h.linkWith(args, "--replace", name); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("--role %s --replace %s: %v", args, name, err)
+		}
+	}
+	link, notice, err := h.linkWith("daemon", "--replace", "BOX")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(notice, fmt.Sprintf(`replaces device "box" (%s)`, old.PrincipalID)) || !strings.Contains(notice, "circus join --force") {
+		t.Fatalf("enroll-token create --replace said:\n%s", notice)
+	}
+	// The credential file still needs --force; another name is refused.
+	if _, err := h.join(link); err == nil || !strings.Contains(err.Error(), "rejoin link") {
+		t.Fatalf("rejoin over a credential file: %v", err)
+	}
+	if _, err := h.join(link, "--force", "--name", "other"); err == nil || !strings.Contains(err.Error(), `this link rejoins as daemon "box"`) {
+		t.Fatalf("rejoin under another name: %v", err)
+	}
+	out, err := h.join(link, "--force")
+	if err != nil {
+		t.Fatalf("rejoin: %v\n%s", err, out)
+	}
+	d, _ := h.cred(credfile.RoleDaemon)
+	want := fmt.Sprintf("Replaced this machine's earlier daemon %q (%s).\nJoined as daemon %q (%s).", "box", old.PrincipalID, "box", d.PrincipalID)
+	if !strings.Contains(out, want) {
+		t.Fatalf("output:\n%s\nwant it to contain:\n%s", out, want)
+	}
+	h.authenticates(d)
+	r := httptest.NewRequest("GET", "/v1/whoami", nil)
+	r.Header.Set("Authorization", "Bearer "+old.Token)
+	if _, err := auth.NewAuthenticator(h.st, auth.Options{}).Authenticate(context.Background(), r); !errors.Is(err, auth.ErrRevoked) {
+		t.Fatalf("replaced credential: %v", err)
+	}
+	if ids, _ := h.st.ListIdentities(context.Background(), store.KindDevice, mustUser(t, h.st).ID); len(ids) != 1 || ids[0].ID != d.PrincipalID {
+		t.Fatalf("devices: %+v", ids)
+	}
 }
 
 // Admin commands never create a database.

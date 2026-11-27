@@ -9,6 +9,7 @@ import {
   enrollCommand,
   enrollLinkErrorMessage,
   isReleaseVersion,
+  joinedWith,
   localDeadline,
 } from "./enroll"
 
@@ -115,11 +116,64 @@ describe("enrollCommand", () => {
     )
   })
 
+  it("passes a name to join for every role, release or development build", () => {
+    const join = (role: "daemon" | "worker" | "both", serverVersion: string) =>
+      enrollCommand({ link, role, serverVersion, platform: "linux-amd64", name: "Box-1.a_b" })
+        .split("\n")
+        .find((line) => line.includes(" join"))
+    expect(join("daemon", "v0.2.0")).toBe("  printf '%s\\n' 'https://cp.example/join#d.w' | ~/.local/bin/circus join --name 'Box-1.a_b' &&")
+    expect(join("both", "v0.2.0")).toBe("  printf '%s\\n' 'https://cp.example/join#d.w' | ~/.local/bin/circus join --name 'Box-1.a_b' &&")
+    expect(join("worker", "v0.2.0")).toBe(
+      "  printf '%s\\n' 'https://cp.example/join#d.w' | ~/.local/bin/circus join --role worker --name 'Box-1.a_b' &&",
+    )
+    expect(join("daemon", "dev")).toBe(" printf '%s\\n' 'https://cp.example/join#d.w' | task cli -- join --name 'Box-1.a_b' &&")
+    expect(join("worker", "dev")).toBe(" printf '%s\\n' 'https://cp.example/join#d.w' | task cli -- join --role worker --name 'Box-1.a_b'")
+  })
+
+  it("leaves --name out without a name", () => {
+    expect(enrollCommand({ link, role: "both", serverVersion: "v0.2.0", platform: "linux-amd64", name: "" })).not.toContain("--name")
+  })
+
   it("quotes the link for the shell", () => {
     expect(enrollCommand({ link: "https://x/join#a'b", role: "worker", serverVersion: "dev", platform: "linux-amd64" })).toBe(
       " printf '%s\\n' 'https://x/join#a'\\''b' | task cli -- join --role worker",
     )
   })
+})
+
+describe("finding what joined with a link", () => {
+  const d = (deviceId: string, name: string) => ({ deviceId, name })
+  const id = (x: { deviceId: string }) => x.deviceId
+  const known = new Set(["1", "2"])
+  const before = [d("1", "box"), d("2", "web")]
+
+  it("finds a new id, under a new name or a known one", () => {
+    expect(joinedWith(known, before, id, "")).toBeUndefined()
+    expect(joinedWith(known, [...before, d("3", "new")], id, "")?.deviceId).toBe("3")
+    // A rejoin: the old one goes, the same name comes back with a new id.
+    expect(joinedWith(known, [d("3", "box"), before[1]], id, "box")?.deviceId).toBe("3")
+    // The same id, whatever else changed, is the old one.
+    expect(joinedWith(known, [d("1", "renamed"), before[1]], id, "")).toBeUndefined()
+  })
+
+  it("takes only a new id under the name the link was issued for, when it is known", () => {
+    const listed = [...before, d("3", "other"), d("4", "Box2")]
+    expect(joinedWith(known, listed, id, "BOX2")?.deviceId).toBe("4")
+    expect(joinedWith(known, listed, id, "")?.deviceId).toBe("3")
+    // Another machine joined meanwhile with another link: not this one.
+    expect(joinedWith(known, listed, id, "none")).toBeUndefined()
+    expect(joinedWith(known, [...before, d("3", "other")], id, "box")).toBeUndefined()
+  })
+})
+
+it("adds --force to a rejoin link's join", () => {
+  const link = "https://cp.example/join#d"
+  expect(enrollCommand({ link, role: "worker", serverVersion: "dev", platform: "linux-amd64", force: true })).toBe(
+    " printf '%s\\n' 'https://cp.example/join#d' | task cli -- join --role worker --force",
+  )
+  expect(enrollCommand({ link, role: "daemon", serverVersion: "v0.2.0", platform: "linux-amd64", force: true })).toContain(
+    "~/.local/bin/circus join --force &&",
+  )
 })
 
 describe("localDeadline", () => {

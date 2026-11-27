@@ -19,6 +19,13 @@ const (
 	LinkAuthHeader = "Circus-Auth"
 	// LinkAuthRejected marks an HTTP response that rejected the link credential.
 	LinkAuthRejected = "rejected"
+	// LinkAuthRevoked marks a 403 for a credential the control plane knows
+	// and has revoked (its identity was deleted or replaced), with the
+	// identity's id in LinkPrincipalHeader. Clients treat it as terminal, as
+	// LinkAuthRejected, and only it as proof of the revocation.
+	LinkAuthRevoked = "revoked"
+	// LinkPrincipalHeader carries the revoked identity's id.
+	LinkPrincipalHeader = "Circus-Principal"
 )
 
 // WebSocket owns a coder connection and the underlying transport's abort handle.

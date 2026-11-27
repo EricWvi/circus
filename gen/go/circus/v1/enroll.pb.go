@@ -78,8 +78,11 @@ type EnrollRequest struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	OneTimeToken string                 `protobuf:"bytes,1,opt,name=one_time_token,json=oneTimeToken,proto3" json:"one_time_token,omitempty"`
 	Role         Role                   `protobuf:"varint,2,opt,name=role,proto3,enum=circus.v1.Role" json:"role,omitempty"`
-	Name         string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Hostname     string                 `protobuf:"bytes,4,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	// The identity name; empty for the first label of hostname, or, with a
+	// token issued to replace an identity, for that identity's name. A token
+	// that replaces an identity refuses any other name (INVALID_ARGUMENT).
+	Name     string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Hostname string `protobuf:"bytes,4,opt,name=hostname,proto3" json:"hostname,omitempty"`
 	// Shared machine hash links identities; credentials and revocation stay separate.
 	MachineId     string `protobuf:"bytes,5,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
 	Os            string `protobuf:"bytes,6,opt,name=os,proto3" json:"os,omitempty"`
@@ -184,8 +187,17 @@ type EnrollResponse struct {
 	PrincipalId     string `protobuf:"bytes,1,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
 	LongTermToken   string `protobuf:"bytes,2,opt,name=long_term_token,json=longTermToken,proto3" json:"long_term_token,omitempty"`
 	ControlPlaneUrl string `protobuf:"bytes,3,opt,name=control_plane_url,json=controlPlaneUrl,proto3" json:"control_plane_url,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The identity this enrollment replaced: set when the one-time token was
+	// issued to rejoin as an identity of the user (a "Rejoin" link, or
+	// `circus server enroll-token create --replace`). That identity was
+	// revoked, as deleting it would, in the transaction that created the new
+	// one, which took its name. Unset for a plain enrollment.
+	Replaced *EnrollResponse_ReplacedIdentity `protobuf:"bytes,4,opt,name=replaced,proto3" json:"replaced,omitempty"`
+	// The name the identity was enrolled under: the request's name, the
+	// hostname's first label without one, or the replaced identity's name.
+	Name          string `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EnrollResponse) Reset() {
@@ -239,6 +251,73 @@ func (x *EnrollResponse) GetControlPlaneUrl() string {
 	return ""
 }
 
+func (x *EnrollResponse) GetReplaced() *EnrollResponse_ReplacedIdentity {
+	if x != nil {
+		return x.Replaced
+	}
+	return nil
+}
+
+func (x *EnrollResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// ReplacedIdentity is the revoked identity, as it was named.
+type EnrollResponse_ReplacedIdentity struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PrincipalId   string                 `protobuf:"bytes,1,opt,name=principal_id,json=principalId,proto3" json:"principal_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnrollResponse_ReplacedIdentity) Reset() {
+	*x = EnrollResponse_ReplacedIdentity{}
+	mi := &file_circus_v1_enroll_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollResponse_ReplacedIdentity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollResponse_ReplacedIdentity) ProtoMessage() {}
+
+func (x *EnrollResponse_ReplacedIdentity) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_enroll_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollResponse_ReplacedIdentity.ProtoReflect.Descriptor instead.
+func (*EnrollResponse_ReplacedIdentity) Descriptor() ([]byte, []int) {
+	return file_circus_v1_enroll_proto_rawDescGZIP(), []int{1, 0}
+}
+
+func (x *EnrollResponse_ReplacedIdentity) GetPrincipalId() string {
+	if x != nil {
+		return x.PrincipalId
+	}
+	return ""
+}
+
+func (x *EnrollResponse_ReplacedIdentity) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 var File_circus_v1_enroll_proto protoreflect.FileDescriptor
 
 const file_circus_v1_enroll_proto_rawDesc = "" +
@@ -253,11 +332,16 @@ const file_circus_v1_enroll_proto_rawDesc = "" +
 	"machine_id\x18\x05 \x01(\tR\tmachineId\x12\x0e\n" +
 	"\x02os\x18\x06 \x01(\tR\x02os\x12\x12\n" +
 	"\x04arch\x18\a \x01(\tR\x04arch\x12%\n" +
-	"\x0eclient_version\x18\b \x01(\tR\rclientVersion\"\x87\x01\n" +
+	"\x0eclient_version\x18\b \x01(\tR\rclientVersion\"\xae\x02\n" +
 	"\x0eEnrollResponse\x12!\n" +
 	"\fprincipal_id\x18\x01 \x01(\tR\vprincipalId\x12&\n" +
 	"\x0flong_term_token\x18\x02 \x01(\tR\rlongTermToken\x12*\n" +
-	"\x11control_plane_url\x18\x03 \x01(\tR\x0fcontrolPlaneUrl*>\n" +
+	"\x11control_plane_url\x18\x03 \x01(\tR\x0fcontrolPlaneUrl\x12F\n" +
+	"\breplaced\x18\x04 \x01(\v2*.circus.v1.EnrollResponse.ReplacedIdentityR\breplaced\x12\x12\n" +
+	"\x04name\x18\x05 \x01(\tR\x04name\x1aI\n" +
+	"\x10ReplacedIdentity\x12!\n" +
+	"\fprincipal_id\x18\x01 \x01(\tR\vprincipalId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name*>\n" +
 	"\x04Role\x12\x14\n" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vROLE_DAEMON\x10\x01\x12\x0f\n" +
@@ -278,21 +362,23 @@ func file_circus_v1_enroll_proto_rawDescGZIP() []byte {
 }
 
 var file_circus_v1_enroll_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_circus_v1_enroll_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_circus_v1_enroll_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_circus_v1_enroll_proto_goTypes = []any{
-	(Role)(0),              // 0: circus.v1.Role
-	(*EnrollRequest)(nil),  // 1: circus.v1.EnrollRequest
-	(*EnrollResponse)(nil), // 2: circus.v1.EnrollResponse
+	(Role)(0),                               // 0: circus.v1.Role
+	(*EnrollRequest)(nil),                   // 1: circus.v1.EnrollRequest
+	(*EnrollResponse)(nil),                  // 2: circus.v1.EnrollResponse
+	(*EnrollResponse_ReplacedIdentity)(nil), // 3: circus.v1.EnrollResponse.ReplacedIdentity
 }
 var file_circus_v1_enroll_proto_depIdxs = []int32{
 	0, // 0: circus.v1.EnrollRequest.role:type_name -> circus.v1.Role
-	1, // 1: circus.v1.EnrollService.Enroll:input_type -> circus.v1.EnrollRequest
-	2, // 2: circus.v1.EnrollService.Enroll:output_type -> circus.v1.EnrollResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 1: circus.v1.EnrollResponse.replaced:type_name -> circus.v1.EnrollResponse.ReplacedIdentity
+	1, // 2: circus.v1.EnrollService.Enroll:input_type -> circus.v1.EnrollRequest
+	2, // 3: circus.v1.EnrollService.Enroll:output_type -> circus.v1.EnrollResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_enroll_proto_init() }
@@ -306,7 +392,7 @@ func file_circus_v1_enroll_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_enroll_proto_rawDesc), len(file_circus_v1_enroll_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

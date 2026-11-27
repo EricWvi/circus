@@ -53,8 +53,9 @@ export function validatePassword(password: string): string | null {
 }
 
 // Project names, paths and repository URLs follow the control plane's
-// rules (internal/controlplane/webapi/rules.go); validation-parity.test.ts
-// runs the Go tests' cases against these functions.
+// rules (internal/controlplane/webapi/rules.go), and device and worker names
+// its enrollment's (auth.ValidateName); validation-parity.test.ts runs the
+// Go tests' cases against these functions.
 
 /** UTF-8 bytes. */
 export const PATH_MAX_BYTES = 4096
@@ -82,6 +83,35 @@ const FORBIDDEN = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\ufeff\u061c\u202a-\u
 
 /** Whitespace as Go's unicode.IsSpace sees it (JavaScript's \s, plus NEL). */
 const SPACE = /[\s\u0085]/
+
+/** Bytes, which are characters here: names are ASCII (`auth.MaxNameLen`). */
+export const IDENTITY_NAME_MAX = 63
+
+const IDENTITY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+/**
+ * Checks a device or worker name as the server does (`auth.ValidateName`):
+ * 1 to IDENTITY_NAME_MAX of A–Z, a–z, 0–9, ".", "_" and "-", starting with
+ * a letter or digit. Nothing is trimmed: the name goes into the join
+ * command as typed, so leading or trailing spaces get a message of their
+ * own. An empty name is refused too (the add device dialog takes it to
+ * mean the host name and does not check it).
+ */
+export function checkIdentityName(raw: string): Checked {
+  if (raw.length > IDENTITY_NAME_MAX) return refuse(i18n.t("validation.identityNameTooLong", { max: IDENTITY_NAME_MAX }))
+  // Spaces pasted along with a host name are easy to miss: say so.
+  if (raw !== "" && raw.trim() !== raw) return refuse(i18n.t("validation.identityNameSpaces"))
+  if (!IDENTITY_NAME.test(raw)) return refuse(i18n.t("validation.identityNameChars"))
+  return accept(raw)
+}
+
+/**
+ * Device and worker names compare ignoring ASCII case, as the server's do
+ * (`store.IdentityNameKey`): "Box" and "box" name the same device.
+ */
+export const sameIdentityName = (a: string, b: string) => identityNameKey(a) === identityNameKey(b)
+
+const identityNameKey = (name: string) => name.replace(/[A-Z]/g, (c) => c.toLowerCase())
 
 /** Checks a project name; the value is the trimmed name. */
 export function checkProjectName(raw: string): Checked {

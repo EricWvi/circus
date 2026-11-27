@@ -54,6 +54,12 @@ const (
 	// MachineServiceGetGitRemoteProcedure is the fully-qualified name of the MachineService's
 	// GetGitRemote RPC.
 	MachineServiceGetGitRemoteProcedure = "/circus.v1.MachineService/GetGitRemote"
+	// MachineServiceDeleteDeviceProcedure is the fully-qualified name of the MachineService's
+	// DeleteDevice RPC.
+	MachineServiceDeleteDeviceProcedure = "/circus.v1.MachineService/DeleteDevice"
+	// MachineServiceDeleteWorkerProcedure is the fully-qualified name of the MachineService's
+	// DeleteWorker RPC.
+	MachineServiceDeleteWorkerProcedure = "/circus.v1.MachineService/DeleteWorker"
 )
 
 // MachineServiceClient is a client for the circus.v1.MachineService service.
@@ -98,6 +104,17 @@ type MachineServiceClient interface {
 	// "device_query.git_remote". Problems with the path or repository come
 	// back in GetGitRemoteResponse.result.error.
 	GetGitRemote(context.Context, *connect.Request[v1.GetGitRemoteRequest]) (*connect.Response[v1.GetGitRemoteResponse], error)
+	// Deletes one of the caller's devices as `circus server device revoke`
+	// does: its credentials are revoked (a live daemon link closes at its
+	// next credential check, within seconds), the device is removed and its
+	// name freed, and project locations on it read as removed. The worker on
+	// the same machine is untouched. NOT_FOUND for another user's, an
+	// unknown or an already deleted device.
+	DeleteDevice(context.Context, *connect.Request[v1.DeleteDeviceRequest]) (*connect.Response[v1.DeleteDeviceResponse], error)
+	// Deletes one of the caller's workers as `circus server worker revoke`
+	// does: as DeleteDevice, and the worker also leaves every provider it was
+	// assigned to and loses its integrator grant. NOT_FOUND as DeleteDevice.
+	DeleteWorker(context.Context, *connect.Request[v1.DeleteWorkerRequest]) (*connect.Response[v1.DeleteWorkerResponse], error)
 }
 
 // NewMachineServiceClient constructs a client for the circus.v1.MachineService service. By default,
@@ -153,6 +170,18 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(machineServiceMethods.ByName("GetGitRemote")),
 			connect.WithClientOptions(opts...),
 		),
+		deleteDevice: connect.NewClient[v1.DeleteDeviceRequest, v1.DeleteDeviceResponse](
+			httpClient,
+			baseURL+MachineServiceDeleteDeviceProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("DeleteDevice")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteWorker: connect.NewClient[v1.DeleteWorkerRequest, v1.DeleteWorkerResponse](
+			httpClient,
+			baseURL+MachineServiceDeleteWorkerProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("DeleteWorker")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -165,6 +194,8 @@ type machineServiceClient struct {
 	setWorkerAgent   *connect.Client[v1.SetWorkerAgentRequest, v1.SetWorkerAgentResponse]
 	listDirectory    *connect.Client[v1.ListDirectoryRequest, v1.ListDirectoryResponse]
 	getGitRemote     *connect.Client[v1.GetGitRemoteRequest, v1.GetGitRemoteResponse]
+	deleteDevice     *connect.Client[v1.DeleteDeviceRequest, v1.DeleteDeviceResponse]
+	deleteWorker     *connect.Client[v1.DeleteWorkerRequest, v1.DeleteWorkerResponse]
 }
 
 // ListDevices calls circus.v1.MachineService.ListDevices.
@@ -200,6 +231,16 @@ func (c *machineServiceClient) ListDirectory(ctx context.Context, req *connect.R
 // GetGitRemote calls circus.v1.MachineService.GetGitRemote.
 func (c *machineServiceClient) GetGitRemote(ctx context.Context, req *connect.Request[v1.GetGitRemoteRequest]) (*connect.Response[v1.GetGitRemoteResponse], error) {
 	return c.getGitRemote.CallUnary(ctx, req)
+}
+
+// DeleteDevice calls circus.v1.MachineService.DeleteDevice.
+func (c *machineServiceClient) DeleteDevice(ctx context.Context, req *connect.Request[v1.DeleteDeviceRequest]) (*connect.Response[v1.DeleteDeviceResponse], error) {
+	return c.deleteDevice.CallUnary(ctx, req)
+}
+
+// DeleteWorker calls circus.v1.MachineService.DeleteWorker.
+func (c *machineServiceClient) DeleteWorker(ctx context.Context, req *connect.Request[v1.DeleteWorkerRequest]) (*connect.Response[v1.DeleteWorkerResponse], error) {
+	return c.deleteWorker.CallUnary(ctx, req)
 }
 
 // MachineServiceHandler is an implementation of the circus.v1.MachineService service.
@@ -244,6 +285,17 @@ type MachineServiceHandler interface {
 	// "device_query.git_remote". Problems with the path or repository come
 	// back in GetGitRemoteResponse.result.error.
 	GetGitRemote(context.Context, *connect.Request[v1.GetGitRemoteRequest]) (*connect.Response[v1.GetGitRemoteResponse], error)
+	// Deletes one of the caller's devices as `circus server device revoke`
+	// does: its credentials are revoked (a live daemon link closes at its
+	// next credential check, within seconds), the device is removed and its
+	// name freed, and project locations on it read as removed. The worker on
+	// the same machine is untouched. NOT_FOUND for another user's, an
+	// unknown or an already deleted device.
+	DeleteDevice(context.Context, *connect.Request[v1.DeleteDeviceRequest]) (*connect.Response[v1.DeleteDeviceResponse], error)
+	// Deletes one of the caller's workers as `circus server worker revoke`
+	// does: as DeleteDevice, and the worker also leaves every provider it was
+	// assigned to and loses its integrator grant. NOT_FOUND as DeleteDevice.
+	DeleteWorker(context.Context, *connect.Request[v1.DeleteWorkerRequest]) (*connect.Response[v1.DeleteWorkerResponse], error)
 }
 
 // NewMachineServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -295,6 +347,18 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithSchema(machineServiceMethods.ByName("GetGitRemote")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceDeleteDeviceHandler := connect.NewUnaryHandler(
+		MachineServiceDeleteDeviceProcedure,
+		svc.DeleteDevice,
+		connect.WithSchema(machineServiceMethods.ByName("DeleteDevice")),
+		connect.WithHandlerOptions(opts...),
+	)
+	machineServiceDeleteWorkerHandler := connect.NewUnaryHandler(
+		MachineServiceDeleteWorkerProcedure,
+		svc.DeleteWorker,
+		connect.WithSchema(machineServiceMethods.ByName("DeleteWorker")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/circus.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineServiceListDevicesProcedure:
@@ -311,6 +375,10 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 			machineServiceListDirectoryHandler.ServeHTTP(w, r)
 		case MachineServiceGetGitRemoteProcedure:
 			machineServiceGetGitRemoteHandler.ServeHTTP(w, r)
+		case MachineServiceDeleteDeviceProcedure:
+			machineServiceDeleteDeviceHandler.ServeHTTP(w, r)
+		case MachineServiceDeleteWorkerProcedure:
+			machineServiceDeleteWorkerHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -346,4 +414,12 @@ func (UnimplementedMachineServiceHandler) ListDirectory(context.Context, *connec
 
 func (UnimplementedMachineServiceHandler) GetGitRemote(context.Context, *connect.Request[v1.GetGitRemoteRequest]) (*connect.Response[v1.GetGitRemoteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.GetGitRemote is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) DeleteDevice(context.Context, *connect.Request[v1.DeleteDeviceRequest]) (*connect.Response[v1.DeleteDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.DeleteDevice is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) DeleteWorker(context.Context, *connect.Request[v1.DeleteWorkerRequest]) (*connect.Response[v1.DeleteWorkerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.DeleteWorker is not implemented"))
 }

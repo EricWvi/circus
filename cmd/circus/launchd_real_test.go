@@ -384,13 +384,15 @@ func buildWorkerPackage(ctx context.Context, t *testing.T, node, dir, version, t
 }
 
 // controlPlane stands in for the control plane of one service: it refuses
-// every link with 503, which daemon and worker retry, or, once reject is
-// set, rejects the credential as the control plane does for a revoked
-// machine, a terminal stop for both. It records the process each link
-// request came from.
+// every link with 503, which daemon and worker retry; once reject is set,
+// with 401 as the control plane answers an unknown credential; once revoke
+// is set, with 403 naming the revoked identity revoke holds, as it answers
+// a deleted or replaced one. Both stop either service for good. It records
+// the process each link request came from.
 type controlPlane struct {
 	srv    *httptest.Server
 	reject atomic.Bool
+	revoke atomic.Pointer[string]
 	mu     sync.Mutex
 	pids   map[int]bool
 }
@@ -404,6 +406,12 @@ func newControlPlane(t *testing.T) *controlPlane {
 			c.mu.Lock()
 			c.pids[pid] = true
 			c.mu.Unlock()
+		}
+		if principal := c.revoke.Load(); principal != nil {
+			w.Header().Set(wire.LinkAuthHeader, wire.LinkAuthRevoked)
+			w.Header().Set(wire.LinkPrincipalHeader, *principal)
+			w.WriteHeader(http.StatusForbidden)
+			return
 		}
 		if c.reject.Load() {
 			w.Header().Set(wire.LinkAuthHeader, wire.LinkAuthRejected)
@@ -505,6 +513,23 @@ func newLaunchdFixture(t *testing.T) *launchdFixture {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
+	f.saveCredentials(t)
+
+	oldVersion, oldRelease, oldExe := version, workerRelease, workerExecutable
+	t.Cleanup(func() { version, workerRelease, workerExecutable = oldVersion, oldRelease, oldExe })
+	version = "v1.2.3"
+	workerRelease = func(string) selfupdate.Release { return release.Release() }
+	workerExecutable = func() (string, error) { return f.circus, nil }
+	// Registered last, so it runs first: in-process calls still running
+	// use HOME and the stand-ins above until they return.
+	t.Cleanup(func() { f.waitCalls(t) })
+	return f
+}
+
+// saveCredentials writes the daemon and worker credential files, each for
+// its own control plane, as a join would.
+func (f *launchdFixture) saveCredentials(t *testing.T) {
+	t.Helper()
 	for role, plane := range map[credfile.Role]*controlPlane{credfile.RoleDaemon: f.daemonPlane, credfile.RoleWorker: f.workerPlane} {
 		path, err := credfile.Path(role)
 		if err != nil {
@@ -516,16 +541,6 @@ func newLaunchdFixture(t *testing.T) *launchdFixture {
 			t.Fatal(err)
 		}
 	}
-
-	oldVersion, oldRelease, oldExe := version, workerRelease, workerExecutable
-	t.Cleanup(func() { version, workerRelease, workerExecutable = oldVersion, oldRelease, oldExe })
-	version = "v1.2.3"
-	workerRelease = func(string) selfupdate.Release { return release.Release() }
-	workerExecutable = func() (string, error) { return f.circus, nil }
-	// Registered last, so it runs first: in-process calls still running
-	// use HOME and the stand-ins above until they return.
-	t.Cleanup(func() { f.waitCalls(t) })
-	return f
 }
 
 // waitCalls waits for the in-process calls (within) that may still change
@@ -772,26 +787,81 @@ func TestRealLaunchdServices(t *testing.T) {
 		f.ready(t, s.label, s.plane, b)
 	}
 
-	// A credential the control plane rejects stops either service for
-	// good: exit 0 on macOS, so launchd leaves it stopped.
+	// A credential the control plane does not know (it may run on another
+	// or an older database) stops either service for good, exit 0 on macOS
+	// so launchd leaves it stopped, and removes nothing.
+	roles := map[string]credfile.Role{daemonLabel: credfile.RoleDaemon, workerLabel: credfile.RoleWorker}
 	for _, s := range services {
+		credential, err := credfile.Path(roles[s.label])
+		if err != nil {
+			t.Fatal(err)
+		}
 		s.plane.reject.Store(true)
 		f.cli(t, s.name, "restart")
 		f.waitAgent(t, s.label, "stopped after exit 0", agent.stoppedCleanly)
 		f.holdAgent(t, s.label, "stopped after exit 0", 7*time.Second, agent.stoppedCleanly)
 		f.requireStoppedCleanly(t, s.svc)
+		for _, path := range []string{f.plist(s.label), credential} {
+			if _, err := os.Stat(path); err != nil {
+				t.Errorf("an unknown credential's refusal removed %s: %v", path, err)
+			}
+		}
 	}
 	requireOutput(t, "daemon log", f.log(t, "daemon"), "circus daemon service stopped: daemon link: HTTP 401 authentication rejected")
 	requireOutput(t, "worker status", f.cli(t, "worker", "status"),
 		"It stopped itself and stays stopped. The control plane refused its credential")
 
+	// A credential the control plane revoked (its identity was deleted)
+	// stops either service for good, and the service removes itself: its
+	// plist and its credential file are gone, and launchd no longer has the
+	// agent loaded (a detached helper boots it out once it has exited).
+	for _, s := range services {
+		credential, err := credfile.Path(roles[s.label])
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The fixture's credentials name their role as the principal.
+		principal := string(roles[s.label])
+		s.plane.revoke.Store(&principal)
+		f.cli(t, s.name, "start")
+		unloaded := func(a agent) bool { return !a.loaded }
+		f.waitAgent(t, s.label, "unloaded after the revocation", unloaded)
+		f.holdAgent(t, s.label, "unloaded after the revocation", 7*time.Second, unloaded)
+		if _, err := os.Stat(f.plist(s.label)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s remains after the revocation: %v", f.plist(s.label), err)
+		}
+		if _, err := os.Stat(credential); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s remains after the revocation: %v", credential, err)
+		}
+		requireOutput(t, s.name+" status after the revocation", f.cli(t, s.name, "status"), "service is not installed.")
+	}
+	requireOutput(t, "daemon log", f.log(t, "daemon"), "circus daemon service stopped: daemon link: HTTP 403 credential revoked",
+		"so the service and the credential file were removed")
+	requireOutput(t, "worker log", f.log(t, "worker"), `"outcome":"removed"`)
+	// The worker package stays.
+	if _, err := os.Stat(filepath.Join(root, "v1.2.3")); err != nil {
+		t.Errorf("the revocation removed the worker package: %v", err)
+	}
+
+	// Join again (new credentials) and install both services again.
+	for _, s := range services {
+		s.plane.reject.Store(false)
+		s.plane.revoke.Store(nil)
+	}
+	f.saveCredentials(t)
+	requireOutput(t, "daemon install again", f.cli(t, "daemon", "install"), "✓ Installed and started the circus device daemon service.")
+	daemon = f.waitDaemon(t, 0)
+	stdout.Reset()
+	f.within(t, "worker install again", []string{workerLabel}, func() error { return workerCommand([]string{"install"}, &stdout, &stderr) })
+	requireOutput(t, "worker install again", stdout.String(), "✓ Installed and started the circus worker service.")
+	f.waitWorkerPackage(t, root, "v1.2.3")
+
 	// So does a Node.js that is gone: the package's launcher stops for
 	// good with exit 0 and says why.
-	f.workerPlane.reject.Store(false)
 	if err := os.Remove(f.node); err != nil {
 		t.Fatal(err)
 	}
-	f.cli(t, "worker", "start")
+	f.cli(t, "worker", "restart")
 	installed, _, err := workerservice.InstalledService()
 	if err != nil {
 		t.Fatal(err)

@@ -29,6 +29,10 @@ type LinkAuthenticator interface {
 // (with WWW-Authenticate: Bearer) for ErrUnauthenticated, 403 for ErrRevoked
 // or a principal of another kind, and 503 for any other error (a store
 // failure), so an unauthenticated request never reaches a WebSocket upgrade.
+// Every refusal is marked Circus-Auth: rejected (RejectLink) except
+// ErrRevoked, marked Circus-Auth: revoked with the revoked identity's id in
+// Circus-Principal: an unknown token proves nothing (the control plane may
+// be running on another or an older database), a revoked one does.
 func Admit(w http.ResponseWriter, r *http.Request, a LinkAuthenticator, logger *slog.Logger, kinds ...store.PrincipalKind) (Principal, bool) {
 	p, err := a.Authenticate(r.Context(), r)
 	log := logger.With("path", r.URL.Path, "remote", r.RemoteAddr)
@@ -39,8 +43,13 @@ func Admit(w http.ResponseWriter, r *http.Request, a LinkAuthenticator, logger *
 		RejectLink(w, "unauthenticated", http.StatusUnauthorized)
 		return Principal{}, false
 	case errors.Is(err, ErrRevoked):
-		log.InfoContext(r.Context(), "request rejected", "status", http.StatusForbidden, "reason", "credential revoked")
-		RejectLink(w, "credential revoked", http.StatusForbidden)
+		log.InfoContext(r.Context(), "request rejected", "status", http.StatusForbidden, "reason", "credential revoked", "principal_id", p.ID)
+		// The one answer that proves the identity was deleted or replaced:
+		// the credential exists here and is revoked. The client checks the
+		// principal id against its own before it removes anything.
+		w.Header().Set(wire.LinkAuthHeader, wire.LinkAuthRevoked)
+		w.Header().Set(wire.LinkPrincipalHeader, p.ID)
+		http.Error(w, "credential revoked", http.StatusForbidden)
 		return Principal{}, false
 	case err != nil:
 		log.ErrorContext(r.Context(), "authentication failed", "error", err)

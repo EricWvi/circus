@@ -617,8 +617,12 @@ func status(t *testing.T, f *fixture, token string) int {
 	res, err := http.DefaultClient.Do(req)
 	must(t, err)
 	_ = res.Body.Close()
+	// The control plane marks its refusals: "revoked" (naming the identity)
+	// for a revoked credential, "rejected" for any other.
 	wantMarker := res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden
-	if got := res.Header.Get("Circus-Auth"); (got == "rejected") != wantMarker {
+	got := res.Header.Get("Circus-Auth")
+	revoked := got == "revoked" && res.StatusCode == http.StatusForbidden && res.Header.Get("Circus-Principal") != ""
+	if (got == "rejected" || revoked) != wantMarker {
 		t.Errorf("worker link HTTP %d: unexpected Circus-Auth %q", res.StatusCode, got)
 	}
 	return res.StatusCode

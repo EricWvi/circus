@@ -154,7 +154,7 @@ func TestInstallWritesTheServiceAndRemovesOtherVersions(t *testing.T) {
 	for _, want := range []string{
 		"Description=circus worker\n",
 		"Restart=on-failure\nRestartSec=5\nKillMode=mixed\n",
-		`ExecStart="` + s.launcher(v1) + `"` + "\n",
+		`ExecStart="` + s.launcher(v1) + `" "--service"` + "\n",
 		`Environment="CIRCUS_NODE=` + f.node + `"`,
 		`Environment="CIRCUS_BIN=` + f.circus + `"`,
 		`Environment="HTTPS_PROXY=http://user:secret@proxy:3128"`,
@@ -482,5 +482,58 @@ func TestStopReason(t *testing.T) {
 	}
 	if !NodeGone(i) {
 		t.Error("the recorded Node.js is gone")
+	}
+}
+
+// A worker service whose credential the control plane refused for good is
+// removed with its credential, under the store's lock; its packages and
+// agents stay. A service installed since for another credential stays.
+func TestRemoveRejectedKeepsThePackages(t *testing.T) {
+	f := newFixture(t)
+	f.joinWorker(t)
+	if _, err := Install(t.Context(), v1, f.options(io.Discard)); err != nil {
+		t.Fatal(err)
+	}
+	agents := filepath.Join(f.data, "circus", "agents", "claude-code")
+	if err := os.MkdirAll(agents, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path, err := credfile.Path(credfile.RoleWorker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.calls(t)
+	file, err := credfile.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := userservice.RejectedCredential(file)
+	if removed, err := RemoveRejected(t.Context(), filepath.Join(f.dir, "other.json"), running, 1, io.Discard); removed || err != nil {
+		t.Fatalf("another credential: %v, %v", removed, err)
+	}
+	if !f.exists(f.unit) || !f.exists(path) {
+		t.Fatal("removed another credential's service")
+	}
+	// A token other than the file's: the file was replaced since.
+	if removed, err := RemoveRejected(t.Context(), path, userservice.Rejected{PrincipalID: file.PrincipalID}, 1, io.Discard); removed || err != nil {
+		t.Fatalf("another token: %v, %v", removed, err)
+	}
+	removed, err := RemoveRejected(t.Context(), path, running, 1, io.Discard)
+	if err != nil || !removed {
+		t.Fatalf("RemoveRejected = %v, %v", removed, err)
+	}
+	if f.exists(f.unit) || f.exists(path) {
+		t.Fatal("service file or credential kept")
+	}
+	if !f.exists(f.store().launcher(v1)) || !f.exists(agents) {
+		t.Fatal("the worker package or the agents were removed")
+	}
+	for _, call := range f.calls(t) {
+		if strings.Contains(call, "--now") || strings.Contains(call, " stop ") {
+			t.Fatalf("stopped the unit from inside: %q", call)
+		}
+	}
+	if removed, err := RemoveRejected(t.Context(), path, running, 1, io.Discard); removed || err != nil {
+		t.Fatalf("without a service: %v, %v", removed, err)
 	}
 }

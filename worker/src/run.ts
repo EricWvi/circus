@@ -6,6 +6,7 @@ import { AgentManager, claudeCode } from "./agents/manager.js";
 import { loadConfig } from "./config.js";
 import { WorkerLink } from "./link/index.js";
 import { exitStatus } from "./exit.js";
+import { removeRejectedService, type RunningCredential } from "./rejected.js";
 import { clearStop, recordStop, stopReason } from "./stop.js";
 import { createLogger } from "./log.js";
 import { SessionPool } from "./pool.js";
@@ -26,9 +27,10 @@ function bootID(): string {
   return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
 }
 
-async function main(): Promise<void> {
+async function main(running: { credential?: RunningCredential }): Promise<void> {
   clearStop();
   const config = loadConfig();
+  running.credential = { principalId: config.principalId, token: config.token };
   const log = createLogger(config.logLevel);
   const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
 
@@ -106,17 +108,27 @@ async function main(): Promise<void> {
 /**
  * Runs the worker until it stops and returns its exit status (see
  * exitStatus). The reason of an earlier terminal stop is cleared first; a
- * terminal stop records its reason (stop.ts) before returning.
+ * terminal stop records its reason (stop.ts) before returning. Run as the
+ * installed service (argv holds SERVICE_FLAG), a definitive refusal of the
+ * credential also removes the service and the credential (rejected.ts).
  */
-export async function run(): Promise<number> {
+export async function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+  // The credential the worker runs with, as it read it at start.
+  const running: { credential?: RunningCredential } = {};
   try {
-    await main();
+    await main(running);
     return 0;
   } catch (error: unknown) {
     const status = exitStatus(error);
     const reason = stopReason(error);
     if (reason) recordStop(reason, error instanceof Error ? error.message : String(error));
-    createLogger("error").error("worker stopped", { error: String(error).slice(0, 1024), terminal: reason !== undefined });
+    const log = createLogger("error");
+    log.error("worker stopped", { error: String(error).slice(0, 1024), terminal: reason !== undefined });
+    const removal = removeRejectedService(error, argv, running.credential);
+    if (removal) {
+      const outcome = removal.status === 0 ? "removed" : removal.status === 1 || removal.status === null ? "kept" : "failed";
+      log.error("worker service after the refused credential", { outcome, output: removal.output });
+    }
     return status;
   }
 }

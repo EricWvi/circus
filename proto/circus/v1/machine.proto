@@ -51,6 +51,17 @@ service MachineService {
   // "device_query.git_remote". Problems with the path or repository come
   // back in GetGitRemoteResponse.result.error.
   rpc GetGitRemote(GetGitRemoteRequest) returns (GetGitRemoteResponse);
+  // Deletes one of the caller's devices as `circus server device revoke`
+  // does: its credentials are revoked (a live daemon link closes at its
+  // next credential check, within seconds), the device is removed and its
+  // name freed, and project locations on it read as removed. The worker on
+  // the same machine is untouched. NOT_FOUND for another user's, an
+  // unknown or an already deleted device.
+  rpc DeleteDevice(DeleteDeviceRequest) returns (DeleteDeviceResponse);
+  // Deletes one of the caller's workers as `circus server worker revoke`
+  // does: as DeleteDevice, and the worker also leaves every provider it was
+  // assigned to and loses its integrator grant. NOT_FOUND as DeleteDevice.
+  rpc DeleteWorker(DeleteWorkerRequest) returns (DeleteWorkerResponse);
 }
 
 message Device {
@@ -66,6 +77,9 @@ message Device {
   string arch = 5;
   // Daemon client version reported at enrollment.
   string version = 6;
+  // The device identity's id. A device that rejoins (or is revoked and
+  // enrolled again) under the same name has a new one.
+  string device_id = 7;
 }
 message ListDevicesRequest {}
 message ListDevicesResponse {
@@ -118,9 +132,24 @@ message ListWorkersResponse {
   repeated Worker workers = 1;
 }
 
+message DeleteDeviceRequest {
+  string device_id = 1;
+}
+message DeleteDeviceResponse {}
+message DeleteWorkerRequest {
+  string worker_id = 1;
+}
+message DeleteWorkerResponse {}
+
 message CreateEnrollLinkRequest {
   // Which identities the link enrolls. Unspecified is INVALID_ARGUMENT.
   EnrollRole role = 1;
+  // Rejoin: the id of one of the caller's devices (role DAEMON) or workers
+  // (role WORKER) that the enrolled identity replaces under its name. The
+  // enrollment revokes it as DeleteDevice or DeleteWorker would, and is
+  // refused while it is online. INVALID_ARGUMENT with role BOTH; NOT_FOUND
+  // for another user's, an unknown or a deleted identity.
+  string replace_id = 2;
 }
 enum EnrollRole {
   ENROLL_ROLE_UNSPECIFIED = 0;

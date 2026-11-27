@@ -39,7 +39,7 @@ func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[circusv1.L
 		}
 		out.Devices = append(out.Devices, &circusv1.Device{
 			Name: d.Name, Online: online[d.ID], LastSeenUnixMs: lastSeen,
-			Os: d.OS, Arch: d.Arch, Version: d.ClientVersion,
+			Os: d.OS, Arch: d.Arch, Version: d.ClientVersion, DeviceId: d.ID,
 		})
 	}
 	return connect.NewResponse(out), nil
@@ -52,6 +52,13 @@ func (s *Service) CreateEnrollLink(ctx context.Context, req *connect.Request[cir
 	u, err := user(ctx)
 	if err != nil {
 		return nil, err
+	}
+	replace := req.Msg.GetReplaceId()
+	if replace != "" && store.CheckID("replace id", replace) != nil {
+		return nil, invalidField("replace_id", "invalid identity id")
+	}
+	if replace != "" && req.Msg.GetRole() == circusv1.EnrollRole_ENROLL_ROLE_BOTH {
+		return nil, invalidField("role", "a rejoin link enrolls one role: daemon or worker")
 	}
 	var kinds []store.PrincipalKind
 	switch req.Msg.GetRole() {
@@ -73,6 +80,10 @@ func (s *Service) CreateEnrollLink(ctx context.Context, req *connect.Request[cir
 	err = s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {
 		now := s.now()
 		for _, kind := range kinds {
+			// A rejoin frees the slot it fills.
+			if replace != "" {
+				break
+			}
 			if err := auth.CheckIdentityLimit(ctx, tx, u.ID, kind); err != nil {
 				return err
 			}
@@ -85,7 +96,14 @@ func (s *Service) CreateEnrollLink(ctx context.Context, req *connect.Request[cir
 			return store.ErrLimit
 		}
 		for _, kind := range kinds {
-			token, rec, err := auth.CreateEnrollToken(ctx, tx, u.ID, kind, auth.DefaultEnrollTTL, now)
+			var token string
+			var rec store.EnrollToken
+			var err error
+			if replace != "" {
+				token, rec, err = auth.CreateRejoinToken(ctx, tx, u.ID, kind, replace, auth.DefaultEnrollTTL, now)
+			} else {
+				token, rec, err = auth.CreateEnrollToken(ctx, tx, u.ID, kind, auth.DefaultEnrollTTL, now)
+			}
 			if err != nil {
 				return err
 			}
@@ -94,6 +112,9 @@ func (s *Service) CreateEnrollLink(ctx context.Context, req *connect.Request[cir
 		}
 		return nil
 	})
+	if errors.Is(err, auth.ErrNoSuchIdentity) {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("the identity to replace was not found"))
+	}
 	if errors.Is(err, auth.ErrIdentityLimit) {
 		return nil, connect.NewError(connect.CodeResourceExhausted, errors.New("live identity limit reached for the requested roles"))
 	}
@@ -193,6 +214,44 @@ func (s *Service) oneWorker(ctx context.Context, userID string, w store.Identity
 		}
 	}
 	return s.workerMessage(w, online[w.ID], byMachine, agents.Agents), nil
+}
+
+// DeleteDevice deletes one of the caller's devices with auth.RevokeByID,
+// as `circus server device revoke` does.
+func (s *Service) DeleteDevice(ctx context.Context, req *connect.Request[circusv1.DeleteDeviceRequest]) (*connect.Response[circusv1.DeleteDeviceResponse], error) {
+	if err := s.deleteIdentity(ctx, store.KindDevice, "device_id", req.Msg.GetDeviceId()); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&circusv1.DeleteDeviceResponse{}), nil
+}
+
+// DeleteWorker deletes one of the caller's workers with auth.RevokeByID,
+// as `circus server worker revoke` does.
+func (s *Service) DeleteWorker(ctx context.Context, req *connect.Request[circusv1.DeleteWorkerRequest]) (*connect.Response[circusv1.DeleteWorkerResponse], error) {
+	if err := s.deleteIdentity(ctx, store.KindWorker, "worker_id", req.Msg.GetWorkerId()); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&circusv1.DeleteWorkerResponse{}), nil
+}
+
+func (s *Service) deleteIdentity(ctx context.Context, kind store.PrincipalKind, field, id string) error {
+	u, err := user(ctx)
+	if err != nil {
+		return err
+	}
+	if store.CheckID(field, id) != nil {
+		return invalidField(field, "invalid id")
+	}
+	ident, n, err := auth.RevokeByID(ctx, s.st, kind, u.ID, id, s.now())
+	if errors.Is(err, auth.ErrNoSuchIdentity) {
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("%s not found", auth.AdminNoun(kind)))
+	}
+	if err != nil {
+		return s.internal(ctx, "delete "+auth.AdminNoun(kind), err)
+	}
+	s.logger.InfoContext(ctx, "identity deleted", "kind", kind, "principal_id", ident.ID, "name", ident.Name,
+		"user_id", u.ID, "revoked_credentials", n)
+	return nil
 }
 
 // SetWorkerGrant turns the integrator grant of one of the caller's

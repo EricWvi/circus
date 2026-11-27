@@ -239,8 +239,16 @@ describe("the worker list", () => {
     expect(within(same).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["devbox"])
     expect(workerRow("cloud-runner").queryByRole("list", { name: /^Devices on the same machine/ })).toBeNull()
     expect(workerRow("eric-win").getByText("Last seen 2d ago")).toBeTruthy()
-    // Each worker's Claude Code is installed: uninstalling it is all there is to do.
-    expect(workers().getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+    // Each worker's Claude Code is installed: uninstalling it is all there is
+    // to do, besides each row's actions menu.
+    const labels = workers().getAllByRole("button").map((b) => b.getAttribute("aria-label"))
+    expect(labels.filter((l) => l?.startsWith("Actions for "))).toEqual([
+      "Actions for cloud-runner",
+      "Actions for devbox",
+      "Actions for eric-mbp",
+      "Actions for eric-win",
+    ])
+    expect(labels.filter((l) => !l?.startsWith("Actions for "))).toEqual([
       "Uninstall Claude Code from cloud-runner",
       "Uninstall Claude Code from devbox",
       "Uninstall Claude Code from eric-mbp",
@@ -640,5 +648,109 @@ describe("the integrator switch", () => {
     expect(isOn("devbox")).toBe(true)
     await advance(DEVICES_LIVE_INTERVAL_MS)
     expect(isOn("devbox")).toBe(true)
+  })
+})
+
+describe("deleting", () => {
+  const openDelete = async (kind: "devices" | "workers", name: string) => {
+    const list = document.querySelector<HTMLElement>(`section[aria-labelledby="${kind}-heading"]`)!
+    fireEvent.pointerDown(within(list).getByRole("button", { name: `Actions for ${name}` }), { button: 0, ctrlKey: false })
+    await advance(0)
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete…" }))
+    await advance(0)
+  }
+
+  it("confirms with what deleting a device does, then deletes it", async () => {
+    const { state } = await renderDevices(seedState(NOW))
+    await openDelete("devices", "eric-win")
+    const dialog = within(screen.getByRole("dialog", { name: "Delete device eric-win?" }))
+    expect(dialog.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "Its credential is revoked, and its connection, if any, is closed.",
+      "The name eric-win is free for another device or worker to join under.",
+      "Project locations on it show the device as removed.",
+      "A worker on the same machine is not affected.",
+      "If it runs as an installed service, it removes that service and its credential file when it learns of this.",
+    ])
+    // Offline: no warning.
+    expect(dialog.queryByText(/is online/)).toBeNull()
+    fireEvent.click(dialog.getByRole("button", { name: "Delete" }))
+    await advance(50)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(state.devices.some((d) => d.name === "eric-win")).toBe(false)
+    expect(within(screen.getAllByRole("list")[0]).queryByText("eric-win", { selector: "span" })).toBeNull()
+    // The worker of the same name stays.
+    expect(state.workers.some((w) => w.name === "eric-win")).toBe(true)
+  })
+
+  it("warns when it is online, and says how deleting a worker differs", async () => {
+    const { state } = await renderDevices(seedState(NOW))
+    await openDelete("workers", "devbox")
+    const dialog = within(screen.getByRole("dialog", { name: "Delete worker devbox?" }))
+    expect(dialog.getByText("devbox is online: it is disconnected at once, and sessions running on it fail.")).toBeTruthy()
+    expect(dialog.getByText("It leaves every model provider it is assigned to, and loses its Integrator grant.")).toBeTruthy()
+    expect(dialog.getByText("A device on the same machine is not affected.")).toBeTruthy()
+    // Cancel keeps it.
+    fireEvent.click(dialog.getByRole("button", { name: "Cancel" }))
+    await advance(10)
+    expect(state.workers.some((w) => w.name === "devbox")).toBe(true)
+  })
+
+  it("takes a device deleted meanwhile as deleted, and deletes once however often confirmed", async () => {
+    const { state, client } = await renderDevices(seedState(NOW))
+    let calls = 0
+    const deleteDevice = client.machines.deleteDevice.bind(client.machines)
+    client.machines.deleteDevice = (req) => {
+      calls++
+      return deleteDevice(req)
+    }
+    await openDelete("devices", "eric-win")
+    state.devices = state.devices.filter((d) => d.name !== "eric-win")
+    const confirm = screen.getByRole("button", { name: "Delete" })
+    // Enter, Space and a click while the first is under way.
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+    fireEvent.keyDown(confirm, { key: "Enter" })
+    await advance(50)
+    expect(calls).toBe(1)
+    // not_found: it is gone, as asked; the dialog closes.
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(within(screen.getAllByRole("list")[0]).queryByText("eric-win", { selector: "span" })).toBeNull()
+  })
+
+  it("returns focus to the row's menu after Cancel, and to Add device once the row is gone", async () => {
+    await renderDevices(seedState(NOW))
+    const list = () => document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
+    const trigger = () => within(list()).getByRole("button", { name: "Actions for eric-win" })
+    const openMenu = async () => {
+      fireEvent.pointerDown(trigger(), { button: 0, ctrlKey: false })
+      await advance(0)
+    }
+    await openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete…" }))
+    await advance(0)
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    await advance(300)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(document.activeElement).toBe(trigger())
+
+    await openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete…" }))
+    await advance(0)
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await advance(300)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add device" }))
+  })
+
+  it("reads in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    await renderDevices(seedState(NOW))
+    const list = document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
+    fireEvent.pointerDown(within(list).getByRole("button", { name: "devbox 的操作" }), { button: 0, ctrlKey: false })
+    await advance(0)
+    fireEvent.click(screen.getByRole("menuitem", { name: "删除…" }))
+    await advance(0)
+    const dialog = within(screen.getByRole("dialog", { name: "删除设备 devbox？" }))
+    expect(dialog.getByText("devbox 当前在线：它会立即断开连接，在它上面运行的会话会失败。")).toBeTruthy()
   })
 })

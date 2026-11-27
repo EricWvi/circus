@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/machine.proto.
  */
 export const file_circus_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxImwKBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2Ui5AEKBldvcmtlchIRCgl3b3JrZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZvbmxpbmUYAyABKAgSGQoRbGFzdF9zZWVuX3VuaXhfbXMYBCABKAMSCgoCb3MYBSABKAkSDAoEYXJjaBgGIAEoCRIQCghob3N0bmFtZRgHIAEoCRIPCgd2ZXJzaW9uGAggASgJEhUKDWxvY2FsX2RldmljZXMYCSADKAkSEgoKaW50ZWdyYXRvchgKIAEoCBImCgZhZ2VudHMYCyADKAsyFi5jaXJjdXMudjEuV29ya2VyQWdlbnQiFAoSTGlzdFdvcmtlcnNSZXF1ZXN0Ij4KFVNldFdvcmtlckdyYW50UmVxdWVzdBIRCgl3b3JrZXJfaWQYASABKAkSEgoKaW50ZWdyYXRvchgCIAEoCCI7ChZTZXRXb3JrZXJHcmFudFJlc3BvbnNlEiEKBndvcmtlchgBIAEoCzIRLmNpcmN1cy52MS5Xb3JrZXIiYAoVU2V0V29ya2VyQWdlbnRSZXF1ZXN0EhEKCXdvcmtlcl9pZBgBIAEoCRIjCgVhZ2VudBgCIAEoDjIULmNpcmN1cy52MS5BZ2VudEtpbmQSDwoHaW5zdGFsbBgDIAEoCCI7ChZTZXRXb3JrZXJBZ2VudFJlc3BvbnNlEiEKBndvcmtlchgBIAEoCzIRLmNpcmN1cy52MS5Xb3JrZXIiOQoTTGlzdFdvcmtlcnNSZXNwb25zZRIiCgd3b3JrZXJzGAEgAygLMhEuY2lyY3VzLnYxLldvcmtlciI+ChdDcmVhdGVFbnJvbGxMaW5rUmVxdWVzdBIjCgRyb2xlGAEgASgOMhUuY2lyY3VzLnYxLkVucm9sbFJvbGUiWQoYQ3JlYXRlRW5yb2xsTGlua1Jlc3BvbnNlEgwKBGxpbmsYASABKAkSFwoPZXhwaXJlc191bml4X21zGAIgASgDEhYKDnNlcnZlcl92ZXJzaW9uGAMgASgJIkwKFExpc3REaXJlY3RvcnlSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCRIMCgRwYXRoGAIgASgJEhYKDmluY2x1ZGVfaGlkZGVuGAMgASgIIkcKFUxpc3REaXJlY3RvcnlSZXNwb25zZRIuCgZyZXN1bHQYASABKAsyHi5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3VsdCIzChNHZXRHaXRSZW1vdGVSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCRIMCgRwYXRoGAIgASgJIkIKFEdldEdpdFJlbW90ZVJlc3BvbnNlEioKBnJlc3VsdBgBIAEoCzIaLmNpcmN1cy52MS5HaXRSZW1vdGVSZXN1bHQqbwoKRW5yb2xsUm9sZRIbChdFTlJPTExfUk9MRV9VTlNQRUNJRklFRBAAEhYKEkVOUk9MTF9ST0xFX0RBRU1PThABEhYKEkVOUk9MTF9ST0xFX1dPUktFUhACEhQKEEVOUk9MTF9ST0xFX0JPVEgQAzLcBAoOTWFjaGluZVNlcnZpY2USTAoLTGlzdERldmljZXMSHS5jaXJjdXMudjEuTGlzdERldmljZXNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVzcG9uc2USTAoLTGlzdFdvcmtlcnMSHS5jaXJjdXMudjEuTGlzdFdvcmtlcnNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3RXb3JrZXJzUmVzcG9uc2USWwoQQ3JlYXRlRW5yb2xsTGluaxIiLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVxdWVzdBojLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVzcG9uc2USVQoOU2V0V29ya2VyR3JhbnQSIC5jaXJjdXMudjEuU2V0V29ya2VyR3JhbnRSZXF1ZXN0GiEuY2lyY3VzLnYxLlNldFdvcmtlckdyYW50UmVzcG9uc2USVQoOU2V0V29ya2VyQWdlbnQSIC5jaXJjdXMudjEuU2V0V29ya2VyQWdlbnRSZXF1ZXN0GiEuY2lyY3VzLnYxLlNldFdvcmtlckFnZW50UmVzcG9uc2USUgoNTGlzdERpcmVjdG9yeRIfLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVxdWVzdBogLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzcG9uc2USTwoMR2V0R2l0UmVtb3RlEh4uY2lyY3VzLnYxLkdldEdpdFJlbW90ZVJlcXVlc3QaHy5jaXJjdXMudjEuR2V0R2l0UmVtb3RlUmVzcG9uc2VCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM", [file_circus_v1_agent, file_circus_v1_daemon_link]);
+  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxIn8KBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkSEQoJZGV2aWNlX2lkGAcgASgJIhQKEkxpc3REZXZpY2VzUmVxdWVzdCI5ChNMaXN0RGV2aWNlc1Jlc3BvbnNlEiIKB2RldmljZXMYASADKAsyES5jaXJjdXMudjEuRGV2aWNlIuQBCgZXb3JrZXISEQoJd29ya2VyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDgoGb25saW5lGAMgASgIEhkKEWxhc3Rfc2Vlbl91bml4X21zGAQgASgDEgoKAm9zGAUgASgJEgwKBGFyY2gYBiABKAkSEAoIaG9zdG5hbWUYByABKAkSDwoHdmVyc2lvbhgIIAEoCRIVCg1sb2NhbF9kZXZpY2VzGAkgAygJEhIKCmludGVncmF0b3IYCiABKAgSJgoGYWdlbnRzGAsgAygLMhYuY2lyY3VzLnYxLldvcmtlckFnZW50IhQKEkxpc3RXb3JrZXJzUmVxdWVzdCI+ChVTZXRXb3JrZXJHcmFudFJlcXVlc3QSEQoJd29ya2VyX2lkGAEgASgJEhIKCmludGVncmF0b3IYAiABKAgiOwoWU2V0V29ya2VyR3JhbnRSZXNwb25zZRIhCgZ3b3JrZXIYASABKAsyES5jaXJjdXMudjEuV29ya2VyImAKFVNldFdvcmtlckFnZW50UmVxdWVzdBIRCgl3b3JrZXJfaWQYASABKAkSIwoFYWdlbnQYAiABKA4yFC5jaXJjdXMudjEuQWdlbnRLaW5kEg8KB2luc3RhbGwYAyABKAgiOwoWU2V0V29ya2VyQWdlbnRSZXNwb25zZRIhCgZ3b3JrZXIYASABKAsyES5jaXJjdXMudjEuV29ya2VyIjkKE0xpc3RXb3JrZXJzUmVzcG9uc2USIgoHd29ya2VycxgBIAMoCzIRLmNpcmN1cy52MS5Xb3JrZXIiKAoTRGVsZXRlRGV2aWNlUmVxdWVzdBIRCglkZXZpY2VfaWQYASABKAkiFgoURGVsZXRlRGV2aWNlUmVzcG9uc2UiKAoTRGVsZXRlV29ya2VyUmVxdWVzdBIRCgl3b3JrZXJfaWQYASABKAkiFgoURGVsZXRlV29ya2VyUmVzcG9uc2UiUgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlEhIKCnJlcGxhY2VfaWQYAiABKAkiWQoYQ3JlYXRlRW5yb2xsTGlua1Jlc3BvbnNlEgwKBGxpbmsYASABKAkSFwoPZXhwaXJlc191bml4X21zGAIgASgDEhYKDnNlcnZlcl92ZXJzaW9uGAMgASgJIkwKFExpc3REaXJlY3RvcnlSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCRIMCgRwYXRoGAIgASgJEhYKDmluY2x1ZGVfaGlkZGVuGAMgASgIIkcKFUxpc3REaXJlY3RvcnlSZXNwb25zZRIuCgZyZXN1bHQYASABKAsyHi5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3VsdCIzChNHZXRHaXRSZW1vdGVSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCRIMCgRwYXRoGAIgASgJIkIKFEdldEdpdFJlbW90ZVJlc3BvbnNlEioKBnJlc3VsdBgBIAEoCzIaLmNpcmN1cy52MS5HaXRSZW1vdGVSZXN1bHQqbwoKRW5yb2xsUm9sZRIbChdFTlJPTExfUk9MRV9VTlNQRUNJRklFRBAAEhYKEkVOUk9MTF9ST0xFX0RBRU1PThABEhYKEkVOUk9MTF9ST0xFX1dPUktFUhACEhQKEEVOUk9MTF9ST0xFX0JPVEgQAzL+BQoOTWFjaGluZVNlcnZpY2USTAoLTGlzdERldmljZXMSHS5jaXJjdXMudjEuTGlzdERldmljZXNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVzcG9uc2USTAoLTGlzdFdvcmtlcnMSHS5jaXJjdXMudjEuTGlzdFdvcmtlcnNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3RXb3JrZXJzUmVzcG9uc2USWwoQQ3JlYXRlRW5yb2xsTGluaxIiLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVxdWVzdBojLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVzcG9uc2USVQoOU2V0V29ya2VyR3JhbnQSIC5jaXJjdXMudjEuU2V0V29ya2VyR3JhbnRSZXF1ZXN0GiEuY2lyY3VzLnYxLlNldFdvcmtlckdyYW50UmVzcG9uc2USVQoOU2V0V29ya2VyQWdlbnQSIC5jaXJjdXMudjEuU2V0V29ya2VyQWdlbnRSZXF1ZXN0GiEuY2lyY3VzLnYxLlNldFdvcmtlckFnZW50UmVzcG9uc2USUgoNTGlzdERpcmVjdG9yeRIfLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVxdWVzdBogLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzcG9uc2USTwoMR2V0R2l0UmVtb3RlEh4uY2lyY3VzLnYxLkdldEdpdFJlbW90ZVJlcXVlc3QaHy5jaXJjdXMudjEuR2V0R2l0UmVtb3RlUmVzcG9uc2USTwoMRGVsZXRlRGV2aWNlEh4uY2lyY3VzLnYxLkRlbGV0ZURldmljZVJlcXVlc3QaHy5jaXJjdXMudjEuRGVsZXRlRGV2aWNlUmVzcG9uc2USTwoMRGVsZXRlV29ya2VyEh4uY2lyY3VzLnYxLkRlbGV0ZVdvcmtlclJlcXVlc3QaHy5jaXJjdXMudjEuRGVsZXRlV29ya2VyUmVzcG9uc2VCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM", [file_circus_v1_agent, file_circus_v1_daemon_link]);
 
 /**
  * @generated from message circus.v1.Device
@@ -59,6 +59,14 @@ export type Device = Message<"circus.v1.Device"> & {
    * @generated from field: string version = 6;
    */
   version: string;
+
+  /**
+   * The device identity's id. A device that rejoins (or is revoked and
+   * enrolled again) under the same name has a new one.
+   *
+   * @generated from field: string device_id = 7;
+   */
+  deviceId: string;
 };
 
 /**
@@ -298,6 +306,66 @@ export const ListWorkersResponseSchema: GenMessage<ListWorkersResponse> = /*@__P
   messageDesc(file_circus_v1_machine, 9);
 
 /**
+ * @generated from message circus.v1.DeleteDeviceRequest
+ */
+export type DeleteDeviceRequest = Message<"circus.v1.DeleteDeviceRequest"> & {
+  /**
+   * @generated from field: string device_id = 1;
+   */
+  deviceId: string;
+};
+
+/**
+ * Describes the message circus.v1.DeleteDeviceRequest.
+ * Use `create(DeleteDeviceRequestSchema)` to create a new message.
+ */
+export const DeleteDeviceRequestSchema: GenMessage<DeleteDeviceRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 10);
+
+/**
+ * @generated from message circus.v1.DeleteDeviceResponse
+ */
+export type DeleteDeviceResponse = Message<"circus.v1.DeleteDeviceResponse"> & {
+};
+
+/**
+ * Describes the message circus.v1.DeleteDeviceResponse.
+ * Use `create(DeleteDeviceResponseSchema)` to create a new message.
+ */
+export const DeleteDeviceResponseSchema: GenMessage<DeleteDeviceResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 11);
+
+/**
+ * @generated from message circus.v1.DeleteWorkerRequest
+ */
+export type DeleteWorkerRequest = Message<"circus.v1.DeleteWorkerRequest"> & {
+  /**
+   * @generated from field: string worker_id = 1;
+   */
+  workerId: string;
+};
+
+/**
+ * Describes the message circus.v1.DeleteWorkerRequest.
+ * Use `create(DeleteWorkerRequestSchema)` to create a new message.
+ */
+export const DeleteWorkerRequestSchema: GenMessage<DeleteWorkerRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 12);
+
+/**
+ * @generated from message circus.v1.DeleteWorkerResponse
+ */
+export type DeleteWorkerResponse = Message<"circus.v1.DeleteWorkerResponse"> & {
+};
+
+/**
+ * Describes the message circus.v1.DeleteWorkerResponse.
+ * Use `create(DeleteWorkerResponseSchema)` to create a new message.
+ */
+export const DeleteWorkerResponseSchema: GenMessage<DeleteWorkerResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 13);
+
+/**
  * @generated from message circus.v1.CreateEnrollLinkRequest
  */
 export type CreateEnrollLinkRequest = Message<"circus.v1.CreateEnrollLinkRequest"> & {
@@ -307,6 +375,17 @@ export type CreateEnrollLinkRequest = Message<"circus.v1.CreateEnrollLinkRequest
    * @generated from field: circus.v1.EnrollRole role = 1;
    */
   role: EnrollRole;
+
+  /**
+   * Rejoin: the id of one of the caller's devices (role DAEMON) or workers
+   * (role WORKER) that the enrolled identity replaces under its name. The
+   * enrollment revokes it as DeleteDevice or DeleteWorker would, and is
+   * refused while it is online. INVALID_ARGUMENT with role BOTH; NOT_FOUND
+   * for another user's, an unknown or a deleted identity.
+   *
+   * @generated from field: string replace_id = 2;
+   */
+  replaceId: string;
 };
 
 /**
@@ -314,7 +393,7 @@ export type CreateEnrollLinkRequest = Message<"circus.v1.CreateEnrollLinkRequest
  * Use `create(CreateEnrollLinkRequestSchema)` to create a new message.
  */
 export const CreateEnrollLinkRequestSchema: GenMessage<CreateEnrollLinkRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 10);
+  messageDesc(file_circus_v1_machine, 14);
 
 /**
  * @generated from message circus.v1.CreateEnrollLinkResponse
@@ -347,7 +426,7 @@ export type CreateEnrollLinkResponse = Message<"circus.v1.CreateEnrollLinkRespon
  * Use `create(CreateEnrollLinkResponseSchema)` to create a new message.
  */
 export const CreateEnrollLinkResponseSchema: GenMessage<CreateEnrollLinkResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 11);
+  messageDesc(file_circus_v1_machine, 15);
 
 /**
  * @generated from message circus.v1.ListDirectoryRequest
@@ -379,7 +458,7 @@ export type ListDirectoryRequest = Message<"circus.v1.ListDirectoryRequest"> & {
  * Use `create(ListDirectoryRequestSchema)` to create a new message.
  */
 export const ListDirectoryRequestSchema: GenMessage<ListDirectoryRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 12);
+  messageDesc(file_circus_v1_machine, 16);
 
 /**
  * @generated from message circus.v1.ListDirectoryResponse
@@ -398,7 +477,7 @@ export type ListDirectoryResponse = Message<"circus.v1.ListDirectoryResponse"> &
  * Use `create(ListDirectoryResponseSchema)` to create a new message.
  */
 export const ListDirectoryResponseSchema: GenMessage<ListDirectoryResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 13);
+  messageDesc(file_circus_v1_machine, 17);
 
 /**
  * @generated from message circus.v1.GetGitRemoteRequest
@@ -424,7 +503,7 @@ export type GetGitRemoteRequest = Message<"circus.v1.GetGitRemoteRequest"> & {
  * Use `create(GetGitRemoteRequestSchema)` to create a new message.
  */
 export const GetGitRemoteRequestSchema: GenMessage<GetGitRemoteRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 14);
+  messageDesc(file_circus_v1_machine, 18);
 
 /**
  * @generated from message circus.v1.GetGitRemoteResponse
@@ -443,7 +522,7 @@ export type GetGitRemoteResponse = Message<"circus.v1.GetGitRemoteResponse"> & {
  * Use `create(GetGitRemoteResponseSchema)` to create a new message.
  */
 export const GetGitRemoteResponseSchema: GenMessage<GetGitRemoteResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 15);
+  messageDesc(file_circus_v1_machine, 19);
 
 /**
  * @generated from enum circus.v1.EnrollRole
@@ -579,6 +658,33 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof GetGitRemoteRequestSchema;
     output: typeof GetGitRemoteResponseSchema;
+  },
+  /**
+   * Deletes one of the caller's devices as `circus server device revoke`
+   * does: its credentials are revoked (a live daemon link closes at its
+   * next credential check, within seconds), the device is removed and its
+   * name freed, and project locations on it read as removed. The worker on
+   * the same machine is untouched. NOT_FOUND for another user's, an
+   * unknown or an already deleted device.
+   *
+   * @generated from rpc circus.v1.MachineService.DeleteDevice
+   */
+  deleteDevice: {
+    methodKind: "unary";
+    input: typeof DeleteDeviceRequestSchema;
+    output: typeof DeleteDeviceResponseSchema;
+  },
+  /**
+   * Deletes one of the caller's workers as `circus server worker revoke`
+   * does: as DeleteDevice, and the worker also leaves every provider it was
+   * assigned to and loses its integrator grant. NOT_FOUND as DeleteDevice.
+   *
+   * @generated from rpc circus.v1.MachineService.DeleteWorker
+   */
+  deleteWorker: {
+    methodKind: "unary";
+    input: typeof DeleteWorkerRequestSchema;
+    output: typeof DeleteWorkerResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_circus_v1_machine, 0);

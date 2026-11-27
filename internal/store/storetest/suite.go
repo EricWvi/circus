@@ -102,6 +102,8 @@ func Run(t *testing.T, b Backend) {
 		{"Pages", testPages},
 		{"SessionWebReads", testSessionWebReads},
 		{"Identities", testIdentities},
+		{"IdentityNamesIgnoreCase", testIdentityNamesIgnoreCase},
+		{"IdentityNameKey", testIdentityNameKey},
 		{"UpdateHelloMetadata", testUpdateHelloMetadata},
 		{"DeleteIdentity", testDeleteIdentity},
 		{"Credentials", testCredentials},

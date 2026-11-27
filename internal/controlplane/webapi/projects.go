@@ -51,14 +51,14 @@ func (s *Service) resolveLocations(ctx context.Context, u store.User, in []*circ
 	if err != nil {
 		return nil, s.internal(ctx, "list devices", err)
 	}
-	devices := make(map[string]store.Identity, len(list))
+	devices := make(map[string]store.Identity, len(list)) // by store.IdentityNameKey
 	for _, d := range list {
-		devices[d.Name] = d
+		devices[store.IdentityNameKey(d.Name)] = d
 	}
 	out := make([]store.ProjectLocation, 0, len(in))
 	seen := map[[2]string]bool{} // (device id, path); path "" is the default
 	for i, l := range in {
-		d, ok := devices[l.GetDevice()]
+		d, ok := devices[store.IdentityNameKey(l.GetDevice())]
 		if len(l.GetDevice()) > maxDeviceNameBytes || !ok {
 			return nil, invalidField(locationsField(i, "device"), "unknown device")
 		}

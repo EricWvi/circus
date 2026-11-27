@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -345,8 +346,7 @@ func TestServerJoinProcess(t *testing.T) {
 		t.Fatalf("doctor: %v\n%s", err, out)
 	}
 
-	// The link is single-use; a second join with a fresh link and the same
-	// name is refused with a hint to choose another name.
+	// The link is single-use; a join over the credential file needs --force.
 	if _, out, err := p.run("join", link, "--name", "other", "--ca-file", certFile, "--force"); err == nil || !strings.Contains(out, "refused the link") {
 		t.Fatalf("reused link: %v %q", err, out)
 	}
@@ -357,10 +357,6 @@ func TestServerJoinProcess(t *testing.T) {
 	if _, out, err := p.run("join", strings.TrimSpace(link2), "--name", "laptop", "--ca-file", certFile); err == nil || !strings.Contains(out, "--force") {
 		t.Fatalf("join over existing credential: %v %q", err, out)
 	}
-	if _, out, err := p.run("join", strings.TrimSpace(link2), "--name", "laptop", "--ca-file", certFile, "--force"); err == nil || !strings.Contains(out, "--name") {
-		t.Fatalf("duplicate name: %v %q", err, out)
-	}
-
 	// Revocation: 403 for the next request, and doctor says so.
 	if out, errOut, err := p.run("server", "device", "list"); err != nil || !strings.Contains(out, cred.PrincipalID) || !strings.Contains(out, enrollmentEmail) {
 		t.Fatalf("device list: %v %q %q", err, out, errOut)
@@ -394,6 +390,24 @@ func TestServerJoinProcess(t *testing.T) {
 		t.Fatalf("doctor after rejoin: %v\n%s", err, out)
 	}
 
+	// A rejoin link for the device (offline: doctor opens no link) replaces
+	// it under its name, and the join says so.
+	link3, _, err := p.run("server", "enroll-token", "create", "--user", enrollmentEmail, "--role", "daemon", "--url", base, "--replace", "LAPTOP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, err := p.runStdin(strings.TrimSpace(link3), "join", "--ca-file", certFile, "--force")
+	if err != nil || !strings.Contains(out, fmt.Sprintf("Replaced this machine's earlier daemon %q (%s).", "laptop", rejoined.PrincipalID)) {
+		t.Fatalf("join replacing this machine's offline identity: %v\n%s%s", err, out, errOut)
+	}
+	if s := get("/v1/whoami", rejoined.Token); s != http.StatusForbidden {
+		t.Fatalf("replaced credential: %d", s)
+	}
+	replacing, err := credfile.Load(credPath)
+	if err != nil || get("/v1/whoami", replacing.Token) != http.StatusOK {
+		t.Fatalf("replacing credential = %+v, %v", replacing, err)
+	}
+
 	// SIGTERM: clean exit within the 3s shutdown deadline.
 	start := time.Now()
 	if err := srv.Process.Signal(syscall.SIGTERM); err != nil {
@@ -413,6 +427,11 @@ func TestServerJoinProcess(t *testing.T) {
 	}
 	var instance string
 	all := logs.all()
+	if !slices.ContainsFunc(all, func(l string) bool {
+		return strings.Contains(l, `"msg":"enrollment replaced identity"`) && strings.Contains(l, `"replaced_principal_id":"`+rejoined.PrincipalID+`"`)
+	}) {
+		t.Fatalf("no log line for the replacement:\n%s", strings.Join(all, "\n"))
+	}
 	for _, line := range all {
 		var rec struct {
 			InstanceID string `json:"instance_id"`

@@ -22,12 +22,16 @@
 //  1. UseEnrollToken marks the one-time token used (exactly one of any number
 //     of concurrent uses succeeds);
 //  2. the token must list the requested kind;
-//  3. CreateIdentity inserts the device or worker of the token's user (names
-//     are unique per user and kind);
-//  4. CreateCredential stores the hash of a fresh long-term token.
+//  3. a token issued to rejoin (CreateRejoinToken) replaces its identity:
+//     if it is still live, the user's and offline, it is revoked as
+//     RevokeByID revokes and the new identity takes its name;
+//  4. CreateIdentity inserts the device or worker of the token's user
+//     (names are unique per user and kind, ignoring ASCII case);
+//  5. CreateCredential stores the hash of a fresh long-term token.
 //
-// Any failure rolls the whole transaction back, so a rejected role or a taken
-// name does not burn the token: the caller retries with another --name. Every
+// Any failure rolls the whole transaction back, so a rejected role, a taken
+// name or a refused rejoin does not burn the token and leaves the replaced
+// identity in place: the caller retries, or picks another --name. Every
 // token failure (unknown, used, expired, or issued for another role) is the
 // single error ErrEnrollRejected, so a caller cannot tell them apart.
 // The name check runs after the token check, so only a holder of a valid
@@ -36,7 +40,9 @@
 // The machine id, hostname, OS and the other identity fields are reported by
 // the client itself and never verified: they serve audit and the device ↔
 // worker link only, and must never be an input to an authorization decision.
-//
+// Which identity a rejoin replaces is decided when the token is issued, by
+// the signed-in user or an administrator, never by what the machine reports.
+
 // A token whose Kinds list both roles (the store allows it) still yields one
 // identity per Enroll: the first Enroll consumes it. Tokens made by
 // CreateEnrollToken always carry exactly one kind.
@@ -54,10 +60,10 @@
 //
 // # Revocation
 //
-// RevokeByName revokes an identity's credentials and soft-deletes
-// the identity in one transaction, so the name can be enrolled again (a
-// re-join after revocation, or after a join whose credential file was never
-// written).
+// RevokeByID (the Web UI's delete) and RevokeByName (the CLI's revoke)
+// revoke an identity's credentials and soft-deletes the identity in one
+// transaction, so the name can be enrolled again; a rejoin revokes the
+// identity it replaces the same way.
 //
 // # Human authentication
 //

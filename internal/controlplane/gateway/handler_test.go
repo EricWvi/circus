@@ -33,7 +33,7 @@ func (authStub) Authenticate(_ context.Context, r *http.Request) (auth.Principal
 	case "Bearer worker":
 		return auth.Principal{Kind: store.KindWorker, UserID: "u", ID: "w", Name: "desk", CredentialID: "wcred"}, nil
 	case "Bearer revoked":
-		return auth.Principal{}, auth.ErrRevoked
+		return auth.Principal{Kind: store.KindDevice, ID: "gone"}, auth.ErrRevoked
 	default:
 		return auth.Principal{}, auth.ErrUnauthenticated
 	}
@@ -76,8 +76,14 @@ func TestHTTPAuthenticationAndRawVersionReject(t *testing.T) {
 			t.Fatal(err)
 		}
 		res.Body.Close()
-		if res.StatusCode != want || res.Header.Get("Circus-Auth") != "rejected" {
-			t.Fatalf("token %q: %s with Circus-Auth %q, want %d with rejected", token, res.Status, res.Header.Get("Circus-Auth"), want)
+		// Only the revoked one is marked revoked, naming its identity.
+		mark, principal := "rejected", ""
+		if token == "revoked" {
+			mark, principal = "revoked", "gone"
+		}
+		if res.StatusCode != want || res.Header.Get("Circus-Auth") != mark || res.Header.Get("Circus-Principal") != principal {
+			t.Fatalf("token %q: %s with Circus-Auth %q, Circus-Principal %q; want %d with %s", token, res.Status,
+				res.Header.Get("Circus-Auth"), res.Header.Get("Circus-Principal"), want, mark)
 		}
 	}
 	// No need for a real bearer credential in the stub; this is the raw protocol seam.

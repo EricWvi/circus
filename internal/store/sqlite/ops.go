@@ -238,11 +238,11 @@ func (o *ops) CreateIdentity(ctx context.Context, id store.Identity) error {
 	if id.ID == "" || id.UserID == "" || id.Name == "" || id.MachineID == "" {
 		return invalid("identity needs id, user id, name and machine id")
 	}
-	_, err = o.exec(ctx, `INSERT INTO `+table+` (`+identityCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err = o.exec(ctx, `INSERT INTO `+table+` (`+identityCols+`, name_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		id.ID, id.UserID, id.Name, id.MachineID,
 		nstr(id.OS), nstr(id.Arch), nstr(id.Hostname), nstr(id.ClientVersion),
 		nstr(id.CurrentBootID), nint(id.LastConnectedAt), nint(id.LastDisconnectedAt),
-		id.CreatedAt, nint(id.DeletedAt))
+		id.CreatedAt, nint(id.DeletedAt), store.IdentityNameKey(id.Name))
 	return err
 }
 
@@ -281,7 +281,7 @@ func (o *ops) GetIdentityByName(ctx context.Context, kind store.PrincipalKind, u
 		return store.Identity{}, err
 	}
 	return scanIdentity(o.q.QueryRow(ctx, `SELECT `+selectIdentityCols(kind)+` FROM `+table+`
-		WHERE user_id = ? AND name = ? AND deleted_at IS NULL`, userID, name), kind)
+		WHERE user_id = ? AND name_key = ? AND deleted_at IS NULL`, userID, store.IdentityNameKey(name)), kind)
 }
 
 func (o *ops) ListIdentities(ctx context.Context, kind store.PrincipalKind, userID string) ([]store.Identity, error) {
@@ -503,13 +503,13 @@ func (o *ops) RevokeCredentials(ctx context.Context, kind store.PrincipalKind, p
 
 // Enroll tokens.
 
-const enrollCols = `id, user_id, token_hash, kinds, created_at, expires_at, used_at, used_by`
+const enrollCols = `id, user_id, token_hash, kinds, created_at, expires_at, used_at, used_by, replace_id`
 
 func scanEnrollToken(s scanner) (store.EnrollToken, error) {
 	var t store.EnrollToken
 	var kinds string
 	if err := s.Scan(&t.ID, &t.UserID, &t.TokenHash, &kinds, &t.CreatedAt, &t.ExpiresAt,
-		nullInt{&t.UsedAt}, nullStr{&t.UsedBy}); err != nil {
+		nullInt{&t.UsedAt}, nullStr{&t.UsedBy}, nullStr{&t.ReplaceID}); err != nil {
 		return t, mapErr(err)
 	}
 	var err error
@@ -525,8 +525,11 @@ func (o *ops) CreateEnrollToken(ctx context.Context, t store.EnrollToken) error 
 	if t.ID == "" || t.UserID == "" || len(t.TokenHash) == 0 || t.ExpiresAt == 0 {
 		return invalid("enroll token needs id, user id, token hash and expiry")
 	}
-	_, err = o.exec(ctx, `INSERT INTO enroll_tokens (`+enrollCols+`) VALUES (?,?,?,?,?,?,?,?)`,
-		t.ID, t.UserID, t.TokenHash, kinds, t.CreatedAt, t.ExpiresAt, nint(t.UsedAt), nstr(t.UsedBy))
+	if t.ReplaceID != "" && len(t.Kinds) != 1 {
+		return invalid("an enroll token that replaces an identity has exactly one kind")
+	}
+	_, err = o.exec(ctx, `INSERT INTO enroll_tokens (`+enrollCols+`) VALUES (?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.UserID, t.TokenHash, kinds, t.CreatedAt, t.ExpiresAt, nint(t.UsedAt), nstr(t.UsedBy), nstr(t.ReplaceID))
 	return err
 }
 

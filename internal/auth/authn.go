@@ -95,8 +95,8 @@ func BearerToken(r *http.Request) string {
 
 // Authenticate checks the request's bearer token. It returns
 // ErrUnauthenticated for a missing, malformed or unknown token, ErrRevoked
-// for a revoked credential or a deleted identity, and a wrapped store error
-// otherwise.
+// for a revoked credential or a deleted identity (then the Principal holds
+// only that identity's Kind and ID), and a wrapped store error otherwise.
 func (a *Authenticator) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
 	token := BearerToken(r)
 	if !WellFormed(token) {
@@ -113,8 +113,9 @@ func (a *Authenticator) Authenticate(ctx context.Context, r *http.Request) (Prin
 	if !sameHash(cred.TokenHash, hash) {
 		return Principal{}, ErrUnauthenticated
 	}
+	revoked := Principal{Kind: cred.Kind, ID: cred.PrincipalID}
 	if cred.Revoked() {
-		return Principal{}, ErrRevoked
+		return revoked, ErrRevoked
 	}
 	id, err := a.st.GetIdentity(ctx, cred.Kind, cred.PrincipalID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -124,7 +125,7 @@ func (a *Authenticator) Authenticate(ctx context.Context, r *http.Request) (Prin
 		return Principal{}, fmt.Errorf("auth: look up identity: %w", err)
 	}
 	if id.DeletedAt != 0 {
-		return Principal{}, ErrRevoked
+		return revoked, ErrRevoked
 	}
 	a.touchCredential(ctx, cred.ID, hash)
 	return Principal{Kind: cred.Kind, ID: id.ID, Name: id.Name, UserID: id.UserID, MachineID: id.MachineID, CredentialID: cred.ID}, nil

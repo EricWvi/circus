@@ -86,7 +86,10 @@ type Device struct {
 	Os   string `protobuf:"bytes,4,opt,name=os,proto3" json:"os,omitempty"`
 	Arch string `protobuf:"bytes,5,opt,name=arch,proto3" json:"arch,omitempty"`
 	// Daemon client version reported at enrollment.
-	Version       string `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
+	Version string `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
+	// The device identity's id. A device that rejoins (or is revoked and
+	// enrolled again) under the same name has a new one.
+	DeviceId      string `protobuf:"bytes,7,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -159,6 +162,13 @@ func (x *Device) GetArch() string {
 func (x *Device) GetVersion() string {
 	if x != nil {
 		return x.Version
+	}
+	return ""
+}
+
+func (x *Device) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
 	}
 	return ""
 }
@@ -659,17 +669,183 @@ func (x *ListWorkersResponse) GetWorkers() []*Worker {
 	return nil
 }
 
+type DeleteDeviceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteDeviceRequest) Reset() {
+	*x = DeleteDeviceRequest{}
+	mi := &file_circus_v1_machine_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteDeviceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteDeviceRequest) ProtoMessage() {}
+
+func (x *DeleteDeviceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_machine_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteDeviceRequest.ProtoReflect.Descriptor instead.
+func (*DeleteDeviceRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DeleteDeviceRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+type DeleteDeviceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteDeviceResponse) Reset() {
+	*x = DeleteDeviceResponse{}
+	mi := &file_circus_v1_machine_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteDeviceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteDeviceResponse) ProtoMessage() {}
+
+func (x *DeleteDeviceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_machine_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteDeviceResponse.ProtoReflect.Descriptor instead.
+func (*DeleteDeviceResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{11}
+}
+
+type DeleteWorkerRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkerId      string                 `protobuf:"bytes,1,opt,name=worker_id,json=workerId,proto3" json:"worker_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteWorkerRequest) Reset() {
+	*x = DeleteWorkerRequest{}
+	mi := &file_circus_v1_machine_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteWorkerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteWorkerRequest) ProtoMessage() {}
+
+func (x *DeleteWorkerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_machine_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteWorkerRequest.ProtoReflect.Descriptor instead.
+func (*DeleteWorkerRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *DeleteWorkerRequest) GetWorkerId() string {
+	if x != nil {
+		return x.WorkerId
+	}
+	return ""
+}
+
+type DeleteWorkerResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteWorkerResponse) Reset() {
+	*x = DeleteWorkerResponse{}
+	mi := &file_circus_v1_machine_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteWorkerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteWorkerResponse) ProtoMessage() {}
+
+func (x *DeleteWorkerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_machine_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteWorkerResponse.ProtoReflect.Descriptor instead.
+func (*DeleteWorkerResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{13}
+}
+
 type CreateEnrollLinkRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Which identities the link enrolls. Unspecified is INVALID_ARGUMENT.
-	Role          EnrollRole `protobuf:"varint,1,opt,name=role,proto3,enum=circus.v1.EnrollRole" json:"role,omitempty"`
+	Role EnrollRole `protobuf:"varint,1,opt,name=role,proto3,enum=circus.v1.EnrollRole" json:"role,omitempty"`
+	// Rejoin: the id of one of the caller's devices (role DAEMON) or workers
+	// (role WORKER) that the enrolled identity replaces under its name. The
+	// enrollment revokes it as DeleteDevice or DeleteWorker would, and is
+	// refused while it is online. INVALID_ARGUMENT with role BOTH; NOT_FOUND
+	// for another user's, an unknown or a deleted identity.
+	ReplaceId     string `protobuf:"bytes,2,opt,name=replace_id,json=replaceId,proto3" json:"replace_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateEnrollLinkRequest) Reset() {
 	*x = CreateEnrollLinkRequest{}
-	mi := &file_circus_v1_machine_proto_msgTypes[10]
+	mi := &file_circus_v1_machine_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -681,7 +857,7 @@ func (x *CreateEnrollLinkRequest) String() string {
 func (*CreateEnrollLinkRequest) ProtoMessage() {}
 
 func (x *CreateEnrollLinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_machine_proto_msgTypes[10]
+	mi := &file_circus_v1_machine_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -694,7 +870,7 @@ func (x *CreateEnrollLinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEnrollLinkRequest.ProtoReflect.Descriptor instead.
 func (*CreateEnrollLinkRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_machine_proto_rawDescGZIP(), []int{10}
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CreateEnrollLinkRequest) GetRole() EnrollRole {
@@ -702,6 +878,13 @@ func (x *CreateEnrollLinkRequest) GetRole() EnrollRole {
 		return x.Role
 	}
 	return EnrollRole_ENROLL_ROLE_UNSPECIFIED
+}
+
+func (x *CreateEnrollLinkRequest) GetReplaceId() string {
+	if x != nil {
+		return x.ReplaceId
+	}
+	return ""
 }
 
 type CreateEnrollLinkResponse struct {
@@ -719,7 +902,7 @@ type CreateEnrollLinkResponse struct {
 
 func (x *CreateEnrollLinkResponse) Reset() {
 	*x = CreateEnrollLinkResponse{}
-	mi := &file_circus_v1_machine_proto_msgTypes[11]
+	mi := &file_circus_v1_machine_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -731,7 +914,7 @@ func (x *CreateEnrollLinkResponse) String() string {
 func (*CreateEnrollLinkResponse) ProtoMessage() {}
 
 func (x *CreateEnrollLinkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_machine_proto_msgTypes[11]
+	mi := &file_circus_v1_machine_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -744,7 +927,7 @@ func (x *CreateEnrollLinkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateEnrollLinkResponse.ProtoReflect.Descriptor instead.
 func (*CreateEnrollLinkResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_machine_proto_rawDescGZIP(), []int{11}
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CreateEnrollLinkResponse) GetLink() string {
@@ -782,7 +965,7 @@ type ListDirectoryRequest struct {
 
 func (x *ListDirectoryRequest) Reset() {
 	*x = ListDirectoryRequest{}
-	mi := &file_circus_v1_machine_proto_msgTypes[12]
+	mi := &file_circus_v1_machine_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -794,7 +977,7 @@ func (x *ListDirectoryRequest) String() string {
 func (*ListDirectoryRequest) ProtoMessage() {}
 
 func (x *ListDirectoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_machine_proto_msgTypes[12]
+	mi := &file_circus_v1_machine_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -807,7 +990,7 @@ func (x *ListDirectoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDirectoryRequest.ProtoReflect.Descriptor instead.
 func (*ListDirectoryRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_machine_proto_rawDescGZIP(), []int{12}
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListDirectoryRequest) GetDevice() string {
@@ -841,7 +1024,7 @@ type ListDirectoryResponse struct {
 
 func (x *ListDirectoryResponse) Reset() {
 	*x = ListDirectoryResponse{}
-	mi := &file_circus_v1_machine_proto_msgTypes[13]
+	mi := &file_circus_v1_machine_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -853,7 +1036,7 @@ func (x *ListDirectoryResponse) String() string {
 func (*ListDirectoryResponse) ProtoMessage() {}
 
 func (x *ListDirectoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_machine_proto_msgTypes[13]
+	mi := &file_circus_v1_machine_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -866,7 +1049,7 @@ func (x *ListDirectoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDirectoryResponse.ProtoReflect.Descriptor instead.
 func (*ListDirectoryResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_machine_proto_rawDescGZIP(), []int{13}
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListDirectoryResponse) GetResult() *ListDirectoryResult {
@@ -888,7 +1071,7 @@ type GetGitRemoteRequest struct {
 
 func (x *GetGitRemoteRequest) Reset() {
 	*x = GetGitRemoteRequest{}
-	mi := &file_circus_v1_machine_proto_msgTypes[14]
+	mi := &file_circus_v1_machine_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -900,7 +1083,7 @@ func (x *GetGitRemoteRequest) String() string {
 func (*GetGitRemoteRequest) ProtoMessage() {}
 
 func (x *GetGitRemoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_machine_proto_msgTypes[14]
+	mi := &file_circus_v1_machine_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -913,7 +1096,7 @@ func (x *GetGitRemoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGitRemoteRequest.ProtoReflect.Descriptor instead.
 func (*GetGitRemoteRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_machine_proto_rawDescGZIP(), []int{14}
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetGitRemoteRequest) GetDevice() string {
@@ -940,7 +1123,7 @@ type GetGitRemoteResponse struct {
 
 func (x *GetGitRemoteResponse) Reset() {
 	*x = GetGitRemoteResponse{}
-	mi := &file_circus_v1_machine_proto_msgTypes[15]
+	mi := &file_circus_v1_machine_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -952,7 +1135,7 @@ func (x *GetGitRemoteResponse) String() string {
 func (*GetGitRemoteResponse) ProtoMessage() {}
 
 func (x *GetGitRemoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_machine_proto_msgTypes[15]
+	mi := &file_circus_v1_machine_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -965,7 +1148,7 @@ func (x *GetGitRemoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGitRemoteResponse.ProtoReflect.Descriptor instead.
 func (*GetGitRemoteResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_machine_proto_rawDescGZIP(), []int{15}
+	return file_circus_v1_machine_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetGitRemoteResponse) GetResult() *GitRemoteResult {
@@ -979,14 +1162,15 @@ var File_circus_v1_machine_proto protoreflect.FileDescriptor
 
 const file_circus_v1_machine_proto_rawDesc = "" +
 	"\n" +
-	"\x17circus/v1/machine.proto\x12\tcircus.v1\x1a\x15circus/v1/agent.proto\x1a\x1bcircus/v1/daemon_link.proto\"\x9d\x01\n" +
+	"\x17circus/v1/machine.proto\x12\tcircus.v1\x1a\x15circus/v1/agent.proto\x1a\x1bcircus/v1/daemon_link.proto\"\xba\x01\n" +
 	"\x06Device\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06online\x18\x02 \x01(\bR\x06online\x12)\n" +
 	"\x11last_seen_unix_ms\x18\x03 \x01(\x03R\x0elastSeenUnixMs\x12\x0e\n" +
 	"\x02os\x18\x04 \x01(\tR\x02os\x12\x12\n" +
 	"\x04arch\x18\x05 \x01(\tR\x04arch\x12\x18\n" +
-	"\aversion\x18\x06 \x01(\tR\aversion\"\x14\n" +
+	"\aversion\x18\x06 \x01(\tR\aversion\x12\x1b\n" +
+	"\tdevice_id\x18\a \x01(\tR\bdeviceId\"\x14\n" +
 	"\x12ListDevicesRequest\"B\n" +
 	"\x13ListDevicesResponse\x12+\n" +
 	"\adevices\x18\x01 \x03(\v2\x11.circus.v1.DeviceR\adevices\"\xcb\x02\n" +
@@ -1020,9 +1204,17 @@ const file_circus_v1_machine_proto_rawDesc = "" +
 	"\x16SetWorkerAgentResponse\x12)\n" +
 	"\x06worker\x18\x01 \x01(\v2\x11.circus.v1.WorkerR\x06worker\"B\n" +
 	"\x13ListWorkersResponse\x12+\n" +
-	"\aworkers\x18\x01 \x03(\v2\x11.circus.v1.WorkerR\aworkers\"D\n" +
+	"\aworkers\x18\x01 \x03(\v2\x11.circus.v1.WorkerR\aworkers\"2\n" +
+	"\x13DeleteDeviceRequest\x12\x1b\n" +
+	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\"\x16\n" +
+	"\x14DeleteDeviceResponse\"2\n" +
+	"\x13DeleteWorkerRequest\x12\x1b\n" +
+	"\tworker_id\x18\x01 \x01(\tR\bworkerId\"\x16\n" +
+	"\x14DeleteWorkerResponse\"c\n" +
 	"\x17CreateEnrollLinkRequest\x12)\n" +
-	"\x04role\x18\x01 \x01(\x0e2\x15.circus.v1.EnrollRoleR\x04role\"}\n" +
+	"\x04role\x18\x01 \x01(\x0e2\x15.circus.v1.EnrollRoleR\x04role\x12\x1d\n" +
+	"\n" +
+	"replace_id\x18\x02 \x01(\tR\treplaceId\"}\n" +
 	"\x18CreateEnrollLinkResponse\x12\x12\n" +
 	"\x04link\x18\x01 \x01(\tR\x04link\x12&\n" +
 	"\x0fexpires_unix_ms\x18\x02 \x01(\x03R\rexpiresUnixMs\x12%\n" +
@@ -1043,7 +1235,7 @@ const file_circus_v1_machine_proto_rawDesc = "" +
 	"\x17ENROLL_ROLE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12ENROLL_ROLE_DAEMON\x10\x01\x12\x16\n" +
 	"\x12ENROLL_ROLE_WORKER\x10\x02\x12\x14\n" +
-	"\x10ENROLL_ROLE_BOTH\x10\x032\xdc\x04\n" +
+	"\x10ENROLL_ROLE_BOTH\x10\x032\xfe\x05\n" +
 	"\x0eMachineService\x12L\n" +
 	"\vListDevices\x12\x1d.circus.v1.ListDevicesRequest\x1a\x1e.circus.v1.ListDevicesResponse\x12L\n" +
 	"\vListWorkers\x12\x1d.circus.v1.ListWorkersRequest\x1a\x1e.circus.v1.ListWorkersResponse\x12[\n" +
@@ -1051,7 +1243,9 @@ const file_circus_v1_machine_proto_rawDesc = "" +
 	"\x0eSetWorkerGrant\x12 .circus.v1.SetWorkerGrantRequest\x1a!.circus.v1.SetWorkerGrantResponse\x12U\n" +
 	"\x0eSetWorkerAgent\x12 .circus.v1.SetWorkerAgentRequest\x1a!.circus.v1.SetWorkerAgentResponse\x12R\n" +
 	"\rListDirectory\x12\x1f.circus.v1.ListDirectoryRequest\x1a .circus.v1.ListDirectoryResponse\x12O\n" +
-	"\fGetGitRemote\x12\x1e.circus.v1.GetGitRemoteRequest\x1a\x1f.circus.v1.GetGitRemoteResponseB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
+	"\fGetGitRemote\x12\x1e.circus.v1.GetGitRemoteRequest\x1a\x1f.circus.v1.GetGitRemoteResponse\x12O\n" +
+	"\fDeleteDevice\x12\x1e.circus.v1.DeleteDeviceRequest\x1a\x1f.circus.v1.DeleteDeviceResponse\x12O\n" +
+	"\fDeleteWorker\x12\x1e.circus.v1.DeleteWorkerRequest\x1a\x1f.circus.v1.DeleteWorkerResponseB5Z3github.com/EricWvi/circus/gen/go/circus/v1;circusv1b\x06proto3"
 
 var (
 	file_circus_v1_machine_proto_rawDescOnce sync.Once
@@ -1066,7 +1260,7 @@ func file_circus_v1_machine_proto_rawDescGZIP() []byte {
 }
 
 var file_circus_v1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_circus_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_circus_v1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_circus_v1_machine_proto_goTypes = []any{
 	(EnrollRole)(0),                  // 0: circus.v1.EnrollRole
 	(*Device)(nil),                   // 1: circus.v1.Device
@@ -1079,43 +1273,51 @@ var file_circus_v1_machine_proto_goTypes = []any{
 	(*SetWorkerAgentRequest)(nil),    // 8: circus.v1.SetWorkerAgentRequest
 	(*SetWorkerAgentResponse)(nil),   // 9: circus.v1.SetWorkerAgentResponse
 	(*ListWorkersResponse)(nil),      // 10: circus.v1.ListWorkersResponse
-	(*CreateEnrollLinkRequest)(nil),  // 11: circus.v1.CreateEnrollLinkRequest
-	(*CreateEnrollLinkResponse)(nil), // 12: circus.v1.CreateEnrollLinkResponse
-	(*ListDirectoryRequest)(nil),     // 13: circus.v1.ListDirectoryRequest
-	(*ListDirectoryResponse)(nil),    // 14: circus.v1.ListDirectoryResponse
-	(*GetGitRemoteRequest)(nil),      // 15: circus.v1.GetGitRemoteRequest
-	(*GetGitRemoteResponse)(nil),     // 16: circus.v1.GetGitRemoteResponse
-	(*WorkerAgent)(nil),              // 17: circus.v1.WorkerAgent
-	(AgentKind)(0),                   // 18: circus.v1.AgentKind
-	(*ListDirectoryResult)(nil),      // 19: circus.v1.ListDirectoryResult
-	(*GitRemoteResult)(nil),          // 20: circus.v1.GitRemoteResult
+	(*DeleteDeviceRequest)(nil),      // 11: circus.v1.DeleteDeviceRequest
+	(*DeleteDeviceResponse)(nil),     // 12: circus.v1.DeleteDeviceResponse
+	(*DeleteWorkerRequest)(nil),      // 13: circus.v1.DeleteWorkerRequest
+	(*DeleteWorkerResponse)(nil),     // 14: circus.v1.DeleteWorkerResponse
+	(*CreateEnrollLinkRequest)(nil),  // 15: circus.v1.CreateEnrollLinkRequest
+	(*CreateEnrollLinkResponse)(nil), // 16: circus.v1.CreateEnrollLinkResponse
+	(*ListDirectoryRequest)(nil),     // 17: circus.v1.ListDirectoryRequest
+	(*ListDirectoryResponse)(nil),    // 18: circus.v1.ListDirectoryResponse
+	(*GetGitRemoteRequest)(nil),      // 19: circus.v1.GetGitRemoteRequest
+	(*GetGitRemoteResponse)(nil),     // 20: circus.v1.GetGitRemoteResponse
+	(*WorkerAgent)(nil),              // 21: circus.v1.WorkerAgent
+	(AgentKind)(0),                   // 22: circus.v1.AgentKind
+	(*ListDirectoryResult)(nil),      // 23: circus.v1.ListDirectoryResult
+	(*GitRemoteResult)(nil),          // 24: circus.v1.GitRemoteResult
 }
 var file_circus_v1_machine_proto_depIdxs = []int32{
 	1,  // 0: circus.v1.ListDevicesResponse.devices:type_name -> circus.v1.Device
-	17, // 1: circus.v1.Worker.agents:type_name -> circus.v1.WorkerAgent
+	21, // 1: circus.v1.Worker.agents:type_name -> circus.v1.WorkerAgent
 	4,  // 2: circus.v1.SetWorkerGrantResponse.worker:type_name -> circus.v1.Worker
-	18, // 3: circus.v1.SetWorkerAgentRequest.agent:type_name -> circus.v1.AgentKind
+	22, // 3: circus.v1.SetWorkerAgentRequest.agent:type_name -> circus.v1.AgentKind
 	4,  // 4: circus.v1.SetWorkerAgentResponse.worker:type_name -> circus.v1.Worker
 	4,  // 5: circus.v1.ListWorkersResponse.workers:type_name -> circus.v1.Worker
 	0,  // 6: circus.v1.CreateEnrollLinkRequest.role:type_name -> circus.v1.EnrollRole
-	19, // 7: circus.v1.ListDirectoryResponse.result:type_name -> circus.v1.ListDirectoryResult
-	20, // 8: circus.v1.GetGitRemoteResponse.result:type_name -> circus.v1.GitRemoteResult
+	23, // 7: circus.v1.ListDirectoryResponse.result:type_name -> circus.v1.ListDirectoryResult
+	24, // 8: circus.v1.GetGitRemoteResponse.result:type_name -> circus.v1.GitRemoteResult
 	2,  // 9: circus.v1.MachineService.ListDevices:input_type -> circus.v1.ListDevicesRequest
 	5,  // 10: circus.v1.MachineService.ListWorkers:input_type -> circus.v1.ListWorkersRequest
-	11, // 11: circus.v1.MachineService.CreateEnrollLink:input_type -> circus.v1.CreateEnrollLinkRequest
+	15, // 11: circus.v1.MachineService.CreateEnrollLink:input_type -> circus.v1.CreateEnrollLinkRequest
 	6,  // 12: circus.v1.MachineService.SetWorkerGrant:input_type -> circus.v1.SetWorkerGrantRequest
 	8,  // 13: circus.v1.MachineService.SetWorkerAgent:input_type -> circus.v1.SetWorkerAgentRequest
-	13, // 14: circus.v1.MachineService.ListDirectory:input_type -> circus.v1.ListDirectoryRequest
-	15, // 15: circus.v1.MachineService.GetGitRemote:input_type -> circus.v1.GetGitRemoteRequest
-	3,  // 16: circus.v1.MachineService.ListDevices:output_type -> circus.v1.ListDevicesResponse
-	10, // 17: circus.v1.MachineService.ListWorkers:output_type -> circus.v1.ListWorkersResponse
-	12, // 18: circus.v1.MachineService.CreateEnrollLink:output_type -> circus.v1.CreateEnrollLinkResponse
-	7,  // 19: circus.v1.MachineService.SetWorkerGrant:output_type -> circus.v1.SetWorkerGrantResponse
-	9,  // 20: circus.v1.MachineService.SetWorkerAgent:output_type -> circus.v1.SetWorkerAgentResponse
-	14, // 21: circus.v1.MachineService.ListDirectory:output_type -> circus.v1.ListDirectoryResponse
-	16, // 22: circus.v1.MachineService.GetGitRemote:output_type -> circus.v1.GetGitRemoteResponse
-	16, // [16:23] is the sub-list for method output_type
-	9,  // [9:16] is the sub-list for method input_type
+	17, // 14: circus.v1.MachineService.ListDirectory:input_type -> circus.v1.ListDirectoryRequest
+	19, // 15: circus.v1.MachineService.GetGitRemote:input_type -> circus.v1.GetGitRemoteRequest
+	11, // 16: circus.v1.MachineService.DeleteDevice:input_type -> circus.v1.DeleteDeviceRequest
+	13, // 17: circus.v1.MachineService.DeleteWorker:input_type -> circus.v1.DeleteWorkerRequest
+	3,  // 18: circus.v1.MachineService.ListDevices:output_type -> circus.v1.ListDevicesResponse
+	10, // 19: circus.v1.MachineService.ListWorkers:output_type -> circus.v1.ListWorkersResponse
+	16, // 20: circus.v1.MachineService.CreateEnrollLink:output_type -> circus.v1.CreateEnrollLinkResponse
+	7,  // 21: circus.v1.MachineService.SetWorkerGrant:output_type -> circus.v1.SetWorkerGrantResponse
+	9,  // 22: circus.v1.MachineService.SetWorkerAgent:output_type -> circus.v1.SetWorkerAgentResponse
+	18, // 23: circus.v1.MachineService.ListDirectory:output_type -> circus.v1.ListDirectoryResponse
+	20, // 24: circus.v1.MachineService.GetGitRemote:output_type -> circus.v1.GetGitRemoteResponse
+	12, // 25: circus.v1.MachineService.DeleteDevice:output_type -> circus.v1.DeleteDeviceResponse
+	14, // 26: circus.v1.MachineService.DeleteWorker:output_type -> circus.v1.DeleteWorkerResponse
+	18, // [18:27] is the sub-list for method output_type
+	9,  // [9:18] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
 	9,  // [9:9] is the sub-list for extension extendee
 	0,  // [0:9] is the sub-list for field type_name
@@ -1134,7 +1336,7 @@ func file_circus_v1_machine_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_machine_proto_rawDesc), len(file_circus_v1_machine_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

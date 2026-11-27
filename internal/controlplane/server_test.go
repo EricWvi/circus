@@ -297,7 +297,10 @@ func TestEnrollRequestErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	tok := h.token(t, store.KindDevice, time.Hour, time.Now())
-	_, err := c.Enroll(ctx, enrollReq(tok, circusv1.Role_ROLE_DAEMON, "laptop"))
+	// The holder is another machine's: the name is taken.
+	dup := enrollReq(tok, circusv1.Role_ROLE_DAEMON, "Laptop")
+	dup.Msg.MachineId = "machine-2"
+	_, err := c.Enroll(ctx, dup)
 	var ce *connect.Error
 	if !errors.As(err, &ce) || ce.Code() != connect.CodeAlreadyExists || !strings.Contains(ce.Message(), "--name") {
 		t.Fatalf("duplicate name: %v", err)

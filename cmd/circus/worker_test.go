@@ -228,7 +228,7 @@ func TestWorkerServiceRunsTheInstalledPackage(t *testing.T) {
 	}
 
 	d, ok, err := userservice.Worker.Installed()
-	if err != nil || !ok || !slices.Equal(d.Argv, []string{launcher}) {
+	if err != nil || !ok || !slices.Equal(d.Argv, []string{launcher, "--service"}) {
 		t.Fatalf("service runs %v (%t, %v)", d.Argv, ok, err)
 	}
 	record := filepath.Join(f.dir, "record.json")

@@ -23,6 +23,9 @@ service EnrollService {
 message EnrollRequest {
   string one_time_token = 1;
   Role role = 2;
+  // The identity name; empty for the first label of hostname, or, with a
+  // token issued to replace an identity, for that identity's name. A token
+  // that replaces an identity refuses any other name (INVALID_ARGUMENT).
   string name = 3;
   string hostname = 4;
   // Shared machine hash links identities; credentials and revocation stay separate.
@@ -40,4 +43,19 @@ message EnrollResponse {
   string principal_id = 1;
   string long_term_token = 2;
   string control_plane_url = 3;
+  // The identity this enrollment replaced: set when the one-time token was
+  // issued to rejoin as an identity of the user (a "Rejoin" link, or
+  // `circus server enroll-token create --replace`). That identity was
+  // revoked, as deleting it would, in the transaction that created the new
+  // one, which took its name. Unset for a plain enrollment.
+  ReplacedIdentity replaced = 4;
+  // The name the identity was enrolled under: the request's name, the
+  // hostname's first label without one, or the replaced identity's name.
+  string name = 5;
+
+  // ReplacedIdentity is the revoked identity, as it was named.
+  message ReplacedIdentity {
+    string principal_id = 1;
+    string name = 2;
+  }
 }

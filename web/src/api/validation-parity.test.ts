@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest"
 import fixture from "./validation-parity.json"
 import { baseUrlProblem, envNameProblem, keyProblem } from "./provider-rules"
 import {
+  checkIdentityName,
   checkPath,
   checkProjectName,
   checkRepoUrl,
@@ -17,7 +18,7 @@ import {
   type Checked,
 } from "./validation"
 
-type Fn = "checkName" | "checkPath" | "checkRepoURL" | "normalizePath" | "sameProjectName"
+type Fn = "checkName" | "checkIdentityName" | "checkPath" | "checkRepoURL" | "normalizePath" | "sameProjectName"
 
 interface Case {
   fn: Fn
@@ -38,6 +39,7 @@ const expected = (c: Case): Checked | string | boolean => {
 
 const run: Record<Fn, (args: string[]) => Checked | string | boolean> = {
   checkName: ([raw]) => checkProjectName(raw),
+  checkIdentityName: ([raw]) => checkIdentityName(raw),
   checkPath: ([raw, os]) => checkPath(raw, os),
   checkRepoURL: ([raw]) => checkRepoUrl(raw),
   normalizePath: ([path, os]) => normalizePath(path, os),
@@ -56,7 +58,7 @@ const outcomes = (fn: Fn) => {
 
 describe("validation parity with the control plane", () => {
   it("covers both outcomes of every validator", () => {
-    for (const fn of ["checkName", "checkPath", "checkRepoURL"] as const) {
+    for (const fn of ["checkName", "checkIdentityName", "checkPath", "checkRepoURL"] as const) {
       const { yes, no } = outcomes(fn)
       expect.soft(yes, `${fn} accepted`).toBeGreaterThanOrEqual(15)
       expect.soft(no, `${fn} refused`).toBeGreaterThanOrEqual(15)
