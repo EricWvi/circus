@@ -180,17 +180,20 @@ tasks:
         fi
         CIRCUS_BIN="$CIRCUS_HOME/bin/circus" exec node worker/dist/main.js
 
-  # The daemon keeps its credential and state under .tmp/dev-daemon, apart
-  # from an installed daemon service's.
+  # The daemon keeps its credential and state under .tmp/dev, apart from an
+  # installed daemon service's, and shares it with `task cli`, so the Web
+  # UI's development join and rejoin commands (`task cli -- join …`) write
+  # the credential this task reads. daemon.json does not clash with the
+  # scripted worker's worker.json there.
   web:dev:daemon:
-    desc: Build, enroll and run the device daemon from source for a Web UI account (USER_EMAIL=<email>)
+    desc: Build, enroll and run the device daemon from source for a Web UI account (USER_EMAIL=<email>), with its files under .tmp/dev like `task cli`
     requires:
       vars: [USER_EMAIL]
     env:
       CIRCUS_DEV_USER_EMAIL: "{{.USER_EMAIL}}"
     cmds:
       - |
-        export CIRCUS_HOME="$PWD/.tmp/dev-daemon"
+        export CIRCUS_HOME="$PWD/.tmp/dev"
         mkdir -p "$CIRCUS_HOME/bin"
         go build -o "$CIRCUS_HOME/bin/circus" ./cmd/circus
         if [ ! -f "$CIRCUS_HOME/config/daemon.json" ]; then
