@@ -313,6 +313,11 @@ func TestPlanSessionRebase(t *testing.T) {
 			// Its reference to the reused letters stays, for the agent
 			// to resolve before the changeset is merged.
 			nextProblems: []string{"D?b-Queue.md: refers to D?a, which no decision of this changeset has; check it"}}},
+		// Shown in code, the letters are no reference to check.
+		{name: "letters reused, merged path kept, code example", later: func([]byte) []SnapshotChange {
+			return []SnapshotChange{content("D?a-Queue.md", doc("D?a", "Queue", "Use a queue; write `D?a` for a new one.\n"))}
+		}, want: want{file: "D1-Cache.md", line: "Cache reads.", entries: []string{"D?b-Queue.md"}, added: []string{"D?b-Queue.md"},
+			renamed: map[string]string{"D?a-Cache.md": "D1-Cache.md", "D?a-Queue.md": "D?b-Queue.md"}, problems: []string{"D?b-Queue.md"}}},
 		{name: "letters reused twice, merged path gone", later: func([]byte) []SnapshotChange {
 			return []SnapshotChange{{Path: "D?a-Cache.md", Deleted: true}, content("D?a-Queue.md", doc("D?a", "Queue", "Use a queue.\n")),
 				content("ops/D?a-Stream.md", doc("D?a", "Stream", "Stream it.\n"))}
@@ -433,19 +438,20 @@ func TestPlanSessionRebase(t *testing.T) {
 }
 
 // TestPlanSessionRebaseOtherFiles: a file that is not a decision keeps its
-// path, its references to the merged temporary numbers replaced.
+// path, its references to the merged temporary numbers replaced and the
+// notation in its code kept.
 func TestPlanSessionRebaseOtherFiles(t *testing.T) {
 	m, _ := openLedger(t, nil, "project")
 	head := commit(t, m, "project", []Decision{{Number: 0, Title: "Storage", Body: []byte("SQLite.\n")}}, CommitOptions{Author: "a", Message: "one"})
 	newDoc := doc("D?a", "Cache", "Cache reads.\n")
 	res := sessionCheck(t, m, "s1", head, head, content("D?a-Cache.md", newDoc))
 	mergeCS(t, m, res.Changeset.ID, MergeOptions{Authorize: opener})
-	plan := rebasePlan(t, m, res.Changeset.ID, head, map[string][]byte{"D?a-Cache.md": newDoc}, content("notes.md", []byte("See D?a.\n")))
+	plan := rebasePlan(t, m, res.Changeset.ID, head, map[string][]byte{"D?a-Cache.md": newDoc}, content("notes.md", []byte("See D?a, not `D?a`.\n\n```\nD?a\n```\n")))
 	page, err := m.ReadSnapshotFiles(t.Context(), "project", plan.Target, "", 1<<20, 100)
 	check(t, err)
 	for _, f := range page.Files {
 		if f.Path == "notes.md" {
-			if string(f.Content) != "See D1.\n" {
+			if string(f.Content) != "See D1, not `D?a`.\n\n```\nD?a\n```\n" {
 				t.Fatalf("notes.md %q", f.Content)
 			}
 			return

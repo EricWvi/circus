@@ -657,10 +657,12 @@ files may refer to it by that number. A merge gives new decisions the next
 numbers, in the order a, b, …, z, aa, …, renames their files, and replaces
 every reference `D?<letters>` without a letter, digit or underscore next to
 it in every changed file. References to letters no new decision has are
-kept, and `check` warns of them without stopping the merge. Merged files
-are written with the canonical front matter, and every changed file's name
-is derived again from its title: a title that refers to a new decision
-renames its file.
+kept, and `check` warns of them without stopping the merge. Inside
+Markdown code (inline code spans and fenced code blocks, not indented code
+blocks) `D?<letters>` is text, not a reference: it is never replaced,
+warned of or counted. Merged files are written with the canonical front
+matter, and every changed file's name is derived again from its title: a
+title that refers to a new decision renames its file.
 
 Each check replaces the changeset's content on the `changesets/<id>`
 branch, committed with its opener as author on top of its base; a check

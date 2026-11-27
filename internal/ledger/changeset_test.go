@@ -527,6 +527,69 @@ func TestRewriteTemporary(t *testing.T) {
 	}
 }
 
+// TestTemporaryReferencesInCode: the notation inside Markdown code is no
+// reference, and text around the code is read as usual.
+func TestTemporaryReferencesInCode(t *testing.T) {
+	numbers := map[string]uint32{"a": 7, "b": 8}
+	for _, tc := range []struct{ name, in, want string }{
+		{"inline span", "`D?a` and D?a", "`D?a` and D7"},
+		{"double backticks around a backtick", "``a ` D?a`` D?a", "``a ` D?a`` D7"},
+		{"unmatched backtick", "a ` D?a", "a ` D7"},
+		{"unmatched runs", "`` D?a ` D?b", "`` D7 ` D8"},
+		{"longer run is not a closer", "`D?a`` D?b", "`D7`` D8"},
+		{"reference after a closing backtick", "`x`D?a", "`x`D7"},
+		{"reference before an opening backtick", "D?a`x`", "D7`x`"},
+		{"span across lines", "`a\nD?a` D?a", "`a\nD?a` D7"},
+		{"span ends with its paragraph", "`x\n\nD?a `y`", "`x\n\nD7 `y`"},
+		{"escaped backticks", "\\`D?a\\`", "\\`D7\\`"},
+		{"escaped backslash", "\\\\`D?a`", "\\\\`D?a`"},
+		{"backtick fence", "```\nD?a\n```\nD?a\n", "```\nD?a\n```\nD7\n"},
+		{"tilde fence with info", "~~~ md\n`D?a` D?a\n~~~\nD?a", "~~~ md\n`D?a` D?a\n~~~\nD7"},
+		{"indented fence", "   ```\nD?a\n   ```\nD?a", "   ```\nD?a\n   ```\nD7"},
+		{"longer closing fence", "```\nD?a\n`````\nD?a", "```\nD?a\n`````\nD7"},
+		{"shorter fence does not close", "````\nD?a\n```\nD?a\n````\nD?b", "````\nD?a\n```\nD?a\n````\nD8"},
+		{"other character does not close", "```\n~~~\nD?a\n```\nD?a", "```\n~~~\nD?a\n```\nD7"},
+		{"text after a fence does not close", "```\nD?a\n``` x\nD?a\n```\nD?b", "```\nD?a\n``` x\nD?a\n```\nD8"},
+		{"fence interrupts a paragraph", "D?a `x\n```\n`D?a\n```\nD?b`", "D7 `x\n```\n`D?a\n```\nD8`"},
+		{"unclosed fence", "D?a\n```go\nD?a\nD?b\n", "D7\n```go\nD?a\nD?b\n"},
+		{"crlf fence", "```\r\nD?a\r\n```\r\nD?a", "```\r\nD?a\r\n```\r\nD7"},
+		{"four spaces are no fence", "    ```\n    D?a\n", "    ```\n    D7\n"},
+		{"backtick in a backtick fence's info", "``` a`b\nD?a", "``` a`b\nD7"},
+		{"front matter", string(doc("D?a", "`D?b` D?b", "`D?a`\n")), string(doc("D7", "`D?b` D8", "`D?a`\n"))},
+	} {
+		if got := string(rewriteTemporary([]byte(tc.in), numbers)); got != tc.want {
+			t.Errorf("%s: rewrite %q = %q, want %q", tc.name, tc.in, got, tc.want)
+		}
+	}
+	// A paragraph of unmatched runs of every length.
+	var long strings.Builder
+	for n := 1; n < 300; n++ {
+		long.WriteString(strings.Repeat("`", n) + " D?a ")
+	}
+	if got := strings.Count(string(rewriteTemporary([]byte(long.String()), numbers)), "D7"); got != 299 {
+		t.Fatalf("%d of 299 references outside code rewritten", got)
+	}
+}
+
+// TestMergeKeepsCodeExamples: a merge replaces a reference and keeps the
+// notation shown in code in the same file, and check warns of neither
+// the examples nor letters only code mentions.
+func TestMergeKeepsCodeExamples(t *testing.T) {
+	m, _ := openLedger(t, nil, "project")
+	seedLedger(t, m, "project")
+	c := openCS(t, m, "project")
+	body := "Write `D?a` for a new decision; this is D?a.\n\n```\nnumber: D?zz\n```\n\nSee `` `D?q` `` and D?b.\n"
+	res := checkCS(t, m, c.ID, edit("D?a-Syntax.md", doc("D?a", "Syntax", body)), edit("D?b-Other.md", doc("D?b", "Other", "x\n")))
+	if len(res.Problems) != 0 || len(res.Warnings) != 0 {
+		t.Fatalf("check = %+v", res)
+	}
+	mergeCS(t, m, c.ID, MergeOptions{})
+	want := "Write `D?a` for a new decision; this is D3.\n\n```\nnumber: D?zz\n```\n\nSee `` `D?q` `` and D4.\n"
+	if files := mainFiles(t, m, "project"); !strings.HasSuffix(files["D3-Syntax.md"], "\n\n"+want) {
+		t.Fatalf("main = %q", files)
+	}
+}
+
 // TestConcurrentChangesetMerges merges two changesets of one project at
 // once: for workers without the grant only the first succeeds; for
 // integrators both do, one after the other on a linear main line.

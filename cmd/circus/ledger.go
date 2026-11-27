@@ -45,8 +45,10 @@ open starts a changeset from the main line and writes its files to DIR,
 by default $XDG_STATE_HOME/circus/ledger/cli/<changeset> (under
 CIRCUS_HOME/state when that is set). Edit them with any tool; a new
 decision is <dir>/D?<letters>-<title>.md with "number: D?<letters>", and
-other files may refer to it as D?<letters>. Remove a decision's file only
-to move or rename it, together with its new path.
+other files may refer to it as D?<letters>; inside Markdown code (inline
+code spans and fenced code blocks) the notation is text, not a reference.
+Remove a decision's file only to move or rename it, together with its new
+path.
 
 check sends the directory's changes, prints validation problems and
 whether the changeset fast-forwards, and writes each conflicting file's

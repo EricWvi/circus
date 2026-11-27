@@ -1,6 +1,7 @@
 package ledger
 
 import (
+	"bytes"
 	"cmp"
 	"fmt"
 	"maps"
@@ -483,13 +484,145 @@ func wordByte(c byte) bool {
 // number in content: "D?" and one to four lowercase letters, with no
 // letter, digit or underscore right before or after it. visit gets the
 // reference's bounds and letters.
+//
+// Occurrences inside Markdown code are not references, so a decision can
+// show the notation: inline code spans (a run of n backticks up to the
+// next run of exactly n in the same paragraph; an unmatched run is a
+// literal backtick) and fenced code blocks (a line of three or more
+// backticks or tildes indented by at most three spaces, up to a line of
+// at least as many of the same character, or the end of the file).
+// Paragraphs end at blank lines and fences. Indented code blocks are read
+// as text: inside the lists decisions use, indentation is ambiguous. The
+// front matter's number line has no backtick before it, so the number in
+// it is always a reference.
 func temporaryReferences(content []byte, visit func(start, end int, letters string)) {
-	for i := 0; i+2 < len(content); i++ {
+	paragraph := 0
+	var fence byte
+	fenceLen := 0
+	for pos := 0; pos < len(content); {
+		next := len(content)
+		if i := bytes.IndexByte(content[pos:], '\n'); i >= 0 {
+			next = pos + i + 1
+		}
+		line := content[pos:next]
+		switch {
+		case fence != 0:
+			if c, n, rest := fenceLine(line); c == fence && n >= fenceLen && blank(rest) {
+				fence = 0
+			}
+			paragraph = next
+		case blank(line):
+			inlineReferences(content, paragraph, pos, visit)
+			paragraph = next
+		default:
+			// A backtick fence's info string has no backtick; such a line
+			// is inline code instead.
+			if c, n, rest := fenceLine(line); c == '~' || c == '`' && bytes.IndexByte(rest, '`') < 0 {
+				inlineReferences(content, paragraph, pos, visit)
+				fence, fenceLen = c, n
+				paragraph = next
+			}
+		}
+		pos = next
+	}
+	if fence == 0 {
+		inlineReferences(content, paragraph, len(content), visit)
+	}
+}
+
+func blank(line []byte) bool { return len(bytes.Trim(line, " \t\r\n")) == 0 }
+
+// fenceLine returns the fence character and length of a line that starts,
+// after at most three spaces, with three or more backticks or tildes, and
+// the rest of the line; c is 0 for any other line.
+func fenceLine(line []byte) (c byte, n int, rest []byte) {
+	i := 0
+	for i < 3 && i < len(line) && line[i] == ' ' {
+		i++
+	}
+	if i == len(line) || line[i] != '`' && line[i] != '~' {
+		return 0, 0, nil
+	}
+	end := i
+	for end < len(line) && line[end] == line[i] {
+		end++
+	}
+	if end-i < 3 {
+		return 0, 0, nil
+	}
+	return line[i], end - i, line[end:]
+}
+
+// inlineReferences visits the references in the paragraph
+// content[from:to] outside its code spans.
+func inlineReferences(content []byte, from, to int, visit func(start, end int, letters string)) {
+	text := from
+	// unmatched holds, by run length, a position after which no run of
+	// that length follows, so a paragraph of unmatched runs is not
+	// searched again and again.
+	var unmatched map[int]int
+	for i := from; i < to; {
+		switch {
+		case content[i] == '\\' && i+1 < to && (content[i+1] == '`' || content[i+1] == '\\'):
+			// An escaped backtick is literal, and so is an escaped
+			// backslash, which escapes nothing.
+			i += 2
+			continue
+		case content[i] != '`':
+			i++
+			continue
+		}
+		open := backtickRunEnd(content, i, to)
+		n := open - i
+		closing := -1
+		if after, ok := unmatched[n]; !ok || open < after {
+			for j := open; j < to; {
+				if content[j] != '`' {
+					j++
+					continue
+				}
+				k := backtickRunEnd(content, j, to)
+				if k-j == n {
+					closing = j
+					break
+				}
+				j = k
+			}
+			if closing < 0 {
+				if unmatched == nil {
+					unmatched = make(map[int]int)
+				}
+				unmatched[n] = open
+			}
+		}
+		if closing < 0 {
+			i = open
+			continue
+		}
+		plainReferences(content, text, i, visit)
+		i = closing + n
+		text = i
+	}
+	plainReferences(content, text, to, visit)
+}
+
+// backtickRunEnd returns the end of the run of backticks at content[i].
+func backtickRunEnd(content []byte, i, to int) int {
+	for i < to && content[i] == '`' {
+		i++
+	}
+	return i
+}
+
+// plainReferences visits the references in content[from:to], text without
+// code. The bytes around it are backticks, line ends or nothing.
+func plainReferences(content []byte, from, to int, visit func(start, end int, letters string)) {
+	for i := from; i+2 < to; i++ {
 		if content[i] != 'D' || content[i+1] != '?' || i > 0 && wordByte(content[i-1]) {
 			continue
 		}
 		end := i + 2
-		for end < len(content) && content[end] >= 'a' && content[end] <= 'z' {
+		for end < to && content[end] >= 'a' && content[end] <= 'z' {
 			end++
 		}
 		if end < len(content) && wordByte(content[end]) || !store.ValidTemporaryLetters(string(content[i+2:end])) {
@@ -502,7 +635,8 @@ func temporaryReferences(content []byte, visit func(start, end int, letters stri
 
 // rewriteTemporary replaces each reference to a temporary number with its
 // assigned number. One whose letters are not assigned is kept, as text
-// about the notation is.
+// about the notation is, and so is the notation inside Markdown code,
+// which is no reference.
 func rewriteTemporary(content []byte, numbers map[string]uint32) []byte {
 	var out []byte
 	last := 0
@@ -525,6 +659,7 @@ func rewriteTemporary(content []byte, numbers map[string]uint32) []byte {
 // unknownReferences warns of references in the changed files to
 // temporary numbers that no new decision of the changeset has: a merge
 // keeps them as they are, which a typo would leave on the main line.
+// The notation inside Markdown code is no reference and no warning.
 func unknownReferences(changes []change, temporary map[string]string) []Problem {
 	var out []Problem
 	for _, ch := range changes {
