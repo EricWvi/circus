@@ -190,7 +190,6 @@ export const en = {
     loadFailed: "Couldn't load devices.",
     devicesHeading: "Devices",
     workersHeading: "Workers",
-    workersHint: "Workers run Claude Code for your sessions.",
     workersLoading: "Loading workers",
     workersLoadFailed: "Couldn't load workers.",
     noWorkers: "No workers yet. Add one with Add device, choosing the Worker role.",
@@ -208,12 +207,12 @@ export const en = {
     rejoin: {
       title: "Rejoin {{name}}",
       descriptionDevice:
-        "Run a command on the machine to join it again as the device {{name}}. When it joins, the old {{name}} is revoked: its credential stops working, and the new device takes its name.",
+        "Join again as the same device, revoking the old credential.",
       descriptionWorker:
-        "Run a command on the machine to join it again as the worker {{name}}. When it joins, the old {{name}} is revoked: its credential stops working, and the new worker takes its name.",
+        "Join again as the same worker, revoking the old credential.",
       name: "Name",
       nameHint: "The new identity keeps this name.",
-      forceNote: "Run it on the machine that was {{name}}. When the new one joins, the old {{name}} is revoked; the join is refused while the old one is online. The command passes --force to circus join, which overwrites the machine's credential for this role: on a machine already joined as something else, it would replace that one.",
+      forceNote: "Run it on the machine that was {{name}}. Run on another machine, it replaces that machine's identity.",
       done: "{{name}} rejoined",
       doneConnected: "{{name}} rejoined and is connected",
       doneHint: "The old identity was revoked.",
@@ -300,7 +299,7 @@ export const en = {
         both: "Both",
       },
       roleHints: {
-        daemon: "Runs your sessions' tools on this machine (circus daemon).",
+        daemon: "Runs tool calls on this machine.",
         worker: "Runs the agent that drives your sessions.",
         both: "A device and a worker on the same machine.",
       },

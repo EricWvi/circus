@@ -1,4 +1,4 @@
-import { CircleCheckIcon, TimerOffIcon } from "lucide-react"
+import { CircleCheckIcon, InfoIcon, TimerOffIcon } from "lucide-react"
 import { memo, useCallback, useEffect, useId, useRef, useState, type ReactNode, type Ref } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -13,6 +13,7 @@ import {
 import type { EnrollLink, EnrollRole } from "@/api/types"
 import { checkIdentityName } from "@/api/validation"
 import { CommandBlock } from "@/components/command-block"
+import { InfoTip } from "@/components/info-tip"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -23,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
@@ -448,7 +449,20 @@ const NameField = memo(function NameField({
   const id = useId()
   return (
     <Field className="gap-2" data-disabled={disabled || undefined}>
-      <FieldLabel htmlFor={`${id}-name`}>{t("devices.add.name")}</FieldLabel>
+      <div className="flex items-center gap-1">
+        <FieldLabel htmlFor={`${id}-name`}>{t("devices.add.name")}</FieldLabel>
+        <InfoTip content={t("devices.add.nameHint")} contentClassName="max-w-xs" side="top">
+          <span
+            tabIndex={0}
+            className="flex cursor-default items-center rounded-sm p-0.5 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <InfoIcon className="size-3" aria-hidden />
+            <span id={`${id}-hint`} className="sr-only">
+              {t("devices.add.nameHint")}
+            </span>
+          </span>
+        </InfoTip>
+      </div>
       <Input
         ref={inputRef}
         id={`${id}-name`}
@@ -470,9 +484,6 @@ const NameField = memo(function NameField({
         }}
       />
       {problem && <FieldError id={`${id}-error`}>{problem}</FieldError>}
-      <FieldDescription id={`${id}-hint`} className="text-xs">
-        {t("devices.add.nameHint")}
-      </FieldDescription>
     </Field>
   )
 })

@@ -321,7 +321,6 @@ const WorkersSection = memo(function WorkersSection({ onAction }: { onAction: (a
         <h2 id="workers-heading" className="text-sm font-medium">
           {t("devices.workersHeading")}
         </h2>
-        <p className="text-xs text-muted-foreground">{t("devices.workersHint")}</p>
       </div>
       {body}
     </section>

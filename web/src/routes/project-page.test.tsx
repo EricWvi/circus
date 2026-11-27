@@ -627,7 +627,7 @@ describe("a new session without a worker that runs Claude Code", () => {
     notInstalled(state, "eric-mbp")
     await renderProject("circus", state)
     expect(notice()?.textContent).toBe(
-      "eric-mbp 所在机器上的 worker 没有安装 Claude Code，这里的新会话会一直等到它安装为止。去设备页安装",
+      "eric-mbp 所在机器上的工作节点没有安装 Claude Code，这里的新会话会一直等到它安装为止。去设备页安装",
     )
   })
 })

@@ -1262,10 +1262,10 @@ describe("a disconnected worker", () => {
     const state = seedState()
     addWorkerDemo(state)
     await renderSession("/p/circus/s/worker-gone-running", { state })
-    expect(notice()?.textContent).toBe("worker 连接已断开（刚刚）。1 分钟内未重连，本轮将中断。")
+    expect(notice()?.textContent).toBe("工作节点连接已断开（刚刚）。1 分钟内未重连，本轮将中断。")
     cleanup()
     await renderSession("/p/palace/s/worker-gone-idle", { state })
-    expect(notice()?.textContent).toBe("worker 连接已断开（刚刚），等待重连。")
+    expect(notice()?.textContent).toBe("工作节点连接已断开（刚刚），等待重连。")
   })
 
   it("waits for an idle session's worker to reconnect, the time moving on", async () => {

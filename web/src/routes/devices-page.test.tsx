@@ -149,7 +149,7 @@ describe("the device list", () => {
     await renderDevices(seedWithSpare())
     expect(screen.getByRole("heading", { level: 1, name: "设备" })).toBeTruthy()
     expect(row("devbox").getByText("在线")).toBeTruthy()
-    expect(row("devbox").getByText("守护进程 0.1.0")).toBeTruthy()
+    expect(row("devbox").getByText("daemon 0.1.0")).toBeTruthy()
     expect(row("eric-win").getByText("前天在线")).toBeTruthy()
     expect(row("spare").getByText("从未连接")).toBeTruthy()
   })
@@ -227,7 +227,6 @@ describe("the worker list", () => {
 
   it("lists workers with status, version and the devices on the same machine", async () => {
     await renderDevices(seedState(NOW))
-    expect(workers().getByText("Workers run Claude Code for your sessions.")).toBeTruthy()
     const names = workers()
       .getAllByText(/./, { selector: "span.font-medium" })
       .map((e) => e.textContent)
@@ -266,8 +265,7 @@ describe("the worker list", () => {
   it("reads in Chinese", async () => {
     await i18n.changeLanguage("zh-CN")
     await renderDevices(seedState(NOW))
-    const section = within(screen.getByRole("region", { name: "Worker" }))
-    expect(section.getByText("Worker 为你的会话运行 Claude Code。")).toBeTruthy()
+    const section = within(screen.getByRole("region", { name: "工作节点" }))
     expect(section.getByRole("list", { name: "与 devbox 在同一台机器上的设备" })).toBeTruthy()
     const toggle = within(section.getByText("devbox", { selector: "span.font-medium" }).closest("li")!).getByRole("switch", {
       name: "合入者",
@@ -435,7 +433,7 @@ describe("the integrator switch", () => {
   it("says so in Chinese", async () => {
     await i18n.changeLanguage("zh-CN")
     const { fail } = await renderHeld()
-    const section = within(screen.getByRole("region", { name: "Worker" }))
+    const section = within(screen.getByRole("region", { name: "工作节点" }))
     fireEvent.click(within(section.getByText("devbox", { selector: "span.font-medium" }).closest("li")!).getByRole("switch"))
     await advance(0)
     await fail(new ApiError("unavailable", "down"))

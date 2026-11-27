@@ -661,7 +661,7 @@ describe("the add device dialog", () => {
       const { state, requested, replaced } = await renderPage({ issue: release() })
       await openRejoin("eric-win")
       expect(screen.getByRole("dialog", { name: "Rejoin eric-win" })).toBeTruthy()
-      expect(dialog().getByText(/When it joins, the old eric-win is revoked/)).toBeTruthy()
+      expect(dialog().getByText("Join again as the same device, revoking the old credential.")).toBeTruthy()
       // The role and the name are the device's.
       expect(dialog().getAllByRole("radio").map((r) => r.getAttribute("value"))).toEqual(["daemon"])
       // The name is shown as text: nothing to edit or select.
@@ -673,7 +673,7 @@ describe("the add device dialog", () => {
       expect(requested).toEqual(["daemon"])
       expect(replaced).toEqual(["device-eric-win"])
       expect(lines().at(-2)).toBe(`  printf '%s\\n' '${LINK}' | ~/.local/bin/circus join --force &&`)
-      expect(dialog().getByText(/Run it on the machine that was eric-win\..*passes --force to circus join/)).toBeTruthy()
+      expect(dialog().getByText("Run it on the machine that was eric-win. Run on another machine, it replaces that machine's identity.")).toBeTruthy()
       // Another machine joining meanwhile (another link) is not this one.
       state.devices.push(device("other-box"))
       await advance(DEVICES_LIVE_INTERVAL_MS)
@@ -793,7 +793,7 @@ describe("the add device dialog", () => {
     const zh = within(screen.getByRole("dialog", { name: "添加设备" }))
     expect(zh.getByText("在要添加的机器上运行一条命令，安装 circus 并把它加入你的账户。")).toBeTruthy()
     expect(zh.getByRole("radio", { name: /^设备/ })).toBeTruthy()
-    expect(zh.getByText("在该机器上为你的会话运行工具（circus daemon）。")).toBeTruthy()
+    expect(zh.getByText("在该机器上执行工具调用。")).toBeTruthy()
     expect(zh.getByRole("textbox", { name: "名称（可选）" })).toBeTruthy()
     expect(zh.getByText(/^留空则使用该机器的主机名。/)).toBeTruthy()
     fireEvent.change(zh.getByRole("textbox", { name: "名称（可选）" }), { target: { value: "名字" } })

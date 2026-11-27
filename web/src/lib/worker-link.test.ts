@@ -59,12 +59,12 @@ describe("worker disconnects", () => {
     )
     await i18n.changeLanguage("zh-CN")
     expect(workerDisconnectedText(now - 20_000, true, now)).toBe(
-      "worker 连接已断开（刚刚）。1 分钟内未重连，本轮将中断。",
+      "工作节点连接已断开（刚刚）。1 分钟内未重连，本轮将中断。",
     )
-    expect(workerDisconnectedText(now - 3 * 60_000, false, now)).toBe("worker 连接已断开（3 分钟前），等待重连。")
+    expect(workerDisconnectedText(now - 3 * 60_000, false, now)).toBe("工作节点连接已断开（3 分钟前），等待重连。")
     // Before the stream told the server's clock: no time.
-    expect(workerDisconnectedText(now, true, null)).toBe("worker 连接已断开。1 分钟内未重连，本轮将中断。")
-    expect(workerDisconnectedText(now, false, null)).toBe("worker 连接已断开，等待重连。")
+    expect(workerDisconnectedText(now, true, null)).toBe("工作节点连接已断开。1 分钟内未重连，本轮将中断。")
+    expect(workerDisconnectedText(now, false, null)).toBe("工作节点连接已断开，等待重连。")
     await i18n.changeLanguage("en")
     expect(workerDisconnectedText(now, true, null)).toBe(
       "The worker disconnected. If it doesn't reconnect within a minute, this turn will be interrupted.",
