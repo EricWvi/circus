@@ -1,48 +1,61 @@
 // @vitest-environment happy-dom
+// The model providers, a section of the devices page.
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react"
 import { createMemoryRouter, RouterProvider } from "react-router"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { ApiError } from "@/api/errors"
 import { seedState, type MockState } from "@/api/mock/state"
 import { queryKeys } from "@/api/query-client"
-import type { CircusClient, ModelProviderService } from "@/api/types"
+import type { CircusClient, ModelProviderService, ProjectService } from "@/api/types"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
+import { addMenuTrigger, chooseAdd } from "@/test/add-menu"
 import { advance, renderWithBackend } from "@/test/render"
 
-import { ProvidersPage } from "./providers-page"
+import { DevicesPage } from "./devices-page"
 
 const NOW = Date.parse("2026-11-22T12:00:00Z")
 
 async function renderProviders(
   state: MockState = seedState(NOW),
   wrap?: (real: ModelProviderService) => Partial<ModelProviderService>,
+  entry = "/devices",
+  wrapProjects?: (real: ProjectService) => Partial<ProjectService>,
 ) {
   const router = createMemoryRouter(
     [
       {
-        path: "/providers",
+        path: "/devices",
         element: (
           <SidebarProvider>
-            <ProvidersPage />
+            <DevicesPage />
           </SidebarProvider>
         ),
       },
-      { path: "/devices", element: <h1>Devices page</h1> },
     ],
-    { initialEntries: ["/providers"] },
+    { initialEntries: [entry] },
   )
-  const wrapClient = (client: CircusClient): CircusClient =>
-    wrap ? { ...client, modelProviders: { ...client.modelProviders, ...wrap(client.modelProviders) } } : client
+  const wrapClient = (client: CircusClient): CircusClient => ({
+    ...client,
+    modelProviders: { ...client.modelProviders, ...wrap?.(client.modelProviders) },
+    projects: { ...client.projects, ...wrapProjects?.(client.projects) },
+  })
   const result = await renderWithBackend(<RouterProvider router={router} />, { state, wrapClient })
   await advance(50)
   return result
 }
 
+/** The providers section (the devices and workers above have rows too). */
+const section = () => {
+  const element = document.getElementById("providers")
+  if (!element) throw new Error("no providers section")
+  return within(element)
+}
+
 /** The list item of the provider with that name. */
 const row = (name: string) => {
-  const item = screen.getByText(name, { selector: "span.font-medium" }).closest("li")
+  const item = section().getByText(name, { selector: "span.font-medium" }).closest("li")
   if (!item) throw new Error(`no row for ${name}`)
   return within(item)
 }
@@ -66,6 +79,166 @@ afterEach(async () => {
   await i18n.changeLanguage("en")
 })
 
+describe("the providers section", () => {
+  it("sits below the workers, adding providers only through the header's menu", async () => {
+    await renderProviders()
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Devices", "Workers", "Providers"])
+    expect(section().getByRole("heading", { level: 2, name: "Providers" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull()
+    expect(screen.queryByRole("heading", { level: 1, name: "Providers" })).toBeNull()
+  })
+
+  it("shows placeholders while the list loads", async () => {
+    await renderProviders(seedState(NOW), () => ({ listProviders: () => new Promise(() => {}) }))
+    expect(section().getByRole("list", { name: "Loading providers" }).getAttribute("aria-busy")).toBe("true")
+    expect(section().queryByRole("button", { name: "Add provider" })).toBeNull()
+  })
+
+  it("offers a retry when the list can't load", async () => {
+    let failing = true
+    await renderProviders(seedState(NOW), (real) => ({
+      listProviders: () => (failing ? Promise.reject(new Error("boom")) : real.listProviders()),
+    }))
+    expect(section().getByText("Couldn't load providers.")).toBeTruthy()
+    expect(section().queryByRole("button", { name: "Add provider" })).toBeNull()
+    failing = false
+    fireEvent.click(section().getByRole("button", { name: "Try again" }))
+    await advance(50)
+    expect(row("Anthropic").getByText("default")).toBeTruthy()
+  })
+
+  it("is scrolled to and focused from /devices#providers once the lists have loaded", async () => {
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {})
+    onTestFinished(() => scrolled.mockRestore())
+    let release = () => {}
+    await renderProviders(
+      seedState(NOW),
+      (real) => ({
+        // The list arrives late: until then the section isn't where it ends up.
+        listProviders: () => new Promise((resolve) => (release = () => resolve(real.listProviders()))),
+      }),
+      "/devices#providers",
+    )
+    expect(scrolled).not.toHaveBeenCalled()
+    release()
+    await advance(50)
+    const target = document.getElementById("providers")
+    expect(scrolled).toHaveBeenCalledTimes(1)
+    expect(scrolled.mock.contexts[0]).toBe(target)
+    expect(scrolled.mock.calls[0]).toEqual([{ block: "start" }])
+    expect(document.activeElement).toBe(target)
+    // Later polls leave the user's scrolling alone.
+    await advance(60_000)
+    expect(scrolled).toHaveBeenCalledTimes(1)
+  })
+
+  it("waits for the projects too, which add a line to each device", async () => {
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {})
+    onTestFinished(() => scrolled.mockRestore())
+    let release = () => {}
+    await renderProviders(seedState(NOW), undefined, "/devices#providers", (real) => ({
+      listProjects: () => new Promise((resolve) => (release = () => resolve(real.listProjects()))),
+    }))
+    expect(scrolled).not.toHaveBeenCalled()
+    release()
+    await advance(50)
+    expect(scrolled.mock.contexts).toEqual([document.getElementById("providers")])
+  })
+
+  it("leaves focus where the user put it while the lists loaded", async () => {
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {})
+    onTestFinished(() => scrolled.mockRestore())
+    let release = () => {}
+    await renderProviders(
+      seedState(NOW),
+      (real) => ({ listProviders: () => new Promise((resolve) => (release = () => resolve(real.listProviders()))) }),
+      "/devices#providers",
+    )
+    const menu = screen.getAllByRole("button", { name: "Actions for devbox" })[0]
+    menu.focus()
+    release()
+    await advance(50)
+    expect(scrolled).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(menu)
+  })
+
+  it("ignores a hash that isn't a valid escape", async () => {
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {})
+    onTestFinished(() => scrolled.mockRestore())
+    await renderProviders(seedState(NOW), undefined, "/devices#%E0")
+    expect(screen.getByRole("heading", { level: 1, name: "Devices" })).toBeTruthy()
+    expect(row("Anthropic").getByText("default")).toBeTruthy()
+    expect(scrolled).not.toHaveBeenCalled()
+  })
+
+  it("returns focus to the button that opened a provider dialog, or to Add provider once it is gone", async () => {
+    await renderProviders()
+    const edit = row("Team proxy").getByRole("button", { name: "Edit Team proxy" })
+    fireEvent.click(edit)
+    await advance(50)
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+    await advance(300)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(document.activeElement).toBe(edit)
+
+    const remove = row("Anthropic").getByRole("button", { name: "Delete Anthropic" })
+    fireEvent.click(remove)
+    await advance(0)
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }))
+    await advance(300)
+    expect(document.activeElement).toBe(remove)
+
+    fireEvent.click(row("Team proxy").getByRole("button", { name: "Delete Team proxy" }))
+    await advance(0)
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }))
+    await advance(300)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(section().queryByText("Team proxy")).toBeNull()
+    // The deleted row's button is gone, and the list isn't empty: the header's menu.
+    expect(document.activeElement).toBe(addMenuTrigger())
+  })
+
+  it("adds a worker from the form when there are none, with the worker role chosen", async () => {
+    const state = seedState(NOW)
+    state.workers = []
+    await renderProviders(state)
+    const add = addMenuTrigger()
+    await chooseAdd("Add model provider")
+    expect(dialog().getByText(/No workers yet/).textContent).toBe("No workers yet. Add a worker first.")
+    fireEvent.click(dialog().getByRole("button", { name: "Add a worker" }))
+    await advance(300)
+    // The form closed for the add dialog.
+    expect(screen.getAllByRole("dialog")).toHaveLength(1)
+    const addWorker = within(screen.getByRole("dialog", { name: "Add worker" }))
+    expect(addWorker.getByRole("radio", { name: /^Worker/ })).toHaveProperty("checked", true)
+    expect(document.activeElement).not.toBe(add)
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+    await advance(300)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(document.activeElement).toBe(add)
+  })
+
+  it("says so in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    const state = seedState(NOW)
+    state.workers = []
+    await renderProviders(state)
+    await chooseAdd("添加模型提供方", "添加")
+    expect(dialog().getByText(/还没有工作节点/).textContent).toBe("还没有工作节点。请先添加工作节点。")
+    fireEvent.click(dialog().getByRole("button", { name: "添加工作节点" }))
+    await advance(300)
+    expect(screen.getByRole("dialog", { name: "添加工作节点" })).toBeTruthy()
+  })
+
+  it("is not scrolled to without the hash", async () => {
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {})
+    onTestFinished(() => scrolled.mockRestore())
+    await renderProviders()
+    expect(scrolled).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(document.body)
+  })
+})
+
 describe("the provider list", () => {
   it("explains providers when there are none", async () => {
     const state = seedState(NOW)
@@ -73,8 +246,25 @@ describe("the provider list", () => {
     await renderProviders(state)
     expect(screen.getByText("No providers yet")).toBeTruthy()
     expect(screen.getByText(/Without one, sessions use the worker machine's own Claude login/)).toBeTruthy()
-    fireEvent.click(screen.getByRole("button", { name: "Add provider" }))
+    // The empty state keeps its own button.
+    const add = section().getByRole("button", { name: "Add provider" })
+    fireEvent.click(add)
+    await advance(50)
     expect(screen.getByRole("dialog", { name: "Add provider" })).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+    await advance(300)
+    expect(document.activeElement).toBe(add)
+  })
+
+  it("returns focus to the empty state's Add provider once the last one is deleted", async () => {
+    const state = seedState(NOW)
+    state.providers = state.providers.filter((p) => p.name === "Team proxy")
+    await renderProviders(state)
+    fireEvent.click(row("Team proxy").getByRole("button", { name: "Delete Team proxy" }))
+    await advance(0)
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }))
+    await advance(300)
+    expect(document.activeElement).toBe(section().getByRole("button", { name: "Add provider" }))
   })
 
   it("shows each provider's endpoint, masked key, workers, sessions and default", async () => {
@@ -82,7 +272,7 @@ describe("the provider list", () => {
     state.sessions[0].providerId = "provider-proxy"
     state.sessions[0].leased = true
     await renderProviders(state)
-    const names = screen.getAllByText(/./, { selector: "li > div > span.font-medium" }).map((e) => e.textContent)
+    const names = section().getAllByText(/./, { selector: "li > div > span.font-medium" }).map((e) => e.textContent)
     expect(names).toEqual(["Anthropic", "Legacy key", "Team proxy"])
 
     const anthropic = row("Anthropic")
@@ -136,7 +326,7 @@ describe("the provider list", () => {
   it("reads in Chinese", async () => {
     await i18n.changeLanguage("zh-CN")
     await renderProviders()
-    expect(screen.getByRole("heading", { level: 1, name: "模型提供方" })).toBeTruthy()
+    expect(section().getByRole("heading", { level: 2, name: "模型提供方" })).toBeTruthy()
     expect(row("Anthropic").getByText("会话 0 / 不限")).toBeTruthy()
     expect(row("Team proxy").getByText("2 个变量")).toBeTruthy()
     expect(row("Anthropic").getByText("密钥 ••••7Qa2")).toBeTruthy()
@@ -145,7 +335,7 @@ describe("the provider list", () => {
     cleanup()
     state.workers.find((w) => w.name === "devbox")!.localDevices = ["devbox", "eric-mbp"]
     await renderProviders(state)
-    fireEvent.click(screen.getByRole("button", { name: "添加提供方" }))
+    await chooseAdd("添加模型提供方", "添加")
     await advance(50)
     expect(dialog().getByText("与 devbox、eric-mbp 在同一台机器上")).toBeTruthy()
   })
@@ -154,7 +344,7 @@ describe("the provider list", () => {
 describe("adding a provider", () => {
   it("checks the form before sending, then adds it", async () => {
     const { state } = await renderProviders()
-    fireEvent.click(screen.getByRole("button", { name: "Add provider" }))
+    await chooseAdd("Add model provider")
     await save("Create")
     expect(dialog().getByText("Enter a provider name.")).toBeTruthy()
     expect(dialog().getByText("Enter the key.")).toBeTruthy()
@@ -205,20 +395,20 @@ describe("adding a provider", () => {
       // Only the first read answers: what shows next comes from the cache.
       listProviders: () => (++reads > 1 ? new Promise(() => {}) : real.listProviders()),
     }))
-    fireEvent.click(screen.getByRole("button", { name: "Add provider" }))
+    await chooseAdd("Add model provider")
     type("Name", "Staging")
     type("Key", "sk-staging-0000")
     fireEvent.click(dialog().getByRole("checkbox", { name: /Use as my default/ }))
     await save("Create")
     expect(screen.queryByRole("dialog")).toBeNull()
-    expect(screen.getAllByText("default").map((e) => e.closest("li")?.querySelector("span.font-medium")?.textContent)).toEqual([
+    expect(section().getAllByText("default").map((e) => e.closest("li")?.querySelector("span.font-medium")?.textContent)).toEqual([
       "Staging",
     ])
   })
 
   it("shows each worker's state and the devices on its machine", async () => {
     await renderProviders()
-    fireEvent.click(screen.getByRole("button", { name: "Add provider" }))
+    await chooseAdd("Add model provider")
     await advance(50)
     const win = dialog().getByRole("checkbox", { name: /eric-win/ }).closest("label")!
     expect(within(win).getByText("Offline")).toBeTruthy()
@@ -266,7 +456,7 @@ describe("editing a provider", () => {
 
   it("saves an empty value only when chosen on purpose", async () => {
     const { state } = await renderProviders()
-    fireEvent.click(screen.getByRole("button", { name: "Add provider" }))
+    await chooseAdd("Add model provider")
     type("Name", "Staging")
     type("Key", "sk-staging-0000")
     fireEvent.click(dialog().getByRole("button", { name: "Add variable" }))
@@ -319,7 +509,7 @@ describe("editing a provider", () => {
 
   it("keeps no secret in the mutation cache once saved", async () => {
     const { queryClient } = await renderProviders()
-    fireEvent.click(screen.getByRole("button", { name: "Add provider" }))
+    await chooseAdd("Add model provider")
     type("Name", "Staging")
     type("Key", "sk-staging-secret-0000")
     await save("Create")
@@ -427,6 +617,6 @@ describe("deleting a provider", () => {
     fireEvent.click(confirm.getByRole("button", { name: "Delete" }))
     await advance(50)
     expect(screen.queryByRole("dialog")).toBeNull()
-    expect(screen.queryByText("Team proxy")).toBeNull()
+    expect(section().queryByText("Team proxy")).toBeNull()
   })
 })

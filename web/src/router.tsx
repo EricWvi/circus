@@ -8,7 +8,6 @@ import { LedgerPage } from "@/routes/ledger-page"
 import { LoginPage } from "@/routes/login-page"
 import { ProjectPage } from "@/routes/project-page"
 import { ProjectSettingsPage } from "@/routes/project-settings-page"
-import { ProvidersPage } from "@/routes/providers-page"
 import { RouteError } from "@/routes/route-error"
 import { SessionPage } from "@/routes/session-page"
 import { SettingsPage } from "@/routes/settings-page"
@@ -32,7 +31,6 @@ export function createAppRouter() {
             { path: "/p/:projectId/ledger/:decision", element: <LedgerPage /> },
             { path: "/p/:projectId/s/:sessionId", element: <SessionPage /> },
             { path: "/devices", element: <DevicesPage /> },
-            { path: "/providers", element: <ProvidersPage /> },
             { path: "/settings", element: <SettingsPage /> },
           ],
         },

@@ -71,11 +71,14 @@ export const AddDeviceDialog = memo(function AddDeviceDialog({
   onOpenChange,
   onCloseAutoFocus,
   rejoin,
+  role = "daemon",
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCloseAutoFocus?: (event: Event) => void
   rejoin?: RejoinTarget
+  /** The role chosen at first, which the user can change (a rejoin's is fixed). */
+  role?: EnrollRole
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -83,7 +86,7 @@ export const AddDeviceDialog = memo(function AddDeviceDialog({
         className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto *:min-w-0 sm:max-w-xl"
         onCloseAutoFocus={onCloseAutoFocus}
       >
-        <AddDevice rejoin={rejoin} />
+        <AddDevice rejoin={rejoin} initialRole={role} />
       </DialogContent>
     </Dialog>
   )
@@ -108,11 +111,11 @@ const ids = <T,>(list: readonly T[] | undefined, id: (item: T) => string) =>
  * over. It follows the devices and workers, so every status poll renders
  * it; its parts are memoized and render only when their own props change.
  */
-function AddDevice({ rejoin }: { rejoin: RejoinTarget | undefined }) {
+function AddDevice({ rejoin, initialRole }: { rejoin: RejoinTarget | undefined; initialRole: EnrollRole }) {
   const { t } = useTranslation()
   const create = useCreateEnrollLink()
   const fixedRole: EnrollRole | undefined = rejoin && (rejoin.kind === "device" ? "daemon" : "worker")
-  const [chosenRole, setRole] = useState<EnrollRole>("daemon")
+  const [chosenRole, setRole] = useState<EnrollRole>(initialRole)
   const role = fixedRole ?? chosenRole
   // The name for `join --name`; empty for the machine's host name. A
   // rejoin joins under its target's name, which the server sets.
@@ -249,7 +252,13 @@ function AddDevice({ rejoin }: { rejoin: RejoinTarget | undefined }) {
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{rejoin ? t("devices.rejoin.title", { name: rejoin.name }) : t("devices.addDevice")}</DialogTitle>
+        {/* Named after the button that opened it, and kept when the role is
+            changed here: the dialog's name doesn't move under the user. */}
+        <DialogTitle>
+          {rejoin
+            ? t("devices.rejoin.title", { name: rejoin.name })
+            : t(initialRole === "worker" ? "devices.addWorker" : "devices.addDevice")}
+        </DialogTitle>
         <DialogDescription>
           {rejoin
             ? t(rejoin.kind === "device" ? "devices.rejoin.descriptionDevice" : "devices.rejoin.descriptionWorker", {

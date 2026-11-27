@@ -8,6 +8,7 @@ import { DEVICES_LIVE_INTERVAL_MS } from "@/api/hooks"
 import { SEED_OWNER_ID, seedState, type MockState } from "@/api/mock/state"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
+import { addMenuTrigger, chooseAdd } from "@/test/add-menu"
 import { advance, renderWithBackend } from "@/test/render"
 
 import { DevicesPage } from "./devices-page"
@@ -41,6 +42,16 @@ const row = (name: string) => {
   const item = devices.getByText(name, { selector: "span" }).closest("li")
   if (!item) throw new Error(`no row for ${name}`)
   return within(item)
+}
+
+/** The workers section, in any language. */
+const workersSection = () => within(document.querySelector<HTMLElement>('section[aria-labelledby="workers-heading"]')!)
+
+/** Closes the open dialog with Escape, through its exit animation. */
+async function closeDialog() {
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+  await advance(300)
+  expect(screen.queryByRole("dialog")).toBeNull()
 }
 
 beforeEach(() => {
@@ -153,6 +164,102 @@ describe("the device list", () => {
     expect(row("eric-win").getByText("前天在线")).toBeTruthy()
     expect(row("spare").getByText("从未连接")).toBeTruthy()
   })
+
+})
+
+describe("the header's Add menu", () => {
+  const items = () => screen.getAllByRole("menuitem").map((item) => item.textContent)
+
+  it("adds a device, a worker or a model provider, returning focus to the menu", async () => {
+    await renderDevices(seedState(NOW))
+    const trigger = addMenuTrigger()
+    expect(trigger.textContent).toBe("Add")
+    expect(trigger.getAttribute("aria-haspopup")).toBe("menu")
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+    await advance(0)
+    expect(items()).toEqual(["Add device", "Add worker", "Add model provider"])
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    await advance(0)
+
+    await chooseAdd("Add device")
+    let dialog = within(screen.getByRole("dialog", { name: "Add device" }))
+    expect(dialog.getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
+    await closeDialog()
+    expect(document.activeElement).toBe(trigger)
+
+    await chooseAdd("Add worker")
+    dialog = within(screen.getByRole("dialog", { name: "Add worker" }))
+    expect(dialog.getByRole("radio", { name: /^Worker/ })).toHaveProperty("checked", true)
+    await closeDialog()
+    expect(document.activeElement).toBe(trigger)
+
+    await chooseAdd("Add model provider")
+    dialog = within(screen.getByRole("dialog", { name: "Add provider" }))
+    expect(dialog.getByLabelText("Name")).toBeTruthy()
+    await closeDialog()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it("works from the keyboard", async () => {
+    await renderDevices(seedState(NOW))
+    const trigger = addMenuTrigger()
+    trigger.focus()
+    for (const key of ["Enter", " ", "ArrowDown"]) {
+      fireEvent.keyDown(trigger, { key })
+      await advance(0)
+      expect(screen.getByRole("menu")).toBeTruthy()
+      expect(document.activeElement?.textContent).toBe("Add device")
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" })
+      await advance(0)
+      expect(screen.queryByRole("menu")).toBeNull()
+      expect(document.activeElement).toBe(trigger)
+    }
+
+    fireEvent.keyDown(trigger, { key: "Enter" })
+    await advance(0)
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" })
+    await advance(0)
+    expect(document.activeElement?.textContent).toBe("Add worker")
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" })
+    await advance(0)
+    expect(document.activeElement?.textContent).toBe("Add model provider")
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" })
+    await advance(0)
+    expect(document.activeElement?.textContent).toBe("Add worker")
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" })
+    await advance(50)
+    expect(within(screen.getByRole("dialog", { name: "Add worker" })).getByRole("radio", { name: /^Worker/ })).toHaveProperty(
+      "checked",
+      true,
+    )
+    await closeDialog()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it("reads in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    await renderDevices(seedState(NOW))
+    const trigger = addMenuTrigger("添加")
+    expect(trigger.textContent).toBe("添加")
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+    await advance(0)
+    expect(items()).toEqual(["添加设备", "添加工作节点", "添加模型提供方"])
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    await advance(0)
+
+    await chooseAdd("添加设备", "添加")
+    expect(within(screen.getByRole("dialog", { name: "添加设备" })).getByRole("radio", { name: /^设备/ })).toHaveProperty("checked", true)
+    await closeDialog()
+    await chooseAdd("添加工作节点", "添加")
+    expect(
+      within(screen.getByRole("dialog", { name: "添加工作节点" })).getByRole("radio", { name: /^工作节点/ }),
+    ).toHaveProperty("checked", true)
+    await closeDialog()
+    await chooseAdd("添加模型提供方", "添加")
+    expect(screen.getByRole("dialog", { name: "添加提供方" })).toBeTruthy()
+    await closeDialog()
+    expect(document.activeElement).toBe(trigger)
+  })
 })
 
 describe("without devices", () => {
@@ -162,15 +269,48 @@ describe("without devices", () => {
     await renderDevices(state)
 
     expect(screen.getByText("No devices yet")).toBeTruthy()
-    // The empty state's button is the only one; the header has none.
+    // The empty state's button, besides the header's menu.
     expect(screen.getAllByRole("button", { name: "Add device" })).toHaveLength(1)
+    expect(addMenuTrigger()).toBeTruthy()
     // No admin CLI commands any more: adding is the dialog's job.
     expect(document.querySelector("pre")).toBeNull()
     expect(screen.queryByText(/enroll-token/)).toBeNull()
     const empty = screen.getByText("No devices yet").closest("[data-slot=empty]") as HTMLElement
-    fireEvent.click(within(empty).getByRole("button", { name: "Add device" }))
+    const add = within(empty).getByRole("button", { name: "Add device" })
+    fireEvent.click(add)
     await advance(0)
-    expect(screen.getByRole("dialog", { name: "Add device" })).toBeTruthy()
+    const dialog = within(screen.getByRole("dialog", { name: "Add device" }))
+    expect(dialog.getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
+    await closeDialog()
+    expect(document.activeElement).toBe(add)
+  })
+
+  it("shows both empty states when there are no workers either, each adding its own role", async () => {
+    const state = seedState(NOW)
+    state.devices = []
+    state.workers = []
+    await renderDevices(state)
+    expect(document.querySelectorAll("[data-slot=empty]")).toHaveLength(2)
+    const add = workersSection().getByRole("button", { name: "Add worker" })
+    fireEvent.click(add)
+    await advance(0)
+    expect(within(screen.getByRole("dialog")).getByRole("radio", { name: /^Worker/ })).toHaveProperty("checked", true)
+    await closeDialog()
+    expect(document.activeElement).toBe(add)
+    fireEvent.click(screen.getByRole("button", { name: "Add device" }))
+    await advance(0)
+    expect(within(screen.getByRole("dialog")).getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
+  })
+
+  it("reads in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    const state = seedState(NOW)
+    state.devices = []
+    await renderDevices(state)
+    expect(screen.getByText("还没有设备")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "添加设备" }))
+    await advance(0)
+    expect(within(screen.getByRole("dialog")).getByRole("radio", { name: /^设备/ })).toHaveProperty("checked", true)
   })
 })
 
@@ -255,11 +395,43 @@ describe("the worker list", () => {
     ])
   })
 
-  it("says when there are none", async () => {
+  it("says when there are none, and offers to add one with the worker role chosen", async () => {
     const state = seedState(NOW)
     state.workers = []
     await renderDevices(state)
-    expect(workers().getByText(/No workers yet/)).toBeTruthy()
+    const empty = workersSection().getByText("No workers yet").closest("[data-slot=empty]") as HTMLElement
+    expect(empty.className).toContain("border-dashed")
+    const add = within(empty).getByRole("button", { name: "Add worker" })
+    fireEvent.click(add)
+    await advance(0)
+    const dialog = within(screen.getByRole("dialog", { name: "Add worker" }))
+    expect(dialog.getByRole("radio", { name: /^Worker/ })).toHaveProperty("checked", true)
+    expect(dialog.getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", false)
+    // Only chosen: the user can still pick another role. The title stays
+    // the one of the button pressed.
+    fireEvent.click(dialog.getByRole("radio", { name: /^Device/ }))
+    expect(dialog.getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
+    expect(screen.getByRole("dialog", { name: "Add worker" })).toBeTruthy()
+    await closeDialog()
+    expect(document.activeElement).toBe(add)
+
+    // The header's Add device still opens it for a device.
+    await chooseAdd("Add device")
+    expect(within(screen.getByRole("dialog")).getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
+    await closeDialog()
+    expect(document.activeElement).toBe(addMenuTrigger())
+  })
+
+  it("says when there are none in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    const state = seedState(NOW)
+    state.workers = []
+    await renderDevices(state)
+    expect(workersSection().getByText("还没有工作节点")).toBeTruthy()
+    fireEvent.click(workersSection().getByRole("button", { name: "添加工作节点" }))
+    await advance(0)
+    const dialog = within(screen.getByRole("dialog", { name: "添加工作节点" }))
+    expect(dialog.getByRole("radio", { name: /^工作节点/ })).toHaveProperty("checked", true)
   })
 
   it("reads in Chinese", async () => {
@@ -658,6 +830,17 @@ describe("deleting", () => {
     await advance(0)
   }
 
+  it("takes a deleted worker off the providers below at once, not at their next poll", async () => {
+    await renderDevices(seedState(NOW))
+    const providers = () => within(document.getElementById("providers")!)
+    const anthropic = () => within(providers().getByText("Anthropic", { selector: "span.font-medium" }).closest("li")!)
+    expect(anthropic().getAllByRole("listitem").map((li) => li.textContent)).toEqual(["cloud-runner", "devbox", "eric-mbp"])
+    await openDelete("workers", "devbox")
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await advance(50)
+    expect(anthropic().getAllByRole("listitem").map((li) => li.textContent)).toEqual(["cloud-runner", "eric-mbp"])
+  })
+
   it("confirms with what deleting a device does, then deletes it", async () => {
     const { state } = await renderDevices(seedState(NOW))
     await openDelete("devices", "eric-win")
@@ -715,7 +898,7 @@ describe("deleting", () => {
     expect(within(screen.getAllByRole("list")[0]).queryByText("eric-win", { selector: "span" })).toBeNull()
   })
 
-  it("returns focus to the row's menu after Cancel, and to Add device once the row is gone", async () => {
+  it("returns focus to the row's menu after Cancel, and to Add once the row is gone", async () => {
     await renderDevices(seedState(NOW))
     const list = () => document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
     const trigger = () => within(list()).getByRole("button", { name: "Actions for eric-win" })
@@ -737,7 +920,7 @@ describe("deleting", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }))
     await advance(300)
     expect(screen.queryByRole("dialog")).toBeNull()
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add device" }))
+    expect(document.activeElement).toBe(addMenuTrigger())
   })
 
   it("reads in Chinese", async () => {

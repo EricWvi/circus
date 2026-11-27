@@ -10,6 +10,7 @@ import type { CircusClient, Device, EnrollLink, EnrollRole } from "@/api/types"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
 import { DevicesPage } from "@/routes/devices-page"
+import { addMenuTrigger, chooseAdd } from "@/test/add-menu"
 import { advance, renderWithBackend } from "@/test/render"
 
 const NOW = Date.parse("2026-11-17T12:00:00Z")
@@ -80,9 +81,9 @@ const advanceTo = (ms: number) => advance(issuedAt + ms - Date.now())
 // Named "Add device" until a device joins; then after it.
 const dialog = () => within(screen.getByRole("dialog"))
 
+/** Opens it from the page header's Add menu. */
 async function openDialog() {
-  fireEvent.click(screen.getByRole("button", { name: "Add device" }))
-  await advance(0)
+  await chooseAdd("Add device")
 }
 
 async function generate() {
@@ -509,10 +510,11 @@ describe("the add device dialog", () => {
         listDevices: (real) => () => (calls++ === 0 ? gate.then(real) : real()),
       })
       expect(screen.getByRole("list", { name: "Loading devices" })).toBeTruthy()
+      expect(screen.queryByRole("button", { name: "Add" })).toBeNull()
       expect(screen.queryByRole("button", { name: "Add device" })).toBeNull()
       loaded()
       await advance(10)
-      expect(screen.getAllByRole("button", { name: "Add device" }).length).toBeGreaterThan(0)
+      expect(addMenuTrigger()).toBeTruthy()
     })
 
     it("takes the first list that arrives when it can't be fetched for the link", async () => {
@@ -788,8 +790,7 @@ describe("the add device dialog", () => {
   it("reads in Chinese", async () => {
     await i18n.changeLanguage("zh-CN")
     await renderPage({ issue: release() })
-    fireEvent.click(screen.getByRole("button", { name: "添加设备" }))
-    await advance(0)
+    await chooseAdd("添加设备", "添加")
     const zh = within(screen.getByRole("dialog", { name: "添加设备" }))
     expect(zh.getByText("在要添加的机器上运行一条命令，安装 circus 并把它加入你的账户。")).toBeTruthy()
     expect(zh.getByRole("radio", { name: /^设备/ })).toBeTruthy()

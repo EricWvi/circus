@@ -15,7 +15,6 @@ export function AppShell() {
   const projectSettings = useMatch("/p/:projectId/settings")?.params.projectId
   const projectLedger = useMatch("/p/:projectId/ledger/*")?.params.projectId
   const devicesPage = useMatch("/devices") !== null
-  const providersPage = useMatch("/providers") !== null
   const { user } = useCurrentUser()
 
   // Keyed by user, so nothing of the previous user's messages survives.
@@ -29,7 +28,6 @@ export function AppShell() {
               activeProjectId={projectHome ?? projectSettings ?? projectLedger}
               ledgerProjectId={projectLedger}
               devicesActive={devicesPage}
-              providersActive={providersPage}
             />
             <SidebarInset className="min-h-0 overflow-hidden outline-none">
               <NoticeStrip />

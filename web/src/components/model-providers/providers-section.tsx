@@ -1,12 +1,11 @@
 import { KeyRoundIcon, PlusIcon, Trash2Icon, TriangleAlertIcon } from "lucide-react"
-import { useState } from "react"
+import { memo, useImperativeHandle, useRef, useState, type Ref } from "react"
 import { useTranslation } from "react-i18next"
 
 import { isApiError } from "@/api/errors"
 import { useDeleteModelProvider, useModelProviders, useWorkers } from "@/api/hooks"
 import type { ModelProvider, Worker } from "@/api/types"
 import { ProviderForm } from "@/components/model-providers/provider-dialog"
-import { PageHeader } from "@/components/page-header"
 import { DeviceStatusDot } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,29 +20,63 @@ import {
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
-import { useOverlayFocus } from "@/hooks/use-overlay-focus"
+import { useReturnFocus } from "@/hooks/use-return-focus"
 import { maskedSecret, providerErrorMessage } from "@/lib/model-provider-form"
 
 /** What the provider dialog shows: a new provider, or one to edit. */
 type Editing = { kind: "new" } | { kind: "edit"; provider: ModelProvider }
 
-/** The signed-in user's model providers: list, add, edit, delete. */
-export function ProvidersPage() {
+/** What the page asks of the section: the new-provider form, opened from `trigger` (where focus returns). */
+export interface ProvidersSectionHandle {
+  addProvider: (trigger: HTMLElement | null) => void
+}
+
+/**
+ * The signed-in user's model providers, a section of the devices page:
+ * list, edit, delete, and add (from the page's Add menu through `ref`, or
+ * the empty state). Memoized, with stable props: the page's renders (each
+ * change of the devices) leave it, and its dialogs, alone. `onAddWorker`
+ * opens the page's add dialog for a worker, from `trigger` (where focus
+ * returns); `fallbackFocus` is where focus goes once a dialog's opener is
+ * gone and the empty state isn't there either.
+ */
+export const ProvidersSection = memo(function ProvidersSection({
+  ref,
+  onAddWorker,
+  fallbackFocus,
+}: {
+  ref?: Ref<ProvidersSectionHandle>
+  onAddWorker: (trigger: HTMLElement | null) => void
+  fallbackFocus: () => HTMLElement | null
+}) {
   const { t } = useTranslation()
   const providers = useModelProviders({ live: true })
   const workers = useWorkers()
   const [editing, setEditing] = useState<Editing | null>(null)
   const [deleting, setDeleting] = useState<ModelProvider | null>(null)
-  const formFocus = useOverlayFocus()
-  const deleteFocus = useOverlayFocus()
+  // Both dialogs return focus to the button that opened them; once that is
+  // gone (its provider deleted), to the empty state's Add provider, else the
+  // page's.
+  const focus = useReturnFocus()
+  const addRef = useRef<HTMLButtonElement>(null)
+  const restoreFocus = (event: Event) => focus.restore(event, () => addRef.current ?? fallbackFocus())
 
-  const openForm = (next: Editing | null) => {
-    formFocus.onOpenChange(next !== null)
+  const openForm = (next: Editing, trigger: HTMLElement | null) => {
+    focus.opened(trigger)
     setEditing(next)
   }
-  const openDelete = (next: ModelProvider | null) => {
-    deleteFocus.onOpenChange(next !== null)
+  useImperativeHandle(ref, () => ({ addProvider: (trigger) => openForm({ kind: "new" }, trigger) }))
+  const closeForm = () => setEditing(null)
+  const openDelete = (next: ModelProvider, trigger: HTMLElement) => {
+    focus.opened(trigger)
     setDeleting(next)
+  }
+  // The form has no workers to offer: it closes for the add dialog, which
+  // returns focus to the form's opener.
+  const addWorker = () => {
+    const opener = focus.handOff()
+    closeForm()
+    onAddWorker(opener)
   }
   // The provider as the server has it now; undefined once it is gone.
   const reload = async (providerId: string) => {
@@ -52,11 +85,12 @@ export function ProvidersPage() {
   }
 
   let body
+  // Only a failed first load shows the error; a failed refetch keeps the list.
   if (providers.isError && !providers.data) {
     body = (
-      <div className="flex flex-col items-center gap-4 py-12">
+      <div className="flex items-center gap-3">
         <p className="text-sm text-muted-foreground">{t("providers.loadFailed")}</p>
-        <Button variant="outline" onClick={() => void providers.refetch()}>
+        <Button variant="outline" size="sm" onClick={() => void providers.refetch()}>
           {t("common.tryAgain")}
         </Button>
       </div>
@@ -64,7 +98,7 @@ export function ProvidersPage() {
   } else if (!providers.data) {
     body = <LoadingList />
   } else if (providers.data.length === 0) {
-    body = <NoProviders onAdd={() => openForm({ kind: "new" })} />
+    body = <NoProviders onAdd={(trigger) => openForm({ kind: "new" }, trigger)} addRef={addRef} />
   } else {
     body = (
       <ul className="flex flex-col divide-y border">
@@ -73,8 +107,8 @@ export function ProvidersPage() {
             key={p.providerId}
             provider={p}
             workers={workers.data}
-            onEdit={() => openForm({ kind: "edit", provider: p })}
-            onDelete={() => openDelete(p)}
+            onEdit={(trigger) => openForm({ kind: "edit", provider: p }, trigger)}
+            onDelete={(trigger) => openDelete(p, trigger)}
           />
         ))}
       </ul>
@@ -82,42 +116,43 @@ export function ProvidersPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <PageHeader
-        actions={
-          providers.data && providers.data.length > 0 ? (
-            <Button variant="outline" size="sm" onClick={() => openForm({ kind: "new" })}>
-              <PlusIcon />
-              {t("providers.addProvider")}
-            </Button>
-          ) : undefined
-        }
-      >
-        <h1 className="min-w-0 truncate font-medium">{t("providers.title")}</h1>
-      </PageHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-[760px] flex-col px-4 py-8">{body}</div>
-      </div>
+    <section
+      id="providers"
+      tabIndex={-1}
+      className="flex scroll-mt-8 flex-col gap-3 outline-none"
+      aria-labelledby="providers-heading"
+    >
+      {/* Providers are added from the page header's Add menu, or the empty state. */}
+      <h2 id="providers-heading" className="text-sm font-medium">
+        {t("providers.title")}
+      </h2>
+      {body}
 
-      <Dialog open={editing !== null} onOpenChange={(open) => !open && openForm(null)}>
+      <Dialog open={editing !== null} onOpenChange={(open) => !open && closeForm()}>
         <DialogContent
           className="max-h-[calc(100svh-2rem)] gap-5 overflow-y-auto sm:max-w-xl"
-          onCloseAutoFocus={formFocus.onCloseAutoFocus}
+          onCloseAutoFocus={restoreFocus}
         >
           {editing && (
             <ProviderForm
               editing={editing.kind === "edit" ? editing.provider : undefined}
               providers={providers.data ?? []}
-              onDone={() => openForm(null)}
+              onDone={closeForm}
               reload={reload}
+              onAddWorker={addWorker}
             />
           )}
         </DialogContent>
       </Dialog>
-      <DeleteDialog provider={deleting} onClose={() => openDelete(null)} onCloseAutoFocus={deleteFocus.onCloseAutoFocus} />
-    </div>
+      <DeleteDialog
+        provider={deleting}
+        onClose={() => setDeleting(null)}
+        onDeleted={focus.forget}
+        onCloseAutoFocus={restoreFocus}
+      />
+    </section>
   )
-}
+})
 
 /** "https://host/path", or "Default endpoint". */
 function Endpoint({ provider }: { provider: ModelProvider }) {
@@ -134,8 +169,9 @@ function ProviderRow({
 }: {
   provider: ModelProvider
   workers: Worker[] | undefined
-  onEdit: () => void
-  onDelete: () => void
+  /** Each gets the button pressed, where focus returns. */
+  onEdit: (trigger: HTMLElement) => void
+  onDelete: (trigger: HTMLElement) => void
 }) {
   const { t } = useTranslation()
   const assigned = provider.workerIds.map(
@@ -156,7 +192,7 @@ function ProviderRow({
         )}
         <span className="flex-1" />
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{sessions}</span>
-        <Button variant="ghost" size="sm" aria-label={t("providers.editFor", { name: provider.name })} onClick={onEdit}>
+        <Button variant="ghost" size="sm" aria-label={t("providers.editFor", { name: provider.name })} onClick={(e) => onEdit(e.currentTarget)}>
           {t("providers.edit")}
         </Button>
         <Button
@@ -164,7 +200,7 @@ function ProviderRow({
           size="icon-sm"
           aria-label={t("providers.deleteFor", { name: provider.name })}
           title={t("providers.deleteFor", { name: provider.name })}
-          onClick={onDelete}
+          onClick={(e) => onDelete(e.currentTarget)}
         >
           <Trash2Icon />
         </Button>
@@ -195,7 +231,7 @@ function ProviderRow({
         <div role="alert" className="flex items-start gap-2 border border-destructive/40 px-3 py-2 text-sm text-destructive">
           <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1">{t("providers.secretsUnreadable")}</span>
-          <Button variant="outline" size="sm" className="shrink-0" onClick={onEdit}>
+          <Button variant="outline" size="sm" className="shrink-0" onClick={(e) => onEdit(e.currentTarget)}>
             {t("providers.reenterSecrets")}
           </Button>
         </div>
@@ -207,10 +243,13 @@ function ProviderRow({
 function DeleteDialog({
   provider,
   onClose,
+  onDeleted,
   onCloseAutoFocus,
 }: {
   provider: ModelProvider | null
   onClose: () => void
+  /** The provider was deleted: its row, and the button that opened this, go. */
+  onDeleted: () => void
   onCloseAutoFocus: (event: Event) => void
 }) {
   const { t } = useTranslation()
@@ -243,7 +282,18 @@ function DeleteDialog({
           <Button
             variant="destructive"
             disabled={remove.isPending}
-            onClick={() => shown && remove.mutate({ providerId: shown.providerId }, { onSuccess: onClose })}
+            onClick={() =>
+              shown &&
+              remove.mutate(
+                { providerId: shown.providerId },
+                {
+                  onSuccess: () => {
+                    onDeleted()
+                    onClose()
+                  },
+                },
+              )
+            }
           >
             {remove.isPending && <Spinner aria-label={t("providers.deleting")} />}
             {t("common.delete")}
@@ -270,7 +320,7 @@ function LoadingList() {
 }
 
 /** No providers: what one is, and the way to add one. */
-function NoProviders({ onAdd }: { onAdd: () => void }) {
+function NoProviders({ onAdd, addRef }: { onAdd: (trigger: HTMLElement) => void; addRef: Ref<HTMLButtonElement> }) {
   const { t } = useTranslation()
   return (
     <Empty className="border border-dashed px-4 py-8 sm:px-6 sm:py-10">
@@ -282,7 +332,7 @@ function NoProviders({ onAdd }: { onAdd: () => void }) {
         <EmptyDescription>{t("providers.emptyDescription")}</EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
-        <Button onClick={onAdd}>
+        <Button ref={addRef} onClick={(e) => onAdd(e.currentTarget)}>
           <PlusIcon />
           {t("providers.addProvider")}
         </Button>

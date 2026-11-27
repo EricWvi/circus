@@ -1084,6 +1084,18 @@ describe("a queued session", () => {
     expect(notice()?.textContent).toBe(text)
   })
 
+  it.each(["queue-full", "queue-no-worker", "queue-secrets"])(
+    "links to the providers on the Devices page (%s)",
+    async (id) => {
+      const state = seedState()
+      addQueueDemo(state)
+      const project = state.sessions.find((s) => s.sessionId === id)!.projectId
+      await renderSession(`/p/${project}/s/${id}`, { state })
+      const link = within(notice() as HTMLElement).getByRole("link", { name: "Open Providers" })
+      expect(link.getAttribute("href")).toBe("/devices#providers")
+    },
+  )
+
   it("links to Devices when no worker that may run it has Claude Code", async () => {
     const state = seedState()
     addQueueDemo(state)

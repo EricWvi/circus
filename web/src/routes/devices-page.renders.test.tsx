@@ -3,7 +3,7 @@
 // again, and must not render the add-device dialog with it (every render of
 // the dialog renders its Dialog root, which this file counts), nor the rows
 // they leave unchanged (every row renders one status dot, also counted).
-import { cleanup, fireEvent, screen } from "@testing-library/react"
+import { cleanup, screen } from "@testing-library/react"
 import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -12,6 +12,7 @@ import { seedState } from "@/api/mock/state"
 import type * as StatusDotModule from "@/components/status-dot"
 import type * as DialogModule from "@/components/ui/dialog"
 import { SidebarProvider } from "@/components/ui/sidebar"
+import { chooseAdd } from "@/test/add-menu"
 import { advance, renderWithBackend } from "@/test/render"
 
 import { DevicesPage } from "./devices-page"
@@ -77,8 +78,7 @@ describe("the devices page's polls", () => {
     await advance(3 * DEVICES_LIVE_INTERVAL_MS)
     expect(counts.dialogRenders).toBe(before)
 
-    fireEvent.click(screen.getByRole("button", { name: "Add device" }))
-    await advance(50)
+    await chooseAdd("Add device")
     const open = counts.dialogRenders
     await advance(3 * DEVICES_LIVE_INTERVAL_MS)
     // The dialog follows the devices itself (to see one join), but nothing

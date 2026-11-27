@@ -799,7 +799,8 @@ export type MachineIdentity = { kind: "device"; id: string } | { kind: "worker";
 /**
  * Deletes one of the user's devices or workers. Either way the lists
  * refetch (one already gone reads as deleted: the list catches up), and
- * so do the projects, whose locations on a deleted device read as removed.
+ * so do the projects, whose locations on a deleted device read as removed,
+ * and the providers, which a deleted worker leaves.
  */
 export function useDeleteMachine() {
   const client = useClient()
@@ -812,6 +813,7 @@ export function useDeleteMachine() {
         queryClient.invalidateQueries({ queryKey: queryKeys.devices }),
         queryClient.invalidateQueries({ queryKey: queryKeys.workers }),
         queryClient.invalidateQueries({ queryKey: queryKeys.projects }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.modelProviders }),
       ]),
   })
 }

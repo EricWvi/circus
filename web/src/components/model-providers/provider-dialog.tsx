@@ -1,7 +1,6 @@
 import { PlusIcon, XIcon } from "lucide-react"
 import { useState, type FormEvent, type ReactNode } from "react"
 import { Trans, useTranslation } from "react-i18next"
-import { Link } from "react-router"
 
 import { isApiError } from "@/api/errors"
 import { useCreateModelProvider, useUpdateModelProvider, useWorkers } from "@/api/hooks"
@@ -43,6 +42,7 @@ export function ProviderForm({
   providers,
   onDone,
   reload,
+  onAddWorker,
 }: {
   editing?: ModelProvider
   /** The user's providers, for the name check. */
@@ -50,6 +50,8 @@ export function ProviderForm({
   onDone: () => void
   /** Fetches the provider again; resolves to undefined if it is gone. */
   reload: (providerId: string) => Promise<ModelProvider | undefined>
+  /** With no workers to offer: closes the form to add one. */
+  onAddWorker: () => void
 }) {
   const { t } = useTranslation()
   const workers = useWorkers()
@@ -246,6 +248,7 @@ export function ProviderForm({
         error={errors.fields.workerIds}
         gone={goneWorkers.length}
         onChange={(ids) => form.set("workerIds", ids)}
+        onAddWorker={onAddWorker}
       />
 
       <Field>
@@ -506,6 +509,7 @@ function WorkersField({
   error,
   gone,
   onChange,
+  onAddWorker,
 }: {
   workers: Worker[] | undefined
   failed: boolean
@@ -515,6 +519,7 @@ function WorkersField({
   /** Assigned workers the list no longer has, which saving takes off. */
   gone: number
   onChange: (ids: string[]) => void
+  onAddWorker: () => void
 }) {
   const { t } = useTranslation()
   let body: ReactNode
@@ -525,7 +530,15 @@ function WorkersField({
       <p className="text-sm text-muted-foreground">
         <Trans
           i18nKey="providers.form.noWorkers"
-          components={{ devices: <Link to="/devices" className="text-foreground underline underline-offset-4" /> }}
+          components={{
+            add: (
+              <button
+                type="button"
+                className="rounded-sm text-foreground underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
+                onClick={onAddWorker}
+              />
+            ),
+          }}
         />
       </p>
     )

@@ -31,7 +31,7 @@ import { PageHeader } from "@/components/page-header"
 import { useOverlayFocus } from "@/hooks/use-overlay-focus"
 import { StatusBadge, WorkspaceBadge } from "@/components/status-dot"
 import { lastInputWasKeyboard, lastInputWasTouch } from "@/lib/input-modality"
-import { currentQueueReason, fixedOnProvidersPage, queueReasonText } from "@/lib/queue-reason"
+import { currentQueueReason, fixedOnProvidersSection, queueReasonText } from "@/lib/queue-reason"
 import { withOutbox } from "@/lib/session-events/outbox"
 import { approvalLapsed, showsTurnFailure, turnRunning } from "@/lib/session-state"
 import { sessionTitle } from "@/lib/title"
@@ -506,8 +506,9 @@ function KeepBottomOnShrink() {
 
 /**
  * Why the session waits for a worker, and what to do about it: the
- * Providers page for a provider's limit, workers or secrets, another
- * provider for a deleted one, the Devices page for a missing agent.
+ * providers on the Devices page for a provider's limit, workers or
+ * secrets, another provider for a deleted one, the Devices page for a
+ * missing agent.
  */
 function QueueNotice({
   reason,
@@ -526,8 +527,8 @@ function QueueNotice({
       <HourglassIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0">
         {queueReasonText(reason, provider)}{" "}
-        {fixedOnProvidersPage(reason) && (
-          <Link to="/providers" className={action}>
+        {fixedOnProvidersSection(reason) && (
+          <Link to="/devices#providers" className={action}>
             {t("session.queue.openProviders")}
           </Link>
         )}

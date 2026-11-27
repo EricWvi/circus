@@ -40,8 +40,8 @@ export function currentQueueReason(
   return live && live.receivedAtMs >= (readSentAtMs ?? 0) ? live.reason : fetched
 }
 
-/** Reasons the Providers page can do something about. */
-export const fixedOnProvidersPage = (reason: QueueReason) =>
+/** Reasons the providers on the Devices page can do something about. */
+export const fixedOnProvidersSection = (reason: QueueReason) =>
   reason === "provider_full" || reason === "no_assigned_worker" || reason === "provider_secrets_unreadable"
 
 /**

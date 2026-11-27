@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Link } from "react-router"
-import { BookOpenIcon, ChevronRightIcon, KeyRoundIcon, MonitorSmartphoneIcon, PlusIcon, SearchIcon } from "lucide-react"
+import { BookOpenIcon, ChevronRightIcon, MonitorSmartphoneIcon, PlusIcon, SearchIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { useCurrentUser, useDevices, useProjects, useSessionList } from "@/api/hooks"
@@ -43,7 +43,6 @@ export function AppSidebar({
   activeSessionId,
   activeProjectId,
   devicesActive = false,
-  providersActive = false,
   ledgerProjectId,
 }: {
   activeSessionId?: string
@@ -53,8 +52,6 @@ export function AppSidebar({
   ledgerProjectId?: string
   /** The devices page is open. */
   devicesActive?: boolean
-  /** The providers page is open. */
-  providersActive?: boolean
 }) {
   const { t } = useTranslation()
   const { user } = useCurrentUser()
@@ -146,18 +143,6 @@ export function AppSidebar({
                     })}
                   </span>
                 )}
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={providersActive} className={rowStates}>
-              <Link
-                to="/providers"
-                aria-current={providersActive ? "page" : undefined}
-                onClick={() => isMobile && setOpenMobile(false)}
-              >
-                <KeyRoundIcon />
-                <span className="flex-1">{t("sidebar.providers")}</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

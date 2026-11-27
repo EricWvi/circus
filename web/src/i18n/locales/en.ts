@@ -175,7 +175,6 @@ export const en = {
     collapseProject: "Collapse {{name}}",
     devices: "Devices",
     devicesOnline: "{{online}}/{{total}} online",
-    providers: "Providers",
   },
 
   devices: {
@@ -192,7 +191,8 @@ export const en = {
     workersHeading: "Workers",
     workersLoading: "Loading workers",
     workersLoadFailed: "Couldn't load workers.",
-    noWorkers: "No workers yet. Add one with Add device, choosing the Worker role.",
+    workersEmptyTitle: "No workers yet",
+    addWorker: "Add worker",
     workerVersion: "worker {{version}}",
     sameMachine: "Same machine as",
     sameMachineAs: "Devices on the same machine as {{worker}}",
@@ -287,6 +287,8 @@ export const en = {
     },
     emptyTitle: "No devices yet",
     addDevice: "Add device",
+    addAction: "Add",
+    addProvider: "Add model provider",
     copyCommand: "Copy command",
     copied: "Copied",
     add: {
@@ -551,7 +553,7 @@ export const en = {
       maxVariables: "A provider has at most {{max}} variables",
       workers: "Workers",
       workersHint: "Sessions with this provider run only on these workers.",
-      noWorkers: "No workers yet. Add one on the <devices>Devices</devices> page.",
+      noWorkers: "No workers yet. <add>Add a worker</add> first.",
       workersLoadFailed: "Couldn't load workers.",
       workerSameMachine: "same machine as {{devices}}",
       maxSessions: "Session limit",

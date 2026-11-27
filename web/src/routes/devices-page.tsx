@@ -1,14 +1,31 @@
-import { EllipsisIcon, FolderIcon, InfoIcon, MonitorSmartphoneIcon, MonitorIcon, PlusIcon } from "lucide-react"
-import { memo, useCallback, useId, useRef, useState, type Ref } from "react"
+import {
+  ChevronDownIcon,
+  EllipsisIcon,
+  FolderIcon,
+  InfoIcon,
+  MonitorIcon,
+  MonitorSmartphoneIcon,
+  PlusIcon,
+  ServerIcon,
+} from "lucide-react"
+import { memo, useCallback, useEffect, useId, useRef, useState, type RefObject } from "react"
 import { useTranslation } from "react-i18next"
-import { Link } from "react-router"
+import { Link, useLocation } from "react-router"
 
-import { useDevices, useProjects, useSetWorkerGrant, useWorkerGrantStates, useWorkers } from "@/api/hooks"
+import {
+  useDevices,
+  useModelProviders,
+  useProjects,
+  useSetWorkerGrant,
+  useWorkerGrantStates,
+  useWorkers,
+} from "@/api/hooks"
 import { isApiError } from "@/api/errors"
-import type { Device, Project, Worker } from "@/api/types"
+import type { Device, EnrollRole, Project, Worker } from "@/api/types"
 import { AddDeviceDialog, type RejoinTarget } from "@/components/devices/add-device-dialog"
 import { DeleteMachineDialog, type DeleteTarget } from "@/components/devices/delete-machine-dialog"
 import { WorkerAgents } from "@/components/devices/worker-agents"
+import { ProvidersSection, type ProvidersSectionHandle } from "@/components/model-providers/providers-section"
 import { InfoTip } from "@/components/info-tip"
 import { PageHeader } from "@/components/page-header"
 import { DeviceStatusDot } from "@/components/status-dot"
@@ -30,14 +47,16 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { useMenuFocus } from "@/hooks/use-menu-focus"
-import { useOverlayFocus } from "@/hooks/use-overlay-focus"
+import { useReturnFocus } from "@/hooks/use-return-focus"
 import { i18n } from "@/i18n/i18n"
-import { lastInputWasKeyboard } from "@/lib/input-modality"
 import { formatDateTime, formatTimeAgo } from "@/lib/time"
 import { projectPath } from "@/lib/tree"
 import { cn } from "@/lib/utils"
 
-/** The signed-in user's devices (status, platform, and the projects on each), then their workers. */
+/**
+ * The signed-in user's devices (status, platform, and the projects on each),
+ * then their workers, then their model providers (`#providers`).
+ */
 export function DevicesPage() {
   const { t } = useTranslation()
   // Only the list itself (in DevicesSection) follows each status poll; the
@@ -50,29 +69,30 @@ export function DevicesPage() {
   const [rejoin, setRejoin] = useState<RejoinTarget | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState<DeleteTarget | null>(null)
-  const focus = useOverlayFocus()
-  // Stable, like `focus`, for the memoized sections and dialog.
-  const { onOpenChange } = focus
-  // The Add device button (the header's, or the empty list's).
+  // The role an Add opens the add dialog with: the workers' empty state
+  // asks for a worker, the other Add buttons for a device.
+  const [addRole, setAddRole] = useState<EnrollRole>("daemon")
+  // The header's Add menu trigger, where focus goes once a dialog's opener is gone.
   const addRef = useRef<HTMLButtonElement>(null)
-  // Where focus goes when a dialog a row's menu opened closes: that menu's
-  // trigger; once that row is gone, the menu of the row now under its name
-  // (a rejoin's new identity), else (deleted) the Add device button.
-  const rowFocus = useRef<{ returnTo: HTMLElement | null; keyboard: boolean; row: RejoinTarget | null }>({
-    returnTo: null,
-    keyboard: false,
-    row: null,
-  })
-  const setAddOpen = useCallback(
-    (open: boolean) => {
-      onOpenChange(open)
-      setAdding(open)
-      if (open) setRejoin(null)
-    },
-    [onOpenChange],
-  )
+  const addTrigger = useCallback(() => addRef.current, [])
+  const providersRef = useRef<ProvidersSectionHandle>(null)
+  // Where focus goes when a dialog closes: the button that opened it (an
+  // Add, or a row's menu); once that is gone, the menu of the row now under
+  // its name (a rejoin's new identity), else (deleted, or the empty state
+  // left) the Add button.
+  const dialogFocus = useReturnFocus()
+  const focusRow = useRef<RejoinTarget | null>(null)
+  const onAdd = useCallback((role: EnrollRole, trigger: HTMLElement | null) => {
+    dialogFocus.opened(trigger)
+    focusRow.current = null
+    setRejoin(null)
+    setAddRole(role)
+    setAdding(true)
+  }, [dialogFocus])
+  const onAddWorker = useCallback((trigger: HTMLElement | null) => onAdd("worker", trigger), [onAdd])
   const onAction = useCallback((action: RowAction) => {
-    rowFocus.current = { returnTo: action.trigger, keyboard: lastInputWasKeyboard(), row: action.target }
+    dialogFocus.opened(action.trigger)
+    focusRow.current = action.target
     if (action.kind === "rejoin") {
       setRejoin(action.target)
       setAdding(true)
@@ -80,74 +100,112 @@ export function DevicesPage() {
       setDeleting(action.target)
       setDeleteOpen(true)
     }
-  }, [])
-  const rowCloseAutoFocus = useCallback((event: Event) => {
-    event.preventDefault()
-    const { returnTo, keyboard, row } = rowFocus.current
-    const target = returnTo?.isConnected ? returnTo : (row && rowTrigger(row)) || addRef.current
-    target?.focus({ preventScroll: true, focusVisible: keyboard || lastInputWasKeyboard() } as FocusOptions)
-    setRejoin(null)
-    setDeleting(null)
-  }, [])
+  }, [dialogFocus])
+  const closeAutoFocus = useCallback(
+    (event: Event) => {
+      const row = focusRow.current
+      dialogFocus.restore(event, () => (row && rowTrigger(row)) || addRef.current)
+      setRejoin(null)
+      setDeleting(null)
+    },
+    [dialogFocus],
+  )
   const onDeleted = useCallback(() => {
-    rowFocus.current.returnTo = null
-    rowFocus.current.row = null
-  }, [])
+    dialogFocus.forget()
+    focusRow.current = null
+  }, [dialogFocus])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         actions={
-          // With no devices, the empty state's own button is the only one.
-          devices.data && devices.data.length > 0 ? (
-            <Button ref={addRef} variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-              <PlusIcon />
-              {t("devices.addDevice")}
-            </Button>
-          ) : undefined
+          // Once the devices are known (or can't be): the add dialog compares
+          // the list from before its link with the one after.
+          (devices.data || devices.isError) && (
+            <AddMenu
+              triggerRef={addRef}
+              onAdd={onAdd}
+              onAddProvider={(trigger) => providersRef.current?.addProvider(trigger)}
+            />
+          )
         }
       >
         <h1 className="min-w-0 truncate font-medium">{t("devices.title")}</h1>
       </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-4 py-8">
-          <DevicesSection onAdd={setAddOpen} onAction={onAction} addRef={addRef} />
-          <WorkersSection onAction={onAction} />
+          <DevicesSection onAdd={onAdd} onAction={onAction} />
+          <WorkersSection onAdd={onAdd} onAction={onAction} />
+          <ProvidersSection ref={providersRef} onAddWorker={onAddWorker} fallbackFocus={addTrigger} />
         </div>
       </div>
+      <ScrollToHash />
       <AddDeviceDialog
         // A new dialog for each target: its state is the link's. The key
         // changes only as one opens (the target is cleared once closed).
-        key={rejoin ? `${rejoin.kind}:${rejoin.id}` : "add"}
+        key={rejoin ? `${rejoin.kind}:${rejoin.id}` : `add:${addRole}`}
         open={adding}
-        onOpenChange={setAddOpen}
-        onCloseAutoFocus={rejoin ? rowCloseAutoFocus : focus.onCloseAutoFocus}
+        onOpenChange={setAdding}
+        onCloseAutoFocus={closeAutoFocus}
         rejoin={rejoin ?? undefined}
+        role={addRole}
       />
       <DeleteMachineDialog
         open={deleteOpen}
         target={deleting}
         onOpenChange={setDeleteOpen}
         onDeleted={onDeleted}
-        onCloseAutoFocus={rowCloseAutoFocus}
+        onCloseAutoFocus={closeAutoFocus}
       />
     </div>
   )
 }
 
 /**
+ * Scrolls to the section the location's hash names (`/devices#providers`)
+ * and focuses it, once each list has loaded or failed to: until then their
+ * placeholders are shorter than the lists (the projects add a line to each
+ * device), and the section would move. Once per navigation, so the user's
+ * own scrolling is left alone after; and focus stays where the user put it
+ * meanwhile. A hash that isn't a valid escape names nothing.
+ */
+function ScrollToHash() {
+  const { hash, key } = useLocation()
+  const devices = useDevices()
+  const workers = useWorkers()
+  const providers = useModelProviders()
+  const projects = useProjects()
+  const settled = [devices, workers, providers, projects].every((q) => q.data !== undefined || q.isError)
+  const done = useRef<string | null>(null)
+  useEffect(() => {
+    if (!settled || hash.length < 2 || done.current === key) return
+    done.current = key
+    let id
+    try {
+      id = decodeURIComponent(hash.slice(1))
+    } catch {
+      return
+    }
+    const target = document.getElementById(id)
+    if (!target) return
+    target.scrollIntoView({ block: "start" })
+    const active = document.activeElement
+    if (!active || active === document.body) target.focus({ preventScroll: true })
+  }, [settled, hash, key])
+  return null
+}
+
+/**
  * The devices, kept fresh. Memoized, like WorkersSection: a status poll
  * renders this section (its last seen times move) and not the page.
- * `onAdd(true)` opens the add-device dialog.
+ * `onAdd` opens the add dialog for a device.
  */
 const DevicesSection = memo(function DevicesSection({
   onAdd,
   onAction,
-  addRef,
 }: {
-  onAdd: (open: boolean) => void
+  onAdd: AddHandler
   onAction: (action: RowAction) => void
-  addRef: Ref<HTMLButtonElement>
 }) {
   const { t } = useTranslation()
   const devices = useDevices({ live: true })
@@ -167,7 +225,7 @@ const DevicesSection = memo(function DevicesSection({
   } else if (!devices.data) {
     body = <LoadingList />
   } else if (devices.data.length === 0) {
-    body = <NoDevices onAdd={() => onAdd(true)} addRef={addRef} />
+    body = <NoDevices onAdd={(trigger) => onAdd("daemon", trigger)} />
   } else {
     body = (
       <ul className="flex flex-col divide-y border">
@@ -274,7 +332,13 @@ const DeviceRow = memo(function DeviceRow({
 })
 
 /** The user's workers: status, version, the devices on the same machine, their agents, and the integrator grant. */
-const WorkersSection = memo(function WorkersSection({ onAction }: { onAction: (action: RowAction) => void }) {
+const WorkersSection = memo(function WorkersSection({
+  onAdd,
+  onAction,
+}: {
+  onAdd: AddHandler
+  onAction: (action: RowAction) => void
+}) {
   const { t } = useTranslation()
   // Here rather than in the page, so a refetch renders only this section.
   const workers = useWorkers({ live: true })
@@ -299,7 +363,7 @@ const WorkersSection = memo(function WorkersSection({ onAction }: { onAction: (a
       </ul>
     )
   } else if (workers.data.length === 0) {
-    body = <p className="text-sm text-muted-foreground">{t("devices.noWorkers")}</p>
+    body = <NoWorkers onAdd={(trigger) => onAdd("worker", trigger)} />
   } else {
     body = (
       <ul className="flex flex-col divide-y border">
@@ -452,6 +516,43 @@ function rowTrigger(row: RejoinTarget): HTMLElement | null {
   return [...(section?.querySelectorAll<HTMLElement>("button[aria-label]") ?? [])].find((b) => b.getAttribute("aria-label") === label) ?? null
 }
 
+/** Opens the add dialog with `role` chosen; `trigger` is the button, where focus returns. */
+type AddHandler = (role: EnrollRole, trigger: HTMLElement | null) => void
+
+/**
+ * The header's Add menu: a device, a worker (the add dialog with that role
+ * chosen) or a model provider (the providers section's form). Each dialog
+ * returns focus to the trigger.
+ */
+function AddMenu({
+  triggerRef,
+  onAdd,
+  onAddProvider,
+}: {
+  triggerRef: RefObject<HTMLButtonElement | null>
+  onAdd: AddHandler
+  onAddProvider: (trigger: HTMLElement | null) => void
+}) {
+  const { t } = useTranslation()
+  const menuFocus = useMenuFocus()
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild {...menuFocus.trigger}>
+        <Button ref={triggerRef} variant="outline" size="sm">
+          <PlusIcon />
+          {t("devices.addAction")}
+          <ChevronDownIcon />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-auto min-w-40" {...menuFocus.content}>
+        <DropdownMenuItem onSelect={() => onAdd("daemon", triggerRef.current)}>{t("devices.addDevice")}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onAdd("worker", triggerRef.current)}>{t("devices.addWorker")}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onAddProvider(triggerRef.current)}>{t("devices.addProvider")}</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 /** What a row's menu asks the page to do; `trigger` is the menu's button, where focus returns. */
 type RowAction = ({ kind: "rejoin"; target: RejoinTarget } | { kind: "delete"; target: DeleteTarget }) & {
   trigger: HTMLElement | null
@@ -555,7 +656,7 @@ function LoadingList() {
 }
 
 /** No devices: what one is, and the way to add one. */
-function NoDevices({ onAdd, addRef }: { onAdd: () => void; addRef: Ref<HTMLButtonElement> }) {
+function NoDevices({ onAdd }: { onAdd: (trigger: HTMLElement) => void }) {
   const { t } = useTranslation()
   return (
     <Empty className="border border-dashed px-4 py-8 sm:px-6 sm:py-10">
@@ -566,9 +667,30 @@ function NoDevices({ onAdd, addRef }: { onAdd: () => void; addRef: Ref<HTMLButto
         <EmptyTitle>{t("devices.emptyTitle")}</EmptyTitle>
       </EmptyHeader>
       <EmptyContent>
-        <Button ref={addRef} onClick={onAdd}>
+        <Button onClick={(e) => onAdd(e.currentTarget)}>
           <PlusIcon />
           {t("devices.addDevice")}
+        </Button>
+      </EmptyContent>
+    </Empty>
+  )
+}
+
+/** No workers: the way to add one, with the worker role chosen. */
+function NoWorkers({ onAdd }: { onAdd: (trigger: HTMLElement) => void }) {
+  const { t } = useTranslation()
+  return (
+    <Empty className="border border-dashed px-4 py-8 sm:px-6 sm:py-10">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <ServerIcon />
+        </EmptyMedia>
+        <EmptyTitle>{t("devices.workersEmptyTitle")}</EmptyTitle>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button onClick={(e) => onAdd(e.currentTarget)}>
+          <PlusIcon />
+          {t("devices.addWorker")}
         </Button>
       </EmptyContent>
     </Empty>

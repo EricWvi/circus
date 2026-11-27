@@ -178,7 +178,6 @@ export const zhCN = {
     collapseProject: "收起 {{name}}",
     devices: "设备",
     devicesOnline: "{{online}}/{{total}} 在线",
-    providers: "模型提供方",
   },
 
   devices: {
@@ -195,7 +194,8 @@ export const zhCN = {
     workersHeading: "工作节点",
     workersLoading: "正在加载工作节点",
     workersLoadFailed: "无法加载工作节点。",
-    noWorkers: "还没有工作节点。可通过“添加设备”并选择工作节点角色来添加。",
+    workersEmptyTitle: "还没有工作节点",
+    addWorker: "添加工作节点",
     workerVersion: "worker {{version}}",
     sameMachine: "同一台机器上的设备",
     sameMachineAs: "与 {{worker}} 在同一台机器上的设备",
@@ -290,6 +290,8 @@ export const zhCN = {
     },
     emptyTitle: "还没有设备",
     addDevice: "添加设备",
+    addAction: "添加",
+    addProvider: "添加模型提供方",
     copyCommand: "复制命令",
     copied: "已复制",
     add: {
@@ -543,7 +545,7 @@ export const zhCN = {
       maxVariables: "一个提供方最多 {{max}} 个变量",
       workers: "工作节点",
       workersHint: "使用此提供方的会话只在这些工作节点上运行。",
-      noWorkers: "还没有工作节点，可在<devices>设备</devices>页面添加。",
+      noWorkers: "还没有工作节点。请先<add>添加工作节点</add>。",
       workersLoadFailed: "无法加载工作节点。",
       workerSameMachine: "与 {{devices}} 在同一台机器上",
       maxSessions: "会话上限",
