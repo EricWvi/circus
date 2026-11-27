@@ -13,8 +13,8 @@ import (
 
 // providerQuery reads providers with the user's default and their live
 // lease count at ?1.
-const providerQuery = `SELECT p.id, p.user_id, p.name, p.kind, p.base_url, p.scheme, p.opus_model, p.sonnet_model,
-	p.haiku_model, p.max_sessions, p.secrets, p.key_last4, p.env_names, p.env_last4, p.created_at, p.updated_at,
+const providerQuery = `SELECT p.id, p.user_id, p.name, p.kind, p.base_url, p.scheme, p.fable_model, p.opus_model,
+	p.sonnet_model, p.haiku_model, p.max_sessions, p.secrets, p.key_last4, p.env_names, p.env_last4, p.created_at, p.updated_at,
 	COALESCE(u.default_provider_id = p.id, 0),
 	(SELECT COUNT(*) FROM session_leases l WHERE l.provider_id = p.id AND l.holder_worker_id IS NOT NULL AND l.expires_at > ?1)
 	FROM providers p JOIN users u ON u.id = p.user_id WHERE p.user_id = ?2`
@@ -22,8 +22,8 @@ const providerQuery = `SELECT p.id, p.user_id, p.name, p.kind, p.base_url, p.sch
 func scanProvider(s scanner) (store.Provider, error) {
 	var p store.Provider
 	var kind, scheme, names, last4 string
-	err := s.Scan(&p.ID, &p.UserID, &p.Name, &kind, &p.BaseURL, &scheme, &p.OpusModel, &p.SonnetModel, &p.HaikuModel,
-		&p.MaxSessions, &p.Secrets, &p.KeyLast4, &names, &last4, &p.CreatedAt, &p.UpdatedAt, &p.IsDefault, &p.LeasedSessions)
+	err := s.Scan(&p.ID, &p.UserID, &p.Name, &kind, &p.BaseURL, &scheme, &p.FableModel, &p.OpusModel, &p.SonnetModel,
+		&p.HaikuModel, &p.MaxSessions, &p.Secrets, &p.KeyLast4, &names, &last4, &p.CreatedAt, &p.UpdatedAt, &p.IsDefault, &p.LeasedSessions)
 	if err != nil {
 		return p, mapErr(err)
 	}
@@ -196,11 +196,11 @@ func (o *ops) CreateProvider(ctx context.Context, p store.Provider) (store.Provi
 		if err := tx.providerNameTaken(ctx, p.UserID, key, p.ID); err != nil {
 			return err
 		}
-		if _, err := tx.exec(ctx, `INSERT INTO providers (id, user_id, name, name_key, kind, base_url, scheme, opus_model,
-			sonnet_model, haiku_model, max_sessions, secrets, key_last4, env_names, env_last4, created_at, updated_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			p.ID, p.UserID, p.Name, key, string(p.Kind), p.BaseURL, string(p.Scheme), p.OpusModel, p.SonnetModel, p.HaikuModel,
-			p.MaxSessions, p.Secrets, p.KeyLast4, jsonList(p.EnvNames), jsonList(p.EnvLast4), p.CreatedAt, p.UpdatedAt); err != nil {
+		if _, err := tx.exec(ctx, `INSERT INTO providers (id, user_id, name, name_key, kind, base_url, scheme, fable_model,
+			opus_model, sonnet_model, haiku_model, max_sessions, secrets, key_last4, env_names, env_last4, created_at,
+			updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			p.ID, p.UserID, p.Name, key, string(p.Kind), p.BaseURL, string(p.Scheme), p.FableModel, p.OpusModel,
+			p.SonnetModel, p.HaikuModel, p.MaxSessions, p.Secrets, p.KeyLast4, jsonList(p.EnvNames), jsonList(p.EnvLast4), p.CreatedAt, p.UpdatedAt); err != nil {
 			return err
 		}
 		if err := tx.insertProviderWorkers(ctx, p.ID, p.UserID, p.WorkerIDs); err != nil {
@@ -224,7 +224,7 @@ func (o *ops) CreateProvider(ctx context.Context, p store.Provider) (store.Provi
 // CreatedAt and the read-only counts aside).
 func sameProvider(a, b store.Provider) bool {
 	return a.Name == b.Name && a.BaseURL == b.BaseURL && a.Scheme == b.Scheme && a.Kind == b.Kind &&
-		a.OpusModel == b.OpusModel && a.SonnetModel == b.SonnetModel && a.HaikuModel == b.HaikuModel &&
+		a.FableModel == b.FableModel && a.OpusModel == b.OpusModel && a.SonnetModel == b.SonnetModel && a.HaikuModel == b.HaikuModel &&
 		a.MaxSessions == b.MaxSessions && bytes.Equal(a.Secrets, b.Secrets) && a.KeyLast4 == b.KeyLast4 &&
 		slices.Equal(a.EnvNames, b.EnvNames) && slices.Equal(a.EnvLast4, b.EnvLast4) &&
 		slices.Equal(a.WorkerIDs, b.WorkerIDs) && a.IsDefault == b.IsDefault
@@ -263,10 +263,11 @@ func (o *ops) UpdateProvider(ctx context.Context, userID string, p store.Provide
 		if !sameProvider(cur, p) {
 			updatedAt = max(p.UpdatedAt, cur.UpdatedAt+1)
 		}
-		if _, err := tx.exec(ctx, `UPDATE providers SET name = ?, name_key = ?, base_url = ?, scheme = ?, opus_model = ?,
-			sonnet_model = ?, haiku_model = ?, max_sessions = ?, secrets = ?, key_last4 = ?, env_names = ?, env_last4 = ?,
+		if _, err := tx.exec(ctx, `UPDATE providers SET name = ?, name_key = ?, base_url = ?, scheme = ?, fable_model = ?,
+			opus_model = ?, sonnet_model = ?, haiku_model = ?, max_sessions = ?, secrets = ?, key_last4 = ?, env_names = ?, env_last4 = ?,
 			updated_at = ? WHERE id = ?`,
-			p.Name, key, p.BaseURL, string(p.Scheme), p.OpusModel, p.SonnetModel, p.HaikuModel, p.MaxSessions, p.Secrets,
+			p.Name, key, p.BaseURL, string(p.Scheme), p.FableModel, p.OpusModel, p.SonnetModel, p.HaikuModel, p.MaxSessions,
+			p.Secrets,
 			p.KeyLast4, jsonList(p.EnvNames), jsonList(p.EnvLast4), updatedAt, p.ID); err != nil {
 			return err
 		}

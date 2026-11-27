@@ -32,7 +32,7 @@ import { SecretInput } from "./secret-input"
 import { useProviderForm } from "./use-provider-form"
 
 const SCHEMES = ["x_api_key", "bearer"] as const
-const MODEL_FIELDS = ["opusModel", "sonnetModel", "haikuModel"] as const
+const MODEL_FIELDS = ["fableModel", "opusModel", "sonnetModel", "haikuModel"] as const
 
 /**
  * The form of the provider dialog: a new provider, or `editing`. Mounted
@@ -268,7 +268,7 @@ export function ProviderForm({
             {t("providers.form.models")}
             <HintTip id="provider-models-hint" text={t("providers.form.modelsHint")} />
           </FieldLegend>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {MODEL_FIELDS.map((field) => (
               <Field key={field} className="gap-1.5">
                 <FieldLabel htmlFor={`provider-${field}`} className="text-xs text-muted-foreground">

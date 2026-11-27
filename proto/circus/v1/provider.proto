@@ -13,9 +13,10 @@ option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 // the server's public URL. A provider of another user is NOT_FOUND, like an
 // unknown one. Invalid input is INVALID_ARGUMENT with a google.rpc.BadRequest
 // field violation naming the field: "name", "kind", "api", "api.base_url",
-// "api.scheme", "api.key", "api.opus_model", "api.sonnet_model",
-// "api.haiku_model", "env", "env[i].name", "env[i].value", "worker_ids",
-// "worker_ids[i]", "max_sessions" or "provider_id". A name another of the
+// "api.scheme", "api.key", "api.fable_model", "api.opus_model",
+// "api.sonnet_model", "api.haiku_model", "env", "env[i].name",
+// "env[i].value", "worker_ids", "worker_ids[i]", "max_sessions" or
+// "provider_id". A name another of the
 // user's providers already has is ALREADY_EXISTS with field "name". A user
 // has at most 32 providers; a create past that is RESOURCE_EXHAUSTED.
 //
@@ -62,21 +63,24 @@ message Provider {
     string key = 3;
     // Output only: the key's last four characters.
     string key_last4 = 4;
-    // Optional model ids the CLI's opus, sonnet and haiku aliases resolve
-    // to, each at most 256 bytes without whitespace or control characters.
-    // Set ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL and
+    // Optional model ids the CLI's fable, opus, sonnet and haiku aliases
+    // resolve to, each at most 256 bytes without whitespace or control
+    // characters. Set ANTHROPIC_DEFAULT_FABLE_MODEL,
+    // ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL and
     // ANTHROPIC_DEFAULT_HAIKU_MODEL. Not secret.
     string opus_model = 5;
     string sonnet_model = 6;
     string haiku_model = 7;
+    string fable_model = 8;
   }
   // A custom environment variable for the CLI. The name matches
   // [A-Z_][A-Z0-9_]* (at most 128 bytes) and is none of CLAUDE_CONFIG_DIR,
   // HOME, PATH, CIRCUS_*, CLAUDE_CODE_OAUTH_TOKEN,
   // CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST (the worker sets it) and the
   // variables the endpoint sets (ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY,
-  // ANTHROPIC_AUTH_TOKEN, ANTHROPIC_DEFAULT_OPUS_MODEL,
-  // ANTHROPIC_DEFAULT_SONNET_MODEL, ANTHROPIC_DEFAULT_HAIKU_MODEL). Names
+  // ANTHROPIC_AUTH_TOKEN, ANTHROPIC_DEFAULT_FABLE_MODEL,
+  // ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL,
+  // ANTHROPIC_DEFAULT_HAIKU_MODEL). Names
   // are distinct within a provider. A provider has at most 64 variables,
   // and at most 64 KiB of names and values together.
   message EnvVar {

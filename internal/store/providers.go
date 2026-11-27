@@ -113,7 +113,7 @@ type Provider struct {
 	BaseURL string
 	Scheme  ProviderScheme
 	// The alias models; empty means not set.
-	OpusModel, SonnetModel, HaikuModel string
+	FableModel, OpusModel, SonnetModel, HaikuModel string
 	// KeyLast4 is the key's last four characters.
 	KeyLast4 string
 	// EnvNames are the custom variables' names in order; EnvLast4 holds
@@ -204,7 +204,7 @@ func CheckProvider(p Provider) error {
 	if err := CheckText("base URL", p.BaseURL, MaxProviderBaseURLBytes, true); err != nil {
 		return err
 	}
-	for _, m := range []string{p.OpusModel, p.SonnetModel, p.HaikuModel} {
+	for _, m := range []string{p.FableModel, p.OpusModel, p.SonnetModel, p.HaikuModel} {
 		if err := CheckText("model", m, MaxProviderModelBytes, true); err != nil {
 			return err
 		}

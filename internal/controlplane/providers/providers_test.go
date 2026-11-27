@@ -108,10 +108,10 @@ func TestLaunchEnv(t *testing.T) {
 	if got, want := providers.LaunchEnv(x, providers.Secrets{Key: "k1"}), []providers.Var{{"ANTHROPIC_API_KEY", "k1"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("x-api-key = %v", got)
 	}
-	bearer := store.Provider{Scheme: store.ProviderSchemeBearer, BaseURL: "https://gw.example/v1", OpusModel: "o", HaikuModel: "h", EnvNames: []string{"FOO", "EMPTY"}}
+	bearer := store.Provider{Scheme: store.ProviderSchemeBearer, BaseURL: "https://gw.example/v1", FableModel: "f", OpusModel: "o", HaikuModel: "h", EnvNames: []string{"FOO", "EMPTY"}}
 	want := []providers.Var{
 		{"ANTHROPIC_BASE_URL", "https://gw.example/v1"}, {"ANTHROPIC_AUTH_TOKEN", secrets.Key},
-		{"ANTHROPIC_DEFAULT_OPUS_MODEL", "o"}, {"ANTHROPIC_DEFAULT_HAIKU_MODEL", "h"},
+		{"ANTHROPIC_DEFAULT_FABLE_MODEL", "f"}, {"ANTHROPIC_DEFAULT_OPUS_MODEL", "o"}, {"ANTHROPIC_DEFAULT_HAIKU_MODEL", "h"},
 		{"FOO", "foo-value"}, {"EMPTY", ""},
 	}
 	if got := providers.LaunchEnv(bearer, secrets); !reflect.DeepEqual(got, want) {
@@ -125,7 +125,7 @@ func TestCheckEnvName(t *testing.T) {
 		"": false, "1A": false, "foo": false, "A-B": false, "A B": false, strings.Repeat("A", 129): false,
 		"HOME": false, "PATH": false, "CLAUDE_CONFIG_DIR": false, "CLAUDE_CODE_OAUTH_TOKEN": false,
 		"CIRCUS_TOKEN": false, "CIRCUS": true, "ANTHROPIC_API_KEY": false, "ANTHROPIC_BASE_URL": false,
-		"ANTHROPIC_AUTH_TOKEN": false, "ANTHROPIC_DEFAULT_OPUS_MODEL": false, "ANTHROPIC_DEFAULT_SONNET_MODEL": false,
+		"ANTHROPIC_AUTH_TOKEN": false, "ANTHROPIC_DEFAULT_FABLE_MODEL": false, "ANTHROPIC_DEFAULT_OPUS_MODEL": false, "ANTHROPIC_DEFAULT_SONNET_MODEL": false,
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL": false, "ANTHROPIC_OTHER": true, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": false,
 		"CLAUDE_CODE_USE_BEDROCK": true,
 	} {

@@ -1257,7 +1257,7 @@ A session names a provider (`Session.provider_id`) or none, which means
 local login: the worker's own Claude Code login and environment. A
 provider belongs to a Web user and carries an API endpoint
 (`ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, and
-the `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` aliases) plus custom
+the `ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL` aliases) plus custom
 variables. The control plane stores its secrets encrypted and never returns
 them on the user-side API.
 

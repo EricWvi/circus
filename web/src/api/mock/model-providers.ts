@@ -79,7 +79,7 @@ export function createMockModelProviders(host: MockModelProvidersHost) {
     const keep = existing && !existing.secretsUnreadable ? existing : undefined
     const kProblem = keyProblem(input.key, keep === undefined)
     if (kProblem) throw invalid(kProblem, "api.key")
-    for (const field of ["opusModel", "sonnetModel", "haikuModel"] as const) {
+    for (const field of ["fableModel", "opusModel", "sonnetModel", "haikuModel"] as const) {
       const problem = modelProblem(input[field])
       if (problem) throw invalid(problem, `api.${field.replace("Model", "_model")}`)
     }
@@ -108,6 +108,7 @@ export function createMockModelProviders(host: MockModelProvidersHost) {
       baseUrl: input.baseUrl,
       scheme: input.scheme,
       key: input.key === "" && keep ? keep.key : input.key,
+      fableModel: input.fableModel,
       opusModel: input.opusModel,
       sonnetModel: input.sonnetModel,
       haikuModel: input.haikuModel,

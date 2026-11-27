@@ -40,6 +40,7 @@ const (
 	inheritedOAuth  = "sk-ant-oat01-circus-e2e-inherited-oauth"
 	customOneValue  = "circus-e2e-custom-one"
 	customTwoValue  = "circus-e2e-custom-two"
+	providerFable   = "provider-fable-model"
 	providerOpus    = "provider-opus-model"
 	providerSonnet  = "provider-sonnet-model"
 	providerHaiku   = "provider-haiku-model"
@@ -124,7 +125,7 @@ func (s *providerStack) startProviderWorker(extra ...string) *child {
 	return s.startWorker(append([]string{"ANTHROPIC_BASE_URL=" + s.front.url("inherited"), "ANTHROPIC_API_KEY=" + inheritedKey}, extra...)...)
 }
 
-// provider creates a provider on endpoint with the three alias models and
+// provider creates a provider on endpoint with the four alias models and
 // two custom variables, assigned to the stack's worker.
 func (s *providerStack) provider(name, endpoint string, scheme pb.Provider_ApiEndpoint_Scheme, key string) *pb.Provider {
 	s.t.Helper()
@@ -132,7 +133,7 @@ func (s *providerStack) provider(name, endpoint string, scheme pb.Provider_ApiEn
 		Name: name, Kind: pb.Provider_KIND_CLAUDE_CODE,
 		Api: &pb.Provider_ApiEndpoint{
 			BaseUrl: s.front.url(endpoint), Scheme: scheme, Key: key,
-			OpusModel: providerOpus, SonnetModel: providerSonnet, HaikuModel: providerHaiku,
+			FableModel: providerFable, OpusModel: providerOpus, SonnetModel: providerSonnet, HaikuModel: providerHaiku,
 		},
 		Env: []*pb.Provider_EnvVar{
 			{Name: "E2E_PROVIDER_CUSTOM_ONE", Value: proto.String(customOneValue)},

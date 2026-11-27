@@ -19,6 +19,7 @@ const stored: ModelProvider = {
   baseUrl: "https://proxy.example.com/v1",
   scheme: "bearer",
   keyLast4: "k9Qz",
+  fableModel: "huge",
   opusModel: "big",
   sonnetModel: "",
   haikuModel: "",
@@ -176,6 +177,7 @@ describe("validating the provider form", () => {
       "ANTHROPIC_BASE_URL",
       "ANTHROPIC_API_KEY",
       "ANTHROPIC_AUTH_TOKEN",
+      "ANTHROPIC_DEFAULT_FABLE_MODEL",
       "ANTHROPIC_DEFAULT_OPUS_MODEL",
       "ANTHROPIC_DEFAULT_SONNET_MODEL",
       "ANTHROPIC_DEFAULT_HAIKU_MODEL",
@@ -192,6 +194,7 @@ describe("validating the provider form", () => {
   it("checks the model ids", () => {
     expect(check(valid({ opusModel: "a b" })).fields.opusModel).toBe("Model IDs can't contain spaces or control characters.")
     expect(check(valid({ haikuModel: "m".repeat(257) })).fields.haikuModel).toBe("Model IDs are at most 256 bytes.")
+    expect(check(valid({ fableModel: "a\tb" })).fields.fableModel).toBe("Model IDs can't contain spaces or control characters.")
   })
 
   it("checks variable names: the pattern, reserved and endpoint names, duplicates", () => {
@@ -337,6 +340,9 @@ describe("mapping server errors to the form", () => {
     })
     expect(mapProviderServerError(invalid("api.sonnet_model"), values, context).fields).toEqual({
       sonnetModel: "This model ID can't be used.",
+    })
+    expect(mapProviderServerError(invalid("api.fable_model"), values, context).fields).toEqual({
+      fableModel: "This model ID can't be used.",
     })
     expect(mapProviderServerError(invalid("max_sessions"), values, context).fields).toEqual({
       maxSessions: "Enter a whole number from 0 to 1024.",

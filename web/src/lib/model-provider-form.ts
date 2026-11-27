@@ -45,6 +45,7 @@ export interface ProviderFormValues {
   scheme: ProviderScheme | "unspecified"
   /** Empty keeps the stored key, when editing. */
   key: string
+  fableModel: string
   opusModel: string
   sonnetModel: string
   haikuModel: string
@@ -60,6 +61,7 @@ export type ProviderField =
   | "baseUrl"
   | "scheme"
   | "key"
+  | "fableModel"
   | "opusModel"
   | "sonnetModel"
   | "haikuModel"
@@ -97,6 +99,7 @@ export function providerFormValues(provider?: ModelProvider): ProviderFormValues
       baseUrl: "",
       scheme: "x_api_key",
       key: "",
+      fableModel: "",
       opusModel: "",
       sonnetModel: "",
       haikuModel: "",
@@ -111,6 +114,7 @@ export function providerFormValues(provider?: ModelProvider): ProviderFormValues
     baseUrl: provider.baseUrl,
     scheme: provider.scheme,
     key: "",
+    fableModel: provider.fableModel,
     opusModel: provider.opusModel,
     sonnetModel: provider.sonnetModel,
     haikuModel: provider.haikuModel,
@@ -193,7 +197,7 @@ export function validateProviderForm(
   fields.baseUrl = baseUrlProblem(values.baseUrl.trim()) ?? undefined
   const keyRequired = !editing || editing.secretsUnreadable
   fields.key = keyProblem(values.key.trim(), keyRequired) ?? undefined
-  for (const field of ["opusModel", "sonnetModel", "haikuModel"] as const) {
+  for (const field of ["fableModel", "opusModel", "sonnetModel", "haikuModel"] as const) {
     fields[field] = modelProblem(values[field].trim()) ?? undefined
   }
   fields.env = envListProblem(values)
@@ -210,6 +214,7 @@ export function toProviderInput(values: ProviderFormValues, editing?: ModelProvi
     baseUrl: values.baseUrl.trim(),
     scheme: values.scheme,
     key: values.key.trim(),
+    fableModel: values.fableModel.trim(),
     opusModel: values.opusModel.trim(),
     sonnetModel: values.sonnetModel.trim(),
     haikuModel: values.haikuModel.trim(),
@@ -237,6 +242,7 @@ export function providerFormChanged(provider: ModelProvider, values: ProviderFor
     input.baseUrl !== provider.baseUrl ||
     input.scheme !== provider.scheme ||
     input.key !== "" ||
+    input.fableModel !== provider.fableModel ||
     input.opusModel !== provider.opusModel ||
     input.sonnetModel !== provider.sonnetModel ||
     input.haikuModel !== provider.haikuModel ||
@@ -263,6 +269,7 @@ const apiFields: Record<string, ProviderField> = {
   "api.base_url": "baseUrl",
   "api.scheme": "scheme",
   "api.key": "key",
+  "api.fable_model": "fableModel",
   "api.opus_model": "opusModel",
   "api.sonnet_model": "sonnetModel",
   "api.haiku_model": "haikuModel",
@@ -294,6 +301,7 @@ export function mapProviderServerError(
         baseUrl: "validation.baseUrlRejected",
         scheme: "errors.generic",
         key: "validation.keyRejected",
+        fableModel: "validation.modelRejected",
         opusModel: "validation.modelRejected",
         sonnetModel: "validation.modelRejected",
         haikuModel: "validation.modelRejected",

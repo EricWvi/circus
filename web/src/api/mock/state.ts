@@ -70,6 +70,7 @@ export interface MockProvider {
   baseUrl: string
   scheme: ProviderScheme
   key: string
+  fableModel: string
   opusModel: string
   sonnetModel: string
   haikuModel: string
@@ -306,6 +307,7 @@ export function seedProviders(now: number = Date.now()): MockProvider[] {
     owner: SEED_OWNER_ID,
     baseUrl: "",
     scheme: "x_api_key" as const,
+    fableModel: "",
     opusModel: "",
     sonnetModel: "",
     haikuModel: "",
@@ -332,6 +334,7 @@ export function seedProviders(now: number = Date.now()): MockProvider[] {
       baseUrl: "https://llm-proxy.example.com/anthropic",
       scheme: "bearer",
       key: "mock-proxy-token-k9Qz",
+      fableModel: "proxy-fable-max",
       opusModel: "proxy-opus-large",
       sonnetModel: "proxy-sonnet-medium",
       haikuModel: "proxy-haiku-small",

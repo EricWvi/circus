@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/provider.proto.
  */
 export const file_circus_v1_provider: GenFile = /*@__PURE__*/
-  fileDesc("ChhjaXJjdXMvdjEvcHJvdmlkZXIucHJvdG8SCWNpcmN1cy52MSLaBQoIUHJvdmlkZXISEwoLcHJvdmlkZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRImCgRraW5kGAMgASgOMhguY2lyY3VzLnYxLlByb3ZpZGVyLktpbmQSLAoDYXBpGAQgASgLMh8uY2lyY3VzLnYxLlByb3ZpZGVyLkFwaUVuZHBvaW50EicKA2VudhgFIAMoCzIaLmNpcmN1cy52MS5Qcm92aWRlci5FbnZWYXISEgoKd29ya2VyX2lkcxgGIAMoCRIUCgxtYXhfc2Vzc2lvbnMYByABKA0SEgoKaXNfZGVmYXVsdBgIIAEoCBIXCg9sZWFzZWRfc2Vzc2lvbnMYCSABKA0SGgoSc2VjcmV0c191bnJlYWRhYmxlGAogASgIEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgLIAEoAxIaChJ1cGRhdGVkX2F0X3VuaXhfbXMYDCABKAMagQIKC0FwaUVuZHBvaW50EhAKCGJhc2VfdXJsGAEgASgJEjYKBnNjaGVtZRgCIAEoDjImLmNpcmN1cy52MS5Qcm92aWRlci5BcGlFbmRwb2ludC5TY2hlbWUSCwoDa2V5GAMgASgJEhEKCWtleV9sYXN0NBgEIAEoCRISCgpvcHVzX21vZGVsGAUgASgJEhQKDHNvbm5ldF9tb2RlbBgGIAEoCRITCgtoYWlrdV9tb2RlbBgHIAEoCSJJCgZTY2hlbWUSFgoSU0NIRU1FX1VOU1BFQ0lGSUVEEAASFAoQU0NIRU1FX1hfQVBJX0tFWRABEhEKDVNDSEVNRV9CRUFSRVIQAhpJCgZFbnZWYXISDAoEbmFtZRgBIAEoCRISCgV2YWx1ZRgCIAEoCUgAiAEBEhMKC3ZhbHVlX2xhc3Q0GAMgASgJQggKBl92YWx1ZSIyCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIUChBLSU5EX0NMQVVERV9DT0RFEAEiPgoVQ3JlYXRlUHJvdmlkZXJSZXF1ZXN0EiUKCHByb3ZpZGVyGAEgASgLMhMuY2lyY3VzLnYxLlByb3ZpZGVyIj8KFkNyZWF0ZVByb3ZpZGVyUmVzcG9uc2USJQoIcHJvdmlkZXIYASABKAsyEy5jaXJjdXMudjEuUHJvdmlkZXIiFgoUTGlzdFByb3ZpZGVyc1JlcXVlc3QiPwoVTGlzdFByb3ZpZGVyc1Jlc3BvbnNlEiYKCXByb3ZpZGVycxgBIAMoCzITLmNpcmN1cy52MS5Qcm92aWRlciIpChJHZXRQcm92aWRlclJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkiPAoTR2V0UHJvdmlkZXJSZXNwb25zZRIlCghwcm92aWRlchgBIAEoCzITLmNpcmN1cy52MS5Qcm92aWRlciKIAQoVVXBkYXRlUHJvdmlkZXJSZXF1ZXN0EiUKCHByb3ZpZGVyGAEgASgLMhMuY2lyY3VzLnYxLlByb3ZpZGVyEigKG2V4cGVjdGVkX3VwZGF0ZWRfYXRfdW5peF9tcxgCIAEoA0gAiAEBQh4KHF9leHBlY3RlZF91cGRhdGVkX2F0X3VuaXhfbXMiPwoWVXBkYXRlUHJvdmlkZXJSZXNwb25zZRIlCghwcm92aWRlchgBIAEoCzITLmNpcmN1cy52MS5Qcm92aWRlciIsChVEZWxldGVQcm92aWRlclJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkiGAoWRGVsZXRlUHJvdmlkZXJSZXNwb25zZTK4AwoPUHJvdmlkZXJTZXJ2aWNlElUKDkNyZWF0ZVByb3ZpZGVyEiAuY2lyY3VzLnYxLkNyZWF0ZVByb3ZpZGVyUmVxdWVzdBohLmNpcmN1cy52MS5DcmVhdGVQcm92aWRlclJlc3BvbnNlElIKDUxpc3RQcm92aWRlcnMSHy5jaXJjdXMudjEuTGlzdFByb3ZpZGVyc1JlcXVlc3QaIC5jaXJjdXMudjEuTGlzdFByb3ZpZGVyc1Jlc3BvbnNlEkwKC0dldFByb3ZpZGVyEh0uY2lyY3VzLnYxLkdldFByb3ZpZGVyUmVxdWVzdBoeLmNpcmN1cy52MS5HZXRQcm92aWRlclJlc3BvbnNlElUKDlVwZGF0ZVByb3ZpZGVyEiAuY2lyY3VzLnYxLlVwZGF0ZVByb3ZpZGVyUmVxdWVzdBohLmNpcmN1cy52MS5VcGRhdGVQcm92aWRlclJlc3BvbnNlElUKDkRlbGV0ZVByb3ZpZGVyEiAuY2lyY3VzLnYxLkRlbGV0ZVByb3ZpZGVyUmVxdWVzdBohLmNpcmN1cy52MS5EZWxldGVQcm92aWRlclJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z");
+  fileDesc("ChhjaXJjdXMvdjEvcHJvdmlkZXIucHJvdG8SCWNpcmN1cy52MSLvBQoIUHJvdmlkZXISEwoLcHJvdmlkZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRImCgRraW5kGAMgASgOMhguY2lyY3VzLnYxLlByb3ZpZGVyLktpbmQSLAoDYXBpGAQgASgLMh8uY2lyY3VzLnYxLlByb3ZpZGVyLkFwaUVuZHBvaW50EicKA2VudhgFIAMoCzIaLmNpcmN1cy52MS5Qcm92aWRlci5FbnZWYXISEgoKd29ya2VyX2lkcxgGIAMoCRIUCgxtYXhfc2Vzc2lvbnMYByABKA0SEgoKaXNfZGVmYXVsdBgIIAEoCBIXCg9sZWFzZWRfc2Vzc2lvbnMYCSABKA0SGgoSc2VjcmV0c191bnJlYWRhYmxlGAogASgIEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgLIAEoAxIaChJ1cGRhdGVkX2F0X3VuaXhfbXMYDCABKAMalgIKC0FwaUVuZHBvaW50EhAKCGJhc2VfdXJsGAEgASgJEjYKBnNjaGVtZRgCIAEoDjImLmNpcmN1cy52MS5Qcm92aWRlci5BcGlFbmRwb2ludC5TY2hlbWUSCwoDa2V5GAMgASgJEhEKCWtleV9sYXN0NBgEIAEoCRISCgpvcHVzX21vZGVsGAUgASgJEhQKDHNvbm5ldF9tb2RlbBgGIAEoCRITCgtoYWlrdV9tb2RlbBgHIAEoCRITCgtmYWJsZV9tb2RlbBgIIAEoCSJJCgZTY2hlbWUSFgoSU0NIRU1FX1VOU1BFQ0lGSUVEEAASFAoQU0NIRU1FX1hfQVBJX0tFWRABEhEKDVNDSEVNRV9CRUFSRVIQAhpJCgZFbnZWYXISDAoEbmFtZRgBIAEoCRISCgV2YWx1ZRgCIAEoCUgAiAEBEhMKC3ZhbHVlX2xhc3Q0GAMgASgJQggKBl92YWx1ZSIyCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIUChBLSU5EX0NMQVVERV9DT0RFEAEiPgoVQ3JlYXRlUHJvdmlkZXJSZXF1ZXN0EiUKCHByb3ZpZGVyGAEgASgLMhMuY2lyY3VzLnYxLlByb3ZpZGVyIj8KFkNyZWF0ZVByb3ZpZGVyUmVzcG9uc2USJQoIcHJvdmlkZXIYASABKAsyEy5jaXJjdXMudjEuUHJvdmlkZXIiFgoUTGlzdFByb3ZpZGVyc1JlcXVlc3QiPwoVTGlzdFByb3ZpZGVyc1Jlc3BvbnNlEiYKCXByb3ZpZGVycxgBIAMoCzITLmNpcmN1cy52MS5Qcm92aWRlciIpChJHZXRQcm92aWRlclJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkiPAoTR2V0UHJvdmlkZXJSZXNwb25zZRIlCghwcm92aWRlchgBIAEoCzITLmNpcmN1cy52MS5Qcm92aWRlciKIAQoVVXBkYXRlUHJvdmlkZXJSZXF1ZXN0EiUKCHByb3ZpZGVyGAEgASgLMhMuY2lyY3VzLnYxLlByb3ZpZGVyEigKG2V4cGVjdGVkX3VwZGF0ZWRfYXRfdW5peF9tcxgCIAEoA0gAiAEBQh4KHF9leHBlY3RlZF91cGRhdGVkX2F0X3VuaXhfbXMiPwoWVXBkYXRlUHJvdmlkZXJSZXNwb25zZRIlCghwcm92aWRlchgBIAEoCzITLmNpcmN1cy52MS5Qcm92aWRlciIsChVEZWxldGVQcm92aWRlclJlcXVlc3QSEwoLcHJvdmlkZXJfaWQYASABKAkiGAoWRGVsZXRlUHJvdmlkZXJSZXNwb25zZTK4AwoPUHJvdmlkZXJTZXJ2aWNlElUKDkNyZWF0ZVByb3ZpZGVyEiAuY2lyY3VzLnYxLkNyZWF0ZVByb3ZpZGVyUmVxdWVzdBohLmNpcmN1cy52MS5DcmVhdGVQcm92aWRlclJlc3BvbnNlElIKDUxpc3RQcm92aWRlcnMSHy5jaXJjdXMudjEuTGlzdFByb3ZpZGVyc1JlcXVlc3QaIC5jaXJjdXMudjEuTGlzdFByb3ZpZGVyc1Jlc3BvbnNlEkwKC0dldFByb3ZpZGVyEh0uY2lyY3VzLnYxLkdldFByb3ZpZGVyUmVxdWVzdBoeLmNpcmN1cy52MS5HZXRQcm92aWRlclJlc3BvbnNlElUKDlVwZGF0ZVByb3ZpZGVyEiAuY2lyY3VzLnYxLlVwZGF0ZVByb3ZpZGVyUmVxdWVzdBohLmNpcmN1cy52MS5VcGRhdGVQcm92aWRlclJlc3BvbnNlElUKDkRlbGV0ZVByb3ZpZGVyEiAuY2lyY3VzLnYxLkRlbGV0ZVByb3ZpZGVyUmVxdWVzdBohLmNpcmN1cy52MS5EZWxldGVQcm92aWRlclJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z");
 
 /**
  * @generated from message circus.v1.Provider
@@ -145,9 +145,10 @@ export type Provider_ApiEndpoint = Message<"circus.v1.Provider.ApiEndpoint"> & {
   keyLast4: string;
 
   /**
-   * Optional model ids the CLI's opus, sonnet and haiku aliases resolve
-   * to, each at most 256 bytes without whitespace or control characters.
-   * Set ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL and
+   * Optional model ids the CLI's fable, opus, sonnet and haiku aliases
+   * resolve to, each at most 256 bytes without whitespace or control
+   * characters. Set ANTHROPIC_DEFAULT_FABLE_MODEL,
+   * ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL and
    * ANTHROPIC_DEFAULT_HAIKU_MODEL. Not secret.
    *
    * @generated from field: string opus_model = 5;
@@ -163,6 +164,11 @@ export type Provider_ApiEndpoint = Message<"circus.v1.Provider.ApiEndpoint"> & {
    * @generated from field: string haiku_model = 7;
    */
   haikuModel: string;
+
+  /**
+   * @generated from field: string fable_model = 8;
+   */
+  fableModel: string;
 };
 
 /**
@@ -208,8 +214,9 @@ export const Provider_ApiEndpoint_SchemeSchema: GenEnum<Provider_ApiEndpoint_Sch
  * HOME, PATH, CIRCUS_*, CLAUDE_CODE_OAUTH_TOKEN,
  * CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST (the worker sets it) and the
  * variables the endpoint sets (ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY,
- * ANTHROPIC_AUTH_TOKEN, ANTHROPIC_DEFAULT_OPUS_MODEL,
- * ANTHROPIC_DEFAULT_SONNET_MODEL, ANTHROPIC_DEFAULT_HAIKU_MODEL). Names
+ * ANTHROPIC_AUTH_TOKEN, ANTHROPIC_DEFAULT_FABLE_MODEL,
+ * ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL,
+ * ANTHROPIC_DEFAULT_HAIKU_MODEL). Names
  * are distinct within a provider. A provider has at most 64 variables,
  * and at most 64 KiB of names and values together.
  *
@@ -462,9 +469,10 @@ export const DeleteProviderResponseSchema: GenMessage<DeleteProviderResponse> = 
  * the server's public URL. A provider of another user is NOT_FOUND, like an
  * unknown one. Invalid input is INVALID_ARGUMENT with a google.rpc.BadRequest
  * field violation naming the field: "name", "kind", "api", "api.base_url",
- * "api.scheme", "api.key", "api.opus_model", "api.sonnet_model",
- * "api.haiku_model", "env", "env[i].name", "env[i].value", "worker_ids",
- * "worker_ids[i]", "max_sessions" or "provider_id". A name another of the
+ * "api.scheme", "api.key", "api.fable_model", "api.opus_model",
+ * "api.sonnet_model", "api.haiku_model", "env", "env[i].name",
+ * "env[i].value", "worker_ids", "worker_ids[i]", "max_sessions" or
+ * "provider_id". A name another of the
  * user's providers already has is ALREADY_EXISTS with field "name". A user
  * has at most 32 providers; a create past that is RESOURCE_EXHAUSTED.
  *

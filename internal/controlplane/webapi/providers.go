@@ -82,7 +82,7 @@ func (s *Service) protoProvider(p store.Provider) *circusv1.Provider {
 		ProviderId: p.ID, Name: p.Name, Kind: circusv1.Provider_KIND_CLAUDE_CODE,
 		Api: &circusv1.Provider_ApiEndpoint{
 			BaseUrl: p.BaseURL, Scheme: protoScheme(p.Scheme), KeyLast4: p.KeyLast4,
-			OpusModel: p.OpusModel, SonnetModel: p.SonnetModel, HaikuModel: p.HaikuModel,
+			FableModel: p.FableModel, OpusModel: p.OpusModel, SonnetModel: p.SonnetModel, HaikuModel: p.HaikuModel,
 		},
 		WorkerIds: append([]string{}, p.WorkerIDs...), MaxSessions: uint32(max(p.MaxSessions, 0)), IsDefault: p.IsDefault,
 		LeasedSessions: uint32(max(p.LeasedSessions, 0)), SecretsUnreadable: !s.secrets.Readable(p),
@@ -366,7 +366,8 @@ func (s *Service) checkProvider(ctx context.Context, u store.User, m *circusv1.P
 		return in, invalidField("api.key", problem)
 	}
 	for _, f := range []struct{ field, v string }{
-		{"api.opus_model", api.GetOpusModel()}, {"api.sonnet_model", api.GetSonnetModel()}, {"api.haiku_model", api.GetHaikuModel()},
+		{"api.fable_model", api.GetFableModel()}, {"api.opus_model", api.GetOpusModel()},
+		{"api.sonnet_model", api.GetSonnetModel()}, {"api.haiku_model", api.GetHaikuModel()},
 	} {
 		if problem := checkModel(f.v); problem != "" {
 			return in, invalidField(f.field, problem)
@@ -428,8 +429,9 @@ func (s *Service) checkProvider(ctx context.Context, u store.User, m *circusv1.P
 	in.key = api.GetKey()
 	in.p = store.Provider{
 		UserID: u.ID, Name: name, Kind: store.ProviderKindClaudeCode, BaseURL: api.GetBaseUrl(), Scheme: scheme,
-		OpusModel: api.GetOpusModel(), SonnetModel: api.GetSonnetModel(), HaikuModel: api.GetHaikuModel(),
-		WorkerIDs: append([]string{}, m.GetWorkerIds()...), MaxSessions: int(m.GetMaxSessions()), IsDefault: m.GetIsDefault(),
+		FableModel: api.GetFableModel(), OpusModel: api.GetOpusModel(), SonnetModel: api.GetSonnetModel(),
+		HaikuModel: api.GetHaikuModel(),
+		WorkerIDs:  append([]string{}, m.GetWorkerIds()...), MaxSessions: int(m.GetMaxSessions()), IsDefault: m.GetIsDefault(),
 	}
 	return in, nil
 }

@@ -15,7 +15,7 @@ import (
 func newProvider(id, user, name string, workers ...string) store.Provider {
 	return store.Provider{
 		ID: id, UserID: user, Name: name, Kind: store.ProviderKindClaudeCode, Scheme: store.ProviderSchemeXAPIKey,
-		BaseURL: "https://api.example.com", OpusModel: "opus-x", KeyLast4: "abcd", Secrets: []byte("sealed-" + id),
+		BaseURL: "https://api.example.com", FableModel: "fable-x", OpusModel: "opus-x", KeyLast4: "abcd", Secrets: []byte("sealed-" + id),
 		EnvNames: []string{"FOO", "BAR"}, EnvLast4: []string{"1234", ""}, WorkerIDs: workers, CreatedAt: t0, UpdatedAt: t0,
 	}
 }
@@ -98,6 +98,7 @@ func testProviders(t *testing.T, b Backend) {
 	q := newProvider("p1", "u1", "Prod 2", "w1")
 	q.UpdatedAt, q.MaxSessions, q.Scheme, q.BaseURL = t0+5, 3, store.ProviderSchemeBearer, ""
 	q.EnvNames, q.EnvLast4, q.Secrets = nil, nil, []byte("sealed-again")
+	q.FableModel, q.HaikuModel = "fable-y", "haiku-y"
 	got, err := s.UpdateProvider(ctx, "u1", q, ptr(t0))
 	must(t, err)
 	want := read(q, 0, false)
@@ -168,6 +169,7 @@ func testProviderBounds(t *testing.T, b Backend) {
 		"scheme":           func(p *store.Provider) { p.Scheme = "" },
 		"base url":         func(p *store.Provider) { p.BaseURL = strings.Repeat("u", store.MaxProviderBaseURLBytes+1) },
 		"model":            func(p *store.Provider) { p.HaikuModel = strings.Repeat("m", store.MaxProviderModelBytes+1) },
+		"fable model":      func(p *store.Provider) { p.FableModel = strings.Repeat("m", store.MaxProviderModelBytes+1) },
 		"no secrets":       func(p *store.Provider) { p.Secrets = nil },
 		"large secrets":    func(p *store.Provider) { p.Secrets = make([]byte, store.MaxProviderSecretsBytes+1) },
 		"last4 mismatch":   func(p *store.Provider) { p.EnvLast4 = p.EnvLast4[:1] },
@@ -199,6 +201,7 @@ func testProviderBounds(t *testing.T, b Backend) {
 		p.EnvLast4[i] = "zzzz"
 	}
 	p.Secrets, p.MaxSessions, p.UpdatedAt = make([]byte, store.MaxProviderSecretsBytes), store.MaxProviderMaxSessions, t0+1
+	p.FableModel = strings.Repeat("m", store.MaxProviderModelBytes)
 	got, err := s.UpdateProvider(ctx, "u1", p, nil)
 	must(t, err)
 	mustEqual(t, "largest", []any{len(got.EnvNames), len(got.Secrets)}, []any{store.MaxProviderEnv, store.MaxProviderSecretsBytes})

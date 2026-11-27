@@ -27,7 +27,7 @@ interface ServerState {
 /** The ids of what changed between two versions of the form; any change dismisses the form-wide error. */
 function changedIds(before: ProviderFormValues, after: ProviderFormValues): string[] {
   const ids: string[] = []
-  for (const field of ["name", "baseUrl", "scheme", "key", "opusModel", "sonnetModel", "haikuModel", "maxSessions"] as const) {
+  for (const field of ["name", "baseUrl", "scheme", "key", "fableModel", "opusModel", "sonnetModel", "haikuModel", "maxSessions"] as const) {
     if (before[field] !== after[field]) ids.push(field)
   }
   if (before.workerIds !== after.workerIds) ids.push("workerIds")

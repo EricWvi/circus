@@ -527,6 +527,7 @@ describe("model providers", () => {
     baseUrl: "",
     scheme: "x_api_key" as const,
     key: "sk-staging-1234",
+    fableModel: "",
     opusModel: "",
     sonnetModel: "",
     haikuModel: "",

@@ -726,13 +726,15 @@ type Provider_ApiEndpoint struct {
 	Key string `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
 	// Output only: the key's last four characters.
 	KeyLast4 string `protobuf:"bytes,4,opt,name=key_last4,json=keyLast4,proto3" json:"key_last4,omitempty"`
-	// Optional model ids the CLI's opus, sonnet and haiku aliases resolve
-	// to, each at most 256 bytes without whitespace or control characters.
-	// Set ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL and
+	// Optional model ids the CLI's fable, opus, sonnet and haiku aliases
+	// resolve to, each at most 256 bytes without whitespace or control
+	// characters. Set ANTHROPIC_DEFAULT_FABLE_MODEL,
+	// ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL and
 	// ANTHROPIC_DEFAULT_HAIKU_MODEL. Not secret.
 	OpusModel     string `protobuf:"bytes,5,opt,name=opus_model,json=opusModel,proto3" json:"opus_model,omitempty"`
 	SonnetModel   string `protobuf:"bytes,6,opt,name=sonnet_model,json=sonnetModel,proto3" json:"sonnet_model,omitempty"`
 	HaikuModel    string `protobuf:"bytes,7,opt,name=haiku_model,json=haikuModel,proto3" json:"haiku_model,omitempty"`
+	FableModel    string `protobuf:"bytes,8,opt,name=fable_model,json=fableModel,proto3" json:"fable_model,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -816,13 +818,21 @@ func (x *Provider_ApiEndpoint) GetHaikuModel() string {
 	return ""
 }
 
+func (x *Provider_ApiEndpoint) GetFableModel() string {
+	if x != nil {
+		return x.FableModel
+	}
+	return ""
+}
+
 // A custom environment variable for the CLI. The name matches
 // [A-Z_][A-Z0-9_]* (at most 128 bytes) and is none of CLAUDE_CONFIG_DIR,
 // HOME, PATH, CIRCUS_*, CLAUDE_CODE_OAUTH_TOKEN,
 // CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST (the worker sets it) and the
 // variables the endpoint sets (ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY,
-// ANTHROPIC_AUTH_TOKEN, ANTHROPIC_DEFAULT_OPUS_MODEL,
-// ANTHROPIC_DEFAULT_SONNET_MODEL, ANTHROPIC_DEFAULT_HAIKU_MODEL). Names
+// ANTHROPIC_AUTH_TOKEN, ANTHROPIC_DEFAULT_FABLE_MODEL,
+// ANTHROPIC_DEFAULT_OPUS_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL,
+// ANTHROPIC_DEFAULT_HAIKU_MODEL). Names
 // are distinct within a provider. A provider has at most 64 variables,
 // and at most 64 KiB of names and values together.
 type Provider_EnvVar struct {
@@ -893,7 +903,7 @@ var File_circus_v1_provider_proto protoreflect.FileDescriptor
 
 const file_circus_v1_provider_proto_rawDesc = "" +
 	"\n" +
-	"\x18circus/v1/provider.proto\x12\tcircus.v1\"\xc1\a\n" +
+	"\x18circus/v1/provider.proto\x12\tcircus.v1\"\xe2\a\n" +
 	"\bProvider\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x12\n" +
@@ -910,7 +920,7 @@ const file_circus_v1_provider_proto_rawDesc = "" +
 	"\x12secrets_unreadable\x18\n" +
 	" \x01(\bR\x11secretsUnreadable\x12+\n" +
 	"\x12created_at_unix_ms\x18\v \x01(\x03R\x0fcreatedAtUnixMs\x12+\n" +
-	"\x12updated_at_unix_ms\x18\f \x01(\x03R\x0fupdatedAtUnixMs\x1a\xc5\x02\n" +
+	"\x12updated_at_unix_ms\x18\f \x01(\x03R\x0fupdatedAtUnixMs\x1a\xe6\x02\n" +
 	"\vApiEndpoint\x12\x19\n" +
 	"\bbase_url\x18\x01 \x01(\tR\abaseUrl\x12>\n" +
 	"\x06scheme\x18\x02 \x01(\x0e2&.circus.v1.Provider.ApiEndpoint.SchemeR\x06scheme\x12\x10\n" +
@@ -920,7 +930,9 @@ const file_circus_v1_provider_proto_rawDesc = "" +
 	"opus_model\x18\x05 \x01(\tR\topusModel\x12!\n" +
 	"\fsonnet_model\x18\x06 \x01(\tR\vsonnetModel\x12\x1f\n" +
 	"\vhaiku_model\x18\a \x01(\tR\n" +
-	"haikuModel\"I\n" +
+	"haikuModel\x12\x1f\n" +
+	"\vfable_model\x18\b \x01(\tR\n" +
+	"fableModel\"I\n" +
 	"\x06Scheme\x12\x16\n" +
 	"\x12SCHEME_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SCHEME_X_API_KEY\x10\x01\x12\x11\n" +

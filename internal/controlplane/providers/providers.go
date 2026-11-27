@@ -172,6 +172,7 @@ const (
 	EnvBaseURL     = "ANTHROPIC_BASE_URL"
 	EnvAPIKey      = "ANTHROPIC_API_KEY"
 	EnvAuthToken   = "ANTHROPIC_AUTH_TOKEN"
+	EnvFableModel  = "ANTHROPIC_DEFAULT_FABLE_MODEL"
 	EnvOpusModel   = "ANTHROPIC_DEFAULT_OPUS_MODEL"
 	EnvSonnetModel = "ANTHROPIC_DEFAULT_SONNET_MODEL"
 	EnvHaikuModel  = "ANTHROPIC_DEFAULT_HAIKU_MODEL"
@@ -182,7 +183,7 @@ const (
 // name, then the alias models that are set), then the custom variables in
 // p's order.
 func LaunchEnv(p store.Provider, s Secrets) []Var {
-	out := make([]Var, 0, 5+len(s.Env))
+	out := make([]Var, 0, 6+len(s.Env))
 	if p.BaseURL != "" {
 		out = append(out, Var{EnvBaseURL, p.BaseURL})
 	}
@@ -191,7 +192,8 @@ func LaunchEnv(p store.Provider, s Secrets) []Var {
 	} else {
 		out = append(out, Var{EnvAPIKey, s.Key})
 	}
-	for _, m := range []Var{{EnvOpusModel, p.OpusModel}, {EnvSonnetModel, p.SonnetModel}, {EnvHaikuModel, p.HaikuModel}} {
+	models := []Var{{EnvFableModel, p.FableModel}, {EnvOpusModel, p.OpusModel}, {EnvSonnetModel, p.SonnetModel}, {EnvHaikuModel, p.HaikuModel}}
+	for _, m := range models {
 		if m.Value != "" {
 			out = append(out, m)
 		}
@@ -214,7 +216,9 @@ var reservedEnv = map[string]bool{
 	"CLAUDE_CONFIG_DIR": true, "HOME": true, "PATH": true, "CLAUDE_CODE_OAUTH_TOKEN": true,
 	// The worker sets it itself when it starts the CLI with a provider.
 	"CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST": true,
-	EnvBaseURL:                             true, EnvAPIKey: true, EnvAuthToken: true, EnvOpusModel: true, EnvSonnetModel: true, EnvHaikuModel: true,
+	// The endpoint's.
+	EnvBaseURL: true, EnvAPIKey: true, EnvAuthToken: true,
+	EnvFableModel: true, EnvOpusModel: true, EnvSonnetModel: true, EnvHaikuModel: true,
 }
 
 // CheckEnvName returns why name may not be a custom variable's name, or ""

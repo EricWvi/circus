@@ -27,7 +27,7 @@ func fakeProvider(name string, workers ...string) *circusv1.Provider {
 	return &circusv1.Provider{
 		Name: name, Kind: circusv1.Provider_KIND_CLAUDE_CODE,
 		Api: &circusv1.Provider_ApiEndpoint{BaseUrl: "https://gateway.example/v1", Scheme: circusv1.Provider_ApiEndpoint_SCHEME_BEARER,
-			Key: fakeKey, OpusModel: "opus-fake", SonnetModel: "sonnet-fake"},
+			Key: fakeKey, FableModel: "fable-fake", OpusModel: "opus-fake", SonnetModel: "sonnet-fake"},
 		Env:       []*circusv1.Provider_EnvVar{{Name: "FAKE_TOKEN", Value: proto.String(fakeValue)}, {Name: "EMPTY", Value: proto.String("")}},
 		WorkerIds: workers, MaxSessions: 2,
 	}
@@ -99,7 +99,7 @@ func TestProviderCRUD(t *testing.T) {
 	want := &circusv1.Provider{
 		ProviderId: created.GetProviderId(), Name: "Gateway", Kind: circusv1.Provider_KIND_CLAUDE_CODE,
 		Api: &circusv1.Provider_ApiEndpoint{BaseUrl: "https://gateway.example/v1", Scheme: circusv1.Provider_ApiEndpoint_SCHEME_BEARER,
-			KeyLast4: "6789", OpusModel: "opus-fake", SonnetModel: "sonnet-fake"},
+			KeyLast4: "6789", FableModel: "fable-fake", OpusModel: "opus-fake", SonnetModel: "sonnet-fake"},
 		Env:       []*circusv1.Provider_EnvVar{{Name: "FAKE_TOKEN", ValueLast4: "XYZW"}, {Name: "EMPTY"}},
 		WorkerIds: []string{"w2", "w1"}, MaxSessions: 2,
 		CreatedAtUnixMs: h.clock.Load(), UpdatedAtUnixMs: h.clock.Load(),
@@ -225,6 +225,7 @@ func TestProviderValidation(t *testing.T) {
 		{"api.key", func(p *circusv1.Provider) { p.Api.Key = "sk-fake\n" }},
 		{"api.base_url", func(p *circusv1.Provider) { p.Api.BaseUrl = "https://host:99999" }},
 		{"env[0].name", func(p *circusv1.Provider) { p.Env[0].Name = "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST" }},
+		{"api.fable_model", func(p *circusv1.Provider) { p.Api.FableModel = "tab\tsep" }},
 		{"api.opus_model", func(p *circusv1.Provider) { p.Api.OpusModel = "has space" }},
 		{"api.sonnet_model", func(p *circusv1.Provider) { p.Api.SonnetModel = strings.Repeat("m", 257) }},
 		{"api.haiku_model", func(p *circusv1.Provider) { p.Api.HaikuModel = "ctl\x01" }},

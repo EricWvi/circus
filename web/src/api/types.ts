@@ -722,6 +722,7 @@ export interface ModelProvider {
   /** "unspecified" for a scheme this client doesn't know (from a newer server). */
   scheme: ProviderScheme | "unspecified"
   keyLast4: string
+  fableModel: string
   opusModel: string
   sonnetModel: string
   haikuModel: string
@@ -747,6 +748,7 @@ export interface ModelProviderInput {
   scheme: ProviderScheme
   /** Required on create; on update "" keeps the stored key. */
   key: string
+  fableModel: string
   opusModel: string
   sonnetModel: string
   haikuModel: string

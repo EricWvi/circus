@@ -207,7 +207,8 @@ func TestProviderScheduling(t *testing.T) {
 	w := newProviderWorld(t)
 	xKey := w.provider(t, apiProvider("x-api-key", pb.Provider_ApiEndpoint_SCHEME_X_API_KEY, "sk-fake-x-key", w.worker("alpha")))
 	bearer := apiProvider("bearer", pb.Provider_ApiEndpoint_SCHEME_BEARER, "fake-bearer-token", w.worker("alpha"), w.worker("beta"))
-	bearer.Api.BaseUrl, bearer.Api.OpusModel, bearer.Api.SonnetModel, bearer.Api.HaikuModel = "https://gateway.example/anthropic", "opus-fake", "sonnet-fake", "haiku-fake"
+	bearer.Api.BaseUrl = "https://gateway.example/anthropic"
+	bearer.Api.FableModel, bearer.Api.OpusModel, bearer.Api.SonnetModel, bearer.Api.HaikuModel = "fable-fake", "opus-fake", "sonnet-fake", "haiku-fake"
 	bearer.Env = []*pb.Provider_EnvVar{{Name: "FAKE_REGION", Value: proto.String("fake-east")}, {Name: "FAKE_EMPTY", Value: proto.String("")}}
 	bearer.MaxSessions = 1
 	full := w.provider(t, bearer)
@@ -258,7 +259,8 @@ func TestProviderScheduling(t *testing.T) {
 	second.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED)
 	first.state(pb.Session_STATE_IDLE, pb.TurnOutcome_TURN_OUTCOME_COMPLETED)
 	const bearerEnv = "ANTHROPIC_BASE_URL=https://gateway.example/anthropic ANTHROPIC_AUTH_TOKEN=fake-bearer-token " +
-		"ANTHROPIC_DEFAULT_OPUS_MODEL=opus-fake ANTHROPIC_DEFAULT_SONNET_MODEL=sonnet-fake ANTHROPIC_DEFAULT_HAIKU_MODEL=haiku-fake FAKE_REGION=fake-east FAKE_EMPTY="
+		"ANTHROPIC_DEFAULT_FABLE_MODEL=fable-fake ANTHROPIC_DEFAULT_OPUS_MODEL=opus-fake ANTHROPIC_DEFAULT_SONNET_MODEL=sonnet-fake " +
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL=haiku-fake FAKE_REGION=fake-east FAKE_EMPTY="
 	for _, id := range []string{first.id, second.id} {
 		w.once(t, "bearer", id, "", bearerEnv)
 		if l := w.launches(id)[0]; l.reply.GetLaunchEnv().GetProviderId() != full.GetProviderId() {
