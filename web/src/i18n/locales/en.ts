@@ -509,6 +509,13 @@ export const en = {
     form: {
       newTitle: "Add provider",
       editTitle: "Edit {{name}}",
+      agent: "Agent",
+      agents: {
+        claude_code: "Claude Code",
+        codex: "Codex",
+        opencode: "opencode",
+      },
+      agentUnavailable: "Providers for {{agent}} aren't available yet.",
       endpoint: "Endpoint",
       baseUrl: "Base URL",
       baseUrlPlaceholder: "Claude Code's default endpoint",

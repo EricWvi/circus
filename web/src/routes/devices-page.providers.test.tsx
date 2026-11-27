@@ -419,6 +419,163 @@ describe("adding a provider", () => {
   })
 })
 
+describe("the agent of a provider", () => {
+  const agents = () => dialog().getByRole("radiogroup", { name: "Agent" })
+  const agent = (name: string) => within(agents()).getByRole("radio", { name })
+  const checked = () => within(agents()).getByRole("radio", { checked: true })
+  /** The form's fields show: a textbox finds no hidden element. */
+  const fieldsShown = () => dialog().queryByRole("textbox", { name: "Name" }) !== null
+  const createButton = () => dialog().getByRole("button", { name: "Create" }) as HTMLButtonElement
+  /** What an element's aria-describedby points at, as text. */
+  const description = (element: HTMLElement) =>
+    (element.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ")
+
+  it("starts at Claude Code; Codex and opencode say they aren't available yet", async () => {
+    const { state } = await renderProviders()
+    const before = state.providers.length
+    await chooseAdd("Add model provider")
+    expect(within(agents()).getAllByRole("radio").map((r) => r.textContent)).toEqual(["Claude Code", "Codex", "opencode"])
+    expect(checked().textContent).toBe("Claude Code")
+    // The marks are decorative: each option is named by its text alone.
+    for (const radio of within(agents()).getAllByRole("radio")) {
+      expect(radio.querySelector("[data-agent-mark]")?.getAttribute("aria-hidden")).toBe("true")
+    }
+    expect(fieldsShown()).toBe(true)
+    expect(agent("Claude Code").getAttribute("aria-describedby")).toBeNull()
+    // A complete Claude Code provider, which could be created as it is.
+    type("Name", "Staging")
+    type("Key", "sk-staging-0000")
+
+    for (const name of ["Codex", "opencode"]) {
+      fireEvent.click(agent(name))
+      expect(checked().textContent).toBe(name)
+      expect(fieldsShown()).toBe(false)
+      expect(dialog().queryByRole("checkbox")).toBeNull()
+      // The body says why, and the chosen option and the button point at it.
+      const message = `Providers for ${name} aren't available yet.`
+      expect(dialog().getByText(message)).toBeTruthy()
+      expect(description(agent(name))).toBe(message)
+      expect(description(createButton())).toBe(message)
+      expect(createButton().disabled).toBe(true)
+      // Neither the button nor a submit (as Enter in the form makes) creates it.
+      fireEvent.click(createButton())
+      fireEvent.submit(createButton().closest("form")!)
+      await advance(50)
+      expect(state.providers.length).toBe(before)
+      expect(screen.getByRole("dialog")).toBeTruthy()
+    }
+
+    // Back at Claude Code, the fields are as they were left.
+    fireEvent.click(agent("Claude Code"))
+    expect(fieldsShown()).toBe(true)
+    expect(input("Name").value).toBe("Staging")
+    expect(dialog().queryByText(/aren't available yet/)).toBeNull()
+    expect(createButton().disabled).toBe(false)
+    await save("Create")
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(stored(state, "Staging")).toBeTruthy()
+  })
+
+  it("is one radio group for the keyboard", async () => {
+    /** A key pressed and released, with the focus moves it makes in between. */
+    const press = async (target: HTMLElement, key: string) => {
+      fireEvent.keyDown(target, { key })
+      await advance(0)
+      fireEvent.keyUp(target, { key })
+    }
+    await renderProviders()
+    await chooseAdd("Add model provider")
+    // The form starts at the name, below the choice.
+    expect(document.activeElement).toBe(input("Name"))
+    // Leaving the empty name for the choice isn't an error yet. Tabbing
+    // into the group lands on the chosen option.
+    fireEvent.blur(input("Name"))
+    agents().focus()
+    await advance(0)
+    expect(document.activeElement).toBe(agent("Claude Code"))
+    expect(dialog().queryByText("Enter a provider name.")).toBeNull()
+    await press(agent("Claude Code"), "ArrowRight")
+    expect(document.activeElement).toBe(agent("Codex"))
+    expect(checked().textContent).toBe("Codex")
+    expect(fieldsShown()).toBe(false)
+
+    await press(agent("Codex"), "ArrowRight")
+    expect(checked().textContent).toBe("opencode")
+    // It wraps around.
+    await press(agent("opencode"), "ArrowRight")
+    expect(checked().textContent).toBe("Claude Code")
+    await press(agent("Claude Code"), "ArrowLeft")
+    expect(document.activeElement).toBe(agent("opencode"))
+    expect(checked().textContent).toBe("opencode")
+    // Up and down move too.
+    await press(agent("opencode"), "ArrowUp")
+    expect(checked().textContent).toBe("Codex")
+    await press(agent("Codex"), "ArrowDown")
+    expect(checked().textContent).toBe("opencode")
+    // Only the chosen option is in the tab order.
+    expect(within(agents()).getAllByRole("radio").map((r) => r.tabIndex)).toEqual([-1, -1, 0])
+
+    // Enter selects the focused option, and doesn't submit the form.
+    agent("Claude Code").focus()
+    await press(agent("Claude Code"), "Enter")
+    await advance(50)
+    expect(checked().textContent).toBe("Claude Code")
+    expect(fieldsShown()).toBe(true)
+    expect(dialog().queryByText("Enter a provider name.")).toBeNull()
+    // Space is each option's own activation as a button, which happy-dom
+    // doesn't emulate.
+  })
+
+  it("can't change while the provider is being created", async () => {
+    let release = () => {}
+    const { state } = await renderProviders(seedState(NOW), (real) => ({
+      createProvider: (req) => new Promise((resolve) => (release = () => resolve(real.createProvider(req)))),
+    }))
+    await chooseAdd("Add model provider")
+    type("Name", "Staging")
+    type("Key", "sk-staging-0000")
+    await save("Create")
+    for (const radio of within(agents()).getAllByRole("radio")) expect((radio as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(agent("Codex"))
+    fireEvent.keyDown(agent("Codex"), { key: "Enter" })
+    expect(checked().textContent).toBe("Claude Code")
+    expect(fieldsShown()).toBe(true)
+    release()
+    await advance(50)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(stored(state, "Staging")).toBeTruthy()
+  })
+
+  it("keeps a saved provider on Claude Code", async () => {
+    await renderProviders()
+    fireEvent.click(row("Team proxy").getByRole("button", { name: "Edit Team proxy" }))
+    expect(dialog().queryByRole("radiogroup")).toBeNull()
+    expect(dialog().queryByRole("radio")).toBeNull()
+    const shown = dialog().getByRole("group", { name: "Agent" })
+    expect(shown.textContent).toBe("AgentClaude Code")
+    expect(fieldsShown()).toBe(true)
+    expect((dialog().getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it("reads in Chinese", async () => {
+    await i18n.changeLanguage("zh-CN")
+    await renderProviders()
+    await chooseAdd("添加模型提供方", "添加")
+    expect(checked().textContent).toBe("Claude Code")
+    fireEvent.click(agent("Codex"))
+    expect(dialog().queryByRole("textbox", { name: "名称" })).toBeNull()
+    expect((dialog().getByRole("button", { name: "创建" }) as HTMLButtonElement).disabled).toBe(true)
+    expect(dialog().getByText("暂不支持为 Codex 添加提供方。")).toBeTruthy()
+    expect(description(agent("Codex"))).toBe("暂不支持为 Codex 添加提供方。")
+    fireEvent.click(agent("opencode"))
+    expect(dialog().getByText("暂不支持为 opencode 添加提供方。")).toBeTruthy()
+    await i18n.changeLanguage("en")
+  })
+})
+
 describe("editing a provider", () => {
   it("starts with empty secrets that keep the stored ones", async () => {
     const { state } = await renderProviders()

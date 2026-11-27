@@ -130,7 +130,17 @@ export const ProvidersSection = memo(function ProvidersSection({
 
       <Dialog open={editing !== null} onOpenChange={(open) => !open && closeForm()}>
         <DialogContent
-          className="max-h-[calc(100svh-2rem)] gap-5 overflow-y-auto sm:max-w-xl"
+          // The form holds its height against this limit (ProviderForm).
+          className="max-h-(--provider-dialog-max) gap-5 overflow-y-auto [--provider-dialog-max:calc(100svh-2rem)] sm:max-w-xl"
+          onOpenAutoFocus={(event) => {
+            // A new provider starts at its name, not at the agent choice
+            // above it (the menu that opens the form keeps the name's own
+            // autofocus from landing).
+            const name = document.getElementById("provider-name")
+            if (editing?.kind !== "new" || !name) return
+            event.preventDefault()
+            name.focus({ preventScroll: true })
+          }}
           onCloseAutoFocus={restoreFocus}
         >
           {editing && (

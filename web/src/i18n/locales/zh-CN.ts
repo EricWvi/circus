@@ -502,6 +502,13 @@ export const zhCN = {
     form: {
       newTitle: "添加提供方",
       editTitle: "编辑 {{name}}",
+      agent: "Agent",
+      agents: {
+        claude_code: "Claude Code",
+        codex: "Codex",
+        opencode: "opencode",
+      },
+      agentUnavailable: "暂不支持为 {{agent}} 添加提供方。",
       endpoint: "端点",
       baseUrl: "Base URL",
       baseUrlPlaceholder: "Claude Code 的默认端点",

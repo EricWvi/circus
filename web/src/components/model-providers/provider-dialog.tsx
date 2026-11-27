@@ -1,5 +1,5 @@
 import { PlusIcon, XIcon } from "lucide-react"
-import { useState, type FormEvent, type ReactNode } from "react"
+import { useId, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { Trans, useTranslation } from "react-i18next"
 
 import { isApiError } from "@/api/errors"
@@ -26,6 +26,7 @@ import {
 } from "@/lib/model-provider-form"
 import { cn } from "@/lib/utils"
 
+import { AgentChoice, AgentLabel, type ProviderAgent } from "./provider-agent"
 import { SecretInput } from "./secret-input"
 import { useProviderForm } from "./use-provider-form"
 
@@ -36,6 +37,10 @@ const MODEL_FIELDS = ["opusModel", "sonnetModel", "haikuModel"] as const
  * The form of the provider dialog: a new provider, or `editing`. Mounted
  * with the dialog content, so every opening starts from the saved state.
  * Secrets start empty: leaving them so keeps what is stored.
+ *
+ * A new provider starts by choosing its agent. Only Claude Code has
+ * providers so far: Codex and opencode are offered for later, with no
+ * fields and nothing to create. A saved provider's agent can't change.
  */
 export function ProviderForm({
   editing,
@@ -68,6 +73,28 @@ export function ProviderForm({
   const [reloading, setReloading] = useState(false)
   const [reloadError, setReloadError] = useState<unknown>(null)
   const busy = create.isPending || update.isPending || reloading
+  // Every saved provider is for Claude Code.
+  const [agent, setAgent] = useState<ProviderAgent>("claude_code")
+  const unavailable = agent !== "claude_code"
+  const unavailableId = useId()
+  const formRef = useRef<HTMLFormElement>(null)
+  // An agent without providers yet shows only a message. The form keeps the
+  // height it had with the fields, as far as the dialog shows it (its limit
+  // is --provider-dialog-max, less its padding), so the dialog doesn't
+  // shrink and re-centre under the pointer and the footer stays at its
+  // bottom; CSS keeps that right as the window resizes.
+  const [heldHeight, setHeldHeight] = useState<string>()
+  const chooseAgent = (next: ProviderAgent) => {
+    const element = formRef.current
+    // The dialog's content is the form's scrolling parent.
+    const scroller = element?.parentElement
+    if (!unavailable && element && scroller) {
+      const style = getComputedStyle(scroller)
+      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+      setHeldHeight(`min(${element.offsetHeight}px, calc(var(--provider-dialog-max, 100svh) - ${padding}px))`)
+    }
+    setAgent(next)
+  }
 
   // Assigned workers the list no longer has (deleted since): the server
   // refuses their ids, so they are dropped from what is sent, and the form
@@ -78,7 +105,7 @@ export function ProviderForm({
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (busy || stale) return
+    if (busy || stale || unavailable) return
     const submitted = form.submit()
     if (!submitted) return
     const req = { ...submitted, workerIds: submitted.workerIds.filter((id) => !goneWorkers.includes(id)) }
@@ -143,178 +170,205 @@ export function ProviderForm({
   }
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-6">
+    <form
+      ref={formRef}
+      onSubmit={submit}
+      noValidate
+      className="flex flex-col gap-6"
+      style={unavailable ? { minHeight: heldHeight } : undefined}
+    >
       <DialogHeader>
         <DialogTitle>{base ? t("providers.form.editTitle", { name: base.name }) : t("providers.form.newTitle")}</DialogTitle>
       </DialogHeader>
 
-      <Field>
-        <FieldLabel htmlFor="provider-name">{t("common.name")}</FieldLabel>
-        <Input
-          id="provider-name"
-          autoComplete="off"
-          value={values.name}
-          onChange={(e) => form.set("name", e.target.value)}
-          {...nameProps}
-          // A new provider starts at its name, without a focus ring.
-          {...(base ? {} : { autoFocus: true, "data-quiet-focus": quietAutoFocus["data-quiet-focus"] })}
-          onBlur={() => {
-            quietAutoFocus.onBlur()
-            form.touch("name")
-          }}
-        />
-        {errors.fields.name && <FieldError>{errors.fields.name}</FieldError>}
-      </Field>
-
-      <FieldSet className="gap-4">
-        <FieldLegend variant="label" className="mb-2">
-          {t("providers.form.endpoint")}
-        </FieldLegend>
-        <Field>
-          <FieldLabel htmlFor="provider-base-url">{t("providers.form.baseUrl")}</FieldLabel>
-          <Input
-            id="provider-base-url"
-            autoComplete="off"
-            spellCheck={false}
-            inputMode="url"
-            placeholder={t("providers.form.baseUrlPlaceholder")}
-            value={values.baseUrl}
-            onChange={(e) => form.set("baseUrl", e.target.value)}
-            {...baseUrlProps}
-          />
-          {errors.fields.baseUrl && <FieldError>{errors.fields.baseUrl}</FieldError>}
-        </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SchemeField
-            value={values.scheme}
-            busy={busy}
-            error={errors.fields.scheme}
-            onChange={(scheme) => form.set("scheme", scheme)}
-          />
-          <Field>
-            <FieldLabel htmlFor="provider-key">{t("providers.form.key")}</FieldLabel>
-            <SecretInput
-              id="provider-key"
-              placeholder={keyPlaceholder}
-              value={values.key}
-              aria-describedby="provider-key-hint"
-              onChange={(e) => form.set("key", e.target.value)}
-              {...keyProps}
-            />
-            {errors.fields.key ? (
-              <FieldError>{errors.fields.key}</FieldError>
-            ) : (
-              <FieldDescription id="provider-key-hint" className={cn("text-xs", unreadable && "text-destructive")}>
-                {keyHint}
-              </FieldDescription>
-            )}
-          </Field>
-        </div>
-      </FieldSet>
-
-      <FieldSet className="gap-3">
-        <FieldLegend variant="label" className="mb-2">
-          {t("providers.form.models")}
-        </FieldLegend>
-        <FieldDescription className="text-xs">{t("providers.form.modelsHint")}</FieldDescription>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {MODEL_FIELDS.map((field) => (
-            <Field key={field} className="gap-1.5">
-              <FieldLabel htmlFor={`provider-${field}`} className="text-xs text-muted-foreground">
-                {t(`providers.form.${field}`)}
-              </FieldLabel>
-              <Input
-                id={`provider-${field}`}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder={t("providers.form.modelPlaceholder")}
-                value={values[field]}
-                onChange={(e) => form.set(field, e.target.value)}
-                {...fieldProps(field, errors.fields[field])}
-              />
-              {errors.fields[field] && <FieldError>{errors.fields[field]}</FieldError>}
-            </Field>
-          ))}
-        </div>
-      </FieldSet>
-
-      <VariablesField form={form} editing={base} busy={busy} />
-
-      <WorkersField
-        workers={workers.data}
-        failed={workers.isError && !workers.data}
-        value={values.workerIds}
-        busy={busy}
-        error={errors.fields.workerIds}
-        gone={goneWorkers.length}
-        onChange={(ids) => form.set("workerIds", ids)}
-        onAddWorker={onAddWorker}
-      />
-
-      <Field>
-        <FieldLabel htmlFor="provider-max-sessions">{t("providers.form.maxSessions")}</FieldLabel>
-        <Input
-          id="provider-max-sessions"
-          inputMode="numeric"
-          autoComplete="off"
-          className="max-w-40"
-          placeholder={t("providers.form.maxSessionsPlaceholder")}
-          value={values.maxSessions}
-          aria-describedby="provider-max-sessions-hint"
-          onChange={(e) => form.set("maxSessions", e.target.value)}
-          {...maxSessionsProps}
-        />
-        {errors.fields.maxSessions ? (
-          <FieldError>{errors.fields.maxSessions}</FieldError>
-        ) : (
-          <FieldDescription id="provider-max-sessions-hint" className="text-xs">
-            {t("providers.form.maxSessionsHint")}
-          </FieldDescription>
-        )}
-      </Field>
-
-      <label className="flex cursor-default items-start gap-2.5">
-        <Checkbox
-          className="mt-0.5"
-          checked={values.isDefault}
+      {base ? (
+        <AgentLabel agent="claude_code" />
+      ) : (
+        <AgentChoice
+          value={agent}
+          onChange={chooseAgent}
           disabled={busy}
-          onCheckedChange={(checked) => form.set("isDefault", checked === true)}
-          aria-describedby="provider-default-hint"
+          describedBy={unavailable ? unavailableId : undefined}
         />
-        <span className="flex flex-col gap-0.5">
-          <span className="text-sm">{t("providers.form.useAsDefault")}</span>
-          <span id="provider-default-hint" className="text-xs text-muted-foreground">
-            {t("providers.form.useAsDefaultHint")}
-          </span>
-        </span>
-      </label>
-
-      {stale && (
-        <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-          <span className="text-destructive">{t("providers.form.changedElsewhere")}</span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-disabled={reloading || undefined}
-            className={busyClass}
-            onClick={() => void reloadNow()}
-          >
-            {reloading && <Spinner aria-label={t("common.loading")} />}
-            {t("providers.form.discardAndReload")}
-          </Button>
-          {reloadError !== null && (
-            <span className="text-destructive">
-              {reloadError instanceof Error && reloadError.message === "gone"
-                ? t("providers.form.gone")
-                : providerErrorMessage(reloadError)}
-            </span>
-          )}
-        </div>
       )}
-      {errors.form && (
-        <p role="alert" className="text-sm text-destructive">
-          {errors.form}
+
+      {/* Hidden rather than unmounted: switching back finds them as left. */}
+      <div hidden={unavailable} className="flex flex-col gap-6">
+        <Field>
+          <FieldLabel htmlFor="provider-name">{t("common.name")}</FieldLabel>
+          <Input
+            id="provider-name"
+            autoComplete="off"
+            value={values.name}
+            onChange={(e) => form.set("name", e.target.value)}
+            {...nameProps}
+            // A new provider starts at its name (the dialog focuses it), without a focus ring.
+            {...(base ? {} : { "data-quiet-focus": quietAutoFocus["data-quiet-focus"] })}
+            onBlur={() => {
+              quietAutoFocus.onBlur()
+              // Leaving a new provider's name empty isn't touching it: the
+              // user may choose the agent above first. Saving still asks for it.
+              if (base || values.name !== "") form.touch("name")
+            }}
+          />
+          {errors.fields.name && <FieldError>{errors.fields.name}</FieldError>}
+        </Field>
+
+        <FieldSet className="gap-4">
+          <FieldLegend variant="label" className="mb-2">
+            {t("providers.form.endpoint")}
+          </FieldLegend>
+          <Field>
+            <FieldLabel htmlFor="provider-base-url">{t("providers.form.baseUrl")}</FieldLabel>
+            <Input
+              id="provider-base-url"
+              autoComplete="off"
+              spellCheck={false}
+              inputMode="url"
+              placeholder={t("providers.form.baseUrlPlaceholder")}
+              value={values.baseUrl}
+              onChange={(e) => form.set("baseUrl", e.target.value)}
+              {...baseUrlProps}
+            />
+            {errors.fields.baseUrl && <FieldError>{errors.fields.baseUrl}</FieldError>}
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SchemeField
+              value={values.scheme}
+              busy={busy}
+              error={errors.fields.scheme}
+              onChange={(scheme) => form.set("scheme", scheme)}
+            />
+            <Field>
+              <FieldLabel htmlFor="provider-key">{t("providers.form.key")}</FieldLabel>
+              <SecretInput
+                id="provider-key"
+                placeholder={keyPlaceholder}
+                value={values.key}
+                aria-describedby="provider-key-hint"
+                onChange={(e) => form.set("key", e.target.value)}
+                {...keyProps}
+              />
+              {errors.fields.key ? (
+                <FieldError>{errors.fields.key}</FieldError>
+              ) : (
+                <FieldDescription id="provider-key-hint" className={cn("text-xs", unreadable && "text-destructive")}>
+                  {keyHint}
+                </FieldDescription>
+              )}
+            </Field>
+          </div>
+        </FieldSet>
+
+        <FieldSet className="gap-3">
+          <FieldLegend variant="label" className="mb-2">
+            {t("providers.form.models")}
+          </FieldLegend>
+          <FieldDescription className="text-xs">{t("providers.form.modelsHint")}</FieldDescription>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {MODEL_FIELDS.map((field) => (
+              <Field key={field} className="gap-1.5">
+                <FieldLabel htmlFor={`provider-${field}`} className="text-xs text-muted-foreground">
+                  {t(`providers.form.${field}`)}
+                </FieldLabel>
+                <Input
+                  id={`provider-${field}`}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={t("providers.form.modelPlaceholder")}
+                  value={values[field]}
+                  onChange={(e) => form.set(field, e.target.value)}
+                  {...fieldProps(field, errors.fields[field])}
+                />
+                {errors.fields[field] && <FieldError>{errors.fields[field]}</FieldError>}
+              </Field>
+            ))}
+          </div>
+        </FieldSet>
+
+        <VariablesField form={form} editing={base} busy={busy} />
+
+        <WorkersField
+          workers={workers.data}
+          failed={workers.isError && !workers.data}
+          value={values.workerIds}
+          busy={busy}
+          error={errors.fields.workerIds}
+          gone={goneWorkers.length}
+          onChange={(ids) => form.set("workerIds", ids)}
+          onAddWorker={onAddWorker}
+        />
+
+        <Field>
+          <FieldLabel htmlFor="provider-max-sessions">{t("providers.form.maxSessions")}</FieldLabel>
+          <Input
+            id="provider-max-sessions"
+            inputMode="numeric"
+            autoComplete="off"
+            className="max-w-40"
+            placeholder={t("providers.form.maxSessionsPlaceholder")}
+            value={values.maxSessions}
+            aria-describedby="provider-max-sessions-hint"
+            onChange={(e) => form.set("maxSessions", e.target.value)}
+            {...maxSessionsProps}
+          />
+          {errors.fields.maxSessions ? (
+            <FieldError>{errors.fields.maxSessions}</FieldError>
+          ) : (
+            <FieldDescription id="provider-max-sessions-hint" className="text-xs">
+              {t("providers.form.maxSessionsHint")}
+            </FieldDescription>
+          )}
+        </Field>
+
+        <label className="flex cursor-default items-start gap-2.5">
+          <Checkbox
+            className="mt-0.5"
+            checked={values.isDefault}
+            disabled={busy}
+            onCheckedChange={(checked) => form.set("isDefault", checked === true)}
+            aria-describedby="provider-default-hint"
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm">{t("providers.form.useAsDefault")}</span>
+            <span id="provider-default-hint" className="text-xs text-muted-foreground">
+              {t("providers.form.useAsDefaultHint")}
+            </span>
+          </span>
+        </label>
+
+        {stale && (
+          <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+            <span className="text-destructive">{t("providers.form.changedElsewhere")}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-disabled={reloading || undefined}
+              className={busyClass}
+              onClick={() => void reloadNow()}
+            >
+              {reloading && <Spinner aria-label={t("common.loading")} />}
+              {t("providers.form.discardAndReload")}
+            </Button>
+            {reloadError !== null && (
+              <span className="text-destructive">
+                {reloadError instanceof Error && reloadError.message === "gone"
+                  ? t("providers.form.gone")
+                  : providerErrorMessage(reloadError)}
+              </span>
+            )}
+          </div>
+        )}
+        {errors.form && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.form}
+          </p>
+        )}
+      </div>
+      {unavailable && (
+        <p id={unavailableId} className="flex-1 text-sm text-muted-foreground">
+          {t("providers.form.agentUnavailable", { agent: t(`providers.form.agents.${agent}`) })}
         </p>
       )}
       <DialogFooter>
@@ -323,7 +377,13 @@ export function ProviderForm({
             {t("common.cancel")}
           </Button>
         </DialogClose>
-        <Button type="submit" disabled={stale} aria-disabled={busy || undefined} className={busyClass}>
+        <Button
+          type="submit"
+          disabled={stale || unavailable}
+          aria-disabled={busy || undefined}
+          aria-describedby={unavailable ? unavailableId : undefined}
+          className={busyClass}
+        >
           {(create.isPending || update.isPending) && (
             <Spinner aria-label={base ? t("common.saving") : t("providers.form.creating")} />
           )}
