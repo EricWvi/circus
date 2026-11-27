@@ -186,6 +186,30 @@ func TestLedgerChangesets(t *testing.T) {
 		t.Fatalf("resolved D0 body = %q", storage.Msg.Decision.Body)
 	}
 
+	// Export the main line: its files and index at the head, without a
+	// changeset, into a new directory only.
+	head, err := ledgerAPI.GetLedger(ctx, connect.NewRequest(&circusv1.GetLedgerRequest{ProjectId: projectID}))
+	must(t, err)
+	exported := filepath.Join(h.dir, "export")
+	out, _ = h.ledgerCLI(nil, 0, "export", "Plans", "--dir", exported)
+	if out != "commit: "+head.Msg.HeadCommit+"\ndirectory: "+exported+"\n" {
+		t.Fatalf("export:\n%s", out)
+	}
+	exportedStorage, err := os.ReadFile(filepath.Join(exported, "D0-Storage.md"))
+	must(t, err)
+	if !strings.Contains(string(exportedStorage), "WAL mode with FULL sync") {
+		t.Fatalf("exported D0 = %q", exportedStorage)
+	}
+	index, err := os.ReadFile(filepath.Join(exported, "INDEX.md"))
+	must(t, err)
+	if !strings.Contains(string(index), "| D1 | net | Transport |") {
+		t.Fatalf("exported index = %q", index)
+	}
+	_, errOut = h.ledgerCLI(nil, 1, "export", "Plans", "--dir", exported)
+	if !strings.Contains(errOut, "exists") {
+		t.Fatalf("export into the export:\n%s", errOut)
+	}
+
 	// Discard one, and find it with its reason.
 	dropped, _ := h.ledgerOpen(nil, "Plans")
 	h.ledgerCLI(nil, 0, "discard", dropped, "--reason", "only reading")
@@ -194,7 +218,8 @@ func TestLedgerChangesets(t *testing.T) {
 		t.Fatalf("discarded:\n%s", out)
 	}
 	out, _ = h.ledgerCLI(nil, 0, "list", "Plans")
-	if strings.Count(out, "\tmerged\t") != 4 {
+	// The exports created no changeset.
+	if strings.Count(out, "\tmerged\t") != 4 || strings.Count(out, "\n") != 5 {
 		t.Fatalf("list:\n%s", out)
 	}
 }

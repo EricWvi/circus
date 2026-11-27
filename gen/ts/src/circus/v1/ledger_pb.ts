@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/ledger.proto.
  */
 export const file_circus_v1_ledger: GenFile = /*@__PURE__*/
-  fileDesc("ChZjaXJjdXMvdjEvbGVkZ2VyLnByb3RvEgljaXJjdXMudjEiYwoLTGVkZ2VyRW50cnkSDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgFIAEoAyImChBHZXRMZWRnZXJSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiZgoRR2V0TGVkZ2VyUmVzcG9uc2USEwoLaGVhZF9jb21taXQYASABKAkSJwoHZW50cmllcxgCIAMoCzIWLmNpcmN1cy52MS5MZWRnZXJFbnRyeRITCgtuZXh0X251bWJlchgDIAEoDSKAAQoIRGVjaXNpb24SDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEgwKBGJvZHkYBSABKAkSDgoGY29tbWl0GAYgASgJEhwKFGNvbW1pdHRlZF9hdF91bml4X21zGAcgASgDIkgKEkdldERlY2lzaW9uUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIOCgZjb21taXQYAyABKAkiPAoTR2V0RGVjaXNpb25SZXNwb25zZRIlCghkZWNpc2lvbhgBIAEoCzITLmNpcmN1cy52MS5EZWNpc2lvbiLbAQoPRGVjaXNpb25WZXJzaW9uEg4KBmNvbW1pdBgBIAEoCRIcChRjb21taXR0ZWRfYXRfdW5peF9tcxgCIAEoAxIOCgZhdXRob3IYAyABKAkSDwoHc3VtbWFyeRgEIAEoCRIMCgRwYXRoGAUgASgJEg0KBXRpdGxlGAYgASgJEg0KBWFkZGVkGAcgASgIEhcKD2NvbnRlbnRfY2hhbmdlZBgIIAEoCBINCgVtb3ZlZBgJIAEoCBIQCghyZXRpdGxlZBgKIAEoCBITCgtjb2RlX2NvbW1pdBgLIAEoCSJnChpMaXN0RGVjaXNpb25IaXN0b3J5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJkChtMaXN0RGVjaXNpb25IaXN0b3J5UmVzcG9uc2USLAoIdmVyc2lvbnMYASADKAsyGi5jaXJjdXMudjEuRGVjaXNpb25WZXJzaW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSKOAwoJQ2hhbmdlc2V0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEikKBXN0YXRlGAMgASgOMhouY2lyY3VzLnYxLkNoYW5nZXNldC5TdGF0ZRITCgtiYXNlX2NvbW1pdBgEIAEoCRIYChBvcGVuZXJfd29ya2VyX2lkGAUgASgJEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgGIAEoAxIaChJ1cGRhdGVkX2F0X3VuaXhfbXMYByABKAMSFQoNbWVyZ2VkX2NvbW1pdBgIIAEoCRITCgtjb2RlX2NvbW1pdBgJIAEoCRIWCg5kaXNjYXJkX3JlYXNvbhgKIAEoCRIWCg5yZXBhaXJfZmFpbHVyZRgLIAEoCRISCgpzZXNzaW9uX2lkGAwgASgJIlUKBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASDgoKU1RBVEVfT1BFThABEhAKDFNUQVRFX01FUkdFRBACEhMKD1NUQVRFX0RJU0NBUkRFRBADIisKCkxlZGdlckZpbGUSDAoEcGF0aBgBIAEoCRIPCgdjb250ZW50GAIgASgJIkoKCkZpbGVDaGFuZ2USDAoEcGF0aBgBIAEoCRIRCgdjb250ZW50GAIgASgJSAASEQoHZGVsZXRlZBgDIAEoCEgAQggKBmNoYW5nZSInChRPcGVuQ2hhbmdlc2V0UmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJIkAKFU9wZW5DaGFuZ2VzZXRSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0IkQKGFJlYWRDaGFuZ2VzZXRCYXNlUmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSEgoKcGFnZV90b2tlbhgCIAEoCSJaChlSZWFkQ2hhbmdlc2V0QmFzZVJlc3BvbnNlEiQKBWZpbGVzGAEgAygLMhUuY2lyY3VzLnYxLkxlZGdlckZpbGUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIi4KDUxlZGdlclByb2JsZW0SDAoEcGF0aBgBIAEoCRIPCgdtZXNzYWdlGAIgASgJIqoBCg5MZWRnZXJDb25mbGljdBIMCgRwYXRoGAEgASgJEhMKC2Jhc2VfZXhpc3RzGAIgASgIEgwKBGJhc2UYAyABKAkSGAoQY2hhbmdlc2V0X2V4aXN0cxgEIAEoCBIRCgljaGFuZ2VzZXQYBSABKAkSEwoLbWFpbl9leGlzdHMYBiABKAgSDAoEbWFpbhgHIAEoCRIXCg9jb250ZW50X29taXR0ZWQYCCABKAgiVQoVQ2hlY2tDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRImCgdjaGFuZ2VzGAIgAygLMhUuY2lyY3VzLnYxLkZpbGVDaGFuZ2Ui8gEKFkNoZWNrQ2hhbmdlc2V0UmVzcG9uc2USJwoJY2hhbmdlc2V0GAEgASgLMhQuY2lyY3VzLnYxLkNoYW5nZXNldBIqCghwcm9ibGVtcxgCIAMoCzIYLmNpcmN1cy52MS5MZWRnZXJQcm9ibGVtEhQKDGZhc3RfZm9yd2FyZBgDIAEoCBITCgttYWluX2NvbW1pdBgEIAEoCRIsCgljb25mbGljdHMYBSADKAsyGS5jaXJjdXMudjEuTGVkZ2VyQ29uZmxpY3QSKgoId2FybmluZ3MYBiADKAsyGC5jaXJjdXMudjEuTGVkZ2VyUHJvYmxlbSJeCh1SZWFkQ2hhbmdlc2V0Q29uZmxpY3RzUmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSEwoLbWFpbl9jb21taXQYAiABKAkSEgoKcGFnZV90b2tlbhgDIAEoCSJnCh5SZWFkQ2hhbmdlc2V0Q29uZmxpY3RzUmVzcG9uc2USLAoJY29uZmxpY3RzGAEgAygLMhkuY2lyY3VzLnYxLkxlZGdlckNvbmZsaWN0EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJrChVNZXJnZUNoYW5nZXNldFJlcXVlc3QSFAoMY2hhbmdlc2V0X2lkGAEgASgJEhMKC2NvZGVfY29tbWl0GAIgASgJEicKCHJlc29sdmVkGAMgAygLMhUuY2lyY3VzLnYxLkZpbGVDaGFuZ2UisgEKFk1lcmdlQ2hhbmdlc2V0UmVzcG9uc2USJwoJY2hhbmdlc2V0GAEgASgLMhQuY2lyY3VzLnYxLkNoYW5nZXNldBI/CgdudW1iZXJzGAIgAygLMi4uY2lyY3VzLnYxLk1lcmdlQ2hhbmdlc2V0UmVzcG9uc2UuTnVtYmVyc0VudHJ5Gi4KDE51bWJlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKA06AjgBIj8KF0Rpc2NhcmRDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAkiQwoYRGlzY2FyZENoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQijgEKFUxpc3RDaGFuZ2VzZXRzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEikKBXN0YXRlGAIgASgOMhouY2lyY3VzLnYxLkNoYW5nZXNldC5TdGF0ZRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCRISCgpzZXNzaW9uX2lkGAUgASgJIlsKFkxpc3RDaGFuZ2VzZXRzUmVzcG9uc2USKAoKY2hhbmdlc2V0cxgBIAMoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIisKE0dldENoYW5nZXNldFJlcXVlc3QSFAoMY2hhbmdlc2V0X2lkGAEgASgJIj8KFEdldENoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQiqAQKE1Nlc3Npb25MZWRnZXJTdGF0dXMSMwoFc3RhdGUYASABKA4yJC5jaXJjdXMudjEuU2Vzc2lvbkxlZGdlclN0YXR1cy5TdGF0ZRIMCgRwYXRoGAIgASgJEi0KBWVycm9yGAMgASgOMh4uY2lyY3VzLnYxLkxlZGdlclNuYXBzaG90RXJyb3ISFAoMZXJyb3JfZGV0YWlsGAQgASgJEhwKFGNvbGxlY3RlZF9hdF91bml4X21zGAUgASgDEhYKDmNvbGxlY3Rpb25fZHVlGAYgASgIEhQKDGNoYW5nZXNldF9pZBgHIAEoCRIUCgxjaGFuZ2VfY291bnQYCCABKA0SFQoNcHJvYmxlbV9jb3VudBgJIAEoDRIaChJ1cGRhdGVkX2F0X3VuaXhfbXMYCiABKAMSOQoIYXBwbHlpbmcYCyABKA4yJy5jaXJjdXMudjEuU2Vzc2lvbkxlZGdlclN0YXR1cy5BcHBseWluZyJpCgVTdGF0ZRIVChFTVEFURV9VTlNQRUNJRklFRBAAEhEKDVNUQVRFX1BFTkRJTkcQARITCg9TVEFURV9QUkVQQVJJTkcQAhIPCgtTVEFURV9SRUFEWRADEhAKDFNUQVRFX0ZBSUxFRBAEIk4KCEFwcGx5aW5nEhgKFEFQUExZSU5HX1VOU1BFQ0lGSUVEEAASEgoOQVBQTFlJTkdfTUVSR0UQARIUChBBUFBMWUlOR19ESVNDQVJEEAIi1AEKElNlc3Npb25MZWRnZXJFbnRyeRIMCgRwYXRoGAEgASgJEhEKCWJhc2VfcGF0aBgCIAEoCRIOCgZudW1iZXIYAyABKAkSDQoFdGl0bGUYBCABKAkSEgoKYmFzZV90aXRsZRgFIAEoCRINCgVhZGRlZBgGIAEoCBIXCg9jb250ZW50X2NoYW5nZWQYByABKAgSDQoFbW92ZWQYCCABKAgSEAoIcmV0aXRsZWQYCSABKAgSDwoHZGVsZXRlZBgKIAEoCBIQCghwcm9ibGVtcxgLIAMoCSItChdHZXRTZXNzaW9uTGVkZ2VyUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIsQCChhHZXRTZXNzaW9uTGVkZ2VyUmVzcG9uc2USLgoGc3RhdHVzGAEgASgLMh4uY2lyY3VzLnYxLlNlc3Npb25MZWRnZXJTdGF0dXMSJwoJY2hhbmdlc2V0GAIgASgLMhQuY2lyY3VzLnYxLkNoYW5nZXNldBIuCgdlbnRyaWVzGAMgAygLMh0uY2lyY3VzLnYxLlNlc3Npb25MZWRnZXJFbnRyeRIqCghwcm9ibGVtcxgEIAMoCzIYLmNpcmN1cy52MS5MZWRnZXJQcm9ibGVtEioKCHdhcm5pbmdzGAUgAygLMhguY2lyY3VzLnYxLkxlZGdlclByb2JsZW0SFAoMZmFzdF9mb3J3YXJkGAYgASgIEjEKBm1lcmdlZBgHIAMoCzIhLmNpcmN1cy52MS5NZXJnZWRTZXNzaW9uQ2hhbmdlc2V0IrIBChZNZXJnZWRTZXNzaW9uQ2hhbmdlc2V0EicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSPwoHbnVtYmVycxgCIAMoCzIuLmNpcmN1cy52MS5NZXJnZWRTZXNzaW9uQ2hhbmdlc2V0Lk51bWJlcnNFbnRyeRouCgxOdW1iZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgNOgI4ASI/ChtHZXRTZXNzaW9uTGVkZ2VyRGlmZlJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIMCgRwYXRoGAIgASgJIqMBChxHZXRTZXNzaW9uTGVkZ2VyRGlmZlJlc3BvbnNlEhMKC2Jhc2VfZXhpc3RzGAEgASgIEgwKBGJhc2UYAiABKAkSFgoOYmFzZV90cnVuY2F0ZWQYAyABKAgSGAoQY2hhbmdlc2V0X2V4aXN0cxgEIAEoCBIRCgljaGFuZ2VzZXQYBSABKAkSGwoTY2hhbmdlc2V0X3RydW5jYXRlZBgGIAEoCCJOChlNZXJnZVNlc3Npb25MZWRnZXJSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSHQoVZXhwZWN0ZWRfY2hhbmdlc2V0X2lkGAIgASgJIroBChpNZXJnZVNlc3Npb25MZWRnZXJSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0EkMKB251bWJlcnMYAiADKAsyMi5jaXJjdXMudjEuTWVyZ2VTZXNzaW9uTGVkZ2VyUmVzcG9uc2UuTnVtYmVyc0VudHJ5Gi4KDE51bWJlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKA06AjgBMrQECg1MZWRnZXJTZXJ2aWNlEkYKCUdldExlZGdlchIbLmNpcmN1cy52MS5HZXRMZWRnZXJSZXF1ZXN0GhwuY2lyY3VzLnYxLkdldExlZGdlclJlc3BvbnNlEkwKC0dldERlY2lzaW9uEh0uY2lyY3VzLnYxLkdldERlY2lzaW9uUmVxdWVzdBoeLmNpcmN1cy52MS5HZXREZWNpc2lvblJlc3BvbnNlEmQKE0xpc3REZWNpc2lvbkhpc3RvcnkSJS5jaXJjdXMudjEuTGlzdERlY2lzaW9uSGlzdG9yeVJlcXVlc3QaJi5jaXJjdXMudjEuTGlzdERlY2lzaW9uSGlzdG9yeVJlc3BvbnNlElsKEEdldFNlc3Npb25MZWRnZXISIi5jaXJjdXMudjEuR2V0U2Vzc2lvbkxlZGdlclJlcXVlc3QaIy5jaXJjdXMudjEuR2V0U2Vzc2lvbkxlZGdlclJlc3BvbnNlEmcKFEdldFNlc3Npb25MZWRnZXJEaWZmEiYuY2lyY3VzLnYxLkdldFNlc3Npb25MZWRnZXJEaWZmUmVxdWVzdBonLmNpcmN1cy52MS5HZXRTZXNzaW9uTGVkZ2VyRGlmZlJlc3BvbnNlEmEKEk1lcmdlU2Vzc2lvbkxlZGdlchIkLmNpcmN1cy52MS5NZXJnZVNlc3Npb25MZWRnZXJSZXF1ZXN0GiUuY2lyY3VzLnYxLk1lcmdlU2Vzc2lvbkxlZGdlclJlc3BvbnNlMu4FChZMZWRnZXJDaGFuZ2VzZXRTZXJ2aWNlElIKDU9wZW5DaGFuZ2VzZXQSHy5jaXJjdXMudjEuT3BlbkNoYW5nZXNldFJlcXVlc3QaIC5jaXJjdXMudjEuT3BlbkNoYW5nZXNldFJlc3BvbnNlEl4KEVJlYWRDaGFuZ2VzZXRCYXNlEiMuY2lyY3VzLnYxLlJlYWRDaGFuZ2VzZXRCYXNlUmVxdWVzdBokLmNpcmN1cy52MS5SZWFkQ2hhbmdlc2V0QmFzZVJlc3BvbnNlElUKDkNoZWNrQ2hhbmdlc2V0EiAuY2lyY3VzLnYxLkNoZWNrQ2hhbmdlc2V0UmVxdWVzdBohLmNpcmN1cy52MS5DaGVja0NoYW5nZXNldFJlc3BvbnNlEm0KFlJlYWRDaGFuZ2VzZXRDb25mbGljdHMSKC5jaXJjdXMudjEuUmVhZENoYW5nZXNldENvbmZsaWN0c1JlcXVlc3QaKS5jaXJjdXMudjEuUmVhZENoYW5nZXNldENvbmZsaWN0c1Jlc3BvbnNlElUKDk1lcmdlQ2hhbmdlc2V0EiAuY2lyY3VzLnYxLk1lcmdlQ2hhbmdlc2V0UmVxdWVzdBohLmNpcmN1cy52MS5NZXJnZUNoYW5nZXNldFJlc3BvbnNlElsKEERpc2NhcmRDaGFuZ2VzZXQSIi5jaXJjdXMudjEuRGlzY2FyZENoYW5nZXNldFJlcXVlc3QaIy5jaXJjdXMudjEuRGlzY2FyZENoYW5nZXNldFJlc3BvbnNlElUKDkxpc3RDaGFuZ2VzZXRzEiAuY2lyY3VzLnYxLkxpc3RDaGFuZ2VzZXRzUmVxdWVzdBohLmNpcmN1cy52MS5MaXN0Q2hhbmdlc2V0c1Jlc3BvbnNlEk8KDEdldENoYW5nZXNldBIeLmNpcmN1cy52MS5HZXRDaGFuZ2VzZXRSZXF1ZXN0Gh8uY2lyY3VzLnYxLkdldENoYW5nZXNldFJlc3BvbnNlQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z", [file_circus_v1_device]);
+  fileDesc("ChZjaXJjdXMvdjEvbGVkZ2VyLnByb3RvEgljaXJjdXMudjEiYwoLTGVkZ2VyRW50cnkSDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEhoKEnVwZGF0ZWRfYXRfdW5peF9tcxgFIAEoAyImChBHZXRMZWRnZXJSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkiZgoRR2V0TGVkZ2VyUmVzcG9uc2USEwoLaGVhZF9jb21taXQYASABKAkSJwoHZW50cmllcxgCIAMoCzIWLmNpcmN1cy52MS5MZWRnZXJFbnRyeRITCgtuZXh0X251bWJlchgDIAEoDSKAAQoIRGVjaXNpb24SDgoGbnVtYmVyGAEgASgNEg0KBXRpdGxlGAIgASgJEgsKA2RpchgDIAEoCRIMCgRwYXRoGAQgASgJEgwKBGJvZHkYBSABKAkSDgoGY29tbWl0GAYgASgJEhwKFGNvbW1pdHRlZF9hdF91bml4X21zGAcgASgDIkgKEkdldERlY2lzaW9uUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIOCgZjb21taXQYAyABKAkiPAoTR2V0RGVjaXNpb25SZXNwb25zZRIlCghkZWNpc2lvbhgBIAEoCzITLmNpcmN1cy52MS5EZWNpc2lvbiLbAQoPRGVjaXNpb25WZXJzaW9uEg4KBmNvbW1pdBgBIAEoCRIcChRjb21taXR0ZWRfYXRfdW5peF9tcxgCIAEoAxIOCgZhdXRob3IYAyABKAkSDwoHc3VtbWFyeRgEIAEoCRIMCgRwYXRoGAUgASgJEg0KBXRpdGxlGAYgASgJEg0KBWFkZGVkGAcgASgIEhcKD2NvbnRlbnRfY2hhbmdlZBgIIAEoCBINCgVtb3ZlZBgJIAEoCBIQCghyZXRpdGxlZBgKIAEoCBITCgtjb2RlX2NvbW1pdBgLIAEoCSJnChpMaXN0RGVjaXNpb25IaXN0b3J5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEg4KBm51bWJlchgCIAEoDRIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCSJkChtMaXN0RGVjaXNpb25IaXN0b3J5UmVzcG9uc2USLAoIdmVyc2lvbnMYASADKAsyGi5jaXJjdXMudjEuRGVjaXNpb25WZXJzaW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSKOAwoJQ2hhbmdlc2V0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEikKBXN0YXRlGAMgASgOMhouY2lyY3VzLnYxLkNoYW5nZXNldC5TdGF0ZRITCgtiYXNlX2NvbW1pdBgEIAEoCRIYChBvcGVuZXJfd29ya2VyX2lkGAUgASgJEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgGIAEoAxIaChJ1cGRhdGVkX2F0X3VuaXhfbXMYByABKAMSFQoNbWVyZ2VkX2NvbW1pdBgIIAEoCRITCgtjb2RlX2NvbW1pdBgJIAEoCRIWCg5kaXNjYXJkX3JlYXNvbhgKIAEoCRIWCg5yZXBhaXJfZmFpbHVyZRgLIAEoCRISCgpzZXNzaW9uX2lkGAwgASgJIlUKBVN0YXRlEhUKEVNUQVRFX1VOU1BFQ0lGSUVEEAASDgoKU1RBVEVfT1BFThABEhAKDFNUQVRFX01FUkdFRBACEhMKD1NUQVRFX0RJU0NBUkRFRBADIisKCkxlZGdlckZpbGUSDAoEcGF0aBgBIAEoCRIPCgdjb250ZW50GAIgASgJIkoKCkZpbGVDaGFuZ2USDAoEcGF0aBgBIAEoCRIRCgdjb250ZW50GAIgASgJSAASEQoHZGVsZXRlZBgDIAEoCEgAQggKBmNoYW5nZSInChRPcGVuQ2hhbmdlc2V0UmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJIkAKFU9wZW5DaGFuZ2VzZXRSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0IkQKGFJlYWRDaGFuZ2VzZXRCYXNlUmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSEgoKcGFnZV90b2tlbhgCIAEoCSJaChlSZWFkQ2hhbmdlc2V0QmFzZVJlc3BvbnNlEiQKBWZpbGVzGAEgAygLMhUuY2lyY3VzLnYxLkxlZGdlckZpbGUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIkoKE1JlYWRNYWluTGluZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIOCgZjb21taXQYAiABKAkSEgoKcGFnZV90b2tlbhgDIAEoCSJ5ChRSZWFkTWFpbkxpbmVSZXNwb25zZRIOCgZjb21taXQYASABKAkSJAoFZmlsZXMYAiADKAsyFS5jaXJjdXMudjEuTGVkZ2VyRmlsZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAyABKAkSEgoKcHJvamVjdF9pZBgEIAEoCSIuCg1MZWRnZXJQcm9ibGVtEgwKBHBhdGgYASABKAkSDwoHbWVzc2FnZRgCIAEoCSKqAQoOTGVkZ2VyQ29uZmxpY3QSDAoEcGF0aBgBIAEoCRITCgtiYXNlX2V4aXN0cxgCIAEoCBIMCgRiYXNlGAMgASgJEhgKEGNoYW5nZXNldF9leGlzdHMYBCABKAgSEQoJY2hhbmdlc2V0GAUgASgJEhMKC21haW5fZXhpc3RzGAYgASgIEgwKBG1haW4YByABKAkSFwoPY29udGVudF9vbWl0dGVkGAggASgIIlUKFUNoZWNrQ2hhbmdlc2V0UmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSJgoHY2hhbmdlcxgCIAMoCzIVLmNpcmN1cy52MS5GaWxlQ2hhbmdlIvIBChZDaGVja0NoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSKgoIcHJvYmxlbXMYAiADKAsyGC5jaXJjdXMudjEuTGVkZ2VyUHJvYmxlbRIUCgxmYXN0X2ZvcndhcmQYAyABKAgSEwoLbWFpbl9jb21taXQYBCABKAkSLAoJY29uZmxpY3RzGAUgAygLMhkuY2lyY3VzLnYxLkxlZGdlckNvbmZsaWN0EioKCHdhcm5pbmdzGAYgAygLMhguY2lyY3VzLnYxLkxlZGdlclByb2JsZW0iXgodUmVhZENoYW5nZXNldENvbmZsaWN0c1JlcXVlc3QSFAoMY2hhbmdlc2V0X2lkGAEgASgJEhMKC21haW5fY29tbWl0GAIgASgJEhIKCnBhZ2VfdG9rZW4YAyABKAkiZwoeUmVhZENoYW5nZXNldENvbmZsaWN0c1Jlc3BvbnNlEiwKCWNvbmZsaWN0cxgBIAMoCzIZLmNpcmN1cy52MS5MZWRnZXJDb25mbGljdBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiawoVTWVyZ2VDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCRITCgtjb2RlX2NvbW1pdBgCIAEoCRInCghyZXNvbHZlZBgDIAMoCzIVLmNpcmN1cy52MS5GaWxlQ2hhbmdlIrIBChZNZXJnZUNoYW5nZXNldFJlc3BvbnNlEicKCWNoYW5nZXNldBgBIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSPwoHbnVtYmVycxgCIAMoCzIuLmNpcmN1cy52MS5NZXJnZUNoYW5nZXNldFJlc3BvbnNlLk51bWJlcnNFbnRyeRouCgxOdW1iZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgNOgI4ASI/ChdEaXNjYXJkQ2hhbmdlc2V0UmVxdWVzdBIUCgxjaGFuZ2VzZXRfaWQYASABKAkSDgoGcmVhc29uGAIgASgJIkMKGERpc2NhcmRDaGFuZ2VzZXRSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0Io4BChVMaXN0Q2hhbmdlc2V0c1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIpCgVzdGF0ZRgCIAEoDjIaLmNpcmN1cy52MS5DaGFuZ2VzZXQuU3RhdGUSEQoJcGFnZV9zaXplGAMgASgNEhIKCnBhZ2VfdG9rZW4YBCABKAkSEgoKc2Vzc2lvbl9pZBgFIAEoCSJbChZMaXN0Q2hhbmdlc2V0c1Jlc3BvbnNlEigKCmNoYW5nZXNldHMYASADKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIrChNHZXRDaGFuZ2VzZXRSZXF1ZXN0EhQKDGNoYW5nZXNldF9pZBgBIAEoCSI/ChRHZXRDaGFuZ2VzZXRSZXNwb25zZRInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0IqgEChNTZXNzaW9uTGVkZ2VyU3RhdHVzEjMKBXN0YXRlGAEgASgOMiQuY2lyY3VzLnYxLlNlc3Npb25MZWRnZXJTdGF0dXMuU3RhdGUSDAoEcGF0aBgCIAEoCRItCgVlcnJvchgDIAEoDjIeLmNpcmN1cy52MS5MZWRnZXJTbmFwc2hvdEVycm9yEhQKDGVycm9yX2RldGFpbBgEIAEoCRIcChRjb2xsZWN0ZWRfYXRfdW5peF9tcxgFIAEoAxIWCg5jb2xsZWN0aW9uX2R1ZRgGIAEoCBIUCgxjaGFuZ2VzZXRfaWQYByABKAkSFAoMY2hhbmdlX2NvdW50GAggASgNEhUKDXByb2JsZW1fY291bnQYCSABKA0SGgoSdXBkYXRlZF9hdF91bml4X21zGAogASgDEjkKCGFwcGx5aW5nGAsgASgOMicuY2lyY3VzLnYxLlNlc3Npb25MZWRnZXJTdGF0dXMuQXBwbHlpbmciaQoFU3RhdGUSFQoRU1RBVEVfVU5TUEVDSUZJRUQQABIRCg1TVEFURV9QRU5ESU5HEAESEwoPU1RBVEVfUFJFUEFSSU5HEAISDwoLU1RBVEVfUkVBRFkQAxIQCgxTVEFURV9GQUlMRUQQBCJOCghBcHBseWluZxIYChRBUFBMWUlOR19VTlNQRUNJRklFRBAAEhIKDkFQUExZSU5HX01FUkdFEAESFAoQQVBQTFlJTkdfRElTQ0FSRBACItQBChJTZXNzaW9uTGVkZ2VyRW50cnkSDAoEcGF0aBgBIAEoCRIRCgliYXNlX3BhdGgYAiABKAkSDgoGbnVtYmVyGAMgASgJEg0KBXRpdGxlGAQgASgJEhIKCmJhc2VfdGl0bGUYBSABKAkSDQoFYWRkZWQYBiABKAgSFwoPY29udGVudF9jaGFuZ2VkGAcgASgIEg0KBW1vdmVkGAggASgIEhAKCHJldGl0bGVkGAkgASgIEg8KB2RlbGV0ZWQYCiABKAgSEAoIcHJvYmxlbXMYCyADKAkiLQoXR2V0U2Vzc2lvbkxlZGdlclJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCSLEAgoYR2V0U2Vzc2lvbkxlZGdlclJlc3BvbnNlEi4KBnN0YXR1cxgBIAEoCzIeLmNpcmN1cy52MS5TZXNzaW9uTGVkZ2VyU3RhdHVzEicKCWNoYW5nZXNldBgCIAEoCzIULmNpcmN1cy52MS5DaGFuZ2VzZXQSLgoHZW50cmllcxgDIAMoCzIdLmNpcmN1cy52MS5TZXNzaW9uTGVkZ2VyRW50cnkSKgoIcHJvYmxlbXMYBCADKAsyGC5jaXJjdXMudjEuTGVkZ2VyUHJvYmxlbRIqCgh3YXJuaW5ncxgFIAMoCzIYLmNpcmN1cy52MS5MZWRnZXJQcm9ibGVtEhQKDGZhc3RfZm9yd2FyZBgGIAEoCBIxCgZtZXJnZWQYByADKAsyIS5jaXJjdXMudjEuTWVyZ2VkU2Vzc2lvbkNoYW5nZXNldCKyAQoWTWVyZ2VkU2Vzc2lvbkNoYW5nZXNldBInCgljaGFuZ2VzZXQYASABKAsyFC5jaXJjdXMudjEuQ2hhbmdlc2V0Ej8KB251bWJlcnMYAiADKAsyLi5jaXJjdXMudjEuTWVyZ2VkU2Vzc2lvbkNoYW5nZXNldC5OdW1iZXJzRW50cnkaLgoMTnVtYmVyc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoDToCOAEiPwobR2V0U2Vzc2lvbkxlZGdlckRpZmZSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEcGF0aBgCIAEoCSKjAQocR2V0U2Vzc2lvbkxlZGdlckRpZmZSZXNwb25zZRITCgtiYXNlX2V4aXN0cxgBIAEoCBIMCgRiYXNlGAIgASgJEhYKDmJhc2VfdHJ1bmNhdGVkGAMgASgIEhgKEGNoYW5nZXNldF9leGlzdHMYBCABKAgSEQoJY2hhbmdlc2V0GAUgASgJEhsKE2NoYW5nZXNldF90cnVuY2F0ZWQYBiABKAgiTgoZTWVyZ2VTZXNzaW9uTGVkZ2VyUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEh0KFWV4cGVjdGVkX2NoYW5nZXNldF9pZBgCIAEoCSK6AQoaTWVyZ2VTZXNzaW9uTGVkZ2VyUmVzcG9uc2USJwoJY2hhbmdlc2V0GAEgASgLMhQuY2lyY3VzLnYxLkNoYW5nZXNldBJDCgdudW1iZXJzGAIgAygLMjIuY2lyY3VzLnYxLk1lcmdlU2Vzc2lvbkxlZGdlclJlc3BvbnNlLk51bWJlcnNFbnRyeRouCgxOdW1iZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgNOgI4ATK0BAoNTGVkZ2VyU2VydmljZRJGCglHZXRMZWRnZXISGy5jaXJjdXMudjEuR2V0TGVkZ2VyUmVxdWVzdBocLmNpcmN1cy52MS5HZXRMZWRnZXJSZXNwb25zZRJMCgtHZXREZWNpc2lvbhIdLmNpcmN1cy52MS5HZXREZWNpc2lvblJlcXVlc3QaHi5jaXJjdXMudjEuR2V0RGVjaXNpb25SZXNwb25zZRJkChNMaXN0RGVjaXNpb25IaXN0b3J5EiUuY2lyY3VzLnYxLkxpc3REZWNpc2lvbkhpc3RvcnlSZXF1ZXN0GiYuY2lyY3VzLnYxLkxpc3REZWNpc2lvbkhpc3RvcnlSZXNwb25zZRJbChBHZXRTZXNzaW9uTGVkZ2VyEiIuY2lyY3VzLnYxLkdldFNlc3Npb25MZWRnZXJSZXF1ZXN0GiMuY2lyY3VzLnYxLkdldFNlc3Npb25MZWRnZXJSZXNwb25zZRJnChRHZXRTZXNzaW9uTGVkZ2VyRGlmZhImLmNpcmN1cy52MS5HZXRTZXNzaW9uTGVkZ2VyRGlmZlJlcXVlc3QaJy5jaXJjdXMudjEuR2V0U2Vzc2lvbkxlZGdlckRpZmZSZXNwb25zZRJhChJNZXJnZVNlc3Npb25MZWRnZXISJC5jaXJjdXMudjEuTWVyZ2VTZXNzaW9uTGVkZ2VyUmVxdWVzdBolLmNpcmN1cy52MS5NZXJnZVNlc3Npb25MZWRnZXJSZXNwb25zZTK/BgoWTGVkZ2VyQ2hhbmdlc2V0U2VydmljZRJSCg1PcGVuQ2hhbmdlc2V0Eh8uY2lyY3VzLnYxLk9wZW5DaGFuZ2VzZXRSZXF1ZXN0GiAuY2lyY3VzLnYxLk9wZW5DaGFuZ2VzZXRSZXNwb25zZRJeChFSZWFkQ2hhbmdlc2V0QmFzZRIjLmNpcmN1cy52MS5SZWFkQ2hhbmdlc2V0QmFzZVJlcXVlc3QaJC5jaXJjdXMudjEuUmVhZENoYW5nZXNldEJhc2VSZXNwb25zZRJPCgxSZWFkTWFpbkxpbmUSHi5jaXJjdXMudjEuUmVhZE1haW5MaW5lUmVxdWVzdBofLmNpcmN1cy52MS5SZWFkTWFpbkxpbmVSZXNwb25zZRJVCg5DaGVja0NoYW5nZXNldBIgLmNpcmN1cy52MS5DaGVja0NoYW5nZXNldFJlcXVlc3QaIS5jaXJjdXMudjEuQ2hlY2tDaGFuZ2VzZXRSZXNwb25zZRJtChZSZWFkQ2hhbmdlc2V0Q29uZmxpY3RzEiguY2lyY3VzLnYxLlJlYWRDaGFuZ2VzZXRDb25mbGljdHNSZXF1ZXN0GikuY2lyY3VzLnYxLlJlYWRDaGFuZ2VzZXRDb25mbGljdHNSZXNwb25zZRJVCg5NZXJnZUNoYW5nZXNldBIgLmNpcmN1cy52MS5NZXJnZUNoYW5nZXNldFJlcXVlc3QaIS5jaXJjdXMudjEuTWVyZ2VDaGFuZ2VzZXRSZXNwb25zZRJbChBEaXNjYXJkQ2hhbmdlc2V0EiIuY2lyY3VzLnYxLkRpc2NhcmRDaGFuZ2VzZXRSZXF1ZXN0GiMuY2lyY3VzLnYxLkRpc2NhcmRDaGFuZ2VzZXRSZXNwb25zZRJVCg5MaXN0Q2hhbmdlc2V0cxIgLmNpcmN1cy52MS5MaXN0Q2hhbmdlc2V0c1JlcXVlc3QaIS5jaXJjdXMudjEuTGlzdENoYW5nZXNldHNSZXNwb25zZRJPCgxHZXRDaGFuZ2VzZXQSHi5jaXJjdXMudjEuR2V0Q2hhbmdlc2V0UmVxdWVzdBofLmNpcmN1cy52MS5HZXRDaGFuZ2VzZXRSZXNwb25zZUI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw", [file_circus_v1_device]);
 
 /**
  * @generated from message circus.v1.LedgerEntry
@@ -621,6 +621,84 @@ export const ReadChangesetBaseResponseSchema: GenMessage<ReadChangesetBaseRespon
   messageDesc(file_circus_v1_ledger, 15);
 
 /**
+ * @generated from message circus.v1.ReadMainLineRequest
+ */
+export type ReadMainLineRequest = Message<"circus.v1.ReadMainLineRequest"> & {
+  /**
+   * A project id or the user's project name; with a page token, the
+   * project_id of the first page (a name is then not resolved, and is
+   * NOT_FOUND unless it is that id).
+   *
+   * @generated from field: string project = 1;
+   */
+  project: string;
+
+  /**
+   * Optional full hex id of a main-line commit; empty reads the head. With
+   * a page token, empty or the commit the first page read.
+   *
+   * @generated from field: string commit = 2;
+   */
+  commit: string;
+
+  /**
+   * next_page_token of the previous page; empty starts at the first file.
+   *
+   * @generated from field: string page_token = 3;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message circus.v1.ReadMainLineRequest.
+ * Use `create(ReadMainLineRequestSchema)` to create a new message.
+ */
+export const ReadMainLineRequestSchema: GenMessage<ReadMainLineRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 16);
+
+/**
+ * @generated from message circus.v1.ReadMainLineResponse
+ */
+export type ReadMainLineResponse = Message<"circus.v1.ReadMainLineResponse"> & {
+  /**
+   * Full hex id of the commit read; empty for an empty ledger. Every page
+   * of one read names the same commit.
+   *
+   * @generated from field: string commit = 1;
+   */
+  commit: string;
+
+  /**
+   * Its files in path order, at most 8 MiB per page, as
+   * ReadChangesetBaseResponse.files.
+   *
+   * @generated from field: repeated circus.v1.LedgerFile files = 2;
+   */
+  files: LedgerFile[];
+
+  /**
+   * Empty after the last file.
+   *
+   * @generated from field: string next_page_token = 3;
+   */
+  nextPageToken: string;
+
+  /**
+   * The project's id, for the later pages' requests.
+   *
+   * @generated from field: string project_id = 4;
+   */
+  projectId: string;
+};
+
+/**
+ * Describes the message circus.v1.ReadMainLineResponse.
+ * Use `create(ReadMainLineResponseSchema)` to create a new message.
+ */
+export const ReadMainLineResponseSchema: GenMessage<ReadMainLineResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_ledger, 17);
+
+/**
  * @generated from message circus.v1.LedgerProblem
  */
 export type LedgerProblem = Message<"circus.v1.LedgerProblem"> & {
@@ -643,7 +721,7 @@ export type LedgerProblem = Message<"circus.v1.LedgerProblem"> & {
  * Use `create(LedgerProblemSchema)` to create a new message.
  */
 export const LedgerProblemSchema: GenMessage<LedgerProblem> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 16);
+  messageDesc(file_circus_v1_ledger, 18);
 
 /**
  * @generated from message circus.v1.LedgerConflict
@@ -701,7 +779,7 @@ export type LedgerConflict = Message<"circus.v1.LedgerConflict"> & {
  * Use `create(LedgerConflictSchema)` to create a new message.
  */
 export const LedgerConflictSchema: GenMessage<LedgerConflict> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 17);
+  messageDesc(file_circus_v1_ledger, 19);
 
 /**
  * @generated from message circus.v1.CheckChangesetRequest
@@ -727,7 +805,7 @@ export type CheckChangesetRequest = Message<"circus.v1.CheckChangesetRequest"> &
  * Use `create(CheckChangesetRequestSchema)` to create a new message.
  */
 export const CheckChangesetRequestSchema: GenMessage<CheckChangesetRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 18);
+  messageDesc(file_circus_v1_ledger, 20);
 
 /**
  * @generated from message circus.v1.CheckChangesetResponse
@@ -778,7 +856,7 @@ export type CheckChangesetResponse = Message<"circus.v1.CheckChangesetResponse">
  * Use `create(CheckChangesetResponseSchema)` to create a new message.
  */
 export const CheckChangesetResponseSchema: GenMessage<CheckChangesetResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 19);
+  messageDesc(file_circus_v1_ledger, 21);
 
 /**
  * @generated from message circus.v1.ReadChangesetConflictsRequest
@@ -810,7 +888,7 @@ export type ReadChangesetConflictsRequest = Message<"circus.v1.ReadChangesetConf
  * Use `create(ReadChangesetConflictsRequestSchema)` to create a new message.
  */
 export const ReadChangesetConflictsRequestSchema: GenMessage<ReadChangesetConflictsRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 20);
+  messageDesc(file_circus_v1_ledger, 22);
 
 /**
  * @generated from message circus.v1.ReadChangesetConflictsResponse
@@ -838,7 +916,7 @@ export type ReadChangesetConflictsResponse = Message<"circus.v1.ReadChangesetCon
  * Use `create(ReadChangesetConflictsResponseSchema)` to create a new message.
  */
 export const ReadChangesetConflictsResponseSchema: GenMessage<ReadChangesetConflictsResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 21);
+  messageDesc(file_circus_v1_ledger, 23);
 
 /**
  * @generated from message circus.v1.MergeChangesetRequest
@@ -870,7 +948,7 @@ export type MergeChangesetRequest = Message<"circus.v1.MergeChangesetRequest"> &
  * Use `create(MergeChangesetRequestSchema)` to create a new message.
  */
 export const MergeChangesetRequestSchema: GenMessage<MergeChangesetRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 22);
+  messageDesc(file_circus_v1_ledger, 24);
 
 /**
  * @generated from message circus.v1.MergeChangesetResponse
@@ -894,7 +972,7 @@ export type MergeChangesetResponse = Message<"circus.v1.MergeChangesetResponse">
  * Use `create(MergeChangesetResponseSchema)` to create a new message.
  */
 export const MergeChangesetResponseSchema: GenMessage<MergeChangesetResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 23);
+  messageDesc(file_circus_v1_ledger, 25);
 
 /**
  * @generated from message circus.v1.DiscardChangesetRequest
@@ -918,7 +996,7 @@ export type DiscardChangesetRequest = Message<"circus.v1.DiscardChangesetRequest
  * Use `create(DiscardChangesetRequestSchema)` to create a new message.
  */
 export const DiscardChangesetRequestSchema: GenMessage<DiscardChangesetRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 24);
+  messageDesc(file_circus_v1_ledger, 26);
 
 /**
  * @generated from message circus.v1.DiscardChangesetResponse
@@ -935,7 +1013,7 @@ export type DiscardChangesetResponse = Message<"circus.v1.DiscardChangesetRespon
  * Use `create(DiscardChangesetResponseSchema)` to create a new message.
  */
 export const DiscardChangesetResponseSchema: GenMessage<DiscardChangesetResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 25);
+  messageDesc(file_circus_v1_ledger, 27);
 
 /**
  * @generated from message circus.v1.ListChangesetsRequest
@@ -978,7 +1056,7 @@ export type ListChangesetsRequest = Message<"circus.v1.ListChangesetsRequest"> &
  * Use `create(ListChangesetsRequestSchema)` to create a new message.
  */
 export const ListChangesetsRequestSchema: GenMessage<ListChangesetsRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 26);
+  messageDesc(file_circus_v1_ledger, 28);
 
 /**
  * @generated from message circus.v1.ListChangesetsResponse
@@ -1000,7 +1078,7 @@ export type ListChangesetsResponse = Message<"circus.v1.ListChangesetsResponse">
  * Use `create(ListChangesetsResponseSchema)` to create a new message.
  */
 export const ListChangesetsResponseSchema: GenMessage<ListChangesetsResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 27);
+  messageDesc(file_circus_v1_ledger, 29);
 
 /**
  * @generated from message circus.v1.GetChangesetRequest
@@ -1017,7 +1095,7 @@ export type GetChangesetRequest = Message<"circus.v1.GetChangesetRequest"> & {
  * Use `create(GetChangesetRequestSchema)` to create a new message.
  */
 export const GetChangesetRequestSchema: GenMessage<GetChangesetRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 28);
+  messageDesc(file_circus_v1_ledger, 30);
 
 /**
  * @generated from message circus.v1.GetChangesetResponse
@@ -1034,7 +1112,7 @@ export type GetChangesetResponse = Message<"circus.v1.GetChangesetResponse"> & {
  * Use `create(GetChangesetResponseSchema)` to create a new message.
  */
 export const GetChangesetResponseSchema: GenMessage<GetChangesetResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 29);
+  messageDesc(file_circus_v1_ledger, 31);
 
 /**
  * SessionLedgerStatus is the state of a session's ledger snapshot: a copy
@@ -1135,7 +1213,7 @@ export type SessionLedgerStatus = Message<"circus.v1.SessionLedgerStatus"> & {
  * Use `create(SessionLedgerStatusSchema)` to create a new message.
  */
 export const SessionLedgerStatusSchema: GenMessage<SessionLedgerStatus> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 30);
+  messageDesc(file_circus_v1_ledger, 32);
 
 /**
  * @generated from enum circus.v1.SessionLedgerStatus.State
@@ -1179,7 +1257,7 @@ export enum SessionLedgerStatus_State {
  * Describes the enum circus.v1.SessionLedgerStatus.State.
  */
 export const SessionLedgerStatus_StateSchema: GenEnum<SessionLedgerStatus_State> = /*@__PURE__*/
-  enumDesc(file_circus_v1_ledger, 30, 0);
+  enumDesc(file_circus_v1_ledger, 32, 0);
 
 /**
  * @generated from enum circus.v1.SessionLedgerStatus.Applying
@@ -1211,7 +1289,7 @@ export enum SessionLedgerStatus_Applying {
  * Describes the enum circus.v1.SessionLedgerStatus.Applying.
  */
 export const SessionLedgerStatus_ApplyingSchema: GenEnum<SessionLedgerStatus_Applying> = /*@__PURE__*/
-  enumDesc(file_circus_v1_ledger, 30, 1);
+  enumDesc(file_circus_v1_ledger, 32, 1);
 
 /**
  * SessionLedgerEntry is one decision (or other file) the open changeset
@@ -1295,7 +1373,7 @@ export type SessionLedgerEntry = Message<"circus.v1.SessionLedgerEntry"> & {
  * Use `create(SessionLedgerEntrySchema)` to create a new message.
  */
 export const SessionLedgerEntrySchema: GenMessage<SessionLedgerEntry> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 31);
+  messageDesc(file_circus_v1_ledger, 33);
 
 /**
  * @generated from message circus.v1.GetSessionLedgerRequest
@@ -1312,7 +1390,7 @@ export type GetSessionLedgerRequest = Message<"circus.v1.GetSessionLedgerRequest
  * Use `create(GetSessionLedgerRequestSchema)` to create a new message.
  */
 export const GetSessionLedgerRequestSchema: GenMessage<GetSessionLedgerRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 32);
+  messageDesc(file_circus_v1_ledger, 34);
 
 /**
  * @generated from message circus.v1.GetSessionLedgerResponse
@@ -1371,7 +1449,7 @@ export type GetSessionLedgerResponse = Message<"circus.v1.GetSessionLedgerRespon
  * Use `create(GetSessionLedgerResponseSchema)` to create a new message.
  */
 export const GetSessionLedgerResponseSchema: GenMessage<GetSessionLedgerResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 33);
+  messageDesc(file_circus_v1_ledger, 35);
 
 /**
  * @generated from message circus.v1.MergedSessionChangeset
@@ -1395,7 +1473,7 @@ export type MergedSessionChangeset = Message<"circus.v1.MergedSessionChangeset">
  * Use `create(MergedSessionChangesetSchema)` to create a new message.
  */
 export const MergedSessionChangesetSchema: GenMessage<MergedSessionChangeset> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 34);
+  messageDesc(file_circus_v1_ledger, 36);
 
 /**
  * @generated from message circus.v1.GetSessionLedgerDiffRequest
@@ -1419,7 +1497,7 @@ export type GetSessionLedgerDiffRequest = Message<"circus.v1.GetSessionLedgerDif
  * Use `create(GetSessionLedgerDiffRequestSchema)` to create a new message.
  */
 export const GetSessionLedgerDiffRequestSchema: GenMessage<GetSessionLedgerDiffRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 35);
+  messageDesc(file_circus_v1_ledger, 37);
 
 /**
  * @generated from message circus.v1.GetSessionLedgerDiffResponse
@@ -1466,7 +1544,7 @@ export type GetSessionLedgerDiffResponse = Message<"circus.v1.GetSessionLedgerDi
  * Use `create(GetSessionLedgerDiffResponseSchema)` to create a new message.
  */
 export const GetSessionLedgerDiffResponseSchema: GenMessage<GetSessionLedgerDiffResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 36);
+  messageDesc(file_circus_v1_ledger, 38);
 
 /**
  * @generated from message circus.v1.MergeSessionLedgerRequest
@@ -1490,7 +1568,7 @@ export type MergeSessionLedgerRequest = Message<"circus.v1.MergeSessionLedgerReq
  * Use `create(MergeSessionLedgerRequestSchema)` to create a new message.
  */
 export const MergeSessionLedgerRequestSchema: GenMessage<MergeSessionLedgerRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 37);
+  messageDesc(file_circus_v1_ledger, 39);
 
 /**
  * @generated from message circus.v1.MergeSessionLedgerResponse
@@ -1512,7 +1590,7 @@ export type MergeSessionLedgerResponse = Message<"circus.v1.MergeSessionLedgerRe
  * Use `create(MergeSessionLedgerResponseSchema)` to create a new message.
  */
 export const MergeSessionLedgerResponseSchema: GenMessage<MergeSessionLedgerResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_ledger, 38);
+  messageDesc(file_circus_v1_ledger, 40);
 
 /**
  * LedgerService reads a project's ledger: its numbered decisions, filed in
@@ -1638,7 +1716,7 @@ export const LedgerService: GenService<{
  *
  * Who may do what:
  *   - any worker of the user: OpenChangeset, ReadChangesetBase,
- *     ListChangesets, GetChangeset;
+ *     ReadMainLine, ListChangesets, GetChangeset;
  *   - a session's changeset (session_id set) has no opener: only an
  *     integrator may check, read conflicts of, merge or discard it;
  *   - the worker that opened the changeset, or a worker with the integrator
@@ -1704,6 +1782,27 @@ export const LedgerChangesetService: GenService<{
     methodKind: "unary";
     input: typeof ReadChangesetBaseRequestSchema;
     output: typeof ReadChangesetBaseResponseSchema;
+  },
+  /**
+   * ReadMainLine pages through the files of a main-line commit, the
+   * generated INDEX.md included, for exporting the ledger (`circus ledger
+   * export`). It creates no changeset and changes nothing itself; like
+   * every read of the ledger, it may start the project's background
+   * recovery when its repository needs it, which rebuilds the index and
+   * records interrupted merges and archives. The first page fixes the
+   * commit (the head, unless one is given) and its page token binds the
+   * later pages to it, so a merge between pages does not mix two trees;
+   * the later pages name the project by the id the first returned. An
+   * empty ledger reads as its INDEX.md alone, with an empty commit.
+   * NOT_FOUND when the given commit is not on the main line, and when the
+   * project is deleted while it reads.
+   *
+   * @generated from rpc circus.v1.LedgerChangesetService.ReadMainLine
+   */
+  readMainLine: {
+    methodKind: "unary";
+    input: typeof ReadMainLineRequestSchema;
+    output: typeof ReadMainLineResponseSchema;
   },
   /**
    * CheckChangeset replaces the changeset's content with changes (the

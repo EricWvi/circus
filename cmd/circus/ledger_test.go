@@ -2,19 +2,29 @@ package main
 
 import (
 	"bytes"
+	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
+	"github.com/EricWvi/circus/gen/go/circus/v1/circusv1connect"
 	"github.com/EricWvi/circus/internal/controlplane"
 	"github.com/EricWvi/circus/internal/credfile"
 	"github.com/EricWvi/circus/internal/store"
+	"golang.org/x/sys/unix"
 )
 
 // ledgerHarness runs `circus ledger` against an in-process control plane
@@ -487,5 +497,285 @@ func TestLedgerSessionChangesets(t *testing.T) {
 	}
 	if _, errOut, code := h.run("check", id); code != 1 || !strings.Contains(errOut, "no local copy") {
 		t.Fatalf("check without a local copy: exit %d\n%s", code, errOut)
+	}
+}
+
+var exportedRE = regexp.MustCompile(`(?m)^commit: (.+)\ndirectory: (.+)$`)
+
+// tree reads every regular file below dir by its slash path; anything
+// else fails the test.
+func tree(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	files := make(map[string]string)
+	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		switch {
+		case d.IsDir():
+		case d.Type().IsRegular():
+			files[filepath.ToSlash(rel)] = readFile(t, p)
+		default:
+			t.Errorf("%s is not a regular file", rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// names lists the entries of dir.
+func names(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
+}
+
+func TestLedgerExport(t *testing.T) {
+	h := newLedgerHarness(t)
+	export := func(args ...string) (string, string) {
+		t.Helper()
+		m := exportedRE.FindStringSubmatch(h.must(append([]string{"export", "Notes"}, args...)...))
+		if m == nil {
+			t.Fatal("export printed no commit and directory")
+		}
+		return m[1], m[2]
+	}
+	root := t.TempDir()
+	// refused runs an export that must fail with message and leave root's
+	// entries as they were: no temporary directory remains.
+	refused := func(message string, args ...string) {
+		t.Helper()
+		before := names(t, root)
+		_, errOut, code := h.run(append([]string{"export"}, args...)...)
+		if code != 1 || !strings.Contains(errOut, message) {
+			t.Fatalf("export %v: exit %d\n%s", args, code, errOut)
+		}
+		if after := names(t, root); !slices.Equal(after, before) {
+			t.Fatalf("export %v left %v, before %v", args, after, before)
+		}
+	}
+
+	// The empty ledger exports its index alone.
+	commit, dir := export("--dir", filepath.Join(root, "empty"))
+	if files := tree(t, dir); commit != "none (the ledger is empty)" || len(files) != 1 || files["INDEX.md"] == "" {
+		t.Fatalf("empty export %q: %v", commit, files)
+	}
+
+	id, open := h.open()
+	writeFile(t, filepath.Join(open, "D?a-Plugins.md"), decision("D?a", "Plugins", "Plugins talk JSON-RPC.\n"))
+	writeFile(t, filepath.Join(open, "core", "D?b-Transport.md"), decision("D?b", "Transport", "Details of D?a.\n"))
+	h.must("merge", id)
+	changesets := h.must("list", "Notes")
+
+	// A new directory, with the usual mode, and nothing left beside it.
+	fresh := filepath.Join(root, "fresh")
+	commit, dir = export("--dir", fresh)
+	if !store.IsLedgerCommitID(commit) || dir != fresh {
+		t.Fatalf("export printed commit %q, directory %q", commit, dir)
+	}
+	want := tree(t, fresh)
+	if len(want) != 3 || !strings.Contains(want["core/D1-Transport.md"], "Details of D0.") || !strings.Contains(want["INDEX.md"], "| D1 | core | Transport |") {
+		t.Fatalf("export: %v", want)
+	}
+	if got := names(t, root); !slices.Equal(got, []string{"empty", "fresh"}) {
+		t.Fatalf("beside the export: %v", got)
+	}
+	if again, _ := export("--dir", filepath.Join(root, "again")); again != commit || !maps.Equal(tree(t, filepath.Join(root, "again")), want) {
+		t.Fatalf("second export read %s, first %s", again, commit)
+	}
+	// Exports create no changeset.
+	if got := h.must("list", "Notes"); got != changesets {
+		t.Fatalf("changesets after exports:\n%s\nbefore:\n%s", got, changesets)
+	}
+
+	// DIR must be new: anything there, even an empty directory or a
+	// symlink to nothing, is refused and left as it was.
+	writeFile(t, filepath.Join(fresh, "notes.txt"), "mine")
+	refused("exists", "Notes", "--dir", fresh)
+	if got := tree(t, fresh); len(got) != 4 || got["notes.txt"] != "mine" {
+		t.Fatalf("a refused export changed the directory: %v", got)
+	}
+	if err := os.Mkdir(filepath.Join(root, "kept"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "file"), "a file")
+	if err := os.Symlink(filepath.Join(root, "nowhere"), filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"kept", "file", "link"} {
+		refused("exists", "Notes", "--dir", filepath.Join(root, name))
+	}
+	if st, err := os.Stat(filepath.Join(root, "kept")); err != nil || st.Mode().Perm() != 0o700 {
+		t.Fatalf("kept: %v, %v", st, err)
+	}
+	refused("no such file", "Notes", "--dir", filepath.Join(root, "missing", "dir"))
+	// A refusal of the server creates nothing, and says so.
+	refused(filepath.Join(root, "elsewhere")+" was not created", "Elsewhere", "--dir", filepath.Join(root, "elsewhere"))
+
+	// Usage.
+	if _, errOut, code := h.run("export", "Notes"); code != 1 || !strings.Contains(errOut, "--dir") {
+		t.Fatalf("export without --dir: exit %d\n%s", code, errOut)
+	}
+	if _, _, code := h.run("export", "Notes", "--dir", filepath.Join(root, "r"), "--replace"); code != 1 {
+		t.Fatalf("export --replace: exit %d", code)
+	}
+}
+
+// mainLineFake serves two ReadMainLine pages; second runs before the
+// second page is answered, with commit as its commit, or err.
+type mainLineFake struct {
+	circusv1connect.UnimplementedLedgerChangesetServiceHandler
+	commit string
+	err    error
+	second func()
+}
+
+func (f *mainLineFake) ReadMainLine(_ context.Context, req *connect.Request[circusv1.ReadMainLineRequest]) (*connect.Response[circusv1.ReadMainLineResponse], error) {
+	first := strings.Repeat("a", 40)
+	if req.Msg.PageToken == "" {
+		return connect.NewResponse(&circusv1.ReadMainLineResponse{Commit: first, ProjectId: "p1", NextPageToken: "next",
+			Files: []*circusv1.LedgerFile{{Path: "D0-One.md", Content: "one"}, {Path: "core/net/D2-Three.md", Content: "three"}}}), nil
+	}
+	if f.second != nil {
+		f.second()
+	}
+	if f.err != nil {
+		return nil, f.err
+	}
+	return connect.NewResponse(&circusv1.ReadMainLineResponse{Commit: cmp.Or(f.commit, first), ProjectId: "p1",
+		Files: []*circusv1.LedgerFile{{Path: "core/net/D3-Two.md", Content: "two"}}}), nil
+}
+
+// exportWith runs export to dir against f.
+func exportWith(t *testing.T, f *mainLineFake, dir string) (string, error) {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.Handle(circusv1connect.NewLedgerChangesetServiceHandler(f))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	cred := filepath.Join(t.TempDir(), "worker.json")
+	if err := credfile.Save(cred, credfile.File{ControlPlaneURL: srv.URL, Role: credfile.RoleWorker, PrincipalID: "w1", Token: "token"}); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	err := ledgerCommand([]string{"export", "Notes", "--dir", dir, "--credentials", cred}, &out, &errOut)
+	return out.String(), err
+}
+
+// temporary returns the one export directory in parent.
+func temporary(t *testing.T, parent string) string {
+	t.Helper()
+	got := names(t, parent)
+	if len(got) != 1 || !strings.HasPrefix(got[0], ".dir.export-") {
+		t.Fatalf("in %s: %v", parent, got)
+	}
+	return got[0]
+}
+
+// A server that answers another commit on a later page fails the export,
+// and DIR is not made.
+func TestLedgerExportCommitChanges(t *testing.T) {
+	root := t.TempDir()
+	_, err := exportWith(t, &mainLineFake{commit: strings.Repeat("b", 40)}, filepath.Join(root, "dir"))
+	if err == nil || !strings.Contains(err.Error(), "answered commit") || !strings.Contains(err.Error(), "was not created") {
+		t.Fatalf("export = %v", err)
+	}
+	if got := names(t, root); len(got) != 0 {
+		t.Fatalf("left %v", got)
+	}
+}
+
+// DIR made by someone else during the export is not replaced: the export
+// fails and its temporary directory is removed.
+func TestLedgerExportDirAppears(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "dir")
+	f := &mainLineFake{second: func() {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	}}
+	_, err := exportWith(t, f, dir)
+	if err == nil || !strings.Contains(err.Error(), "appeared during the export") {
+		t.Fatalf("export = %v", err)
+	}
+	if got := names(t, root); !slices.Equal(got, []string{"dir"}) {
+		t.Fatalf("left %v", got)
+	}
+	if got := names(t, dir); len(got) != 0 {
+		t.Fatalf("dir holds %v", got)
+	}
+}
+
+// Cleanup goes through the parent opened at the start: when the parent is
+// moved away during the export and another directory takes its place with
+// a directory of the temporary one's name, the moved temporary directory
+// is removed and the other one is left alone.
+func TestLedgerExportCleanupThroughParent(t *testing.T) {
+	root := t.TempDir()
+	parent, moved := filepath.Join(root, "parent"), filepath.Join(root, "moved")
+	if err := os.Mkdir(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f := &mainLineFake{err: connect.NewError(connect.CodeUnavailable, errors.New("gone")), second: func() {
+		tmp := temporary(t, parent)
+		if err := os.Rename(parent, moved); err != nil {
+			t.Error(err)
+		}
+		writeFile(t, filepath.Join(parent, tmp, "keep.md"), "keep")
+	}}
+	_, err := exportWith(t, f, filepath.Join(parent, "dir"))
+	if err == nil || !strings.Contains(err.Error(), "was not created") {
+		t.Fatalf("export = %v", err)
+	}
+	if got := names(t, moved); len(got) != 0 {
+		t.Fatalf("moved parent holds %v", got)
+	}
+	if got := tree(t, filepath.Join(parent, temporary(t, parent))); got["keep.md"] != "keep" {
+		t.Fatalf("decoy: %v", got)
+	}
+}
+
+// Modes follow the umask: with 077 the export is private.
+func TestLedgerExportUmask(t *testing.T) {
+	old := unix.Umask(0o077)
+	defer unix.Umask(old)
+	root := t.TempDir()
+	dir := filepath.Join(root, "dir")
+	if _, err := exportWith(t, &mainLineFake{}, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"", "core", "core/net"} {
+		if st, err := os.Stat(filepath.Join(dir, p)); err != nil || st.Mode().Perm() != 0o700 {
+			t.Fatalf("%q: %v, %v", p, st, err)
+		}
+	}
+	for _, p := range []string{"D0-One.md", "core/net/D2-Three.md", "core/net/D3-Two.md"} {
+		if st, err := os.Stat(filepath.Join(dir, p)); err != nil || st.Mode().Perm() != 0o600 {
+			t.Fatalf("%q: %v, %v", p, st, err)
+		}
+	}
+	unix.Umask(0o022)
+	other := filepath.Join(root, "other")
+	if _, err := exportWith(t, &mainLineFake{}, other); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(other); err != nil || st.Mode().Perm() != 0o755 {
+		t.Fatalf("umask 022: %v, %v", st, err)
+	}
+	if st, err := os.Stat(filepath.Join(other, "D0-One.md")); err != nil || st.Mode().Perm() != 0o644 {
+		t.Fatalf("umask 022 file: %v, %v", st, err)
 	}
 }

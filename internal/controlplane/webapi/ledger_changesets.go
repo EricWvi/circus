@@ -35,10 +35,11 @@ const (
 	// escaping of ordinary text; a client that escapes far more must send
 	// binary.
 	maxChangesetFilesRequestBytes = 2 * (ledger.MaxChangesetBytes + ledger.MaxChanges*(ledger.MaxChangePathBytes+16))
-	// A base page holds files up to basePageBytes of encoded content; a
-	// larger file comes alone, and only the generated index can be larger:
-	// a row per decision with a title of at most five encoded bytes per
-	// byte ('<' becomes "&#60;") and a directory that needs no escaping.
+	// A base or main-line page holds files up to basePageBytes of encoded
+	// content; a larger file comes alone, and only the generated index can
+	// be larger: a row per decision with a title of at most five encoded
+	// bytes per byte ('<' becomes "&#60;") and a directory that needs no
+	// escaping.
 	basePageBytes        = 8 << 20
 	maxIndexEncodedBytes = 1024 + store.MaxLedgerDecisions*(5*store.MaxLedgerTitleBytes+store.MaxLedgerDirBytes+64)
 	maxBaseResponseBytes = max(basePageBytes, maxIndexEncodedBytes) + 64<<10
@@ -101,6 +102,7 @@ func (s *Service) registerChangesets(mux *http.ServeMux) {
 	}{
 		{circusv1connect.LedgerChangesetServiceOpenChangesetProcedure, maxChangesetSmallRequestBytes, maxChangesetSmallResponse, false},
 		{circusv1connect.LedgerChangesetServiceReadChangesetBaseProcedure, maxChangesetSmallRequestBytes, maxBaseResponseBytes, false},
+		{circusv1connect.LedgerChangesetServiceReadMainLineProcedure, maxChangesetSmallRequestBytes, maxBaseResponseBytes, false},
 		{circusv1connect.LedgerChangesetServiceCheckChangesetProcedure, maxChangesetFilesRequestBytes, maxCheckResponseBytes, true},
 		{circusv1connect.LedgerChangesetServiceReadChangesetConflictsProcedure, maxChangesetSmallRequestBytes, maxConflictsResponseBytes, true},
 		{circusv1connect.LedgerChangesetServiceMergeChangesetProcedure, maxChangesetFilesRequestBytes, maxMergeResponseBytes, true},
@@ -257,6 +259,20 @@ func (cs *changesetService) project(ctx context.Context, userID, ref string) (st
 		}
 	}
 	return "", connect.NewError(connect.CodeNotFound, errProjectNotFound)
+}
+
+// projectByID checks that id is one of the user's projects, reading its
+// row alone.
+func (cs *changesetService) projectByID(ctx context.Context, userID, id string) (string, error) {
+	if !ledger.ValidProjectID(id) {
+		return "", invalidField("project", "with a page token, project must be the project_id of the first page")
+	}
+	if _, err := cs.st.GetProject(ctx, userID, id); errors.Is(err, store.ErrNotFound) {
+		return "", connect.NewError(connect.CodeNotFound, errProjectNotFound)
+	} else if err != nil {
+		return "", cs.internal(ctx, "read ledger project", err)
+	}
+	return id, nil
 }
 
 // changeset reads one of the user's changesets.
@@ -419,6 +435,62 @@ func (cs *changesetService) ReadChangesetBase(ctx context.Context, req *connect.
 	}
 	if more && len(files) > 0 {
 		out.NextPageToken = encodePathCursor(c.ID, files[len(files)-1].Path)
+	}
+	return connect.NewResponse(out), nil
+}
+
+// ReadMainLine pages through a main-line commit's files like a base, without
+// a changeset: the page token carries the commit the first page read. The
+// first page resolves a project name, which reads the user's project list
+// as open and list do; the later pages take the id, a single row, so they
+// cost what a base page costs.
+func (cs *changesetService) ReadMainLine(ctx context.Context, req *connect.Request[circusv1.ReadMainLineRequest]) (*connect.Response[circusv1.ReadMainLineResponse], error) {
+	p, err := worker(ctx)
+	if err != nil {
+		return nil, err
+	}
+	commit := req.Msg.GetCommit()
+	if commit != "" && !store.IsLedgerCommitID(commit) {
+		return nil, invalidField("commit", "commit must be a full commit id: 40 lowercase hexadecimal digits")
+	}
+	token := req.Msg.GetPageToken()
+	var projectID string
+	if token == "" {
+		projectID, err = cs.project(ctx, p.UserID, req.Msg.GetProject())
+	} else {
+		projectID, err = cs.projectByID(ctx, p.UserID, req.Msg.GetProject())
+	}
+	if err != nil {
+		return nil, err
+	}
+	after := ""
+	if token != "" {
+		read, path, ok := decodeMainLineCursor(token, projectID)
+		if !ok || commit != "" && commit != read {
+			return nil, invalidField("page_token", "invalid main line page token")
+		}
+		commit, after = read, path
+	}
+	read, files, more, err := cs.ledger.ReadMainLine(ctx, projectID, commit, after, basePageBytes)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("the commit is not on the main line"))
+	}
+	if err != nil {
+		return nil, cs.fail(ctx, "read main line", err)
+	}
+	if read == "" {
+		// A project deleted after it was resolved has lost its repository
+		// too, and reads as empty: its row goes first, so check it again.
+		if _, err := cs.projectByID(ctx, p.UserID, projectID); err != nil {
+			return nil, err
+		}
+	}
+	out := &circusv1.ReadMainLineResponse{Commit: read, Files: make([]*circusv1.LedgerFile, 0, len(files)), ProjectId: projectID}
+	for _, f := range files {
+		out.Files = append(out.Files, &circusv1.LedgerFile{Path: f.Path, Content: string(f.Content)})
+	}
+	if more && len(files) > 0 {
+		out.NextPageToken = encodeMainLineCursor(projectID, read, files[len(files)-1].Path)
 	}
 	return connect.NewResponse(out), nil
 }
@@ -725,6 +797,30 @@ func decodePathCursor(token, id string) (string, bool) {
 	}
 	path := string(b[2+len(id):])
 	return path, path != "" && len(path) <= store.MaxLedgerPathBytes+len("INDEX.md") && utf8.ValidString(path)
+}
+
+// A main-line cursor names the last path of a main-line page, bound to the
+// project and the commit read: version, the id's length, the id, the
+// commit's 20 bytes, the path. It is not signed: every page checks again
+// that the project is the caller's and the commit on its main line, and the
+// path only positions a read the caller may make from the start anyway.
+func encodeMainLineCursor(projectID, commit, path string) string {
+	b := append([]byte{4, byte(len(projectID))}, projectID...)
+	hash := plumbing.NewHash(commit)
+	b = append(b, hash[:]...)
+	return base64.RawURLEncoding.EncodeToString(append(b, path...))
+}
+
+func decodeMainLineCursor(token, projectID string) (commit, path string, ok bool) {
+	b, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	const hashBytes = 20
+	if err != nil || len(b) < 2+len(projectID)+hashBytes || b[0] != 4 || int(b[1]) != len(projectID) || string(b[2:2+len(projectID)]) != projectID {
+		return "", "", false
+	}
+	rest := b[2+len(projectID):]
+	commit, path = hex.EncodeToString(rest[:hashBytes]), string(rest[hashBytes:])
+	return commit, path, commit != strings.Repeat("0", 40) && path != "" &&
+		len(path) <= store.MaxLedgerPathBytes+len("INDEX.md") && utf8.ValidString(path)
 }
 
 // A conflict cursor names the last path of a conflicts page, bound to its

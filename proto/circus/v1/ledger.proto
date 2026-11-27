@@ -162,7 +162,7 @@ message ListDecisionHistoryResponse {
 //
 // Who may do what:
 //   - any worker of the user: OpenChangeset, ReadChangesetBase,
-//     ListChangesets, GetChangeset;
+//     ReadMainLine, ListChangesets, GetChangeset;
 //   - a session's changeset (session_id set) has no opener: only an
 //     integrator may check, read conflicts of, merge or discard it;
 //   - the worker that opened the changeset, or a worker with the integrator
@@ -210,6 +210,19 @@ service LedgerChangesetService {
   // ReadChangesetBase pages through the base commit's files, for writing
   // the changeset's local copy.
   rpc ReadChangesetBase(ReadChangesetBaseRequest) returns (ReadChangesetBaseResponse);
+  // ReadMainLine pages through the files of a main-line commit, the
+  // generated INDEX.md included, for exporting the ledger (`circus ledger
+  // export`). It creates no changeset and changes nothing itself; like
+  // every read of the ledger, it may start the project's background
+  // recovery when its repository needs it, which rebuilds the index and
+  // records interrupted merges and archives. The first page fixes the
+  // commit (the head, unless one is given) and its page token binds the
+  // later pages to it, so a merge between pages does not mix two trees;
+  // the later pages name the project by the id the first returned. An
+  // empty ledger reads as its INDEX.md alone, with an empty commit.
+  // NOT_FOUND when the given commit is not on the main line, and when the
+  // project is deleted while it reads.
+  rpc ReadMainLine(ReadMainLineRequest) returns (ReadMainLineResponse);
   // CheckChangeset replaces the changeset's content with changes (the
   // complete set relative to its base; calling it again with the same
   // changes changes nothing), validates it and compares it with the
@@ -323,6 +336,30 @@ message ReadChangesetBaseResponse {
   repeated LedgerFile files = 1;
   // Empty after the last file.
   string next_page_token = 2;
+}
+
+message ReadMainLineRequest {
+  // A project id or the user's project name; with a page token, the
+  // project_id of the first page (a name is then not resolved, and is
+  // NOT_FOUND unless it is that id).
+  string project = 1;
+  // Optional full hex id of a main-line commit; empty reads the head. With
+  // a page token, empty or the commit the first page read.
+  string commit = 2;
+  // next_page_token of the previous page; empty starts at the first file.
+  string page_token = 3;
+}
+message ReadMainLineResponse {
+  // Full hex id of the commit read; empty for an empty ledger. Every page
+  // of one read names the same commit.
+  string commit = 1;
+  // Its files in path order, at most 8 MiB per page, as
+  // ReadChangesetBaseResponse.files.
+  repeated LedgerFile files = 2;
+  // Empty after the last file.
+  string next_page_token = 3;
+  // The project's id, for the later pages' requests.
+  string project_id = 4;
 }
 
 message LedgerProblem {

@@ -695,7 +695,7 @@ the rest of it.
 
 The ledger changes only through changesets (`LedgerChangesetService` in
 `proto/circus/v1/ledger.proto`), which `circus ledger` drives with the
-worker credential from `circus join`:
+worker credential from `circus join`; the same credential exports it:
 
 ```sh
 circus ledger open <project>             # prints the changeset id and its directory
@@ -704,7 +704,40 @@ circus ledger check <changeset>          # problems, fast-forward, conflicts
 circus ledger merge <changeset> [--commit <sha>] [--resolved <dir>]
 circus ledger discard <changeset> --reason <text>
 circus ledger list <project> [--state open|merged|discarded] [--session <id>]
+circus ledger export <project> --dir <dir>  # prints the commit
 ```
+
+`export` writes the files of the main line's head, the decisions in their
+directories and the generated `INDEX.md`, to `--dir` with
+`ReadMainLine`, which pages through a main-line commit like a changeset's
+base. It creates no changeset. The read writes nothing on the server
+itself, but like every ledger read it may start the project's background
+recovery when the repository needs it (rebuilding a stale index,
+recording an interrupted merge or archive), which does. The first page
+fixes the commit and resolves a project name to its id; the later pages
+name the project by that id, and their tokens bind them to the commit, so
+a merge while it reads does not mix two trees. An empty ledger exports its
+`INDEX.md` alone; a project deleted while it reads is not found.
+
+The directory must not exist, and its parent must. The export is written
+through the parent, opened once, to a new private directory
+`.<dir>.export-*` beside it, whose files and directories are synced after
+it takes the mode the umask gives a new directory; it is then renamed to
+the directory with an exclusive rename (`renameat2` with
+`RENAME_NOREPLACE` on Linux, `renameatx_np` with `RENAME_EXCL` on macOS),
+which fails rather than replace anything that appeared there meanwhile; a
+file system without one refuses the export. On a failure before that, only
+the temporary directory is removed, relative to the parent, and the
+directory is not created; if syncing the parent fails after the rename,
+the export is in place but may not be durable, and the command says so. A
+crash can leave a `.<dir>.export-*` directory behind, which is safe to
+delete. Paths from the server are checked as for `open`, and must also
+come in order and stay distinct on a case-insensitive,
+normalization-insensitive file system, directories included; file systems
+with further aliasing rules (exFAT, for one, drops trailing dots from
+names) are not checked for. To refresh an existing copy, export to a new
+directory and mirror it, for example with
+`rsync -a --delete <export>/ <dir>/`.
 
 `open` writes the main line's files to
 `$XDG_STATE_HOME/circus/ledger/cli/<changeset>/` (under
@@ -800,15 +833,16 @@ at these bounds, in memory held at once:
 | Check: request buffer 32 MiB (it grows by doubling, so about 48 MiB while the last 24 MiB body is read), message 13 MiB, file copies 8 MiB, base and main snapshots 14 MiB with the index read once (up to 12 MiB), conflict contents 8 MiB and their copies 8 MiB, response 21 MiB, object cache 4 MiB | ≈ 120 MiB |
 | Merge: request buffer 32 MiB and message 13 MiB, resolutions 8 MiB, snapshots and index 26 MiB, changeset content 8 MiB, rewritten files 48 MiB (a reference of at least 4 bytes grows to at most 12), object cache 4 MiB | ≈ 140 MiB |
 | A conflicts page: contents 8 MiB, or a single conflict alone up to 30.5 MiB (two versions of the generated index and an 8 MiB changeset file), their copies 30.5 MiB, the encoded page up to 70 MiB (six bytes per control character), which JSON encoding grows by doubling, so about 126 MiB while the last copy is made, the three file lists about 8 MiB, object cache 4 MiB: 30.5 + 30.5 + 126 + 8 + 4 | ≈ 199 MiB |
-| A base page: files 8 MiB, or the generated index alone up to 12 MiB, their copies and the encoded page | ≈ 36 MiB |
+| A base or main-line page: files 8 MiB, or the generated index alone up to 12 MiB, their copies and the encoded page (the first main-line page given a project name also reads the user's project list, as open and list do) | ≈ 36 MiB |
 | Open, discard, list, get | < 1 MiB |
 
 The three write slots are the server's, shared with the session
 snapshots below, whose collections and rebases wait for one instead of
 being refused. With every write slot held by a conflict read (3 × 199) the
-four admitted requests can all be lighter ones, such as base pages or a
-session changeset's check after its collection (4 × 36): the service and
-the snapshots' engine work hold at most about 741 MiB. With the four
+four admitted requests can all be lighter ones, such as base or main-line
+pages or a session changeset's check after its collection (4 × 36): the
+service and the snapshots' engine work hold at most about 741 MiB. With
+the four
 requests of `LedgerService` (a full listing about 45 MiB each with its index
 rows and message; a session's ledger about 95 MiB, of which at most two
 run at once, see below) and the snapshot operations (268 MiB), the ledger

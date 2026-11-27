@@ -3,12 +3,15 @@ package webapi_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptrace"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +22,8 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
 	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/store"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 )
 
@@ -898,5 +903,192 @@ func TestReadChangesetConflictsLargePage(t *testing.T) {
 	_, err = read(w, first.NextPageToken)
 	if got := preconditionSubjects(t, err); len(got) != 1 || got[0] != "CHANGESET_CHANGED:"+b {
 		t.Fatalf("page after another check = %v", got)
+	}
+}
+
+// mainLine reads every page of a main-line read, checking that each page
+// names the commit of the first, and returns the commit and the files by
+// path in order.
+func mainLine(t *testing.T, api circusv1connect.LedgerChangesetServiceClient, project, commit string, between func()) (string, []*circusv1.LedgerFile, int) {
+	t.Helper()
+	var files []*circusv1.LedgerFile
+	read, token, pages := "", "", 0
+	for {
+		res, err := api.ReadMainLine(t.Context(), connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project, Commit: commit, PageToken: token}))
+		if err != nil {
+			t.Fatalf("page %d: %v", pages, err)
+		}
+		if pages++; pages == 1 {
+			read, project = res.Msg.Commit, res.Msg.ProjectId
+		} else if res.Msg.Commit != read || res.Msg.ProjectId != project {
+			t.Fatalf("page %d read %s, the first %s", pages, res.Msg.Commit, read)
+		}
+		files = append(files, res.Msg.Files...)
+		if token = res.Msg.NextPageToken; token == "" {
+			break
+		}
+		if pages == 1 && between != nil {
+			between()
+		}
+	}
+	for i := 1; i < len(files); i++ {
+		if files[i-1].Path >= files[i].Path {
+			t.Fatalf("files out of order: %q before %q", files[i-1].Path, files[i].Path)
+		}
+	}
+	return read, files, pages
+}
+
+func TestReadMainLineService(t *testing.T) {
+	h, owner := newHarness(t, withWorkers)
+	ctx := t.Context()
+	project := createLedgerProject(t, owner) // named "Ledger"
+	w := h.worker(t, h.owner.ID, "w1", false)
+	asJSON := h.changesets(t, h.credential(t, store.KindWorker, h.owner.ID, "w-json", "w-json"), connect.WithProtoJSON())
+	h.signIn(t, "stranger", "stranger@example.com")
+	stranger := h.worker(t, "stranger", "w-stranger", true)
+
+	// The empty ledger is its index alone, without a commit.
+	commit, files, _ := mainLine(t, w, "ledger", "", nil)
+	if commit != "" || len(files) != 1 || files[0].Path != "INDEX.md" || files[0].Content == "" {
+		t.Fatalf("empty ledger: %q %v", commit, files)
+	}
+	_, err := w.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project, Commit: strings.Repeat("b", 40)}))
+	wantCode(t, err, connect.CodeNotFound)
+
+	// Decisions of 200 KiB of control characters, six JSON bytes each:
+	// about six fill a page.
+	var decisions []ledger.Decision
+	for i := range 14 {
+		decisions = append(decisions, ledger.Decision{Number: uint32(i), Dir: []string{"", "core", "net/wire"}[i%3],
+			Title: fmt.Sprintf("Old %d", i), Body: []byte(strings.Repeat("\x01", 200<<10))})
+	}
+	old := ledgerCommit(t, h, project, decisions, "Seed", "")
+
+	// Another user's worker finds neither the project nor its name.
+	for _, ref := range []string{project, "Ledger"} {
+		_, err = stranger.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: ref}))
+		wantCode(t, err, connect.CodeNotFound)
+	}
+
+	// A merge between the pages: the later pages still read the first
+	// page's commit, so the export is that commit's tree alone.
+	var head string
+	read, files, pages := mainLine(t, asJSON, "Ledger", "", func() {
+		changed := slices.Clone(decisions)
+		for i := range changed {
+			changed[i].Title = fmt.Sprintf("New %d", i)
+			changed[i].Body = []byte("new\n")
+		}
+		changed = append(changed, ledger.Decision{Number: 99, Title: "Added", Body: []byte("added\n")})
+		head = ledgerCommit(t, h, project, changed, "Change everything", "")
+	})
+	if read != old || pages < 3 || len(files) != len(decisions)+1 {
+		t.Fatalf("read %s (old %s) in %d pages, %d files", read, old, pages, len(files))
+	}
+	for _, f := range files {
+		if strings.Contains(f.Path, "New") || strings.Contains(f.Path, "Added") || strings.Contains(f.Content, "New ") {
+			t.Fatalf("file of the later commit: %s", f.Path)
+		}
+		if f.Path != "INDEX.md" && !strings.HasSuffix(f.Content, strings.Repeat("\x01", 200<<10)) {
+			t.Fatalf("%s has another content", f.Path)
+		}
+	}
+	// The head now, and the old commit asked for by id, page alike.
+	read, files, _ = mainLine(t, w, project, "", nil)
+	if read != head || len(files) != len(decisions)+2 {
+		t.Fatalf("head: read %s (head %s), %d files", read, head, len(files))
+	}
+	if read, files, _ = mainLine(t, w, project, old, nil); read != old || len(files) != len(decisions)+1 || !strings.Contains(files[0].Path, "Old") {
+		t.Fatalf("old commit: read %s, %d files", read, len(files))
+	}
+
+	// A commit that is not on the main line: a changeset's branch.
+	opened, err := w.OpenChangeset(ctx, connect.NewRequest(&circusv1.OpenChangesetRequest{Project: project}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := opened.Msg.Changeset.ChangesetId
+	if _, err := w.CheckChangeset(ctx, connect.NewRequest(&circusv1.CheckChangesetRequest{ChangesetId: id,
+		Changes: []*circusv1.FileChange{content("D?a-Branch.md", decisionFile("D?a", "Branch", "branch\n"))}})); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := git.PlainOpen(filepath.Join(h.dir, "ledger", project+".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, err := repo.Reference(plumbing.ReferenceName("refs/heads/changesets/"+id), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = w.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project, Commit: branch.Hash().String()}))
+	wantCode(t, err, connect.CodeNotFound)
+
+	// Invalid input.
+	_, err = w.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project, Commit: "HEAD"}))
+	wantField(t, err, connect.CodeInvalidArgument, "commit")
+	first, err := w.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project, Commit: old}))
+	if err != nil || first.Msg.NextPageToken == "" {
+		t.Fatalf("first page = %v, %v", first, err)
+	}
+	_, err = w.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project, Commit: head, PageToken: first.Msg.NextPageToken}))
+	wantField(t, err, connect.CodeInvalidArgument, "page_token")
+	_, err = w.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project, PageToken: "bad"}))
+	wantField(t, err, connect.CodeInvalidArgument, "page_token")
+	// Later pages name the project by id, and only the caller's.
+	if first.Msg.ProjectId != project {
+		t.Fatalf("project_id = %q", first.Msg.ProjectId)
+	}
+	// A name is not resolved there: it is looked up as an id.
+	_, err = w.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: "Ledger", PageToken: first.Msg.NextPageToken}))
+	wantCode(t, err, connect.CodeNotFound)
+	_, err = w.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: "a/b", PageToken: first.Msg.NextPageToken}))
+	wantField(t, err, connect.CodeInvalidArgument, "project")
+	_, err = stranger.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project, PageToken: first.Msg.NextPageToken}))
+	wantCode(t, err, connect.CodeNotFound)
+	other, err := owner.projects.CreateProject(ctx, connect.NewRequest(&circusv1.CreateProjectRequest{Name: "Other"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = w.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: other.Msg.Project.ProjectId, PageToken: first.Msg.NextPageToken}))
+	wantField(t, err, connect.CodeInvalidArgument, "page_token")
+
+	// Nothing was created: the only changeset is the one opened above.
+	listed, err := w.ListChangesets(ctx, connect.NewRequest(&circusv1.ListChangesetsRequest{Project: project}))
+	if err != nil || len(listed.Msg.Changesets) != 1 {
+		t.Fatalf("changesets = %v, %v", listed, err)
+	}
+}
+
+// vanishing is a store whose projects disappear after limit reads of
+// them, as when a project is deleted after a request resolved it.
+type vanishing struct {
+	store.Store
+	reads atomic.Int32
+	limit int32
+}
+
+func (v *vanishing) GetProject(ctx context.Context, userID, id string) (store.Project, error) {
+	if v.reads.Add(1) > v.limit {
+		return store.Project{}, store.ErrNotFound
+	}
+	return v.Store.GetProject(ctx, userID, id)
+}
+
+// A project deleted between its resolution and the read has no repository
+// any more, which reads as an empty ledger: that is NOT_FOUND, never an
+// empty export.
+func TestReadMainLineDeletedProject(t *testing.T) {
+	st := &vanishing{limit: 1 << 30}
+	h, owner := newHarness(t, withWorkers, func(cfg *webapi.Config) { st.Store = cfg.Store; cfg.Store = st })
+	project := createLedgerProject(t, owner)
+	w := h.worker(t, h.owner.ID, "w1", false)
+	st.reads.Store(0)
+	st.limit = 1
+	_, err := w.ReadMainLine(t.Context(), connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project}))
+	wantCode(t, err, connect.CodeNotFound)
+	st.reads.Store(-1 << 30)
+	if res, err := w.ReadMainLine(t.Context(), connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project})); err != nil || res.Msg.Commit != "" {
+		t.Fatalf("empty ledger = %v, %v", res, err)
 	}
 }

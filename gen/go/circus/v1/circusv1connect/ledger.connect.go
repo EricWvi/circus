@@ -58,6 +58,9 @@ const (
 	// LedgerChangesetServiceReadChangesetBaseProcedure is the fully-qualified name of the
 	// LedgerChangesetService's ReadChangesetBase RPC.
 	LedgerChangesetServiceReadChangesetBaseProcedure = "/circus.v1.LedgerChangesetService/ReadChangesetBase"
+	// LedgerChangesetServiceReadMainLineProcedure is the fully-qualified name of the
+	// LedgerChangesetService's ReadMainLine RPC.
+	LedgerChangesetServiceReadMainLineProcedure = "/circus.v1.LedgerChangesetService/ReadMainLine"
 	// LedgerChangesetServiceCheckChangesetProcedure is the fully-qualified name of the
 	// LedgerChangesetService's CheckChangeset RPC.
 	LedgerChangesetServiceCheckChangesetProcedure = "/circus.v1.LedgerChangesetService/CheckChangeset"
@@ -348,6 +351,19 @@ type LedgerChangesetServiceClient interface {
 	// ReadChangesetBase pages through the base commit's files, for writing
 	// the changeset's local copy.
 	ReadChangesetBase(context.Context, *connect.Request[v1.ReadChangesetBaseRequest]) (*connect.Response[v1.ReadChangesetBaseResponse], error)
+	// ReadMainLine pages through the files of a main-line commit, the
+	// generated INDEX.md included, for exporting the ledger (`circus ledger
+	// export`). It creates no changeset and changes nothing itself; like
+	// every read of the ledger, it may start the project's background
+	// recovery when its repository needs it, which rebuilds the index and
+	// records interrupted merges and archives. The first page fixes the
+	// commit (the head, unless one is given) and its page token binds the
+	// later pages to it, so a merge between pages does not mix two trees;
+	// the later pages name the project by the id the first returned. An
+	// empty ledger reads as its INDEX.md alone, with an empty commit.
+	// NOT_FOUND when the given commit is not on the main line, and when the
+	// project is deleted while it reads.
+	ReadMainLine(context.Context, *connect.Request[v1.ReadMainLineRequest]) (*connect.Response[v1.ReadMainLineResponse], error)
 	// CheckChangeset replaces the changeset's content with changes (the
 	// complete set relative to its base; calling it again with the same
 	// changes changes nothing), validates it and compares it with the
@@ -416,6 +432,12 @@ func NewLedgerChangesetServiceClient(httpClient connect.HTTPClient, baseURL stri
 			connect.WithSchema(ledgerChangesetServiceMethods.ByName("ReadChangesetBase")),
 			connect.WithClientOptions(opts...),
 		),
+		readMainLine: connect.NewClient[v1.ReadMainLineRequest, v1.ReadMainLineResponse](
+			httpClient,
+			baseURL+LedgerChangesetServiceReadMainLineProcedure,
+			connect.WithSchema(ledgerChangesetServiceMethods.ByName("ReadMainLine")),
+			connect.WithClientOptions(opts...),
+		),
 		checkChangeset: connect.NewClient[v1.CheckChangesetRequest, v1.CheckChangesetResponse](
 			httpClient,
 			baseURL+LedgerChangesetServiceCheckChangesetProcedure,
@@ -459,6 +481,7 @@ func NewLedgerChangesetServiceClient(httpClient connect.HTTPClient, baseURL stri
 type ledgerChangesetServiceClient struct {
 	openChangeset          *connect.Client[v1.OpenChangesetRequest, v1.OpenChangesetResponse]
 	readChangesetBase      *connect.Client[v1.ReadChangesetBaseRequest, v1.ReadChangesetBaseResponse]
+	readMainLine           *connect.Client[v1.ReadMainLineRequest, v1.ReadMainLineResponse]
 	checkChangeset         *connect.Client[v1.CheckChangesetRequest, v1.CheckChangesetResponse]
 	readChangesetConflicts *connect.Client[v1.ReadChangesetConflictsRequest, v1.ReadChangesetConflictsResponse]
 	mergeChangeset         *connect.Client[v1.MergeChangesetRequest, v1.MergeChangesetResponse]
@@ -475,6 +498,11 @@ func (c *ledgerChangesetServiceClient) OpenChangeset(ctx context.Context, req *c
 // ReadChangesetBase calls circus.v1.LedgerChangesetService.ReadChangesetBase.
 func (c *ledgerChangesetServiceClient) ReadChangesetBase(ctx context.Context, req *connect.Request[v1.ReadChangesetBaseRequest]) (*connect.Response[v1.ReadChangesetBaseResponse], error) {
 	return c.readChangesetBase.CallUnary(ctx, req)
+}
+
+// ReadMainLine calls circus.v1.LedgerChangesetService.ReadMainLine.
+func (c *ledgerChangesetServiceClient) ReadMainLine(ctx context.Context, req *connect.Request[v1.ReadMainLineRequest]) (*connect.Response[v1.ReadMainLineResponse], error) {
+	return c.readMainLine.CallUnary(ctx, req)
 }
 
 // CheckChangeset calls circus.v1.LedgerChangesetService.CheckChangeset.
@@ -516,6 +544,19 @@ type LedgerChangesetServiceHandler interface {
 	// ReadChangesetBase pages through the base commit's files, for writing
 	// the changeset's local copy.
 	ReadChangesetBase(context.Context, *connect.Request[v1.ReadChangesetBaseRequest]) (*connect.Response[v1.ReadChangesetBaseResponse], error)
+	// ReadMainLine pages through the files of a main-line commit, the
+	// generated INDEX.md included, for exporting the ledger (`circus ledger
+	// export`). It creates no changeset and changes nothing itself; like
+	// every read of the ledger, it may start the project's background
+	// recovery when its repository needs it, which rebuilds the index and
+	// records interrupted merges and archives. The first page fixes the
+	// commit (the head, unless one is given) and its page token binds the
+	// later pages to it, so a merge between pages does not mix two trees;
+	// the later pages name the project by the id the first returned. An
+	// empty ledger reads as its INDEX.md alone, with an empty commit.
+	// NOT_FOUND when the given commit is not on the main line, and when the
+	// project is deleted while it reads.
+	ReadMainLine(context.Context, *connect.Request[v1.ReadMainLineRequest]) (*connect.Response[v1.ReadMainLineResponse], error)
 	// CheckChangeset replaces the changeset's content with changes (the
 	// complete set relative to its base; calling it again with the same
 	// changes changes nothing), validates it and compares it with the
@@ -580,6 +621,12 @@ func NewLedgerChangesetServiceHandler(svc LedgerChangesetServiceHandler, opts ..
 		connect.WithSchema(ledgerChangesetServiceMethods.ByName("ReadChangesetBase")),
 		connect.WithHandlerOptions(opts...),
 	)
+	ledgerChangesetServiceReadMainLineHandler := connect.NewUnaryHandler(
+		LedgerChangesetServiceReadMainLineProcedure,
+		svc.ReadMainLine,
+		connect.WithSchema(ledgerChangesetServiceMethods.ByName("ReadMainLine")),
+		connect.WithHandlerOptions(opts...),
+	)
 	ledgerChangesetServiceCheckChangesetHandler := connect.NewUnaryHandler(
 		LedgerChangesetServiceCheckChangesetProcedure,
 		svc.CheckChangeset,
@@ -622,6 +669,8 @@ func NewLedgerChangesetServiceHandler(svc LedgerChangesetServiceHandler, opts ..
 			ledgerChangesetServiceOpenChangesetHandler.ServeHTTP(w, r)
 		case LedgerChangesetServiceReadChangesetBaseProcedure:
 			ledgerChangesetServiceReadChangesetBaseHandler.ServeHTTP(w, r)
+		case LedgerChangesetServiceReadMainLineProcedure:
+			ledgerChangesetServiceReadMainLineHandler.ServeHTTP(w, r)
 		case LedgerChangesetServiceCheckChangesetProcedure:
 			ledgerChangesetServiceCheckChangesetHandler.ServeHTTP(w, r)
 		case LedgerChangesetServiceReadChangesetConflictsProcedure:
@@ -649,6 +698,10 @@ func (UnimplementedLedgerChangesetServiceHandler) OpenChangeset(context.Context,
 
 func (UnimplementedLedgerChangesetServiceHandler) ReadChangesetBase(context.Context, *connect.Request[v1.ReadChangesetBaseRequest]) (*connect.Response[v1.ReadChangesetBaseResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.ReadChangesetBase is not implemented"))
+}
+
+func (UnimplementedLedgerChangesetServiceHandler) ReadMainLine(context.Context, *connect.Request[v1.ReadMainLineRequest]) (*connect.Response[v1.ReadMainLineResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.LedgerChangesetService.ReadMainLine is not implemented"))
 }
 
 func (UnimplementedLedgerChangesetServiceHandler) CheckChangeset(context.Context, *connect.Request[v1.CheckChangesetRequest]) (*connect.Response[v1.CheckChangesetResponse], error) {

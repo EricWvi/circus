@@ -84,6 +84,51 @@ func (m *Manager) GetDecision(ctx context.Context, projectID string, number uint
 	return DecisionAt{}, store.ErrNotFound
 }
 
+// ReadMainLine returns the files of a main-line commit (empty: the head)
+// after the path after, as ReadChangesetBase pages them, and the commit it
+// read. An empty ledger reads as its index alone, with an empty commit; a
+// commit that is not on the main line is store.ErrNotFound. It changes
+// nothing.
+func (m *Manager) ReadMainLine(ctx context.Context, projectID, commit, after string, budget int) (read string, files []File, more bool, _ error) {
+	if commit != "" && !store.IsLedgerCommitID(commit) {
+		return "", nil, false, store.ErrInvalid
+	}
+	if !ValidProjectID(projectID) {
+		return "", nil, false, fmt.Errorf("%w: invalid ledger project id", store.ErrInvalid)
+	}
+	if err := m.CheckProject(ctx, projectID); err != nil {
+		return "", nil, false, err
+	}
+	release, err := m.acquire(ctx, projectID)
+	if err != nil {
+		return "", nil, false, err
+	}
+	defer release()
+	r, err := m.open(m.repoPath(projectID))
+	if err != nil {
+		return "", nil, false, err
+	}
+	var head plumbing.Hash
+	if r != nil {
+		defer r.storage.Close()
+		if head, err = r.head(); err != nil {
+			return "", nil, false, err
+		}
+	}
+	if head.IsZero() {
+		if commit != "" {
+			return "", nil, false, store.ErrNotFound
+		}
+		return "", emptyFiles(after), false, nil
+	}
+	c, err := r.mainCommit(ctx, commit)
+	if err != nil {
+		return "", nil, false, err
+	}
+	files, more, err = r.readFiles(ctx, c.TreeHash, after, budget)
+	return c.Hash.String(), files, more, err
+}
+
 func (r *repository) mainCommit(ctx context.Context, id string) (*object.Commit, error) {
 	head, err := r.head()
 	if err != nil {

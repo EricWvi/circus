@@ -1,6 +1,7 @@
 // Package snapshot keeps a plain directory holding a copy of a ledger (a
 // snapshot) and finds what was changed in it, for the device daemon's
-// session snapshots and for the circus ledger CLI's local copies.
+// session snapshots and for the circus ledger CLI's local copies. Exporter
+// writes the CLI's exports, which are not compared.
 //
 // A Manifest records, for each file of the base the directory was written
 // from, its path, size, modification and inode change times (ns), inode

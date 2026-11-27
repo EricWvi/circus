@@ -3,6 +3,8 @@ package main
 import (
 	"cmp"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -28,6 +30,7 @@ import (
 	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/ledger/snapshot"
 	"github.com/EricWvi/circus/internal/store"
+	"golang.org/x/sys/unix"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 )
 
@@ -37,9 +40,11 @@ const ledgerUsage = `usage:
   circus ledger merge <changeset> [--commit SHA] [--resolved DIR]
   circus ledger discard <changeset> --reason TEXT
   circus ledger list <project> [--state open|merged|discarded] [--session ID]
+  circus ledger export <project> --dir DIR
 
-Changes a project's ledger through a changeset, with the worker credential
-from circus join. All forms accept --credentials PATH and --ca-file FILE.
+Changes a project's ledger through a changeset, or exports it, with the
+worker credential from circus join. All forms accept --credentials PATH and
+--ca-file FILE.
 
 open starts a changeset from the main line and writes its files to DIR,
 by default $XDG_STATE_HOME/circus/ledger/cli/<changeset> (under
@@ -70,6 +75,17 @@ of the session's ledger snapshot on its device: there is no local copy.
 Only a worker with the integrator grant may check, merge or discard it;
 check and merge make the server collect the snapshot first (with the
 device offline, the last collection is used, and check says so).
+
+export writes the files of the main line's head (decisions in their
+directories and the generated INDEX.md) to DIR and prints the commit it
+read; a merge while it reads does not mix two commits. It creates no
+changeset. DIR must not exist, in an existing parent: the files are written
+to a private directory .DIR.export-* beside it, which is renamed to DIR
+once complete, without replacing anything that appeared there meanwhile.
+On a failure before that, DIR is not created. A crash can leave the
+.DIR.export-* directory behind; it is safe to delete. To refresh an
+existing copy, export to a new directory and mirror it, e.g.
+rsync -a --delete NEW/ DIR/.
 
 A call the server refuses because it is busy with other checks or merges
 of the user is tried again for up to two minutes.
@@ -104,7 +120,7 @@ func ledgerCommand(args []string, out, errOut io.Writer) error {
 	fs.Usage = func() { fmt.Fprintln(errOut, ledgerUsage); fs.PrintDefaults() }
 	credentials := fs.String("credentials", "", "worker credential file (default $XDG_CONFIG_HOME/circus/worker.json)")
 	ca := fs.String("ca-file", "", "PEM CA bundle (default credential's CA file)")
-	dir := fs.String("dir", "", "open: directory for the changeset's files")
+	dir := fs.String("dir", "", "open: directory for the changeset's files; export: directory to write the export to")
 	commit := fs.String("commit", "", "merge: the code commit merged with it (40 hex digits)")
 	resolved := fs.String("resolved", "", "merge: directory with the final content of conflicting files")
 	reason := fs.String("reason", "", "discard: why the changeset is discarded")
@@ -120,6 +136,10 @@ func ledgerCommand(args []string, out, errOut io.Writer) error {
 	command, arg := pos[0], pos[1]
 	switch command {
 	case "open", "list":
+	case "export":
+		if *dir == "" {
+			return errors.New("export requires --dir DIR")
+		}
 	case "check", "merge", "discard":
 		if !ledger.ValidChangesetID(arg) {
 			return fmt.Errorf("invalid changeset id %q", arg)
@@ -166,6 +186,8 @@ func ledgerCommand(args []string, out, errOut io.Writer) error {
 		return cli.merge(ctx, arg, *commit, *resolved)
 	case "discard":
 		return cli.discard(ctx, arg, *reason)
+	case "export":
+		return cli.export(ctx, arg, *dir)
 	default:
 		return cli.list(ctx, arg, listState, *session)
 	}
@@ -353,6 +375,133 @@ func (c *ledgerCLI) open(ctx context.Context, project, dir string) error {
 	}
 	fmt.Fprintf(c.out, "changeset: %s\ndirectory: %s\n", id, written)
 	return nil
+}
+
+// export writes the main line's files to dir, which must not exist. The
+// files go to a new private directory beside dir that only this export
+// writes, through the parent directory opened once; once everything in it
+// is synced, it takes the umask's mode and is renamed to dir without
+// replacing anything. Before that, a failure removes only that directory,
+// through the same parent, and dir is not created.
+func (c *ledgerCLI) export(ctx context.Context, project, dir string) error {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	parent, base := filepath.Dir(dir), filepath.Base(dir)
+	if dir == parent {
+		return fmt.Errorf("refusing to export to %s", dir)
+	}
+	umask := unix.Umask(0)
+	unix.Umask(umask)
+	pfd, err := unix.Open(parent, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return &os.PathError{Op: "open", Path: parent, Err: err}
+	}
+	defer unix.Close(pfd)
+	var st unix.Stat_t
+	if err := unix.Fstatat(pfd, base, &st, unix.AT_SYMLINK_NOFOLLOW); err == nil {
+		return fmt.Errorf("%s exists; export only to a new directory", dir)
+	} else if !errors.Is(err, unix.ENOENT) {
+		return &os.PathError{Op: "stat", Path: dir, Err: err}
+	}
+	tmp, td, err := exportTemp(pfd, parent, base)
+	if err != nil {
+		return fmt.Errorf("%w\n%s was not created", err, dir)
+	}
+	commit, err := c.writeExport(ctx, td, project, os.FileMode(0o777&^umask))
+	td.Close()
+	if err == nil {
+		err = snapshot.RenameDirNoReplace(pfd, tmp, pfd, base)
+		if errors.Is(err, unix.EEXIST) || errors.Is(err, unix.ENOTEMPTY) {
+			err = fmt.Errorf("%s exists: it appeared during the export", dir)
+		} else if err != nil {
+			err = &os.PathError{Op: "rename", Path: dir, Err: err}
+		}
+	}
+	if err != nil {
+		if rmErr := snapshot.RemoveAllAt(pfd, tmp); rmErr != nil {
+			return fmt.Errorf("%w\n%s was not created; removing the temporary directory %s failed: %w", err, dir, filepath.Join(parent, tmp), rmErr)
+		}
+		return fmt.Errorf("%w\n%s was not created", err, dir)
+	}
+	if err := snapshot.SyncDir(pfd); err != nil {
+		return fmt.Errorf("the export is in %s but may not be durable: syncing %s failed: %w", dir, parent, err)
+	}
+	if commit == "" {
+		commit = "none (the ledger is empty)"
+	}
+	fmt.Fprintf(c.out, "commit: %s\ndirectory: %s\n", commit, dir)
+	return nil
+}
+
+// exportTemp makes a new private directory beside base in pfd and opens
+// it.
+func exportTemp(pfd int, parent, base string) (string, *os.File, error) {
+	var suffix [8]byte
+	for {
+		if _, err := cryptorand.Read(suffix[:]); err != nil {
+			return "", nil, err
+		}
+		name := "." + base + ".export-" + hex.EncodeToString(suffix[:])
+		if len(name) > 255 {
+			name = ".circus-export-" + hex.EncodeToString(suffix[:])
+		}
+		err := unix.Mkdirat(pfd, name, 0o700)
+		if errors.Is(err, unix.EEXIST) {
+			continue
+		}
+		if err != nil {
+			return "", nil, &os.PathError{Op: "mkdir", Path: filepath.Join(parent, name), Err: err}
+		}
+		fd, err := unix.Openat(pfd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err != nil {
+			_ = unix.Unlinkat(pfd, name, unix.AT_REMOVEDIR)
+			return "", nil, &os.PathError{Op: "open", Path: filepath.Join(parent, name), Err: err}
+		}
+		return name, os.NewFile(uintptr(fd), filepath.Join(parent, name)), nil
+	}
+}
+
+// writeExport writes the export into d, gives d mode, syncs it and returns
+// the commit read. Later pages name the project by the id the first page
+// returned.
+func (c *ledgerCLI) writeExport(ctx context.Context, d *os.File, project string, mode os.FileMode) (string, error) {
+	e := snapshot.NewExporter(d)
+	commit, token := "", ""
+	for first := true; ; first = false {
+		page, err := c.api.ReadMainLine(ctx, connect.NewRequest(&circusv1.ReadMainLineRequest{Project: project, Commit: commit, PageToken: token}))
+		if err != nil {
+			return "", c.fail(err)
+		}
+		read := page.Msg.GetCommit()
+		switch {
+		case first && read != "" && !store.IsLedgerCommitID(read):
+			return "", fmt.Errorf("the server answered an invalid commit %q", read)
+		case first && !ledger.ValidProjectID(page.Msg.GetProjectId()):
+			return "", fmt.Errorf("the server answered an invalid project id %q", page.Msg.GetProjectId())
+		case first:
+			commit, project = read, page.Msg.GetProjectId()
+		case read != commit:
+			return "", fmt.Errorf("the server answered commit %q after %q", read, commit)
+		}
+		for _, f := range page.Msg.GetFiles() {
+			if err := e.Add(f.GetPath(), f.GetContent()); err != nil {
+				if errors.Is(err, snapshot.ErrInvalidPath) {
+					return "", fmt.Errorf("refusing ledger path %q: %w", f.GetPath(), err)
+				}
+				return "", err
+			}
+		}
+		if token = page.Msg.GetNextPageToken(); token == "" {
+			break
+		}
+	}
+	// The mode before the last sync of d, so it is durable with it.
+	if err := d.Chmod(mode); err != nil {
+		return "", err
+	}
+	return commit, e.Sync()
 }
 
 // writeBase writes the base's files to dir and the record beside them.

@@ -217,9 +217,16 @@ func (m *Manager) ReadChangesetBase(ctx context.Context, c store.LedgerChangeset
 	if err != nil {
 		return nil, false, err
 	}
+	return r.readFiles(ctx, commit.TreeHash, after, budget)
+}
+
+// readFiles returns the files of tree after the path after, in path order,
+// until their encoded size reaches budget; a file larger than the budget
+// comes alone. more reports that files follow.
+func (r *repository) readFiles(ctx context.Context, tree plumbing.Hash, after string, budget int) (files []File, more bool, _ error) {
 	used := 0
 	full := errors.New("page full")
-	err = r.walkFiles(ctx, commit.TreeHash, "", func(f fileObject) error {
+	err := r.walkFiles(ctx, tree, "", func(f fileObject) error {
 		if f.path <= after {
 			return nil
 		}

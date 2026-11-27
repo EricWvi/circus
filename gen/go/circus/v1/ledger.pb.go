@@ -129,7 +129,7 @@ func (x SessionLedgerStatus_State) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SessionLedgerStatus_State.Descriptor instead.
 func (SessionLedgerStatus_State) EnumDescriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{30, 0}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{32, 0}
 }
 
 type SessionLedgerStatus_Applying int32
@@ -181,7 +181,7 @@ func (x SessionLedgerStatus_Applying) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SessionLedgerStatus_Applying.Descriptor instead.
 func (SessionLedgerStatus_Applying) EnumDescriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{30, 1}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{32, 1}
 }
 
 type LedgerEntry struct {
@@ -1315,6 +1315,146 @@ func (x *ReadChangesetBaseResponse) GetNextPageToken() string {
 	return ""
 }
 
+type ReadMainLineRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A project id or the user's project name; with a page token, the
+	// project_id of the first page (a name is then not resolved, and is
+	// NOT_FOUND unless it is that id).
+	Project string `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	// Optional full hex id of a main-line commit; empty reads the head. With
+	// a page token, empty or the commit the first page read.
+	Commit string `protobuf:"bytes,2,opt,name=commit,proto3" json:"commit,omitempty"`
+	// next_page_token of the previous page; empty starts at the first file.
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadMainLineRequest) Reset() {
+	*x = ReadMainLineRequest{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadMainLineRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadMainLineRequest) ProtoMessage() {}
+
+func (x *ReadMainLineRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadMainLineRequest.ProtoReflect.Descriptor instead.
+func (*ReadMainLineRequest) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ReadMainLineRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ReadMainLineRequest) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+func (x *ReadMainLineRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type ReadMainLineResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Full hex id of the commit read; empty for an empty ledger. Every page
+	// of one read names the same commit.
+	Commit string `protobuf:"bytes,1,opt,name=commit,proto3" json:"commit,omitempty"`
+	// Its files in path order, at most 8 MiB per page, as
+	// ReadChangesetBaseResponse.files.
+	Files []*LedgerFile `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty"`
+	// Empty after the last file.
+	NextPageToken string `protobuf:"bytes,3,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	// The project's id, for the later pages' requests.
+	ProjectId     string `protobuf:"bytes,4,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadMainLineResponse) Reset() {
+	*x = ReadMainLineResponse{}
+	mi := &file_circus_v1_ledger_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadMainLineResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadMainLineResponse) ProtoMessage() {}
+
+func (x *ReadMainLineResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_ledger_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadMainLineResponse.ProtoReflect.Descriptor instead.
+func (*ReadMainLineResponse) Descriptor() ([]byte, []int) {
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ReadMainLineResponse) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+func (x *ReadMainLineResponse) GetFiles() []*LedgerFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *ReadMainLineResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+func (x *ReadMainLineResponse) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
 type LedgerProblem struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
@@ -1327,7 +1467,7 @@ type LedgerProblem struct {
 
 func (x *LedgerProblem) Reset() {
 	*x = LedgerProblem{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[16]
+	mi := &file_circus_v1_ledger_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1339,7 +1479,7 @@ func (x *LedgerProblem) String() string {
 func (*LedgerProblem) ProtoMessage() {}
 
 func (x *LedgerProblem) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[16]
+	mi := &file_circus_v1_ledger_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1352,7 +1492,7 @@ func (x *LedgerProblem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LedgerProblem.ProtoReflect.Descriptor instead.
 func (*LedgerProblem) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{16}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *LedgerProblem) GetPath() string {
@@ -1389,7 +1529,7 @@ type LedgerConflict struct {
 
 func (x *LedgerConflict) Reset() {
 	*x = LedgerConflict{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[17]
+	mi := &file_circus_v1_ledger_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1401,7 +1541,7 @@ func (x *LedgerConflict) String() string {
 func (*LedgerConflict) ProtoMessage() {}
 
 func (x *LedgerConflict) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[17]
+	mi := &file_circus_v1_ledger_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1414,7 +1554,7 @@ func (x *LedgerConflict) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LedgerConflict.ProtoReflect.Descriptor instead.
 func (*LedgerConflict) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{17}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *LedgerConflict) GetPath() string {
@@ -1486,7 +1626,7 @@ type CheckChangesetRequest struct {
 
 func (x *CheckChangesetRequest) Reset() {
 	*x = CheckChangesetRequest{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[18]
+	mi := &file_circus_v1_ledger_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1498,7 +1638,7 @@ func (x *CheckChangesetRequest) String() string {
 func (*CheckChangesetRequest) ProtoMessage() {}
 
 func (x *CheckChangesetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[18]
+	mi := &file_circus_v1_ledger_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1511,7 +1651,7 @@ func (x *CheckChangesetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckChangesetRequest.ProtoReflect.Descriptor instead.
 func (*CheckChangesetRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{18}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CheckChangesetRequest) GetChangesetId() string {
@@ -1548,7 +1688,7 @@ type CheckChangesetResponse struct {
 
 func (x *CheckChangesetResponse) Reset() {
 	*x = CheckChangesetResponse{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[19]
+	mi := &file_circus_v1_ledger_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1560,7 +1700,7 @@ func (x *CheckChangesetResponse) String() string {
 func (*CheckChangesetResponse) ProtoMessage() {}
 
 func (x *CheckChangesetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[19]
+	mi := &file_circus_v1_ledger_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1573,7 +1713,7 @@ func (x *CheckChangesetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckChangesetResponse.ProtoReflect.Descriptor instead.
 func (*CheckChangesetResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{19}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CheckChangesetResponse) GetChangeset() *Changeset {
@@ -1632,7 +1772,7 @@ type ReadChangesetConflictsRequest struct {
 
 func (x *ReadChangesetConflictsRequest) Reset() {
 	*x = ReadChangesetConflictsRequest{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[20]
+	mi := &file_circus_v1_ledger_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1644,7 +1784,7 @@ func (x *ReadChangesetConflictsRequest) String() string {
 func (*ReadChangesetConflictsRequest) ProtoMessage() {}
 
 func (x *ReadChangesetConflictsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[20]
+	mi := &file_circus_v1_ledger_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1657,7 +1797,7 @@ func (x *ReadChangesetConflictsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadChangesetConflictsRequest.ProtoReflect.Descriptor instead.
 func (*ReadChangesetConflictsRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{20}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ReadChangesetConflictsRequest) GetChangesetId() string {
@@ -1695,7 +1835,7 @@ type ReadChangesetConflictsResponse struct {
 
 func (x *ReadChangesetConflictsResponse) Reset() {
 	*x = ReadChangesetConflictsResponse{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[21]
+	mi := &file_circus_v1_ledger_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1707,7 +1847,7 @@ func (x *ReadChangesetConflictsResponse) String() string {
 func (*ReadChangesetConflictsResponse) ProtoMessage() {}
 
 func (x *ReadChangesetConflictsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[21]
+	mi := &file_circus_v1_ledger_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1720,7 +1860,7 @@ func (x *ReadChangesetConflictsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadChangesetConflictsResponse.ProtoReflect.Descriptor instead.
 func (*ReadChangesetConflictsResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{21}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ReadChangesetConflictsResponse) GetConflicts() []*LedgerConflict {
@@ -1751,7 +1891,7 @@ type MergeChangesetRequest struct {
 
 func (x *MergeChangesetRequest) Reset() {
 	*x = MergeChangesetRequest{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[22]
+	mi := &file_circus_v1_ledger_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1763,7 +1903,7 @@ func (x *MergeChangesetRequest) String() string {
 func (*MergeChangesetRequest) ProtoMessage() {}
 
 func (x *MergeChangesetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[22]
+	mi := &file_circus_v1_ledger_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1776,7 +1916,7 @@ func (x *MergeChangesetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergeChangesetRequest.ProtoReflect.Descriptor instead.
 func (*MergeChangesetRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{22}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *MergeChangesetRequest) GetChangesetId() string {
@@ -1811,7 +1951,7 @@ type MergeChangesetResponse struct {
 
 func (x *MergeChangesetResponse) Reset() {
 	*x = MergeChangesetResponse{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[23]
+	mi := &file_circus_v1_ledger_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1823,7 +1963,7 @@ func (x *MergeChangesetResponse) String() string {
 func (*MergeChangesetResponse) ProtoMessage() {}
 
 func (x *MergeChangesetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[23]
+	mi := &file_circus_v1_ledger_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1836,7 +1976,7 @@ func (x *MergeChangesetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergeChangesetResponse.ProtoReflect.Descriptor instead.
 func (*MergeChangesetResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{23}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *MergeChangesetResponse) GetChangeset() *Changeset {
@@ -1864,7 +2004,7 @@ type DiscardChangesetRequest struct {
 
 func (x *DiscardChangesetRequest) Reset() {
 	*x = DiscardChangesetRequest{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[24]
+	mi := &file_circus_v1_ledger_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1876,7 +2016,7 @@ func (x *DiscardChangesetRequest) String() string {
 func (*DiscardChangesetRequest) ProtoMessage() {}
 
 func (x *DiscardChangesetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[24]
+	mi := &file_circus_v1_ledger_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1889,7 +2029,7 @@ func (x *DiscardChangesetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscardChangesetRequest.ProtoReflect.Descriptor instead.
 func (*DiscardChangesetRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{24}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DiscardChangesetRequest) GetChangesetId() string {
@@ -1915,7 +2055,7 @@ type DiscardChangesetResponse struct {
 
 func (x *DiscardChangesetResponse) Reset() {
 	*x = DiscardChangesetResponse{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[25]
+	mi := &file_circus_v1_ledger_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1927,7 +2067,7 @@ func (x *DiscardChangesetResponse) String() string {
 func (*DiscardChangesetResponse) ProtoMessage() {}
 
 func (x *DiscardChangesetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[25]
+	mi := &file_circus_v1_ledger_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1940,7 +2080,7 @@ func (x *DiscardChangesetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscardChangesetResponse.ProtoReflect.Descriptor instead.
 func (*DiscardChangesetResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{25}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *DiscardChangesetResponse) GetChangeset() *Changeset {
@@ -1966,7 +2106,7 @@ type ListChangesetsRequest struct {
 
 func (x *ListChangesetsRequest) Reset() {
 	*x = ListChangesetsRequest{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[26]
+	mi := &file_circus_v1_ledger_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1978,7 +2118,7 @@ func (x *ListChangesetsRequest) String() string {
 func (*ListChangesetsRequest) ProtoMessage() {}
 
 func (x *ListChangesetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[26]
+	mi := &file_circus_v1_ledger_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1991,7 +2131,7 @@ func (x *ListChangesetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChangesetsRequest.ProtoReflect.Descriptor instead.
 func (*ListChangesetsRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{26}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ListChangesetsRequest) GetProject() string {
@@ -2039,7 +2179,7 @@ type ListChangesetsResponse struct {
 
 func (x *ListChangesetsResponse) Reset() {
 	*x = ListChangesetsResponse{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[27]
+	mi := &file_circus_v1_ledger_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2051,7 +2191,7 @@ func (x *ListChangesetsResponse) String() string {
 func (*ListChangesetsResponse) ProtoMessage() {}
 
 func (x *ListChangesetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[27]
+	mi := &file_circus_v1_ledger_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2064,7 +2204,7 @@ func (x *ListChangesetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChangesetsResponse.ProtoReflect.Descriptor instead.
 func (*ListChangesetsResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{27}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ListChangesetsResponse) GetChangesets() []*Changeset {
@@ -2090,7 +2230,7 @@ type GetChangesetRequest struct {
 
 func (x *GetChangesetRequest) Reset() {
 	*x = GetChangesetRequest{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[28]
+	mi := &file_circus_v1_ledger_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2102,7 +2242,7 @@ func (x *GetChangesetRequest) String() string {
 func (*GetChangesetRequest) ProtoMessage() {}
 
 func (x *GetChangesetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[28]
+	mi := &file_circus_v1_ledger_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2115,7 +2255,7 @@ func (x *GetChangesetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetChangesetRequest.ProtoReflect.Descriptor instead.
 func (*GetChangesetRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{28}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *GetChangesetRequest) GetChangesetId() string {
@@ -2134,7 +2274,7 @@ type GetChangesetResponse struct {
 
 func (x *GetChangesetResponse) Reset() {
 	*x = GetChangesetResponse{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[29]
+	mi := &file_circus_v1_ledger_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2146,7 +2286,7 @@ func (x *GetChangesetResponse) String() string {
 func (*GetChangesetResponse) ProtoMessage() {}
 
 func (x *GetChangesetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[29]
+	mi := &file_circus_v1_ledger_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2159,7 +2299,7 @@ func (x *GetChangesetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetChangesetResponse.ProtoReflect.Descriptor instead.
 func (*GetChangesetResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{29}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetChangesetResponse) GetChangeset() *Changeset {
@@ -2212,7 +2352,7 @@ type SessionLedgerStatus struct {
 
 func (x *SessionLedgerStatus) Reset() {
 	*x = SessionLedgerStatus{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[30]
+	mi := &file_circus_v1_ledger_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2224,7 +2364,7 @@ func (x *SessionLedgerStatus) String() string {
 func (*SessionLedgerStatus) ProtoMessage() {}
 
 func (x *SessionLedgerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[30]
+	mi := &file_circus_v1_ledger_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2237,7 +2377,7 @@ func (x *SessionLedgerStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionLedgerStatus.ProtoReflect.Descriptor instead.
 func (*SessionLedgerStatus) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{30}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *SessionLedgerStatus) GetState() SessionLedgerStatus_State {
@@ -2346,7 +2486,7 @@ type SessionLedgerEntry struct {
 
 func (x *SessionLedgerEntry) Reset() {
 	*x = SessionLedgerEntry{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[31]
+	mi := &file_circus_v1_ledger_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2358,7 +2498,7 @@ func (x *SessionLedgerEntry) String() string {
 func (*SessionLedgerEntry) ProtoMessage() {}
 
 func (x *SessionLedgerEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[31]
+	mi := &file_circus_v1_ledger_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2371,7 +2511,7 @@ func (x *SessionLedgerEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionLedgerEntry.ProtoReflect.Descriptor instead.
 func (*SessionLedgerEntry) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{31}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *SessionLedgerEntry) GetPath() string {
@@ -2460,7 +2600,7 @@ type GetSessionLedgerRequest struct {
 
 func (x *GetSessionLedgerRequest) Reset() {
 	*x = GetSessionLedgerRequest{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[32]
+	mi := &file_circus_v1_ledger_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2472,7 +2612,7 @@ func (x *GetSessionLedgerRequest) String() string {
 func (*GetSessionLedgerRequest) ProtoMessage() {}
 
 func (x *GetSessionLedgerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[32]
+	mi := &file_circus_v1_ledger_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2485,7 +2625,7 @@ func (x *GetSessionLedgerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionLedgerRequest.ProtoReflect.Descriptor instead.
 func (*GetSessionLedgerRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{32}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetSessionLedgerRequest) GetSessionId() string {
@@ -2517,7 +2657,7 @@ type GetSessionLedgerResponse struct {
 
 func (x *GetSessionLedgerResponse) Reset() {
 	*x = GetSessionLedgerResponse{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[33]
+	mi := &file_circus_v1_ledger_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2529,7 +2669,7 @@ func (x *GetSessionLedgerResponse) String() string {
 func (*GetSessionLedgerResponse) ProtoMessage() {}
 
 func (x *GetSessionLedgerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[33]
+	mi := &file_circus_v1_ledger_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2542,7 +2682,7 @@ func (x *GetSessionLedgerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionLedgerResponse.ProtoReflect.Descriptor instead.
 func (*GetSessionLedgerResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{33}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *GetSessionLedgerResponse) GetStatus() *SessionLedgerStatus {
@@ -2605,7 +2745,7 @@ type MergedSessionChangeset struct {
 
 func (x *MergedSessionChangeset) Reset() {
 	*x = MergedSessionChangeset{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[34]
+	mi := &file_circus_v1_ledger_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2617,7 +2757,7 @@ func (x *MergedSessionChangeset) String() string {
 func (*MergedSessionChangeset) ProtoMessage() {}
 
 func (x *MergedSessionChangeset) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[34]
+	mi := &file_circus_v1_ledger_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2630,7 +2770,7 @@ func (x *MergedSessionChangeset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergedSessionChangeset.ProtoReflect.Descriptor instead.
 func (*MergedSessionChangeset) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{34}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *MergedSessionChangeset) GetChangeset() *Changeset {
@@ -2658,7 +2798,7 @@ type GetSessionLedgerDiffRequest struct {
 
 func (x *GetSessionLedgerDiffRequest) Reset() {
 	*x = GetSessionLedgerDiffRequest{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[35]
+	mi := &file_circus_v1_ledger_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2670,7 +2810,7 @@ func (x *GetSessionLedgerDiffRequest) String() string {
 func (*GetSessionLedgerDiffRequest) ProtoMessage() {}
 
 func (x *GetSessionLedgerDiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[35]
+	mi := &file_circus_v1_ledger_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2683,7 +2823,7 @@ func (x *GetSessionLedgerDiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionLedgerDiffRequest.ProtoReflect.Descriptor instead.
 func (*GetSessionLedgerDiffRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{35}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *GetSessionLedgerDiffRequest) GetSessionId() string {
@@ -2718,7 +2858,7 @@ type GetSessionLedgerDiffResponse struct {
 
 func (x *GetSessionLedgerDiffResponse) Reset() {
 	*x = GetSessionLedgerDiffResponse{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[36]
+	mi := &file_circus_v1_ledger_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2730,7 +2870,7 @@ func (x *GetSessionLedgerDiffResponse) String() string {
 func (*GetSessionLedgerDiffResponse) ProtoMessage() {}
 
 func (x *GetSessionLedgerDiffResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[36]
+	mi := &file_circus_v1_ledger_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2743,7 +2883,7 @@ func (x *GetSessionLedgerDiffResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionLedgerDiffResponse.ProtoReflect.Descriptor instead.
 func (*GetSessionLedgerDiffResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{36}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *GetSessionLedgerDiffResponse) GetBaseExists() bool {
@@ -2799,7 +2939,7 @@ type MergeSessionLedgerRequest struct {
 
 func (x *MergeSessionLedgerRequest) Reset() {
 	*x = MergeSessionLedgerRequest{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[37]
+	mi := &file_circus_v1_ledger_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2811,7 +2951,7 @@ func (x *MergeSessionLedgerRequest) String() string {
 func (*MergeSessionLedgerRequest) ProtoMessage() {}
 
 func (x *MergeSessionLedgerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[37]
+	mi := &file_circus_v1_ledger_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2824,7 +2964,7 @@ func (x *MergeSessionLedgerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergeSessionLedgerRequest.ProtoReflect.Descriptor instead.
 func (*MergeSessionLedgerRequest) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{37}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *MergeSessionLedgerRequest) GetSessionId() string {
@@ -2851,7 +2991,7 @@ type MergeSessionLedgerResponse struct {
 
 func (x *MergeSessionLedgerResponse) Reset() {
 	*x = MergeSessionLedgerResponse{}
-	mi := &file_circus_v1_ledger_proto_msgTypes[38]
+	mi := &file_circus_v1_ledger_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2863,7 +3003,7 @@ func (x *MergeSessionLedgerResponse) String() string {
 func (*MergeSessionLedgerResponse) ProtoMessage() {}
 
 func (x *MergeSessionLedgerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_ledger_proto_msgTypes[38]
+	mi := &file_circus_v1_ledger_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2876,7 +3016,7 @@ func (x *MergeSessionLedgerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergeSessionLedgerResponse.ProtoReflect.Descriptor instead.
 func (*MergeSessionLedgerResponse) Descriptor() ([]byte, []int) {
-	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{38}
+	return file_circus_v1_ledger_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *MergeSessionLedgerResponse) GetChangeset() *Changeset {
@@ -2996,7 +3136,18 @@ const file_circus_v1_ledger_proto_rawDesc = "" +
 	"page_token\x18\x02 \x01(\tR\tpageToken\"p\n" +
 	"\x19ReadChangesetBaseResponse\x12+\n" +
 	"\x05files\x18\x01 \x03(\v2\x15.circus.v1.LedgerFileR\x05files\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"=\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"f\n" +
+	"\x13ReadMainLineRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x16\n" +
+	"\x06commit\x18\x02 \x01(\tR\x06commit\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\xa2\x01\n" +
+	"\x14ReadMainLineResponse\x12\x16\n" +
+	"\x06commit\x18\x01 \x01(\tR\x06commit\x12+\n" +
+	"\x05files\x18\x02 \x03(\v2\x15.circus.v1.LedgerFileR\x05files\x12&\n" +
+	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x04 \x01(\tR\tprojectId\"=\n" +
 	"\rLedgerProblem\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"\x80\x02\n" +
@@ -3146,10 +3297,11 @@ const file_circus_v1_ledger_proto_rawDesc = "" +
 	"\x13ListDecisionHistory\x12%.circus.v1.ListDecisionHistoryRequest\x1a&.circus.v1.ListDecisionHistoryResponse\x12[\n" +
 	"\x10GetSessionLedger\x12\".circus.v1.GetSessionLedgerRequest\x1a#.circus.v1.GetSessionLedgerResponse\x12g\n" +
 	"\x14GetSessionLedgerDiff\x12&.circus.v1.GetSessionLedgerDiffRequest\x1a'.circus.v1.GetSessionLedgerDiffResponse\x12a\n" +
-	"\x12MergeSessionLedger\x12$.circus.v1.MergeSessionLedgerRequest\x1a%.circus.v1.MergeSessionLedgerResponse2\xee\x05\n" +
+	"\x12MergeSessionLedger\x12$.circus.v1.MergeSessionLedgerRequest\x1a%.circus.v1.MergeSessionLedgerResponse2\xbf\x06\n" +
 	"\x16LedgerChangesetService\x12R\n" +
 	"\rOpenChangeset\x12\x1f.circus.v1.OpenChangesetRequest\x1a .circus.v1.OpenChangesetResponse\x12^\n" +
-	"\x11ReadChangesetBase\x12#.circus.v1.ReadChangesetBaseRequest\x1a$.circus.v1.ReadChangesetBaseResponse\x12U\n" +
+	"\x11ReadChangesetBase\x12#.circus.v1.ReadChangesetBaseRequest\x1a$.circus.v1.ReadChangesetBaseResponse\x12O\n" +
+	"\fReadMainLine\x12\x1e.circus.v1.ReadMainLineRequest\x1a\x1f.circus.v1.ReadMainLineResponse\x12U\n" +
 	"\x0eCheckChangeset\x12 .circus.v1.CheckChangesetRequest\x1a!.circus.v1.CheckChangesetResponse\x12m\n" +
 	"\x16ReadChangesetConflicts\x12(.circus.v1.ReadChangesetConflictsRequest\x1a).circus.v1.ReadChangesetConflictsResponse\x12U\n" +
 	"\x0eMergeChangeset\x12 .circus.v1.MergeChangesetRequest\x1a!.circus.v1.MergeChangesetResponse\x12[\n" +
@@ -3170,7 +3322,7 @@ func file_circus_v1_ledger_proto_rawDescGZIP() []byte {
 }
 
 var file_circus_v1_ledger_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_circus_v1_ledger_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_circus_v1_ledger_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_circus_v1_ledger_proto_goTypes = []any{
 	(Changeset_State)(0),                   // 0: circus.v1.Changeset.State
 	(SessionLedgerStatus_State)(0),         // 1: circus.v1.SessionLedgerStatus.State
@@ -3191,33 +3343,35 @@ var file_circus_v1_ledger_proto_goTypes = []any{
 	(*OpenChangesetResponse)(nil),          // 16: circus.v1.OpenChangesetResponse
 	(*ReadChangesetBaseRequest)(nil),       // 17: circus.v1.ReadChangesetBaseRequest
 	(*ReadChangesetBaseResponse)(nil),      // 18: circus.v1.ReadChangesetBaseResponse
-	(*LedgerProblem)(nil),                  // 19: circus.v1.LedgerProblem
-	(*LedgerConflict)(nil),                 // 20: circus.v1.LedgerConflict
-	(*CheckChangesetRequest)(nil),          // 21: circus.v1.CheckChangesetRequest
-	(*CheckChangesetResponse)(nil),         // 22: circus.v1.CheckChangesetResponse
-	(*ReadChangesetConflictsRequest)(nil),  // 23: circus.v1.ReadChangesetConflictsRequest
-	(*ReadChangesetConflictsResponse)(nil), // 24: circus.v1.ReadChangesetConflictsResponse
-	(*MergeChangesetRequest)(nil),          // 25: circus.v1.MergeChangesetRequest
-	(*MergeChangesetResponse)(nil),         // 26: circus.v1.MergeChangesetResponse
-	(*DiscardChangesetRequest)(nil),        // 27: circus.v1.DiscardChangesetRequest
-	(*DiscardChangesetResponse)(nil),       // 28: circus.v1.DiscardChangesetResponse
-	(*ListChangesetsRequest)(nil),          // 29: circus.v1.ListChangesetsRequest
-	(*ListChangesetsResponse)(nil),         // 30: circus.v1.ListChangesetsResponse
-	(*GetChangesetRequest)(nil),            // 31: circus.v1.GetChangesetRequest
-	(*GetChangesetResponse)(nil),           // 32: circus.v1.GetChangesetResponse
-	(*SessionLedgerStatus)(nil),            // 33: circus.v1.SessionLedgerStatus
-	(*SessionLedgerEntry)(nil),             // 34: circus.v1.SessionLedgerEntry
-	(*GetSessionLedgerRequest)(nil),        // 35: circus.v1.GetSessionLedgerRequest
-	(*GetSessionLedgerResponse)(nil),       // 36: circus.v1.GetSessionLedgerResponse
-	(*MergedSessionChangeset)(nil),         // 37: circus.v1.MergedSessionChangeset
-	(*GetSessionLedgerDiffRequest)(nil),    // 38: circus.v1.GetSessionLedgerDiffRequest
-	(*GetSessionLedgerDiffResponse)(nil),   // 39: circus.v1.GetSessionLedgerDiffResponse
-	(*MergeSessionLedgerRequest)(nil),      // 40: circus.v1.MergeSessionLedgerRequest
-	(*MergeSessionLedgerResponse)(nil),     // 41: circus.v1.MergeSessionLedgerResponse
-	nil,                                    // 42: circus.v1.MergeChangesetResponse.NumbersEntry
-	nil,                                    // 43: circus.v1.MergedSessionChangeset.NumbersEntry
-	nil,                                    // 44: circus.v1.MergeSessionLedgerResponse.NumbersEntry
-	(LedgerSnapshotError)(0),               // 45: circus.v1.LedgerSnapshotError
+	(*ReadMainLineRequest)(nil),            // 19: circus.v1.ReadMainLineRequest
+	(*ReadMainLineResponse)(nil),           // 20: circus.v1.ReadMainLineResponse
+	(*LedgerProblem)(nil),                  // 21: circus.v1.LedgerProblem
+	(*LedgerConflict)(nil),                 // 22: circus.v1.LedgerConflict
+	(*CheckChangesetRequest)(nil),          // 23: circus.v1.CheckChangesetRequest
+	(*CheckChangesetResponse)(nil),         // 24: circus.v1.CheckChangesetResponse
+	(*ReadChangesetConflictsRequest)(nil),  // 25: circus.v1.ReadChangesetConflictsRequest
+	(*ReadChangesetConflictsResponse)(nil), // 26: circus.v1.ReadChangesetConflictsResponse
+	(*MergeChangesetRequest)(nil),          // 27: circus.v1.MergeChangesetRequest
+	(*MergeChangesetResponse)(nil),         // 28: circus.v1.MergeChangesetResponse
+	(*DiscardChangesetRequest)(nil),        // 29: circus.v1.DiscardChangesetRequest
+	(*DiscardChangesetResponse)(nil),       // 30: circus.v1.DiscardChangesetResponse
+	(*ListChangesetsRequest)(nil),          // 31: circus.v1.ListChangesetsRequest
+	(*ListChangesetsResponse)(nil),         // 32: circus.v1.ListChangesetsResponse
+	(*GetChangesetRequest)(nil),            // 33: circus.v1.GetChangesetRequest
+	(*GetChangesetResponse)(nil),           // 34: circus.v1.GetChangesetResponse
+	(*SessionLedgerStatus)(nil),            // 35: circus.v1.SessionLedgerStatus
+	(*SessionLedgerEntry)(nil),             // 36: circus.v1.SessionLedgerEntry
+	(*GetSessionLedgerRequest)(nil),        // 37: circus.v1.GetSessionLedgerRequest
+	(*GetSessionLedgerResponse)(nil),       // 38: circus.v1.GetSessionLedgerResponse
+	(*MergedSessionChangeset)(nil),         // 39: circus.v1.MergedSessionChangeset
+	(*GetSessionLedgerDiffRequest)(nil),    // 40: circus.v1.GetSessionLedgerDiffRequest
+	(*GetSessionLedgerDiffResponse)(nil),   // 41: circus.v1.GetSessionLedgerDiffResponse
+	(*MergeSessionLedgerRequest)(nil),      // 42: circus.v1.MergeSessionLedgerRequest
+	(*MergeSessionLedgerResponse)(nil),     // 43: circus.v1.MergeSessionLedgerResponse
+	nil,                                    // 44: circus.v1.MergeChangesetResponse.NumbersEntry
+	nil,                                    // 45: circus.v1.MergedSessionChangeset.NumbersEntry
+	nil,                                    // 46: circus.v1.MergeSessionLedgerResponse.NumbersEntry
+	(LedgerSnapshotError)(0),               // 47: circus.v1.LedgerSnapshotError
 }
 var file_circus_v1_ledger_proto_depIdxs = []int32{
 	3,  // 0: circus.v1.GetLedgerResponse.entries:type_name -> circus.v1.LedgerEntry
@@ -3226,65 +3380,68 @@ var file_circus_v1_ledger_proto_depIdxs = []int32{
 	0,  // 3: circus.v1.Changeset.state:type_name -> circus.v1.Changeset.State
 	12, // 4: circus.v1.OpenChangesetResponse.changeset:type_name -> circus.v1.Changeset
 	13, // 5: circus.v1.ReadChangesetBaseResponse.files:type_name -> circus.v1.LedgerFile
-	14, // 6: circus.v1.CheckChangesetRequest.changes:type_name -> circus.v1.FileChange
-	12, // 7: circus.v1.CheckChangesetResponse.changeset:type_name -> circus.v1.Changeset
-	19, // 8: circus.v1.CheckChangesetResponse.problems:type_name -> circus.v1.LedgerProblem
-	20, // 9: circus.v1.CheckChangesetResponse.conflicts:type_name -> circus.v1.LedgerConflict
-	19, // 10: circus.v1.CheckChangesetResponse.warnings:type_name -> circus.v1.LedgerProblem
-	20, // 11: circus.v1.ReadChangesetConflictsResponse.conflicts:type_name -> circus.v1.LedgerConflict
-	14, // 12: circus.v1.MergeChangesetRequest.resolved:type_name -> circus.v1.FileChange
-	12, // 13: circus.v1.MergeChangesetResponse.changeset:type_name -> circus.v1.Changeset
-	42, // 14: circus.v1.MergeChangesetResponse.numbers:type_name -> circus.v1.MergeChangesetResponse.NumbersEntry
-	12, // 15: circus.v1.DiscardChangesetResponse.changeset:type_name -> circus.v1.Changeset
-	0,  // 16: circus.v1.ListChangesetsRequest.state:type_name -> circus.v1.Changeset.State
-	12, // 17: circus.v1.ListChangesetsResponse.changesets:type_name -> circus.v1.Changeset
-	12, // 18: circus.v1.GetChangesetResponse.changeset:type_name -> circus.v1.Changeset
-	1,  // 19: circus.v1.SessionLedgerStatus.state:type_name -> circus.v1.SessionLedgerStatus.State
-	45, // 20: circus.v1.SessionLedgerStatus.error:type_name -> circus.v1.LedgerSnapshotError
-	2,  // 21: circus.v1.SessionLedgerStatus.applying:type_name -> circus.v1.SessionLedgerStatus.Applying
-	33, // 22: circus.v1.GetSessionLedgerResponse.status:type_name -> circus.v1.SessionLedgerStatus
-	12, // 23: circus.v1.GetSessionLedgerResponse.changeset:type_name -> circus.v1.Changeset
-	34, // 24: circus.v1.GetSessionLedgerResponse.entries:type_name -> circus.v1.SessionLedgerEntry
-	19, // 25: circus.v1.GetSessionLedgerResponse.problems:type_name -> circus.v1.LedgerProblem
-	19, // 26: circus.v1.GetSessionLedgerResponse.warnings:type_name -> circus.v1.LedgerProblem
-	37, // 27: circus.v1.GetSessionLedgerResponse.merged:type_name -> circus.v1.MergedSessionChangeset
-	12, // 28: circus.v1.MergedSessionChangeset.changeset:type_name -> circus.v1.Changeset
-	43, // 29: circus.v1.MergedSessionChangeset.numbers:type_name -> circus.v1.MergedSessionChangeset.NumbersEntry
-	12, // 30: circus.v1.MergeSessionLedgerResponse.changeset:type_name -> circus.v1.Changeset
-	44, // 31: circus.v1.MergeSessionLedgerResponse.numbers:type_name -> circus.v1.MergeSessionLedgerResponse.NumbersEntry
-	4,  // 32: circus.v1.LedgerService.GetLedger:input_type -> circus.v1.GetLedgerRequest
-	7,  // 33: circus.v1.LedgerService.GetDecision:input_type -> circus.v1.GetDecisionRequest
-	10, // 34: circus.v1.LedgerService.ListDecisionHistory:input_type -> circus.v1.ListDecisionHistoryRequest
-	35, // 35: circus.v1.LedgerService.GetSessionLedger:input_type -> circus.v1.GetSessionLedgerRequest
-	38, // 36: circus.v1.LedgerService.GetSessionLedgerDiff:input_type -> circus.v1.GetSessionLedgerDiffRequest
-	40, // 37: circus.v1.LedgerService.MergeSessionLedger:input_type -> circus.v1.MergeSessionLedgerRequest
-	15, // 38: circus.v1.LedgerChangesetService.OpenChangeset:input_type -> circus.v1.OpenChangesetRequest
-	17, // 39: circus.v1.LedgerChangesetService.ReadChangesetBase:input_type -> circus.v1.ReadChangesetBaseRequest
-	21, // 40: circus.v1.LedgerChangesetService.CheckChangeset:input_type -> circus.v1.CheckChangesetRequest
-	23, // 41: circus.v1.LedgerChangesetService.ReadChangesetConflicts:input_type -> circus.v1.ReadChangesetConflictsRequest
-	25, // 42: circus.v1.LedgerChangesetService.MergeChangeset:input_type -> circus.v1.MergeChangesetRequest
-	27, // 43: circus.v1.LedgerChangesetService.DiscardChangeset:input_type -> circus.v1.DiscardChangesetRequest
-	29, // 44: circus.v1.LedgerChangesetService.ListChangesets:input_type -> circus.v1.ListChangesetsRequest
-	31, // 45: circus.v1.LedgerChangesetService.GetChangeset:input_type -> circus.v1.GetChangesetRequest
-	5,  // 46: circus.v1.LedgerService.GetLedger:output_type -> circus.v1.GetLedgerResponse
-	8,  // 47: circus.v1.LedgerService.GetDecision:output_type -> circus.v1.GetDecisionResponse
-	11, // 48: circus.v1.LedgerService.ListDecisionHistory:output_type -> circus.v1.ListDecisionHistoryResponse
-	36, // 49: circus.v1.LedgerService.GetSessionLedger:output_type -> circus.v1.GetSessionLedgerResponse
-	39, // 50: circus.v1.LedgerService.GetSessionLedgerDiff:output_type -> circus.v1.GetSessionLedgerDiffResponse
-	41, // 51: circus.v1.LedgerService.MergeSessionLedger:output_type -> circus.v1.MergeSessionLedgerResponse
-	16, // 52: circus.v1.LedgerChangesetService.OpenChangeset:output_type -> circus.v1.OpenChangesetResponse
-	18, // 53: circus.v1.LedgerChangesetService.ReadChangesetBase:output_type -> circus.v1.ReadChangesetBaseResponse
-	22, // 54: circus.v1.LedgerChangesetService.CheckChangeset:output_type -> circus.v1.CheckChangesetResponse
-	24, // 55: circus.v1.LedgerChangesetService.ReadChangesetConflicts:output_type -> circus.v1.ReadChangesetConflictsResponse
-	26, // 56: circus.v1.LedgerChangesetService.MergeChangeset:output_type -> circus.v1.MergeChangesetResponse
-	28, // 57: circus.v1.LedgerChangesetService.DiscardChangeset:output_type -> circus.v1.DiscardChangesetResponse
-	30, // 58: circus.v1.LedgerChangesetService.ListChangesets:output_type -> circus.v1.ListChangesetsResponse
-	32, // 59: circus.v1.LedgerChangesetService.GetChangeset:output_type -> circus.v1.GetChangesetResponse
-	46, // [46:60] is the sub-list for method output_type
-	32, // [32:46] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	13, // 6: circus.v1.ReadMainLineResponse.files:type_name -> circus.v1.LedgerFile
+	14, // 7: circus.v1.CheckChangesetRequest.changes:type_name -> circus.v1.FileChange
+	12, // 8: circus.v1.CheckChangesetResponse.changeset:type_name -> circus.v1.Changeset
+	21, // 9: circus.v1.CheckChangesetResponse.problems:type_name -> circus.v1.LedgerProblem
+	22, // 10: circus.v1.CheckChangesetResponse.conflicts:type_name -> circus.v1.LedgerConflict
+	21, // 11: circus.v1.CheckChangesetResponse.warnings:type_name -> circus.v1.LedgerProblem
+	22, // 12: circus.v1.ReadChangesetConflictsResponse.conflicts:type_name -> circus.v1.LedgerConflict
+	14, // 13: circus.v1.MergeChangesetRequest.resolved:type_name -> circus.v1.FileChange
+	12, // 14: circus.v1.MergeChangesetResponse.changeset:type_name -> circus.v1.Changeset
+	44, // 15: circus.v1.MergeChangesetResponse.numbers:type_name -> circus.v1.MergeChangesetResponse.NumbersEntry
+	12, // 16: circus.v1.DiscardChangesetResponse.changeset:type_name -> circus.v1.Changeset
+	0,  // 17: circus.v1.ListChangesetsRequest.state:type_name -> circus.v1.Changeset.State
+	12, // 18: circus.v1.ListChangesetsResponse.changesets:type_name -> circus.v1.Changeset
+	12, // 19: circus.v1.GetChangesetResponse.changeset:type_name -> circus.v1.Changeset
+	1,  // 20: circus.v1.SessionLedgerStatus.state:type_name -> circus.v1.SessionLedgerStatus.State
+	47, // 21: circus.v1.SessionLedgerStatus.error:type_name -> circus.v1.LedgerSnapshotError
+	2,  // 22: circus.v1.SessionLedgerStatus.applying:type_name -> circus.v1.SessionLedgerStatus.Applying
+	35, // 23: circus.v1.GetSessionLedgerResponse.status:type_name -> circus.v1.SessionLedgerStatus
+	12, // 24: circus.v1.GetSessionLedgerResponse.changeset:type_name -> circus.v1.Changeset
+	36, // 25: circus.v1.GetSessionLedgerResponse.entries:type_name -> circus.v1.SessionLedgerEntry
+	21, // 26: circus.v1.GetSessionLedgerResponse.problems:type_name -> circus.v1.LedgerProblem
+	21, // 27: circus.v1.GetSessionLedgerResponse.warnings:type_name -> circus.v1.LedgerProblem
+	39, // 28: circus.v1.GetSessionLedgerResponse.merged:type_name -> circus.v1.MergedSessionChangeset
+	12, // 29: circus.v1.MergedSessionChangeset.changeset:type_name -> circus.v1.Changeset
+	45, // 30: circus.v1.MergedSessionChangeset.numbers:type_name -> circus.v1.MergedSessionChangeset.NumbersEntry
+	12, // 31: circus.v1.MergeSessionLedgerResponse.changeset:type_name -> circus.v1.Changeset
+	46, // 32: circus.v1.MergeSessionLedgerResponse.numbers:type_name -> circus.v1.MergeSessionLedgerResponse.NumbersEntry
+	4,  // 33: circus.v1.LedgerService.GetLedger:input_type -> circus.v1.GetLedgerRequest
+	7,  // 34: circus.v1.LedgerService.GetDecision:input_type -> circus.v1.GetDecisionRequest
+	10, // 35: circus.v1.LedgerService.ListDecisionHistory:input_type -> circus.v1.ListDecisionHistoryRequest
+	37, // 36: circus.v1.LedgerService.GetSessionLedger:input_type -> circus.v1.GetSessionLedgerRequest
+	40, // 37: circus.v1.LedgerService.GetSessionLedgerDiff:input_type -> circus.v1.GetSessionLedgerDiffRequest
+	42, // 38: circus.v1.LedgerService.MergeSessionLedger:input_type -> circus.v1.MergeSessionLedgerRequest
+	15, // 39: circus.v1.LedgerChangesetService.OpenChangeset:input_type -> circus.v1.OpenChangesetRequest
+	17, // 40: circus.v1.LedgerChangesetService.ReadChangesetBase:input_type -> circus.v1.ReadChangesetBaseRequest
+	19, // 41: circus.v1.LedgerChangesetService.ReadMainLine:input_type -> circus.v1.ReadMainLineRequest
+	23, // 42: circus.v1.LedgerChangesetService.CheckChangeset:input_type -> circus.v1.CheckChangesetRequest
+	25, // 43: circus.v1.LedgerChangesetService.ReadChangesetConflicts:input_type -> circus.v1.ReadChangesetConflictsRequest
+	27, // 44: circus.v1.LedgerChangesetService.MergeChangeset:input_type -> circus.v1.MergeChangesetRequest
+	29, // 45: circus.v1.LedgerChangesetService.DiscardChangeset:input_type -> circus.v1.DiscardChangesetRequest
+	31, // 46: circus.v1.LedgerChangesetService.ListChangesets:input_type -> circus.v1.ListChangesetsRequest
+	33, // 47: circus.v1.LedgerChangesetService.GetChangeset:input_type -> circus.v1.GetChangesetRequest
+	5,  // 48: circus.v1.LedgerService.GetLedger:output_type -> circus.v1.GetLedgerResponse
+	8,  // 49: circus.v1.LedgerService.GetDecision:output_type -> circus.v1.GetDecisionResponse
+	11, // 50: circus.v1.LedgerService.ListDecisionHistory:output_type -> circus.v1.ListDecisionHistoryResponse
+	38, // 51: circus.v1.LedgerService.GetSessionLedger:output_type -> circus.v1.GetSessionLedgerResponse
+	41, // 52: circus.v1.LedgerService.GetSessionLedgerDiff:output_type -> circus.v1.GetSessionLedgerDiffResponse
+	43, // 53: circus.v1.LedgerService.MergeSessionLedger:output_type -> circus.v1.MergeSessionLedgerResponse
+	16, // 54: circus.v1.LedgerChangesetService.OpenChangeset:output_type -> circus.v1.OpenChangesetResponse
+	18, // 55: circus.v1.LedgerChangesetService.ReadChangesetBase:output_type -> circus.v1.ReadChangesetBaseResponse
+	20, // 56: circus.v1.LedgerChangesetService.ReadMainLine:output_type -> circus.v1.ReadMainLineResponse
+	24, // 57: circus.v1.LedgerChangesetService.CheckChangeset:output_type -> circus.v1.CheckChangesetResponse
+	26, // 58: circus.v1.LedgerChangesetService.ReadChangesetConflicts:output_type -> circus.v1.ReadChangesetConflictsResponse
+	28, // 59: circus.v1.LedgerChangesetService.MergeChangeset:output_type -> circus.v1.MergeChangesetResponse
+	30, // 60: circus.v1.LedgerChangesetService.DiscardChangeset:output_type -> circus.v1.DiscardChangesetResponse
+	32, // 61: circus.v1.LedgerChangesetService.ListChangesets:output_type -> circus.v1.ListChangesetsResponse
+	34, // 62: circus.v1.LedgerChangesetService.GetChangeset:output_type -> circus.v1.GetChangesetResponse
+	48, // [48:63] is the sub-list for method output_type
+	33, // [33:48] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_ledger_proto_init() }
@@ -3303,7 +3460,7 @@ func file_circus_v1_ledger_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_ledger_proto_rawDesc), len(file_circus_v1_ledger_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   42,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
