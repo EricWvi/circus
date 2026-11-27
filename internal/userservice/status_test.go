@@ -159,7 +159,7 @@ func TestLaunchdRestartIfRunningKickstartsOnlyLoadedAgents(t *testing.T) {
 	if err := Daemon.Stop(); err != nil {
 		t.Fatal(err)
 	}
-	f.checkCalls(t, print, "launchctl bootout "+target)
+	f.checkCalls(t, print, "launchctl bootout "+target, print)
 	if r := RestartIfRunning(RestartRequest{Service: Daemon})[0]; r.Err != nil || r.Requested {
 		t.Fatalf("restart stopped agent = %+v", r)
 	}

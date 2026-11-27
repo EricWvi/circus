@@ -269,6 +269,11 @@ func (l launchd) bootout() error {
 	return err
 }
 
+// stop boots the agent out and waits (up to unloadTimeout) until launchd
+// no longer has it loaded. `launchctl bootout` can return while the agent's
+// process is still exiting (launchd shows it "SIGTERMed" until then), so
+// without the wait `stop` and `uninstall` could report success with the
+// agent still loaded and its process still running.
 func (l launchd) stop() error {
 	_, loaded, err := l.print(context.Background())
 	if errors.Is(err, errNoGUIDomain) {
@@ -277,7 +282,10 @@ func (l launchd) stop() error {
 	if err != nil || !loaded {
 		return err
 	}
-	return l.bootout()
+	if err := l.bootout(); err != nil {
+		return err
+	}
+	return l.waitForUnload()
 }
 
 func (l launchd) restart() error {

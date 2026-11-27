@@ -277,9 +277,45 @@ func TestLaunchdLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	f.checkCalls(t, print, "launchctl kickstart "+target, print, bootout, print, print, bootstrap, print, "launchctl kickstart -k "+target, print, bootout)
+	// Stop and uninstall wait until launchd no longer lists the agent: a
+	// print after each bootout.
+	f.checkCalls(t, print, "launchctl kickstart "+target, print, bootout, print, print, print, bootstrap, print, "launchctl kickstart -k "+target, print, bootout, print)
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("after uninstall, stat = %v", err)
+	}
+}
+
+// `launchctl bootout` can return while the agent's process is still
+// exiting (launchd lists it, "SIGTERMed", until then). Stop and uninstall
+// wait until launchd no longer lists the agent, so once they return
+// nothing is loaded and, after an uninstall, the plist is gone.
+func TestLaunchdStopAndUninstallWaitForTheAgentToUnload(t *testing.T) {
+	for _, action := range []struct {
+		name string
+		run  func() error
+	}{{"stop", Daemon.Stop}, {"uninstall", Daemon.Uninstall}} {
+		t.Run(action.name, func(t *testing.T) {
+			f := fakeService(t, "darwin")
+			path := filepath.Join(f.home, "Library", "LaunchAgents", Daemon.label()+".plist")
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			writeTestFile(t, path, launchd{home: f.home, svc: Daemon}.plist(fakeExecutable, []string{"daemon", "--service"}, nil), 0o600)
+			f.response(t, "loaded", "")
+			// The bootout leaves the agent listed for one more print.
+			f.response(t, "delay-unload", "")
+			if err := action.run(); err != nil {
+				t.Fatal(err)
+			}
+			if exists(t, filepath.Join(f.dir, "loaded")) {
+				t.Fatalf("%s returned with the agent still loaded", action.name)
+			}
+			target := launchd{svc: Daemon}.target()
+			f.checkCalls(t, "launchctl print "+target, "launchctl bootout "+target, "launchctl print "+target, "launchctl print "+target)
+			if exists(t, path) != (action.name == "stop") {
+				t.Fatalf("after %s the plist exists: %v", action.name, exists(t, path))
+			}
+		})
 	}
 }
 
