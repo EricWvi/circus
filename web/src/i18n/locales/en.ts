@@ -484,8 +484,6 @@ export const en = {
     title: "Providers",
     addProvider: "Add provider",
     emptyTitle: "No providers yet",
-    emptyDescription:
-      "A provider holds the API key and settings Claude Code starts with. Without one, sessions use the worker machine's own Claude login.",
     loading: "Loading providers",
     loadFailed: "Couldn't load providers.",
     defaultMark: "default",

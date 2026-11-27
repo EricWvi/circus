@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { useReturnFocus } from "@/hooks/use-return-focus"
@@ -329,7 +329,6 @@ function NoProviders({ onAdd, addRef }: { onAdd: (trigger: HTMLElement) => void;
           <KeyRoundIcon />
         </EmptyMedia>
         <EmptyTitle>{t("providers.emptyTitle")}</EmptyTitle>
-        <EmptyDescription>{t("providers.emptyDescription")}</EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
         <Button ref={addRef} onClick={(e) => onAdd(e.currentTarget)}>

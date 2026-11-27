@@ -478,7 +478,6 @@ export const zhCN = {
     title: "模型提供方",
     addProvider: "添加提供方",
     emptyTitle: "还没有提供方",
-    emptyDescription: "提供方保存 Claude Code 启动时使用的 API 密钥和设置。没有提供方时，会话使用工作节点所在机器自己的 Claude 登录。",
     loading: "正在加载提供方",
     loadFailed: "无法加载提供方。",
     defaultMark: "默认",

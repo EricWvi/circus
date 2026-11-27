@@ -240,12 +240,12 @@ describe("the providers section", () => {
 })
 
 describe("the provider list", () => {
-  it("explains providers when there are none", async () => {
+  it("shows an empty state when there are none", async () => {
     const state = seedState(NOW)
     state.providers = []
     await renderProviders(state)
     expect(screen.getByText("No providers yet")).toBeTruthy()
-    expect(screen.getByText(/Without one, sessions use the worker machine's own Claude login/)).toBeTruthy()
+    expect(screen.queryByText(/Without one, sessions use the worker machine's own Claude login/)).toBeNull()
     // The empty state keeps its own button.
     const add = section().getByRole("button", { name: "Add provider" })
     fireEvent.click(add)
