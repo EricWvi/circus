@@ -31,14 +31,16 @@ const MARKS: Record<ProviderAgent, { src: string; color: string }> = {
  * vanish, so the mark paints itself in a system colour: Highlight when
  * `selected`, else CanvasText.
  */
-function AgentMark({
+export function AgentMark({
   agent,
   muted = false,
   selected = false,
+  className,
 }: {
   agent: ProviderAgent
   muted?: boolean
   selected?: boolean
+  className?: string
 }) {
   const mark = MARKS[agent]
   const mask = `url("${mark.src}")`
@@ -64,6 +66,7 @@ function AgentMark({
           "bg-muted-foreground opacity-70 group-hover:bg-(--mark) group-hover:opacity-100 group-focus-visible:bg-(--mark) group-focus-visible:opacity-100",
         "forced-colors:opacity-100 forced-colors:[forced-color-adjust:none]",
         selected ? "forced-colors:bg-[Highlight]" : "forced-colors:bg-[CanvasText]",
+        className,
       )}
       style={style}
     />

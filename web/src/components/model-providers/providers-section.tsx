@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next"
 import { isApiError } from "@/api/errors"
 import { useDeleteModelProvider, useModelProviders, useWorkers } from "@/api/hooks"
 import type { ModelProvider, Worker } from "@/api/types"
+import { AgentMark } from "@/components/model-providers/provider-agent"
 import { ProviderForm } from "@/components/model-providers/provider-dialog"
 import { DeviceStatusDot } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
@@ -194,6 +195,8 @@ function ProviderRow({
   return (
     <li className="flex flex-col gap-2 px-4 py-3">
       <div className="flex min-w-0 items-center gap-2">
+        {/* Only Claude Code has providers so far. */}
+        <AgentMark agent="claude_code" className="size-4" />
         <span className="truncate text-sm font-medium">{provider.name}</span>
         {provider.isDefault && (
           <span className="shrink-0 border px-1.5 text-xs leading-5 text-muted-foreground">
