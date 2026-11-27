@@ -444,8 +444,9 @@ func TestTerminalRejectionsStopWithoutRetry(t *testing.T) {
 		})
 	}
 	// The control plane's refusals stop for good; only its proof of a
-	// revocation (403, Circus-Auth: revoked) names the revoked identity. An
-	// unmarked 401 or 403 (a proxy's) is retried.
+	// revocation (403, Circus-Auth: revoked) names the revoked identity, a
+	// 401 with the same marker does not. An unmarked 401 or 403 (a proxy's)
+	// is retried.
 	for _, mark := range []string{wire.LinkAuthRejected, wire.LinkAuthRevoked, ""} {
 		for _, status := range []int{401, 403} {
 			t.Run(fmt.Sprintf("%d/%q", status, mark), func(t *testing.T) {
@@ -473,7 +474,7 @@ func TestTerminalRejectionsStopWithoutRetry(t *testing.T) {
 				h.done <- nil
 				h.clk.Advance(time.Hour)
 				principal, revoked := daemonlink.RevokedPrincipal(err)
-				if revoked != (mark == wire.LinkAuthRevoked) || revoked && principal != "device" {
+				if revoked != (mark == wire.LinkAuthRevoked && status == http.StatusForbidden) || revoked && principal != "device" {
 					t.Fatalf("revoked = %q, %v for %q", principal, revoked, mark)
 				}
 				if !daemonlink.IsTerminal(err) || !strings.Contains(err.Error(), fmt.Sprint(status)) || attempts.Load() != wantAttempts {

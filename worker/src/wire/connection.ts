@@ -142,7 +142,8 @@ export class WireConnection {
       // front of it is retried like any other failure.
       const mark = status === 401 || status === 403 ? response.headers[LINK_AUTH_HEADER] : undefined;
       const principal = response.headers[LINK_PRINCIPAL_HEADER];
-      if (mark === LINK_AUTH_REVOKED && typeof principal === "string" && principal !== "") {
+      // Only a 403 proves the revocation (docs/wire.md).
+      if (mark === LINK_AUTH_REVOKED && status === 403 && typeof principal === "string" && principal !== "") {
         this.fail(new TerminalLinkError(`worker upgrade HTTP ${status}: the control plane revoked the credential (worker ${principal})`,
           "refused", principal));
       } else if (mark === LINK_AUTH_REJECTED || mark === LINK_AUTH_REVOKED) {

@@ -6,7 +6,7 @@ import { AgentManager, claudeCode } from "./agents/manager.js";
 import { loadConfig } from "./config.js";
 import { WorkerLink } from "./link/index.js";
 import { exitStatus } from "./exit.js";
-import { removeRejectedService, type RunningCredential } from "./rejected.js";
+import { CREDENTIAL_GONE, removeRevoked, SERVICE_FLAG, type RunningCredential } from "./rejected.js";
 import { clearStop, recordStop, stopReason } from "./stop.js";
 import { createLogger } from "./log.js";
 import { SessionPool } from "./pool.js";
@@ -108,9 +108,10 @@ async function main(running: { credential?: RunningCredential }): Promise<void> 
 /**
  * Runs the worker until it stops and returns its exit status (see
  * exitStatus). The reason of an earlier terminal stop is cleared first; a
- * terminal stop records its reason (stop.ts) before returning. Run as the
- * installed service (argv holds SERVICE_FLAG), a definitive refusal of the
- * credential also removes the service and the credential (rejected.ts).
+ * terminal stop records its reason (stop.ts) before returning. The control
+ * plane's proof that it revoked the credential also removes the credential
+ * file and, run as the installed service (argv holds SERVICE_FLAG), the
+ * service (rejected.ts).
  */
 export async function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   // The credential the worker runs with, as it read it at start.
@@ -121,13 +122,21 @@ export async function run(argv: readonly string[] = process.argv.slice(2)): Prom
   } catch (error: unknown) {
     const status = exitStatus(error);
     const reason = stopReason(error);
-    if (reason) recordStop(reason, error instanceof Error ? error.message : String(error));
     const log = createLogger("error");
+    if (reason) {
+      // A stop file that cannot be written skips neither the cleanup below nor the exit status.
+      try {
+        recordStop(reason, error instanceof Error ? error.message : String(error));
+      } catch (failure: unknown) {
+        log.error("could not record the stop reason", { error: String(failure).slice(0, 1024) });
+      }
+    }
     log.error("worker stopped", { error: String(error).slice(0, 1024), terminal: reason !== undefined });
-    const removal = removeRejectedService(error, argv, running.credential);
+    const removal = removeRevoked(error, argv, running.credential);
     if (removal) {
-      const outcome = removal.status === 0 ? "removed" : removal.status === 1 || removal.status === null ? "kept" : "failed";
-      log.error("worker service after the refused credential", { outcome, output: removal.output });
+      const outcome = removal.status === 0 ? "removed" : removal.status === 1 || removal.status === null ? "kept"
+        : removal.status === CREDENTIAL_GONE ? "gone" : "failed";
+      log.error("worker credential after the revocation", { service: argv.includes(SERVICE_FLAG), outcome, output: removal.output });
     }
     return status;
   }

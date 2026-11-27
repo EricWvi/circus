@@ -1237,6 +1237,9 @@ func TestRevocationEndsDaemon(t *testing.T) {
 	h.submit(c, active)
 	h.trackTool(pidfile)
 	wait(t, 3*time.Second, func() bool { return markerLines(t, marker) == 1 })
+	credPath := filepath.Join(h.dir, "config/circus/daemon.json")
+	f, err := credfile.Load(credPath)
+	must(t, err)
 	h.run("", 0, "server", "device", "revoke", "desk", "--user", enrollmentEmail, "--config", filepath.Join(filepath.Dir(h.db), "server.yaml"))
 	// Access logging happens only after ServeHTTP released the live link.
 	wait(t, 6*time.Second, func() bool {
@@ -1258,8 +1261,16 @@ func TestRevocationEndsDaemon(t *testing.T) {
 	if !strings.Contains(h.daemon.stderr.String(), "revoked") && !strings.Contains(h.daemon.stderr.String(), "403") {
 		t.Fatal(h.daemon.stderr.String())
 	}
-	f, err := credfile.Load(filepath.Join(h.dir, "config/circus/daemon.json"))
-	must(t, err)
+	// It stopped on the terminal link error, said apart from the cleanup.
+	if !strings.Contains(h.daemon.stderr.String(), `daemon link: HTTP 403 credential revoked (device "`+f.PrincipalID+`" was deleted or replaced)`) {
+		t.Fatalf("no terminal link error:\n%s", h.daemon.stderr.String())
+	}
+	// The foreground daemon removed its credential file, which held the
+	// revoked credential, so a new link joins without --force.
+	if _, err := os.Stat(credPath); !errors.Is(err, os.ErrNotExist) ||
+		!strings.Contains(h.daemon.stderr.String(), "so the credential file was removed; join again with a new link") {
+		t.Fatalf("credential file %v\n%s", err, h.daemon.stderr.String())
+	}
 	req, err := http.NewRequest("GET", h.base+"/v1/link/daemon", nil)
 	must(t, err)
 	req.Header.Set("Authorization", "Bearer "+f.Token)

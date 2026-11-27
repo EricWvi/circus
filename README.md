@@ -134,6 +134,8 @@ unused unless the link itself was refused), or with a new worker link.
 # Start the device daemon in the foreground. It reconnects after network
 # and server failures. It exits if the server refuses its credential
 # (HTTP 401/403) or rejects its handshake (such as an unsupported version).
+# When the server proves it revoked the credential (the device was deleted
+# or replaced), it also removes the credential file (see below).
 circus daemon
 
 # Terminal 3: run a tool on the device. Tool text goes to stdout; JSON
@@ -211,11 +213,16 @@ so only when the named identity is its own, the installed service still
 reads that credential file, and the file still holds the credential it ran
 with: after a rejoin's `join --force` wrote a new one there, the service
 and the file are the new credential's and stay. The worker packages and
-installed agents stay; `circus worker uninstall` removes them. A foreground
-daemon or worker only stops. A credential the control plane does not know
-(401, `Circus-Auth: rejected`, as when it runs on an empty, another or a
-restored database) only stops the service, which removes nothing: fix the
-control plane and start the service again.
+installed agents stay; `circus worker uninstall` removes them. A daemon or
+worker run in the foreground removes only its credential file, on the same
+proof and only while the file still holds the credential it ran with, then
+stops; it never changes a service. When an installed service of the same
+role reads that file, the foreground process leaves it to that service,
+which cleans up when it gets the same proof; while that service is stopped,
+the file stays and joining again needs `--force`. A credential the control plane does
+not know (401, `Circus-Auth: rejected`, as when it runs on an empty, another
+or a restored database) only stops the daemon or worker, which removes
+nothing: fix the control plane and start it again.
 The daemon's local harness also works without a server, reading
 one protojson `DeviceCall` per line from stdin:
 

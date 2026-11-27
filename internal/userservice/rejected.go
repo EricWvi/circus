@@ -8,9 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/EricWvi/circus/internal/circushome"
 	"github.com/EricWvi/circus/internal/credfile"
 )
 
@@ -19,7 +21,10 @@ import (
 // deleted, or replaced by a rejoin): rejected names the credential the
 // process ran with. Only the running service calls it (the daemon's
 // --service, the worker launcher's --service), just before it exits with
-// the terminal status, which the manager does not restart.
+// the terminal status, which the manager does not restart. A process run
+// in the foreground touches no service and removes only its credential
+// file, with steps 2 and 3 alone, and only when no installed service reads
+// that file (RemoveRejectedCredential).
 //
 // A join (a rejoin's `join --force`) may write a new credential to path at
 // any moment and takes no lock, so the credential is moved aside first:
@@ -62,31 +67,19 @@ func (s *Service) RemoveRejected(path string, rejected Rejected, pid int) (bool,
 	if filepath.Clean(m.definition(data).Credentials(s.role)) != filepath.Clean(path) || rejected.PrincipalID == "" {
 		return false, nil
 	}
-	aside := fmt.Sprintf("%s.revoked-%d-%d", path, os.Getpid(), time.Now().UnixNano())
-	if err := os.Rename(path, aside); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
+	removed, removeErr := removeRejectedCredential(path, rejected, func() error {
+		switch m := m.(type) {
+		case systemd:
+			return m.removeFromInside()
+		case launchd:
+			return m.removeFromInside(pid)
+		default:
+			return fmt.Errorf("unknown service manager %T", m)
 		}
-		return false, fmt.Errorf("move the credential file aside: %w", err)
+	})
+	if removed != CredentialRemoved {
+		return false, removeErr
 	}
-	testHookAside()
-	if !holds(aside, rejected) {
-		// Not ours: put it back, unless a newer one is there by now.
-		if err := os.Link(aside, path); err != nil && !errors.Is(err, os.ErrExist) {
-			return false, fmt.Errorf("put the credential file back from %s: %w", aside, err)
-		}
-		return false, removeAside(aside)
-	}
-	var removeErr error
-	switch m := m.(type) {
-	case systemd:
-		removeErr = m.removeFromInside()
-	case launchd:
-		removeErr = m.removeFromInside(pid)
-	default:
-		removeErr = fmt.Errorf("unknown service manager %T", m)
-	}
-	removeErr = errors.Join(removeErr, removeAside(aside))
 	testHookRemoved()
 	if _, err := os.Stat(path); err == nil {
 		// A join wrote a new credential while the service was removed: the
@@ -112,6 +105,124 @@ func (s *Service) restoreService(m manager, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// CredentialOutcome says what RemoveRejectedCredential did.
+type CredentialOutcome int
+
+const (
+	// CredentialRemoved: the file held the rejected credential and is gone.
+	CredentialRemoved CredentialOutcome = iota
+	// CredentialKept: the file holds another or an unreadable credential.
+	CredentialKept
+	// CredentialGone: there was no file at the path.
+	CredentialGone
+	// CredentialLeftToService: the installed service reads the path, so the
+	// file is left to it.
+	CredentialLeftToService
+)
+
+// RemoveRejectedCredential removes the credential file at path after the
+// control plane proved it revoked the credential rejected, which the caller
+// ran with in the foreground. It never changes a service: when the
+// installed service of s's role reads the same file (through links too),
+// the file is left to that service (RemoveRejected), which removes both
+// once it gets the same proof, and when that cannot be told (the service
+// file cannot be read or parsed), the file is kept and the error says why. Otherwise path is renamed to a unique name in its directory (a join
+// may write a new credential to path at any moment and takes no lock) and
+// the moved file checked; unless it holds rejected (the same principal and
+// token), it is put back with a link, which fails rather than overwrite a
+// still newer credential written meanwhile (then the moved one, outdated,
+// is dropped).
+func (s *Service) RemoveRejectedCredential(path string, rejected Rejected) (CredentialOutcome, error) {
+	definition, installed, err := s.Installed()
+	if errors.Is(err, ErrUnsupported) {
+		installed, err = false, nil
+	}
+	if err != nil {
+		return CredentialKept, fmt.Errorf("cannot tell whether the installed %s service reads it, so it is kept: %w", s.name, err)
+	}
+	if installed {
+		reads, ok := recordedCredentials(definition, s.role)
+		if !ok {
+			return CredentialKept, fmt.Errorf("cannot tell which credential file the installed %s service reads, so it is kept", s.name)
+		}
+		if sameFile(reads, path) {
+			return CredentialLeftToService, nil
+		}
+	}
+	return removeRejectedCredential(path, rejected, nil)
+}
+
+// recordedCredentials returns the credential file of role the service file
+// d records: its --credentials argument, else the default path under its
+// recorded CIRCUS_HOME, XDG_CONFIG_HOME or HOME. ok is false when d names
+// no program (it could not be parsed) or records none of these.
+func recordedCredentials(d Definition, role credfile.Role) (string, bool) {
+	if d.Program() == "" {
+		return "", false
+	}
+	recorded := filepath.IsAbs(d.Env["XDG_CONFIG_HOME"]) || d.Env[circushome.Env] != "" || d.Env["HOME"] != ""
+	for _, arg := range d.Argv[1:] {
+		recorded = recorded || arg == "--credentials" || strings.HasPrefix(arg, "--credentials=")
+	}
+	if !recorded {
+		return "", false
+	}
+	return d.Credentials(role), true
+}
+
+// sameFile reports whether paths a and b name the same file, through
+// symbolic links too. When either cannot be stat'ed, it compares the
+// absolute paths with their directories' links resolved.
+func sameFile(a, b string) bool {
+	ai, aErr := os.Stat(a)
+	bi, bErr := os.Stat(b)
+	if aErr == nil && bErr == nil {
+		return os.SameFile(ai, bi)
+	}
+	return resolveDir(a) == resolveDir(b)
+}
+
+func resolveDir(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	if dir, err := filepath.EvalSymlinks(filepath.Dir(abs)); err == nil {
+		return filepath.Join(dir, filepath.Base(abs))
+	}
+	return abs
+}
+
+// removeRejectedCredential moves the credential file at path aside and,
+// when it holds rejected, runs whileAside (when not nil) and then removes
+// the moved file, or else puts it back (see RemoveRejectedCredential). The
+// error joins whileAside's and the removal's.
+func removeRejectedCredential(path string, rejected Rejected, whileAside func() error) (CredentialOutcome, error) {
+	if rejected.PrincipalID == "" {
+		return CredentialKept, nil
+	}
+	aside := fmt.Sprintf("%s.revoked-%d-%d", path, os.Getpid(), time.Now().UnixNano())
+	if err := os.Rename(path, aside); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return CredentialGone, nil
+		}
+		return CredentialKept, fmt.Errorf("move the credential file aside: %w", err)
+	}
+	testHookAside()
+	if !holds(aside, rejected) {
+		// Not ours: put it back, unless a newer one is there by now.
+		if err := os.Link(aside, path); err != nil && !errors.Is(err, os.ErrExist) {
+			return CredentialKept, fmt.Errorf("put the credential file back from %s: %w", aside, err)
+		}
+		return CredentialKept, removeAside(aside)
+	}
+	var err error
+	if whileAside != nil {
+		err = whileAside()
+	}
+	return CredentialRemoved, errors.Join(err, removeAside(aside))
 }
 
 func removeAside(aside string) error {

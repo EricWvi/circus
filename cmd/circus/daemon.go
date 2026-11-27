@@ -381,8 +381,12 @@ func daemonRun(path string, service bool, errOut io.Writer) error {
 		return err
 	}
 	err = client.Run(ctx)
-	if revoked, ok := daemonlink.RevokedPrincipal(err); service && ok {
-		removeRevokedService(userservice.Daemon, path, file, revoked, errOut)
+	if revoked, ok := daemonlink.RevokedPrincipal(err); ok {
+		if service {
+			removeRevokedService(userservice.Daemon, path, file, revoked, errOut)
+		} else {
+			removeRevokedCredential(path, file, revoked, errOut)
+		}
 	}
 	if service && daemonlink.IsTerminal(err) {
 		return logServiceExit(errOut, err)
@@ -409,9 +413,41 @@ func removeRevokedService(svc *userservice.Service, path string, file credfile.F
 	case err != nil:
 		fmt.Fprintf(errOut, "circus: could not fully remove the service and its credential %s after the control plane revoked it: %v\n", path, err)
 	case removed:
-		fmt.Fprintf(errOut, "circus: the control plane revoked the credential %s, so the service and the credential file were removed\n", path)
+		fmt.Fprintf(errOut, "circus: the control plane revoked the credential %s, so the service and the credential file were removed; join again with a new link\n", path)
 	default:
 		fmt.Fprintf(errOut, "circus: the installed service no longer reads %s, or another join replaced it; the service and the file are kept\n", path)
+	}
+}
+
+// removeRevokedCredential removes the credential file at path after the
+// control plane proved it revoked the identity revoked, for a daemon run in
+// the foreground: only when that is file's own identity, path still holds
+// file and no installed daemon service reads path
+// (userservice.RemoveRejectedCredential). It never changes a service and
+// says what it did on errOut.
+func removeRevokedCredential(path string, file credfile.File, revoked string, errOut io.Writer) {
+	if revoked != file.PrincipalID {
+		fmt.Fprintf(errOut, "circus: the control plane revoked %q, not this credential's %q; %s is kept\n", revoked, file.PrincipalID, path)
+		return
+	}
+	outcome, err := userservice.Daemon.RemoveRejectedCredential(path, userservice.RejectedCredential(file))
+	reportRevokedCredential(credfile.RoleDaemon, path, outcome, err, errOut)
+}
+
+// reportRevokedCredential says on errOut what RemoveRejectedCredential did
+// with the revoked credential file of role at path.
+func reportRevokedCredential(role credfile.Role, path string, outcome userservice.CredentialOutcome, err error, errOut io.Writer) {
+	switch {
+	case err != nil:
+		fmt.Fprintf(errOut, "circus: could not remove the %s credential file %s after the control plane revoked it: %v\n", role, path, err)
+	case outcome == userservice.CredentialRemoved:
+		fmt.Fprintf(errOut, "circus: the control plane revoked the %s credential %s, so the credential file was removed; join again with a new link\n", role, path)
+	case outcome == userservice.CredentialGone:
+		fmt.Fprintf(errOut, "circus: the control plane revoked the %s credential %s, and the file is already gone; join again with a new link\n", role, path)
+	case outcome == userservice.CredentialLeftToService:
+		fmt.Fprintf(errOut, "circus: the installed %s service reads %s; it is left to the service\n", role, path)
+	default:
+		fmt.Fprintf(errOut, "circus: the control plane revoked the %s credential %s, but the file now holds another or unreadable credential; kept\n", role, path)
 	}
 }
 

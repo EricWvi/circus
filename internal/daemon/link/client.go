@@ -461,8 +461,14 @@ func (c *Client) connect(ctx context.Context) (*connection, error) {
 			switch response.Header.Get(wire.LinkAuthHeader) {
 			case wire.LinkAuthRevoked:
 				principal := response.Header.Get(wire.LinkPrincipalHeader)
-				return nil, &terminalError{message: fmt.Sprintf("daemon link: HTTP %d credential revoked (device %q was deleted or replaced); "+
-					"join again with a new link, or rejoin as it (\"Rejoin…\" in the Web UI)", response.StatusCode, principal), revokedPrincipal: principal}
+				// What became of the credential file (and the service) is
+				// said separately, so this says nothing about what to do.
+				// Only a 403 proves the revocation (docs/wire.md).
+				if response.StatusCode != http.StatusForbidden {
+					return nil, &terminalError{message: fmt.Sprintf("daemon link: HTTP %d credential refused", response.StatusCode)}
+				}
+				return nil, &terminalError{message: fmt.Sprintf("daemon link: HTTP %d credential revoked (device %q was deleted or replaced)",
+					response.StatusCode, principal), revokedPrincipal: principal}
 			case wire.LinkAuthRejected:
 				return nil, &terminalError{message: fmt.Sprintf("daemon link: HTTP %d authentication rejected; the control plane does not know "+
 					"this credential (if it runs on the wrong or a restored database, fix that and start the daemon again; "+

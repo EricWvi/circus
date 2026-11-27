@@ -89,9 +89,10 @@ export class Peer {
  * number is an anonymous answer (a proxy's), `refused` is the control
  * plane's own refusal of an unknown credential (Circus-Auth: rejected),
  * `revoked` its proof that it revoked the identity it names (403,
- * Circus-Auth: revoked, Circus-Principal).
+ * Circus-Auth: revoked, Circus-Principal), or the same marker on another
+ * `status`, which proves nothing.
  */
-export type UpgradeAnswer = number | { refused: number } | { revoked: string };
+export type UpgradeAnswer = number | { refused: number } | { revoked: string; status?: number };
 
 export async function serve(statuses: UpgradeAnswer[] = []) {
   const server = createServer();
@@ -113,7 +114,7 @@ export async function serve(statuses: UpgradeAnswer[] = []) {
         ? [answer, ""]
         : "refused" in answer
           ? [answer.refused, "Circus-Auth: rejected\r\n"]
-          : [403, `Circus-Auth: revoked\r\nCircus-Principal: ${answer.revoked}\r\n`];
+          : [answer.status ?? 403, `Circus-Auth: revoked\r\nCircus-Principal: ${answer.revoked}\r\n`];
       socket.end(`HTTP/1.1 ${status} Test\r\n${marker}Content-Length: 0\r\nConnection: close\r\nLocation: /trap\r\n\r\n`);
     } else {
       wss.handleUpgrade(request, socket, head, (ws) => peers.push(new Peer(ws)));

@@ -91,7 +91,13 @@ status. The stop file is `$CIRCUS_WORKER_STOP_FILE` (recorded in the service
 by `circus worker install`, read by `circus worker status`), else
 `<data>/worker-state/stop.json`; it is written atomically with mode 0600,
 only its own directory is created (0700), and the worker removes it when it
-starts. A 401 or 403 without the marker (a proxy's) is retried.
+starts. A 401 or 403 without the marker (a proxy's) is retried. A 403
+marked `Circus-Auth: revoked` that names the worker's own identity proves
+the control plane revoked its credential: before it exits, the worker has
+`circus internal worker-rejected` remove the credential file while it still
+holds that credential, and also the worker service when it runs as that
+service; run in the foreground, it leaves the file to an installed worker
+service that reads it (as the circus README describes for deleted devices and workers).
 The terminal status is 78 on
 Linux, which the systemd unit of `circus worker install` does not restart
 (`RestartPreventExitStatus=78`), and 0 on macOS, since launchd's `KeepAlive`

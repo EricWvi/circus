@@ -133,27 +133,38 @@ exit 0
 // credential's identity (403, Circus-Auth: revoked, the principal id), on
 // Linux without stopping its own unit; and only while the unit still reads
 // that credential file, the file still holds that credential, and it runs
-// as the service. An unknown credential (401, Circus-Auth: rejected: the
-// control plane may run on an empty or old database) only stops it.
+// as the service. Run in the foreground, it removes only the credential
+// file, on the same proof, while the file still holds that credential and
+// no installed daemon service reads it, and never changes the service. An
+// unknown credential (401, Circus-Auth: rejected: the control plane may run
+// on an empty or old database), or a 401 with the revoked marker, which
+// proves nothing, only stops it.
 func TestDaemonServiceRemovesItselfWhenRejected(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the fake systemctl is for Linux; macOS runs the real launchd test in CI")
 	}
 	for _, tc := range []struct {
-		name    string
-		answer  string // "unknown", or the principal id the control plane revoked
-		service bool
-		other   bool // the unit reads another credential
-		rejoin  bool // a join wrote a new credential to the path before the answer
-		removed bool
-		log     string
+		name     string
+		answer   string // "unknown", or the principal id the control plane revoked (with "/401": answered 401, not 403)
+		service  bool
+		other    bool // the unit reads another credential
+		rejoin   bool // a join wrote a new credential to the path before the answer
+		removed  bool // the service and the credential file
+		credOnly bool // only the credential file
+		log      string
 	}{
-		{"revoked", "device", true, false, false, true, "the service and the credential file were removed"},
-		{"unknown credential", "unknown", true, false, false, false, "HTTP 401 authentication rejected; the control plane does not know"},
-		{"another identity revoked", "other-device", true, false, false, false, `revoked "other-device", not this credential's "device"`},
-		{"another credential's service", "device", true, true, false, false, "no longer reads"},
-		{"replaced by a rejoin", "device", true, false, true, false, "another join replaced it"},
-		{"foreground", "device", false, false, false, false, "HTTP 403 credential revoked"},
+		{"revoked", "device", true, false, false, true, false, "the service and the credential file were removed"},
+		{"unknown credential", "unknown", true, false, false, false, false, "HTTP 401 authentication rejected; the control plane does not know"},
+		{"another identity revoked", "other-device", true, false, false, false, false, `revoked "other-device", not this credential's "device"`},
+		{"another credential's service", "device", true, true, false, false, false, "no longer reads"},
+		{"replaced by a rejoin", "device", true, false, true, false, false, "another join replaced it"},
+		{"revoked with 401", "device/401", true, false, false, false, false, "daemon link: HTTP 401 credential refused\n"},
+		{"foreground", "device", false, true, false, false, true, "so the credential file was removed; join again with a new link"},
+		{"foreground, the service's file", "device", false, false, false, false, false, "; it is left to the service"},
+		{"foreground, unknown credential", "unknown", false, true, false, false, false, "HTTP 401 authentication rejected; the control plane does not know"},
+		{"foreground, revoked with 401", "device/401", false, true, false, false, false, "daemon link: HTTP 401 credential refused\n"},
+		{"foreground, another identity revoked", "other-device", false, true, false, false, false, `revoked "other-device", not this credential's "device"`},
+		{"foreground, replaced by a rejoin", "device", false, true, true, false, false, "the file now holds another or unreadable credential; kept"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -190,8 +201,13 @@ func TestDaemonServiceRemovesItselfWhenRejected(t *testing.T) {
 					w.WriteHeader(http.StatusUnauthorized)
 					return
 				}
+				principal, unauthorized := strings.CutSuffix(tc.answer, "/401")
 				w.Header().Set("Circus-Auth", "revoked")
-				w.Header().Set("Circus-Principal", tc.answer)
+				w.Header().Set("Circus-Principal", principal)
+				if unauthorized {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
 				w.WriteHeader(http.StatusForbidden)
 			}))
 			defer server.Close()
@@ -221,13 +237,28 @@ func TestDaemonServiceRemovesItselfWhenRejected(t *testing.T) {
 			if code != wantCode || !strings.Contains(out, tc.log) {
 				t.Fatalf("status %d, want %d; want the log to say %q:\n%s", code, wantCode, tc.log, out)
 			}
-			_, unitErr := os.Stat(unit)
+			// The terminal link error, said apart from the cleanup.
+			// A 401 with the revoked marker proves nothing: a plain refusal.
+			if principal, unauthorized := strings.CutSuffix(tc.answer, "/401"); unauthorized {
+				if strings.Contains(out, "credential revoked") || strings.Contains(out, "the control plane revoked") || strings.Contains(out, "left to the service") {
+					t.Fatalf("a 401 was taken as the proof of a revocation:\n%s", out)
+				}
+			} else if want := fmt.Sprintf("daemon link: HTTP 403 credential revoked (device %q was deleted or replaced)", principal); tc.answer != "unknown" && !strings.Contains(out, want) {
+				t.Fatalf("want the log to say %q:\n%s", want, out)
+			}
+			unitText, unitErr := os.ReadFile(unit)
 			_, credErr := os.Stat(path)
 			if gone := errors.Is(unitErr, os.ErrNotExist) && errors.Is(credErr, os.ErrNotExist); gone != tc.removed {
 				t.Fatalf("unit %v, credential %v; want removed %v\n%s", unitErr, credErr, tc.removed, out)
 			}
-			if !tc.removed && (unitErr != nil || credErr != nil) {
-				t.Fatalf("unit %v, credential %v kept only in part\n%s", unitErr, credErr, out)
+			if !tc.removed && (unitErr != nil || (credErr != nil) != tc.credOnly) {
+				t.Fatalf("unit %v, credential %v; want only the credential removed %v\n%s", unitErr, credErr, tc.credOnly, out)
+			}
+			if tc.credOnly && !errors.Is(credErr, os.ErrNotExist) {
+				t.Fatalf("credential %v, want it removed\n%s", credErr, out)
+			}
+			if !tc.removed && !strings.Contains(string(unitText), execStart) {
+				t.Fatalf("the unit changed:\n%s", unitText)
 			}
 			if tc.rejoin {
 				if got, err := credfile.Load(path); err != nil || got.Token != rejoined.Token {
