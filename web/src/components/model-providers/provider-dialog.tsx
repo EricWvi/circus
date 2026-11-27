@@ -1,4 +1,4 @@
-import { PlusIcon, XIcon } from "lucide-react"
+import { InfoIcon, PlusIcon, XIcon } from "lucide-react"
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { Trans, useTranslation } from "react-i18next"
 
@@ -6,6 +6,7 @@ import { isApiError } from "@/api/errors"
 import { useCreateModelProvider, useUpdateModelProvider, useWorkers } from "@/api/hooks"
 import { MAX_ENV_VARS } from "@/api/provider-rules"
 import type { ModelProvider, Worker } from "@/api/types"
+import { InfoTip } from "@/components/info-tip"
 import { busyClass } from "@/components/projects/busy"
 import { DeviceStatusDot } from "@/components/status-dot"
 import { Button } from "@/components/ui/button"
@@ -162,7 +163,7 @@ export function ProviderForm({
   const maxSessionsProps = fieldProps("maxSessions", errors.fields.maxSessions)
 
   let keyPlaceholder: string | undefined
-  let keyHint: string = t("providers.form.secretHint")
+  let keyHint: string | undefined
   if (unreadable) keyHint = t("providers.form.keyReenterHint")
   else if (base) {
     keyPlaceholder = t("providers.form.keyStored", { masked: maskedSecret(base.keyLast4) })
@@ -245,26 +246,28 @@ export function ProviderForm({
                 id="provider-key"
                 placeholder={keyPlaceholder}
                 value={values.key}
-                aria-describedby="provider-key-hint"
+                aria-describedby={keyHint ? "provider-key-hint" : undefined}
                 onChange={(e) => form.set("key", e.target.value)}
                 {...keyProps}
               />
               {errors.fields.key ? (
                 <FieldError>{errors.fields.key}</FieldError>
               ) : (
-                <FieldDescription id="provider-key-hint" className={cn("text-xs", unreadable && "text-destructive")}>
-                  {keyHint}
-                </FieldDescription>
+                keyHint && (
+                  <FieldDescription id="provider-key-hint" className={cn("text-xs", unreadable && "text-destructive")}>
+                    {keyHint}
+                  </FieldDescription>
+                )
               )}
             </Field>
           </div>
         </FieldSet>
 
         <FieldSet className="gap-3">
-          <FieldLegend variant="label" className="mb-2">
+          <FieldLegend variant="label" className="mb-2 flex items-center gap-1">
             {t("providers.form.models")}
+            <HintTip id="provider-models-hint" text={t("providers.form.modelsHint")} />
           </FieldLegend>
-          <FieldDescription className="text-xs">{t("providers.form.modelsHint")}</FieldDescription>
           <div className="grid gap-3 sm:grid-cols-3">
             {MODEL_FIELDS.map((field) => (
               <Field key={field} className="gap-1.5">
@@ -300,7 +303,10 @@ export function ProviderForm({
         />
 
         <Field>
-          <FieldLabel htmlFor="provider-max-sessions">{t("providers.form.maxSessions")}</FieldLabel>
+          <div className="flex items-center gap-1">
+            <FieldLabel htmlFor="provider-max-sessions">{t("providers.form.maxSessions")}</FieldLabel>
+            <HintTip id="provider-max-sessions-hint" text={t("providers.form.maxSessionsHint")} />
+          </div>
           <Input
             id="provider-max-sessions"
             inputMode="numeric"
@@ -312,13 +318,7 @@ export function ProviderForm({
             onChange={(e) => form.set("maxSessions", e.target.value)}
             {...maxSessionsProps}
           />
-          {errors.fields.maxSessions ? (
-            <FieldError>{errors.fields.maxSessions}</FieldError>
-          ) : (
-            <FieldDescription id="provider-max-sessions-hint" className="text-xs">
-              {t("providers.form.maxSessionsHint")}
-            </FieldDescription>
-          )}
+          {errors.fields.maxSessions && <FieldError>{errors.fields.maxSessions}</FieldError>}
         </Field>
 
         <label className="flex cursor-default items-start gap-2.5">
@@ -466,7 +466,6 @@ function VariablesField({
       <FieldLegend variant="label" className="mb-2">
         {t("providers.form.variables")}
       </FieldLegend>
-      <FieldDescription className="text-xs">{t("providers.form.variablesHint")}</FieldDescription>
       {rows.length > 0 && (
         <ul className="flex flex-col gap-2">
           {rows.map((row, i) => {
@@ -641,7 +640,6 @@ function WorkersField({
       <FieldLegend variant="label" className="mb-2">
         {t("providers.form.workers")}
       </FieldLegend>
-      <FieldDescription className="text-xs">{t("providers.form.workersHint")}</FieldDescription>
       {body}
       {gone > 0 && (
         <p role="status" className="text-xs text-muted-foreground">
@@ -650,5 +648,22 @@ function WorkersField({
       )}
       {error && <FieldError>{error}</FieldError>}
     </FieldSet>
+  )
+}
+
+/** An info icon beside a field's label whose tooltip holds the field's hint. */
+function HintTip({ id, text }: { id: string; text: string }) {
+  return (
+    <InfoTip content={text} contentClassName="max-w-xs" side="top">
+      <span
+        tabIndex={0}
+        className="flex cursor-default items-center rounded-sm p-0.5 font-normal text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+      >
+        <InfoIcon className="size-3" aria-hidden />
+        <span id={id} className="sr-only">
+          {text}
+        </span>
+      </span>
+    </InfoTip>
   )
 }
