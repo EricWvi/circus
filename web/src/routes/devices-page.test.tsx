@@ -5,10 +5,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError } from "@/api/errors"
 import { DEVICES_LIVE_INTERVAL_MS } from "@/api/hooks"
-import { SEED_OWNER_ID, seedState, type MockState } from "@/api/mock/state"
+import { SEED_OWNER_ID, seedMachine, seedState, type MockState } from "@/api/mock/state"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
 import { addMenuTrigger, chooseAdd } from "@/test/add-menu"
+import {
+  deviceRow,
+  machineCard,
+  machineCards,
+  machineNames,
+  machinesSection,
+  roleLabels,
+  rolesOf,
+  shownNames,
+  workerRow,
+} from "@/test/machines"
 import { advance, renderWithBackend } from "@/test/render"
 
 import { DevicesPage } from "./devices-page"
@@ -36,16 +47,8 @@ async function renderDevices(state: MockState) {
   return { ...result, router }
 }
 
-/** The list item of the device with that name (the workers below have names too). */
-const row = (name: string) => {
-  const devices = within(screen.getAllByRole("region")[0])
-  const item = devices.getByText(name, { selector: "span" }).closest("li")
-  if (!item) throw new Error(`no row for ${name}`)
-  return within(item)
-}
-
-/** The workers section, in any language. */
-const workersSection = () => within(document.querySelector<HTMLElement>('section[aria-labelledby="workers-heading"]')!)
+/** The row of the device with that name. */
+const row = (name: string) => within(deviceRow(name))
 
 /** Closes the open dialog with Escape, through its exit animation. */
 async function closeDialog() {
@@ -64,7 +67,7 @@ afterEach(async () => {
   await i18n.changeLanguage("en")
 })
 
-describe("the device list", () => {
+describe("the machine list", () => {
   function seedWithSpare() {
     const state = seedState(NOW)
     // Enrolled but never connected, with nothing reported.
@@ -77,36 +80,164 @@ describe("the device list", () => {
       version: "",
       owner: SEED_OWNER_ID,
       deviceId: "device-spare",
+      hostname: "",
+      machineKey: "machine-spare",
     })
     return state
   }
 
-  it("lists devices by name with their status, platform and version", async () => {
+  it("shows one card per machine, by name ignoring case, with a row for each of its roles", async () => {
     await renderDevices(seedWithSpare())
     expect(screen.getByRole("heading", { level: 1, name: "Devices" })).toBeTruthy()
-    const list = screen.getAllByRole("list")[0]
-    const names = Array.from(list.children, (li) => li.querySelector("span.font-medium")?.textContent)
-    expect(names).toEqual(["devbox", "eric-mbp", "eric-win", "palace-builder", "spare"])
+    expect(screen.getByRole("heading", { level: 2, name: "Machines" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Workers" })).toBeNull()
+    // Named by the hostname the device reported (ERIC-WIN, erics-mbp.local),
+    // else the worker's (cloud-runner), else the device's name
+    // (palace-builder, spare). ERIC-WIN sorts among the others, not first.
+    expect(machineNames()).toEqual(["cloud-runner", "devbox", "ERIC-WIN", "erics-mbp.local", "palace-builder", "spare"])
+    expect(rolesOf(machineCard("devbox"))).toEqual(["Device devbox", "Worker devbox"])
+    expect(rolesOf(machineCard("erics-mbp.local"))).toEqual(["Device eric-mbp", "Worker eric-mbp"])
+    // A worker on a machine of its own, and devices without a worker.
+    expect(rolesOf(machineCard("cloud-runner"))).toEqual(["Worker cloud-runner"])
+    expect(rolesOf(machineCard("palace-builder"))).toEqual(["Device palace-builder"])
+    expect(rolesOf(machineCard("spare"))).toEqual(["Device spare"])
+    // The rows say their role, and the old "same machine" line is gone.
+    expect(roleLabels(machineCard("devbox"))).toEqual(["Device", "Worker"])
+    expect(screen.queryByText("Same machine as")).toBeNull()
+  })
 
-    const devbox = row("devbox")
-    expect(devbox.getByRole("img", { name: "Online" })).toBeTruthy()
-    expect(devbox.getByText("Online")).toBeTruthy()
-    expect(devbox.getByText("linux/amd64")).toBeTruthy()
-    expect(devbox.getByText("daemon v0.1.0")).toBeTruthy()
-    expect(devbox.queryByText(/Last seen/)).toBeNull()
+  it("leaves out a role's name where it is the machine's, ignoring case, and shows it where it differs", async () => {
+    const state = seedState(NOW)
+    // A device of another name on eric-mbp's machine (erics-mbp.local).
+    state.devices.find((d) => d.name === "eric-mbp")!.name = "laptop"
+    await renderDevices(state)
+    // The same name: devbox, palace-builder (named after its device), cloud-runner.
+    expect(shownNames(machineCard("devbox"))).toEqual([null, null])
+    expect(shownNames(machineCard("palace-builder"))).toEqual([null])
+    expect(shownNames(machineCard("cloud-runner"))).toEqual([null])
+    // The same ignoring case: ERIC-WIN and eric-win.
+    expect(shownNames(machineCard("ERIC-WIN"))).toEqual([null, null])
+    // Different names are shown.
+    expect(shownNames(machineCard("erics-mbp.local"))).toEqual(["laptop", "eric-mbp"])
 
-    const win = row("eric-win")
-    expect(win.getByRole("img", { name: "Offline" })).toBeTruthy()
-    const seen = win.getByText("Last seen 2d ago")
-    expect(seen.tagName).toBe("TIME")
-    expect(seen.getAttribute("datetime")).toBe(new Date(NOW - 2 * DAY).toISOString())
+    // The rows and their menus still name their roles, shown or not.
+    expect(rolesOf(machineCard("ERIC-WIN"))).toEqual(["Device eric-win", "Worker eric-win"])
+    expect(rolesOf(machineCard("erics-mbp.local"))).toEqual(["Device laptop", "Worker eric-mbp"])
+    for (const [r, menu] of [
+      [deviceRow("eric-win"), "Actions for device eric-win"],
+      [workerRow("eric-win"), "Actions for worker eric-win"],
+      [deviceRow("devbox"), "Actions for device devbox"],
+      [deviceRow("laptop"), "Actions for device laptop"],
+    ] as const) {
+      expect(within(r).getByRole("button", { name: menu })).toBeTruthy()
+    }
+    // The row reads: role, version, link state.
+    const win = deviceRow("eric-win")
+    expect(within(win).queryByText("eric-win")).toBeNull()
+    expect(within(win).getByText("v0.1.0")).toBeTruthy()
+    expect(within(win).getByText("Last seen 2d ago")).toBeTruthy()
+  })
+
+  it("lines up the role labels of a card with both kinds of rows, as wide as the longer label", async () => {
+    await renderDevices(seedState(NOW))
+    // Each label's cell holds both labels, the other one hidden from view
+    // and from assistive technology, so both cells take the longer one's width.
+    for (const r of [deviceRow("devbox"), workerRow("devbox")]) {
+      const cell = r.querySelector("[data-role-label]")!.parentElement!
+      expect([...cell.children].map((c) => c.textContent).sort()).toEqual(["Device", "Worker"])
+      const hidden = [...cell.children].find((c) => !c.hasAttribute("data-role-label"))!
+      expect(hidden.getAttribute("aria-hidden")).toBe("true")
+      expect(hidden.className).toContain("invisible")
+      expect(cell.className).toContain("grid")
+    }
+    // A card with one kind of row has nothing to line up with: no padding.
+    const solo = deviceRow("palace-builder").querySelector("[data-role-label]")!.parentElement!
+    expect([...solo.children].map((c) => c.textContent)).toEqual(["Device"])
+  })
+
+  it("puts the platform on the machine, and each role's status and version on its row", async () => {
+    await renderDevices(seedWithSpare())
+    const devbox = within(machineCard("devbox"))
+    expect(devbox.getAllByText("linux/amd64")).toHaveLength(1)
+
+    const device = row("devbox")
+    expect(device.getByRole("img", { name: "Online" })).toBeTruthy()
+    expect(device.getByText("Online")).toBeTruthy()
+    // The version alone: the role label says whose it is.
+    expect(device.getByText("v0.1.0")).toBeTruthy()
+    expect(device.queryByText(/daemon/)).toBeNull()
+    expect(device.queryByText(/Last seen/)).toBeNull()
+    const worker = within(workerRow("devbox"))
+    expect(worker.getByText("Online")).toBeTruthy()
+    expect(worker.getByText("v0.1.0")).toBeTruthy()
+    expect(worker.queryByText(/^worker/)).toBeNull()
+
+    // An offline machine: both roles say when they were last seen.
+    for (const r of [deviceRow("eric-win"), workerRow("eric-win")]) {
+      expect(within(r).getByRole("img", { name: "Offline" })).toBeTruthy()
+      const seen = within(r).getByText("Last seen 2d ago")
+      expect(seen.tagName).toBe("TIME")
+      expect(seen.getAttribute("datetime")).toBe(new Date(NOW - 2 * DAY).toISOString())
+    }
 
     const spare = row("spare")
     expect(spare.getByRole("img", { name: "Offline" })).toBeTruthy()
     expect(spare.getByText("Never connected")).toBeTruthy()
     // Empty platform and version are left out, not shown as blanks.
-    expect(spare.queryByText(/daemon/)).toBeNull()
-    expect(spare.queryByText("/")).toBeNull()
+    expect(spare.queryByText(/^v/)).toBeNull()
+    expect(within(machineCard("spare")).queryByText("/")).toBeNull()
+  })
+
+  it("gives each role its own menu, named by its role", async () => {
+    await renderDevices(seedState(NOW))
+    const labels = within(machineCard("devbox"))
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label"))
+      .filter((l) => l?.startsWith("Actions for "))
+    expect(labels).toEqual(["Actions for device devbox", "Actions for worker devbox"])
+    expect(within(workerRow("devbox")).getByRole("switch", { name: "Integrator" })).toBeTruthy()
+    expect(within(workerRow("devbox")).getByRole("list", { name: "Agents on devbox" })).toBeTruthy()
+    expect(within(deviceRow("devbox")).queryByRole("switch")).toBeNull()
+  })
+
+  it("groups by machine key, not by name", async () => {
+    const state = seedState(NOW)
+    // A worker named like a device on another machine, and a device and a
+    // worker of different names on one machine without a hostname.
+    state.workers.find((w) => w.name === "cloud-runner")!.hostname = ""
+    state.devices.push({
+      ...state.devices.find((d) => d.name === "palace-builder")!,
+      name: "cloud-runner",
+      deviceId: "device-cloud-runner",
+      machineKey: "machine-elsewhere",
+      hostname: "",
+    })
+    state.devices.find((d) => d.name === "palace-builder")!.machineKey = seedMachine("cloud-runner")
+    await renderDevices(state)
+    // Named by the device's name: cloud-runner's machine is now palace-builder.
+    expect(machineNames()).toEqual(["cloud-runner", "devbox", "ERIC-WIN", "erics-mbp.local", "palace-builder"])
+    expect(rolesOf(machineCard("palace-builder"))).toEqual(["Device palace-builder", "Worker cloud-runner"])
+    expect(rolesOf(machineCard("cloud-runner"))).toEqual(["Device cloud-runner"])
+  })
+
+  it("names a machine after its online role, not an old identity left on it", async () => {
+    const state = seedState(NOW)
+    // Enrolled again instead of rejoined: the old device stays, offline, with the old hostname.
+    state.devices.push({
+      ...state.devices.find((d) => d.name === "devbox")!,
+      name: "aaa-old",
+      deviceId: "device-aaa-old",
+      online: false,
+      lastSeenUnixMs: NOW - 30 * DAY,
+      hostname: "oldname",
+      os: "windows",
+    })
+    await renderDevices(state)
+    expect(machineNames()).toContain("devbox")
+    expect(machineNames()).not.toContain("oldname")
+    expect(rolesOf(machineCard("devbox"))).toEqual(["Device aaa-old", "Device devbox", "Worker devbox"])
+    expect(within(machineCard("devbox")).getByText("linux/amd64")).toBeTruthy()
+    expect(shownNames(machineCard("devbox"))).toEqual(["aaa-old", null, null])
   })
 
   it("links the projects with a location on each device", async () => {
@@ -126,6 +257,7 @@ describe("the device list", () => {
       ["circus", "/p/circus"],
       ["toolbox", "/p/toolbox"],
     ])
+    expect(deviceRow("devbox").contains(projectsOf("devbox"))).toBe(true)
     expect(projectsOf("spare")).toBeNull()
 
     fireEvent.click(within(projectsOf("eric-win")!).getByRole("link", { name: "toolbox" }))
@@ -150,21 +282,35 @@ describe("the device list", () => {
     expect(row("eric-win").getByText("Last seen 2d ago")).toBeTruthy()
 
     state.devices.find((d) => d.name === "eric-win")!.online = true
+    state.workers.find((w) => w.name === "cloud-runner")!.online = false
     await advance(DEVICES_LIVE_INTERVAL_MS)
     expect(row("eric-win").getByText("Online")).toBeTruthy()
-    expect(screen.queryByRole("list", { name: "Loading devices" })).toBeNull()
+    expect(within(workerRow("eric-win")).getByText("Last seen 2d ago")).toBeTruthy()
+    expect(within(workerRow("cloud-runner")).getByText("Last seen just now")).toBeTruthy()
+    expect(screen.queryByRole("list", { name: "Loading machines" })).toBeNull()
   })
 
   it("reads in Chinese", async () => {
     await i18n.changeLanguage("zh-CN")
     await renderDevices(seedWithSpare())
     expect(screen.getByRole("heading", { level: 1, name: "设备" })).toBeTruthy()
+    expect(screen.getByRole("heading", { level: 2, name: "机器" })).toBeTruthy()
+    expect(roleLabels(machineCard("devbox"))).toEqual(["设备", "工作节点"])
+    expect(shownNames(machineCard("erics-mbp.local"))).toEqual(["eric-mbp", "eric-mbp"])
+    expect(shownNames(machineCard("devbox"))).toEqual([null, null])
+    expect(rolesOf(machineCard("devbox"))).toEqual(["设备 devbox", "工作节点 devbox"])
     expect(row("devbox").getByText("在线")).toBeTruthy()
-    expect(row("devbox").getByText("daemon v0.1.0")).toBeTruthy()
+    expect(row("devbox").getByText("v0.1.0")).toBeTruthy()
+    expect(within(workerRow("devbox")).getByText("v0.1.0")).toBeTruthy()
+    expect(within(machineCard("devbox")).getByRole("button", { name: "设备 devbox 的操作" })).toBeTruthy()
+    expect(within(machineCard("devbox")).getByRole("button", { name: "工作节点 devbox 的操作" })).toBeTruthy()
     expect(row("eric-win").getByText("前天在线")).toBeTruthy()
     expect(row("spare").getByText("从未连接")).toBeTruthy()
+    const toggle = within(workerRow("devbox")).getByRole("switch", { name: "合入者" })
+    expect(document.getElementById(toggle.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "可以合入落后于 main 的 Ledger 改动集，并丢弃不是它开的改动集。",
+    )
   })
-
 })
 
 describe("the header's Add menu", () => {
@@ -262,71 +408,94 @@ describe("the header's Add menu", () => {
   })
 })
 
-describe("without devices", () => {
-  it("says so and offers to add one", async () => {
-    const state = seedState(NOW)
-    state.devices = []
-    await renderDevices(state)
-
-    expect(screen.getByText("No devices yet")).toBeTruthy()
-    // The empty state's button, besides the header's menu.
-    expect(screen.getAllByRole("button", { name: "Add device" })).toHaveLength(1)
-    expect(addMenuTrigger()).toBeTruthy()
-    // No admin CLI commands any more: adding is the dialog's job.
-    expect(document.querySelector("pre")).toBeNull()
-    expect(screen.queryByText(/enroll-token/)).toBeNull()
-    const empty = screen.getByText("No devices yet").closest("[data-slot=empty]") as HTMLElement
-    const add = within(empty).getByRole("button", { name: "Add device" })
-    fireEvent.click(add)
-    await advance(0)
-    const dialog = within(screen.getByRole("dialog", { name: "Add device" }))
-    expect(dialog.getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
-    await closeDialog()
-    expect(document.activeElement).toBe(add)
-  })
-
-  it("shows both empty states when there are no workers either, each adding its own role", async () => {
+describe("without machines", () => {
+  it("says so and offers to add a device or a worker", async () => {
     const state = seedState(NOW)
     state.devices = []
     state.workers = []
     await renderDevices(state)
-    expect(document.querySelectorAll("[data-slot=empty]")).toHaveLength(2)
-    const add = workersSection().getByRole("button", { name: "Add worker" })
-    fireEvent.click(add)
+
+    expect(screen.getByText("No machines yet")).toBeTruthy()
+    // One empty state, besides the header's menu.
+    expect(document.querySelectorAll("[data-slot=empty]")).toHaveLength(1)
+    expect(addMenuTrigger()).toBeTruthy()
+    // No admin CLI commands any more: adding is the dialog's job.
+    expect(document.querySelector("pre")).toBeNull()
+    expect(screen.queryByText(/enroll-token/)).toBeNull()
+    const empty = within(screen.getByText("No machines yet").closest<HTMLElement>("[data-slot=empty]")!)
+    expect(empty.getAllByRole("button").map((b) => b.textContent)).toEqual(["Add device", "Add worker"])
+
+    const addDevice = empty.getByRole("button", { name: "Add device" })
+    fireEvent.click(addDevice)
     await advance(0)
-    expect(within(screen.getByRole("dialog")).getByRole("radio", { name: /^Worker/ })).toHaveProperty("checked", true)
+    let dialog = within(screen.getByRole("dialog", { name: "Add device" }))
+    expect(dialog.getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
     await closeDialog()
-    expect(document.activeElement).toBe(add)
-    fireEvent.click(screen.getByRole("button", { name: "Add device" }))
+    expect(document.activeElement).toBe(addDevice)
+
+    const addWorker = empty.getByRole("button", { name: "Add worker" })
+    fireEvent.click(addWorker)
     await advance(0)
-    expect(within(screen.getByRole("dialog")).getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
+    dialog = within(screen.getByRole("dialog", { name: "Add worker" }))
+    expect(dialog.getByRole("radio", { name: /^Worker/ })).toHaveProperty("checked", true)
+    // Only chosen: the user can still pick another role. The title stays
+    // the one of the button pressed.
+    fireEvent.click(dialog.getByRole("radio", { name: /^Device/ }))
+    expect(dialog.getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
+    expect(screen.getByRole("dialog", { name: "Add worker" })).toBeTruthy()
+    await closeDialog()
+    expect(document.activeElement).toBe(addWorker)
+  })
+
+  it("lists the machines of the one role there is", async () => {
+    const state = seedState(NOW)
+    state.devices = []
+    await renderDevices(state)
+    expect(screen.queryByText("No machines yet")).toBeNull()
+    expect(machineNames()).toEqual(["cloud-runner", "devbox", "ERIC-WIN", "erics-mbp.local"])
+    expect(machineCards().map(rolesOf)).toEqual([
+      ["Worker cloud-runner"],
+      ["Worker devbox"],
+      ["Worker eric-win"],
+      ["Worker eric-mbp"],
+    ])
   })
 
   it("reads in Chinese", async () => {
     await i18n.changeLanguage("zh-CN")
     const state = seedState(NOW)
     state.devices = []
+    state.workers = []
     await renderDevices(state)
-    expect(screen.getByText("还没有设备")).toBeTruthy()
+    expect(screen.getByText("还没有机器")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "添加设备" }))
     await advance(0)
     expect(within(screen.getByRole("dialog")).getByRole("radio", { name: /^设备/ })).toHaveProperty("checked", true)
+    await closeDialog()
+    fireEvent.click(screen.getByRole("button", { name: "添加工作节点" }))
+    await advance(0)
+    expect(within(screen.getByRole("dialog", { name: "添加工作节点" })).getByRole("radio", { name: /^工作节点/ })).toHaveProperty(
+      "checked",
+      true,
+    )
   })
 })
 
-describe("when the list can't load", () => {
-  it("offers a retry", async () => {
-    const { restore } = await renderDevicesFailing(seedState(NOW))
-    expect(screen.getByText("Couldn't load devices.")).toBeTruthy()
+describe("when a list can't load", () => {
+  it.each(["listDevices", "listWorkers"] as const)("offers a retry (%s)", async (call) => {
+    const { restore } = await renderDevicesFailing(seedState(NOW), call)
+    expect(screen.getByText("Couldn't load machines.")).toBeTruthy()
+    expect(screen.queryByRole("listitem", { name: "devbox" })).toBeNull()
     restore()
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
     await advance(50)
+    expect(rolesOf(machineCard("devbox"))).toEqual(["Device devbox", "Worker devbox"])
     expect(row("devbox").getByText("Online")).toBeTruthy()
   })
 })
 
-/** Renders the page while listDevices fails; `restore` makes it work again. */
-async function renderDevicesFailing(state: MockState) {
+/** Renders the page while `call` fails; `restore` makes it work again. */
+async function renderDevicesFailing(state: MockState, call: "listDevices" | "listWorkers") {
   const router = createMemoryRouter(
     [
       {
@@ -347,8 +516,7 @@ async function renderDevicesFailing(state: MockState) {
       ...client,
       machines: {
         ...client.machines,
-        listDevices: () =>
-          failing ? Promise.reject(new Error("boom")) : client.machines.listDevices(),
+        [call]: () => (failing ? Promise.reject(new Error("boom")) : client.machines[call]()),
       },
     }),
   })
@@ -360,99 +528,6 @@ async function renderDevicesFailing(state: MockState) {
     },
   }
 }
-
-describe("the worker list", () => {
-  const workers = () => within(screen.getByRole("region", { name: "Workers" }))
-  const workerRow = (name: string) => within(workers().getByText(name, { selector: "span.font-medium" }).closest("li")!)
-
-  it("lists workers with status, version and the devices on the same machine", async () => {
-    await renderDevices(seedState(NOW))
-    const names = workers()
-      .getAllByText(/./, { selector: "span.font-medium" })
-      .map((e) => e.textContent)
-    expect(names).toEqual(["cloud-runner", "devbox", "eric-mbp", "eric-win"])
-    expect(workerRow("devbox").getByText("Online")).toBeTruthy()
-    expect(workerRow("devbox").getByText("worker v0.1.0")).toBeTruthy()
-    expect(workerRow("devbox").getByText("linux/amd64")).toBeTruthy()
-    const same = workerRow("devbox").getByRole("list", { name: "Devices on the same machine as devbox" })
-    expect(within(same).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["devbox"])
-    expect(workerRow("cloud-runner").queryByRole("list", { name: /^Devices on the same machine/ })).toBeNull()
-    expect(workerRow("eric-win").getByText("Last seen 2d ago")).toBeTruthy()
-    // Each worker's Claude Code is installed: uninstalling it is all there is
-    // to do, besides each row's actions menu.
-    const labels = workers().getAllByRole("button").map((b) => b.getAttribute("aria-label"))
-    expect(labels.filter((l) => l?.startsWith("Actions for "))).toEqual([
-      "Actions for cloud-runner",
-      "Actions for devbox",
-      "Actions for eric-mbp",
-      "Actions for eric-win",
-    ])
-    // The online workers that run as the installed service are offered their
-    // machine's update; devbox's runs in the foreground (see the machine update tests).
-    expect(labels.filter((l) => l?.startsWith("Update the machine of "))).toEqual([
-      "Update the machine of cloud-runner to v0.2.0",
-      "Update the machine of eric-mbp to v0.2.0",
-    ])
-    expect(labels.filter((l) => !l?.startsWith("Actions for ") && !l?.startsWith("Update the machine of "))).toEqual([
-      "Uninstall Claude Code from cloud-runner",
-      "Uninstall Claude Code from devbox",
-      "Uninstall Claude Code from eric-mbp",
-      "Uninstall Claude Code from eric-win",
-    ])
-  })
-
-  it("says when there are none, and offers to add one with the worker role chosen", async () => {
-    const state = seedState(NOW)
-    state.workers = []
-    await renderDevices(state)
-    const empty = workersSection().getByText("No workers yet").closest("[data-slot=empty]") as HTMLElement
-    expect(empty.className).toContain("border-dashed")
-    const add = within(empty).getByRole("button", { name: "Add worker" })
-    fireEvent.click(add)
-    await advance(0)
-    const dialog = within(screen.getByRole("dialog", { name: "Add worker" }))
-    expect(dialog.getByRole("radio", { name: /^Worker/ })).toHaveProperty("checked", true)
-    expect(dialog.getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", false)
-    // Only chosen: the user can still pick another role. The title stays
-    // the one of the button pressed.
-    fireEvent.click(dialog.getByRole("radio", { name: /^Device/ }))
-    expect(dialog.getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
-    expect(screen.getByRole("dialog", { name: "Add worker" })).toBeTruthy()
-    await closeDialog()
-    expect(document.activeElement).toBe(add)
-
-    // The header's Add device still opens it for a device.
-    await chooseAdd("Add device")
-    expect(within(screen.getByRole("dialog")).getByRole("radio", { name: /^Device/ })).toHaveProperty("checked", true)
-    await closeDialog()
-    expect(document.activeElement).toBe(addMenuTrigger())
-  })
-
-  it("says when there are none in Chinese", async () => {
-    await i18n.changeLanguage("zh-CN")
-    const state = seedState(NOW)
-    state.workers = []
-    await renderDevices(state)
-    expect(workersSection().getByText("还没有工作节点")).toBeTruthy()
-    fireEvent.click(workersSection().getByRole("button", { name: "添加工作节点" }))
-    await advance(0)
-    const dialog = within(screen.getByRole("dialog", { name: "添加工作节点" }))
-    expect(dialog.getByRole("radio", { name: /^工作节点/ })).toHaveProperty("checked", true)
-  })
-
-  it("reads in Chinese", async () => {
-    await i18n.changeLanguage("zh-CN")
-    await renderDevices(seedState(NOW))
-    const section = within(screen.getByRole("region", { name: "工作节点" }))
-    expect(section.getByRole("list", { name: "与 devbox 在同一台机器上的设备" })).toBeTruthy()
-    const toggle = within(section.getByText("devbox", { selector: "span.font-medium" }).closest("li")!).getByRole("switch", {
-      name: "合入者",
-    })
-    expect(document.getElementById(toggle.getAttribute("aria-describedby")!)?.textContent).toBe(
-      "可以合入落后于 main 的 Ledger 改动集，并丢弃不是它开的改动集。",
-    )
-  })
-})
 
 /** A promise settled from outside. */
 function deferred<T>() {
@@ -466,11 +541,8 @@ function deferred<T>() {
 }
 
 describe("the integrator switch", () => {
-  const workers = () => within(screen.getByRole("region", { name: "Workers" }))
-  const toggleOf = (name: string) =>
-    within(workers().getByText(name, { selector: "span.font-medium" }).closest("li")!).getByRole("switch", {
-      name: "Integrator",
-    })
+  const workers = () => within(machinesSection())
+  const toggleOf = (name: string) => within(workerRow(name)).getByRole("switch", { name: "Integrator" })
   const isOn = (name: string) => toggleOf(name).getAttribute("aria-checked") === "true"
 
   type Grant = { workerId: string; integrator: boolean }
@@ -611,11 +683,10 @@ describe("the integrator switch", () => {
   it("says so in Chinese", async () => {
     await i18n.changeLanguage("zh-CN")
     const { fail } = await renderHeld()
-    const section = within(screen.getByRole("region", { name: "工作节点" }))
-    fireEvent.click(within(section.getByText("devbox", { selector: "span.font-medium" }).closest("li")!).getByRole("switch"))
+    fireEvent.click(within(workerRow("devbox")).getByRole("switch"))
     await advance(0)
     await fail(new ApiError("unavailable", "down"))
-    expect(section.getByRole("alert").textContent).toBe("无法更改合入者设置，请重试。")
+    expect(within(workerRow("devbox")).getByRole("alert").textContent).toBe("无法更改合入者设置，请重试。")
   })
 
   it("drops a worker that is gone, with a notice that outlives its row", async () => {
@@ -624,7 +695,9 @@ describe("the integrator switch", () => {
     await advance(0)
     state.workers = state.workers.filter((w) => w.workerId !== "worker-devbox")
     await release()
-    expect(workers().queryByText("devbox", { selector: "span.font-medium" })).toBeNull()
+    // The machine's card keeps its device.
+    expect(screen.queryByRole("listitem", { name: "Worker devbox" })).toBeNull()
+    expect(rolesOf(machineCard("devbox"))).toEqual(["Device devbox"])
     expect(isOn("cloud-runner")).toBe(true)
     expect(workers().queryByRole("alert")).toBeNull()
     expect(screen.getByText("Worker devbox no longer exists")).toBeTruthy()
@@ -828,9 +901,8 @@ describe("the integrator switch", () => {
 })
 
 describe("deleting", () => {
-  const openDelete = async (kind: "devices" | "workers", name: string) => {
-    const list = document.querySelector<HTMLElement>(`section[aria-labelledby="${kind}-heading"]`)!
-    fireEvent.pointerDown(within(list).getByRole("button", { name: `Actions for ${name}` }), { button: 0, ctrlKey: false })
+  const openDelete = async (kind: "device" | "worker", name: string) => {
+    fireEvent.pointerDown(screen.getByRole("button", { name: `Actions for ${kind} ${name}` }), { button: 0, ctrlKey: false })
     await advance(0)
     fireEvent.click(screen.getByRole("menuitem", { name: "Delete…" }))
     await advance(0)
@@ -841,7 +913,7 @@ describe("deleting", () => {
     const providers = () => within(document.getElementById("providers")!)
     const anthropic = () => within(providers().getByText("Anthropic", { selector: "span.font-medium" }).closest("li")!)
     expect(anthropic().getAllByRole("listitem").map((li) => li.textContent)).toEqual(["cloud-runner", "devbox", "eric-mbp"])
-    await openDelete("workers", "devbox")
+    await openDelete("worker", "devbox")
     fireEvent.click(screen.getByRole("button", { name: "Delete" }))
     await advance(50)
     expect(anthropic().getAllByRole("listitem").map((li) => li.textContent)).toEqual(["cloud-runner", "eric-mbp"])
@@ -849,7 +921,7 @@ describe("deleting", () => {
 
   it("confirms with what deleting a device does, then deletes it", async () => {
     const { state } = await renderDevices(seedState(NOW))
-    await openDelete("devices", "eric-win")
+    await openDelete("device", "eric-win")
     const dialog = within(screen.getByRole("dialog", { name: "Delete device eric-win?" }))
     expect(dialog.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "Its credential is revoked, and its connection, if any, is closed.",
@@ -864,14 +936,16 @@ describe("deleting", () => {
     await advance(50)
     expect(screen.queryByRole("dialog")).toBeNull()
     expect(state.devices.some((d) => d.name === "eric-win")).toBe(false)
-    expect(within(screen.getAllByRole("list")[0]).queryByText("eric-win", { selector: "span" })).toBeNull()
-    // The worker of the same name stays.
+    // The card keeps the worker of the machine, and its name: the worker
+    // reported the same hostname.
     expect(state.workers.some((w) => w.name === "eric-win")).toBe(true)
+    expect(rolesOf(machineCard("ERIC-WIN"))).toEqual(["Worker eric-win"])
+    expect(screen.queryByRole("listitem", { name: "Device eric-win" })).toBeNull()
   })
 
   it("warns when it is online, and says how deleting a worker differs", async () => {
     const { state } = await renderDevices(seedState(NOW))
-    await openDelete("workers", "devbox")
+    await openDelete("worker", "devbox")
     const dialog = within(screen.getByRole("dialog", { name: "Delete worker devbox?" }))
     expect(dialog.getByText("devbox is online: it is disconnected at once, and sessions running on it fail.")).toBeTruthy()
     expect(dialog.getByText("It leaves every model provider it is assigned to, and loses its Integrator grant.")).toBeTruthy()
@@ -890,7 +964,7 @@ describe("deleting", () => {
       calls++
       return deleteDevice(req)
     }
-    await openDelete("devices", "eric-win")
+    await openDelete("device", "eric-win")
     state.devices = state.devices.filter((d) => d.name !== "eric-win")
     const confirm = screen.getByRole("button", { name: "Delete" })
     // Enter, Space and a click while the first is under way.
@@ -901,13 +975,21 @@ describe("deleting", () => {
     expect(calls).toBe(1)
     // not_found: it is gone, as asked; the dialog closes.
     expect(screen.queryByRole("dialog")).toBeNull()
-    expect(within(screen.getAllByRole("list")[0]).queryByText("eric-win", { selector: "span" })).toBeNull()
+    expect(rolesOf(machineCard("ERIC-WIN"))).toEqual(["Worker eric-win"])
   })
 
-  it("returns focus to the row's menu after Cancel, and to Add once the row is gone", async () => {
+  it("takes the card away with the machine's last role", async () => {
+    const { state } = await renderDevices(seedState(NOW))
+    await openDelete("device", "palace-builder")
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await advance(50)
+    expect(state.devices.some((d) => d.name === "palace-builder")).toBe(false)
+    expect(machineNames()).toEqual(["cloud-runner", "devbox", "ERIC-WIN", "erics-mbp.local"])
+  })
+
+  it("returns focus to the row's menu after Cancel, and to the card's other row once the row is gone", async () => {
     await renderDevices(seedState(NOW))
-    const list = () => document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
-    const trigger = () => within(list()).getByRole("button", { name: "Actions for eric-win" })
+    const trigger = () => screen.getByRole("button", { name: "Actions for device eric-win" })
     const openMenu = async () => {
       fireEvent.pointerDown(trigger(), { button: 0, ctrlKey: false })
       await advance(0)
@@ -926,14 +1008,34 @@ describe("deleting", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }))
     await advance(300)
     expect(screen.queryByRole("dialog")).toBeNull()
+    // The card stays with the machine's worker: focus goes to its menu.
+    expect(rolesOf(machineCard("ERIC-WIN"))).toEqual(["Worker eric-win"])
+    expect(document.activeElement).toBe(within(workerRow("eric-win")).getByRole("button", { name: "Actions for worker eric-win" }))
+  })
+
+  it("returns focus to Add once the card is gone with the machine's last row", async () => {
+    await renderDevices(seedState(NOW))
+    await openDelete("device", "palace-builder")
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await advance(300)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(machineNames()).not.toContain("palace-builder")
     expect(document.activeElement).toBe(addMenuTrigger())
+  })
+
+  it("returns focus to the device's menu once the worker of its card is deleted", async () => {
+    await renderDevices(seedState(NOW))
+    await openDelete("worker", "devbox")
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await advance(300)
+    expect(rolesOf(machineCard("devbox"))).toEqual(["Device devbox"])
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Actions for device devbox" }))
   })
 
   it("reads in Chinese", async () => {
     await i18n.changeLanguage("zh-CN")
     await renderDevices(seedState(NOW))
-    const list = document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
-    fireEvent.pointerDown(within(list).getByRole("button", { name: "devbox 的操作" }), { button: 0, ctrlKey: false })
+    fireEvent.pointerDown(screen.getByRole("button", { name: "设备 devbox 的操作" }), { button: 0, ctrlKey: false })
     await advance(0)
     fireEvent.click(screen.getByRole("menuitem", { name: "删除…" }))
     await advance(0)

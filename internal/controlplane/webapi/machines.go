@@ -47,6 +47,7 @@ func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[circusv1.L
 			Name: d.Name, Online: online[d.ID], LastSeenUnixMs: lastSeen,
 			Os: d.OS, Arch: d.Arch, Version: d.ClientVersion, DeviceId: d.ID,
 			UpdateVersion: s.offer(d, mach), Update: machineUpdateProto(mach.Update),
+			MachineKey: d.MachineID, Hostname: d.Hostname,
 		})
 	}
 	return connect.NewResponse(out), nil
@@ -197,6 +198,7 @@ func (s *Service) workerMessage(w store.Identity, online bool, byMachine map[str
 		WorkerId: w.ID, Name: w.Name, Online: online, LastSeenUnixMs: lastSeen,
 		Os: w.OS, Arch: w.Arch, Hostname: w.Hostname, Version: w.ClientVersion, LocalDevices: local,
 		Integrator: w.Integrator, UpdateVersion: s.offer(w, mach), Update: machineUpdateProto(mach.Update),
+		MachineKey: w.MachineID,
 	}
 	for _, a := range agents {
 		out.Agents = append(out.Agents, sessions.WorkerAgentProto(a))

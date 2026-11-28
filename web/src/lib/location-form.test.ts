@@ -35,6 +35,8 @@ const device = (name: string, os: string, online = true): Device => ({
   version: "0.1.0",
   updateVersion: "",
   lastSeenUnixMs: 0,
+  hostname: "",
+  machineKey: `machine-${name}`,
 })
 const devices = [device("win", "windows", false), device("mac", "darwin"), device("box", "linux")]
 const row = (key: string, d: string, path: string): LocationRow => ({ key, device: d, path })

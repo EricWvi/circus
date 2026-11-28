@@ -187,6 +187,7 @@ describe("listWorkers", () => {
             hostname: "devbox.lan",
             version: "0.2.0",
             localDevices: ["devbox"],
+            machineKey: "m1",
             integrator: true,
             agents: [
               {
@@ -217,6 +218,7 @@ describe("listWorkers", () => {
         hostname: "devbox.lan",
         version: "0.2.0",
         localDevices: ["devbox"],
+        machineKey: "m1",
         integrator: true,
         updateVersion: "",
         agents: [

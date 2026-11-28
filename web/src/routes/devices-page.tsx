@@ -1,14 +1,5 @@
-import {
-  ChevronDownIcon,
-  EllipsisIcon,
-  FolderIcon,
-  InfoIcon,
-  MonitorIcon,
-  MonitorSmartphoneIcon,
-  PlusIcon,
-  ServerIcon,
-} from "lucide-react"
-import { memo, useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react"
+import { ChevronDownIcon, EllipsisIcon, FolderIcon, InfoIcon, MonitorSmartphoneIcon, PlusIcon } from "lucide-react"
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation } from "react-router"
 
@@ -19,6 +10,7 @@ import {
   useSetWorkerGrant,
   useWorkerGrantStates,
   useWorkers,
+  type MachineUpdateTarget,
 } from "@/api/hooks"
 import { isApiError } from "@/api/errors"
 import type { Device, EnrollRole, Project, Worker } from "@/api/types"
@@ -50,17 +42,19 @@ import { Switch } from "@/components/ui/switch"
 import { useMenuFocus } from "@/hooks/use-menu-focus"
 import { useReturnFocus } from "@/hooks/use-return-focus"
 import { i18n } from "@/i18n/i18n"
+import { groupMachines, type Machine } from "@/lib/machines"
 import { formatDateTime, formatTimeAgo } from "@/lib/time"
 import { projectPath } from "@/lib/tree"
 import { cn } from "@/lib/utils"
 
 /**
- * The signed-in user's devices (status, platform, and the projects on each),
- * then their workers, then their model providers (`#providers`).
+ * The signed-in user's machines, one card each with its device (status,
+ * version, and the projects on it) and its worker (status, version, agents
+ * and integrator grant), then their model providers (`#providers`).
  */
 export function DevicesPage() {
   const { t } = useTranslation()
-  // Only the list itself (in DevicesSection) follows each status poll; the
+  // Only the list itself (in MachinesSection) follows each status poll; the
   // page renders again only when the devices change.
   const devices = useDevices({ live: true })
   const [adding, setAdding] = useState(false)
@@ -70,8 +64,7 @@ export function DevicesPage() {
   const [rejoin, setRejoin] = useState<RejoinTarget | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState<DeleteTarget | null>(null)
-  // The role an Add opens the add dialog with: the workers' empty state
-  // asks for a worker, the other Add buttons for a device.
+  // The role an Add opens the add dialog with.
   const [addRole, setAddRole] = useState<EnrollRole>("daemon")
   // The header's Add menu trigger, where focus goes once a dialog's opener is gone.
   const addRef = useRef<HTMLButtonElement>(null)
@@ -79,13 +72,19 @@ export function DevicesPage() {
   const providersRef = useRef<ProvidersSectionHandle>(null)
   // Where focus goes when a dialog closes: the button that opened it (an
   // Add, or a row's menu); once that is gone, the menu of the row now under
-  // its name (a rejoin's new identity), else (deleted, or the empty state
-  // left) the Add button.
+  // its name (a rejoin's new identity), else the menu of another row of the
+  // card a deleted row was on, else (the card went with it, or the empty
+  // state left) the Add button.
   const dialogFocus = useReturnFocus()
   const focusRow = useRef<RejoinTarget | null>(null)
+  // The card and the menu of the row a row's action was opened from, and,
+  // once that row is deleted, the same for the deleted row.
+  const actionFrom = useRef<RowOrigin | null>(null)
+  const deletedFrom = useRef<RowOrigin | null>(null)
   const onAdd = useCallback((role: EnrollRole, trigger: HTMLElement | null) => {
     dialogFocus.opened(trigger)
     focusRow.current = null
+    deletedFrom.current = null
     setRejoin(null)
     setAddRole(role)
     setAdding(true)
@@ -94,6 +93,8 @@ export function DevicesPage() {
   const onAction = useCallback((action: RowAction) => {
     dialogFocus.opened(action.trigger)
     focusRow.current = action.target
+    actionFrom.current = { card: action.trigger?.closest("[data-machine-card]") ?? null, trigger: action.trigger }
+    deletedFrom.current = null
     if (action.kind === "rejoin") {
       setRejoin(action.target)
       setAdding(true)
@@ -105,13 +106,16 @@ export function DevicesPage() {
   const closeAutoFocus = useCallback(
     (event: Event) => {
       const row = focusRow.current
-      dialogFocus.restore(event, () => (row && rowTrigger(row)) || addRef.current)
+      const from = deletedFrom.current
+      deletedFrom.current = null
+      dialogFocus.restore(event, () => (row && rowTrigger(row)) || (from && otherRowTrigger(from)) || addRef.current)
       setRejoin(null)
       setDeleting(null)
     },
     [dialogFocus],
   )
   const onDeleted = useCallback(() => {
+    deletedFrom.current = actionFrom.current
     dialogFocus.forget()
     focusRow.current = null
   }, [dialogFocus])
@@ -135,8 +139,7 @@ export function DevicesPage() {
       </PageHeader>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-4 py-8">
-          <DevicesSection onAdd={onAdd} onAction={onAction} />
-          <WorkersSection onAdd={onAdd} onAction={onAction} />
+          <MachinesSection onAdd={onAdd} onAction={onAction} />
           <ProvidersSection ref={providersRef} onAddWorker={onAddWorker} fallbackFocus={addTrigger} />
         </div>
       </div>
@@ -197,11 +200,12 @@ function ScrollToHash() {
 }
 
 /**
- * The devices, kept fresh. Memoized, like WorkersSection: a status poll
- * renders this section (its last seen times move) and not the page.
- * `onAdd` opens the add dialog for a device.
+ * The user's machines, kept fresh: one card for each, with a row for its
+ * device and one for its worker. Memoized: a status poll renders this
+ * section (its last seen times move) and not the page. `onAdd` opens the
+ * add dialog.
  */
-const DevicesSection = memo(function DevicesSection({
+const MachinesSection = memo(function MachinesSection({
   onAdd,
   onAction,
 }: {
@@ -210,35 +214,48 @@ const DevicesSection = memo(function DevicesSection({
 }) {
   const { t } = useTranslation()
   const devices = useDevices({ live: true })
+  const workers = useWorkers({ live: true })
   const projects = useProjects()
+  // The lists keep their objects across refetches that change nothing, and so does this.
+  const machines = useMemo(
+    () => (devices.data && workers.data ? groupMachines(devices.data, workers.data) : undefined),
+    [devices.data, workers.data],
+  )
 
   let body
   // Only a failed first load shows the error; a failed refetch keeps the list.
-  if (devices.isError && !devices.data) {
+  if ((devices.isError && !devices.data) || (workers.isError && !workers.data)) {
     body = (
       <div className="flex flex-col items-center gap-4 py-12">
         <p className="text-sm text-muted-foreground">{t("devices.loadFailed")}</p>
-        <Button variant="outline" onClick={() => void devices.refetch()}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            if (!devices.data) void devices.refetch()
+            if (!workers.data) void workers.refetch()
+          }}
+        >
           {t("common.tryAgain")}
         </Button>
       </div>
     )
-  } else if (!devices.data) {
+  } else if (!machines) {
     body = <LoadingList />
-  } else if (devices.data.length === 0) {
-    body = <NoDevices onAdd={(trigger) => onAdd("daemon", trigger)} />
+  } else if (machines.length === 0) {
+    body = <NoMachines onAdd={onAdd} />
   } else {
     body = (
-      <ul className="flex flex-col divide-y border">
-        {devices.data.map((device) => (
-          <DeviceRow
-            key={device.deviceId}
-            device={device}
-            onAction={onAction}
+      <ul className="flex flex-col gap-3">
+        {machines.map((m) => (
+          <MachineCard
+            key={m.key}
+            machine={m}
             projects={projects.data}
+            onAction={onAction}
             // Relative times count from the last fetch, so each refetch
             // (every few seconds) also moves "last seen" along.
-            lastSeen={lastSeenAgo(device, devices.dataUpdatedAt)}
+            devicesAt={devices.dataUpdatedAt}
+            workersAt={workers.dataUpdatedAt}
           />
         ))}
       </ul>
@@ -246,14 +263,88 @@ const DevicesSection = memo(function DevicesSection({
   }
 
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="devices-heading">
-      <h2 id="devices-heading" className="text-sm font-medium">
-        {t("devices.devicesHeading")}
+    <section className="flex flex-col gap-3" aria-labelledby="machines-heading">
+      <h2 id="machines-heading" className="text-sm font-medium">
+        {t("devices.machinesHeading")}
       </h2>
       {body}
     </section>
   )
 })
+
+/**
+ * A machine's card: its name, platform and update, then a row for each of
+ * its roles. `devicesAt` and `workersAt` are when each list was fetched,
+ * which relative times count from.
+ */
+function MachineCard({
+  machine,
+  projects,
+  onAction,
+  devicesAt,
+  workersAt,
+}: {
+  machine: Machine
+  projects: Project[] | undefined
+  onAction: (action: RowAction) => void
+  devicesAt: number
+  workersAt: number
+}) {
+  const nameId = useId()
+  const roles = [...machine.devices, ...machine.workers]
+  const { platform } = machine
+  const aligned = machine.devices.length > 0 && machine.workers.length > 0
+  // The update is offered on the machine when a role offers it (the
+  // device first); otherwise the card shows the machine's update, if any.
+  const offering = machine.devices.find((d) => d.updateVersion) ?? machine.workers.find((w) => w.updateVersion)
+  const pressed = offering ?? roles[0]
+  const target: MachineUpdateTarget =
+    "deviceId" in pressed
+      ? { kind: "device", deviceId: pressed.deviceId, name: pressed.name, machine: machine.name }
+      : { kind: "worker", workerId: pressed.workerId, name: pressed.name, machine: machine.name }
+  return (
+    <li data-machine-card aria-labelledby={nameId} className="flex min-w-0 flex-col border">
+      <div className="flex min-w-0 flex-col gap-1.5 px-4 pt-3 pb-2 sm:flex-row sm:items-center sm:gap-3">
+        <p className="flex min-w-0 flex-1 items-baseline gap-x-3">
+          <span id={nameId} className="truncate text-sm font-medium">
+            {machine.name}
+          </span>
+          {platform && <span className="shrink-0 text-xs text-muted-foreground">{platform}</span>}
+        </p>
+        {/* Mounted while it shows nothing too: it keeps its live region and focus (see MachineUpdateAction). */}
+        <MachineUpdateAction
+          target={target}
+          updateVersion={offering?.updateVersion ?? ""}
+          update={roles.find((r) => r.update)?.update}
+        />
+      </div>
+      <ul className="flex min-w-0 flex-col">
+        {machine.devices.map((d) => (
+          <DeviceRow
+            key={d.deviceId}
+            device={d}
+            onAction={onAction}
+            machine={machine.name}
+            aligned={aligned}
+            projects={projects}
+            lastSeen={lastSeenAgo(d, devicesAt)}
+          />
+        ))}
+        {machine.workers.map((w) => (
+          <WorkerRow
+            key={w.workerId}
+            worker={w}
+            machine={machine.name}
+            aligned={aligned}
+            onAction={onAction}
+            lastSeen={lastSeenAgo(w, workersAt)}
+            reportedAgo={agentsReportedAgo(w, workersAt)}
+          />
+        ))}
+      </ul>
+    </li>
+  )
+}
 
 /**
  * The projects with a location on the device, in the list's order (by
@@ -266,9 +357,6 @@ function projectsOn(device: Device, projects: Project[] | undefined): Project[] 
   )
 }
 
-/** "linux/amd64", or whichever half is known. */
-const platformOf = (device: Device) => [device.os, device.arch].filter(Boolean).join("/")
-
 /**
  * How long ago an offline device or worker was last seen, as of `now`; none
  * when it is online or never connected.
@@ -277,50 +365,131 @@ function lastSeenAgo(device: Pick<Device, "online" | "lastSeenUnixMs">, now: num
   return device.online || device.lastSeenUnixMs === 0 ? undefined : formatTimeAgo(device.lastSeenUnixMs, now)
 }
 
+/** Whether a role's name is the machine's, ignoring case: the row then leaves it out. */
+const sameName = (name: string, machine: string) => name.toLowerCase() === machine.toLowerCase()
+
 /**
- * Memoized, like WorkerRow: the list refetches every few seconds, mostly
+ * The first line of a role's row: its status, role, name (left out when
+ * it is the machine's, which the card's header shows) and version, its
+ * link state and its menu, in the row's grid. The row's own label and the
+ * menu's always name it. On a narrow screen the version wraps under the
+ * name; every line is 20px high, and the dot, the link state and the menu
+ * stay on the first one.
+ */
+function RoleHeader({
+  kind,
+  id,
+  name,
+  machine,
+  aligned,
+  version,
+  role,
+  lastSeen,
+  onAction,
+}: {
+  kind: "device" | "worker"
+  id: string
+  name: string
+  /** The card's name. */
+  machine: string
+  /** The card has rows of both kinds, whose labels line up. */
+  aligned: boolean
+  version: string
+  role: Pick<Device, "online" | "lastSeenUnixMs">
+  lastSeen: string | undefined
+  onAction: (action: RowAction) => void
+}) {
+  const { t } = useTranslation()
+  const deviceLabel = t("devices.roles.device")
+  const workerLabel = t("devices.roles.worker")
+  const [label, otherLabel] = kind === "device" ? [deviceLabel, workerLabel] : [workerLabel, deviceLabel]
+  return (
+    <>
+      <span className={firstLine}>
+        <DeviceStatusDot online={role.online} />
+      </span>
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+        {/* The role and the name stay on one line; the version wraps first. */}
+        <span className="flex max-w-full min-w-0 items-baseline gap-x-2">
+          {/*
+           * On a card with both kinds of rows, both labels in one cell, the
+           * other one invisible: the cell is as wide as the longer one in
+           * this language, so the rows line up.
+           */}
+          <span className="grid shrink-0 text-xs leading-5 text-muted-foreground">
+            <span data-role-label className="col-start-1 row-start-1">
+              {label}
+            </span>
+            {aligned && (
+              <span aria-hidden className="invisible col-start-1 row-start-1">
+                {otherLabel}
+              </span>
+            )}
+          </span>
+          {!sameName(name, machine) && (
+            <span data-role-name className="min-w-0 truncate text-sm">
+              {name}
+            </span>
+          )}
+        </span>
+        {/* The version alone: the label says whose (daemon or worker). */}
+        {version && <span className="text-xs leading-5 whitespace-nowrap text-muted-foreground">{version}</span>}
+      </span>
+      <span className={cn(firstLine, "justify-end")}>
+        <LinkState device={role} lastSeen={lastSeen} />
+      </span>
+      <span className={firstLine}>
+        <RowMenu kind={kind} id={id} name={name} online={role.online} onAction={onAction} />
+      </span>
+    </>
+  )
+}
+
+/** A role row's classes: a grid of the status dot, the name, the link state and the menu, then what spans the last three. */
+const roleRow = "grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-start gap-x-3 gap-y-1.5 border-t px-4 py-2.5"
+
+/** A cell that keeps to the first line of a role's row (its lines are 20px high). */
+const firstLine = "flex h-5 items-center"
+
+/**
+ * Memoized, like WorkerRow: the lists refetch every few seconds, mostly
  * unchanged. The rows take the time since last seen as its text and the
  * query's data as it is (both stay the same between refetches that change
  * nothing), so such a refetch renders none of them.
  */
 const DeviceRow = memo(function DeviceRow({
   device,
+  machine,
+  aligned,
   projects: allProjects,
   lastSeen,
   onAction,
 }: {
   device: Device
+  /** The card's name; the row leaves out the device's name when it is the same. */
+  machine: string
+  /** As RoleHeader's. */
+  aligned: boolean
   onAction: (action: RowAction) => void
   /** All the user's projects; the row shows those on its device. */
   projects: Project[] | undefined
   lastSeen: string | undefined
 }) {
   const { t } = useTranslation()
-  const platform = platformOf(device)
   const projects = projectsOn(device, allProjects)
   return (
-    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
-      <DeviceStatusDot online={device.online} />
-      <span className="truncate text-sm font-medium">{device.name}</span>
-      <HeaderEnd
-        showUpdate={Boolean(device.updateVersion || device.update)}
-        update={
-          <MachineUpdateAction
-            target={{ kind: "device", deviceId: device.deviceId, name: device.name }}
-            updateVersion={device.updateVersion}
-            update={device.update}
-          />
-        }
-      >
-        <LinkState device={device} lastSeen={lastSeen} />
-      </HeaderEnd>
-      <RowMenu kind="device" id={device.deviceId} name={device.name} online={device.online} onAction={onAction} />
-      {(platform || device.version) && (
-        <p className="col-span-3 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
-          {platform && <span>{platform}</span>}
-          {device.version && <span>{t("devices.daemonVersion", { version: device.version })}</span>}
-        </p>
-      )}
+    <li data-role-row="device" aria-label={t("devices.roleRow.device", { name: device.name })} className={roleRow}>
+      <RoleHeader
+        kind="device"
+        id={device.deviceId}
+        name={device.name}
+        machine={machine}
+        aligned={aligned}
+        version={device.version}
+        role={device}
+        lastSeen={lastSeen}
+        onAction={onAction}
+      />
       {projects.length > 0 && (
         <ul
           aria-label={t("devices.projectsOn", { device: device.name })}
@@ -343,66 +512,6 @@ const DeviceRow = memo(function DeviceRow({
   )
 })
 
-/** The user's workers: status, version, the devices on the same machine, their agents, and the integrator grant. */
-const WorkersSection = memo(function WorkersSection({
-  onAdd,
-  onAction,
-}: {
-  onAdd: AddHandler
-  onAction: (action: RowAction) => void
-}) {
-  const { t } = useTranslation()
-  // Here rather than in the page, so a refetch renders only this section.
-  const workers = useWorkers({ live: true })
-  let body
-  if (workers.isError && !workers.data) {
-    body = (
-      <div className="flex items-center gap-3">
-        <p className="text-sm text-muted-foreground">{t("devices.workersLoadFailed")}</p>
-        <Button variant="outline" size="sm" onClick={() => void workers.refetch()}>
-          {t("common.tryAgain")}
-        </Button>
-      </div>
-    )
-  } else if (!workers.data) {
-    body = (
-      <ul aria-busy="true" aria-label={t("devices.workersLoading")} className="flex flex-col divide-y border">
-        <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-3.5">
-          <Skeleton className="size-2.5 rounded-full" />
-          <Skeleton className="h-3.5 w-32" />
-          <Skeleton className="h-3 w-14" />
-        </li>
-      </ul>
-    )
-  } else if (workers.data.length === 0) {
-    body = <NoWorkers onAdd={(trigger) => onAdd("worker", trigger)} />
-  } else {
-    body = (
-      <ul className="flex flex-col divide-y border">
-        {workers.data.map((w) => (
-          <WorkerRow
-            key={w.workerId}
-            worker={w}
-            onAction={onAction}
-            lastSeen={lastSeenAgo(w, workers.dataUpdatedAt)}
-            reportedAgo={agentsReportedAgo(w, workers.dataUpdatedAt)}
-          />
-        ))}
-      </ul>
-    )
-  }
-  return (
-    <section className="flex flex-col gap-3" aria-labelledby="workers-heading">
-      <div className="flex flex-col gap-1">
-        <h2 id="workers-heading" className="text-sm font-medium">
-          {t("devices.workersHeading")}
-        </h2>
-      </div>
-      {body}
-    </section>
-  )
-})
-
 /**
  * How long ago an offline worker last reported its agents, as of `now`;
  * none when it is online (its report is current) or never reported. A
@@ -416,55 +525,34 @@ function agentsReportedAgo(worker: Worker, now: number): string | undefined {
 /** Memoized, like DeviceRow; `reportedAgo` is from agentsReportedAgo. */
 const WorkerRow = memo(function WorkerRow({
   worker,
+  machine,
+  aligned,
   lastSeen,
   reportedAgo,
   onAction,
 }: {
   worker: Worker
+  /** As DeviceRow's. */
+  machine: string
+  aligned: boolean
   onAction: (action: RowAction) => void
   lastSeen: string | undefined
   reportedAgo: string | undefined
 }) {
   const { t } = useTranslation()
-  const platform = [worker.os, worker.arch].filter(Boolean).join("/")
   return (
-    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
-      <DeviceStatusDot online={worker.online} />
-      <span className="truncate text-sm font-medium">{worker.name}</span>
-      <HeaderEnd
-        showUpdate={Boolean(worker.updateVersion || worker.update)}
-        update={
-          <MachineUpdateAction
-            target={{ kind: "worker", workerId: worker.workerId, name: worker.name }}
-            updateVersion={worker.updateVersion}
-            update={worker.update}
-          />
-        }
-      >
-        <LinkState device={worker} lastSeen={lastSeen} />
-      </HeaderEnd>
-      <RowMenu kind="worker" id={worker.workerId} name={worker.name} online={worker.online} onAction={onAction} />
-      {(platform || worker.version) && (
-        <p className="col-span-3 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
-          {platform && <span>{platform}</span>}
-          {worker.version && <span>{t("devices.workerVersion", { version: worker.version })}</span>}
-        </p>
-      )}
-      {worker.localDevices.length > 0 && (
-        <div className="col-span-3 col-start-2 flex min-w-0 flex-wrap items-center gap-1.5 pt-0.5">
-          <span className="text-xs text-muted-foreground" aria-hidden>
-            {t("devices.sameMachine")}
-          </span>
-          <ul aria-label={t("devices.sameMachineAs", { worker: worker.name })} className="flex min-w-0 flex-wrap gap-1.5">
-            {worker.localDevices.map((d) => (
-              <li key={d} className="flex h-6 min-w-0 items-center gap-1.5 border px-2 text-xs text-muted-foreground">
-                <MonitorIcon className="size-3 shrink-0" aria-hidden />
-                <span className="truncate">{d}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+    <li data-role-row="worker" aria-label={t("devices.roleRow.worker", { name: worker.name })} className={roleRow}>
+      <RoleHeader
+        kind="worker"
+        id={worker.workerId}
+        name={worker.name}
+        machine={machine}
+        aligned={aligned}
+        version={worker.version}
+        role={worker}
+        lastSeen={lastSeen}
+        onAction={onAction}
+      />
       <WorkerAgents worker={worker} reportedAgo={reportedAgo} />
       <IntegratorGrant worker={worker} />
     </li>
@@ -532,10 +620,20 @@ function IntegratorGrant({ worker }: { worker: Worker }) {
   )
 }
 
+/**
+ * The menu of another row of the card a deleted row was on, if the card
+ * is still listed: the deleted row's own menu (`trigger`) is skipped, in
+ * case the list has not caught up yet.
+ */
+function otherRowTrigger({ card, trigger }: RowOrigin): HTMLElement | null {
+  if (!card?.isConnected) return null
+  return [...card.querySelectorAll<HTMLElement>("[data-role-row] [data-card-focus]")].find((b) => b !== trigger) ?? null
+}
+
 /** The menu trigger of the device's or worker's row now listed under `row`'s name, if any. */
 function rowTrigger(row: RejoinTarget): HTMLElement | null {
-  const section = document.querySelector(`section[aria-labelledby="${row.kind === "device" ? "devices" : "workers"}-heading"]`)
-  const label = i18n.t("devices.actions", { name: row.name })
+  const label = i18n.t(row.kind === "device" ? "devices.actionsDevice" : "devices.actionsWorker", { name: row.name })
+  const section = document.querySelector('section[aria-labelledby="machines-heading"]')
   return [...(section?.querySelectorAll<HTMLElement>("button[aria-label]") ?? [])].find((b) => b.getAttribute("aria-label") === label) ?? null
 }
 
@@ -576,6 +674,9 @@ function AddMenu({
   )
 }
 
+/** The card a row is on and the row's menu button. */
+type RowOrigin = { card: Element | null; trigger: HTMLElement | null }
+
 /** What a row's menu asks the page to do; `trigger` is the menu's button, where focus returns. */
 type RowAction = ({ kind: "rejoin"; target: RejoinTarget } | { kind: "delete"; target: DeleteTarget }) & {
   trigger: HTMLElement | null
@@ -609,7 +710,7 @@ function RowMenu({
           variant="ghost"
           size="icon-sm"
           className="-my-1 size-7"
-          aria-label={t("devices.actions", { name })}
+          aria-label={t(kind === "device" ? "devices.actionsDevice" : "devices.actionsWorker", { name })}
           // Where a card's machine update moves focus when nothing of it remains.
           data-card-focus
         >
@@ -632,24 +733,6 @@ function RowMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
-}
-
-/**
- * The end of a card's first line: the machine's update, if any, left of
- * the link state (`children`). On a narrow screen the update takes a line
- * of its own under the name instead: the wrapper dissolves into the
- * card's grid, which puts the update on the second row.
- */
-function HeaderEnd({ update, showUpdate, children }: { update: ReactNode; showUpdate: boolean; children: ReactNode }) {
-  return (
-    <span className="contents sm:flex sm:min-w-0 sm:items-center sm:justify-end sm:gap-3">
-      {/* Mounted while it shows nothing too: it keeps its live region and focus (see MachineUpdateAction). */}
-      <span className={showUpdate ? "col-span-3 col-start-2 row-start-2 flex min-w-0 items-center sm:contents" : "contents"}>
-        {update}
-      </span>
-      {children}
-    </span>
   )
 }
 
@@ -685,21 +768,26 @@ function LinkState({
 function LoadingList() {
   const { t } = useTranslation()
   return (
-    <ul aria-busy="true" aria-label={t("devices.loading")} className="flex flex-col divide-y border">
-      {[0, 1, 2].map((i) => (
-        <li key={i} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2.5 px-4 py-3.5">
-          <Skeleton className="size-2.5 rounded-full" />
-          <Skeleton className="h-3.5 w-32" />
-          <Skeleton className="h-3 w-14" />
-          <Skeleton className="col-start-2 h-3 w-40" />
+    <ul aria-busy="true" aria-label={t("devices.loading")} className="flex flex-col gap-3">
+      {[0, 1].map((i) => (
+        <li key={i} className="flex flex-col border">
+          <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-t px-4 py-3">
+            <Skeleton className="size-2.5 rounded-full" />
+            <Skeleton className="h-3.5 w-40" />
+            <Skeleton className="h-3 w-14" />
+          </div>
         </li>
       ))}
     </ul>
   )
 }
 
-/** No devices: what one is, and the way to add one. */
-function NoDevices({ onAdd }: { onAdd: (trigger: HTMLElement) => void }) {
+/** No machines: what to add, a device or a worker, each with its role chosen. */
+function NoMachines({ onAdd }: { onAdd: AddHandler }) {
   const { t } = useTranslation()
   return (
     <Empty className="border border-dashed px-4 py-8 sm:px-6 sm:py-10">
@@ -709,29 +797,12 @@ function NoDevices({ onAdd }: { onAdd: (trigger: HTMLElement) => void }) {
         </EmptyMedia>
         <EmptyTitle>{t("devices.emptyTitle")}</EmptyTitle>
       </EmptyHeader>
-      <EmptyContent>
-        <Button onClick={(e) => onAdd(e.currentTarget)}>
+      <EmptyContent className="flex-row flex-wrap justify-center">
+        <Button onClick={(e) => onAdd("daemon", e.currentTarget)}>
           <PlusIcon />
           {t("devices.addDevice")}
         </Button>
-      </EmptyContent>
-    </Empty>
-  )
-}
-
-/** No workers: the way to add one, with the worker role chosen. */
-function NoWorkers({ onAdd }: { onAdd: (trigger: HTMLElement) => void }) {
-  const { t } = useTranslation()
-  return (
-    <Empty className="border border-dashed px-4 py-8 sm:px-6 sm:py-10">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <ServerIcon />
-        </EmptyMedia>
-        <EmptyTitle>{t("devices.workersEmptyTitle")}</EmptyTitle>
-      </EmptyHeader>
-      <EmptyContent>
-        <Button onClick={(e) => onAdd(e.currentTarget)}>
+        <Button variant="outline" onClick={(e) => onAdd("worker", e.currentTarget)}>
           <PlusIcon />
           {t("devices.addWorker")}
         </Button>

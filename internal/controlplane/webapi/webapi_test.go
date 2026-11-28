@@ -748,6 +748,53 @@ func TestDevices(t *testing.T) {
 	}
 }
 
+// A device and a worker on the same machine have the same machine key,
+// and a device carries the hostname its daemon reported.
+func TestMachineKeyAndHostname(t *testing.T) {
+	h, super := newHarness(t)
+	h.device(t, "d1", "box", "linux") // machine m-d1
+	h.device(t, "d2", "attic", "linux")
+	if _, err := h.st.UpdateHelloMetadata(t.Context(), store.KindDevice, "d1", store.HelloMetadata{Hostname: "box.local"}); err != nil {
+		t.Fatal(err)
+	}
+	h.addWorker(t, localWorker{id: "w-box", machine: "m-d1"})
+	h.addWorker(t, localWorker{id: "w-alone", machine: "m-alone"})
+
+	keys := map[string]string{}
+	hostnames := map[string]string{}
+	for _, d := range super.devices(t) {
+		keys[d.Name] = d.MachineKey
+		hostnames[d.Name] = d.Hostname
+	}
+	resp, err := super.machines.ListWorkers(t.Context(), connect.NewRequest(&circusv1.ListWorkersRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range resp.Msg.GetWorkers() {
+		keys[w.Name] = w.MachineKey
+	}
+	for name, key := range keys {
+		if key == "" {
+			t.Fatalf("%s has no machine key: %v", name, keys)
+		}
+	}
+	if keys["box"] != keys["w-box"] || keys["attic"] == keys["box"] || keys["w-alone"] == keys["box"] || keys["w-alone"] == keys["attic"] {
+		t.Fatalf("machine keys = %v", keys)
+	}
+	if hostnames["box"] != "box.local" || hostnames["attic"] != "" {
+		t.Fatalf("hostnames = %v", hostnames)
+	}
+
+	// SetWorkerGrant returns the worker with its key too.
+	grant, err := super.machines.SetWorkerGrant(t.Context(), connect.NewRequest(&circusv1.SetWorkerGrantRequest{WorkerId: "w-box", Integrator: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := grant.Msg.GetWorker().GetMachineKey(); got != keys["box"] {
+		t.Fatalf("SetWorkerGrant machine key = %q, want %q", got, keys["box"])
+	}
+}
+
 func TestRevokedDevice(t *testing.T) {
 	h, super := newHarness(t)
 	d := h.device(t, "d1", "box", "linux")

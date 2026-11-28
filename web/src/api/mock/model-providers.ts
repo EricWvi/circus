@@ -20,10 +20,10 @@ import {
 } from "@/api/provider-rules"
 import type { ModelProvider, ModelProviderInput, ProviderVersion, QueueReason, Worker } from "@/api/types"
 import { sameProjectName } from "@/api/validation"
-import { DEFAULT_AGENT, localWorker, runsAgent } from "@/lib/agents"
+import { DEFAULT_AGENT, runsAgent } from "@/lib/agents"
 
 import type { MockSession } from "./sessions"
-import type { MockProvider, MockState, MockWorker } from "./state"
+import { machineWorker, type MockProvider, type MockState, type MockWorker } from "./state"
 
 /** The worker has the sessions' agent installed at its target version. */
 export const runsSessions = (w: Pick<Worker, "agents">) => runsAgent(w, DEFAULT_AGENT)
@@ -219,7 +219,7 @@ export function createMockModelProviders(host: MockModelProvidersHost) {
     queueReasonOf(s: MockSession): QueueReason {
       const owner = host.ownerOf(s)
       const workers = state.workers.filter((w) => w.owner === owner)
-      const pinned = localWorker(workers, s.device)
+      const pinned = machineWorker(state, owner, s.device)
       const candidates: MockWorker[] = pinned ? [pinned] : workers
       const provider = s.providerId ? find(owner ?? "", s.providerId) : undefined
       if (s.providerId && !provider) return "provider_deleted"

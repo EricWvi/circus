@@ -279,16 +279,16 @@ describe("devices over Connect", () => {
         service(MachineService, {
           listDevices: () => ({
             devices: [
-              { deviceId: "d-box", name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000n, os: "linux", arch: "amd64", version: "0.1.0" },
-              { deviceId: "d-new", name: "new", online: false, lastSeenUnixMs: 0n, os: "", arch: "", version: "" },
+              { deviceId: "d-box", name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000n, os: "linux", arch: "amd64", version: "0.1.0", machineKey: "m1", hostname: "box.lan" },
+              { deviceId: "d-new", name: "new", online: false, lastSeenUnixMs: 0n, os: "", arch: "", version: "", machineKey: "m2" },
             ],
           }),
         }),
       ),
     )
     expect(await client.listDevices()).toEqual([
-      { deviceId: "d-box", name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000, os: "linux", arch: "amd64", version: "0.1.0", updateVersion: "" },
-      { deviceId: "d-new", name: "new", online: false, lastSeenUnixMs: 0, os: "", arch: "", version: "", updateVersion: "" },
+      { deviceId: "d-box", name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000, os: "linux", arch: "amd64", version: "0.1.0", updateVersion: "", machineKey: "m1", hostname: "box.lan" },
+      { deviceId: "d-new", name: "new", online: false, lastSeenUnixMs: 0, os: "", arch: "", version: "", updateVersion: "", machineKey: "m2", hostname: "" },
     ])
   })
 

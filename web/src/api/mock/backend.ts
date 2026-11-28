@@ -69,6 +69,8 @@ import {
   OIDC_SETUP_EMAIL,
   SEED_OWNER_ID,
   SEED_SUPER_EMAIL,
+  machineWorker,
+  seedMachine,
   type MockDevice,
   type MockLocation,
   type MockProject,
@@ -215,7 +217,7 @@ export function createMockBackend({
     // gets none); palace-builder's update starts again on each page load.
     updates.seedFailed(
       SEED_OWNER_ID,
-      "eric-mbp",
+      seedMachine("eric-mbp"),
       "command",
       [
         "Checking the latest circus release…",
@@ -227,16 +229,19 @@ export function createMockBackend({
         "download circus-v0.2.0-darwin-arm64.tar.gz: Get \"https://github.com/EricWvi/circus/releases/download/v0.2.0/circus-v0.2.0-darwin-arm64.tar.gz\": dial tcp 140.82.112.4:443: i/o timeout",
       ].join("\n"),
     )
-    updates.seedFailed(SEED_OWNER_ID, "worker/worker-cloud-runner", "timed_out", "")
-    updates.seedFailed(SEED_OWNER_ID, "eric-win", "unreachable", "the device's link closed before the command was sent")
-    updates.seedRunning(SEED_OWNER_ID, "palace-builder", 90_000)
+    updates.seedFailed(SEED_OWNER_ID, seedMachine("cloud-runner"), "timed_out", "")
+    updates.seedFailed(SEED_OWNER_ID, seedMachine("eric-win"), "unreachable", "the device's link closed before the command was sent")
+    updates.seedRunning(SEED_OWNER_ID, seedMachine("palace-builder"), 90_000)
   }
 
   /** A worker as its owner sees it: only their own devices share its machine. */
   function publicWorker(owner: string, mock: MockWorker): Worker {
     const { owner: _, foreground: __, ...worker } = mock
-    const devices = new Set(state.devices.filter((d) => d.owner === owner).map((d) => d.name))
-    return { ...worker, localDevices: worker.localDevices.filter((d) => devices.has(d)), ...updates.worker(owner, mock) }
+    const localDevices = state.devices
+      .filter((d) => d.owner === owner && d.machineKey === mock.machineKey)
+      .map((d) => d.name)
+      .sort((a, b) => a.localeCompare(b))
+    return { ...worker, localDevices, ...updates.worker(owner, mock) }
   }
 
   const hasSuper = () => state.users.some((u) => u.role === "super")
@@ -419,7 +424,7 @@ export function createMockBackend({
     const owner = ownerOf(s)
     const workers = state.workers.filter((w) => w.owner === owner)
     return (
-      workers.find((w) => w.localDevices.includes(s.device)) ??
+      machineWorker(state, owner, s.device) ??
       workers
         .filter((w) => w.online && runsSessions(w))
         .sort((a, b) => a.name.localeCompare(b.name))[0]

@@ -12,8 +12,8 @@ import { MAX_PRESS_MS } from "@/lib/pointer-press"
 import { useFolderRemote, type PathCommit } from "./use-folder-remote"
 
 const devices: Device[] = [
-  { deviceId: "device-devbox", name: "devbox", online: true, lastSeenUnixMs: 0, os: "linux", arch: "amd64", version: "0.1.0", updateVersion: "" },
-  { deviceId: "device-eric-mbp", name: "eric-mbp", online: true, lastSeenUnixMs: 0, os: "darwin", arch: "arm64", version: "0.1.0", updateVersion: "" },
+  { deviceId: "device-devbox", name: "devbox", online: true, lastSeenUnixMs: 0, os: "linux", arch: "amd64", version: "0.1.0", updateVersion: "", hostname: "", machineKey: "machine-devbox" },
+  { deviceId: "device-eric-mbp", name: "eric-mbp", online: true, lastSeenUnixMs: 0, os: "darwin", arch: "arm64", version: "0.1.0", updateVersion: "", hostname: "", machineKey: "machine-eric-mbp" },
 ]
 
 const PALACE = "https://git.example.com/infra/palace.git"

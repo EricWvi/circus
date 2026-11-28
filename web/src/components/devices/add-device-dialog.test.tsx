@@ -11,6 +11,7 @@ import { SidebarProvider } from "@/components/ui/sidebar"
 import { i18n } from "@/i18n/i18n"
 import { DevicesPage } from "@/routes/devices-page"
 import { addMenuTrigger, chooseAdd } from "@/test/add-menu"
+import { deviceRow } from "@/test/machines"
 import { advance, renderWithBackend } from "@/test/render"
 
 const NOW = Date.parse("2026-11-17T12:00:00Z")
@@ -115,6 +116,8 @@ const device = (name: string, online = true): MockDevice => ({
   version: "v0.3.0",
   owner: SEED_OWNER_ID,
   deviceId: `device-${name}-${Date.now()}`,
+  hostname: name,
+  machineKey: `machine-${name}`,
 })
 
 const waiting = () => dialog().queryByText("Waiting for the device to join…")
@@ -455,7 +458,7 @@ describe("the add device dialog", () => {
       // The link is forgotten.
       expect(queryClient.getMutationCache().getAll()).toEqual([])
       // The page's list has it too.
-      expect(screen.getByText("new-box", { selector: "li span" })).toBeTruthy()
+      expect(deviceRow("new-box")).toBeTruthy()
 
       fireEvent.click(dialog().getAllByRole("button", { name: "Close" }).at(-1)!)
       await advance(0)
@@ -509,7 +512,7 @@ describe("the add device dialog", () => {
         issue: release(),
         listDevices: (real) => () => (calls++ === 0 ? gate.then(real) : real()),
       })
-      expect(screen.getByRole("list", { name: "Loading devices" })).toBeTruthy()
+      expect(screen.getByRole("list", { name: "Loading machines" })).toBeTruthy()
       expect(screen.queryByRole("button", { name: "Add" })).toBeNull()
       expect(screen.queryByRole("button", { name: "Add device" })).toBeNull()
       loaded()
@@ -651,9 +654,8 @@ describe("the add device dialog", () => {
   })
 
   describe("rejoining", () => {
-    const openRejoin = async (name: string, kind: "devices" | "workers" = "devices") => {
-      const list = document.querySelector<HTMLElement>(`section[aria-labelledby="${kind}-heading"]`)!
-      fireEvent.pointerDown(within(list).getByRole("button", { name: `Actions for ${name}` }), { button: 0, ctrlKey: false })
+    const openRejoin = async (name: string, kind: "device" | "worker" = "device") => {
+      fireEvent.pointerDown(screen.getByRole("button", { name: `Actions for ${kind} ${name}` }), { button: 0, ctrlKey: false })
       await advance(0)
       fireEvent.click(screen.getByRole("menuitem", { name: "Rejoin…" }))
       await advance(0)
@@ -695,8 +697,7 @@ describe("the add device dialog", () => {
       expect(screen.queryByRole("dialog", { name: "Add device" })).toBeNull()
       await advance(300)
       expect(screen.queryByRole("dialog")).toBeNull()
-      const list = document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
-      expect(document.activeElement).toBe(within(list).getByRole("button", { name: "Actions for eric-win" }))
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Actions for device eric-win" }))
     })
 
     it("returns focus to the new identity's row after a rejoin", async () => {
@@ -709,13 +710,22 @@ describe("the add device dialog", () => {
       fireEvent.click(dialog().getAllByRole("button", { name: "Close" }).at(-1)!)
       await advance(300)
       expect(screen.queryByRole("dialog")).toBeNull()
-      const list = document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
-      expect(document.activeElement).toBe(within(list).getByRole("button", { name: "Actions for eric-win" }))
+      // The new device's row, on the machine's card beside the worker of the same name.
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Actions for device eric-win" }))
+      expect(deviceRow("eric-win").contains(document.activeElement)).toBe(true)
+    })
+
+    it("returns focus to a worker's row after its rejoin dialog closes", async () => {
+      await renderPage({ issue: release() })
+      await openRejoin("eric-win", "worker")
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+      await advance(300)
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Actions for worker eric-win" }))
     })
 
     it("joins a worker again as a worker", async () => {
       const { replaced } = await renderPage({ issue: release() })
-      await openRejoin("eric-win", "workers")
+      await openRejoin("eric-win", "worker")
       expect(dialog().getAllByRole("radio").map((r) => r.getAttribute("value"))).toEqual(["worker"])
       await generate()
       expect(replaced).toEqual(["worker-eric-win"])
@@ -724,8 +734,7 @@ describe("the add device dialog", () => {
 
     it("is offered only for an offline device or worker", async () => {
       await renderPage({ issue: release() })
-      const list = document.querySelector<HTMLElement>('section[aria-labelledby="devices-heading"]')!
-      fireEvent.pointerDown(within(list).getByRole("button", { name: "Actions for devbox" }), { button: 0, ctrlKey: false })
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Actions for device devbox" }), { button: 0, ctrlKey: false })
       await advance(0)
       expect(screen.queryByRole("menuitem", { name: "Rejoin…" })).toBeNull()
       expect(screen.getByRole("menuitem", { name: "Delete…" })).toBeTruthy()

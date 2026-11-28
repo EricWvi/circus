@@ -21,22 +21,21 @@ function failureSummary(error: string): string {
 type Shown = "none" | "running" | "failed"
 
 /**
- * The update of a device's or worker's machine, on its card beside the
- * online indicator. Both cards of a machine show the same state, since the
- * server sends the machine's update on both rows: offered (a button to
- * update to `updateVersion`), running (a spinner, no button) or failed (a
- * short reason that opens the whole of it, and Retry while an update is
- * offered). Nothing visible otherwise.
+ * The update of a machine, on its card beside its name: offered (a button
+ * to update to `updateVersion`), running (a spinner, no button) or failed
+ * (a short reason that opens the whole of it, and Retry while an update is
+ * offered). Nothing visible otherwise. `target` is the role a press asks
+ * for the update through (the one offering it); its `machine`, the card's
+ * name, is what the labels and announcements name.
  *
- * It stays mounted while nothing shows, for the card that was pressed: its
- * polite live region says when that attempt ends or fails (only on that
- * card, so a machine's two cards don't both speak, and never for states
- * found on page load), and that it runs unless focus moved to the running
- * status, which says so itself. When the element that had focus here is
- * removed (the pressed button, the running status) and focus fell to the
- * page, focus moves to what replaced it (the running status, Retry or the
- * failure), else to the card's menu button; focus the user moved
- * elsewhere is never taken back.
+ * It stays mounted while nothing shows: its polite live region says when
+ * an attempt pressed here ends or fails (never for states found on page
+ * load), and that it runs unless focus moved to the running status, which
+ * says so itself. When the element that had focus here is removed (the
+ * pressed button, the running status) and focus fell to the page, focus
+ * moves to what replaced it (the running status, Retry or the failure),
+ * else to the card's first menu button; focus the user moved elsewhere is
+ * never taken back.
  */
 export function MachineUpdateAction({
   target,
@@ -49,12 +48,14 @@ export function MachineUpdateAction({
 }) {
   const { t } = useTranslation()
   const start = useUpdateMachine(target)
+  const { machine } = target
   const root = useRef<HTMLSpanElement>(null)
   // The element in this component that has focus, kept when it is removed
   // with focus on it and forgotten when the user moves focus elsewhere.
   const focused = useRef<HTMLElement | null>(null)
-  // This card was pressed (with focus on its button, which then moves to
-  // the running status): its live region speaks until that attempt ends.
+  // The update was pressed here (with focus on its button, which then
+  // moves to the running status): the live region speaks until that
+  // attempt ends.
   const [pressed, setPressed] = useState<false | "focused" | "unfocused">(false)
   const [announcement, setAnnouncement] = useState("")
   const shown: Shown = update?.state ?? "none"
@@ -66,7 +67,7 @@ export function MachineUpdateAction({
   })
   if (seen.shown !== shown) {
     setSeen({ shown, target: update?.targetVersion ?? seen.target, changes: seen.changes + 1 })
-    const name = target.name
+    const name = machine
     if (pressed && shown === "running") {
       // With focus on the pressed button, focus moves to the running status, which says it.
       if (pressed === "unfocused") setAnnouncement(t("devices.update.announceRunning", { name, version: update!.targetVersion }))
@@ -86,7 +87,7 @@ export function MachineUpdateAction({
   }
 
   // The element that had focus here was removed and focus fell to the
-  // page: focus what replaced it, else the card's menu button.
+  // page: focus what replaced it, else the card's first menu button.
   useEffect(() => {
     const gone = focused.current
     const el = root.current
@@ -151,7 +152,7 @@ export function MachineUpdateAction({
             <button
               data-update-focus="failure"
               type="button"
-              aria-label={t("devices.update.failureLabel", { name: target.name, summary })}
+              aria-label={t("devices.update.failureLabel", { name: machine, summary })}
               className="min-w-0 cursor-pointer truncate rounded-sm text-left text-xs text-destructive outline-hidden focus-visible:ring-2 focus-visible:ring-ring/50 sm:max-w-64"
             >
               {summary}
@@ -184,7 +185,7 @@ export function MachineUpdateAction({
         {updateVersion &&
           button(
             t("devices.update.retry"),
-            t("devices.update.retryLabel", { name: target.name, version: updateVersion }),
+            t("devices.update.retryLabel", { name: machine, version: updateVersion }),
             true,
           )}
       </span>
@@ -192,7 +193,7 @@ export function MachineUpdateAction({
   } else if (updateVersion) {
     content = button(
       t("devices.update.action", { version: updateVersion }),
-      t("devices.update.actionLabel", { name: target.name, version: updateVersion }),
+      t("devices.update.actionLabel", { name: machine, version: updateVersion }),
     )
   }
 

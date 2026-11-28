@@ -94,8 +94,11 @@ export interface MockProvider {
   updatedAtUnixMs: number
 }
 
-/** An enrolled worker. */
-export type MockWorker = Omit<Worker, "updateVersion" | "update"> & { owner: string } & RunsAs
+/**
+ * An enrolled worker. The devices on its machine (`localDevices`) are
+ * the owner's devices with its `machineKey`.
+ */
+export type MockWorker = Omit<Worker, "updateVersion" | "update" | "localDevices"> & { owner: string } & RunsAs
 
 /**
  * Everything the mock server knows. Plain JSON so it can be persisted;
@@ -141,12 +144,15 @@ const DAY = 24 * HOUR
  */
 export function seedState(now: number = Date.now()): MockState {
   const owner = SEED_OWNER_ID
+  // Each on a machine of its own; devbox, eric-mbp and eric-win share
+  // theirs with a worker (seedWorkers). palace-builder's daemon has not
+  // reported a hostname.
   const devices: MockState["devices"] = [
-    { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64" },
-    { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64" },
-    { name: "eric-win", online: false, lastSeenUnixMs: now - 2 * DAY, os: "windows", arch: "amd64" },
-    { name: "palace-builder", online: true, lastSeenUnixMs: now, os: "linux", arch: "arm64" },
-  ].map((d) => ({ ...d, owner, version: "v0.1.0", deviceId: `device-${d.name}` }))
+    { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", hostname: "devbox" },
+    { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64", hostname: SEED_HOSTNAMES["eric-mbp"] },
+    { name: "eric-win", online: false, lastSeenUnixMs: now - 2 * DAY, os: "windows", arch: "amd64", hostname: SEED_HOSTNAMES["eric-win"] },
+    { name: "palace-builder", online: true, lastSeenUnixMs: now, os: "linux", arch: "arm64", hostname: "" },
+  ].map((d) => ({ ...d, owner, version: "v0.1.0", deviceId: `device-${d.name}`, machineKey: seedMachine(d.name) }))
 
   const projects: MockState["projects"] = seedProjects.map((p, i) => {
     const latest = seedSessionList
@@ -205,16 +211,34 @@ export function mockAgent(reportedAtUnixMs: number, fields: Partial<WorkerAgent>
   }
 }
 
-type SeedWorker = Omit<MockWorker, "owner" | "workerId" | "hostname" | "version" | "integrator" | "agents"> &
-  Partial<Pick<MockWorker, "integrator" | "agents">>
+/**
+ * The worker a session in a location on the owner's device named `device`
+ * is pinned to: the one on that device's machine; none when no worker
+ * shares it.
+ */
+export function machineWorker(state: MockState, owner: string | undefined, device: string): MockWorker | undefined {
+  const machine = state.devices.find((d) => d.owner === owner && d.name === device)?.machineKey
+  return machine === undefined ? undefined : state.workers.find((w) => w.owner === owner && w.machineKey === machine)
+}
+
+/** The machine key of a demo machine, named after its device (or its worker, when it has no device). */
+export const seedMachine = (name: string) => `machine-${name}`
+
+/** The demo machines' hostnames where they differ from the name of their device or worker. */
+const SEED_HOSTNAMES: Record<string, string> = { "eric-mbp": "erics-mbp.local", "eric-win": "ERIC-WIN" }
+
+/** A demo worker; on a machine of its own unless `machineKey` says otherwise. */
+type SeedWorker = Omit<MockWorker, "owner" | "workerId" | "hostname" | "version" | "integrator" | "agents" | "machineKey"> &
+  Partial<Pick<MockWorker, "integrator" | "agents" | "machineKey">>
 
 const seedWorker = (w: SeedWorker): MockWorker => ({
   integrator: false,
   agents: [],
+  machineKey: seedMachine(w.name),
   ...w,
   owner: SEED_OWNER_ID,
   workerId: `worker-${w.name}`,
-  hostname: w.name,
+  hostname: SEED_HOSTNAMES[w.name] ?? w.name,
   version: "v0.1.0",
 })
 
@@ -226,10 +250,10 @@ const seedWorker = (w: SeedWorker): MockWorker => ({
  */
 export function seedWorkers(now: number = Date.now()): MockWorker[] {
   return [
-    { name: "cloud-runner", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: [], integrator: true },
-    { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: ["devbox"], foreground: true },
-    { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64", localDevices: ["eric-mbp"] },
-    { name: "eric-win", online: false, lastSeenUnixMs: now - 2 * DAY, os: "windows", arch: "amd64", localDevices: ["eric-win"] },
+    { name: "cloud-runner", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", integrator: true },
+    { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", foreground: true },
+    { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64" },
+    { name: "eric-win", online: false, lastSeenUnixMs: now - 2 * DAY, os: "windows", arch: "amd64" },
   ].map((w) => seedWorker({ ...w, agents: [mockAgent(w.lastSeenUnixMs)] }))
 }
 
@@ -252,7 +276,7 @@ export function removeAgents(state: MockState) {
  * failed (installed again when it connects).
  */
 export function addAgentsDemo(state: MockState, now: number = Date.now()) {
-  const online = { online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: [] }
+  const online = { online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64" }
   const offline = (ago: number) => ({ ...online, online: false, lastSeenUnixMs: now - ago })
   const notInstalled = { state: "not_installed" as const, installedVersion: "", wanted: false, wantedVersion: "" }
   state.workers.push(
@@ -399,7 +423,6 @@ export function addQueueDemo(state: MockState, now: number = Date.now()) {
       lastSeenUnixMs: now,
       os: "linux",
       arch: "amd64",
-      localDevices: [],
       agents: [mockAgent(now, { state: "not_installed", installedVersion: "", wanted: false, wantedVersion: "" })],
     }),
   )

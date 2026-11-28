@@ -630,8 +630,8 @@ func TestListWorkers(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []*circusv1.Worker{
-		{WorkerId: "w-a", Name: "w-a", LastSeenUnixMs: h.clock.Load() - 100},
-		{WorkerId: "w-b", Name: "w-b", Online: true, LastSeenUnixMs: h.clock.Load(), LocalDevices: []string{"box"}},
+		{WorkerId: "w-a", Name: "w-a", LastSeenUnixMs: h.clock.Load() - 100, MachineKey: "m-none"},
+		{WorkerId: "w-b", Name: "w-b", Online: true, LastSeenUnixMs: h.clock.Load(), LocalDevices: []string{"box"}, MachineKey: "m-d1"},
 	}
 	if got := resp.Msg.GetWorkers(); len(got) != len(want) || !proto.Equal(got[0], want[0]) || !proto.Equal(got[1], want[1]) {
 		t.Fatalf("workers %v\nwant %v", got, want)

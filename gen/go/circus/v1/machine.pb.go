@@ -420,7 +420,13 @@ type Device struct {
 	// one, and no update of the machine runs. Empty otherwise.
 	UpdateVersion string `protobuf:"bytes,8,opt,name=update_version,json=updateVersion,proto3" json:"update_version,omitempty"`
 	// The machine's update, running or failed; unset when there is none.
-	Update        *MachineUpdate `protobuf:"bytes,9,opt,name=update,proto3" json:"update,omitempty"`
+	Update *MachineUpdate `protobuf:"bytes,9,opt,name=update,proto3" json:"update,omitempty"`
+	// Groups the caller's devices and workers by machine: a device and a
+	// worker on the same machine have the same key. Opaque: clients only
+	// compare it. Never empty.
+	MachineKey string `protobuf:"bytes,10,opt,name=machine_key,json=machineKey,proto3" json:"machine_key,omitempty"`
+	// The machine's hostname, as the daemon last reported it; may be empty.
+	Hostname      string `protobuf:"bytes,11,opt,name=hostname,proto3" json:"hostname,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -516,6 +522,20 @@ func (x *Device) GetUpdate() *MachineUpdate {
 		return x.Update
 	}
 	return nil
+}
+
+func (x *Device) GetMachineKey() string {
+	if x != nil {
+		return x.MachineKey
+	}
+	return ""
+}
+
+func (x *Device) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
 }
 
 type ListDevicesRequest struct {
@@ -627,6 +647,8 @@ type Worker struct {
 	// and Device.update, for the worker's machine.
 	UpdateVersion string         `protobuf:"bytes,12,opt,name=update_version,json=updateVersion,proto3" json:"update_version,omitempty"`
 	Update        *MachineUpdate `protobuf:"bytes,13,opt,name=update,proto3" json:"update,omitempty"`
+	// As Device.machine_key.
+	MachineKey    string `protobuf:"bytes,14,opt,name=machine_key,json=machineKey,proto3" json:"machine_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -750,6 +772,13 @@ func (x *Worker) GetUpdate() *MachineUpdate {
 		return x.Update
 	}
 	return nil
+}
+
+func (x *Worker) GetMachineKey() string {
+	if x != nil {
+		return x.MachineKey
+	}
+	return ""
 }
 
 type ListWorkersRequest struct {
@@ -1539,7 +1568,7 @@ const file_circus_v1_machine_proto_rawDesc = "" +
 	"\n" +
 	"\bidentity\"I\n" +
 	"\x15UpdateMachineResponse\x120\n" +
-	"\x06update\x18\x01 \x01(\v2\x18.circus.v1.MachineUpdateR\x06update\"\x93\x02\n" +
+	"\x06update\x18\x01 \x01(\v2\x18.circus.v1.MachineUpdateR\x06update\"\xd0\x02\n" +
 	"\x06Device\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06online\x18\x02 \x01(\bR\x06online\x12)\n" +
@@ -1549,10 +1578,14 @@ const file_circus_v1_machine_proto_rawDesc = "" +
 	"\aversion\x18\x06 \x01(\tR\aversion\x12\x1b\n" +
 	"\tdevice_id\x18\a \x01(\tR\bdeviceId\x12%\n" +
 	"\x0eupdate_version\x18\b \x01(\tR\rupdateVersion\x120\n" +
-	"\x06update\x18\t \x01(\v2\x18.circus.v1.MachineUpdateR\x06update\"\x14\n" +
+	"\x06update\x18\t \x01(\v2\x18.circus.v1.MachineUpdateR\x06update\x12\x1f\n" +
+	"\vmachine_key\x18\n" +
+	" \x01(\tR\n" +
+	"machineKey\x12\x1a\n" +
+	"\bhostname\x18\v \x01(\tR\bhostname\"\x14\n" +
 	"\x12ListDevicesRequest\"B\n" +
 	"\x13ListDevicesResponse\x12+\n" +
-	"\adevices\x18\x01 \x03(\v2\x11.circus.v1.DeviceR\adevices\"\xa4\x03\n" +
+	"\adevices\x18\x01 \x03(\v2\x11.circus.v1.DeviceR\adevices\"\xc5\x03\n" +
 	"\x06Worker\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
@@ -1569,7 +1602,9 @@ const file_circus_v1_machine_proto_rawDesc = "" +
 	"integrator\x12.\n" +
 	"\x06agents\x18\v \x03(\v2\x16.circus.v1.WorkerAgentR\x06agents\x12%\n" +
 	"\x0eupdate_version\x18\f \x01(\tR\rupdateVersion\x120\n" +
-	"\x06update\x18\r \x01(\v2\x18.circus.v1.MachineUpdateR\x06update\"\x14\n" +
+	"\x06update\x18\r \x01(\v2\x18.circus.v1.MachineUpdateR\x06update\x12\x1f\n" +
+	"\vmachine_key\x18\x0e \x01(\tR\n" +
+	"machineKey\"\x14\n" +
 	"\x12ListWorkersRequest\"T\n" +
 	"\x15SetWorkerGrantRequest\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x1e\n" +

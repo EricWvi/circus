@@ -151,6 +151,12 @@ message Device {
   string update_version = 8;
   // The machine's update, running or failed; unset when there is none.
   MachineUpdate update = 9;
+  // Groups the caller's devices and workers by machine: a device and a
+  // worker on the same machine have the same key. Opaque: clients only
+  // compare it. Never empty.
+  string machine_key = 10;
+  // The machine's hostname, as the daemon last reported it; may be empty.
+  string hostname = 11;
 }
 message ListDevicesRequest {}
 message ListDevicesResponse {
@@ -184,6 +190,8 @@ message Worker {
   // and Device.update, for the worker's machine.
   string update_version = 12;
   MachineUpdate update = 13;
+  // As Device.machine_key.
+  string machine_key = 14;
 }
 message ListWorkersRequest {}
 

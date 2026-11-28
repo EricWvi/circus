@@ -230,7 +230,14 @@ export interface Device {
   lastSeenUnixMs: number
   os: string
   arch: string
+  /** The machine's hostname, as the daemon last reported it; may be empty. */
+  hostname: string
   version: string
+  /**
+   * Groups devices and workers by machine: a device and a worker on the
+   * same machine have the same key. Opaque: only compare it.
+   */
+  machineKey: string
   /**
    * The release an update would install, when one is offered on this card
    * (this role is online and runs as the installed service, its version is
@@ -328,6 +335,8 @@ export interface Worker {
    * locations run in local mode on this worker.
    */
   localDevices: string[]
+  /** As `Device.machineKey`. */
+  machineKey: string
   /**
    * The integrator grant: the worker may merge ledger changesets that do
    * not fast-forward and discard changesets it did not open, for the

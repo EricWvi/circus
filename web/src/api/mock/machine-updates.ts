@@ -1,7 +1,6 @@
 // The machine updates of the mock: UpdateMachine and the update a machine
-// would run, simulated with timers in this tab's memory. A machine is a
-// device and the workers whose `localDevices` name it, or a worker on a
-// machine of its own. As on the server, an update is offered on the card of
+// would run, simulated with timers in this tab's memory. A machine is the
+// devices and workers that share a `machineKey`. As on the server, an update is offered on the card of
 // a role that is online and runs as the installed service (not
 // `foreground`), and runs on such a role of the machine.
 
@@ -65,14 +64,13 @@ export function createMockMachineUpdates({
   const updates = new Map<string, MachineUpdate>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
 
-  const deviceMachine = (d: MockDevice) => d.name
-  const workerMachine = (w: MockWorker) => w.localDevices[0] ?? `worker/${w.workerId}`
+  const machineOf = (r: Role) => r.machineKey
   const key = (owner: string, machine: string) => `${owner}/${machine}`
 
   function roles(owner: string, machine: string) {
     return {
-      devices: state.devices.filter((d) => d.owner === owner && deviceMachine(d) === machine),
-      workers: state.workers.filter((w) => w.owner === owner && workerMachine(w) === machine),
+      devices: state.devices.filter((d) => d.owner === owner && machineOf(d) === machine),
+      workers: state.workers.filter((w) => w.owner === owner && machineOf(w) === machine),
     }
   }
 
@@ -129,12 +127,12 @@ export function createMockMachineUpdates({
     if ("deviceId" in req) {
       const d = state.devices.find((x) => x.owner === owner && x.deviceId === req.deviceId)
       if (!d) throw new ApiError("not_found", "Device not found.")
-      machine = deviceMachine(d)
+      machine = machineOf(d)
       role = d
     } else {
       const w = state.workers.find((x) => x.owner === owner && x.workerId === req.workerId)
       if (!w) throw new ApiError("not_found", "Worker not found.")
-      machine = workerMachine(w)
+      machine = machineOf(w)
       role = w
     }
     const current = updates.get(key(owner, machine))
@@ -169,8 +167,8 @@ export function createMockMachineUpdates({
   }
 
   return {
-    device: (owner: string, d: MockDevice) => fields(owner, deviceMachine(d), d),
-    worker: (owner: string, w: MockWorker) => fields(owner, workerMachine(w), w),
+    device: (owner: string, d: MockDevice) => fields(owner, machineOf(d), d),
+    worker: (owner: string, w: MockWorker) => fields(owner, machineOf(w), w),
     start: (owner: string, req: { deviceId: string } | { workerId: string }) => start(owner, req),
 
     /**

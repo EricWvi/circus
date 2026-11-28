@@ -590,17 +590,21 @@ function serverMessage(error: unknown): string {
   return error instanceof Error ? error.message : ""
 }
 
-/** The device or worker whose card asks for its machine's update. */
-export type MachineUpdateTarget =
+/**
+ * The device or worker a machine's update is asked for through: `name` is
+ * its own name, `machine` the name of its machine's card.
+ */
+export type MachineUpdateTarget = (
   | { kind: "device"; deviceId: string; name: string }
   | { kind: "worker"; workerId: string; name: string }
+) & { machine: string }
 
 /**
  * Updates the target's machine (UpdateMachine) to the latest release. The
- * answer goes on the card pressed and on the cards of the same machine
- * (a worker names the devices on its machine) at once, and both lists are
- * read again, so they poll quickly until the update ends. A machine that
- * is gone or has no update to offer any more is reported with a notice.
+ * answer goes on the devices and workers of the target's machine (those
+ * with its machine key) at once, and both lists are read again, so they
+ * poll quickly until the update ends. A target that is gone or a machine
+ * with no update to offer any more is reported with a notice.
  */
 export function useUpdateMachine(target: MachineUpdateTarget) {
   const client = useClient()
@@ -618,19 +622,19 @@ export function useUpdateMachine(target: MachineUpdateTarget) {
       ])
       const devices = queryClient.getQueryData<Device[]>(queryKeys.devices) ?? []
       const workers = queryClient.getQueryData<Worker[]>(queryKeys.workers) ?? []
-      // The machine's devices by name: the pressed device's, or the devices the pressed worker names.
-      const pressedWorker = target.kind === "worker" ? workers.find((w) => w.workerId === target.workerId) : undefined
-      const pressedDevice = target.kind === "device" ? devices.find((d) => d.deviceId === target.deviceId) : undefined
-      const deviceNames = new Set(pressedWorker?.localDevices ?? (pressedDevice ? [pressedDevice.name] : []))
-      const onMachine = (w: Worker) =>
-        (target.kind === "worker" && w.workerId === target.workerId) || w.localDevices.some((d) => deviceNames.has(d))
+      const pressed =
+        target.kind === "device"
+          ? devices.find((d) => d.deviceId === target.deviceId)
+          : workers.find((w) => w.workerId === target.workerId)
+      const onMachine = (m: Device | Worker) =>
+        pressed !== undefined && m.machineKey === pressed.machineKey
       const set = <T extends { updateVersion: string; update?: MachineUpdate }>(m: T): T => ({
         ...m,
         updateVersion: "",
         update,
       })
       queryClient.setQueryData<Device[]>(queryKeys.devices, (list) =>
-        list?.map((d) => (deviceNames.has(d.name) ? set(d) : d)),
+        list?.map((d) => (onMachine(d) ? set(d) : d)),
       )
       queryClient.setQueryData<Worker[]>(queryKeys.workers, (list) => list?.map((w) => (onMachine(w) ? set(w) : w)))
       void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
@@ -639,7 +643,7 @@ export function useUpdateMachine(target: MachineUpdateTarget) {
     onError: (error) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
       void queryClient.invalidateQueries({ queryKey: queryKeys.workers })
-      const { name } = target
+      const { name, machine } = target
       const gone = isApiError(error, "not_found")
       const notOffered = isApiError(error, "failed_precondition")
       const detail = error instanceof Error ? error.message : String(error)
@@ -653,11 +657,11 @@ export function useUpdateMachine(target: MachineUpdateTarget) {
             // The server says why (already at the latest release, a
             // development build, not online as the installed service).
             return {
-              title: i18n.t("devices.update.notOffered", { name }),
+              title: i18n.t("devices.update.notOffered", { name: machine }),
               lines: [{ text: serverMessage(error) || i18n.t("devices.update.notOfferedHint") }],
             }
           }
-          return { title: i18n.t("devices.update.startFailed", { name }), lines: [{ text: detail }] }
+          return { title: i18n.t("devices.update.startFailed", { name: machine }), lines: [{ text: detail }] }
         },
         failure: true,
       })

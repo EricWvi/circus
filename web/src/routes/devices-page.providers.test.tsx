@@ -5,7 +5,7 @@ import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest"
 
 import { ApiError } from "@/api/errors"
-import { seedState, type MockState } from "@/api/mock/state"
+import { seedMachine, seedState, type MockState } from "@/api/mock/state"
 import { queryKeys } from "@/api/query-client"
 import type { CircusClient, ModelProviderService, ProjectService } from "@/api/types"
 import { SidebarProvider } from "@/components/ui/sidebar"
@@ -80,9 +80,9 @@ afterEach(async () => {
 })
 
 describe("the providers section", () => {
-  it("sits below the workers, adding providers only through the header's menu", async () => {
+  it("sits below the machines, adding providers only through the header's menu", async () => {
     await renderProviders()
-    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Devices", "Workers", "Providers"])
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual(["Machines", "Providers"])
     expect(section().getByRole("heading", { level: 2, name: "Providers" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull()
     expect(screen.queryByRole("heading", { level: 1, name: "Providers" })).toBeNull()
@@ -154,7 +154,7 @@ describe("the providers section", () => {
       (real) => ({ listProviders: () => new Promise((resolve) => (release = () => resolve(real.listProviders()))) }),
       "/devices#providers",
     )
-    const menu = screen.getAllByRole("button", { name: "Actions for devbox" })[0]
+    const menu = screen.getByRole("button", { name: "Actions for device devbox" })
     menu.focus()
     release()
     await advance(50)
@@ -333,7 +333,8 @@ describe("the provider list", () => {
     // Lists join the Chinese way.
     const state = seedState(NOW)
     cleanup()
-    state.workers.find((w) => w.name === "devbox")!.localDevices = ["devbox", "eric-mbp"]
+    // eric-mbp's device on devbox's machine too.
+    state.devices.find((d) => d.name === "eric-mbp")!.machineKey = seedMachine("devbox")
     await renderProviders(state)
     await chooseAdd("添加模型提供方", "添加")
     await advance(50)
