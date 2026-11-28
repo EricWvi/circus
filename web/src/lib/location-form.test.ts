@@ -33,6 +33,7 @@ const device = (name: string, os: string, online = true): Device => ({
   online,
   arch: "amd64",
   version: "0.1.0",
+  updateVersion: "",
   lastSeenUnixMs: 0,
 })
 const devices = [device("win", "windows", false), device("mac", "darwin"), device("box", "linux")]

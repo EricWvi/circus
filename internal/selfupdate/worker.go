@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // WorkerArchiveLimit bounds a worker release package download.
@@ -29,6 +30,31 @@ type Release struct {
 // DefaultRelease reads the circus releases on GitHub.
 func DefaultRelease(current string) Release {
 	return Release{BaseURL: releasesURL, Client: releaseClient(), Current: current}
+}
+
+// LatestTimeout bounds one Latest call: the manifest is small, so a
+// connection that stays slow for this long is not worth waiting for.
+const LatestTimeout = 60 * time.Second
+
+// Latest reads the latest release's manifest (latest.json, the one
+// `circus update` reads) and returns its version. It gives up after
+// LatestTimeout.
+//
+// The client's idle connections are closed once it returns: the next read
+// is hours away, and nothing is left behind when the caller stops.
+func (r Release) Latest(ctx context.Context) (string, error) {
+	defer r.Client.CloseIdleConnections()
+	ctx, cancel := context.WithTimeout(ctx, LatestTimeout)
+	defer cancel()
+	var data bytes.Buffer
+	if err := fetch(ctx, r.Client, r.Current, r.BaseURL+"latest/download/latest.json", manifestLimit, &data); err != nil {
+		return "", fmt.Errorf("download latest.json: %w", err)
+	}
+	m, err := parseLatest(data.Bytes())
+	if err != nil {
+		return "", err
+	}
+	return m.Version, nil
 }
 
 // WorkerPackage is the worker's release package for one platform, as its

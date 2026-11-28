@@ -62,6 +62,70 @@ service MachineService {
   // does: as DeleteDevice, and the worker also leaves every provider it was
   // assigned to and loses its integrator grant. NOT_FOUND as DeleteDevice.
   rpc DeleteWorker(DeleteWorkerRequest) returns (DeleteWorkerResponse);
+  // Updates the machine of one of the caller's devices or workers (its
+  // device and worker share the machine) to the latest circus release, as
+  // `circus update` run there does: the CLI, the worker service's package
+  // when the worker service runs that circus, then a restart of the
+  // services. It is offered on the card of a role that is online and runs
+  // as the installed service (Device.update_version,
+  // Worker.update_version). The control plane sends the command to one
+  // online role of the machine that runs as the installed service: one
+  // whose version is below the target when there is one, the daemon first
+  // among them; otherwise the daemon first. It returns the machine's
+  // update, RUNNING. The update completes (and is removed) when a role of
+  // the machine connects with a version at least the target, or when every
+  // role of the machine is found at it as a failure is reported or the
+  // deadline passes; otherwise it fails when the role reports an error,
+  // the command cannot be sent, or after 5 minutes. While one runs,
+  // calling again returns it unchanged; after a failure, it starts a new
+  // attempt. Errors: NOT_FOUND for another user's or an unknown identity;
+  // FAILED_PRECONDITION, with the reason as the message, when no update is
+  // offered for the identity (a development build, already at the latest
+  // release, the latest release is not known yet, or the identity is not
+  // online as the installed service).
+  rpc UpdateMachine(UpdateMachineRequest) returns (UpdateMachineResponse);
+}
+
+// MachineUpdate is the update of a machine to a circus release.
+message MachineUpdate {
+  string target_version = 1;
+  MachineUpdateState state = 2;
+  // When FAILED: the command's output tail (COMMAND), or why the command
+  // could not be sent (UNREACHABLE); empty for TIMED_OUT. At most 2048
+  // bytes, without control characters other than newlines and tabs.
+  string error = 3;
+  int64 started_unix_ms = 4;
+  // When it fails unless a role of the machine has connected with the
+  // target version.
+  int64 deadline_unix_ms = 5;
+  // Why it failed; UNSPECIFIED unless FAILED.
+  MachineUpdateFailure failure = 6;
+}
+enum MachineUpdateState {
+  MACHINE_UPDATE_STATE_UNSPECIFIED = 0;
+  MACHINE_UPDATE_STATE_RUNNING = 1;
+  MACHINE_UPDATE_STATE_FAILED = 2;
+}
+enum MachineUpdateFailure {
+  MACHINE_UPDATE_FAILURE_UNSPECIFIED = 0;
+  // The role ran `circus update` and it failed (MachineUpdate.error).
+  MACHINE_UPDATE_FAILURE_COMMAND = 1;
+  // No role of the machine was at the target version when the deadline
+  // passed.
+  MACHINE_UPDATE_FAILURE_TIMED_OUT = 2;
+  // The command could not be sent to the role (MachineUpdate.error).
+  MACHINE_UPDATE_FAILURE_UNREACHABLE = 3;
+}
+
+message UpdateMachineRequest {
+  // The identity whose card was pressed; the update covers its machine.
+  oneof identity {
+    string device_id = 1;
+    string worker_id = 2;
+  }
+}
+message UpdateMachineResponse {
+  MachineUpdate update = 1;
 }
 
 message Device {
@@ -80,6 +144,13 @@ message Device {
   // The device identity's id. A device that rejoins (or is revoked and
   // enrolled again) under the same name has a new one.
   string device_id = 7;
+  // The release UpdateMachine would install, when an update is offered on
+  // this card: this device is online as the installed service (its daemon
+  // listed "machine_update"), version is a release older than the latest
+  // one, and no update of the machine runs. Empty otherwise.
+  string update_version = 8;
+  // The machine's update, running or failed; unset when there is none.
+  MachineUpdate update = 9;
 }
 message ListDevicesRequest {}
 message ListDevicesResponse {
@@ -109,6 +180,10 @@ message Worker {
   // One entry per agent the worker reported or the user asked for, ordered
   // by AgentKind.
   repeated WorkerAgent agents = 11;
+  // As Device.update_version (this worker online as the installed service)
+  // and Device.update, for the worker's machine.
+  string update_version = 12;
+  MachineUpdate update = 13;
 }
 message ListWorkersRequest {}
 

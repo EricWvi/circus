@@ -108,6 +108,15 @@ type Options struct {
 	DirectoryFS dirlist.FileSystem
 	// GitExecutable is the command used by git remote queries. Empty uses git on PATH.
 	GitExecutable string
+	// Service: this process runs as the installed user service, which the
+	// service manager restarts after `circus update`. Only then does the
+	// daemon advertise wire.FeatureMachineUpdate and run UpdateMachine.
+	Service bool
+	// UpdateExecutable is the circus run as `update` for UpdateMachine;
+	// empty means this process's executable, with symlinks resolved.
+	UpdateExecutable string
+	// UpdateTimeout bounds that command; zero means DefaultUpdateTimeout.
+	UpdateTimeout time.Duration
 }
 
 // Stats reports connection lifecycle diagnostics; it retains no payloads.
@@ -126,7 +135,9 @@ type Stats struct {
 	// Results counts result notifications, including dropped ones.
 	Results    uint64
 	RetryDelay time.Duration
-	Wire       wire.Stats
+	// Updating: `circus update` runs for an UpdateMachine.
+	Updating bool
+	Wire     wire.Stats
 }
 
 type connection struct {
@@ -180,6 +191,9 @@ type Client struct {
 	gitQueries  map[chan struct{}]struct{}
 	// features are the Hello capabilities, fixed at construction.
 	features []string
+	// updating is set while `circus update` runs for UpdateMachine; at
+	// most one runs at a time.
+	updating atomic.Bool
 }
 
 // New validates credentials/TLS policy and creates a fresh UUIDv7 boot.
@@ -274,6 +288,9 @@ func New(o Options) (*Client, error) {
 		d.Tools = daemon.DefaultTools(c.jobs, bashtool.Options{})
 	}
 	c.features = helloFeatures(d.Tools)
+	if o.Service {
+		c.features = append(c.features, wire.FeatureMachineUpdate)
+	}
 	d.OnResult = func(r *circusv1.DeviceResult) {
 		c.send(c.live.Load(), &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_Result{Result: r}})
 	}
@@ -314,6 +331,7 @@ func (c *Client) Stats() Stats {
 	s := c.stats
 	c.mu.Unlock()
 	s.ShuttingDown = c.stopping.Load()
+	s.Updating = c.updating.Load()
 	if a := c.live.Load(); a != nil {
 		s.Connected = true
 		s.Wire = a.link.Stats()
@@ -578,6 +596,8 @@ func (c *Client) reader(a *connection) (time.Duration, error) {
 			c.send(a, &circusv1.DaemonUplink{Payload: &circusv1.DaemonUplink_CallStatus{CallStatus: c.dispatcher.Query(p.CallQuery.GetCallId())}})
 		case *circusv1.DaemonDownlink_DeviceQuery:
 			c.deviceQuery(a, p.DeviceQuery)
+		case *circusv1.DaemonDownlink_UpdateMachine:
+			c.updateMachine(p.UpdateMachine)
 		case *circusv1.DaemonDownlink_ListJobs:
 			// Cap the reply to what this link accepts, so an oversize snapshot is
 			// truncated instead of failing the connection on every resync.

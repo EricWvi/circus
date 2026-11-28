@@ -5,6 +5,7 @@ import {
 } from "@circus/proto/circus/v1/worker_link_pb";
 import { AgentKind } from "@circus/proto/circus/v1/agent_pb";
 import type { WorkerEvent_AgentsWanted as AgentsWanted } from "@circus/proto/circus/v1/worker_link_pb";
+import type { UpdateMachine } from "@circus/proto/circus/v1/link_pb";
 import { LinkLostError, type ResumeOutcome, type WorkerEvent } from "./link/index.js";
 import type { Logger } from "./log.js";
 import type { CliProcessesPort } from "./process.js";
@@ -39,6 +40,8 @@ export interface PoolOptions {
   createRunner?: RunnerFactory;
   /** AgentsWanted from the control plane. */
   agentsWanted?: (wanted: AgentsWanted) => void;
+  /** UpdateMachine from the control plane. */
+  updateMachine?: (update: UpdateMachine) => void;
   /** A held session started or ended (agents wait for theirs to end before an uninstall). */
   sessionsChanged?: () => void;
 }
@@ -123,6 +126,10 @@ export class SessionPool {
     const { event } = message;
     if (event.case === "agentsWanted") {
       this.#opts.agentsWanted?.(event.value);
+      return;
+    }
+    if (event.case === "updateMachine") {
+      this.#opts.updateMachine?.(event.value);
       return;
     }
     if (event.case === "leaseRevoked") {

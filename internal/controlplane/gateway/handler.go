@@ -199,7 +199,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	p.link = link
 	p.info = info
-	p.features = helloFeatures(hello.Features)
+	p.features = wire.HelloFeatures(hello.Features)
 	p.queries = make(map[string]pendingQuery)
 	if h.closed {
 		h.mu.Unlock()
@@ -284,6 +284,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			err = h.config.Hooks.OnJobSnapshot(ctx, info, v.JobSnapshot)
 		case *circusv1.DaemonUplink_DeviceQueryResult:
 			h.resolveQuery(p, v.DeviceQueryResult)
+		case *circusv1.DaemonUplink_UpdateFailed:
+			// The daemon link has no reply: an error is the hook's to log.
+			if h.config.UpdateFailed != nil {
+				_ = h.config.UpdateFailed(ctx, principal.ID, v.UpdateFailed)
+			}
 		case *circusv1.DaemonUplink_Heartbeat:
 		default:
 			err = fmt.Errorf("gateway: unexpected business message")

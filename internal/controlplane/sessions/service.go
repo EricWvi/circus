@@ -370,6 +370,9 @@ type ConnInfo struct {
 	// Seq is the connection's number from ReserveConn, taken before the
 	// Welcome was sent; 0 takes one now.
 	Seq uint64
+	// Updatable: the worker listed wire.FeatureMachineUpdate in its Hello
+	// (it runs as the installed service), so it accepts UpdateMachine.
+	Updatable bool
 }
 
 // ReserveConn numbers a connection about to be welcomed. Connections are
@@ -473,7 +476,7 @@ func (s *Service) checkOrder(ctx context.Context, ops store.Ops, workerID string
 // the connection must be closed; the worker reconnects.
 func (s *Service) Connect(ctx context.Context, info ConnInfo) (*Conn, error) {
 	c := &Conn{s: s, workerID: info.WorkerID, userID: info.UserID, bootID: info.BootID, fail: info.Fail,
-		queued: make(map[string]*hint), kick: make(chan struct{}, 1)}
+		queued: make(map[string]*hint), kick: make(chan struct{}, 1), updatable: info.Updatable}
 	c.seq = info.Seq
 	if c.seq == 0 {
 		c.seq = s.ReserveConn()
@@ -642,6 +645,10 @@ type Conn struct {
 	// agentsDue: the worker's AgentsWanted is owed on this connection; the
 	// sender builds it from the worker's current agents.
 	agentsDue bool
+	// updatable: the connection accepts UpdateMachine (ConnInfo.Updatable);
+	// update is one owed on it, sent once and never resent.
+	updatable bool
+	update    *circusv1.UpdateMachine
 	// acquires remembers this connection's last AcquireLeases, for a late
 	// Unwatch (Unwatched); nextAcquire is the slot to overwrite next.
 	acquires       [maxRecentAcquires]recentAcquire
@@ -865,6 +872,10 @@ func (c *Conn) run(ctx context.Context) {
 		if c.agentsDue {
 			c.agentsDue = false
 			events = append(events, s.agentsWantedEvent(c.workerID))
+		}
+		if c.update != nil {
+			events = append(events, &circusv1.WorkerEvent{Event: &circusv1.WorkerEvent_UpdateMachine{UpdateMachine: c.update}})
+			c.update = nil
 		}
 		for len(events) == 0 && len(c.outbox) > 0 {
 			id := c.outbox[0]

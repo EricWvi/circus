@@ -81,3 +81,9 @@ func Peers(h *Handler) int {
 // SetAfterWelcome sets a hook that runs after each Welcome was sent and
 // before the connection is registered with the session service.
 func SetAfterWelcome(h *Handler, f func()) { h.afterWelcome = f }
+
+// SetUpdateFailed replaces Config.UpdateFailed; call it before connections
+// are served.
+func SetUpdateFailed(h *Handler, f func(ctx context.Context, workerID string, u *circusv1.UpdateFailed) error) {
+	h.cfg.UpdateFailed = f
+}

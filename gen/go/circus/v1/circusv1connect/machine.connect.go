@@ -60,6 +60,9 @@ const (
 	// MachineServiceDeleteWorkerProcedure is the fully-qualified name of the MachineService's
 	// DeleteWorker RPC.
 	MachineServiceDeleteWorkerProcedure = "/circus.v1.MachineService/DeleteWorker"
+	// MachineServiceUpdateMachineProcedure is the fully-qualified name of the MachineService's
+	// UpdateMachine RPC.
+	MachineServiceUpdateMachineProcedure = "/circus.v1.MachineService/UpdateMachine"
 )
 
 // MachineServiceClient is a client for the circus.v1.MachineService service.
@@ -115,6 +118,28 @@ type MachineServiceClient interface {
 	// does: as DeleteDevice, and the worker also leaves every provider it was
 	// assigned to and loses its integrator grant. NOT_FOUND as DeleteDevice.
 	DeleteWorker(context.Context, *connect.Request[v1.DeleteWorkerRequest]) (*connect.Response[v1.DeleteWorkerResponse], error)
+	// Updates the machine of one of the caller's devices or workers (its
+	// device and worker share the machine) to the latest circus release, as
+	// `circus update` run there does: the CLI, the worker service's package
+	// when the worker service runs that circus, then a restart of the
+	// services. It is offered on the card of a role that is online and runs
+	// as the installed service (Device.update_version,
+	// Worker.update_version). The control plane sends the command to one
+	// online role of the machine that runs as the installed service: one
+	// whose version is below the target when there is one, the daemon first
+	// among them; otherwise the daemon first. It returns the machine's
+	// update, RUNNING. The update completes (and is removed) when a role of
+	// the machine connects with a version at least the target, or when every
+	// role of the machine is found at it as a failure is reported or the
+	// deadline passes; otherwise it fails when the role reports an error,
+	// the command cannot be sent, or after 5 minutes. While one runs,
+	// calling again returns it unchanged; after a failure, it starts a new
+	// attempt. Errors: NOT_FOUND for another user's or an unknown identity;
+	// FAILED_PRECONDITION, with the reason as the message, when no update is
+	// offered for the identity (a development build, already at the latest
+	// release, the latest release is not known yet, or the identity is not
+	// online as the installed service).
+	UpdateMachine(context.Context, *connect.Request[v1.UpdateMachineRequest]) (*connect.Response[v1.UpdateMachineResponse], error)
 }
 
 // NewMachineServiceClient constructs a client for the circus.v1.MachineService service. By default,
@@ -182,6 +207,12 @@ func NewMachineServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(machineServiceMethods.ByName("DeleteWorker")),
 			connect.WithClientOptions(opts...),
 		),
+		updateMachine: connect.NewClient[v1.UpdateMachineRequest, v1.UpdateMachineResponse](
+			httpClient,
+			baseURL+MachineServiceUpdateMachineProcedure,
+			connect.WithSchema(machineServiceMethods.ByName("UpdateMachine")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -196,6 +227,7 @@ type machineServiceClient struct {
 	getGitRemote     *connect.Client[v1.GetGitRemoteRequest, v1.GetGitRemoteResponse]
 	deleteDevice     *connect.Client[v1.DeleteDeviceRequest, v1.DeleteDeviceResponse]
 	deleteWorker     *connect.Client[v1.DeleteWorkerRequest, v1.DeleteWorkerResponse]
+	updateMachine    *connect.Client[v1.UpdateMachineRequest, v1.UpdateMachineResponse]
 }
 
 // ListDevices calls circus.v1.MachineService.ListDevices.
@@ -241,6 +273,11 @@ func (c *machineServiceClient) DeleteDevice(ctx context.Context, req *connect.Re
 // DeleteWorker calls circus.v1.MachineService.DeleteWorker.
 func (c *machineServiceClient) DeleteWorker(ctx context.Context, req *connect.Request[v1.DeleteWorkerRequest]) (*connect.Response[v1.DeleteWorkerResponse], error) {
 	return c.deleteWorker.CallUnary(ctx, req)
+}
+
+// UpdateMachine calls circus.v1.MachineService.UpdateMachine.
+func (c *machineServiceClient) UpdateMachine(ctx context.Context, req *connect.Request[v1.UpdateMachineRequest]) (*connect.Response[v1.UpdateMachineResponse], error) {
+	return c.updateMachine.CallUnary(ctx, req)
 }
 
 // MachineServiceHandler is an implementation of the circus.v1.MachineService service.
@@ -296,6 +333,28 @@ type MachineServiceHandler interface {
 	// does: as DeleteDevice, and the worker also leaves every provider it was
 	// assigned to and loses its integrator grant. NOT_FOUND as DeleteDevice.
 	DeleteWorker(context.Context, *connect.Request[v1.DeleteWorkerRequest]) (*connect.Response[v1.DeleteWorkerResponse], error)
+	// Updates the machine of one of the caller's devices or workers (its
+	// device and worker share the machine) to the latest circus release, as
+	// `circus update` run there does: the CLI, the worker service's package
+	// when the worker service runs that circus, then a restart of the
+	// services. It is offered on the card of a role that is online and runs
+	// as the installed service (Device.update_version,
+	// Worker.update_version). The control plane sends the command to one
+	// online role of the machine that runs as the installed service: one
+	// whose version is below the target when there is one, the daemon first
+	// among them; otherwise the daemon first. It returns the machine's
+	// update, RUNNING. The update completes (and is removed) when a role of
+	// the machine connects with a version at least the target, or when every
+	// role of the machine is found at it as a failure is reported or the
+	// deadline passes; otherwise it fails when the role reports an error,
+	// the command cannot be sent, or after 5 minutes. While one runs,
+	// calling again returns it unchanged; after a failure, it starts a new
+	// attempt. Errors: NOT_FOUND for another user's or an unknown identity;
+	// FAILED_PRECONDITION, with the reason as the message, when no update is
+	// offered for the identity (a development build, already at the latest
+	// release, the latest release is not known yet, or the identity is not
+	// online as the installed service).
+	UpdateMachine(context.Context, *connect.Request[v1.UpdateMachineRequest]) (*connect.Response[v1.UpdateMachineResponse], error)
 }
 
 // NewMachineServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -359,6 +418,12 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 		connect.WithSchema(machineServiceMethods.ByName("DeleteWorker")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineServiceUpdateMachineHandler := connect.NewUnaryHandler(
+		MachineServiceUpdateMachineProcedure,
+		svc.UpdateMachine,
+		connect.WithSchema(machineServiceMethods.ByName("UpdateMachine")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/circus.v1.MachineService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineServiceListDevicesProcedure:
@@ -379,6 +444,8 @@ func NewMachineServiceHandler(svc MachineServiceHandler, opts ...connect.Handler
 			machineServiceDeleteDeviceHandler.ServeHTTP(w, r)
 		case MachineServiceDeleteWorkerProcedure:
 			machineServiceDeleteWorkerHandler.ServeHTTP(w, r)
+		case MachineServiceUpdateMachineProcedure:
+			machineServiceUpdateMachineHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -422,4 +489,8 @@ func (UnimplementedMachineServiceHandler) DeleteDevice(context.Context, *connect
 
 func (UnimplementedMachineServiceHandler) DeleteWorker(context.Context, *connect.Request[v1.DeleteWorkerRequest]) (*connect.Response[v1.DeleteWorkerResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.DeleteWorker is not implemented"))
+}
+
+func (UnimplementedMachineServiceHandler) UpdateMachine(context.Context, *connect.Request[v1.UpdateMachineRequest]) (*connect.Response[v1.UpdateMachineResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("circus.v1.MachineService.UpdateMachine is not implemented"))
 }

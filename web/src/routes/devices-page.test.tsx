@@ -92,7 +92,7 @@ describe("the device list", () => {
     expect(devbox.getByRole("img", { name: "Online" })).toBeTruthy()
     expect(devbox.getByText("Online")).toBeTruthy()
     expect(devbox.getByText("linux/amd64")).toBeTruthy()
-    expect(devbox.getByText("daemon 0.1.0")).toBeTruthy()
+    expect(devbox.getByText("daemon v0.1.0")).toBeTruthy()
     expect(devbox.queryByText(/Last seen/)).toBeNull()
 
     const win = row("eric-win")
@@ -160,7 +160,7 @@ describe("the device list", () => {
     await renderDevices(seedWithSpare())
     expect(screen.getByRole("heading", { level: 1, name: "设备" })).toBeTruthy()
     expect(row("devbox").getByText("在线")).toBeTruthy()
-    expect(row("devbox").getByText("daemon 0.1.0")).toBeTruthy()
+    expect(row("devbox").getByText("daemon v0.1.0")).toBeTruthy()
     expect(row("eric-win").getByText("前天在线")).toBeTruthy()
     expect(row("spare").getByText("从未连接")).toBeTruthy()
   })
@@ -372,7 +372,7 @@ describe("the worker list", () => {
       .map((e) => e.textContent)
     expect(names).toEqual(["cloud-runner", "devbox", "eric-mbp", "eric-win"])
     expect(workerRow("devbox").getByText("Online")).toBeTruthy()
-    expect(workerRow("devbox").getByText("worker 0.1.0")).toBeTruthy()
+    expect(workerRow("devbox").getByText("worker v0.1.0")).toBeTruthy()
     expect(workerRow("devbox").getByText("linux/amd64")).toBeTruthy()
     const same = workerRow("devbox").getByRole("list", { name: "Devices on the same machine as devbox" })
     expect(within(same).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["devbox"])
@@ -387,7 +387,13 @@ describe("the worker list", () => {
       "Actions for eric-mbp",
       "Actions for eric-win",
     ])
-    expect(labels.filter((l) => !l?.startsWith("Actions for "))).toEqual([
+    // The online workers that run as the installed service are offered their
+    // machine's update; devbox's runs in the foreground (see the machine update tests).
+    expect(labels.filter((l) => l?.startsWith("Update the machine of "))).toEqual([
+      "Update the machine of cloud-runner to v0.2.0",
+      "Update the machine of eric-mbp to v0.2.0",
+    ])
+    expect(labels.filter((l) => !l?.startsWith("Actions for ") && !l?.startsWith("Update the machine of "))).toEqual([
       "Uninstall Claude Code from cloud-runner",
       "Uninstall Claude Code from devbox",
       "Uninstall Claude Code from eric-mbp",

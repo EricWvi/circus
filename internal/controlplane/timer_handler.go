@@ -24,6 +24,11 @@ func (s *Server) handleTimer(ctx context.Context, claim store.Timer) error {
 	switch claim.Kind {
 	case timers.DeviceGrace, timers.CallWatchdog:
 		return s.router.HandleTimer(ctx, claim)
+	case timers.MachineUpdate:
+		if s.updates == nil {
+			return s.completeUnhandledTimer(ctx, claim, "no update manager")
+		}
+		return s.updates.HandleTimer(ctx, claim)
 	case timers.EnrollTokenExpiry:
 		var purged, webPurged int
 		err := s.st.Tx(ctx, func(ctx context.Context, tx store.Ops) error {

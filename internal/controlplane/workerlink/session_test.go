@@ -3,8 +3,10 @@ package workerlink_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -680,5 +682,82 @@ func TestLaterConnectionClaimsReports(t *testing.T) {
 	must(t, err)
 	if reply.GetOk() == nil {
 		t.Fatalf("the newer connection's report: %v", reply)
+	}
+}
+
+// TestUpdateFailedReplies: a valid report reaches the hook whole (the
+// control plane keeps its last 2048 bytes, as for the daemon link) and is
+// answered Ok; an invalid update id is Rejected INVALID without reaching
+// it; a report the hook could not record is Rejected STORE_UNAVAILABLE,
+// never Ok.
+func TestUpdateFailedReplies(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	fail := errors.New("store busy")
+	l := newSessionLink(t, clock.Real{}, nil, func(h *workerlink.Handler) {
+		workerlink.SetUpdateFailed(h, func(_ context.Context, workerID string, u *circusv1.UpdateFailed) error {
+			mu.Lock()
+			defer mu.Unlock()
+			got = append(got, fmt.Sprintf("%s:%s:%d", workerID, u.GetUpdateId(), len(u.GetError())))
+			if u.GetUpdateId() == "busy" {
+				return fail
+			}
+			return nil
+		})
+	})
+	report := func(id string, size int) *circusv1.SessionReply {
+		t.Helper()
+		r, err := l.c.UpdateFailed(wait.Ctx(t), id, strings.Repeat("e", size))
+		must(t, err)
+		reply, err := r.Wait(wait.Ctx(t))
+		must(t, err)
+		return reply
+	}
+	if r := report("a1", 5000); r.GetOk() == nil {
+		t.Fatalf("valid report: %v", r)
+	}
+	if r := report("not valid!", 10); r.GetRejected().GetCode() != circusv1.SessionReply_Rejected_CODE_INVALID {
+		t.Fatalf("invalid id: %v", r)
+	}
+	if r := report("busy", 10); r.GetRejected().GetCode() != circusv1.SessionReply_Rejected_CODE_STORE_UNAVAILABLE {
+		t.Fatalf("unrecorded report: %v", r)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{l.worker.Identity.ID + ":a1:5000", l.worker.Identity.ID + ":busy:10"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("hook saw %q, want %q", got, want)
+	}
+}
+
+// TestUpdateFeatureFirst32: the worker link reads Hello.features as the
+// daemon link does: "machine_update" as the 33rd entry does not count; as
+// the first it does.
+func TestUpdateFeatureFirst32(t *testing.T) {
+	l := newSessionLink(t, clock.Real{}, nil, nil)
+	dial := func(features []string) {
+		t.Helper()
+		c, err := wc.Dial(wait.Ctx(t), wc.Options{URL: l.url, Token: l.worker.Token, PrincipalID: l.worker.Identity.ID,
+			BootID: uuid.Must(uuid.NewV7()).String(), Features: features})
+		must(t, err)
+		t.Cleanup(func() { _ = c.Close() })
+		_, err = c.Attach(wait.Ctx(t), &circusv1.Attach{MaxSessions: 1, Agents: wc.ClaudeInstalled()})
+		must(t, err)
+		// The receive loop handles Attach inline: once a later request on
+		// the connection is answered, the connection is attached.
+		_, err = c.ListDevices(wait.Ctx(t))
+		must(t, err)
+	}
+	var filler []string
+	for i := range 32 {
+		filler = append(filler, fmt.Sprintf("f%d", i))
+	}
+	dial(append(filler, wire.FeatureMachineUpdate))
+	if l.svc.Updatable(l.worker.Identity.ID) {
+		t.Fatal("a 33rd feature counted")
+	}
+	dial([]string{wire.FeatureMachineUpdate})
+	if !l.svc.Updatable(l.worker.Identity.ID) {
+		t.Fatal("the feature listed first did not count")
 	}
 }

@@ -119,7 +119,7 @@ func (c *Client) gitCommand(ctx context.Context, path string, args ...string) (*
 	stdout, stderr := &gitOutput{}, &gitOutput{}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return killGitGroup(cmd.Process.Pid) }
+	cmd.Cancel = func() error { return killProcessGroup(cmd.Process.Pid) }
 	cmd.WaitDelay = 100 * time.Millisecond
 	err := waitGitCommand(cmd, path, c.opts.Logger)
 	var exit *exec.ExitError
@@ -159,7 +159,7 @@ func (o *gitOutput) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func killGitGroup(pgid int) error {
+func killProcessGroup(pgid int) error {
 	err := syscall.Kill(-pgid, syscall.SIGKILL)
 	if errors.Is(err, syscall.ESRCH) {
 		return os.ErrProcessDone
@@ -175,26 +175,33 @@ func waitGitCommand(cmd *exec.Cmd, path string, logger *slog.Logger) error {
 	pgid := cmd.Process.Pid
 	// Wait owns the leader. Cancel may not have run if the leader exited
 	// while a descendant still held its output pipes or ran independently.
-	if killErr := killGitGroup(pgid); killErr != nil {
+	if killErr := killProcessGroup(pgid); killErr != nil {
 		if errors.Is(killErr, os.ErrProcessDone) {
 			return err
 		}
 		return killErr
 	}
-	// Reap adopted children when running as PID 1 or a child subreaper.
-	for {
-		_, reapErr := syscall.Wait4(-pgid, nil, 0, nil)
-		if errors.Is(reapErr, syscall.ECHILD) {
-			break
-		}
-		if reapErr != nil && !errors.Is(reapErr, syscall.EINTR) {
-			return reapErr
-		}
+	if reapErr := reapProcessGroup(pgid); reapErr != nil {
+		return reapErr
 	}
 	if groupErr := waitGitGroup(pgid, path, logger, clock.Real{}, syscall.Kill); groupErr != nil {
 		return groupErr
 	}
 	return err
+}
+
+// reapProcessGroup reaps the killed group's processes this process
+// adopted, when it runs as PID 1 or a child subreaper.
+func reapProcessGroup(pgid int) error {
+	for {
+		_, err := syscall.Wait4(-pgid, nil, 0, nil)
+		if errors.Is(err, syscall.ECHILD) {
+			return nil
+		}
+		if err != nil && !errors.Is(err, syscall.EINTR) {
+			return err
+		}
+	}
 }
 
 func waitGitGroup(pgid int, path string, logger *slog.Logger, clk clock.Clock, signal func(int, syscall.Signal) error) error {

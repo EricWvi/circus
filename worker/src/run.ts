@@ -11,6 +11,7 @@ import { clearStop, recordStop, stopReason } from "./stop.js";
 import { createLogger } from "./log.js";
 import { SessionPool } from "./pool.js";
 import { CliProcesses, ensureStateDirectory, findExecGuard, stateDirectory } from "./process.js";
+import { helloFeatures, Updater } from "./update.js";
 import { sdkVersion } from "./versions.js";
 
 /** Graceful shutdown: turns end, leases are released, the link closes. */
@@ -27,7 +28,7 @@ function bootID(): string {
   return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
 }
 
-async function main(running: { credential?: RunningCredential }): Promise<void> {
+async function main(running: { credential?: RunningCredential }, argv: readonly string[]): Promise<void> {
   clearStop();
   const config = loadConfig();
   running.credential = { principalId: config.principalId, token: config.token };
@@ -57,8 +58,13 @@ async function main(running: { credential?: RunningCredential }): Promise<void> 
   });
   await agents.start();
 
+  // Only the installed service runs `circus update` (see helloFeatures).
+  const features = helloFeatures(argv);
+  const service = features.length > 0;
+  const updater = new Updater({ log, report: (id, error, signal) => late.link!.updateFailed(id, error, signal) });
   const link = new WorkerLink({
     ...config, bootId: bootID(), clientVersion: version, log,
+    features,
     // The account and auto-mode fields are not reported.
     attach: { maxSessions: config.maxSessions, sdkVersion: sdkVersion(), localOnly: true, agents: () => agents.forAttach() },
   });
@@ -66,6 +72,10 @@ async function main(running: { credential?: RunningCredential }): Promise<void> 
     link, maxSessions: config.maxSessions, log, processes,
     runner: { query, idleMs: config.idleMs, agentExecutable: (kind) => agents.executable(kind) },
     agentsWanted: (wanted) => agents.want(wanted),
+    updateMachine: (update) => {
+      if (service) updater.update(update);
+      else log.warn("UpdateMachine ignored: the worker does not run as the installed service", { update_id: update.updateId });
+    },
     sessionsChanged: () => agents.sessionsChanged(),
   });
   late.link = link;
@@ -117,7 +127,7 @@ export async function run(argv: readonly string[] = process.argv.slice(2)): Prom
   // The credential the worker runs with, as it read it at start.
   const running: { credential?: RunningCredential } = {};
   try {
-    await main(running);
+    await main(running, argv);
     return 0;
   } catch (error: unknown) {
     const status = exitStatus(error);

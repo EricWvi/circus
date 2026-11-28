@@ -28,6 +28,8 @@ message DaemonUplink {
     JobEvent job_event = 13;
     JobSnapshot job_snapshot = 14;
     DeviceQueryResult device_query_result = 15;
+    // Only for an UpdateMachine this daemon received.
+    UpdateFailed update_failed = 16;
   }
 }
 
@@ -52,6 +54,8 @@ message DaemonDownlink {
     ListJobs list_jobs = 13;
     StopSessionJobs stop_session_jobs = 14;
     DeviceQuery device_query = 15;
+    // Sent only to a daemon whose Hello.features lists "machine_update".
+    UpdateMachine update_machine = 16;
   }
 }
 

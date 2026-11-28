@@ -19,25 +19,28 @@ import (
 
 // Config contains all server settings. Zero values select the server defaults.
 type Config struct {
-	Listen            string           `yaml:"listen"`
-	DB                string           `yaml:"db"`
-	ProviderKeyFile   string           `yaml:"provider_key_file"`
-	TLSCert           string           `yaml:"tls_cert"`
-	TLSKey            string           `yaml:"tls_key"`
-	BehindProxy       bool             `yaml:"behind_proxy"`
-	DevInsecure       bool             `yaml:"dev_insecure"`
-	PublicURL         string           `yaml:"public_url"`
-	ShutdownTimeout   time.Duration    `yaml:"shutdown_timeout"`
-	TimerPollInterval time.Duration    `yaml:"timer_poll_interval"`
-	MaxMessageBytes   int              `yaml:"max_message_bytes"`
-	DeviceGrace       time.Duration    `yaml:"device_grace"`
-	HeartbeatInterval time.Duration    `yaml:"heartbeat_interval"`
-	HeartbeatTimeout  time.Duration    `yaml:"heartbeat_timeout"`
-	SendPoolBytes     int              `yaml:"send_pool_bytes"`
-	ReceivePoolBytes  int              `yaml:"receive_pool_bytes"`
-	WorkerConnections int              `yaml:"worker_connections"`
-	Debug             bool             `yaml:"debug"`
-	OIDC              *auth.OIDCConfig `yaml:"oidc"`
+	Listen            string        `yaml:"listen"`
+	DB                string        `yaml:"db"`
+	ProviderKeyFile   string        `yaml:"provider_key_file"`
+	TLSCert           string        `yaml:"tls_cert"`
+	TLSKey            string        `yaml:"tls_key"`
+	BehindProxy       bool          `yaml:"behind_proxy"`
+	DevInsecure       bool          `yaml:"dev_insecure"`
+	PublicURL         string        `yaml:"public_url"`
+	ShutdownTimeout   time.Duration `yaml:"shutdown_timeout"`
+	TimerPollInterval time.Duration `yaml:"timer_poll_interval"`
+	MaxMessageBytes   int           `yaml:"max_message_bytes"`
+	DeviceGrace       time.Duration `yaml:"device_grace"`
+	HeartbeatInterval time.Duration `yaml:"heartbeat_interval"`
+	HeartbeatTimeout  time.Duration `yaml:"heartbeat_timeout"`
+	SendPoolBytes     int           `yaml:"send_pool_bytes"`
+	ReceivePoolBytes  int           `yaml:"receive_pool_bytes"`
+	WorkerConnections int           `yaml:"worker_connections"`
+	Debug             bool          `yaml:"debug"`
+	// ReleaseCheck reads the latest circus release for Web machine
+	// updates; absent means on.
+	ReleaseCheck *bool            `yaml:"release_check"`
+	OIDC         *auth.OIDCConfig `yaml:"oidc"`
 }
 
 // Load requires a file, rejects unknown keys and multiple YAML documents,
@@ -87,6 +90,10 @@ func Load(path string) (Config, error) {
 	}
 	return c, nil
 }
+
+// ReleaseCheckEnabled reports whether the server reads the latest release
+// (release_check, on unless false).
+func (c Config) ReleaseCheckEnabled() bool { return c.ReleaseCheck == nil || *c.ReleaseCheck }
 
 // Server returns the programmatic server configuration; runtime hooks stay
 // outside the YAML file.

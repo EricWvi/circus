@@ -377,7 +377,7 @@ func (h *harness) startServer(fault bool) {
 		extra = append(extra, "CIRCUS_E2E_CRASH_DISPATCH=1")
 	}
 	configPath := filepath.Join(filepath.Dir(h.db), "server.yaml")
-	must(h.t, os.WriteFile(configPath, []byte(fmt.Sprintf("db: %q\nlisten: %q\ndev_insecure: true\ndevice_grace: %s\ntimer_poll_interval: 50ms\nheartbeat_interval: 1s\nheartbeat_timeout: 6s\nshutdown_timeout: 4s\nmax_message_bytes: 8388608\n", h.db, listen, h.grace)), 0o600))
+	must(h.t, os.WriteFile(configPath, []byte(fmt.Sprintf("db: %q\nlisten: %q\ndev_insecure: true\ndevice_grace: %s\ntimer_poll_interval: 50ms\nheartbeat_interval: 1s\nheartbeat_timeout: 6s\nshutdown_timeout: 4s\nmax_message_bytes: 8388608\nrelease_check: false\n", h.db, listen, h.grace)), 0o600))
 	h.server = h.start(extra, "", "server", "--config", configPath)
 	wait(h.t, 5*time.Second, func() bool {
 		if h.server.exited() {

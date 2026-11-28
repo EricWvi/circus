@@ -35,6 +35,7 @@ import { seedLedgers } from "@/mock/ledger"
 import { listMockDirectory, readMockGitRemote } from "./directories"
 import { decisionOf, historyOf, ledgerOf, type MockLedgers } from "./ledger"
 import { createMockAgents, defaultAgentTiming, type MockAgentTiming } from "./agents"
+import { createMockMachineUpdates, defaultUpdateTiming, type MockUpdateTiming } from "./machine-updates"
 import { createMockModelProviders, runsSessions } from "./model-providers"
 import {
   collectSessionLedger,
@@ -66,6 +67,7 @@ import {
 import {
   MOCK_LOGIN_METHODS,
   OIDC_SETUP_EMAIL,
+  SEED_OWNER_ID,
   SEED_SUPER_EMAIL,
   type MockDevice,
   type MockLocation,
@@ -100,6 +102,13 @@ export interface MockBackendOptions {
   workspaceTiming?: MockWorkspaceTiming
   /** How the simulated agent installs and uninstalls pace themselves. */
   agentTiming?: MockAgentTiming
+  /** How the simulated machine updates pace themselves. */
+  updateTiming?: MockUpdateTiming
+  /**
+   * Seeds the machine updates demo for the demo owner: eric-mbp's last
+   * update failed, and palace-builder's runs for a minute and a half.
+   */
+  updatesDemo?: boolean
   /** Receives notes about what the mock does in place of the real server. */
   note?: (message: string) => void
   /** Whether an OIDC provider is configured (default true). */
@@ -134,6 +143,8 @@ export function createMockBackend({
   sessionTiming = defaultSessionTiming,
   workspaceTiming = defaultWorkspaceTiming,
   agentTiming = defaultAgentTiming,
+  updateTiming = defaultUpdateTiming,
+  updatesDemo = false,
   note = () => {},
   oidc = true,
   ledgers = seedLedgers(now()),
@@ -197,10 +208,35 @@ export function createMockBackend({
     return device
   }
 
+  const updates = createMockMachineUpdates({ state, now, timing: updateTiming, changed: () => changed() })
+  if (updatesDemo) {
+    // Each state a machine update can show. The seeds are written directly,
+    // whatever the persisted state says (a machine that has caught up since
+    // gets none); palace-builder's update starts again on each page load.
+    updates.seedFailed(
+      SEED_OWNER_ID,
+      "eric-mbp",
+      "command",
+      [
+        "Checking the latest circus release…",
+        "Latest release: v0.2.0 (this circus: v0.1.0)",
+        "Downloading circus-v0.2.0-darwin-arm64.tar.gz (11.8 MiB)",
+        "Downloading circus-worker-v0.2.0-darwin-arm64.tar.gz (38.2 MiB)",
+        "  retrying in 1s (attempt 2 of 3)",
+        "  retrying in 2s (attempt 3 of 3)",
+        "download circus-v0.2.0-darwin-arm64.tar.gz: Get \"https://github.com/EricWvi/circus/releases/download/v0.2.0/circus-v0.2.0-darwin-arm64.tar.gz\": dial tcp 140.82.112.4:443: i/o timeout",
+      ].join("\n"),
+    )
+    updates.seedFailed(SEED_OWNER_ID, "worker/worker-cloud-runner", "timed_out", "")
+    updates.seedFailed(SEED_OWNER_ID, "eric-win", "unreachable", "the device's link closed before the command was sent")
+    updates.seedRunning(SEED_OWNER_ID, "palace-builder", 90_000)
+  }
+
   /** A worker as its owner sees it: only their own devices share its machine. */
-  function publicWorker(owner: string, { owner: _, ...worker }: MockWorker): Worker {
+  function publicWorker(owner: string, mock: MockWorker): Worker {
+    const { owner: _, foreground: __, ...worker } = mock
     const devices = new Set(state.devices.filter((d) => d.owner === owner).map((d) => d.name))
-    return { ...worker, localDevices: worker.localDevices.filter((d) => devices.has(d)) }
+    return { ...worker, localDevices: worker.localDevices.filter((d) => devices.has(d)), ...updates.worker(owner, mock) }
   }
 
   const hasSuper = () => state.users.some((u) => u.role === "super")
@@ -682,7 +718,10 @@ export function createMockBackend({
         return state.devices
           .filter((d) => d.owner === owner)
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map(({ owner: _, ...device }) => device)
+          .map((mock) => {
+            const { owner: _, foreground: __, ...device } = mock
+            return { ...device, ...updates.device(owner, mock) }
+          })
       }),
       listWorkers: call(() => {
         const owner = currentUser()
@@ -711,6 +750,7 @@ export function createMockBackend({
         const device = state.devices.find((d) => d.owner === owner && d.deviceId === deviceId)
         if (!device) throw new ApiError("not_found", "Device not found.")
         state.devices = state.devices.filter((d) => d !== device)
+        updates.forget(owner)
         changed()
       }),
       deleteWorker: call(({ workerId }: { workerId: string }) => {
@@ -720,7 +760,9 @@ export function createMockBackend({
         // Workers and providers live in this tab's memory: nothing to save.
         state.workers = state.workers.filter((w) => w !== worker)
         for (const p of state.providers) p.workerIds = p.workerIds.filter((id) => id !== workerId)
+        updates.forget(owner)
       }),
+      updateMachine: call((req: { deviceId: string } | { workerId: string }) => updates.start(currentUser(), req)),
       // A link that enrolls nothing: the mock has no enrollment endpoint.
       createEnrollLink: call(({ role, replaceId }: { role: EnrollRole; replaceId?: string }) => {
         const owner = currentUser()

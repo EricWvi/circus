@@ -10,6 +10,7 @@ import (
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/auth"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
+	"github.com/EricWvi/circus/internal/controlplane/updates"
 	"github.com/EricWvi/circus/internal/store"
 )
 
@@ -31,15 +32,21 @@ func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[circusv1.L
 	if err != nil {
 		return nil, s.internal(ctx, "online devices", err)
 	}
+	machines, err := s.machines(ctx, u.ID)
+	if err != nil {
+		return nil, s.internal(ctx, "machine updates", err)
+	}
 	now := s.now().UnixMilli()
 	for _, d := range devices {
 		lastSeen := max(d.LastConnectedAt, d.LastDisconnectedAt)
 		if online[d.ID] {
 			lastSeen = now
 		}
+		mach := machines[d.MachineID]
 		out.Devices = append(out.Devices, &circusv1.Device{
 			Name: d.Name, Online: online[d.ID], LastSeenUnixMs: lastSeen,
 			Os: d.OS, Arch: d.Arch, Version: d.ClientVersion, DeviceId: d.ID,
+			UpdateVersion: s.offer(d, mach), Update: machineUpdateProto(mach.Update),
 		})
 	}
 	return connect.NewResponse(out), nil
@@ -164,16 +171,20 @@ func (s *Service) ListWorkers(ctx context.Context, _ *connect.Request[circusv1.L
 			byMachine[d.MachineID] = append(byMachine[d.MachineID], d.Name)
 		}
 	}
+	machines, err := s.machines(ctx, u.ID)
+	if err != nil {
+		return nil, s.internal(ctx, "machine updates", err)
+	}
 	out := &circusv1.ListWorkersResponse{Workers: make([]*circusv1.Worker, 0, len(workers))}
 	for _, w := range workers {
-		out.Workers = append(out.Workers, s.workerMessage(w, online[w.ID], byMachine, byWorker[w.ID]))
+		out.Workers = append(out.Workers, s.workerMessage(w, online[w.ID], byMachine, byWorker[w.ID], machines[w.MachineID]))
 	}
 	return connect.NewResponse(out), nil
 }
 
 // workerMessage is the worker as ListWorkers shows it, with its agents
-// (ordered by AgentKind).
-func (s *Service) workerMessage(w store.Identity, online bool, byMachine map[string][]string, agents []store.WorkerAgent) *circusv1.Worker {
+// (ordered by AgentKind) and its machine's update.
+func (s *Service) workerMessage(w store.Identity, online bool, byMachine map[string][]string, agents []store.WorkerAgent, mach updates.Machine) *circusv1.Worker {
 	lastSeen := max(w.LastConnectedAt, w.LastDisconnectedAt)
 	if online {
 		lastSeen = s.now().UnixMilli()
@@ -185,7 +196,7 @@ func (s *Service) workerMessage(w store.Identity, online bool, byMachine map[str
 	out := &circusv1.Worker{
 		WorkerId: w.ID, Name: w.Name, Online: online, LastSeenUnixMs: lastSeen,
 		Os: w.OS, Arch: w.Arch, Hostname: w.Hostname, Version: w.ClientVersion, LocalDevices: local,
-		Integrator: w.Integrator,
+		Integrator: w.Integrator, UpdateVersion: s.offer(w, mach), Update: machineUpdateProto(mach.Update),
 	}
 	for _, a := range agents {
 		out.Agents = append(out.Agents, sessions.WorkerAgentProto(a))
@@ -213,7 +224,85 @@ func (s *Service) oneWorker(ctx context.Context, userID string, w store.Identity
 			byMachine[d.MachineID] = append(byMachine[d.MachineID], d.Name)
 		}
 	}
-	return s.workerMessage(w, online[w.ID], byMachine, agents.Agents), nil
+	machines, err := s.machines(ctx, userID)
+	if err != nil {
+		return nil, s.internal(ctx, "machine updates", err)
+	}
+	return s.workerMessage(w, online[w.ID], byMachine, agents.Agents, machines[w.MachineID]), nil
+}
+
+// machines returns the updates of the user's machines, by machine id;
+// none without an update manager.
+func (s *Service) machines(ctx context.Context, userID string) (map[string]updates.Machine, error) {
+	if s.updates == nil {
+		return map[string]updates.Machine{}, nil
+	}
+	return s.updates.Machines(ctx, userID)
+}
+
+// offer is the release offered on id's card, or "".
+func (s *Service) offer(id store.Identity, mach updates.Machine) string {
+	if s.updates == nil {
+		return ""
+	}
+	return s.updates.Offer(id, mach)
+}
+
+func machineUpdateProto(u *store.MachineUpdate) *circusv1.MachineUpdate {
+	if u == nil {
+		return nil
+	}
+	state := circusv1.MachineUpdateState_MACHINE_UPDATE_STATE_RUNNING
+	if u.State == store.MachineUpdateFailed {
+		state = circusv1.MachineUpdateState_MACHINE_UPDATE_STATE_FAILED
+	}
+	var failure circusv1.MachineUpdateFailure
+	switch u.Failure {
+	case store.UpdateFailedCommand:
+		failure = circusv1.MachineUpdateFailure_MACHINE_UPDATE_FAILURE_COMMAND
+	case store.UpdateTimedOut:
+		failure = circusv1.MachineUpdateFailure_MACHINE_UPDATE_FAILURE_TIMED_OUT
+	case store.UpdateUnreachable:
+		failure = circusv1.MachineUpdateFailure_MACHINE_UPDATE_FAILURE_UNREACHABLE
+	}
+	return &circusv1.MachineUpdate{TargetVersion: u.TargetVersion, State: state, Error: u.Error,
+		StartedUnixMs: u.StartedAt, DeadlineUnixMs: u.DeadlineAt, Failure: failure}
+}
+
+// UpdateMachine updates the machine of one of the caller's devices or
+// workers to the latest release (updates.Manager.Start) and returns its
+// update.
+func (s *Service) UpdateMachine(ctx context.Context, req *connect.Request[circusv1.UpdateMachineRequest]) (*connect.Response[circusv1.UpdateMachineResponse], error) {
+	u, err := user(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var kind store.PrincipalKind
+	var field, id string
+	switch v := req.Msg.GetIdentity().(type) {
+	case *circusv1.UpdateMachineRequest_DeviceId:
+		kind, field, id = store.KindDevice, "device_id", v.DeviceId
+	case *circusv1.UpdateMachineRequest_WorkerId:
+		kind, field, id = store.KindWorker, "worker_id", v.WorkerId
+	default:
+		return nil, invalidField("identity", "a device id or a worker id is required")
+	}
+	if store.CheckID(field, id) != nil {
+		return nil, invalidField(field, "invalid id")
+	}
+	if s.updates == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("machine updates are not available"))
+	}
+	update, err := s.updates.Start(ctx, u.ID, kind, id)
+	switch {
+	case errors.Is(err, updates.ErrNotFound):
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("%s not found", auth.AdminNoun(kind)))
+	case errors.Is(err, updates.ErrUnavailable):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case err != nil:
+		return nil, s.internal(ctx, "update machine", err)
+	}
+	return connect.NewResponse(&circusv1.UpdateMachineResponse{Update: machineUpdateProto(&update)}), nil
 }
 
 // DeleteDevice deletes one of the caller's devices with auth.RevokeByID,

@@ -23,7 +23,7 @@ import { sameProjectName } from "@/api/validation"
 import { DEFAULT_AGENT, localWorker, runsAgent } from "@/lib/agents"
 
 import type { MockSession } from "./sessions"
-import type { MockProvider, MockState } from "./state"
+import type { MockProvider, MockState, MockWorker } from "./state"
 
 /** The worker has the sessions' agent installed at its target version. */
 export const runsSessions = (w: Pick<Worker, "agents">) => runsAgent(w, DEFAULT_AGENT)
@@ -220,11 +220,11 @@ export function createMockModelProviders(host: MockModelProvidersHost) {
       const owner = host.ownerOf(s)
       const workers = state.workers.filter((w) => w.owner === owner)
       const pinned = localWorker(workers, s.device)
-      const candidates: Worker[] = pinned ? [pinned] : workers
+      const candidates: MockWorker[] = pinned ? [pinned] : workers
       const provider = s.providerId ? find(owner ?? "", s.providerId) : undefined
       if (s.providerId && !provider) return "provider_deleted"
       if (provider?.secretsUnreadable) return "provider_secrets_unreadable"
-      const assigned = (w: Worker) => !provider || provider.workerIds.includes(w.workerId)
+      const assigned = (w: MockWorker) => !provider || provider.workerIds.includes(w.workerId)
       if (pinned && !assigned(pinned)) return "no_assigned_worker"
       if (!candidates.some((w) => w.online)) return "worker_offline"
       if (!candidates.some((w) => w.online && assigned(w))) return "no_assigned_worker"

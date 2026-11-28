@@ -76,7 +76,7 @@ func (x Reject_Code) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Reject_Code.Descriptor instead.
 func (Reject_Code) EnumDescriptor() ([]byte, []int) {
-	return file_circus_v1_link_proto_rawDescGZIP(), []int{2, 0}
+	return file_circus_v1_link_proto_rawDescGZIP(), []int{4, 0}
 }
 
 type GoAway_Reason int32
@@ -125,7 +125,7 @@ func (x GoAway_Reason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GoAway_Reason.Descriptor instead.
 func (GoAway_Reason) EnumDescriptor() ([]byte, []int) {
-	return file_circus_v1_link_proto_rawDescGZIP(), []int{5, 0}
+	return file_circus_v1_link_proto_rawDescGZIP(), []int{7, 0}
 }
 
 // Hello is the client's first message after authenticated HTTP upgrade. Bearer
@@ -133,7 +133,7 @@ func (GoAway_Reason) EnumDescriptor() ([]byte, []int) {
 // messages may be sent by either side before Welcome. Missing Hello times out
 // and closes the connection; both link servers apply the same handshake rules.
 // Both roles require boot_id. The worker sends protocol and client versions
-// too; os, arch, hostname and machine_id are daemon metadata.
+// and features too; os, arch, hostname and machine_id are daemon metadata.
 type Hello struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	ProtocolVersion uint32                 `protobuf:"varint,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
@@ -151,7 +151,13 @@ type Hello struct {
 	// message that depends on a feature only if the other side listed it,
 	// because receivers close the link on unexpected messages. Daemon features:
 	// "device_query.list_directory" (accepts DeviceQuery.list_directory),
-	// "device_query.git_remote" (accepts DeviceQuery.git_remote).
+	// "device_query.git_remote" (accepts DeviceQuery.git_remote),
+	// "device_call.prepare_workspace" and "device_call.remove_workspace"
+	// (accept those device calls). Features of both roles: "machine_update"
+	// (accepts UpdateMachine: DaemonDownlink.update_machine on the daemon
+	// link, WorkerEvent.update_machine on the worker link), listed only by a
+	// process that runs as the installed user service, which the service
+	// manager restarts after `circus update`.
 	Features      []string `protobuf:"bytes,8,rep,name=features,proto3" json:"features,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -243,6 +249,130 @@ func (x *Hello) GetFeatures() []string {
 	return nil
 }
 
+// UpdateMachine asks the role to run `circus update` for its whole machine:
+// the daemon runs its own executable, the worker CIRCUS_BIN (or circus on
+// PATH), as a child process with the service's environment and a deadline
+// of 4 minutes 30 seconds, killing it (and its process group) when that
+// passes. A role runs at most one such child at a time and ignores a
+// command that arrives while one runs. The command is one-shot: it is not
+// persisted, acknowledged or resent after a reconnect. On success the role
+// reports nothing: the service manager restarts the machine's services and
+// they reconnect with the new version, which completes the update. On a
+// non-zero exit, a failure to start or the deadline, it sends UpdateFailed.
+type UpdateMachine struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Required: 1-128 bytes, charset [A-Za-z0-9_-]; names this attempt.
+	UpdateId string `protobuf:"bytes,1,opt,name=update_id,json=updateId,proto3" json:"update_id,omitempty"`
+	// The release the control plane expects (informational: `circus update`
+	// installs the latest release).
+	Version       string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateMachine) Reset() {
+	*x = UpdateMachine{}
+	mi := &file_circus_v1_link_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateMachine) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateMachine) ProtoMessage() {}
+
+func (x *UpdateMachine) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_link_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateMachine.ProtoReflect.Descriptor instead.
+func (*UpdateMachine) Descriptor() ([]byte, []int) {
+	return file_circus_v1_link_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *UpdateMachine) GetUpdateId() string {
+	if x != nil {
+		return x.UpdateId
+	}
+	return ""
+}
+
+func (x *UpdateMachine) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+// UpdateFailed reports that the role's `circus update` for UpdateMachine
+// update_id failed. The control plane ignores it unless update_id is the
+// machine's running attempt.
+type UpdateFailed struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	UpdateId string                 `protobuf:"bytes,1,opt,name=update_id,json=updateId,proto3" json:"update_id,omitempty"`
+	// Why it failed, usually the tail of the command's output, at most 2048
+	// bytes. On both links the control plane keeps only the last 2048 bytes
+	// of a longer one and removes control characters other than newlines
+	// and tabs.
+	Error         string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateFailed) Reset() {
+	*x = UpdateFailed{}
+	mi := &file_circus_v1_link_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateFailed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateFailed) ProtoMessage() {}
+
+func (x *UpdateFailed) ProtoReflect() protoreflect.Message {
+	mi := &file_circus_v1_link_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateFailed.ProtoReflect.Descriptor instead.
+func (*UpdateFailed) Descriptor() ([]byte, []int) {
+	return file_circus_v1_link_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *UpdateFailed) GetUpdateId() string {
+	if x != nil {
+		return x.UpdateId
+	}
+	return ""
+}
+
+func (x *UpdateFailed) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 // Welcome accepts a Hello whose protocol_version is supported (currently only 1).
 // Limits and heartbeat values apply to this connection in both directions.
 type Welcome struct {
@@ -272,7 +402,7 @@ type Welcome struct {
 
 func (x *Welcome) Reset() {
 	*x = Welcome{}
-	mi := &file_circus_v1_link_proto_msgTypes[1]
+	mi := &file_circus_v1_link_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -284,7 +414,7 @@ func (x *Welcome) String() string {
 func (*Welcome) ProtoMessage() {}
 
 func (x *Welcome) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_link_proto_msgTypes[1]
+	mi := &file_circus_v1_link_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -297,7 +427,7 @@ func (x *Welcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Welcome.ProtoReflect.Descriptor instead.
 func (*Welcome) Descriptor() ([]byte, []int) {
-	return file_circus_v1_link_proto_rawDescGZIP(), []int{1}
+	return file_circus_v1_link_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Welcome) GetPrincipalId() string {
@@ -383,7 +513,7 @@ type Reject struct {
 
 func (x *Reject) Reset() {
 	*x = Reject{}
-	mi := &file_circus_v1_link_proto_msgTypes[2]
+	mi := &file_circus_v1_link_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -395,7 +525,7 @@ func (x *Reject) String() string {
 func (*Reject) ProtoMessage() {}
 
 func (x *Reject) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_link_proto_msgTypes[2]
+	mi := &file_circus_v1_link_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -408,7 +538,7 @@ func (x *Reject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Reject.ProtoReflect.Descriptor instead.
 func (*Reject) Descriptor() ([]byte, []int) {
-	return file_circus_v1_link_proto_rawDescGZIP(), []int{2}
+	return file_circus_v1_link_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Reject) GetCode() Reject_Code {
@@ -460,7 +590,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_circus_v1_link_proto_msgTypes[3]
+	mi := &file_circus_v1_link_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -472,7 +602,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_link_proto_msgTypes[3]
+	mi := &file_circus_v1_link_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -485,7 +615,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_circus_v1_link_proto_rawDescGZIP(), []int{3}
+	return file_circus_v1_link_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Heartbeat) GetSeq() uint64 {
@@ -539,7 +669,7 @@ type Fragment struct {
 
 func (x *Fragment) Reset() {
 	*x = Fragment{}
-	mi := &file_circus_v1_link_proto_msgTypes[4]
+	mi := &file_circus_v1_link_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -551,7 +681,7 @@ func (x *Fragment) String() string {
 func (*Fragment) ProtoMessage() {}
 
 func (x *Fragment) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_link_proto_msgTypes[4]
+	mi := &file_circus_v1_link_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -564,7 +694,7 @@ func (x *Fragment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Fragment.ProtoReflect.Descriptor instead.
 func (*Fragment) Descriptor() ([]byte, []int) {
-	return file_circus_v1_link_proto_rawDescGZIP(), []int{4}
+	return file_circus_v1_link_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Fragment) GetMessageId() uint64 {
@@ -614,7 +744,7 @@ type GoAway struct {
 
 func (x *GoAway) Reset() {
 	*x = GoAway{}
-	mi := &file_circus_v1_link_proto_msgTypes[5]
+	mi := &file_circus_v1_link_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -626,7 +756,7 @@ func (x *GoAway) String() string {
 func (*GoAway) ProtoMessage() {}
 
 func (x *GoAway) ProtoReflect() protoreflect.Message {
-	mi := &file_circus_v1_link_proto_msgTypes[5]
+	mi := &file_circus_v1_link_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -639,7 +769,7 @@ func (x *GoAway) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GoAway.ProtoReflect.Descriptor instead.
 func (*GoAway) Descriptor() ([]byte, []int) {
-	return file_circus_v1_link_proto_rawDescGZIP(), []int{5}
+	return file_circus_v1_link_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GoAway) GetReason() GoAway_Reason {
@@ -670,7 +800,13 @@ const file_circus_v1_link_proto_rawDesc = "" +
 	"\bhostname\x18\x06 \x01(\tR\bhostname\x12\x1d\n" +
 	"\n" +
 	"machine_id\x18\a \x01(\tR\tmachineId\x12\x1a\n" +
-	"\bfeatures\x18\b \x03(\tR\bfeatures\"\xcf\x03\n" +
+	"\bfeatures\x18\b \x03(\tR\bfeatures\"F\n" +
+	"\rUpdateMachine\x12\x1b\n" +
+	"\tupdate_id\x18\x01 \x01(\tR\bupdateId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\"A\n" +
+	"\fUpdateFailed\x12\x1b\n" +
+	"\tupdate_id\x18\x01 \x01(\tR\bupdateId\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"\xcf\x03\n" +
 	"\aWelcome\x12!\n" +
 	"\fprincipal_id\x18\x01 \x01(\tR\vprincipalId\x12\x1f\n" +
 	"\vinstance_id\x18\x02 \x01(\tR\n" +
@@ -730,16 +866,18 @@ func file_circus_v1_link_proto_rawDescGZIP() []byte {
 }
 
 var file_circus_v1_link_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_circus_v1_link_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_circus_v1_link_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_circus_v1_link_proto_goTypes = []any{
-	(Reject_Code)(0),   // 0: circus.v1.Reject.Code
-	(GoAway_Reason)(0), // 1: circus.v1.GoAway.Reason
-	(*Hello)(nil),      // 2: circus.v1.Hello
-	(*Welcome)(nil),    // 3: circus.v1.Welcome
-	(*Reject)(nil),     // 4: circus.v1.Reject
-	(*Heartbeat)(nil),  // 5: circus.v1.Heartbeat
-	(*Fragment)(nil),   // 6: circus.v1.Fragment
-	(*GoAway)(nil),     // 7: circus.v1.GoAway
+	(Reject_Code)(0),      // 0: circus.v1.Reject.Code
+	(GoAway_Reason)(0),    // 1: circus.v1.GoAway.Reason
+	(*Hello)(nil),         // 2: circus.v1.Hello
+	(*UpdateMachine)(nil), // 3: circus.v1.UpdateMachine
+	(*UpdateFailed)(nil),  // 4: circus.v1.UpdateFailed
+	(*Welcome)(nil),       // 5: circus.v1.Welcome
+	(*Reject)(nil),        // 6: circus.v1.Reject
+	(*Heartbeat)(nil),     // 7: circus.v1.Heartbeat
+	(*Fragment)(nil),      // 8: circus.v1.Fragment
+	(*GoAway)(nil),        // 9: circus.v1.GoAway
 }
 var file_circus_v1_link_proto_depIdxs = []int32{
 	0, // 0: circus.v1.Reject.code:type_name -> circus.v1.Reject.Code
@@ -762,7 +900,7 @@ func file_circus_v1_link_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_circus_v1_link_proto_rawDesc), len(file_circus_v1_link_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

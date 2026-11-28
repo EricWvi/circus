@@ -636,6 +636,7 @@ type WorkerUplink struct {
 	//	*WorkerUplink_ResumeLeases
 	//	*WorkerUplink_ListDevices
 	//	*WorkerUplink_ReportAgents
+	//	*WorkerUplink_UpdateFailed
 	Payload isWorkerUplink_Payload `protobuf_oneof:"payload"`
 	// Nonzero on every business payload; 0 on Hello, Heartbeat and Fragment.
 	RequestId     uint64 `protobuf:"varint,20,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -788,6 +789,15 @@ func (x *WorkerUplink) GetReportAgents() *ReportAgents {
 	return nil
 }
 
+func (x *WorkerUplink) GetUpdateFailed() *UpdateFailed {
+	if x != nil {
+		if x, ok := x.Payload.(*WorkerUplink_UpdateFailed); ok {
+			return x.UpdateFailed
+		}
+	}
+	return nil
+}
+
 func (x *WorkerUplink) GetRequestId() uint64 {
 	if x != nil {
 		return x.RequestId
@@ -863,6 +873,14 @@ type WorkerUplink_ReportAgents struct {
 	ReportAgents *ReportAgents `protobuf:"bytes,18,opt,name=report_agents,json=reportAgents,proto3,oneof"`
 }
 
+type WorkerUplink_UpdateFailed struct {
+	// Answered by one SessionReply: Ok once it is recorded or found stale
+	// (not the machine's running attempt), Rejected INVALID for an invalid
+	// update_id, Rejected STORE_UNAVAILABLE when it could not be recorded.
+	// Only for an UpdateMachine this worker received.
+	UpdateFailed *UpdateFailed `protobuf:"bytes,19,opt,name=update_failed,json=updateFailed,proto3,oneof"`
+}
+
 func (*WorkerUplink_Hello) isWorkerUplink_Payload() {}
 
 func (*WorkerUplink_Heartbeat) isWorkerUplink_Payload() {}
@@ -886,6 +904,8 @@ func (*WorkerUplink_ResumeLeases) isWorkerUplink_Payload() {}
 func (*WorkerUplink_ListDevices) isWorkerUplink_Payload() {}
 
 func (*WorkerUplink_ReportAgents) isWorkerUplink_Payload() {}
+
+func (*WorkerUplink_UpdateFailed) isWorkerUplink_Payload() {}
 
 // WorkerDownlink carries replies and hints for open worker operations.
 type WorkerDownlink struct {
@@ -1479,6 +1499,7 @@ type WorkerEvent struct {
 	//	*WorkerEvent_LeaseRevoked_
 	//	*WorkerEvent_ReleaseIdle_
 	//	*WorkerEvent_AgentsWanted_
+	//	*WorkerEvent_UpdateMachine
 	Event         isWorkerEvent_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1566,6 +1587,15 @@ func (x *WorkerEvent) GetAgentsWanted() *WorkerEvent_AgentsWanted {
 	return nil
 }
 
+func (x *WorkerEvent) GetUpdateMachine() *UpdateMachine {
+	if x != nil {
+		if x, ok := x.Event.(*WorkerEvent_UpdateMachine); ok {
+			return x.UpdateMachine
+		}
+	}
+	return nil
+}
+
 type isWorkerEvent_Event interface {
 	isWorkerEvent_Event()
 }
@@ -1590,6 +1620,12 @@ type WorkerEvent_AgentsWanted_ struct {
 	AgentsWanted *WorkerEvent_AgentsWanted `protobuf:"bytes,5,opt,name=agents_wanted,json=agentsWanted,proto3,oneof"`
 }
 
+type WorkerEvent_UpdateMachine struct {
+	// Sent only on a connection whose Hello.features lists
+	// "machine_update"; see UpdateMachine.
+	UpdateMachine *UpdateMachine `protobuf:"bytes,6,opt,name=update_machine,json=updateMachine,proto3,oneof"`
+}
+
 func (*WorkerEvent_Offer_) isWorkerEvent_Event() {}
 
 func (*WorkerEvent_Nudge_) isWorkerEvent_Event() {}
@@ -1599,6 +1635,8 @@ func (*WorkerEvent_LeaseRevoked_) isWorkerEvent_Event() {}
 func (*WorkerEvent_ReleaseIdle_) isWorkerEvent_Event() {}
 
 func (*WorkerEvent_AgentsWanted_) isWorkerEvent_Event() {}
+
+func (*WorkerEvent_UpdateMachine) isWorkerEvent_Event() {}
 
 // SessionRequest is Data ordered by session/<session_id>. Each request opens
 // one operation with exactly one SessionReply and carries exactly one op; a
@@ -6088,7 +6126,7 @@ var File_circus_v1_worker_link_proto protoreflect.FileDescriptor
 
 const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcircus/v1/worker_link.proto\x12\tcircus.v1\x1a\x15circus/v1/agent.proto\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\x1a\x17circus/v1/session.proto\"\xc7\x05\n" +
+	"\x1bcircus/v1/worker_link.proto\x12\tcircus.v1\x1a\x15circus/v1/agent.proto\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\x1a\x17circus/v1/session.proto\"\x87\x06\n" +
 	"\fWorkerUplink\x12(\n" +
 	"\x05hello\x18\x01 \x01(\v2\x10.circus.v1.HelloH\x00R\x05hello\x124\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x14.circus.v1.HeartbeatH\x00R\theartbeat\x121\n" +
@@ -6105,7 +6143,8 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\asession\x18\x0f \x01(\v2\x19.circus.v1.SessionRequestH\x00R\asession\x12>\n" +
 	"\rresume_leases\x18\x10 \x01(\v2\x17.circus.v1.ResumeLeasesH\x00R\fresumeLeases\x12;\n" +
 	"\flist_devices\x18\x11 \x01(\v2\x16.circus.v1.ListDevicesH\x00R\vlistDevices\x12>\n" +
-	"\rreport_agents\x18\x12 \x01(\v2\x17.circus.v1.ReportAgentsH\x00R\freportAgents\x12\x1d\n" +
+	"\rreport_agents\x18\x12 \x01(\v2\x17.circus.v1.ReportAgentsH\x00R\freportAgents\x12>\n" +
+	"\rupdate_failed\x18\x13 \x01(\v2\x17.circus.v1.UpdateFailedH\x00R\fupdateFailed\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x14 \x01(\x04R\trequestIdB\t\n" +
 	"\apayload\"\xc8\x03\n" +
@@ -6184,13 +6223,14 @@ const file_circus_v1_worker_link_proto_rawDesc = "" +
 	"\rAutoModeCheck\x12\x1f\n" +
 	"\x1bAUTO_MODE_CHECK_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19AUTO_MODE_CHECK_AVAILABLE\x10\x01\x12\x1f\n" +
-	"\x1bAUTO_MODE_CHECK_UNAVAILABLE\x10\x02J\x04\b\x03\x10\x04R\x0eclaude_version\"\xeb\a\n" +
+	"\x1bAUTO_MODE_CHECK_UNAVAILABLE\x10\x02J\x04\b\x03\x10\x04R\x0eclaude_version\"\xae\b\n" +
 	"\vWorkerEvent\x124\n" +
 	"\x05offer\x18\x01 \x01(\v2\x1c.circus.v1.WorkerEvent.OfferH\x00R\x05offer\x124\n" +
 	"\x05nudge\x18\x02 \x01(\v2\x1c.circus.v1.WorkerEvent.NudgeH\x00R\x05nudge\x12J\n" +
 	"\rlease_revoked\x18\x03 \x01(\v2#.circus.v1.WorkerEvent.LeaseRevokedH\x00R\fleaseRevoked\x12G\n" +
 	"\frelease_idle\x18\x04 \x01(\v2\".circus.v1.WorkerEvent.ReleaseIdleH\x00R\vreleaseIdle\x12J\n" +
-	"\ragents_wanted\x18\x05 \x01(\v2#.circus.v1.WorkerEvent.AgentsWantedH\x00R\fagentsWanted\x1a&\n" +
+	"\ragents_wanted\x18\x05 \x01(\v2#.circus.v1.WorkerEvent.AgentsWantedH\x00R\fagentsWanted\x12A\n" +
+	"\x0eupdate_machine\x18\x06 \x01(\v2\x18.circus.v1.UpdateMachineH\x00R\rupdateMachine\x1a&\n" +
 	"\x05Offer\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x1a\x95\x02\n" +
@@ -6623,19 +6663,21 @@ var file_circus_v1_worker_link_proto_goTypes = []any{
 	(*Fragment)(nil),                         // 82: circus.v1.Fragment
 	(*CancelCall)(nil),                       // 83: circus.v1.CancelCall
 	(*CallQuery)(nil),                        // 84: circus.v1.CallQuery
-	(*Welcome)(nil),                          // 85: circus.v1.Welcome
-	(*Reject)(nil),                           // 86: circus.v1.Reject
-	(*DeviceCall)(nil),                       // 87: circus.v1.DeviceCall
-	(*DeviceResult)(nil),                     // 88: circus.v1.DeviceResult
-	(*AgentStatus)(nil),                      // 89: circus.v1.AgentStatus
-	(TurnOrigin)(0),                          // 90: circus.v1.TurnOrigin
-	(TurnOutcome)(0),                         // 91: circus.v1.TurnOutcome
-	(ApprovalKind)(0),                        // 92: circus.v1.ApprovalKind
-	(AgentKind)(0),                           // 93: circus.v1.AgentKind
-	(JobEvent_State)(0),                      // 94: circus.v1.JobEvent.State
-	(SessionEvent_Kind)(0),                   // 95: circus.v1.SessionEvent.Kind
-	(*SessionConfig)(nil),                    // 96: circus.v1.SessionConfig
-	(InputPriority)(0),                       // 97: circus.v1.InputPriority
+	(*UpdateFailed)(nil),                     // 85: circus.v1.UpdateFailed
+	(*Welcome)(nil),                          // 86: circus.v1.Welcome
+	(*Reject)(nil),                           // 87: circus.v1.Reject
+	(*DeviceCall)(nil),                       // 88: circus.v1.DeviceCall
+	(*DeviceResult)(nil),                     // 89: circus.v1.DeviceResult
+	(*AgentStatus)(nil),                      // 90: circus.v1.AgentStatus
+	(*UpdateMachine)(nil),                    // 91: circus.v1.UpdateMachine
+	(TurnOrigin)(0),                          // 92: circus.v1.TurnOrigin
+	(TurnOutcome)(0),                         // 93: circus.v1.TurnOutcome
+	(ApprovalKind)(0),                        // 94: circus.v1.ApprovalKind
+	(AgentKind)(0),                           // 95: circus.v1.AgentKind
+	(JobEvent_State)(0),                      // 96: circus.v1.JobEvent.State
+	(SessionEvent_Kind)(0),                   // 97: circus.v1.SessionEvent.Kind
+	(*SessionConfig)(nil),                    // 98: circus.v1.SessionConfig
+	(InputPriority)(0),                       // 99: circus.v1.InputPriority
 }
 var file_circus_v1_worker_link_proto_depIdxs = []int32{
 	80,  // 0: circus.v1.WorkerUplink.hello:type_name -> circus.v1.Hello
@@ -6650,108 +6692,110 @@ var file_circus_v1_worker_link_proto_depIdxs = []int32{
 	35,  // 9: circus.v1.WorkerUplink.resume_leases:type_name -> circus.v1.ResumeLeases
 	36,  // 10: circus.v1.WorkerUplink.list_devices:type_name -> circus.v1.ListDevices
 	37,  // 11: circus.v1.WorkerUplink.report_agents:type_name -> circus.v1.ReportAgents
-	85,  // 12: circus.v1.WorkerDownlink.welcome:type_name -> circus.v1.Welcome
-	86,  // 13: circus.v1.WorkerDownlink.reject:type_name -> circus.v1.Reject
-	81,  // 14: circus.v1.WorkerDownlink.heartbeat:type_name -> circus.v1.Heartbeat
-	82,  // 15: circus.v1.WorkerDownlink.fragment:type_name -> circus.v1.Fragment
-	13,  // 16: circus.v1.WorkerDownlink.call_update:type_name -> circus.v1.CallUpdate
-	38,  // 17: circus.v1.WorkerDownlink.session_reply:type_name -> circus.v1.SessionReply
-	15,  // 18: circus.v1.WorkerDownlink.worker_event:type_name -> circus.v1.WorkerEvent
-	87,  // 19: circus.v1.SubmitCall.call:type_name -> circus.v1.DeviceCall
-	39,  // 20: circus.v1.CallUpdate.accepted:type_name -> circus.v1.CallUpdate.Accepted
-	40,  // 21: circus.v1.CallUpdate.dispatched:type_name -> circus.v1.CallUpdate.Dispatched
-	88,  // 22: circus.v1.CallUpdate.result:type_name -> circus.v1.DeviceResult
-	41,  // 23: circus.v1.CallUpdate.offline:type_name -> circus.v1.CallUpdate.DeviceOffline
-	42,  // 24: circus.v1.CallUpdate.unknown:type_name -> circus.v1.CallUpdate.Unknown
-	43,  // 25: circus.v1.CallUpdate.lost:type_name -> circus.v1.CallUpdate.Lost
-	44,  // 26: circus.v1.CallUpdate.rejected:type_name -> circus.v1.CallUpdate.Rejected
-	45,  // 27: circus.v1.CallUpdate.cancelled:type_name -> circus.v1.CallUpdate.Cancelled
-	46,  // 28: circus.v1.Attach.account:type_name -> circus.v1.Attach.Account
-	2,   // 29: circus.v1.Attach.auto_mode_check:type_name -> circus.v1.Attach.AutoModeCheck
-	89,  // 30: circus.v1.Attach.agents:type_name -> circus.v1.AgentStatus
-	47,  // 31: circus.v1.WorkerEvent.offer:type_name -> circus.v1.WorkerEvent.Offer
-	48,  // 32: circus.v1.WorkerEvent.nudge:type_name -> circus.v1.WorkerEvent.Nudge
-	49,  // 33: circus.v1.WorkerEvent.lease_revoked:type_name -> circus.v1.WorkerEvent.LeaseRevoked
-	50,  // 34: circus.v1.WorkerEvent.release_idle:type_name -> circus.v1.WorkerEvent.ReleaseIdle
-	51,  // 35: circus.v1.WorkerEvent.agents_wanted:type_name -> circus.v1.WorkerEvent.AgentsWanted
-	17,  // 36: circus.v1.SessionRequest.acquire_lease:type_name -> circus.v1.AcquireLease
-	18,  // 37: circus.v1.SessionRequest.release_lease:type_name -> circus.v1.ReleaseLease
-	19,  // 38: circus.v1.SessionRequest.load_transcript:type_name -> circus.v1.LoadTranscript
-	20,  // 39: circus.v1.SessionRequest.list_transcript_keys:type_name -> circus.v1.ListTranscriptKeys
-	21,  // 40: circus.v1.SessionRequest.append_transcript:type_name -> circus.v1.AppendTranscript
-	23,  // 41: circus.v1.SessionRequest.take_inputs:type_name -> circus.v1.TakeInputs
-	24,  // 42: circus.v1.SessionRequest.report_turn:type_name -> circus.v1.ReportTurn
-	26,  // 43: circus.v1.SessionRequest.patch_state:type_name -> circus.v1.PatchSessionState
-	27,  // 44: circus.v1.SessionRequest.get_state:type_name -> circus.v1.GetSessionState
-	30,  // 45: circus.v1.SessionRequest.publish_events:type_name -> circus.v1.PublishEvents
-	31,  // 46: circus.v1.SessionRequest.request_approval:type_name -> circus.v1.RequestApproval
-	32,  // 47: circus.v1.SessionRequest.consume_grant:type_name -> circus.v1.ConsumeGrant
-	33,  // 48: circus.v1.SessionRequest.transcript_repaired:type_name -> circus.v1.TranscriptRepaired
-	34,  // 49: circus.v1.SessionRequest.get_launch_env:type_name -> circus.v1.GetLaunchEnv
-	4,   // 50: circus.v1.ReleaseLease.reason:type_name -> circus.v1.ReleaseLease.Reason
-	22,  // 51: circus.v1.AppendTranscript.entries:type_name -> circus.v1.TranscriptEntry
-	5,   // 52: circus.v1.ReportTurn.phase:type_name -> circus.v1.ReportTurn.Phase
-	90,  // 53: circus.v1.ReportTurn.origin:type_name -> circus.v1.TurnOrigin
-	91,  // 54: circus.v1.ReportTurn.outcome:type_name -> circus.v1.TurnOutcome
-	53,  // 55: circus.v1.ReportTurn.persisted:type_name -> circus.v1.ReportTurn.Persisted
-	54,  // 56: circus.v1.PatchSessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
-	55,  // 57: circus.v1.PatchSessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
-	56,  // 58: circus.v1.PatchSessionState.bgtasks_started:type_name -> circus.v1.PatchSessionState.BackgroundTask
-	25,  // 59: circus.v1.PatchSessionState.handed_jobs:type_name -> circus.v1.JobKey
-	53,  // 60: circus.v1.PatchSessionState.persisted:type_name -> circus.v1.ReportTurn.Persisted
-	6,   // 61: circus.v1.GetSessionState.sections:type_name -> circus.v1.GetSessionState.Section
-	54,  // 62: circus.v1.SessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
-	55,  // 63: circus.v1.SessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
-	57,  // 64: circus.v1.SessionState.jobs:type_name -> circus.v1.SessionState.Job
-	58,  // 65: circus.v1.SessionState.calls:type_name -> circus.v1.SessionState.Call
-	59,  // 66: circus.v1.SessionState.grants:type_name -> circus.v1.SessionState.Grant
-	58,  // 67: circus.v1.Recovery.calls:type_name -> circus.v1.SessionState.Call
-	56,  // 68: circus.v1.Recovery.lost_bgtasks:type_name -> circus.v1.PatchSessionState.BackgroundTask
-	60,  // 69: circus.v1.PublishEvents.events:type_name -> circus.v1.PublishEvents.Event
-	92,  // 70: circus.v1.RequestApproval.kind:type_name -> circus.v1.ApprovalKind
-	61,  // 71: circus.v1.ResumeLeases.leases:type_name -> circus.v1.ResumeLeases.Held
-	89,  // 72: circus.v1.ReportAgents.agents:type_name -> circus.v1.AgentStatus
-	62,  // 73: circus.v1.SessionReply.ok:type_name -> circus.v1.SessionReply.Ok
-	63,  // 74: circus.v1.SessionReply.fenced:type_name -> circus.v1.SessionReply.Fenced
-	64,  // 75: circus.v1.SessionReply.rejected:type_name -> circus.v1.SessionReply.Rejected
-	65,  // 76: circus.v1.SessionReply.lease:type_name -> circus.v1.SessionReply.Lease
-	66,  // 77: circus.v1.SessionReply.transcript_page:type_name -> circus.v1.SessionReply.TranscriptPage
-	67,  // 78: circus.v1.SessionReply.transcript_keys:type_name -> circus.v1.SessionReply.TranscriptKeys
-	68,  // 79: circus.v1.SessionReply.inputs:type_name -> circus.v1.SessionReply.Inputs
-	69,  // 80: circus.v1.SessionReply.turn:type_name -> circus.v1.SessionReply.Turn
-	70,  // 81: circus.v1.SessionReply.state:type_name -> circus.v1.SessionReply.SessionStateReply
-	71,  // 82: circus.v1.SessionReply.approval:type_name -> circus.v1.SessionReply.Approval
-	72,  // 83: circus.v1.SessionReply.grant:type_name -> circus.v1.SessionReply.Grant
-	73,  // 84: circus.v1.SessionReply.devices:type_name -> circus.v1.SessionReply.Devices
-	75,  // 85: circus.v1.SessionReply.resumed:type_name -> circus.v1.SessionReply.Resumed
-	74,  // 86: circus.v1.SessionReply.launch_env:type_name -> circus.v1.SessionReply.LaunchEnv
-	1,   // 87: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
-	3,   // 88: circus.v1.WorkerEvent.Nudge.reasons:type_name -> circus.v1.WorkerEvent.Nudge.Reason
-	52,  // 89: circus.v1.WorkerEvent.AgentsWanted.agents:type_name -> circus.v1.WorkerEvent.AgentsWanted.Wanted
-	93,  // 90: circus.v1.WorkerEvent.AgentsWanted.Wanted.agent:type_name -> circus.v1.AgentKind
-	25,  // 91: circus.v1.ReportTurn.Persisted.jobs:type_name -> circus.v1.JobKey
-	25,  // 92: circus.v1.SessionState.Job.key:type_name -> circus.v1.JobKey
-	94,  // 93: circus.v1.SessionState.Job.state:type_name -> circus.v1.JobEvent.State
-	0,   // 94: circus.v1.SessionState.Call.outcome:type_name -> circus.v1.CallOutcome
-	1,   // 95: circus.v1.SessionState.Call.rejected_code:type_name -> circus.v1.CallUpdate.Rejected.Code
-	95,  // 96: circus.v1.PublishEvents.Event.kind:type_name -> circus.v1.SessionEvent.Kind
-	7,   // 97: circus.v1.SessionReply.Rejected.code:type_name -> circus.v1.SessionReply.Rejected.Code
-	28,  // 98: circus.v1.SessionReply.Lease.state:type_name -> circus.v1.SessionState
-	29,  // 99: circus.v1.SessionReply.Lease.recovery:type_name -> circus.v1.Recovery
-	96,  // 100: circus.v1.SessionReply.Lease.config:type_name -> circus.v1.SessionConfig
-	22,  // 101: circus.v1.SessionReply.TranscriptPage.entries:type_name -> circus.v1.TranscriptEntry
-	76,  // 102: circus.v1.SessionReply.Inputs.inputs:type_name -> circus.v1.SessionReply.Inputs.Input
-	28,  // 103: circus.v1.SessionReply.SessionStateReply.state:type_name -> circus.v1.SessionState
-	77,  // 104: circus.v1.SessionReply.Devices.devices:type_name -> circus.v1.SessionReply.Devices.Device
-	78,  // 105: circus.v1.SessionReply.LaunchEnv.env:type_name -> circus.v1.SessionReply.LaunchEnv.Var
-	79,  // 106: circus.v1.SessionReply.Resumed.leases:type_name -> circus.v1.SessionReply.Resumed.Outcome
-	8,   // 107: circus.v1.SessionReply.Inputs.Input.kind:type_name -> circus.v1.SessionReply.Inputs.Input.Kind
-	97,  // 108: circus.v1.SessionReply.Inputs.Input.priority:type_name -> circus.v1.InputPriority
-	109, // [109:109] is the sub-list for method output_type
-	109, // [109:109] is the sub-list for method input_type
-	109, // [109:109] is the sub-list for extension type_name
-	109, // [109:109] is the sub-list for extension extendee
-	0,   // [0:109] is the sub-list for field type_name
+	85,  // 12: circus.v1.WorkerUplink.update_failed:type_name -> circus.v1.UpdateFailed
+	86,  // 13: circus.v1.WorkerDownlink.welcome:type_name -> circus.v1.Welcome
+	87,  // 14: circus.v1.WorkerDownlink.reject:type_name -> circus.v1.Reject
+	81,  // 15: circus.v1.WorkerDownlink.heartbeat:type_name -> circus.v1.Heartbeat
+	82,  // 16: circus.v1.WorkerDownlink.fragment:type_name -> circus.v1.Fragment
+	13,  // 17: circus.v1.WorkerDownlink.call_update:type_name -> circus.v1.CallUpdate
+	38,  // 18: circus.v1.WorkerDownlink.session_reply:type_name -> circus.v1.SessionReply
+	15,  // 19: circus.v1.WorkerDownlink.worker_event:type_name -> circus.v1.WorkerEvent
+	88,  // 20: circus.v1.SubmitCall.call:type_name -> circus.v1.DeviceCall
+	39,  // 21: circus.v1.CallUpdate.accepted:type_name -> circus.v1.CallUpdate.Accepted
+	40,  // 22: circus.v1.CallUpdate.dispatched:type_name -> circus.v1.CallUpdate.Dispatched
+	89,  // 23: circus.v1.CallUpdate.result:type_name -> circus.v1.DeviceResult
+	41,  // 24: circus.v1.CallUpdate.offline:type_name -> circus.v1.CallUpdate.DeviceOffline
+	42,  // 25: circus.v1.CallUpdate.unknown:type_name -> circus.v1.CallUpdate.Unknown
+	43,  // 26: circus.v1.CallUpdate.lost:type_name -> circus.v1.CallUpdate.Lost
+	44,  // 27: circus.v1.CallUpdate.rejected:type_name -> circus.v1.CallUpdate.Rejected
+	45,  // 28: circus.v1.CallUpdate.cancelled:type_name -> circus.v1.CallUpdate.Cancelled
+	46,  // 29: circus.v1.Attach.account:type_name -> circus.v1.Attach.Account
+	2,   // 30: circus.v1.Attach.auto_mode_check:type_name -> circus.v1.Attach.AutoModeCheck
+	90,  // 31: circus.v1.Attach.agents:type_name -> circus.v1.AgentStatus
+	47,  // 32: circus.v1.WorkerEvent.offer:type_name -> circus.v1.WorkerEvent.Offer
+	48,  // 33: circus.v1.WorkerEvent.nudge:type_name -> circus.v1.WorkerEvent.Nudge
+	49,  // 34: circus.v1.WorkerEvent.lease_revoked:type_name -> circus.v1.WorkerEvent.LeaseRevoked
+	50,  // 35: circus.v1.WorkerEvent.release_idle:type_name -> circus.v1.WorkerEvent.ReleaseIdle
+	51,  // 36: circus.v1.WorkerEvent.agents_wanted:type_name -> circus.v1.WorkerEvent.AgentsWanted
+	91,  // 37: circus.v1.WorkerEvent.update_machine:type_name -> circus.v1.UpdateMachine
+	17,  // 38: circus.v1.SessionRequest.acquire_lease:type_name -> circus.v1.AcquireLease
+	18,  // 39: circus.v1.SessionRequest.release_lease:type_name -> circus.v1.ReleaseLease
+	19,  // 40: circus.v1.SessionRequest.load_transcript:type_name -> circus.v1.LoadTranscript
+	20,  // 41: circus.v1.SessionRequest.list_transcript_keys:type_name -> circus.v1.ListTranscriptKeys
+	21,  // 42: circus.v1.SessionRequest.append_transcript:type_name -> circus.v1.AppendTranscript
+	23,  // 43: circus.v1.SessionRequest.take_inputs:type_name -> circus.v1.TakeInputs
+	24,  // 44: circus.v1.SessionRequest.report_turn:type_name -> circus.v1.ReportTurn
+	26,  // 45: circus.v1.SessionRequest.patch_state:type_name -> circus.v1.PatchSessionState
+	27,  // 46: circus.v1.SessionRequest.get_state:type_name -> circus.v1.GetSessionState
+	30,  // 47: circus.v1.SessionRequest.publish_events:type_name -> circus.v1.PublishEvents
+	31,  // 48: circus.v1.SessionRequest.request_approval:type_name -> circus.v1.RequestApproval
+	32,  // 49: circus.v1.SessionRequest.consume_grant:type_name -> circus.v1.ConsumeGrant
+	33,  // 50: circus.v1.SessionRequest.transcript_repaired:type_name -> circus.v1.TranscriptRepaired
+	34,  // 51: circus.v1.SessionRequest.get_launch_env:type_name -> circus.v1.GetLaunchEnv
+	4,   // 52: circus.v1.ReleaseLease.reason:type_name -> circus.v1.ReleaseLease.Reason
+	22,  // 53: circus.v1.AppendTranscript.entries:type_name -> circus.v1.TranscriptEntry
+	5,   // 54: circus.v1.ReportTurn.phase:type_name -> circus.v1.ReportTurn.Phase
+	92,  // 55: circus.v1.ReportTurn.origin:type_name -> circus.v1.TurnOrigin
+	93,  // 56: circus.v1.ReportTurn.outcome:type_name -> circus.v1.TurnOutcome
+	53,  // 57: circus.v1.ReportTurn.persisted:type_name -> circus.v1.ReportTurn.Persisted
+	54,  // 58: circus.v1.PatchSessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
+	55,  // 59: circus.v1.PatchSessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
+	56,  // 60: circus.v1.PatchSessionState.bgtasks_started:type_name -> circus.v1.PatchSessionState.BackgroundTask
+	25,  // 61: circus.v1.PatchSessionState.handed_jobs:type_name -> circus.v1.JobKey
+	53,  // 62: circus.v1.PatchSessionState.persisted:type_name -> circus.v1.ReportTurn.Persisted
+	6,   // 63: circus.v1.GetSessionState.sections:type_name -> circus.v1.GetSessionState.Section
+	54,  // 64: circus.v1.SessionState.cwds:type_name -> circus.v1.PatchSessionState.Cwd
+	55,  // 65: circus.v1.SessionState.files:type_name -> circus.v1.PatchSessionState.FileRecord
+	57,  // 66: circus.v1.SessionState.jobs:type_name -> circus.v1.SessionState.Job
+	58,  // 67: circus.v1.SessionState.calls:type_name -> circus.v1.SessionState.Call
+	59,  // 68: circus.v1.SessionState.grants:type_name -> circus.v1.SessionState.Grant
+	58,  // 69: circus.v1.Recovery.calls:type_name -> circus.v1.SessionState.Call
+	56,  // 70: circus.v1.Recovery.lost_bgtasks:type_name -> circus.v1.PatchSessionState.BackgroundTask
+	60,  // 71: circus.v1.PublishEvents.events:type_name -> circus.v1.PublishEvents.Event
+	94,  // 72: circus.v1.RequestApproval.kind:type_name -> circus.v1.ApprovalKind
+	61,  // 73: circus.v1.ResumeLeases.leases:type_name -> circus.v1.ResumeLeases.Held
+	90,  // 74: circus.v1.ReportAgents.agents:type_name -> circus.v1.AgentStatus
+	62,  // 75: circus.v1.SessionReply.ok:type_name -> circus.v1.SessionReply.Ok
+	63,  // 76: circus.v1.SessionReply.fenced:type_name -> circus.v1.SessionReply.Fenced
+	64,  // 77: circus.v1.SessionReply.rejected:type_name -> circus.v1.SessionReply.Rejected
+	65,  // 78: circus.v1.SessionReply.lease:type_name -> circus.v1.SessionReply.Lease
+	66,  // 79: circus.v1.SessionReply.transcript_page:type_name -> circus.v1.SessionReply.TranscriptPage
+	67,  // 80: circus.v1.SessionReply.transcript_keys:type_name -> circus.v1.SessionReply.TranscriptKeys
+	68,  // 81: circus.v1.SessionReply.inputs:type_name -> circus.v1.SessionReply.Inputs
+	69,  // 82: circus.v1.SessionReply.turn:type_name -> circus.v1.SessionReply.Turn
+	70,  // 83: circus.v1.SessionReply.state:type_name -> circus.v1.SessionReply.SessionStateReply
+	71,  // 84: circus.v1.SessionReply.approval:type_name -> circus.v1.SessionReply.Approval
+	72,  // 85: circus.v1.SessionReply.grant:type_name -> circus.v1.SessionReply.Grant
+	73,  // 86: circus.v1.SessionReply.devices:type_name -> circus.v1.SessionReply.Devices
+	75,  // 87: circus.v1.SessionReply.resumed:type_name -> circus.v1.SessionReply.Resumed
+	74,  // 88: circus.v1.SessionReply.launch_env:type_name -> circus.v1.SessionReply.LaunchEnv
+	1,   // 89: circus.v1.CallUpdate.Rejected.code:type_name -> circus.v1.CallUpdate.Rejected.Code
+	3,   // 90: circus.v1.WorkerEvent.Nudge.reasons:type_name -> circus.v1.WorkerEvent.Nudge.Reason
+	52,  // 91: circus.v1.WorkerEvent.AgentsWanted.agents:type_name -> circus.v1.WorkerEvent.AgentsWanted.Wanted
+	95,  // 92: circus.v1.WorkerEvent.AgentsWanted.Wanted.agent:type_name -> circus.v1.AgentKind
+	25,  // 93: circus.v1.ReportTurn.Persisted.jobs:type_name -> circus.v1.JobKey
+	25,  // 94: circus.v1.SessionState.Job.key:type_name -> circus.v1.JobKey
+	96,  // 95: circus.v1.SessionState.Job.state:type_name -> circus.v1.JobEvent.State
+	0,   // 96: circus.v1.SessionState.Call.outcome:type_name -> circus.v1.CallOutcome
+	1,   // 97: circus.v1.SessionState.Call.rejected_code:type_name -> circus.v1.CallUpdate.Rejected.Code
+	97,  // 98: circus.v1.PublishEvents.Event.kind:type_name -> circus.v1.SessionEvent.Kind
+	7,   // 99: circus.v1.SessionReply.Rejected.code:type_name -> circus.v1.SessionReply.Rejected.Code
+	28,  // 100: circus.v1.SessionReply.Lease.state:type_name -> circus.v1.SessionState
+	29,  // 101: circus.v1.SessionReply.Lease.recovery:type_name -> circus.v1.Recovery
+	98,  // 102: circus.v1.SessionReply.Lease.config:type_name -> circus.v1.SessionConfig
+	22,  // 103: circus.v1.SessionReply.TranscriptPage.entries:type_name -> circus.v1.TranscriptEntry
+	76,  // 104: circus.v1.SessionReply.Inputs.inputs:type_name -> circus.v1.SessionReply.Inputs.Input
+	28,  // 105: circus.v1.SessionReply.SessionStateReply.state:type_name -> circus.v1.SessionState
+	77,  // 106: circus.v1.SessionReply.Devices.devices:type_name -> circus.v1.SessionReply.Devices.Device
+	78,  // 107: circus.v1.SessionReply.LaunchEnv.env:type_name -> circus.v1.SessionReply.LaunchEnv.Var
+	79,  // 108: circus.v1.SessionReply.Resumed.leases:type_name -> circus.v1.SessionReply.Resumed.Outcome
+	8,   // 109: circus.v1.SessionReply.Inputs.Input.kind:type_name -> circus.v1.SessionReply.Inputs.Input.Kind
+	99,  // 110: circus.v1.SessionReply.Inputs.Input.priority:type_name -> circus.v1.InputPriority
+	111, // [111:111] is the sub-list for method output_type
+	111, // [111:111] is the sub-list for method input_type
+	111, // [111:111] is the sub-list for extension type_name
+	111, // [111:111] is the sub-list for extension extendee
+	0,   // [0:111] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_worker_link_proto_init() }
@@ -6776,6 +6820,7 @@ func file_circus_v1_worker_link_proto_init() {
 		(*WorkerUplink_ResumeLeases)(nil),
 		(*WorkerUplink_ListDevices)(nil),
 		(*WorkerUplink_ReportAgents)(nil),
+		(*WorkerUplink_UpdateFailed)(nil),
 	}
 	file_circus_v1_worker_link_proto_msgTypes[1].OneofWrappers = []any{
 		(*WorkerDownlink_Welcome)(nil),
@@ -6802,6 +6847,7 @@ func file_circus_v1_worker_link_proto_init() {
 		(*WorkerEvent_LeaseRevoked_)(nil),
 		(*WorkerEvent_ReleaseIdle_)(nil),
 		(*WorkerEvent_AgentsWanted_)(nil),
+		(*WorkerEvent_UpdateMachine)(nil),
 	}
 	file_circus_v1_worker_link_proto_msgTypes[7].OneofWrappers = []any{
 		(*SessionRequest_AcquireLease)(nil),

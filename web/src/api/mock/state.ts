@@ -59,8 +59,18 @@ export interface MockProject {
 
 export type MockLocation = Location & { deviceId: string }
 
+/**
+ * How a role runs: true when it runs in the foreground, not as the
+ * installed service, so the service manager would not restart it after
+ * `circus update` and no update is offered on its card. Absent means it
+ * runs as the installed service.
+ */
+interface RunsAs {
+  foreground?: boolean
+}
+
 /** An enrolled device. `deviceId` is unique; a name can be enrolled again. */
-export type MockDevice = Device & { owner: string }
+export type MockDevice = Omit<Device, "updateVersion" | "update"> & { owner: string } & RunsAs
 
 /** A stored model provider, secrets in the clear (the mock has nothing to protect). */
 export interface MockProvider {
@@ -85,7 +95,7 @@ export interface MockProvider {
 }
 
 /** An enrolled worker. */
-export type MockWorker = Worker & { owner: string }
+export type MockWorker = Omit<Worker, "updateVersion" | "update"> & { owner: string } & RunsAs
 
 /**
  * Everything the mock server knows. Plain JSON so it can be persisted;
@@ -136,7 +146,7 @@ export function seedState(now: number = Date.now()): MockState {
     { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64" },
     { name: "eric-win", online: false, lastSeenUnixMs: now - 2 * DAY, os: "windows", arch: "amd64" },
     { name: "palace-builder", online: true, lastSeenUnixMs: now, os: "linux", arch: "arm64" },
-  ].map((d) => ({ ...d, owner, version: "0.1.0", deviceId: `device-${d.name}` }))
+  ].map((d) => ({ ...d, owner, version: "v0.1.0", deviceId: `device-${d.name}` }))
 
   const projects: MockState["projects"] = seedProjects.map((p, i) => {
     const latest = seedSessionList
@@ -205,18 +215,19 @@ const seedWorker = (w: SeedWorker): MockWorker => ({
   owner: SEED_OWNER_ID,
   workerId: `worker-${w.name}`,
   hostname: w.name,
-  version: "0.1.0",
+  version: "v0.1.0",
 })
 
 /**
  * The demo owner's workers: one beside each of three devices, and one on a
  * machine of its own, the only integrator. All have Claude Code installed
- * (the offline one as it last reported).
+ * (the offline one as it last reported). The one on devbox runs in the
+ * foreground, so only devbox's device card offers its machine's update.
  */
 export function seedWorkers(now: number = Date.now()): MockWorker[] {
   return [
     { name: "cloud-runner", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: [], integrator: true },
-    { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: ["devbox"] },
+    { name: "devbox", online: true, lastSeenUnixMs: now, os: "linux", arch: "amd64", localDevices: ["devbox"], foreground: true },
     { name: "eric-mbp", online: true, lastSeenUnixMs: now, os: "darwin", arch: "arm64", localDevices: ["eric-mbp"] },
     { name: "eric-win", online: false, lastSeenUnixMs: now - 2 * DAY, os: "windows", arch: "amd64", localDevices: ["eric-win"] },
   ].map((w) => seedWorker({ ...w, agents: [mockAgent(w.lastSeenUnixMs)] }))

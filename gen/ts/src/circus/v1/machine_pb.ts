@@ -14,7 +14,108 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/machine.proto.
  */
 export const file_circus_v1_machine: GenFile = /*@__PURE__*/
-  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxIn8KBkRldmljZRIMCgRuYW1lGAEgASgJEg4KBm9ubGluZRgCIAEoCBIZChFsYXN0X3NlZW5fdW5peF9tcxgDIAEoAxIKCgJvcxgEIAEoCRIMCgRhcmNoGAUgASgJEg8KB3ZlcnNpb24YBiABKAkSEQoJZGV2aWNlX2lkGAcgASgJIhQKEkxpc3REZXZpY2VzUmVxdWVzdCI5ChNMaXN0RGV2aWNlc1Jlc3BvbnNlEiIKB2RldmljZXMYASADKAsyES5jaXJjdXMudjEuRGV2aWNlIuQBCgZXb3JrZXISEQoJd29ya2VyX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSDgoGb25saW5lGAMgASgIEhkKEWxhc3Rfc2Vlbl91bml4X21zGAQgASgDEgoKAm9zGAUgASgJEgwKBGFyY2gYBiABKAkSEAoIaG9zdG5hbWUYByABKAkSDwoHdmVyc2lvbhgIIAEoCRIVCg1sb2NhbF9kZXZpY2VzGAkgAygJEhIKCmludGVncmF0b3IYCiABKAgSJgoGYWdlbnRzGAsgAygLMhYuY2lyY3VzLnYxLldvcmtlckFnZW50IhQKEkxpc3RXb3JrZXJzUmVxdWVzdCI+ChVTZXRXb3JrZXJHcmFudFJlcXVlc3QSEQoJd29ya2VyX2lkGAEgASgJEhIKCmludGVncmF0b3IYAiABKAgiOwoWU2V0V29ya2VyR3JhbnRSZXNwb25zZRIhCgZ3b3JrZXIYASABKAsyES5jaXJjdXMudjEuV29ya2VyImAKFVNldFdvcmtlckFnZW50UmVxdWVzdBIRCgl3b3JrZXJfaWQYASABKAkSIwoFYWdlbnQYAiABKA4yFC5jaXJjdXMudjEuQWdlbnRLaW5kEg8KB2luc3RhbGwYAyABKAgiOwoWU2V0V29ya2VyQWdlbnRSZXNwb25zZRIhCgZ3b3JrZXIYASABKAsyES5jaXJjdXMudjEuV29ya2VyIjkKE0xpc3RXb3JrZXJzUmVzcG9uc2USIgoHd29ya2VycxgBIAMoCzIRLmNpcmN1cy52MS5Xb3JrZXIiKAoTRGVsZXRlRGV2aWNlUmVxdWVzdBIRCglkZXZpY2VfaWQYASABKAkiFgoURGVsZXRlRGV2aWNlUmVzcG9uc2UiKAoTRGVsZXRlV29ya2VyUmVxdWVzdBIRCgl3b3JrZXJfaWQYASABKAkiFgoURGVsZXRlV29ya2VyUmVzcG9uc2UiUgoXQ3JlYXRlRW5yb2xsTGlua1JlcXVlc3QSIwoEcm9sZRgBIAEoDjIVLmNpcmN1cy52MS5FbnJvbGxSb2xlEhIKCnJlcGxhY2VfaWQYAiABKAkiWQoYQ3JlYXRlRW5yb2xsTGlua1Jlc3BvbnNlEgwKBGxpbmsYASABKAkSFwoPZXhwaXJlc191bml4X21zGAIgASgDEhYKDnNlcnZlcl92ZXJzaW9uGAMgASgJIkwKFExpc3REaXJlY3RvcnlSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCRIMCgRwYXRoGAIgASgJEhYKDmluY2x1ZGVfaGlkZGVuGAMgASgIIkcKFUxpc3REaXJlY3RvcnlSZXNwb25zZRIuCgZyZXN1bHQYASABKAsyHi5jaXJjdXMudjEuTGlzdERpcmVjdG9yeVJlc3VsdCIzChNHZXRHaXRSZW1vdGVSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCRIMCgRwYXRoGAIgASgJIkIKFEdldEdpdFJlbW90ZVJlc3BvbnNlEioKBnJlc3VsdBgBIAEoCzIaLmNpcmN1cy52MS5HaXRSZW1vdGVSZXN1bHQqbwoKRW5yb2xsUm9sZRIbChdFTlJPTExfUk9MRV9VTlNQRUNJRklFRBAAEhYKEkVOUk9MTF9ST0xFX0RBRU1PThABEhYKEkVOUk9MTF9ST0xFX1dPUktFUhACEhQKEEVOUk9MTF9ST0xFX0JPVEgQAzL+BQoOTWFjaGluZVNlcnZpY2USTAoLTGlzdERldmljZXMSHS5jaXJjdXMudjEuTGlzdERldmljZXNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3REZXZpY2VzUmVzcG9uc2USTAoLTGlzdFdvcmtlcnMSHS5jaXJjdXMudjEuTGlzdFdvcmtlcnNSZXF1ZXN0Gh4uY2lyY3VzLnYxLkxpc3RXb3JrZXJzUmVzcG9uc2USWwoQQ3JlYXRlRW5yb2xsTGluaxIiLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVxdWVzdBojLmNpcmN1cy52MS5DcmVhdGVFbnJvbGxMaW5rUmVzcG9uc2USVQoOU2V0V29ya2VyR3JhbnQSIC5jaXJjdXMudjEuU2V0V29ya2VyR3JhbnRSZXF1ZXN0GiEuY2lyY3VzLnYxLlNldFdvcmtlckdyYW50UmVzcG9uc2USVQoOU2V0V29ya2VyQWdlbnQSIC5jaXJjdXMudjEuU2V0V29ya2VyQWdlbnRSZXF1ZXN0GiEuY2lyY3VzLnYxLlNldFdvcmtlckFnZW50UmVzcG9uc2USUgoNTGlzdERpcmVjdG9yeRIfLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVxdWVzdBogLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzcG9uc2USTwoMR2V0R2l0UmVtb3RlEh4uY2lyY3VzLnYxLkdldEdpdFJlbW90ZVJlcXVlc3QaHy5jaXJjdXMudjEuR2V0R2l0UmVtb3RlUmVzcG9uc2USTwoMRGVsZXRlRGV2aWNlEh4uY2lyY3VzLnYxLkRlbGV0ZURldmljZVJlcXVlc3QaHy5jaXJjdXMudjEuRGVsZXRlRGV2aWNlUmVzcG9uc2USTwoMRGVsZXRlV29ya2VyEh4uY2lyY3VzLnYxLkRlbGV0ZVdvcmtlclJlcXVlc3QaHy5jaXJjdXMudjEuRGVsZXRlV29ya2VyUmVzcG9uc2VCNVozZ2l0aHViLmNvbS9FcmljV3ZpL2NpcmN1cy9nZW4vZ28vY2lyY3VzL3YxO2NpcmN1c3YxYgZwcm90bzM", [file_circus_v1_agent, file_circus_v1_daemon_link]);
+  fileDesc("ChdjaXJjdXMvdjEvbWFjaGluZS5wcm90bxIJY2lyY3VzLnYxIskBCg1NYWNoaW5lVXBkYXRlEhYKDnRhcmdldF92ZXJzaW9uGAEgASgJEiwKBXN0YXRlGAIgASgOMh0uY2lyY3VzLnYxLk1hY2hpbmVVcGRhdGVTdGF0ZRINCgVlcnJvchgDIAEoCRIXCg9zdGFydGVkX3VuaXhfbXMYBCABKAMSGAoQZGVhZGxpbmVfdW5peF9tcxgFIAEoAxIwCgdmYWlsdXJlGAYgASgOMh8uY2lyY3VzLnYxLk1hY2hpbmVVcGRhdGVGYWlsdXJlIkwKFFVwZGF0ZU1hY2hpbmVSZXF1ZXN0EhMKCWRldmljZV9pZBgBIAEoCUgAEhMKCXdvcmtlcl9pZBgCIAEoCUgAQgoKCGlkZW50aXR5IkEKFVVwZGF0ZU1hY2hpbmVSZXNwb25zZRIoCgZ1cGRhdGUYASABKAsyGC5jaXJjdXMudjEuTWFjaGluZVVwZGF0ZSLBAQoGRGV2aWNlEgwKBG5hbWUYASABKAkSDgoGb25saW5lGAIgASgIEhkKEWxhc3Rfc2Vlbl91bml4X21zGAMgASgDEgoKAm9zGAQgASgJEgwKBGFyY2gYBSABKAkSDwoHdmVyc2lvbhgGIAEoCRIRCglkZXZpY2VfaWQYByABKAkSFgoOdXBkYXRlX3ZlcnNpb24YCCABKAkSKAoGdXBkYXRlGAkgASgLMhguY2lyY3VzLnYxLk1hY2hpbmVVcGRhdGUiFAoSTGlzdERldmljZXNSZXF1ZXN0IjkKE0xpc3REZXZpY2VzUmVzcG9uc2USIgoHZGV2aWNlcxgBIAMoCzIRLmNpcmN1cy52MS5EZXZpY2UipgIKBldvcmtlchIRCgl3b3JrZXJfaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZvbmxpbmUYAyABKAgSGQoRbGFzdF9zZWVuX3VuaXhfbXMYBCABKAMSCgoCb3MYBSABKAkSDAoEYXJjaBgGIAEoCRIQCghob3N0bmFtZRgHIAEoCRIPCgd2ZXJzaW9uGAggASgJEhUKDWxvY2FsX2RldmljZXMYCSADKAkSEgoKaW50ZWdyYXRvchgKIAEoCBImCgZhZ2VudHMYCyADKAsyFi5jaXJjdXMudjEuV29ya2VyQWdlbnQSFgoOdXBkYXRlX3ZlcnNpb24YDCABKAkSKAoGdXBkYXRlGA0gASgLMhguY2lyY3VzLnYxLk1hY2hpbmVVcGRhdGUiFAoSTGlzdFdvcmtlcnNSZXF1ZXN0Ij4KFVNldFdvcmtlckdyYW50UmVxdWVzdBIRCgl3b3JrZXJfaWQYASABKAkSEgoKaW50ZWdyYXRvchgCIAEoCCI7ChZTZXRXb3JrZXJHcmFudFJlc3BvbnNlEiEKBndvcmtlchgBIAEoCzIRLmNpcmN1cy52MS5Xb3JrZXIiYAoVU2V0V29ya2VyQWdlbnRSZXF1ZXN0EhEKCXdvcmtlcl9pZBgBIAEoCRIjCgVhZ2VudBgCIAEoDjIULmNpcmN1cy52MS5BZ2VudEtpbmQSDwoHaW5zdGFsbBgDIAEoCCI7ChZTZXRXb3JrZXJBZ2VudFJlc3BvbnNlEiEKBndvcmtlchgBIAEoCzIRLmNpcmN1cy52MS5Xb3JrZXIiOQoTTGlzdFdvcmtlcnNSZXNwb25zZRIiCgd3b3JrZXJzGAEgAygLMhEuY2lyY3VzLnYxLldvcmtlciIoChNEZWxldGVEZXZpY2VSZXF1ZXN0EhEKCWRldmljZV9pZBgBIAEoCSIWChREZWxldGVEZXZpY2VSZXNwb25zZSIoChNEZWxldGVXb3JrZXJSZXF1ZXN0EhEKCXdvcmtlcl9pZBgBIAEoCSIWChREZWxldGVXb3JrZXJSZXNwb25zZSJSChdDcmVhdGVFbnJvbGxMaW5rUmVxdWVzdBIjCgRyb2xlGAEgASgOMhUuY2lyY3VzLnYxLkVucm9sbFJvbGUSEgoKcmVwbGFjZV9pZBgCIAEoCSJZChhDcmVhdGVFbnJvbGxMaW5rUmVzcG9uc2USDAoEbGluaxgBIAEoCRIXCg9leHBpcmVzX3VuaXhfbXMYAiABKAMSFgoOc2VydmVyX3ZlcnNpb24YAyABKAkiTAoUTGlzdERpcmVjdG9yeVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJEgwKBHBhdGgYAiABKAkSFgoOaW5jbHVkZV9oaWRkZW4YAyABKAgiRwoVTGlzdERpcmVjdG9yeVJlc3BvbnNlEi4KBnJlc3VsdBgBIAEoCzIeLmNpcmN1cy52MS5MaXN0RGlyZWN0b3J5UmVzdWx0IjMKE0dldEdpdFJlbW90ZVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJEgwKBHBhdGgYAiABKAkiQgoUR2V0R2l0UmVtb3RlUmVzcG9uc2USKgoGcmVzdWx0GAEgASgLMhouY2lyY3VzLnYxLkdpdFJlbW90ZVJlc3VsdCp9ChJNYWNoaW5lVXBkYXRlU3RhdGUSJAogTUFDSElORV9VUERBVEVfU1RBVEVfVU5TUEVDSUZJRUQQABIgChxNQUNISU5FX1VQREFURV9TVEFURV9SVU5OSU5HEAESHwobTUFDSElORV9VUERBVEVfU1RBVEVfRkFJTEVEEAIqsAEKFE1hY2hpbmVVcGRhdGVGYWlsdXJlEiYKIk1BQ0hJTkVfVVBEQVRFX0ZBSUxVUkVfVU5TUEVDSUZJRUQQABIiCh5NQUNISU5FX1VQREFURV9GQUlMVVJFX0NPTU1BTkQQARIkCiBNQUNISU5FX1VQREFURV9GQUlMVVJFX1RJTUVEX09VVBACEiYKIk1BQ0hJTkVfVVBEQVRFX0ZBSUxVUkVfVU5SRUFDSEFCTEUQAypvCgpFbnJvbGxSb2xlEhsKF0VOUk9MTF9ST0xFX1VOU1BFQ0lGSUVEEAASFgoSRU5ST0xMX1JPTEVfREFFTU9OEAESFgoSRU5ST0xMX1JPTEVfV09SS0VSEAISFAoQRU5ST0xMX1JPTEVfQk9USBADMtIGCg5NYWNoaW5lU2VydmljZRJMCgtMaXN0RGV2aWNlcxIdLmNpcmN1cy52MS5MaXN0RGV2aWNlc1JlcXVlc3QaHi5jaXJjdXMudjEuTGlzdERldmljZXNSZXNwb25zZRJMCgtMaXN0V29ya2VycxIdLmNpcmN1cy52MS5MaXN0V29ya2Vyc1JlcXVlc3QaHi5jaXJjdXMudjEuTGlzdFdvcmtlcnNSZXNwb25zZRJbChBDcmVhdGVFbnJvbGxMaW5rEiIuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXF1ZXN0GiMuY2lyY3VzLnYxLkNyZWF0ZUVucm9sbExpbmtSZXNwb25zZRJVCg5TZXRXb3JrZXJHcmFudBIgLmNpcmN1cy52MS5TZXRXb3JrZXJHcmFudFJlcXVlc3QaIS5jaXJjdXMudjEuU2V0V29ya2VyR3JhbnRSZXNwb25zZRJVCg5TZXRXb3JrZXJBZ2VudBIgLmNpcmN1cy52MS5TZXRXb3JrZXJBZ2VudFJlcXVlc3QaIS5jaXJjdXMudjEuU2V0V29ya2VyQWdlbnRSZXNwb25zZRJSCg1MaXN0RGlyZWN0b3J5Eh8uY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXF1ZXN0GiAuY2lyY3VzLnYxLkxpc3REaXJlY3RvcnlSZXNwb25zZRJPCgxHZXRHaXRSZW1vdGUSHi5jaXJjdXMudjEuR2V0R2l0UmVtb3RlUmVxdWVzdBofLmNpcmN1cy52MS5HZXRHaXRSZW1vdGVSZXNwb25zZRJPCgxEZWxldGVEZXZpY2USHi5jaXJjdXMudjEuRGVsZXRlRGV2aWNlUmVxdWVzdBofLmNpcmN1cy52MS5EZWxldGVEZXZpY2VSZXNwb25zZRJPCgxEZWxldGVXb3JrZXISHi5jaXJjdXMudjEuRGVsZXRlV29ya2VyUmVxdWVzdBofLmNpcmN1cy52MS5EZWxldGVXb3JrZXJSZXNwb25zZRJSCg1VcGRhdGVNYWNoaW5lEh8uY2lyY3VzLnYxLlVwZGF0ZU1hY2hpbmVSZXF1ZXN0GiAuY2lyY3VzLnYxLlVwZGF0ZU1hY2hpbmVSZXNwb25zZUI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw", [file_circus_v1_agent, file_circus_v1_daemon_link]);
+
+/**
+ * MachineUpdate is the update of a machine to a circus release.
+ *
+ * @generated from message circus.v1.MachineUpdate
+ */
+export type MachineUpdate = Message<"circus.v1.MachineUpdate"> & {
+  /**
+   * @generated from field: string target_version = 1;
+   */
+  targetVersion: string;
+
+  /**
+   * @generated from field: circus.v1.MachineUpdateState state = 2;
+   */
+  state: MachineUpdateState;
+
+  /**
+   * When FAILED: the command's output tail (COMMAND), or why the command
+   * could not be sent (UNREACHABLE); empty for TIMED_OUT. At most 2048
+   * bytes, without control characters other than newlines and tabs.
+   *
+   * @generated from field: string error = 3;
+   */
+  error: string;
+
+  /**
+   * @generated from field: int64 started_unix_ms = 4;
+   */
+  startedUnixMs: bigint;
+
+  /**
+   * When it fails unless a role of the machine has connected with the
+   * target version.
+   *
+   * @generated from field: int64 deadline_unix_ms = 5;
+   */
+  deadlineUnixMs: bigint;
+
+  /**
+   * Why it failed; UNSPECIFIED unless FAILED.
+   *
+   * @generated from field: circus.v1.MachineUpdateFailure failure = 6;
+   */
+  failure: MachineUpdateFailure;
+};
+
+/**
+ * Describes the message circus.v1.MachineUpdate.
+ * Use `create(MachineUpdateSchema)` to create a new message.
+ */
+export const MachineUpdateSchema: GenMessage<MachineUpdate> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 0);
+
+/**
+ * @generated from message circus.v1.UpdateMachineRequest
+ */
+export type UpdateMachineRequest = Message<"circus.v1.UpdateMachineRequest"> & {
+  /**
+   * The identity whose card was pressed; the update covers its machine.
+   *
+   * @generated from oneof circus.v1.UpdateMachineRequest.identity
+   */
+  identity: {
+    /**
+     * @generated from field: string device_id = 1;
+     */
+    value: string;
+    case: "deviceId";
+  } | {
+    /**
+     * @generated from field: string worker_id = 2;
+     */
+    value: string;
+    case: "workerId";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message circus.v1.UpdateMachineRequest.
+ * Use `create(UpdateMachineRequestSchema)` to create a new message.
+ */
+export const UpdateMachineRequestSchema: GenMessage<UpdateMachineRequest> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 1);
+
+/**
+ * @generated from message circus.v1.UpdateMachineResponse
+ */
+export type UpdateMachineResponse = Message<"circus.v1.UpdateMachineResponse"> & {
+  /**
+   * @generated from field: circus.v1.MachineUpdate update = 1;
+   */
+  update?: MachineUpdate | undefined;
+};
+
+/**
+ * Describes the message circus.v1.UpdateMachineResponse.
+ * Use `create(UpdateMachineResponseSchema)` to create a new message.
+ */
+export const UpdateMachineResponseSchema: GenMessage<UpdateMachineResponse> = /*@__PURE__*/
+  messageDesc(file_circus_v1_machine, 2);
 
 /**
  * @generated from message circus.v1.Device
@@ -67,6 +168,23 @@ export type Device = Message<"circus.v1.Device"> & {
    * @generated from field: string device_id = 7;
    */
   deviceId: string;
+
+  /**
+   * The release UpdateMachine would install, when an update is offered on
+   * this card: this device is online as the installed service (its daemon
+   * listed "machine_update"), version is a release older than the latest
+   * one, and no update of the machine runs. Empty otherwise.
+   *
+   * @generated from field: string update_version = 8;
+   */
+  updateVersion: string;
+
+  /**
+   * The machine's update, running or failed; unset when there is none.
+   *
+   * @generated from field: circus.v1.MachineUpdate update = 9;
+   */
+  update?: MachineUpdate | undefined;
 };
 
 /**
@@ -74,7 +192,7 @@ export type Device = Message<"circus.v1.Device"> & {
  * Use `create(DeviceSchema)` to create a new message.
  */
 export const DeviceSchema: GenMessage<Device> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 0);
+  messageDesc(file_circus_v1_machine, 3);
 
 /**
  * @generated from message circus.v1.ListDevicesRequest
@@ -87,7 +205,7 @@ export type ListDevicesRequest = Message<"circus.v1.ListDevicesRequest"> & {
  * Use `create(ListDevicesRequestSchema)` to create a new message.
  */
 export const ListDevicesRequestSchema: GenMessage<ListDevicesRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 1);
+  messageDesc(file_circus_v1_machine, 4);
 
 /**
  * @generated from message circus.v1.ListDevicesResponse
@@ -104,7 +222,7 @@ export type ListDevicesResponse = Message<"circus.v1.ListDevicesResponse"> & {
  * Use `create(ListDevicesResponseSchema)` to create a new message.
  */
 export const ListDevicesResponseSchema: GenMessage<ListDevicesResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 2);
+  messageDesc(file_circus_v1_machine, 5);
 
 /**
  * @generated from message circus.v1.Worker
@@ -183,6 +301,19 @@ export type Worker = Message<"circus.v1.Worker"> & {
    * @generated from field: repeated circus.v1.WorkerAgent agents = 11;
    */
   agents: WorkerAgent[];
+
+  /**
+   * As Device.update_version (this worker online as the installed service)
+   * and Device.update, for the worker's machine.
+   *
+   * @generated from field: string update_version = 12;
+   */
+  updateVersion: string;
+
+  /**
+   * @generated from field: circus.v1.MachineUpdate update = 13;
+   */
+  update?: MachineUpdate | undefined;
 };
 
 /**
@@ -190,7 +321,7 @@ export type Worker = Message<"circus.v1.Worker"> & {
  * Use `create(WorkerSchema)` to create a new message.
  */
 export const WorkerSchema: GenMessage<Worker> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 3);
+  messageDesc(file_circus_v1_machine, 6);
 
 /**
  * @generated from message circus.v1.ListWorkersRequest
@@ -203,7 +334,7 @@ export type ListWorkersRequest = Message<"circus.v1.ListWorkersRequest"> & {
  * Use `create(ListWorkersRequestSchema)` to create a new message.
  */
 export const ListWorkersRequestSchema: GenMessage<ListWorkersRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 4);
+  messageDesc(file_circus_v1_machine, 7);
 
 /**
  * @generated from message circus.v1.SetWorkerGrantRequest
@@ -225,7 +356,7 @@ export type SetWorkerGrantRequest = Message<"circus.v1.SetWorkerGrantRequest"> &
  * Use `create(SetWorkerGrantRequestSchema)` to create a new message.
  */
 export const SetWorkerGrantRequestSchema: GenMessage<SetWorkerGrantRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 5);
+  messageDesc(file_circus_v1_machine, 8);
 
 /**
  * @generated from message circus.v1.SetWorkerGrantResponse
@@ -242,7 +373,7 @@ export type SetWorkerGrantResponse = Message<"circus.v1.SetWorkerGrantResponse">
  * Use `create(SetWorkerGrantResponseSchema)` to create a new message.
  */
 export const SetWorkerGrantResponseSchema: GenMessage<SetWorkerGrantResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 6);
+  messageDesc(file_circus_v1_machine, 9);
 
 /**
  * @generated from message circus.v1.SetWorkerAgentRequest
@@ -269,7 +400,7 @@ export type SetWorkerAgentRequest = Message<"circus.v1.SetWorkerAgentRequest"> &
  * Use `create(SetWorkerAgentRequestSchema)` to create a new message.
  */
 export const SetWorkerAgentRequestSchema: GenMessage<SetWorkerAgentRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 7);
+  messageDesc(file_circus_v1_machine, 10);
 
 /**
  * @generated from message circus.v1.SetWorkerAgentResponse
@@ -286,7 +417,7 @@ export type SetWorkerAgentResponse = Message<"circus.v1.SetWorkerAgentResponse">
  * Use `create(SetWorkerAgentResponseSchema)` to create a new message.
  */
 export const SetWorkerAgentResponseSchema: GenMessage<SetWorkerAgentResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 8);
+  messageDesc(file_circus_v1_machine, 11);
 
 /**
  * @generated from message circus.v1.ListWorkersResponse
@@ -303,7 +434,7 @@ export type ListWorkersResponse = Message<"circus.v1.ListWorkersResponse"> & {
  * Use `create(ListWorkersResponseSchema)` to create a new message.
  */
 export const ListWorkersResponseSchema: GenMessage<ListWorkersResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 9);
+  messageDesc(file_circus_v1_machine, 12);
 
 /**
  * @generated from message circus.v1.DeleteDeviceRequest
@@ -320,7 +451,7 @@ export type DeleteDeviceRequest = Message<"circus.v1.DeleteDeviceRequest"> & {
  * Use `create(DeleteDeviceRequestSchema)` to create a new message.
  */
 export const DeleteDeviceRequestSchema: GenMessage<DeleteDeviceRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 10);
+  messageDesc(file_circus_v1_machine, 13);
 
 /**
  * @generated from message circus.v1.DeleteDeviceResponse
@@ -333,7 +464,7 @@ export type DeleteDeviceResponse = Message<"circus.v1.DeleteDeviceResponse"> & {
  * Use `create(DeleteDeviceResponseSchema)` to create a new message.
  */
 export const DeleteDeviceResponseSchema: GenMessage<DeleteDeviceResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 11);
+  messageDesc(file_circus_v1_machine, 14);
 
 /**
  * @generated from message circus.v1.DeleteWorkerRequest
@@ -350,7 +481,7 @@ export type DeleteWorkerRequest = Message<"circus.v1.DeleteWorkerRequest"> & {
  * Use `create(DeleteWorkerRequestSchema)` to create a new message.
  */
 export const DeleteWorkerRequestSchema: GenMessage<DeleteWorkerRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 12);
+  messageDesc(file_circus_v1_machine, 15);
 
 /**
  * @generated from message circus.v1.DeleteWorkerResponse
@@ -363,7 +494,7 @@ export type DeleteWorkerResponse = Message<"circus.v1.DeleteWorkerResponse"> & {
  * Use `create(DeleteWorkerResponseSchema)` to create a new message.
  */
 export const DeleteWorkerResponseSchema: GenMessage<DeleteWorkerResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 13);
+  messageDesc(file_circus_v1_machine, 16);
 
 /**
  * @generated from message circus.v1.CreateEnrollLinkRequest
@@ -393,7 +524,7 @@ export type CreateEnrollLinkRequest = Message<"circus.v1.CreateEnrollLinkRequest
  * Use `create(CreateEnrollLinkRequestSchema)` to create a new message.
  */
 export const CreateEnrollLinkRequestSchema: GenMessage<CreateEnrollLinkRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 14);
+  messageDesc(file_circus_v1_machine, 17);
 
 /**
  * @generated from message circus.v1.CreateEnrollLinkResponse
@@ -426,7 +557,7 @@ export type CreateEnrollLinkResponse = Message<"circus.v1.CreateEnrollLinkRespon
  * Use `create(CreateEnrollLinkResponseSchema)` to create a new message.
  */
 export const CreateEnrollLinkResponseSchema: GenMessage<CreateEnrollLinkResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 15);
+  messageDesc(file_circus_v1_machine, 18);
 
 /**
  * @generated from message circus.v1.ListDirectoryRequest
@@ -458,7 +589,7 @@ export type ListDirectoryRequest = Message<"circus.v1.ListDirectoryRequest"> & {
  * Use `create(ListDirectoryRequestSchema)` to create a new message.
  */
 export const ListDirectoryRequestSchema: GenMessage<ListDirectoryRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 16);
+  messageDesc(file_circus_v1_machine, 19);
 
 /**
  * @generated from message circus.v1.ListDirectoryResponse
@@ -477,7 +608,7 @@ export type ListDirectoryResponse = Message<"circus.v1.ListDirectoryResponse"> &
  * Use `create(ListDirectoryResponseSchema)` to create a new message.
  */
 export const ListDirectoryResponseSchema: GenMessage<ListDirectoryResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 17);
+  messageDesc(file_circus_v1_machine, 20);
 
 /**
  * @generated from message circus.v1.GetGitRemoteRequest
@@ -503,7 +634,7 @@ export type GetGitRemoteRequest = Message<"circus.v1.GetGitRemoteRequest"> & {
  * Use `create(GetGitRemoteRequestSchema)` to create a new message.
  */
 export const GetGitRemoteRequestSchema: GenMessage<GetGitRemoteRequest> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 18);
+  messageDesc(file_circus_v1_machine, 21);
 
 /**
  * @generated from message circus.v1.GetGitRemoteResponse
@@ -522,7 +653,71 @@ export type GetGitRemoteResponse = Message<"circus.v1.GetGitRemoteResponse"> & {
  * Use `create(GetGitRemoteResponseSchema)` to create a new message.
  */
 export const GetGitRemoteResponseSchema: GenMessage<GetGitRemoteResponse> = /*@__PURE__*/
-  messageDesc(file_circus_v1_machine, 19);
+  messageDesc(file_circus_v1_machine, 22);
+
+/**
+ * @generated from enum circus.v1.MachineUpdateState
+ */
+export enum MachineUpdateState {
+  /**
+   * @generated from enum value: MACHINE_UPDATE_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: MACHINE_UPDATE_STATE_RUNNING = 1;
+   */
+  RUNNING = 1,
+
+  /**
+   * @generated from enum value: MACHINE_UPDATE_STATE_FAILED = 2;
+   */
+  FAILED = 2,
+}
+
+/**
+ * Describes the enum circus.v1.MachineUpdateState.
+ */
+export const MachineUpdateStateSchema: GenEnum<MachineUpdateState> = /*@__PURE__*/
+  enumDesc(file_circus_v1_machine, 0);
+
+/**
+ * @generated from enum circus.v1.MachineUpdateFailure
+ */
+export enum MachineUpdateFailure {
+  /**
+   * @generated from enum value: MACHINE_UPDATE_FAILURE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The role ran `circus update` and it failed (MachineUpdate.error).
+   *
+   * @generated from enum value: MACHINE_UPDATE_FAILURE_COMMAND = 1;
+   */
+  COMMAND = 1,
+
+  /**
+   * No role of the machine was at the target version when the deadline
+   * passed.
+   *
+   * @generated from enum value: MACHINE_UPDATE_FAILURE_TIMED_OUT = 2;
+   */
+  TIMED_OUT = 2,
+
+  /**
+   * The command could not be sent to the role (MachineUpdate.error).
+   *
+   * @generated from enum value: MACHINE_UPDATE_FAILURE_UNREACHABLE = 3;
+   */
+  UNREACHABLE = 3,
+}
+
+/**
+ * Describes the enum circus.v1.MachineUpdateFailure.
+ */
+export const MachineUpdateFailureSchema: GenEnum<MachineUpdateFailure> = /*@__PURE__*/
+  enumDesc(file_circus_v1_machine, 1);
 
 /**
  * @generated from enum circus.v1.EnrollRole
@@ -553,7 +748,7 @@ export enum EnrollRole {
  * Describes the enum circus.v1.EnrollRole.
  */
 export const EnrollRoleSchema: GenEnum<EnrollRole> = /*@__PURE__*/
-  enumDesc(file_circus_v1_machine, 0);
+  enumDesc(file_circus_v1_machine, 2);
 
 /**
  * MachineService lists and enrolls machines for the signed-in browser user.
@@ -685,6 +880,36 @@ export const MachineService: GenService<{
     methodKind: "unary";
     input: typeof DeleteWorkerRequestSchema;
     output: typeof DeleteWorkerResponseSchema;
+  },
+  /**
+   * Updates the machine of one of the caller's devices or workers (its
+   * device and worker share the machine) to the latest circus release, as
+   * `circus update` run there does: the CLI, the worker service's package
+   * when the worker service runs that circus, then a restart of the
+   * services. It is offered on the card of a role that is online and runs
+   * as the installed service (Device.update_version,
+   * Worker.update_version). The control plane sends the command to one
+   * online role of the machine that runs as the installed service: one
+   * whose version is below the target when there is one, the daemon first
+   * among them; otherwise the daemon first. It returns the machine's
+   * update, RUNNING. The update completes (and is removed) when a role of
+   * the machine connects with a version at least the target, or when every
+   * role of the machine is found at it as a failure is reported or the
+   * deadline passes; otherwise it fails when the role reports an error,
+   * the command cannot be sent, or after 5 minutes. While one runs,
+   * calling again returns it unchanged; after a failure, it starts a new
+   * attempt. Errors: NOT_FOUND for another user's or an unknown identity;
+   * FAILED_PRECONDITION, with the reason as the message, when no update is
+   * offered for the identity (a development build, already at the latest
+   * release, the latest release is not known yet, or the identity is not
+   * online as the installed service).
+   *
+   * @generated from rpc circus.v1.MachineService.UpdateMachine
+   */
+  updateMachine: {
+    methodKind: "unary";
+    input: typeof UpdateMachineRequestSchema;
+    output: typeof UpdateMachineResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_circus_v1_machine, 0);

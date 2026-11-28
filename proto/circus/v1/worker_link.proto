@@ -55,6 +55,11 @@ message WorkerUplink {
     ResumeLeases resume_leases = 16;
     ListDevices list_devices = 17;
     ReportAgents report_agents = 18;
+    // Answered by one SessionReply: Ok once it is recorded or found stale
+    // (not the machine's running attempt), Rejected INVALID for an invalid
+    // update_id, Rejected STORE_UNAVAILABLE when it could not be recorded.
+    // Only for an UpdateMachine this worker received.
+    UpdateFailed update_failed = 19;
   }
   // Nonzero on every business payload; 0 on Hello, Heartbeat and Fragment.
   uint64 request_id = 20;
@@ -235,6 +240,9 @@ message WorkerEvent {
     LeaseRevoked lease_revoked = 3;
     ReleaseIdle release_idle = 4;
     AgentsWanted agents_wanted = 5;
+    // Sent only on a connection whose Hello.features lists
+    // "machine_update"; see UpdateMachine.
+    UpdateMachine update_machine = 6;
   }
   message Offer {
     string session_id = 1;

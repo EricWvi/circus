@@ -8,7 +8,7 @@ import {
   PlusIcon,
   ServerIcon,
 } from "lucide-react"
-import { memo, useCallback, useEffect, useId, useRef, useState, type RefObject } from "react"
+import { memo, useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation } from "react-router"
 
@@ -24,6 +24,7 @@ import { isApiError } from "@/api/errors"
 import type { Device, EnrollRole, Project, Worker } from "@/api/types"
 import { AddDeviceDialog, type RejoinTarget } from "@/components/devices/add-device-dialog"
 import { DeleteMachineDialog, type DeleteTarget } from "@/components/devices/delete-machine-dialog"
+import { MachineUpdateAction } from "@/components/devices/machine-update"
 import { WorkerAgents } from "@/components/devices/worker-agents"
 import { ProvidersSection, type ProvidersSectionHandle } from "@/components/model-providers/providers-section"
 import { InfoTip } from "@/components/info-tip"
@@ -301,7 +302,18 @@ const DeviceRow = memo(function DeviceRow({
     <li className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
       <DeviceStatusDot online={device.online} />
       <span className="truncate text-sm font-medium">{device.name}</span>
-      <LinkState device={device} lastSeen={lastSeen} />
+      <HeaderEnd
+        showUpdate={Boolean(device.updateVersion || device.update)}
+        update={
+          <MachineUpdateAction
+            target={{ kind: "device", deviceId: device.deviceId, name: device.name }}
+            updateVersion={device.updateVersion}
+            update={device.update}
+          />
+        }
+      >
+        <LinkState device={device} lastSeen={lastSeen} />
+      </HeaderEnd>
       <RowMenu kind="device" id={device.deviceId} name={device.name} online={device.online} onAction={onAction} />
       {(platform || device.version) && (
         <p className="col-span-3 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
@@ -419,7 +431,18 @@ const WorkerRow = memo(function WorkerRow({
     <li className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
       <DeviceStatusDot online={worker.online} />
       <span className="truncate text-sm font-medium">{worker.name}</span>
-      <LinkState device={worker} lastSeen={lastSeen} />
+      <HeaderEnd
+        showUpdate={Boolean(worker.updateVersion || worker.update)}
+        update={
+          <MachineUpdateAction
+            target={{ kind: "worker", workerId: worker.workerId, name: worker.name }}
+            updateVersion={worker.updateVersion}
+            update={worker.update}
+          />
+        }
+      >
+        <LinkState device={worker} lastSeen={lastSeen} />
+      </HeaderEnd>
       <RowMenu kind="worker" id={worker.workerId} name={worker.name} online={worker.online} onAction={onAction} />
       {(platform || worker.version) && (
         <p className="col-span-3 col-start-2 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
@@ -587,6 +610,8 @@ function RowMenu({
           size="icon-sm"
           className="-my-1 size-7"
           aria-label={t("devices.actions", { name })}
+          // Where a card's machine update moves focus when nothing of it remains.
+          data-card-focus
         >
           <EllipsisIcon />
         </Button>
@@ -607,6 +632,24 @@ function RowMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/**
+ * The end of a card's first line: the machine's update, if any, left of
+ * the link state (`children`). On a narrow screen the update takes a line
+ * of its own under the name instead: the wrapper dissolves into the
+ * card's grid, which puts the update on the second row.
+ */
+function HeaderEnd({ update, showUpdate, children }: { update: ReactNode; showUpdate: boolean; children: ReactNode }) {
+  return (
+    <span className="contents sm:flex sm:min-w-0 sm:items-center sm:justify-end sm:gap-3">
+      {/* Mounted while it shows nothing too: it keeps its live region and focus (see MachineUpdateAction). */}
+      <span className={showUpdate ? "col-span-3 col-start-2 row-start-2 flex min-w-0 items-center sm:contents" : "contents"}>
+        {update}
+      </span>
+      {children}
+    </span>
   )
 }
 

@@ -56,3 +56,17 @@ func TestOIDCSecretOverride(t *testing.T) {
 		t.Fatal("empty environment value should leave the file secret unchanged")
 	}
 }
+
+// TestReleaseCheck: the release check is on unless the file turns it off,
+// as tests that start servers do so no request leaves the machine.
+func TestReleaseCheck(t *testing.T) {
+	for body, want := range map[string]bool{"": true, "release_check: true": true, "release_check: false": false} {
+		c, err := loadTest(t, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.ReleaseCheckEnabled() != want {
+			t.Errorf("%q: release check %t, want %t", body, !want, want)
+		}
+	}
+}

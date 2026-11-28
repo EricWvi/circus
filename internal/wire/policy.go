@@ -2,6 +2,7 @@ package wire
 
 import (
 	"fmt"
+	"strings"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
 	"github.com/EricWvi/circus/internal/identifier"
@@ -22,6 +23,32 @@ const FeaturePrepareWorkspace = "device_call.prepare_workspace"
 // FeatureRemoveWorkspace is the daemon Hello capability for the
 // RemoveWorkspaceRequest device call.
 const FeatureRemoveWorkspace = "device_call.remove_workspace"
+
+// FeatureMachineUpdate is the Hello capability, of either role, for
+// UpdateMachine: the process runs as the installed user service.
+const FeatureMachineUpdate = "machine_update"
+
+// MaxHelloFeatures is how many Hello.features entries count; later ones
+// are ignored.
+const MaxHelloFeatures = 32
+
+// HelloFeatures is the set of valid capabilities among the first
+// MaxHelloFeatures entries of Hello.features: each 1-64 bytes of
+// [a-z0-9_.]; others are ignored. Both links read features with it.
+func HelloFeatures(features []string) map[string]struct{} {
+	valid := make(map[string]struct{})
+	for _, name := range features[:min(len(features), MaxHelloFeatures)] {
+		if len(name) == 0 || len(name) > 64 {
+			continue
+		}
+		if strings.IndexFunc(name, func(c rune) bool {
+			return !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '.')
+		}) == -1 {
+			valid[strings.Clone(name)] = struct{}{}
+		}
+	}
+	return valid
+}
 
 // DeviceQueryFeature returns the capability required by a recognized query.
 func DeviceQueryFeature(q *circusv1.DeviceQuery) string {
@@ -86,7 +113,7 @@ func classify(m proto.Message) (Class, string, error) {
 		return Data, "call/" + m.(*circusv1.WorkerDownlink).GetCallUpdate().GetCallId(), nil
 	case "session":
 		return Data, "session/" + m.(*circusv1.WorkerUplink).GetSession().GetSessionId(), nil
-	case "list_devices", "report_agents", "session_reply", "worker_event":
+	case "list_devices", "report_agents", "session_reply", "worker_event", "update_machine", "update_failed":
 		return Data, "", nil
 	case "hello", "welcome", "reject", "fragment", "result", "call_status", "job_snapshot":
 		return Data, "", nil

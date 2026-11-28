@@ -27,6 +27,7 @@ import {
   type Attach, type SessionReply, type SessionReply_Resumed_Outcome, type SessionRequest,
   type WorkerEvent, type WorkerUplink,
 } from "@circus/proto/circus/v1/worker_link_pb";
+import { UpdateFailedSchema } from "@circus/proto/circus/v1/link_pb";
 import { readBoundedFile } from "../config.js";
 import type { AgentStatus } from "@circus/proto/circus/v1/agent_pb";
 import type { Logger } from "../log.js";
@@ -48,6 +49,12 @@ export interface LinkOptions {
   caFile?: string;
   bootId: string;
   clientVersion: string;
+  /**
+   * Hello.features. FEATURE_MACHINE_UPDATE only when the worker runs as
+   * the installed service, which the service manager restarts after
+   * `circus update`.
+   */
+  features?: string[];
   attach: {
     maxSessions: number;
     sdkVersion: string;
@@ -116,6 +123,7 @@ class Connection {
       principalId: opts.principalId,
       bootId: opts.bootId,
       clientVersion: opts.clientVersion,
+      features: opts.features,
     }, ({ requestId, payload }) => {
       switch (payload.case) {
         case "workerEvent":
@@ -354,6 +362,23 @@ export class WorkerLink {
     if (reply.result.case === "rejected") {
       const { code, message } = reply.result.value;
       throw new Error(`ReportAgents rejected (code ${SessionReply_Rejected_Code[code] ?? code}): ${message.slice(0, 512)}`);
+    }
+  }
+
+  /**
+   * UpdateFailed on the ready connection: tells the control plane that
+   * `circus update` for UpdateMachine updateId failed. Rejects with
+   * LinkLostError when the link is not ready (the report is then lost;
+   * the update's deadline fails it instead).
+   */
+  async updateFailed(updateId: string, error: string, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    const connection = this.#active;
+    if (!connection?.wire.active) throw new LinkLostError("worker link is disconnected or resuming");
+    const reply = await connection.request({ case: "updateFailed", value: create(UpdateFailedSchema, { updateId, error }) }, "ok", signal);
+    if (reply.result.case === "rejected") {
+      const { code, message } = reply.result.value;
+      throw new Error(`UpdateFailed rejected (code ${SessionReply_Rejected_Code[code] ?? code}): ${message.slice(0, 512)}`);
     }
   }
 

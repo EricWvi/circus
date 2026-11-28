@@ -79,6 +79,8 @@ func Run(t *testing.T, b Backend) {
 		{"WorkerAgentValidation", testWorkerAgentValidation},
 		{"AgentLeases", testAgentLeases},
 		{"AgentReportFence", testAgentReportFence},
+		{"MachineUpdates", testMachineUpdates},
+		{"MachineUpdateValidation", testMachineUpdateValidation},
 		{"ProjectLimit", testProjectLimit},
 		{"ProjectConcurrentCreate", testProjectConcurrentCreate},
 		{"ProjectNameKey", testProjectNameKey},

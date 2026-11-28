@@ -373,7 +373,7 @@ func daemonRun(path string, service bool, errOut io.Writer) error {
 		}
 		return err
 	}
-	client, err := daemonlink.New(daemonlink.Options{Credentials: file, ClientVersion: version})
+	client, err := daemonlink.New(daemonlink.Options{Credentials: file, ClientVersion: version, Service: service})
 	if err != nil {
 		if service {
 			return logServiceExit(errOut, err)

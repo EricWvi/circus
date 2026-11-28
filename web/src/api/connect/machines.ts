@@ -11,6 +11,9 @@ import {
 import {
   EnrollRole as ProtoEnrollRole,
   MachineService as MachineServiceDesc,
+  MachineUpdateFailure as ProtoMachineUpdateFailure,
+  MachineUpdateState as ProtoMachineUpdateState,
+  type MachineUpdate as ProtoMachineUpdate,
   type Worker as ProtoWorker,
 } from "@circus/proto/circus/v1/machine_pb"
 
@@ -21,6 +24,9 @@ import type {
   EnrollRole,
   GitRemoteError,
   MachineService,
+  MachineUpdate,
+  MachineUpdateFailure,
+  MachineUpdateState,
   Worker,
   WorkerAgent,
 } from "@/api/types"
@@ -99,6 +105,38 @@ function agentOf(a: ProtoWorkerAgent): WorkerAgent[] {
   ]
 }
 
+const updateStates: Partial<Record<ProtoMachineUpdateState, MachineUpdateState>> = {
+  [ProtoMachineUpdateState.RUNNING]: "running",
+  [ProtoMachineUpdateState.FAILED]: "failed",
+}
+
+const updateFailures: Partial<Record<ProtoMachineUpdateFailure, MachineUpdateFailure>> = {
+  [ProtoMachineUpdateFailure.COMMAND]: "command",
+  [ProtoMachineUpdateFailure.TIMED_OUT]: "timed_out",
+  [ProtoMachineUpdateFailure.UNREACHABLE]: "unreachable",
+}
+
+/** A machine's update; none without one, or in a state this client doesn't know. */
+function updateOf(u: ProtoMachineUpdate | undefined): MachineUpdate | undefined {
+  const state = u && updateStates[u.state]
+  if (!u || !state) return undefined
+  const failure = state === "failed" ? updateFailures[u.failure] : undefined
+  return {
+    targetVersion: u.targetVersion,
+    state,
+    error: u.error,
+    ...(failure ? { failure } : {}),
+    startedUnixMs: Number(u.startedUnixMs),
+    deadlineUnixMs: Number(u.deadlineUnixMs),
+  }
+}
+
+/** The update fields of a device or worker; `update` only when there is one. */
+function updateFields(m: { updateVersion: string; update?: ProtoMachineUpdate }): Pick<Worker, "updateVersion" | "update"> {
+  const update = updateOf(m.update)
+  return { updateVersion: m.updateVersion, ...(update ? { update } : {}) }
+}
+
 const workerOf = (w: ProtoWorker): Worker => ({
   workerId: w.workerId,
   name: w.name,
@@ -111,6 +149,7 @@ const workerOf = (w: ProtoWorker): Worker => ({
   localDevices: [...w.localDevices],
   integrator: w.integrator,
   agents: w.agents.flatMap(agentOf),
+  ...updateFields(w),
 })
 
 /** The machine service of a real control plane, over Connect. */
@@ -127,6 +166,7 @@ export function createConnectMachines(transport: Transport): MachineService {
           os: d.os,
           arch: d.arch,
           version: d.version,
+          ...updateFields(d),
         })),
       ),
     listWorkers: () => call(async () => (await client.listWorkers({})).workers.map(workerOf)),
@@ -149,6 +189,16 @@ export function createConnectMachines(transport: Transport): MachineService {
     deleteWorker: ({ workerId }) =>
       call(async () => {
         await client.deleteWorker({ workerId })
+      }),
+    updateMachine: (req) =>
+      call(async () => {
+        const identity =
+          "deviceId" in req
+            ? { case: "deviceId" as const, value: req.deviceId }
+            : { case: "workerId" as const, value: req.workerId }
+        const update = updateOf((await client.updateMachine({ identity })).update)
+        if (!update) throw malformed("machine update")
+        return update
       }),
     createEnrollLink: ({ role, replaceId }) =>
       call(async () => {

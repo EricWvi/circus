@@ -193,12 +193,9 @@ func check(ctx context.Context, download downloader, current, target string, for
 	if err != nil {
 		return Plan{}, fmt.Errorf("download latest.json: %w", err)
 	}
-	var m manifest
-	if err := json.Unmarshal(data, &m); err != nil {
-		return Plan{}, fmt.Errorf("invalid latest.json: %w", err)
-	}
-	if !IsRelease(m.Version) {
-		return Plan{}, errors.New("invalid version in latest.json")
+	m, err := parseLatest(data)
+	if err != nil {
+		return Plan{}, err
 	}
 	a, digest, err := selectAsset(m.Assets, releasesURL, "circus", m.Version, target)
 	if err != nil {
@@ -242,6 +239,18 @@ func check(ctx context.Context, download downloader, current, target string, for
 		}
 		return Result{Message: "Updated circus to " + version, ReplacedPath: path, Version: version}, nil
 	}}, nil
+}
+
+// parseLatest reads the latest release's manifest (latest.json).
+func parseLatest(data []byte) (manifest, error) {
+	var m manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return manifest{}, fmt.Errorf("invalid latest.json: %w", err)
+	}
+	if !IsRelease(m.Version) {
+		return manifest{}, errors.New("invalid version in latest.json")
+	}
+	return m, nil
 }
 
 // selectAsset picks product's archive for target from assets, checking its

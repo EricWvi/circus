@@ -205,8 +205,11 @@ func Enroll(ctx context.Context, st store.Store, req EnrollRequest, now time.Tim
 	if req.MachineID == "" {
 		return Enrollment{}, fmt.Errorf("%w: machine id is required", ErrInvalidRequest)
 	}
+	if len(req.MachineID) > store.MaxMachineIDBytes {
+		return Enrollment{}, fmt.Errorf("%w: machine id longer than %d bytes", ErrInvalidRequest, store.MaxMachineIDBytes)
+	}
 	for field, v := range map[string]string{
-		"hostname": req.Hostname, "machine id": req.MachineID, "os": req.OS,
+		"hostname": req.Hostname, "os": req.OS,
 		"arch": req.Arch, "client version": req.ClientVersion,
 	} {
 		if len(v) > maxFieldLen {
@@ -277,6 +280,12 @@ func Enroll(ctx context.Context, st store.Store, req EnrollRequest, now time.Tim
 		cred := store.Credential{ID: credID, Kind: req.Kind, PrincipalID: identityID, TokenHash: HashToken(longTerm), CreatedAt: at}
 		if err := tx.CreateCredential(ctx, cred); err != nil {
 			return err
+		}
+		// A rejoin from another machine leaves the replaced one's.
+		if replaced.ID != "" {
+			if err := ForgetMachine(ctx, tx, replaced.UserID, replaced.MachineID); err != nil {
+				return err
+			}
 		}
 		out = Enrollment{Identity: id, CredentialID: credID, Token: longTerm, Replaced: replaced, ReplacedCredentials: n}
 		return nil

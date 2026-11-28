@@ -19,6 +19,7 @@ import (
 	"github.com/EricWvi/circus/internal/config"
 	"github.com/EricWvi/circus/internal/controlplane"
 	"github.com/EricWvi/circus/internal/controlplane/gateway"
+	"github.com/EricWvi/circus/internal/selfupdate"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/web"
 )
@@ -102,6 +103,9 @@ func serverCommand(args []string, out, errOut io.Writer) error {
 	serverCfg := cfg.Server()
 	serverCfg.UI = webui.FS()
 	serverCfg.Version = version
+	if cfg.ReleaseCheckEnabled() {
+		serverCfg.LatestRelease = selfupdate.DefaultRelease(version).Latest
+	}
 	serverCfg.LogOutput, serverCfg.LogLevel = errOut, level
 	srv, err := controlplane.New(ctx, st, serverCfg)
 	if err != nil {

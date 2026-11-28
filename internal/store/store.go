@@ -60,6 +60,9 @@ type Ops interface {
 	ProviderOps
 	// AgentOps holds the worker agent operations (agents.go).
 	AgentOps
+	// MachineUpdateOps holds the machine update operations
+	// (machine_updates.go).
+	MachineUpdateOps
 	// SessionOps holds the session operations (sessions.go). They are part
 	// of Ops so a session write and a call write can share one Tx.
 	SessionOps

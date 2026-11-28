@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -416,4 +417,44 @@ func TestCheckChangesNothingUntilApply(t *testing.T) {
 	if len(requests) != 2 {
 		t.Errorf("apply downloaded again: %v", requests)
 	}
+}
+
+// TestDefaultReleaseClient: the release check goes through the proxy the
+// environment names (HTTPS_PROXY and NO_PROXY), with bounded connection
+// setup, as `circus update` does.
+func TestDefaultReleaseClient(t *testing.T) {
+	tr, ok := DefaultRelease("v1.0.0").Client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T", DefaultRelease("v1.0.0").Client.Transport)
+	}
+	if reflect.ValueOf(tr.Proxy).Pointer() != reflect.ValueOf(http.ProxyFromEnvironment).Pointer() {
+		t.Error("the release client does not use http.ProxyFromEnvironment")
+	}
+	if tr.TLSHandshakeTimeout == 0 || tr.ResponseHeaderTimeout == 0 {
+		t.Errorf("timeouts: TLS %v, response header %v", tr.TLSHandshakeTimeout, tr.ResponseHeaderTimeout)
+	}
+}
+
+// TestLatestDeadline: a manifest that trickles in never makes Latest wait
+// longer than LatestTimeout.
+func TestLatestDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		r := Release{BaseURL: "https://example.com/releases/", Current: "v1.0.0", Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body := readFunc(func(p []byte) (int, error) {
+				select {
+				case <-req.Context().Done():
+					return 0, req.Context().Err()
+				case <-time.After(time.Second):
+					p[0] = ' '
+					return 1, nil
+				}
+			})
+			return &http.Response{StatusCode: http.StatusOK, ContentLength: -1, Body: io.NopCloser(body)}, nil
+		})}}
+		_, err := r.Latest(t.Context())
+		if err == nil || time.Since(start) != LatestTimeout {
+			t.Errorf("Latest = %v after %v, want an error after %v", err, time.Since(start), LatestTimeout)
+		}
+	})
 }

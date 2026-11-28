@@ -1,6 +1,8 @@
 package wire_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -77,7 +79,7 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 				if key != "session/"+callID {
 					t.Errorf("session ordering key for %s: %q", f.FullName(), key)
 				}
-			case "attach", "resume_leases", "list_devices", "report_agents", "session_reply", "worker_event":
+			case "attach", "resume_leases", "list_devices", "report_agents", "session_reply", "worker_event", "update_machine", "update_failed":
 				if key != "" {
 					t.Errorf("unexpected ordering key for %s: %q", f.FullName(), key)
 				}
@@ -93,5 +95,27 @@ func TestEnvelopeSchemaAndPolicyCoverage(t *testing.T) {
 	}
 	if _, _, err := wire.Classify(&circusv1.DeviceResult{}); err == nil {
 		t.Fatal("non-envelope classified")
+	}
+}
+
+// TestHelloFeatures: both links read the first 32 entries, each 1-64
+// bytes of [a-z0-9_.]; the rest is ignored.
+func TestHelloFeatures(t *testing.T) {
+	var list []string
+	for i := range 32 {
+		list = append(list, fmt.Sprintf("f%d", i))
+	}
+	list = append(list, wire.FeatureMachineUpdate)
+	if _, ok := wire.HelloFeatures(list)[wire.FeatureMachineUpdate]; ok {
+		t.Error("the 33rd feature counted")
+	}
+	got := wire.HelloFeatures([]string{wire.FeatureMachineUpdate, "", "Upper", strings.Repeat("a", 65), "a.b_c9"})
+	if len(got) != 2 {
+		t.Errorf("features = %v", got)
+	}
+	for _, name := range []string{wire.FeatureMachineUpdate, "a.b_c9"} {
+		if _, ok := got[name]; !ok {
+			t.Errorf("%q missing from %v", name, got)
+		}
 	}
 }

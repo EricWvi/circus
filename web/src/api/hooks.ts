@@ -30,6 +30,7 @@ import type {
   EnrollLink,
   EnrollRole,
   Ledger,
+  MachineUpdate,
   ModelProvider,
   ModelProviderService,
   Project,
@@ -410,16 +411,36 @@ export const AGENTS_BUSY_FAST_MS = 60_000
 export const AGENTS_BUSY_SLOW_INTERVAL_MS = 5_000
 
 /**
+ * How often a page that shows devices or workers refetches both lists
+ * while a machine update runs: it ends when the machine comes back, which
+ * the lists show.
+ */
+export const MACHINE_UPDATE_INTERVAL_MS = 2_000
+
+/** Whether a machine update runs, as either cached list shows it. */
+function machineUpdating(queryClient: QueryClient): boolean {
+  const running = (list: { update?: MachineUpdate }[] | undefined) =>
+    list?.some((m) => m.update?.state === "running") ?? false
+  return (
+    running(queryClient.getQueryData<Device[]>(queryKeys.devices)) ||
+    running(queryClient.getQueryData<Worker[]>(queryKeys.workers))
+  )
+}
+
+/**
  * The caller's devices. `live` keeps their status fresh while the page is
  * visible: a refetch every few seconds and whenever the window regains
  * focus. Hidden tabs don't poll.
  */
 export function useDevices({ live = false }: { live?: boolean } = {}) {
   const client = useClient()
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: queryKeys.devices,
     queryFn: () => client.machines.listDevices(),
-    refetchInterval: live ? DEVICES_LIVE_INTERVAL_MS : false,
+    refetchInterval: live
+      ? () => (machineUpdating(queryClient) ? MACHINE_UPDATE_INTERVAL_MS : DEVICES_LIVE_INTERVAL_MS)
+      : false,
     refetchOnWindowFocus: live ? "always" : true,
   })
 }
@@ -429,7 +450,8 @@ export function useDevices({ live = false }: { live?: boolean } = {}) {
  * visible, as for devices, and follows an online worker's agent install
  * or uninstall (or a request it hasn't acted on yet) every second for a
  * minute from when that began or was last asked for, then every few
- * seconds until it is over.
+ * seconds until it is over. While a machine update runs (on either list),
+ * both lists are read every MACHINE_UPDATE_INTERVAL_MS at most.
  */
 export function useWorkers({ live = false }: { live?: boolean } = {}) {
   const client = useClient()
@@ -443,15 +465,18 @@ export function useWorkers({ live = false }: { live?: boolean } = {}) {
           const busy = query.state.data?.some((w) =>
             agentBusy(w, (agent) => answeredReportAt(queryClient, w.workerId, agent)),
           )
+          const updating = machineUpdating(queryClient) ? MACHINE_UPDATE_INTERVAL_MS : Infinity
           if (!busy) {
             busySince.current = null
-            return DEVICES_LIVE_INTERVAL_MS
+            return Math.min(DEVICES_LIVE_INTERVAL_MS, updating)
           }
           const now = Date.now()
           const requests = queryClient.getMutationCache().findAll({ mutationKey: ["workerAgent"] })
           const lastRequest = Math.max(0, ...requests.map((m) => m.state.submittedAt))
           busySince.current = Math.max(busySince.current ?? now, lastRequest)
-          return now - busySince.current < AGENTS_BUSY_FAST_MS ? AGENTS_BUSY_INTERVAL_MS : AGENTS_BUSY_SLOW_INTERVAL_MS
+          const agents =
+            now - busySince.current < AGENTS_BUSY_FAST_MS ? AGENTS_BUSY_INTERVAL_MS : AGENTS_BUSY_SLOW_INTERVAL_MS
+          return Math.min(agents, updating)
         }
       : false,
     refetchOnWindowFocus: live ? "always" : true,
@@ -549,6 +574,91 @@ export function useSetWorkerAgent({ workerId, name }: Pick<Worker, "workerId" | 
           title: i18n.t("devices.integratorWorkerGone", { name }),
           lines: [{ text: i18n.t("devices.agents.workerGoneHint") }],
         }),
+        failure: true,
+      })
+    },
+  })
+}
+
+/**
+ * The message the server sent with an error (a Connect error's raw
+ * message, kept as the ApiError's cause), else the error's own message.
+ */
+function serverMessage(error: unknown): string {
+  const cause = error instanceof Error ? (error.cause as { rawMessage?: unknown } | undefined) : undefined
+  if (typeof cause?.rawMessage === "string") return cause.rawMessage
+  return error instanceof Error ? error.message : ""
+}
+
+/** The device or worker whose card asks for its machine's update. */
+export type MachineUpdateTarget =
+  | { kind: "device"; deviceId: string; name: string }
+  | { kind: "worker"; workerId: string; name: string }
+
+/**
+ * Updates the target's machine (UpdateMachine) to the latest release. The
+ * answer goes on the card pressed and on the cards of the same machine
+ * (a worker names the devices on its machine) at once, and both lists are
+ * read again, so they poll quickly until the update ends. A machine that
+ * is gone or has no update to offer any more is reported with a notice.
+ */
+export function useUpdateMachine(target: MachineUpdateTarget) {
+  const client = useClient()
+  const queryClient = useQueryClient()
+  const showNotice = useShowNotice()
+  const key = target.kind === "device" ? target.deviceId : target.workerId
+  return useMutation({
+    mutationKey: ["machineUpdate", target.kind, key],
+    mutationFn: () =>
+      client.machines.updateMachine(target.kind === "device" ? { deviceId: target.deviceId } : { workerId: target.workerId }),
+    onSuccess: async (update) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: queryKeys.devices }),
+        queryClient.cancelQueries({ queryKey: queryKeys.workers }),
+      ])
+      const devices = queryClient.getQueryData<Device[]>(queryKeys.devices) ?? []
+      const workers = queryClient.getQueryData<Worker[]>(queryKeys.workers) ?? []
+      // The machine's devices by name: the pressed device's, or the devices the pressed worker names.
+      const pressedWorker = target.kind === "worker" ? workers.find((w) => w.workerId === target.workerId) : undefined
+      const pressedDevice = target.kind === "device" ? devices.find((d) => d.deviceId === target.deviceId) : undefined
+      const deviceNames = new Set(pressedWorker?.localDevices ?? (pressedDevice ? [pressedDevice.name] : []))
+      const onMachine = (w: Worker) =>
+        (target.kind === "worker" && w.workerId === target.workerId) || w.localDevices.some((d) => deviceNames.has(d))
+      const set = <T extends { updateVersion: string; update?: MachineUpdate }>(m: T): T => ({
+        ...m,
+        updateVersion: "",
+        update,
+      })
+      queryClient.setQueryData<Device[]>(queryKeys.devices, (list) =>
+        list?.map((d) => (deviceNames.has(d.name) ? set(d) : d)),
+      )
+      queryClient.setQueryData<Worker[]>(queryKeys.workers, (list) => list?.map((w) => (onMachine(w) ? set(w) : w)))
+      void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workers })
+    },
+    onError: (error) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.devices })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workers })
+      const { name } = target
+      const gone = isApiError(error, "not_found")
+      const notOffered = isApiError(error, "failed_precondition")
+      const detail = error instanceof Error ? error.message : String(error)
+      showNotice({
+        content: () => {
+          if (gone) {
+            const title = target.kind === "device" ? "devices.update.deviceGone" : "devices.update.workerGone"
+            return { title: i18n.t(title, { name }), lines: [{ text: i18n.t("devices.update.goneHint") }] }
+          }
+          if (notOffered) {
+            // The server says why (already at the latest release, a
+            // development build, not online as the installed service).
+            return {
+              title: i18n.t("devices.update.notOffered", { name }),
+              lines: [{ text: serverMessage(error) || i18n.t("devices.update.notOfferedHint") }],
+            }
+          }
+          return { title: i18n.t("devices.update.startFailed", { name }), lines: [{ text: detail }] }
+        },
         failure: true,
       })
     },

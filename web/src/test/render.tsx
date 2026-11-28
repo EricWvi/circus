@@ -8,7 +8,7 @@ import type { ReactNode } from "react"
 import { onTestFinished, vi } from "vitest"
 
 import { ClientContext } from "@/api/context"
-import { createMockBackend } from "@/api/mock/backend"
+import { createMockBackend, type MockBackendOptions } from "@/api/mock/backend"
 import type { MockSessionTiming } from "@/api/mock/sessions"
 import { SEED_OWNER_ID, seedState, type MockState } from "@/api/mock/state"
 import { createQueryClient, followUnauthenticated } from "@/api/query-client"
@@ -30,22 +30,25 @@ export async function advance(ms: number) {
 /**
  * Renders `ui` inside the providers a signed-in page has, backed by a mock
  * server holding `state` (the demo seed by default), signed in as its owner.
- * `wrapClient` stands between the pages and the mock, to make calls fail.
+ * `wrapClient` stands between the pages and the mock, to make calls fail;
+ * `options` sets more of the mock's options.
  */
 export async function renderWithBackend(
   ui: ReactNode,
   {
     state = seedState(),
     wrapClient = (client) => client,
+    options = {},
   }: {
     state?: MockState
     wrapClient?: (client: CircusClient) => CircusClient
+    options?: Partial<Omit<MockBackendOptions, "state">>
   } = {},
 ) {
   // Signed in as the demo data's owner (the mock's cookie), without a call
   // that would wait on the fake timers.
   state.cookie = SEED_OWNER_ID
-  const backend = createMockBackend({ state, latency: () => 0, sessionTiming: testSessionTiming })
+  const backend = createMockBackend({ state, latency: () => 0, sessionTiming: testSessionTiming, ...options })
   const queryClient = createQueryClient()
   // As ApiProvider does; the test's cleanup unmounts the tree, not this.
   onTestFinished(followUnauthenticated(queryClient))

@@ -138,6 +138,7 @@ import (
 	"github.com/EricWvi/circus/internal/clock"
 	"github.com/EricWvi/circus/internal/controlplane/calls"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
+	"github.com/EricWvi/circus/internal/identifier"
 	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
 	"google.golang.org/protobuf/proto"
@@ -186,6 +187,12 @@ type Config struct {
 	// and ListDevices and records worker boots. Nil leaves the link a call link: those
 	// payloads close it as unexpected.
 	Sessions *sessions.Service
+	// UpdateFailed receives a worker's UpdateFailed with a valid update_id,
+	// with the worker id; nil drops it. It runs in the link's receive loop
+	// and must return promptly. An error (the report could not be
+	// recorded) is answered with Rejected STORE_UNAVAILABLE; a report it
+	// ignores (stale or unknown) returns nil and is answered Ok.
+	UpdateFailed func(ctx context.Context, workerID string, f *circusv1.UpdateFailed) error
 }
 
 // Handler owns every admitted handshake, subscription and query. Shutdown
@@ -490,6 +497,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.cfg.Sessions != nil {
 		sc, err = h.cfg.Sessions.Connect(ctx, sessions.ConnInfo{WorkerID: principal.ID, UserID: principal.UserID, BootID: hello.GetBootId(), Seq: seq,
+			Updatable: hasFeature(hello.GetFeatures(), wire.FeatureMachineUpdate),
 			Fail: func(reason string) {
 				h.cfg.Logger.WarnContext(ctx, "worker session hint closed link", "reason", reason)
 				cancel()
@@ -914,6 +922,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if op, ok := admit(rid); ok {
 				answer(rid, op, sc.ReportAgents(op.ctx, v.ReportAgents))
 			}
+		case *circusv1.WorkerUplink_UpdateFailed:
+			op, ok := admit(rid)
+			if !ok {
+				continue
+			}
+			f := v.UpdateFailed
+			// A longer error is not refused: the hook keeps its last 2048
+			// bytes, as on the daemon link.
+			if !identifier.Valid(f.GetUpdateId(), false) {
+				answer(rid, op, sessionRejected(circusv1.SessionReply_Rejected_CODE_INVALID, "invalid UpdateFailed update_id"))
+				continue
+			}
+			if h.cfg.UpdateFailed != nil {
+				if err := h.cfg.UpdateFailed(op.ctx, principal.ID, f); err != nil {
+					answer(rid, op, sessionRejected(circusv1.SessionReply_Rejected_CODE_STORE_UNAVAILABLE, "store unavailable; retry"))
+					continue
+				}
+			}
+			answer(rid, op, &circusv1.SessionReply{Result: &circusv1.SessionReply_Ok_{Ok: &circusv1.SessionReply_Ok{}}})
 		case *circusv1.WorkerUplink_ListDevices:
 			if sc == nil {
 				h.cfg.Logger.WarnContext(ctx, "worker protocol error closed link", "reason", "unexpected payload")
@@ -928,6 +955,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// sessionRejected is a Rejected SessionReply.
+func sessionRejected(code circusv1.SessionReply_Rejected_Code, message string) *circusv1.SessionReply {
+	return &circusv1.SessionReply{Result: &circusv1.SessionReply_Rejected_{Rejected: &circusv1.SessionReply_Rejected{Code: code, Message: message}}}
+}
+
+// hasFeature reports whether Hello.features lists feature, read as the
+// daemon link reads it (wire.HelloFeatures).
+func hasFeature(features []string, feature string) bool {
+	_, ok := wire.HelloFeatures(features)[feature]
+	return ok
 }
 
 // operation is one open request ID. ctx ends on Unwatch or with the link.

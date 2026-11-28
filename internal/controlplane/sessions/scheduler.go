@@ -572,6 +572,47 @@ func (s *Service) OnlineWorkers(_ context.Context, userID string) (map[string]bo
 	return out, nil
 }
 
+// updateConn is a connection of worker workerID that takes UpdateMachine:
+// attached, of the worker's current boot and listing the feature, the
+// latest one when there are several; s.mu held.
+func (s *Service) updateConn(workerID string) *Conn {
+	var out *Conn
+	for _, c := range s.conns {
+		if c.workerID == workerID && c.updatable && !c.closed && c.attached && !s.stale(c) && (out == nil || c.seq > out.seq) {
+			out = c
+		}
+	}
+	return out
+}
+
+// Updatable reports whether worker workerID has a live connection that
+// takes UpdateMachine (see UpdateMachine).
+func (s *Service) Updatable(workerID string) bool {
+	s.mu.Lock()
+	defer s.unlock()
+	return s.updateConn(workerID) != nil
+}
+
+// UpdateMachine queues u on a live connection of worker workerID that
+// takes it (attached, of the worker's current boot, its Hello listed
+// wire.FeatureMachineUpdate) and reports whether there was one. It is sent
+// once, on that connection's hint stream, and never resent: if the
+// connection closes first it is lost.
+func (s *Service) UpdateMachine(workerID string, u *circusv1.UpdateMachine) bool {
+	s.mu.Lock()
+	defer s.unlock()
+	c := s.updateConn(workerID)
+	if c == nil {
+		return false
+	}
+	c.update = u
+	select {
+	case c.kick <- struct{}{}:
+	default:
+	}
+	return true
+}
+
 func (s *Service) setBound(e *entry, c *Conn) {
 	if e.bound == c {
 		return

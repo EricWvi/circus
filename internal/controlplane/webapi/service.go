@@ -18,6 +18,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/ledgersnaps"
 	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
+	"github.com/EricWvi/circus/internal/controlplane/updates"
 	"github.com/EricWvi/circus/internal/controlplane/workspaces"
 	"github.com/EricWvi/circus/internal/ledger"
 	"github.com/EricWvi/circus/internal/store"
@@ -115,6 +116,9 @@ type Config struct {
 	// Workers authenticates worker credentials for LedgerChangesetService,
 	// which is served only with it and Ledger.
 	Workers *auth.Authenticator
+	// Updates runs machine updates (UpdateMachine) and offers them in
+	// ListDevices and ListWorkers; nil offers none.
+	Updates *updates.Manager
 	// WatchKeepalive is how long a WatchSession stream may stay silent
 	// before a keepalive; zero means DefaultWatchKeepalive.
 	WatchKeepalive time.Duration
@@ -157,6 +161,7 @@ type Service struct {
 	maxLifetime   time.Duration
 	writeTimeout  time.Duration
 	query         QueryFunc
+	updates       *updates.Manager
 	deviceQueryMu sync.Mutex
 	deviceQueries map[string]int
 }
@@ -180,7 +185,7 @@ func New(cfg Config) (*Service, error) {
 		bus: cfg.Bus, waker: cfg.Waker, scheduler: cfg.Scheduler, onlineWorkers: cfg.OnlineWorkers, secrets: cfg.Secrets, jobs: cfg.Jobs, keepalive: cfg.WatchKeepalive, recheck: cfg.WatchRecheck,
 		maxLifetime: cfg.WatchMaxLifetime, writeTimeout: cfg.WatchWriteTimeout,
 		query: cfg.Query, workspaces: cfg.Workspaces, ledger: cfg.Ledger, snapshots: cfg.Snapshots, writes: cfg.LedgerWrites,
-		workers: cfg.Workers, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
+		workers: cfg.Workers, updates: cfg.Updates, removals: make(map[[2]string]chan struct{}), deviceQueries: make(map[string]int)}
 	if s.writes == nil {
 		s.writes = ledgerslots.New(ledgerslots.Writes, ledgerslots.WritesPerUser, ledgerslots.MaxWaiters)
 	}

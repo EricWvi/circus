@@ -6,6 +6,8 @@ import { ProtocolError } from "../wire/codec.js";
 
 export const MAX_HINTS = 256;
 export const validSessionId = (id: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(id);
+/** UpdateMachine.update_id: 1-128 bytes of [A-Za-z0-9_-]. */
+export const validUpdateId = (id: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(id);
 
 export class HintQueue {
   #events = new Map<string, WorkerEvent>();
@@ -17,8 +19,11 @@ export class HintQueue {
   push(message: WorkerEvent): void {
     if (this.#closed) return;
     const { event } = message;
-    if (event.case === "agentsWanted") {
-      // The latest wishes replace any not yet consumed.
+    if (event.case === "updateMachine" && !validUpdateId(event.value.updateId)) {
+      throw new ProtocolError("invalid UpdateMachine");
+    }
+    if (event.case === "agentsWanted" || event.case === "updateMachine") {
+      // The latest wishes, or update command, replace any not yet consumed.
       if (!this.#events.has(event.case) && this.#events.size >= MAX_HINTS) throw new Error("worker hint queue full");
       this.#events.set(event.case, message);
       this.#deliver();

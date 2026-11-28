@@ -248,7 +248,7 @@ describe("a worker's agents", () => {
       // worker acts on it three seconds later.
       setWorkerAgent: async (req) => {
         const worker = demo.workers.find((w) => w.workerId === req.workerId)!
-        const answer: Worker = { ...worker, agents: [{ ...worker.agents[0], wanted: true }] }
+        const answer: Worker = { ...worker, updateVersion: "", agents: [{ ...worker.agents[0], wanted: true }] }
         setTimeout(() => void real.setWorkerAgent(req), 3_000)
         return answer
       },
@@ -312,7 +312,7 @@ describe("a worker's agents", () => {
       setWorkerAgent: async (req) => {
         const worker = demo.workers.find((w) => w.workerId === req.workerId)!
         Object.assign(worker.agents[0], { wanted: true, error: "boom again", reportedAtUnixMs: Date.now() })
-        return { ...worker, agents: [{ ...worker.agents[0] }] }
+        return { ...worker, updateVersion: "", agents: [{ ...worker.agents[0] }] }
       },
     }))
     fireEvent.click(claude("devbox").getByRole("button", { name: "Install Claude Code on devbox again" }))

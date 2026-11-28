@@ -41,7 +41,8 @@ function save(state: MockState) {
  * back: their leases end a minute later), and `?mock=agents` workers with
  * Claude Code in every state an agent can be in (see `agents.ts` for the
  * simulated installs and uninstalls); `?mock=noagents` takes Claude Code
- * off every worker.
+ * off every worker. The demo owner's machines show each state of a
+ * machine update (see `machine-updates.ts`): offered, running and failed.
  * Modes combine with commas (`?mock=reset,nooidc`); the query parameter is
  * removed afterwards. Sessions live in this tab's memory only. A message
  * that mentions a "ledger" or "decision" makes the agent add a new
@@ -80,6 +81,7 @@ export function startMockBackend(): MockBackend {
     onChange: save,
     note: (message) => console.info(message),
     oidc: !modes.has("nooidc"),
+    updatesDemo: true,
     ...(modes.has("stress") ? { ledgers: stressLedgers(), largeSnapshotChange: true } : {}),
   })
 

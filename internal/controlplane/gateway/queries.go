@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -39,21 +38,6 @@ type queryReply struct {
 	err    error
 }
 
-func helloFeatures(features []string) map[string]struct{} {
-	valid := make(map[string]struct{})
-	for _, name := range features[:min(len(features), 32)] {
-		if len(name) == 0 || len(name) > 64 {
-			continue
-		}
-		if strings.IndexFunc(name, func(c rune) bool {
-			return !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '.')
-		}) == -1 {
-			valid[strings.Clone(name)] = struct{}{}
-		}
-	}
-	return valid
-}
-
 // closeQueries is called under h.mu at replacement or as the peer closes.
 func (p *peer) closeQueries() {
 	p.queriesClosed = true
@@ -61,6 +45,27 @@ func (p *peer) closeQueries() {
 		query.done <- queryReply{err: ErrQueryLinkClosed}
 	}
 	clear(p.queries)
+}
+
+func (h *handler) UpdateMachine(ctx context.Context, deviceID string, u *circusv1.UpdateMachine) error {
+	h.mu.Lock()
+	route, ok, err := h.config.Registry.Lookup(ctx, deviceID)
+	if err != nil || !ok || !route.Ready {
+		h.mu.Unlock()
+		return ErrDeviceOffline
+	}
+	p := h.peers[route.Target.ConnectionID]
+	if h.closed || p == nil || p.queriesClosed || p.link.Err() != nil {
+		h.mu.Unlock()
+		return ErrDeviceOffline
+	}
+	if _, ok := p.features[wire.FeatureMachineUpdate]; !ok {
+		h.mu.Unlock()
+		return ErrFeatureUnsupported
+	}
+	link := p.link
+	h.mu.Unlock()
+	return link.Send(ctx, &circusv1.DaemonDownlink{Payload: &circusv1.DaemonDownlink_UpdateMachine{UpdateMachine: u}})
 }
 
 func (h *handler) Supports(deviceID, feature string) (online, supported bool) {

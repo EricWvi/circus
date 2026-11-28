@@ -43,6 +43,10 @@ receive_pool_bytes: 0
 # user from exhausting those budgets alone. Two users together can fill them.
 worker_connections: 8
 debug: false # --debug overrides this key.
+# Read the latest circus release from GitHub (through HTTPS_PROXY when set)
+# at start and every 6 hours, to offer Web updates of machines. false offers
+# none and makes no request.
+release_check: true
 
 # Optional. Register <public_url>/auth/oidc/callback at the provider.
 # Omit this block to disable OIDC; password login stays enabled.

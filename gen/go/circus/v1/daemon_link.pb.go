@@ -298,6 +298,7 @@ type DaemonUplink struct {
 	//	*DaemonUplink_JobEvent
 	//	*DaemonUplink_JobSnapshot
 	//	*DaemonUplink_DeviceQueryResult
+	//	*DaemonUplink_UpdateFailed
 	Payload       isDaemonUplink_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -421,6 +422,15 @@ func (x *DaemonUplink) GetDeviceQueryResult() *DeviceQueryResult {
 	return nil
 }
 
+func (x *DaemonUplink) GetUpdateFailed() *UpdateFailed {
+	if x != nil {
+		if x, ok := x.Payload.(*DaemonUplink_UpdateFailed); ok {
+			return x.UpdateFailed
+		}
+	}
+	return nil
+}
+
 type isDaemonUplink_Payload interface {
 	isDaemonUplink_Payload()
 }
@@ -461,6 +471,11 @@ type DaemonUplink_DeviceQueryResult struct {
 	DeviceQueryResult *DeviceQueryResult `protobuf:"bytes,15,opt,name=device_query_result,json=deviceQueryResult,proto3,oneof"`
 }
 
+type DaemonUplink_UpdateFailed struct {
+	// Only for an UpdateMachine this daemon received.
+	UpdateFailed *UpdateFailed `protobuf:"bytes,16,opt,name=update_failed,json=updateFailed,proto3,oneof"`
+}
+
 func (*DaemonUplink_Hello) isDaemonUplink_Payload() {}
 
 func (*DaemonUplink_Heartbeat) isDaemonUplink_Payload() {}
@@ -478,6 +493,8 @@ func (*DaemonUplink_JobEvent) isDaemonUplink_Payload() {}
 func (*DaemonUplink_JobSnapshot) isDaemonUplink_Payload() {}
 
 func (*DaemonUplink_DeviceQueryResult) isDaemonUplink_Payload() {}
+
+func (*DaemonUplink_UpdateFailed) isDaemonUplink_Payload() {}
 
 // DaemonDownlink is one control-plane-to-daemon WSS binary message.
 // No business message precedes Welcome. Every same-call DispatchCall,
@@ -502,6 +519,7 @@ type DaemonDownlink struct {
 	//	*DaemonDownlink_ListJobs
 	//	*DaemonDownlink_StopSessionJobs
 	//	*DaemonDownlink_DeviceQuery
+	//	*DaemonDownlink_UpdateMachine
 	Payload       isDaemonDownlink_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -643,6 +661,15 @@ func (x *DaemonDownlink) GetDeviceQuery() *DeviceQuery {
 	return nil
 }
 
+func (x *DaemonDownlink) GetUpdateMachine() *UpdateMachine {
+	if x != nil {
+		if x, ok := x.Payload.(*DaemonDownlink_UpdateMachine); ok {
+			return x.UpdateMachine
+		}
+	}
+	return nil
+}
+
 type isDaemonDownlink_Payload interface {
 	isDaemonDownlink_Payload()
 }
@@ -691,6 +718,11 @@ type DaemonDownlink_DeviceQuery struct {
 	DeviceQuery *DeviceQuery `protobuf:"bytes,15,opt,name=device_query,json=deviceQuery,proto3,oneof"`
 }
 
+type DaemonDownlink_UpdateMachine struct {
+	// Sent only to a daemon whose Hello.features lists "machine_update".
+	UpdateMachine *UpdateMachine `protobuf:"bytes,16,opt,name=update_machine,json=updateMachine,proto3,oneof"`
+}
+
 func (*DaemonDownlink_Welcome) isDaemonDownlink_Payload() {}
 
 func (*DaemonDownlink_Reject) isDaemonDownlink_Payload() {}
@@ -712,6 +744,8 @@ func (*DaemonDownlink_ListJobs) isDaemonDownlink_Payload() {}
 func (*DaemonDownlink_StopSessionJobs) isDaemonDownlink_Payload() {}
 
 func (*DaemonDownlink_DeviceQuery) isDaemonDownlink_Payload() {}
+
+func (*DaemonDownlink_UpdateMachine) isDaemonDownlink_Payload() {}
 
 // DispatchCall fences execution to one daemon boot.
 type DispatchCall struct {
@@ -1684,7 +1718,7 @@ var File_circus_v1_daemon_link_proto protoreflect.FileDescriptor
 
 const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"\n" +
-	"\x1bcircus/v1/daemon_link.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\"\x8b\x04\n" +
+	"\x1bcircus/v1/daemon_link.proto\x12\tcircus.v1\x1a\x16circus/v1/device.proto\x1a\x14circus/v1/link.proto\"\xcb\x04\n" +
 	"\fDaemonUplink\x12(\n" +
 	"\x05hello\x18\x01 \x01(\v2\x10.circus.v1.HelloH\x00R\x05hello\x124\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x14.circus.v1.HeartbeatH\x00R\theartbeat\x121\n" +
@@ -1696,8 +1730,9 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"callStatus\x122\n" +
 	"\tjob_event\x18\r \x01(\v2\x13.circus.v1.JobEventH\x00R\bjobEvent\x12;\n" +
 	"\fjob_snapshot\x18\x0e \x01(\v2\x16.circus.v1.JobSnapshotH\x00R\vjobSnapshot\x12N\n" +
-	"\x13device_query_result\x18\x0f \x01(\v2\x1c.circus.v1.DeviceQueryResultH\x00R\x11deviceQueryResultB\t\n" +
-	"\apayload\"\xfb\x04\n" +
+	"\x13device_query_result\x18\x0f \x01(\v2\x1c.circus.v1.DeviceQueryResultH\x00R\x11deviceQueryResult\x12>\n" +
+	"\rupdate_failed\x18\x10 \x01(\v2\x17.circus.v1.UpdateFailedH\x00R\fupdateFailedB\t\n" +
+	"\apayload\"\xbe\x05\n" +
 	"\x0eDaemonDownlink\x12.\n" +
 	"\awelcome\x18\x01 \x01(\v2\x12.circus.v1.WelcomeH\x00R\awelcome\x12+\n" +
 	"\x06reject\x18\x02 \x01(\v2\x11.circus.v1.RejectH\x00R\x06reject\x124\n" +
@@ -1712,7 +1747,8 @@ const file_circus_v1_daemon_link_proto_rawDesc = "" +
 	"call_query\x18\f \x01(\v2\x14.circus.v1.CallQueryH\x00R\tcallQuery\x122\n" +
 	"\tlist_jobs\x18\r \x01(\v2\x13.circus.v1.ListJobsH\x00R\blistJobs\x12H\n" +
 	"\x11stop_session_jobs\x18\x0e \x01(\v2\x1a.circus.v1.StopSessionJobsH\x00R\x0fstopSessionJobs\x12;\n" +
-	"\fdevice_query\x18\x0f \x01(\v2\x16.circus.v1.DeviceQueryH\x00R\vdeviceQueryB\t\n" +
+	"\fdevice_query\x18\x0f \x01(\v2\x16.circus.v1.DeviceQueryH\x00R\vdeviceQuery\x12A\n" +
+	"\x0eupdate_machine\x18\x10 \x01(\v2\x18.circus.v1.UpdateMachineH\x00R\rupdateMachineB\t\n" +
 	"\apayload\"\x92\x01\n" +
 	"\fDispatchCall\x12)\n" +
 	"\x04call\x18\x01 \x01(\v2\x15.circus.v1.DeviceCallR\x04call\x12$\n" +
@@ -1847,12 +1883,14 @@ var file_circus_v1_daemon_link_proto_goTypes = []any{
 	(*DeviceResult)(nil),        // 23: circus.v1.DeviceResult
 	(*CallStatus)(nil),          // 24: circus.v1.CallStatus
 	(*JobEvent)(nil),            // 25: circus.v1.JobEvent
-	(*Welcome)(nil),             // 26: circus.v1.Welcome
-	(*Reject)(nil),              // 27: circus.v1.Reject
-	(*GoAway)(nil),              // 28: circus.v1.GoAway
-	(*CancelCall)(nil),          // 29: circus.v1.CancelCall
-	(*CallQuery)(nil),           // 30: circus.v1.CallQuery
-	(*DeviceCall)(nil),          // 31: circus.v1.DeviceCall
+	(*UpdateFailed)(nil),        // 26: circus.v1.UpdateFailed
+	(*Welcome)(nil),             // 27: circus.v1.Welcome
+	(*Reject)(nil),              // 28: circus.v1.Reject
+	(*GoAway)(nil),              // 29: circus.v1.GoAway
+	(*CancelCall)(nil),          // 30: circus.v1.CancelCall
+	(*CallQuery)(nil),           // 31: circus.v1.CallQuery
+	(*UpdateMachine)(nil),       // 32: circus.v1.UpdateMachine
+	(*DeviceCall)(nil),          // 33: circus.v1.DeviceCall
 }
 var file_circus_v1_daemon_link_proto_depIdxs = []int32{
 	20, // 0: circus.v1.DaemonUplink.hello:type_name -> circus.v1.Hello
@@ -1864,36 +1902,38 @@ var file_circus_v1_daemon_link_proto_depIdxs = []int32{
 	25, // 6: circus.v1.DaemonUplink.job_event:type_name -> circus.v1.JobEvent
 	10, // 7: circus.v1.DaemonUplink.job_snapshot:type_name -> circus.v1.JobSnapshot
 	13, // 8: circus.v1.DaemonUplink.device_query_result:type_name -> circus.v1.DeviceQueryResult
-	26, // 9: circus.v1.DaemonDownlink.welcome:type_name -> circus.v1.Welcome
-	27, // 10: circus.v1.DaemonDownlink.reject:type_name -> circus.v1.Reject
-	21, // 11: circus.v1.DaemonDownlink.heartbeat:type_name -> circus.v1.Heartbeat
-	22, // 12: circus.v1.DaemonDownlink.fragment:type_name -> circus.v1.Fragment
-	28, // 13: circus.v1.DaemonDownlink.go_away:type_name -> circus.v1.GoAway
-	6,  // 14: circus.v1.DaemonDownlink.dispatch_call:type_name -> circus.v1.DispatchCall
-	29, // 15: circus.v1.DaemonDownlink.cancel_call:type_name -> circus.v1.CancelCall
-	30, // 16: circus.v1.DaemonDownlink.call_query:type_name -> circus.v1.CallQuery
-	9,  // 17: circus.v1.DaemonDownlink.list_jobs:type_name -> circus.v1.ListJobs
-	11, // 18: circus.v1.DaemonDownlink.stop_session_jobs:type_name -> circus.v1.StopSessionJobs
-	12, // 19: circus.v1.DaemonDownlink.device_query:type_name -> circus.v1.DeviceQuery
-	31, // 20: circus.v1.DispatchCall.call:type_name -> circus.v1.DeviceCall
-	24, // 21: circus.v1.CallAck.status:type_name -> circus.v1.CallStatus
-	8,  // 22: circus.v1.CallAck.rejection:type_name -> circus.v1.Rejection
-	2,  // 23: circus.v1.Rejection.code:type_name -> circus.v1.Rejection.Code
-	25, // 24: circus.v1.JobSnapshot.jobs:type_name -> circus.v1.JobEvent
-	15, // 25: circus.v1.DeviceQuery.list_directory:type_name -> circus.v1.ListDirectoryQuery
-	18, // 26: circus.v1.DeviceQuery.git_remote:type_name -> circus.v1.GitRemoteQuery
-	14, // 27: circus.v1.DeviceQueryResult.error:type_name -> circus.v1.DeviceQueryError
-	16, // 28: circus.v1.DeviceQueryResult.list_directory:type_name -> circus.v1.ListDirectoryResult
-	19, // 29: circus.v1.DeviceQueryResult.git_remote:type_name -> circus.v1.GitRemoteResult
-	3,  // 30: circus.v1.DeviceQueryError.code:type_name -> circus.v1.DeviceQueryError.Code
-	17, // 31: circus.v1.ListDirectoryResult.entries:type_name -> circus.v1.DirectoryEntry
-	0,  // 32: circus.v1.ListDirectoryResult.error:type_name -> circus.v1.DirectoryError
-	1,  // 33: circus.v1.GitRemoteResult.error:type_name -> circus.v1.GitRemoteError
-	34, // [34:34] is the sub-list for method output_type
-	34, // [34:34] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	26, // 9: circus.v1.DaemonUplink.update_failed:type_name -> circus.v1.UpdateFailed
+	27, // 10: circus.v1.DaemonDownlink.welcome:type_name -> circus.v1.Welcome
+	28, // 11: circus.v1.DaemonDownlink.reject:type_name -> circus.v1.Reject
+	21, // 12: circus.v1.DaemonDownlink.heartbeat:type_name -> circus.v1.Heartbeat
+	22, // 13: circus.v1.DaemonDownlink.fragment:type_name -> circus.v1.Fragment
+	29, // 14: circus.v1.DaemonDownlink.go_away:type_name -> circus.v1.GoAway
+	6,  // 15: circus.v1.DaemonDownlink.dispatch_call:type_name -> circus.v1.DispatchCall
+	30, // 16: circus.v1.DaemonDownlink.cancel_call:type_name -> circus.v1.CancelCall
+	31, // 17: circus.v1.DaemonDownlink.call_query:type_name -> circus.v1.CallQuery
+	9,  // 18: circus.v1.DaemonDownlink.list_jobs:type_name -> circus.v1.ListJobs
+	11, // 19: circus.v1.DaemonDownlink.stop_session_jobs:type_name -> circus.v1.StopSessionJobs
+	12, // 20: circus.v1.DaemonDownlink.device_query:type_name -> circus.v1.DeviceQuery
+	32, // 21: circus.v1.DaemonDownlink.update_machine:type_name -> circus.v1.UpdateMachine
+	33, // 22: circus.v1.DispatchCall.call:type_name -> circus.v1.DeviceCall
+	24, // 23: circus.v1.CallAck.status:type_name -> circus.v1.CallStatus
+	8,  // 24: circus.v1.CallAck.rejection:type_name -> circus.v1.Rejection
+	2,  // 25: circus.v1.Rejection.code:type_name -> circus.v1.Rejection.Code
+	25, // 26: circus.v1.JobSnapshot.jobs:type_name -> circus.v1.JobEvent
+	15, // 27: circus.v1.DeviceQuery.list_directory:type_name -> circus.v1.ListDirectoryQuery
+	18, // 28: circus.v1.DeviceQuery.git_remote:type_name -> circus.v1.GitRemoteQuery
+	14, // 29: circus.v1.DeviceQueryResult.error:type_name -> circus.v1.DeviceQueryError
+	16, // 30: circus.v1.DeviceQueryResult.list_directory:type_name -> circus.v1.ListDirectoryResult
+	19, // 31: circus.v1.DeviceQueryResult.git_remote:type_name -> circus.v1.GitRemoteResult
+	3,  // 32: circus.v1.DeviceQueryError.code:type_name -> circus.v1.DeviceQueryError.Code
+	17, // 33: circus.v1.ListDirectoryResult.entries:type_name -> circus.v1.DirectoryEntry
+	0,  // 34: circus.v1.ListDirectoryResult.error:type_name -> circus.v1.DirectoryError
+	1,  // 35: circus.v1.GitRemoteResult.error:type_name -> circus.v1.GitRemoteError
+	36, // [36:36] is the sub-list for method output_type
+	36, // [36:36] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_circus_v1_daemon_link_proto_init() }
@@ -1913,6 +1953,7 @@ func file_circus_v1_daemon_link_proto_init() {
 		(*DaemonUplink_JobEvent)(nil),
 		(*DaemonUplink_JobSnapshot)(nil),
 		(*DaemonUplink_DeviceQueryResult)(nil),
+		(*DaemonUplink_UpdateFailed)(nil),
 	}
 	file_circus_v1_daemon_link_proto_msgTypes[1].OneofWrappers = []any{
 		(*DaemonDownlink_Welcome)(nil),
@@ -1926,6 +1967,7 @@ func file_circus_v1_daemon_link_proto_init() {
 		(*DaemonDownlink_ListJobs)(nil),
 		(*DaemonDownlink_StopSessionJobs)(nil),
 		(*DaemonDownlink_DeviceQuery)(nil),
+		(*DaemonDownlink_UpdateMachine)(nil),
 	}
 	file_circus_v1_daemon_link_proto_msgTypes[3].OneofWrappers = []any{
 		(*CallAck_Status)(nil),

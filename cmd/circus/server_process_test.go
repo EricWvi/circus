@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -192,10 +193,15 @@ func TestServerJoinProcess(t *testing.T) {
 	})
 
 	// Start the server and stop exactly that PID at the end.
-	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte(fmt.Sprintf("listen: 127.0.0.1:0\ntls_cert: %q\ntls_key: %q\nshutdown_timeout: 3s\n", certFile, keyFile)), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte(fmt.Sprintf("listen: 127.0.0.1:0\ntls_cert: %q\ntls_key: %q\nshutdown_timeout: 3s\nrelease_check: false\n", certFile, keyFile)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	srv := p.command(context.Background(), "server")
+	// The config turns the release check off: no request may leave, which
+	// a proxy that refuses everything and counts connections proves.
+	proxy := refusingProxy(t)
+	srv.Env = append(slices.Clip(p.env), "HTTPS_PROXY=http://"+proxy.addr, "https_proxy=http://"+proxy.addr,
+		"HTTP_PROXY=http://"+proxy.addr, "http_proxy=http://"+proxy.addr, "NO_PROXY=", "no_proxy=")
 	stderr, err := srv.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -425,6 +431,9 @@ func TestServerJoinProcess(t *testing.T) {
 	if d := time.Since(start); d > 4*time.Second {
 		t.Fatalf("shutdown took %v", d)
 	}
+	if n := proxy.connections.Load(); n != 0 {
+		t.Fatalf("the server made %d outbound connections with release_check: false", n)
+	}
 	var instance string
 	all := logs.all()
 	if !slices.ContainsFunc(all, func(l string) bool {
@@ -483,4 +492,33 @@ func writeTestCert(t *testing.T, dir string) (string, string) {
 		t.Fatal(err)
 	}
 	return certPath, keyPath
+}
+
+// countingProxy accepts connections, counts and closes them.
+type countingProxy struct {
+	addr        string
+	connections atomic.Int64
+}
+
+func refusingProxy(t *testing.T) *countingProxy {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &countingProxy{addr: ln.Addr().String()}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			p.connections.Add(1)
+			_ = c.Close()
+		}
+	}()
+	t.Cleanup(func() { _ = ln.Close(); <-done })
+	return p
 }

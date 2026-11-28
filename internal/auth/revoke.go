@@ -50,8 +50,10 @@ func revoke(ctx context.Context, st store.Store, kind store.PrincipalKind, now t
 		if id, err = find(ctx, tx); err != nil {
 			return err
 		}
-		n, err = revokeIn(ctx, tx, kind, id.ID, now)
-		return err
+		if n, err = revokeIn(ctx, tx, kind, id.ID, now); err != nil {
+			return err
+		}
+		return ForgetMachine(ctx, tx, id.UserID, id.MachineID)
 	})
 	if err != nil {
 		return store.Identity{}, 0, err
@@ -65,4 +67,31 @@ func revokeIn(ctx context.Context, tx store.Ops, kind store.PrincipalKind, id st
 		return 0, err
 	}
 	return tx.RevokeCredentials(ctx, kind, id, at)
+}
+
+// ForgetMachine deletes the update of the user's machine machineID once no
+// live identity is on it, in the transaction that removed the last one, so
+// no revocation path leaves it behind. Its deadline timer may stay; it
+// finds no update and does nothing. A rejoin (Enroll) calls it after
+// creating the replacing identity, so a rejoin on the same machine keeps
+// the machine's update.
+func ForgetMachine(ctx context.Context, tx store.Ops, userID, machineID string) error {
+	// A key the update table cannot hold (an identity stored, not
+	// enrolled, with a longer id) has no update.
+	if machineID == "" || len(machineID) > store.MaxMachineIDBytes {
+		return nil
+	}
+	for _, kind := range []store.PrincipalKind{store.KindDevice, store.KindWorker} {
+		ids, err := tx.ListIdentities(ctx, kind, userID)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if id.MachineID == machineID {
+				return nil
+			}
+		}
+	}
+	_, err := tx.DeleteMachineUpdate(ctx, userID, machineID, "")
+	return err
 }

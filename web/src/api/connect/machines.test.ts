@@ -3,10 +3,13 @@ import { AgentKind, AgentStatus_State } from "@circus/proto/circus/v1/agent_pb"
 import { DirectoryError, GitRemoteError } from "@circus/proto/circus/v1/daemon_link_pb"
 import {
   MachineService,
+  MachineUpdateFailure,
+  MachineUpdateState,
   type GetGitRemoteRequest,
   type ListDirectoryRequest,
   type SetWorkerAgentRequest,
   type SetWorkerGrantRequest,
+  type UpdateMachineRequest,
 } from "@circus/proto/circus/v1/machine_pb"
 import { describe, expect, it } from "vitest"
 
@@ -215,6 +218,7 @@ describe("listWorkers", () => {
         version: "0.2.0",
         localDevices: ["devbox"],
         integrator: true,
+        updateVersion: "",
         agents: [
           {
             agent: "claude_code",
@@ -338,5 +342,91 @@ describe("setWorkerGrant", () => {
   it("rejects a response without a worker", async () => {
     const client = machines({ setWorkerGrant: () => ({}) })
     expect((await rejection(client.setWorkerGrant({ workerId: "w1", integrator: true }))).code).toBe("internal")
+  })
+})
+
+describe("machine updates", () => {
+  const running = {
+    targetVersion: "v0.2.0",
+    state: MachineUpdateState.RUNNING,
+    startedUnixMs: 1_700_000_000_000n,
+    deadlineUnixMs: 1_700_000_300_000n,
+  }
+
+  it("maps the offered version and the machine's update on devices and workers", async () => {
+    const client = machines({
+      listDevices: () => ({
+        devices: [
+          { deviceId: "d1", name: "box", updateVersion: "v0.2.0" },
+          {
+            deviceId: "d2",
+            name: "mac",
+            update: { ...running, state: MachineUpdateState.FAILED, error: "boom", failure: MachineUpdateFailure.COMMAND },
+          },
+          // A state this client doesn't know yet reads as no update.
+          { deviceId: "d3", name: "pi", update: { ...running, state: 9 as MachineUpdateState } },
+          { deviceId: "d4", name: "nuc", update: { ...running, state: MachineUpdateState.FAILED, failure: MachineUpdateFailure.TIMED_OUT } },
+          { deviceId: "d5", name: "vm", update: { ...running, state: MachineUpdateState.FAILED, error: "link closed", failure: MachineUpdateFailure.UNREACHABLE } },
+          // A failure reason this client doesn't know yet is left out.
+          { deviceId: "d6", name: "arm", update: { ...running, state: MachineUpdateState.FAILED, error: "x", failure: 9 as MachineUpdateFailure } },
+        ],
+      }),
+      listWorkers: () => ({ workers: [{ workerId: "w1", name: "box", update: running }] }),
+    })
+    const devices = await client.listDevices()
+    expect(devices.map((d) => [d.updateVersion, d.update])).toEqual([
+      ["v0.2.0", undefined],
+      [
+        "",
+        {
+          targetVersion: "v0.2.0",
+          state: "failed",
+          error: "boom",
+          failure: "command",
+          startedUnixMs: 1_700_000_000_000,
+          deadlineUnixMs: 1_700_000_300_000,
+        },
+      ],
+      ["", undefined],
+      ["", expect.objectContaining({ state: "failed", error: "", failure: "timed_out" })],
+      ["", expect.objectContaining({ state: "failed", error: "link closed", failure: "unreachable" })],
+      ["", expect.objectContaining({ state: "failed", error: "x" })],
+    ])
+    expect("update" in devices[2]).toBe(false)
+    expect("failure" in devices[5].update!).toBe(false)
+    const [worker] = await client.listWorkers()
+    expect(worker.update).toEqual({
+      targetVersion: "v0.2.0",
+      state: "running",
+      error: "",
+      startedUnixMs: 1_700_000_000_000,
+      deadlineUnixMs: 1_700_000_300_000,
+    })
+  })
+
+  it.each([
+    [{ deviceId: "d1" }, { case: "deviceId", value: "d1" }],
+    [{ workerId: "w1" }, { case: "workerId", value: "w1" }],
+  ] as const)("sends the card pressed (%o) and maps the update", async (req, identity) => {
+    let received: UpdateMachineRequest | undefined
+    const client = machines({
+      updateMachine: (r) => {
+        received = r
+        return { update: running }
+      },
+    })
+    expect((await client.updateMachine(req)).state).toBe("running")
+    expect(received?.identity).toEqual(identity)
+  })
+
+  it("maps errors and treats an answer without an update as malformed", async () => {
+    const refused = machines({
+      updateMachine: () => {
+        throw new ConnectError("no update", Code.FailedPrecondition)
+      },
+    })
+    expect((await rejection(refused.updateMachine({ deviceId: "d1" }))).code).toBe("failed_precondition")
+    const empty = machines({ updateMachine: () => ({}) })
+    expect((await rejection(empty.updateMachine({ workerId: "w1" }))).code).toBe("internal")
   })
 })

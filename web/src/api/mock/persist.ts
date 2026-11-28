@@ -2,7 +2,7 @@ import { isMockState, seedProviders, seedSessions, seedWorkers, type MockState }
 
 export const STORAGE_KEY = "circus.mock"
 /** Bump whenever the shape of MockState changes; older blobs are dropped. */
-export const VERSION = 7
+export const VERSION = 8
 
 /**
  * The persisted state, or null for anything missing, stale or malformed.

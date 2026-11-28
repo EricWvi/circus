@@ -112,7 +112,7 @@ default 10 s, on the daemon).
 | `boot_id` | MUST be 1-128 bytes; a fresh UUIDv7 per process start, kept across reconnects | A worker process MUST send a fresh UUIDv7 (canonical lowercase form) per process, kept across reconnects; it is required to Attach or drive sessions. A client that only submits calls without a session (the call CLI) sends none. Anything else, or a UUIDv7 older than the worker's current boot while that boot is alive (below), is `CODE_BAD_HELLO` |
 | `client_version` | informational | informational |
 | `os`, `arch`, `hostname`, `machine_id` | sent, informational | not checked |
-| `features` | optional capabilities for this connection | no features defined |
+| `features` | optional capabilities for this connection | optional capabilities for this connection |
 
 The control plane considers the first 32 feature names and drops entries
 outside 1–64 bytes of `[a-z0-9_.]`. Unknown names have no effect. The
@@ -121,7 +121,11 @@ queries, `device_query.git_remote` when it accepts git remote queries,
 and `device_call.prepare_workspace` and `device_call.remove_workspace`
 when it runs the `prepare_workspace` and `remove_workspace` device calls
 (see "Workspace preparation").
-The control plane sends a feature-dependent message only when the daemon
+Either role advertises `machine_update` when it runs as the installed user
+service (the daemon started with `circus daemon --service`, the worker by
+its launcher with `--service`) and accepts UpdateMachine (see "Machine
+updates"). Both links read features the same way.
+The control plane sends a feature-dependent message only when the peer
 advertised the feature in its current Hello.
 
 The control plane records each worker connection's nonempty `boot_id` as
@@ -222,9 +226,9 @@ Each envelope has a single `oneof payload`.
 
 | Envelope | Payload fields (number) |
 | --- | --- |
-| `DaemonUplink` | hello 1, heartbeat 2, fragment 3, call_ack 10, result 11, call_status 12, job_event 13, job_snapshot 14, device_query_result 15 |
-| `DaemonDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, go_away 5, dispatch_call 10, cancel_call 11, call_query 12, list_jobs 13, stop_session_jobs 14, device_query 15 |
-| `WorkerUplink` | hello 1, heartbeat 2, fragment 3, submit_call 10, cancel_call 11, call_query 12, unwatch 13, attach 14, session 15, resume_leases 16, list_devices 17, report_agents 18 |
+| `DaemonUplink` | hello 1, heartbeat 2, fragment 3, call_ack 10, result 11, call_status 12, job_event 13, job_snapshot 14, device_query_result 15, update_failed 16 |
+| `DaemonDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, go_away 5, dispatch_call 10, cancel_call 11, call_query 12, list_jobs 13, stop_session_jobs 14, device_query 15, update_machine 16 |
+| `WorkerUplink` | hello 1, heartbeat 2, fragment 3, submit_call 10, cancel_call 11, call_query 12, unwatch 13, attach 14, session 15, resume_leases 16, list_devices 17, report_agents 18, update_failed 19 |
 | `WorkerDownlink` | welcome 1, reject 2, heartbeat 3, fragment 4, call_update 10, session_reply 12, worker_event 13 (11 and `job_event` reserved) |
 
 Both worker envelopes also have `uint64 request_id = 20` beside the oneof
@@ -257,7 +261,7 @@ scheduling metadata; nothing about them is on the wire.
 | device_query, device_query_result | Data | `device_query/<request_id>` for valid IDs |
 | job_event (daemon uplink) | Data | one key for the whole boot |
 | session (worker uplink) | Data | `session/<session_id>` |
-| list_devices, report_agents, session_reply, worker_event | Data | none |
+| list_devices, report_agents, session_reply, worker_event, update_machine, update_failed | Data | none |
 | result, call_status, job_snapshot (and hello, welcome, reject) | Data | none |
 
 Independently of the class, a message is **small** if its serialized
@@ -408,7 +412,7 @@ closing; other senders MUST NOT send what the scan would reject.
 | job_snapshot | 8 MiB (`MaxSnapshotBytes`) |
 | device_query_result | 4 MiB (`MaxDirectoryResultBytes`) |
 | fragment | F + 128 (`FrameOverhead`) |
-| everything else (hello, welcome, reject, heartbeat, go_away, cancel_call, call_query, device_query, unwatch, list_jobs, stop_session_jobs, job_event, attach, resume_leases, list_devices, report_agents, worker_event) | 64 KiB (`MaxMetadataBytes`) |
+| everything else (hello, welcome, reject, heartbeat, go_away, cancel_call, call_query, device_query, unwatch, list_jobs, stop_session_jobs, job_event, attach, resume_leases, list_devices, report_agents, worker_event, update_machine, update_failed) | 64 KiB (`MaxMetadataBytes`) |
 
 Further size rules:
 - call_status, call_ack, call_update: envelope size minus the encoded size of
@@ -604,6 +608,39 @@ then up to `min(2, max_in_flight_messages)` fragments, rotating between
 started large messages. A started fragmented control message rotates like
 any large message. A sender is conforming as long as it keeps the rules of
 sections 3.2 and 3.3; this round structure is not required.
+
+### Machine updates
+
+UpdateMachine{update_id = 1, version = 2} asks a role that advertised
+`machine_update` to run `circus update` for its whole machine: the daemon
+its own executable, the worker `CIRCUS_BIN` (or `circus` on PATH), as a
+child process in its own process group with the service's environment.
+`update_id` is 1-128 bytes of `[A-Za-z0-9_-]` and names the attempt;
+`version` is the expected release, informational. It is
+`DaemonDownlink.update_machine` (16) on the daemon link and
+`WorkerEvent.update_machine` (6) on the worker link's Attach stream; the
+other WorkerEvent fields are offer 1, nudge 2, lease_revoked 3,
+release_idle 4 and agents_wanted 5. It is a one-shot command, unlike the
+WorkerEvent hints: not persisted, acknowledged, coalesced, repeated or
+resent after a reconnect. A role runs at most
+one such child: a command that arrives while one runs is ignored, and the
+next one is taken as soon as the child has ended. The role kills the
+child's process group after 4 minutes 30 seconds, and once the child has
+exited, whatever it left in its group; it does not stop the child when it
+shuts down itself (that shutdown is normally the restart the command asked
+for). On success the role reports nothing: the service manager restarts
+the services, and a role of the machine connecting with a version at least
+the target completes the update. On a non-zero exit, a failure to start or
+the deadline, it sends UpdateFailed{update_id, error}
+(`DaemonUplink.update_failed`, or `WorkerUplink.update_failed`, answered
+as in section 7) with the tail of the command's output, at most 2048
+bytes. On both links the control plane keeps the last 2048 bytes of a
+longer error and removes control characters other than newlines and tabs;
+it ignores a report that does not name the reporter's machine's running
+attempt (UpdateFailed{update_id = 1, error = 2}). A failure report, or the
+deadline 5 minutes after the start, finds the update done instead when
+every role of the machine already reports a version at least the target;
+otherwise the report fails it, and the deadline fails it as timed out.
 
 ### Workspace preparation
 
@@ -1128,11 +1165,12 @@ the ID lives only on the worker envelope.
 | `SubmitCall{device, call, session_epoch, tool_use_id}` | Submit a `DeviceCall` to the user's device named `device` (1-128 bytes). `call.call_id` and `call.session_id`: 1-128 bytes of `[A-Za-z0-9_-]`; `agent_id`: empty or the same grammar; exactly one tool. | A stream of `CallUpdate`s: zero or more nonterminal updates, then one terminal update (unless the link closes or the operation is unwatched first). | At its terminal update, or at Unwatch. |
 | `CallQuery{call_id}` | Read the call's current state. | Exactly one `CallUpdate` (may be nonterminal, e.g. `unknown`, or `rejected NOT_FOUND`). | At that reply (or Unwatch). |
 | `CancelCall{call_id}` | Cancel before dispatch; after dispatch record the intent (the daemon's result wins). The intent is recorded in receive order, so it cannot overtake an earlier Submit of the same call. | Exactly one `CallUpdate`: the call's state read after the intent was recorded (the call may have finished in between). `cancelled`: cancelled before dispatch. `dispatched` or `unknown`: intent recorded, the daemon's result decides. A terminal outcome (`result`, `lost`, ...): the call had already finished; `unknown` with reason `DEVICE_OFFLINE` when it finished but its result cannot be read now. `rejected NOT_FOUND`: no such call for this user; `rejected INVALID`: invalid id. | At that reply (or Unwatch). The intent stays recorded either way. |
-| `Attach` | Advertise 1..64 session capacity, SDK/account/check metadata, `local_only` and the state of every agent the worker supports (`agents`, at most 16, one per kind); at most once per connection, even after Unwatch. `local_only`: this connection runs only local-mode sessions pinned to its worker (Scheduling below). | WorkerEvent stream: first AgentsWanted (the user's wishes for the worker's agents, complete, each with the count of the user's install requests, `attempt`; sent again whenever they change; a worker retries a FAILED install only for a greater attempt), then Offer, Nudge, LeaseRevoked, ReleaseIdle, starting with every Offer still pending for this worker. Hints are level-triggered, may repeat or coalesce, and carry no authoritative state. Account is recorded only. | Unwatch or disconnect. |
+| `Attach` | Advertise 1..64 session capacity, SDK/account/check metadata, `local_only` and the state of every agent the worker supports (`agents`, at most 16, one per kind); at most once per connection, even after Unwatch. `local_only`: this connection runs only local-mode sessions pinned to its worker (Scheduling below). | WorkerEvent stream: first AgentsWanted (the user's wishes for the worker's agents, complete, each with the count of the user's install requests, `attempt`; sent again whenever they change; a worker retries a FAILED install only for a greater attempt), then Offer, Nudge, LeaseRevoked, ReleaseIdle and UpdateMachine (only on a connection whose Hello listed `machine_update`; see "Machine updates"), starting with every Offer still pending for this worker. Hints (every event except UpdateMachine) are level-triggered, may repeat or coalesce, and carry no authoritative state; UpdateMachine is a one-shot command, sent once and never repeated. Account is recorded only. | Unwatch or disconnect. |
 | `SessionRequest{session_id, epoch, op}` | One of the session operations below; Data with key `session/<session_id>`. | Exactly one SessionReply, success, Fenced or Rejected. | At that reply (or Unwatch). |
 | `ResumeLeases{leases}` | Reattach up to 64 (session_id, epoch) leases on the same worker boot before expiry, rebinding each to this connection. | One SessionReply.resumed, one outcome per requested lease, with retained epoch (and `stopped`) on success or current epoch when fenced. | At that reply (or Unwatch). |
 | `ListDevices{}` | List the user's devices. | One SessionReply.devices, at most 256 devices with name, online, os, arch, hostname, last_seen_unix_ms. | At that reply (or Unwatch). |
 | `ReportAgents{agents}` | Replace the worker's reported agent states (same rules as `Attach.agents`); sent on every change, at most once a second for install progress. A session is offered to a worker only while it reports the session's agent INSTALLED at its target version and the user still wants it. | One SessionReply: ok, or `rejected INVALID` for a field rule, a replaced boot, or a connection older than the worker's latest attached one (a late report there is older than that Attach's). An Attach of a replaced boot closes the link. | At that reply (or Unwatch). |
+| `UpdateFailed{update_id, error}` | Report that `circus update` run for the UpdateMachine `update_id` failed (see "Machine updates"). | One SessionReply: ok once recorded, or ignored as not the machine's running attempt; `rejected INVALID` for an `update_id` that is not 1-128 bytes of `[A-Za-z0-9_-]`; `rejected STORE_UNAVAILABLE` when it could not be recorded. | At that reply (or Unwatch). |
 | `Unwatch{}` | Stop delivery for the open operation named by `request_id` (normally a Submit; on a Query or Cancel it abandons the reply). Never cancels the call. Unknown or finished ids: no-op. | **None.** Updates already in flight may still arrive and are dropped. | Immediately. |
 
 `CallUpdate` variants:
@@ -1434,8 +1472,9 @@ interrupt) while the lease is held.
 
 #### Hints
 
-WorkerEvent hints are level-triggered: they may be coalesced or repeated,
-carry no authoritative state, and never replace the fence. The control plane
+WorkerEvent hints (every WorkerEvent except UpdateMachine, a one-shot
+command; see "Machine updates") are level-triggered: they may be coalesced
+or repeated, carry no authoritative state, and never replace the fence. The control plane
 keeps each session's pending reasons until the holder acts on them
 (TakeInputs clears INPUT and APPROVAL; GetSessionState including jobs clears
 JOB; ReportTurn ENDED clears INTERRUPT; a delivered Lease reply clears JOB,
@@ -2410,7 +2449,7 @@ consumer-stall pauses). Its own memory bound is one partial message
 - [ ] Never sends an envelope that violates section 5 (sizes, repeated caps, nodes, fields, depth, groups, UTF-8).
 - [ ] Shuts down by flushing and closing with 1000; treats other closes as errors.
 - [ ] Worker link: sends a nonzero `request_id` on every business payload and never reuses one on a connection (a counter from 1); routes CallUpdate/SessionReply/WorkerEvent by `request_id` and drops unknown ids; keeps at most 64 operations open including Attach and all session operations; ends an operation at its last reply (Submit: terminal update; Query, Cancel, SessionRequest, ResumeLeases and ListDevices: their one reply; Attach: stream until Unwatch/disconnect) or by sending `Unwatch`, which frees the slot at once and gets no reply; keeps `Unwatch` before any later operation; treats `unknown` and `NOT_FOUND` as nonterminal call states; recovers by reconnecting and querying.
-- [ ] Worker sessions: Attach at most once per connection; advertise capacity 1..64; treat WorkerEvent as repeatable/coalescible hints and fetch authoritative state; answer an Offer or Nudge for a session it does not hold with AcquireLease; interrupt only a turn whose `turn_no` ≤ `interrupt_turn_no`; release with STOPPED on Nudge STOP or any STOPPED.
+- [ ] Worker sessions: Attach at most once per connection; advertise capacity 1..64; treat WorkerEvent hints (all but UpdateMachine) as repeatable/coalescible and fetch authoritative state, and act on each UpdateMachine it receives, since it is sent once; answer an Offer or Nudge for a session it does not hold with AcquireLease; interrupt only a turn whose `turn_no` ≤ `interrupt_turn_no`; release with STOPPED on Nudge STOP or any STOPPED.
 - [ ] Keeps at most 48 call operations (Submit, Query, Cancel) open per connection, so session operations always find a slot.
 - [ ] Uses epoch 0 only for AcquireLease, sets `fresh` whenever it holds no local state, and retries a lost AcquireLease reply with AcquireLease; after a reconnect sends Attach, then ResumeLeases, then resent operations; fences every other session read/write and SubmitCall; sends session operations only on its newest connection; carries opaque tool_use_id; treats SESSION_FENCED and SESSION_STOPPED as terminal and unrecorded.
 - [ ] Reuses an unacknowledged append or event `batch_seq` with identical content until it is acknowledged (an event batch answered INVALID is consumed; an append answered INVALID or LIMIT is reported to the SDK as failed), splitting oversized SDK appends into consecutive batches; preserves ReportTurn local_seq/phase across retries; reuses taken input ids as SDK uuids; marks persisted items only after the SDK result, splitting them across PatchSessionState.persisted when needed; records owed call notices.

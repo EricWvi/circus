@@ -19,8 +19,8 @@ afterEach(() => {
 })
 
 const devices: Device[] = [
-  { deviceId: "device-devbox", name: "devbox", online: true, lastSeenUnixMs: 0, os: "linux", arch: "amd64", version: "0.1.0" },
-  { deviceId: "device-eric-win", name: "eric-win", online: false, lastSeenUnixMs: 0, os: "windows", arch: "amd64", version: "0.1.0" },
+  { deviceId: "device-devbox", name: "devbox", online: true, lastSeenUnixMs: 0, os: "linux", arch: "amd64", version: "0.1.0", updateVersion: "" },
+  { deviceId: "device-eric-win", name: "eric-win", online: false, lastSeenUnixMs: 0, os: "windows", arch: "amd64", version: "0.1.0", updateVersion: "" },
 ]
 
 async function renderEditor(rows: LocationRow[], { busy = false, framed = false } = {}) {

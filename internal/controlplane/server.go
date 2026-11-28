@@ -27,6 +27,7 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/providers"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
 	"github.com/EricWvi/circus/internal/controlplane/timers"
+	"github.com/EricWvi/circus/internal/controlplane/updates"
 	"github.com/EricWvi/circus/internal/controlplane/webapi"
 	"github.com/EricWvi/circus/internal/controlplane/workspaces"
 	"github.com/EricWvi/circus/internal/ledger"
@@ -105,6 +106,10 @@ type Config struct {
 	// WorkerConnections bounds authenticated worker links; zero uses
 	// workerlink.DefaultMaxConnections, negative values are refused.
 	WorkerConnections int
+	// LatestRelease reads the latest circus release's version
+	// (selfupdate.Release.Latest), at start and every 6 hours, for Web
+	// machine updates. Nil never knows one: no update is offered.
+	LatestRelease func(context.Context) (string, error)
 	// OIDC optionally enables human login through an identity provider.
 	OIDC *auth.OIDCConfig
 	// BcryptCost is a test hook; zero uses cost 12.
@@ -197,6 +202,8 @@ type Server struct {
 	sessions   *sessions.Service
 	bus        *sessions.Bus
 	workspaces *workspaces.Manager
+	// updates runs Web machine updates.
+	updates *updates.Manager
 	// ledger is the projects' ledger, nil without a database path; then
 	// sessions get no ledger snapshots (snapshots is nil).
 	ledger      *ledger.Manager
@@ -333,7 +340,7 @@ func New(ctx context.Context, st store.Store, cfg Config) (*Server, error) {
 	web, err := webapi.New(webapi.Config{Store: st, Interceptor: s.webAuth.Interceptor(), Online: s.onlineDevices, Now: now, Logger: s.logger,
 		Bus: s.bus, Waker: s.sessions, Scheduler: s.sessions, OnlineWorkers: s.sessions.OnlineWorkers, Secrets: s.secrets,
 		Jobs: s.router, PublicURL: cfg.PublicURL, Version: cfg.Version, Query: s.query, Workspaces: s.workspaces, Ledger: ledgerManager,
-		Workers: s.authn, Snapshots: s.snapshots, LedgerWrites: s.ledgerSlots})
+		Workers: s.authn, Snapshots: s.snapshots, LedgerWrites: s.ledgerSlots, Updates: s.updates})
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
@@ -395,7 +402,11 @@ func (s *Server) Start() error {
 	bgCtx, s.stopBg = context.WithCancel(context.Background())
 	s.started = true
 	s.timersDone = make(chan struct{})
-	s.bg.Add(3)
+	s.bg.Add(4)
+	go func() {
+		defer s.bg.Done()
+		s.updates.Run(bgCtx)
+	}()
 	workspaceCtx, stop := context.WithCancel(bgCtx)
 	s.stopWorkspaces = stop
 	s.workspacesDone = make(chan struct{})

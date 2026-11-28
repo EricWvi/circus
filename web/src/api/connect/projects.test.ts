@@ -287,8 +287,8 @@ describe("devices over Connect", () => {
       ),
     )
     expect(await client.listDevices()).toEqual([
-      { deviceId: "d-box", name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000, os: "linux", arch: "amd64", version: "0.1.0" },
-      { deviceId: "d-new", name: "new", online: false, lastSeenUnixMs: 0, os: "", arch: "", version: "" },
+      { deviceId: "d-box", name: "box", online: true, lastSeenUnixMs: 1_700_000_000_000, os: "linux", arch: "amd64", version: "0.1.0", updateVersion: "" },
+      { deviceId: "d-new", name: "new", online: false, lastSeenUnixMs: 0, os: "", arch: "", version: "", updateVersion: "" },
     ])
   })
 

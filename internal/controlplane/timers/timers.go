@@ -20,6 +20,9 @@ const (
 	CallWatchdog = "call_watchdog"
 	// EnrollTokenExpiry triggers metadata-only enrollment token cleanup.
 	EnrollTokenExpiry = "enroll_token_expiry"
+	// MachineUpdate fails a machine update still running at its deadline;
+	// its subject is the update ID.
+	MachineUpdate = "machine_update"
 )
 
 // Handler handles one claim synchronously. Its first operation is a store.Tx

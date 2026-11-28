@@ -82,6 +82,14 @@ describe("SessionPool", () => {
     expect(pool.runs(AgentKind.CLAUDE_CODE)).toBe(false);
   });
 
+  test("routes UpdateMachine", () => {
+    const updates: unknown[] = [];
+    const { hint, acquires } = setup(4, { updateMachine: (value) => updates.push(value) });
+    hint({ case: "updateMachine", value: { updateId: "u1", version: "v1.2.3" } });
+    expect(updates).toMatchObject([{ updateId: "u1", version: "v1.2.3" }]);
+    expect(acquires()).toHaveLength(0);
+  });
+
   test("an Offer is acquired fresh, once, ignoring hints while the acquisition is in flight", async () => {
     const { link, runners, hint, offer, acquires } = setup();
     let release!: () => void;

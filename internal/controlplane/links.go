@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	circusv1 "github.com/EricWvi/circus/gen/go/circus/v1"
@@ -12,8 +13,10 @@ import (
 	"github.com/EricWvi/circus/internal/controlplane/ledgerslots"
 	"github.com/EricWvi/circus/internal/controlplane/ledgersnaps"
 	"github.com/EricWvi/circus/internal/controlplane/sessions"
+	"github.com/EricWvi/circus/internal/controlplane/updates"
 	"github.com/EricWvi/circus/internal/controlplane/workerlink"
 	"github.com/EricWvi/circus/internal/controlplane/workspaces"
+	"github.com/EricWvi/circus/internal/store"
 	"github.com/EricWvi/circus/internal/wire"
 )
 
@@ -75,6 +78,15 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 		_ = r.Close(ctx)
 		return err
 	}
+	s.updates, err = updates.New(updates.Config{Store: s.st, Latest: c.LatestRelease, Daemons: daemonUpdates{&g}, Workers: svc,
+		Now: s.now, Logger: s.logger})
+	if err != nil {
+		_ = svc.Close(ctx)
+		_ = r.Close(ctx)
+		return err
+	}
+	// Hello metadata updates also complete machine updates.
+	metadata := helloMetadata{st: s.st, updates: s.updates, logger: s.logger}
 	opts := wire.Options{Clock: clk, MaxMessageBytes: c.MaxMessageBytes, HeartbeatInterval: c.HeartbeatInterval, HeartbeatTimeout: c.HeartbeatTimeout}
 	online := func(userID, deviceID string) {
 		s.workspaces.DeviceOnline(userID, deviceID)
@@ -82,13 +94,19 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 			snapshots.DeviceOnline(userID, deviceID)
 		}
 	}
-	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, MetadataStore: s.st, Registry: registry, Hooks: workspaceHooks{Hooks: r, online: online}, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes})
+	g, err = gateway.New(gateway.Config{InstanceID: s.instanceID, Clock: clk, Auth: s.authn, MetadataStore: metadata, Registry: registry, Hooks: workspaceHooks{Hooks: r, online: online}, Logger: s.logger, LinkOptions: opts, SendPoolBytes: c.SendPoolBytes, ReceivePoolBytes: c.ReceivePoolBytes,
+		UpdateFailed: func(ctx context.Context, deviceID string, f *circusv1.UpdateFailed) error {
+			return s.updateFailed(ctx, store.KindDevice, deviceID, f)
+		}})
 	if err != nil {
 		_ = svc.Close(ctx)
 		_ = r.Close(ctx)
 		return err
 	}
-	w, err := workerlink.New(workerlink.Config{Auth: s.authn, MetadataStore: s.st, Router: r, InstanceID: s.instanceID, Clock: clk, Wire: opts, Logger: s.logger, MaxConnections: c.WorkerConnections, Sessions: svc})
+	w, err := workerlink.New(workerlink.Config{Auth: s.authn, MetadataStore: metadata, Router: r, InstanceID: s.instanceID, Clock: clk, Wire: opts, Logger: s.logger, MaxConnections: c.WorkerConnections, Sessions: svc,
+		UpdateFailed: func(ctx context.Context, workerID string, f *circusv1.UpdateFailed) error {
+			return s.updateFailed(ctx, store.KindWorker, workerID, f)
+		}})
 	if err != nil {
 		_ = g.Shutdown(ctx)
 		_ = svc.Close(ctx)
@@ -145,6 +163,58 @@ func (s *Server) buildCallPlane(ctx context.Context) error {
 	}
 	s.hooks = append(s.hooks, shutdownHook{"call plane", s.closeCalls})
 	return nil
+}
+
+// daemonUpdates reaches the gateway, which is built after the update
+// manager; it is set before any traffic.
+type daemonUpdates struct{ g *gateway.Handler }
+
+func (d daemonUpdates) Supports(deviceID, feature string) (bool, bool) {
+	if *d.g == nil {
+		return false, false
+	}
+	return (*d.g).Supports(deviceID, feature)
+}
+
+func (d daemonUpdates) UpdateMachine(ctx context.Context, deviceID string, u *circusv1.UpdateMachine) error {
+	if *d.g == nil {
+		return gateway.ErrDeviceOffline
+	}
+	return (*d.g).UpdateMachine(ctx, deviceID, u)
+}
+
+// helloMetadata stores a link's Hello metadata, then tells the update
+// manager the version the role connected with: that completes an update
+// of its machine to that release.
+type helloMetadata struct {
+	st      store.Store
+	updates *updates.Manager
+	logger  *slog.Logger
+}
+
+func (h helloMetadata) UpdateHelloMetadata(ctx context.Context, kind store.PrincipalKind, id string, m store.HelloMetadata) (bool, error) {
+	changed, err := h.st.UpdateHelloMetadata(ctx, kind, id, m)
+	if err != nil || m.ClientVersion == "" {
+		return changed, err
+	}
+	if err := h.updates.Connected(ctx, kind, id, m.ClientVersion); err != nil {
+		h.logger.WarnContext(ctx, "completing a machine update failed", "kind", kind, "identity_id", id, "error", err)
+	}
+	return changed, nil
+}
+
+// updateFailed passes a role's UpdateFailed to the update manager, with a
+// bounded store deadline: it runs in the link's receive loop. An error
+// means the report was not recorded (the deadline then fails the update).
+func (s *Server) updateFailed(ctx context.Context, kind store.PrincipalKind, id string, f *circusv1.UpdateFailed) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err := s.updates.Failed(ctx, kind, id, f.GetUpdateId(), f.GetError())
+	if err != nil {
+		s.logger.WarnContext(ctx, "recording a machine update failure failed", "kind", kind, "identity_id", id,
+			"update_id", f.GetUpdateId(), "error", err)
+	}
+	return err
 }
 
 type workspaceHooks struct {

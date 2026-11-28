@@ -59,6 +59,10 @@ type Options struct {
 	BootID string
 	// Wire sets the local link limits; zero values are the defaults.
 	Wire wire.Options
+	// ClientVersion is sent in Hello; empty sends "test".
+	ClientVersion string
+	// Features are sent in Hello.features.
+	Features []string
 }
 
 // Client is one worker connection.
@@ -104,7 +108,11 @@ func Dial(ctx context.Context, o Options) (*Client, error) {
 		}
 		return nil, err
 	}
-	hello := &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, BootId: o.BootID, ClientVersion: "test"}
+	version := o.ClientVersion
+	if version == "" {
+		version = "test"
+	}
+	hello := &circusv1.Hello{ProtocolVersion: wire.ProtocolVersion, BootId: o.BootID, ClientVersion: version, Features: o.Features}
 	welcome, opts, err := wire.DialHello(hctx, conn, wire.WorkerUplink, hello, o.PrincipalID, o.Wire)
 	if err != nil {
 		_ = conn.Close()
@@ -318,6 +326,12 @@ func ClaudeInstalled() []*circusv1.AgentStatus {
 // ReportAgents sends ReportAgents without waiting for its reply.
 func (c *Client) ReportAgents(ctx context.Context, agents ...*circusv1.AgentStatus) (Reply, error) {
 	s, err := c.Open(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_ReportAgents{ReportAgents: &circusv1.ReportAgents{Agents: agents}}})
+	return Reply{s}, err
+}
+
+// UpdateFailed sends UpdateFailed without waiting for its reply.
+func (c *Client) UpdateFailed(ctx context.Context, updateID, errText string) (Reply, error) {
+	s, err := c.Open(ctx, &circusv1.WorkerUplink{Payload: &circusv1.WorkerUplink_UpdateFailed{UpdateFailed: &circusv1.UpdateFailed{UpdateId: updateID, Error: errText}}})
 	return Reply{s}, err
 }
 

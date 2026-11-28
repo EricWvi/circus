@@ -48,6 +48,8 @@ interface WireOptions {
   principalId: string;
   bootId: string;
   clientVersion: string;
+  /** Hello.features: capabilities beyond the protocol version. */
+  features?: string[];
 }
 
 export function welcomeLimits(welcome: Welcome, principalId: string): Limits {
@@ -122,7 +124,7 @@ export class WireConnection {
   constructor(opts: WireOptions, onBusiness: (message: WorkerDownlink) => void) {
     const hello = encodeUplink(create(WorkerUplinkSchema, {
       payload: { case: "hello", value: {
-        protocolVersion: 1, bootId: opts.bootId, clientVersion: opts.clientVersion,
+        protocolVersion: 1, bootId: opts.bootId, clientVersion: opts.clientVersion, features: opts.features ?? [],
       } },
     }), METADATA_BYTES);
 

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file circus/v1/link.proto.
  */
 export const file_circus_v1_link: GenFile = /*@__PURE__*/
-  fileDesc("ChRjaXJjdXMvdjEvbGluay5wcm90bxIJY2lyY3VzLnYxIpwBCgVIZWxsbxIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEg8KB2Jvb3RfaWQYAiABKAkSFgoOY2xpZW50X3ZlcnNpb24YAyABKAkSCgoCb3MYBCABKAkSDAoEYXJjaBgFIAEoCRIQCghob3N0bmFtZRgGIAEoCRISCgptYWNoaW5lX2lkGAcgASgJEhAKCGZlYXR1cmVzGAggAygJIp4CCgdXZWxjb21lEhQKDHByaW5jaXBhbF9pZBgBIAEoCRITCgtpbnN0YW5jZV9pZBgCIAEoCRIdChVoZWFydGJlYXRfaW50ZXJ2YWxfbXMYAyABKA0SHAoUaGVhcnRiZWF0X3RpbWVvdXRfbXMYBCABKA0SGQoRbWF4X21lc3NhZ2VfYnl0ZXMYBSABKAQSGgoSbWF4X2ZyYWdtZW50X2J5dGVzGAYgASgNEhoKEm5lZ290aWF0ZWRfdmVyc2lvbhgHIAEoDRIbChNzZXJ2ZXJfdGltZV91bml4X21zGAggASgDEh4KFm1heF9pbl9mbGlnaHRfbWVzc2FnZXMYCSABKA0SGwoTbWF4X2luX2ZsaWdodF9ieXRlcxgKIAEoBCLlAQoGUmVqZWN0EiQKBGNvZGUYASABKA4yFi5jaXJjdXMudjEuUmVqZWN0LkNvZGUSDwoHbWVzc2FnZRgCIAEoCRITCgttaW5fdmVyc2lvbhgDIAEoDRITCgttYXhfdmVyc2lvbhgEIAEoDSJ6CgRDb2RlEhQKEENPREVfVU5TUEVDSUZJRUQQABIYChRDT0RFX1VOQVVUSEVOVElDQVRFRBABEhAKDENPREVfUkVWT0tFRBACEhwKGENPREVfVkVSU0lPTl9VTlNVUFBPUlRFRBADEhIKDkNPREVfQkFEX0hFTExPEAQiLgoJSGVhcnRiZWF0EgsKA3NlcRgBIAEoBBIUCgxzZW50X3VuaXhfbXMYAiABKAMiXQoIRnJhZ21lbnQSEgoKbWVzc2FnZV9pZBgBIAEoBBINCgVpbmRleBgCIAEoDRIMCgRsYXN0GAMgASgIEhIKCnRvdGFsX3NpemUYBCABKAQSDAoEZGF0YRgFIAEoDCKhAQoGR29Bd2F5EigKBnJlYXNvbhgBIAEoDjIYLmNpcmN1cy52MS5Hb0F3YXkuUmVhc29uEhoKEnJlY29ubmVjdF9hZnRlcl9tcxgCIAEoDSJRCgZSZWFzb24SFgoSUkVBU09OX1VOU1BFQ0lGSUVEEAASGAoUUkVBU09OX1NIVVRUSU5HX0RPV04QARIVChFSRUFTT05fU1VQRVJTRURFRBACQjVaM2dpdGh1Yi5jb20vRXJpY1d2aS9jaXJjdXMvZ2VuL2dvL2NpcmN1cy92MTtjaXJjdXN2MWIGcHJvdG8z");
+  fileDesc("ChRjaXJjdXMvdjEvbGluay5wcm90bxIJY2lyY3VzLnYxIpwBCgVIZWxsbxIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgNEg8KB2Jvb3RfaWQYAiABKAkSFgoOY2xpZW50X3ZlcnNpb24YAyABKAkSCgoCb3MYBCABKAkSDAoEYXJjaBgFIAEoCRIQCghob3N0bmFtZRgGIAEoCRISCgptYWNoaW5lX2lkGAcgASgJEhAKCGZlYXR1cmVzGAggAygJIjMKDVVwZGF0ZU1hY2hpbmUSEQoJdXBkYXRlX2lkGAEgASgJEg8KB3ZlcnNpb24YAiABKAkiMAoMVXBkYXRlRmFpbGVkEhEKCXVwZGF0ZV9pZBgBIAEoCRINCgVlcnJvchgCIAEoCSKeAgoHV2VsY29tZRIUCgxwcmluY2lwYWxfaWQYASABKAkSEwoLaW5zdGFuY2VfaWQYAiABKAkSHQoVaGVhcnRiZWF0X2ludGVydmFsX21zGAMgASgNEhwKFGhlYXJ0YmVhdF90aW1lb3V0X21zGAQgASgNEhkKEW1heF9tZXNzYWdlX2J5dGVzGAUgASgEEhoKEm1heF9mcmFnbWVudF9ieXRlcxgGIAEoDRIaChJuZWdvdGlhdGVkX3ZlcnNpb24YByABKA0SGwoTc2VydmVyX3RpbWVfdW5peF9tcxgIIAEoAxIeChZtYXhfaW5fZmxpZ2h0X21lc3NhZ2VzGAkgASgNEhsKE21heF9pbl9mbGlnaHRfYnl0ZXMYCiABKAQi5QEKBlJlamVjdBIkCgRjb2RlGAEgASgOMhYuY2lyY3VzLnYxLlJlamVjdC5Db2RlEg8KB21lc3NhZ2UYAiABKAkSEwoLbWluX3ZlcnNpb24YAyABKA0SEwoLbWF4X3ZlcnNpb24YBCABKA0iegoEQ29kZRIUChBDT0RFX1VOU1BFQ0lGSUVEEAASGAoUQ09ERV9VTkFVVEhFTlRJQ0FURUQQARIQCgxDT0RFX1JFVk9LRUQQAhIcChhDT0RFX1ZFUlNJT05fVU5TVVBQT1JURUQQAxISCg5DT0RFX0JBRF9IRUxMTxAEIi4KCUhlYXJ0YmVhdBILCgNzZXEYASABKAQSFAoMc2VudF91bml4X21zGAIgASgDIl0KCEZyYWdtZW50EhIKCm1lc3NhZ2VfaWQYASABKAQSDQoFaW5kZXgYAiABKA0SDAoEbGFzdBgDIAEoCBISCgp0b3RhbF9zaXplGAQgASgEEgwKBGRhdGEYBSABKAwioQEKBkdvQXdheRIoCgZyZWFzb24YASABKA4yGC5jaXJjdXMudjEuR29Bd2F5LlJlYXNvbhIaChJyZWNvbm5lY3RfYWZ0ZXJfbXMYAiABKA0iUQoGUmVhc29uEhYKElJFQVNPTl9VTlNQRUNJRklFRBAAEhgKFFJFQVNPTl9TSFVUVElOR19ET1dOEAESFQoRUkVBU09OX1NVUEVSU0VERUQQAkI1WjNnaXRodWIuY29tL0VyaWNXdmkvY2lyY3VzL2dlbi9nby9jaXJjdXMvdjE7Y2lyY3VzdjFiBnByb3RvMw");
 
 /**
  * Hello is the client's first message after authenticated HTTP upgrade. Bearer
@@ -18,7 +18,7 @@ export const file_circus_v1_link: GenFile = /*@__PURE__*/
  * messages may be sent by either side before Welcome. Missing Hello times out
  * and closes the connection; both link servers apply the same handshake rules.
  * Both roles require boot_id. The worker sends protocol and client versions
- * too; os, arch, hostname and machine_id are daemon metadata.
+ * and features too; os, arch, hostname and machine_id are daemon metadata.
  *
  * @generated from message circus.v1.Hello
  */
@@ -69,7 +69,13 @@ export type Hello = Message<"circus.v1.Hello"> & {
    * message that depends on a feature only if the other side listed it,
    * because receivers close the link on unexpected messages. Daemon features:
    * "device_query.list_directory" (accepts DeviceQuery.list_directory),
-   * "device_query.git_remote" (accepts DeviceQuery.git_remote).
+   * "device_query.git_remote" (accepts DeviceQuery.git_remote),
+   * "device_call.prepare_workspace" and "device_call.remove_workspace"
+   * (accept those device calls). Features of both roles: "machine_update"
+   * (accepts UpdateMachine: DaemonDownlink.update_machine on the daemon
+   * link, WorkerEvent.update_machine on the worker link), listed only by a
+   * process that runs as the installed user service, which the service
+   * manager restarts after `circus update`.
    *
    * @generated from field: repeated string features = 8;
    */
@@ -82,6 +88,75 @@ export type Hello = Message<"circus.v1.Hello"> & {
  */
 export const HelloSchema: GenMessage<Hello> = /*@__PURE__*/
   messageDesc(file_circus_v1_link, 0);
+
+/**
+ * UpdateMachine asks the role to run `circus update` for its whole machine:
+ * the daemon runs its own executable, the worker CIRCUS_BIN (or circus on
+ * PATH), as a child process with the service's environment and a deadline
+ * of 4 minutes 30 seconds, killing it (and its process group) when that
+ * passes. A role runs at most one such child at a time and ignores a
+ * command that arrives while one runs. The command is one-shot: it is not
+ * persisted, acknowledged or resent after a reconnect. On success the role
+ * reports nothing: the service manager restarts the machine's services and
+ * they reconnect with the new version, which completes the update. On a
+ * non-zero exit, a failure to start or the deadline, it sends UpdateFailed.
+ *
+ * @generated from message circus.v1.UpdateMachine
+ */
+export type UpdateMachine = Message<"circus.v1.UpdateMachine"> & {
+  /**
+   * Required: 1-128 bytes, charset [A-Za-z0-9_-]; names this attempt.
+   *
+   * @generated from field: string update_id = 1;
+   */
+  updateId: string;
+
+  /**
+   * The release the control plane expects (informational: `circus update`
+   * installs the latest release).
+   *
+   * @generated from field: string version = 2;
+   */
+  version: string;
+};
+
+/**
+ * Describes the message circus.v1.UpdateMachine.
+ * Use `create(UpdateMachineSchema)` to create a new message.
+ */
+export const UpdateMachineSchema: GenMessage<UpdateMachine> = /*@__PURE__*/
+  messageDesc(file_circus_v1_link, 1);
+
+/**
+ * UpdateFailed reports that the role's `circus update` for UpdateMachine
+ * update_id failed. The control plane ignores it unless update_id is the
+ * machine's running attempt.
+ *
+ * @generated from message circus.v1.UpdateFailed
+ */
+export type UpdateFailed = Message<"circus.v1.UpdateFailed"> & {
+  /**
+   * @generated from field: string update_id = 1;
+   */
+  updateId: string;
+
+  /**
+   * Why it failed, usually the tail of the command's output, at most 2048
+   * bytes. On both links the control plane keeps only the last 2048 bytes
+   * of a longer one and removes control characters other than newlines
+   * and tabs.
+   *
+   * @generated from field: string error = 2;
+   */
+  error: string;
+};
+
+/**
+ * Describes the message circus.v1.UpdateFailed.
+ * Use `create(UpdateFailedSchema)` to create a new message.
+ */
+export const UpdateFailedSchema: GenMessage<UpdateFailed> = /*@__PURE__*/
+  messageDesc(file_circus_v1_link, 2);
 
 /**
  * Welcome accepts a Hello whose protocol_version is supported (currently only 1).
@@ -160,7 +235,7 @@ export type Welcome = Message<"circus.v1.Welcome"> & {
  * Use `create(WelcomeSchema)` to create a new message.
  */
 export const WelcomeSchema: GenMessage<Welcome> = /*@__PURE__*/
-  messageDesc(file_circus_v1_link, 1);
+  messageDesc(file_circus_v1_link, 3);
 
 /**
  * Reject ends the handshake; close the connection after sending it.
@@ -194,7 +269,7 @@ export type Reject = Message<"circus.v1.Reject"> & {
  * Use `create(RejectSchema)` to create a new message.
  */
 export const RejectSchema: GenMessage<Reject> = /*@__PURE__*/
-  messageDesc(file_circus_v1_link, 2);
+  messageDesc(file_circus_v1_link, 4);
 
 /**
  * @generated from enum circus.v1.Reject.Code
@@ -234,7 +309,7 @@ export enum Reject_Code {
  * Describes the enum circus.v1.Reject.Code.
  */
 export const Reject_CodeSchema: GenEnum<Reject_Code> = /*@__PURE__*/
-  enumDesc(file_circus_v1_link, 2, 0);
+  enumDesc(file_circus_v1_link, 4, 0);
 
 /**
  * Heartbeat is sent independently by both peers (default every 5 seconds).
@@ -268,7 +343,7 @@ export type Heartbeat = Message<"circus.v1.Heartbeat"> & {
  * Use `create(HeartbeatSchema)` to create a new message.
  */
 export const HeartbeatSchema: GenMessage<Heartbeat> = /*@__PURE__*/
-  messageDesc(file_circus_v1_link, 3);
+  messageDesc(file_circus_v1_link, 5);
 
 /**
  * Fragment carries part of one serialized role-specific Uplink/Downlink.
@@ -330,7 +405,7 @@ export type Fragment = Message<"circus.v1.Fragment"> & {
  * Use `create(FragmentSchema)` to create a new message.
  */
 export const FragmentSchema: GenMessage<Fragment> = /*@__PURE__*/
-  messageDesc(file_circus_v1_link, 4);
+  messageDesc(file_circus_v1_link, 6);
 
 /**
  * GoAway asks the peer to reconnect after a delay, e.g. during server shutdown
@@ -355,7 +430,7 @@ export type GoAway = Message<"circus.v1.GoAway"> & {
  * Use `create(GoAwaySchema)` to create a new message.
  */
 export const GoAwaySchema: GenMessage<GoAway> = /*@__PURE__*/
-  messageDesc(file_circus_v1_link, 5);
+  messageDesc(file_circus_v1_link, 7);
 
 /**
  * @generated from enum circus.v1.GoAway.Reason
@@ -381,5 +456,5 @@ export enum GoAway_Reason {
  * Describes the enum circus.v1.GoAway.Reason.
  */
 export const GoAway_ReasonSchema: GenEnum<GoAway_Reason> = /*@__PURE__*/
-  enumDesc(file_circus_v1_link, 5, 0);
+  enumDesc(file_circus_v1_link, 7, 0);
 

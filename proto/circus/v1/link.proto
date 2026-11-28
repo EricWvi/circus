@@ -9,7 +9,7 @@ option go_package = "github.com/EricWvi/circus/gen/go/circus/v1;circusv1";
 // messages may be sent by either side before Welcome. Missing Hello times out
 // and closes the connection; both link servers apply the same handshake rules.
 // Both roles require boot_id. The worker sends protocol and client versions
-// too; os, arch, hostname and machine_id are daemon metadata.
+// and features too; os, arch, hostname and machine_id are daemon metadata.
 message Hello {
   uint32 protocol_version = 1;
   // Required, 1-128 bytes: fresh UUIDv7 per process, retained across reconnects.
@@ -26,8 +26,44 @@ message Hello {
   // message that depends on a feature only if the other side listed it,
   // because receivers close the link on unexpected messages. Daemon features:
   // "device_query.list_directory" (accepts DeviceQuery.list_directory),
-  // "device_query.git_remote" (accepts DeviceQuery.git_remote).
+  // "device_query.git_remote" (accepts DeviceQuery.git_remote),
+  // "device_call.prepare_workspace" and "device_call.remove_workspace"
+  // (accept those device calls). Features of both roles: "machine_update"
+  // (accepts UpdateMachine: DaemonDownlink.update_machine on the daemon
+  // link, WorkerEvent.update_machine on the worker link), listed only by a
+  // process that runs as the installed user service, which the service
+  // manager restarts after `circus update`.
   repeated string features = 8;
+}
+
+// UpdateMachine asks the role to run `circus update` for its whole machine:
+// the daemon runs its own executable, the worker CIRCUS_BIN (or circus on
+// PATH), as a child process with the service's environment and a deadline
+// of 4 minutes 30 seconds, killing it (and its process group) when that
+// passes. A role runs at most one such child at a time and ignores a
+// command that arrives while one runs. The command is one-shot: it is not
+// persisted, acknowledged or resent after a reconnect. On success the role
+// reports nothing: the service manager restarts the machine's services and
+// they reconnect with the new version, which completes the update. On a
+// non-zero exit, a failure to start or the deadline, it sends UpdateFailed.
+message UpdateMachine {
+  // Required: 1-128 bytes, charset [A-Za-z0-9_-]; names this attempt.
+  string update_id = 1;
+  // The release the control plane expects (informational: `circus update`
+  // installs the latest release).
+  string version = 2;
+}
+
+// UpdateFailed reports that the role's `circus update` for UpdateMachine
+// update_id failed. The control plane ignores it unless update_id is the
+// machine's running attempt.
+message UpdateFailed {
+  string update_id = 1;
+  // Why it failed, usually the tail of the command's output, at most 2048
+  // bytes. On both links the control plane keeps only the last 2048 bytes
+  // of a longer one and removes control characters other than newlines
+  // and tabs.
+  string error = 2;
 }
 
 // Welcome accepts a Hello whose protocol_version is supported (currently only 1).

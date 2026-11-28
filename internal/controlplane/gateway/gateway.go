@@ -135,6 +135,12 @@ type Handler interface {
 	Supports(deviceID, feature string) (online, supported bool)
 	// Query sends an ephemeral device query on the current connection.
 	Query(ctx context.Context, deviceID string, q *circusv1.DeviceQuery) (*circusv1.DeviceQueryResult, error)
+	// UpdateMachine sends u on the device's current ready connection. It
+	// returns ErrDeviceOffline without one and ErrFeatureUnsupported when
+	// the daemon did not list wire.FeatureMachineUpdate. Success means
+	// queued; nothing answers it unless the update fails
+	// (Config.UpdateFailed).
+	UpdateMachine(ctx context.Context, deviceID string, u *circusv1.UpdateMachine) error
 	// Shutdown stops admission, sends GoAway, calls Link.Shutdown(ctx), drains
 	// received messages and joins owned work. A deadline bounds graceful close.
 	// The join-before-return guarantee can outlast ctx after forced abort; this
@@ -166,6 +172,11 @@ type Config struct {
 	Recheck                         auth.RecheckPolicy
 	LinkOptions                     wire.Options
 	SendPoolBytes, ReceivePoolBytes int
+	// UpdateFailed receives a daemon's UpdateFailed, with the device id;
+	// nil drops it. It runs in the link's receive loop and must return
+	// promptly. Its error (the report could not be recorded) is its own to
+	// log: the daemon link has no reply.
+	UpdateFailed func(ctx context.Context, deviceID string, f *circusv1.UpdateFailed) error
 }
 
 // Stats is a constant-size snapshot. Connections includes closing sockets;

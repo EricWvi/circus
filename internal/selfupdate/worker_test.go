@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -81,5 +82,33 @@ func TestIsRelease(t *testing.T) {
 		if got := selfupdate.IsRelease(v); got != want {
 			t.Errorf("IsRelease(%q) = %t", v, got)
 		}
+	}
+}
+
+func TestLatest(t *testing.T) {
+	srv := fakerelease.New(t)
+	rel := srv.Release()
+	const path = "/releases/latest/download/latest.json"
+	srv.Set(path, []byte(`{"version":"v1.4.0","assets":[]}`))
+	if v, err := rel.Latest(t.Context()); err != nil || v != "v1.4.0" {
+		t.Fatalf("Latest = %q, %v", v, err)
+	}
+	if got := srv.Requests(); len(got) != 1 || got[0] != path {
+		t.Errorf("requests = %q", got)
+	}
+	for _, tc := range []struct{ name, body, wantErr string }{
+		{"not JSON", "<html>", "invalid latest.json"},
+		{"not a release", `{"version":"dev"}`, "invalid version in latest.json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv.Set(path, []byte(tc.body))
+			if _, err := rel.Latest(t.Context()); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("Latest = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+	srv.Handle(path, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) })
+	if _, err := rel.Latest(t.Context()); err == nil || !strings.Contains(err.Error(), "HTTP status 502") {
+		t.Errorf("Latest on a server error = %v", err)
 	}
 }

@@ -231,6 +231,41 @@ export interface Device {
   os: string
   arch: string
   version: string
+  /**
+   * The release an update would install, when one is offered on this card
+   * (this role is online and runs as the installed service, its version is
+   * an older release, and no update of the machine runs); empty otherwise.
+   */
+  updateVersion: string
+  /** The machine's update, running or failed; none when there is none. */
+  update?: MachineUpdate
+}
+
+/** Where a machine's update is: under way, or failed (`failure` says why). */
+export type MachineUpdateState = "running" | "failed"
+
+/**
+ * Why a machine's update failed: `circus update` failed on the machine
+ * (`error` holds its output), no role came back with the target version
+ * before the deadline (`error` is empty), or the command couldn't be sent
+ * (`error` says why).
+ */
+export type MachineUpdateFailure = "command" | "timed_out" | "unreachable"
+
+/**
+ * The update of a machine (its device and worker) to a circus release.
+ * Both of the machine's cards show it.
+ */
+export interface MachineUpdate {
+  targetVersion: string
+  state: MachineUpdateState
+  /** When failed: the command's output tail, or why the command couldn't be sent; empty otherwise. */
+  error: string
+  /** Why it failed; only when failed, and absent for a reason this client doesn't know. */
+  failure?: MachineUpdateFailure
+  startedUnixMs: number
+  /** When it fails unless the machine has come back with the target version. */
+  deadlineUnixMs: number
 }
 
 /** A coding agent a worker can install and run sessions with, by the proto names without `AGENT_KIND_`. */
@@ -301,6 +336,10 @@ export interface Worker {
   integrator: boolean
   /** The agents the worker reported or the user asked for, at most one per kind. */
   agents: WorkerAgent[]
+  /** As `Device.updateVersion`, for this worker's card. */
+  updateVersion: string
+  /** As `Device.update`, for the worker's machine. */
+  update?: MachineUpdate
 }
 
 /** Which identities an enrollment link enrolls: a device (daemon), a worker, or both. */
@@ -438,6 +477,15 @@ export interface MachineService {
   deleteDevice(req: { deviceId: string }): Promise<void>
   /** Deletes one of the caller's workers; fails as `deleteDevice`. */
   deleteWorker(req: { workerId: string }): Promise<void>
+  /**
+   * Updates the machine of one of the caller's devices or workers to the
+   * latest circus release, as `circus update` run there does, and returns
+   * the machine's update. While one runs it returns that one; after a
+   * failure it starts again. Fails with `not_found` for an unknown device
+   * or worker or another user's, and `failed_precondition` when no update
+   * is offered.
+   */
+  updateMachine(req: { deviceId: string } | { workerId: string }): Promise<MachineUpdate>
 }
 
 /** A session as lists show it. */
