@@ -54,6 +54,9 @@ export const ProvidersSection = memo(function ProvidersSection({
   const providers = useModelProviders({ live: true })
   const workers = useWorkers()
   const [editing, setEditing] = useState<Editing | null>(null)
+  // The form last opened, kept while the dialog closes so its content doesn't
+  // collapse mid-animation; the key remounts the form on every open.
+  const [shown, setShown] = useState<{ editing: Editing; key: number } | null>(null)
   const [deleting, setDeleting] = useState<ModelProvider | null>(null)
   // Both dialogs return focus to the button that opened them; once that is
   // gone (its provider deleted), to the empty state's Add provider, else the
@@ -65,6 +68,7 @@ export const ProvidersSection = memo(function ProvidersSection({
   const openForm = (next: Editing, trigger: HTMLElement | null) => {
     focus.opened(trigger)
     setEditing(next)
+    setShown((prev) => ({ editing: next, key: (prev?.key ?? 0) + 1 }))
   }
   useImperativeHandle(ref, () => ({ addProvider: (trigger) => openForm({ kind: "new" }, trigger) }))
   const closeForm = () => setEditing(null)
@@ -144,9 +148,10 @@ export const ProvidersSection = memo(function ProvidersSection({
           }}
           onCloseAutoFocus={restoreFocus}
         >
-          {editing && (
+          {shown && (
             <ProviderForm
-              editing={editing.kind === "edit" ? editing.provider : undefined}
+              key={shown.key}
+              editing={shown.editing.kind === "edit" ? shown.editing.provider : undefined}
               providers={providers.data ?? []}
               onDone={closeForm}
               reload={reload}
