@@ -448,8 +448,6 @@ export const zhCN = {
     repoUrlReadFrom: "读取自 <src>{{device}}:{{path}}</src>",
     repoUrlFolderUses: "<src>{{device}}:{{path}}</src> 使用 <url>{{url}}</url>",
     useRepoUrl: "改用此地址",
-    defaultPathCloned: "首次开会话时克隆到这里",
-    defaultPathEmpty: "将在这里新建空的工作目录",
     defaultPathMark: "默认",
     defaultPathHint:
       "路径留空时使用默认工作目录 {{path}}。第一次在这里开始会话时会在设备上创建它；如果项目有仓库地址，还会把仓库克隆进去。",
@@ -458,6 +456,9 @@ export const zhCN = {
     removedMark: "已移除",
     replacedMark: "已替换",
     replacedHint: "一台新设备用了这个名称。保存后改用新设备。",
+    locationSharedOne: "项目 <name>{{name}}</name> 也使用这个位置",
+    locationSharedTwo: "项目 <name>{{first}}</name> 和 <name>{{second}}</name> 也使用这个位置",
+    locationSharedMany: "项目 <name>{{first}}</name>、<name>{{second}}</name> 和另外 {{more}} 个项目也使用这个位置",
     noLocations: "还没有位置。添加一个，才能在设备上开始会话。",
     maxLocations: "一个项目最多 {{max}} 个位置",
     noDevicesToAdd: "没有可以添加位置的设备",

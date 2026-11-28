@@ -4,8 +4,10 @@ import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { SLOW_GIT_REMOTE_MS } from "@/api/mock/directories"
+import type { MockState } from "@/api/mock/state"
+import { seedState } from "@/api/mock/state"
+import { queryKeys } from "@/api/query-client"
 import type { CircusClient } from "@/api/types"
-import { i18n } from "@/i18n/i18n"
 import { advance, renderWithBackend } from "@/test/render"
 
 import { useOpenNewProject } from "./new-project-context"
@@ -18,6 +20,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 function Opener() {
@@ -29,8 +32,14 @@ function Opener() {
   )
 }
 
-/** Opens the new project dialog, counting the git remote reads. */
-async function openDialog() {
+/**
+ * Opens the new project dialog, counting the git remote reads. `state` is
+ * the mock server's data; `wrapClient` stands between the dialog and it.
+ */
+async function openDialog({
+  state = seedState(),
+  wrapClient: wrapMore = (client) => client,
+}: { state?: MockState; wrapClient?: (client: CircusClient) => CircusClient } = {}) {
   const reads: { device: string; path: string }[] = []
   const router = createMemoryRouter(
     [
@@ -45,20 +54,42 @@ async function openDialog() {
     ],
     { initialEntries: ["/"] },
   )
-  const wrapClient = (client: CircusClient): CircusClient => ({
-    ...client,
-    machines: {
-      ...client.machines,
-      getGitRemote: (req) => {
-        reads.push(req)
-        return client.machines.getGitRemote(req)
+  const wrapClient = (backend: CircusClient): CircusClient => {
+    const client = wrapMore(backend)
+    return {
+      ...client,
+      machines: {
+        ...client.machines,
+        getGitRemote: (req) => {
+          reads.push(req)
+          return client.machines.getGitRemote(req)
+        },
       },
-    },
-  })
-  const { state } = await renderWithBackend(<RouterProvider router={router} />, { wrapClient })
+    }
+  }
+  const { queryClient } = await renderWithBackend(<RouterProvider router={router} />, { state, wrapClient })
   fireEvent.click(screen.getByRole("button", { name: "open" }))
   await advance(50)
-  return { reads, state }
+  return { reads, state, queryClient }
+}
+
+/**
+ * Gives the dialog an exit animation that never ends here, so its form
+ * stays mounted while it closes, as in a browser mid-animation.
+ */
+function stubExitAnimation() {
+  const realStyle = globalThis.getComputedStyle
+  vi.spyOn(globalThis, "getComputedStyle").mockImplementation((el, pseudo) => {
+    const style = realStyle(el, pseudo)
+    if (!(el instanceof HTMLElement) || el.getAttribute("role") !== "dialog") return style
+    return new Proxy(style, {
+      get: (target, key) => {
+        if (key === "animationName") return el.dataset.state === "closed" ? "exit" : "enter"
+        const value: unknown = Reflect.get(target, key, target)
+        return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value
+      },
+    })
+  })
 }
 
 const PALACE = "https://git.example.com/infra/palace.git"
@@ -215,10 +246,11 @@ describe("new project repository URL from a folder", () => {
 
   it("only hints for answers that arrive after a refused submit", async () => {
     await openDialog()
+    fireEvent.change(nameInput(), { target: { value: "circus" } })
     act(() => path().focus())
     fireEvent.change(path(), { target: { value: "/home/eric/src/toolbox" } })
     act(() => nameInput().focus())
-    // The name is missing: the submit is refused while the read is under way.
+    // The name is taken: the submit is refused while the read is under way.
     fireEvent.click(screen.getByRole("button", { name: "Create" }))
     await advance(SLOW_GIT_REMOTE_MS + 50)
     expect(repoUrl().value).toBe("")
@@ -362,45 +394,41 @@ describe("new project layout", () => {
     expect(path().hasAttribute("data-quiet-focus")).toBe(false)
   })
 
-  it("says what happens in the default directory, by whether there is a repository URL", async () => {
+  it("has no note under the default directory, with or without a repository URL", async () => {
     await openDialog()
-    expect(note()).toBe("An empty folder is created here")
+    expect(note()).toBeUndefined()
     fireEvent.change(repoUrl(), { target: { value: "git@github.com:owner/repo.git" } })
-    expect(note()).toBe("Cloned here the first time a session starts")
-    await i18n.changeLanguage("zh-CN")
-    try {
-      expect(note()).toBe("首次开会话时克隆到这里")
-      fireEvent.change(repoUrl(), { target: { value: " " } })
-      expect(note()).toBe("将在这里新建空的工作目录")
-    } finally {
-      await i18n.changeLanguage("en")
-    }
-    // Not once the row has a path.
-    fireEvent.change(path(), { target: { value: "/srv/palace" } })
     expect(note()).toBeUndefined()
   })
 
-  it("has no note on a row that needs a path, which shows its error instead", async () => {
+  it("names another project using a row's location", async () => {
+    await openDialog()
+    fireEvent.change(path(), { target: { value: "/home/eric/src/toolbox/" } })
+    expect(note()).toBe("Also used by project toolbox")
+    expect(nameInput().value).toBe("toolbox-2")
+    fireEvent.change(path(), { target: { value: "/home/eric/src/elsewhere" } })
+    expect(note()).toBeUndefined()
+  })
+
+  it("marks a row that needs a path invalid", async () => {
     await openDialog()
     // Four devices: the fifth row is on devbox again, whose default directory is taken.
     for (let i = 0; i < 4; i++) {
       fireEvent.click(screen.getByRole("button", { name: "Add location" }))
       await advance(10)
     }
-    expect(note(4)).toBe("An empty folder is created here")
-    expect(note(5)).toBeUndefined()
     fireEvent.click(screen.getByRole("button", { name: "Create" }))
     await advance(50)
     expect(pathField(5).getAttribute("aria-invalid")).toBe("true")
-    expect(note(5)).toBeUndefined()
-    expect(note(1)).toBe("An empty folder is created here")
+    expect(pathField(4).getAttribute("aria-invalid")).not.toBe("true")
   })
 
-  it("derives the name from the repository URL, and saves it", async () => {
+  it("fills the name from the repository URL, and saves it", async () => {
     const { state } = await openDialog()
-    expect(nameInput().placeholder).toBe("")
+    expect(nameInput().value).toBe("")
     fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/hello-world.git" } })
-    expect(nameInput().placeholder).toBe("hello-world")
+    expect(nameInput().value).toBe("hello-world")
+    expect(nameInput().placeholder).toBe("")
     await submit()
     expect(state.projects.find((p) => p.name === "hello-world")?.repoUrl).toBe(
       "https://github.com/owner/hello-world.git",
@@ -412,11 +440,82 @@ describe("new project layout", () => {
     fireEvent.change(path(), { target: { value: "/home/eric/src" } })
     await pick("dotfiles")
     expect(repoUrl().value).toBe("git@github.com:eric/dotfiles.git")
-    expect(nameInput().placeholder).toBe("dotfiles")
+    expect(nameInput().value).toBe("dotfiles")
     fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/other.git" } })
-    expect(nameInput().placeholder).toBe("dotfiles")
+    expect(nameInput().value).toBe("dotfiles")
     await submit()
     expect(state.projects.find((p) => p.name === "dotfiles")?.locations[0].path).toBe("/home/eric/src/dotfiles")
+  })
+
+  it("follows the locations and the repository URL until the name is typed in", async () => {
+    await openDialog()
+    fireEvent.change(path(), { target: { value: "/home/eric/src/alpha" } })
+    expect(nameInput().value).toBe("alpha")
+    fireEvent.change(path(), { target: { value: "/home/eric/src/beta" } })
+    expect(nameInput().value).toBe("beta")
+    // Back to the default directory: the repository's name, then none.
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/gamma.git" } })
+    fireEvent.change(path(), { target: { value: "" } })
+    expect(nameInput().value).toBe("gamma")
+    fireEvent.change(repoUrl(), { target: { value: "" } })
+    expect(nameInput().value).toBe("")
+
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/gamma.git" } })
+    fireEvent.change(nameInput(), { target: { value: "gamma web" } })
+    fireEvent.change(path(), { target: { value: "/home/eric/src/delta" } })
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/other.git" } })
+    expect(nameInput().value).toBe("gamma web")
+  })
+
+  it("fills the name again once it is cleared and left", async () => {
+    await openDialog()
+    fireEvent.change(path(), { target: { value: "/home/eric/src/alpha" } })
+    fireEvent.change(nameInput(), { target: { value: "Mine" } })
+    act(() => nameInput().focus())
+    fireEvent.change(nameInput(), { target: { value: "" } })
+    // Nothing is filled in under the cursor, whatever else changes.
+    expect(nameInput().value).toBe("")
+    fireEvent.change(path(), { target: { value: "/home/eric/src/beta" } })
+    expect(nameInput().value).toBe("")
+
+    // Leaving it fills it, and it follows the form again.
+    act(() => nameInput().blur())
+    expect(nameInput().value).toBe("beta")
+    expect(nameInput().getAttribute("aria-invalid")).toBeNull()
+    fireEvent.change(path(), { target: { value: "/home/eric/src/gamma" } })
+    expect(nameInput().value).toBe("gamma")
+  })
+
+  it("keeps a cleared name empty under the cursor when a folder's repository URL arrives", async () => {
+    await openDialog()
+    // A slow device: the read is still under way once the name has focus.
+    await typePath("/home/eric/src/toolbox")
+    expect(document.activeElement).toBe(nameInput())
+    expect(nameInput().value).toBe("toolbox-2")
+    fireEvent.change(nameInput(), { target: { value: "" } })
+    await advance(SLOW_GIT_REMOTE_MS + 50)
+    expect(repoUrl().value).toBe("git@gitlab.com:eric/toolbox.git")
+    expect(nameInput().value).toBe("")
+    expect(document.activeElement).toBe(nameInput())
+    act(() => nameInput().blur())
+    expect(nameInput().value).toBe("toolbox-2")
+  })
+
+  it("starts a new form when reopened while closing after Create", async () => {
+    stubExitAnimation()
+    const { state } = await openDialog()
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/hello-world.git" } })
+    await submit()
+    expect(state.projects.find((p) => p.name === "hello-world")).toBeDefined()
+    expect(screen.getByRole("dialog", { hidden: true }).dataset.state).toBe("closed")
+    // The page behind is hidden from screen readers while the dialog is up.
+    fireEvent.click(screen.getByText("open"))
+    await advance(50)
+    expect(nameInput().value).toBe("")
+    expect(repoUrl().value).toBe("")
+    // The project just created is among the others now.
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/hello-world.git" } })
+    expect(nameInput().value).toBe("hello-world-2")
   })
 
   it("saves a typed name over the derived one", async () => {
@@ -428,15 +527,110 @@ describe("new project layout", () => {
     expect(state.projects.find((p) => p.name === "Mine")).toBeDefined()
   })
 
-  it("derives nothing from a taken name, and asks for one", async () => {
+  it("adds a number to a taken name, and saves it", async () => {
     const { state } = await openDialog()
-    const count = state.projects.length
     // "circus" is already a project.
     fireEvent.change(repoUrl(), { target: { value: "https://github.com/eric/circus.git" } })
-    expect(nameInput().placeholder).toBe("")
+    expect(nameInput().value).toBe("circus-2")
+    expect(nameInput().getAttribute("aria-invalid")).toBeNull()
+    await submit()
+    expect(state.projects.find((p) => p.name === "circus-2")?.repoUrl).toBe("https://github.com/eric/circus.git")
+  })
+
+  it("skips numbered names that are taken too, ignoring case", async () => {
+    const state = seedState()
+    const [first] = state.projects
+    state.projects.push(
+      { ...first, projectId: "hello", name: "Hello", locations: [] },
+      { ...first, projectId: "hello-2", name: "HELLO-2", locations: [] },
+    )
+    await openDialog({ state })
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/hello.git" } })
+    expect(nameInput().value).toBe("hello-3")
+  })
+
+  it("asks for a name when there is none to derive", async () => {
+    const { state } = await openDialog()
+    const count = state.projects.length
     await submit()
     expect(state.projects).toHaveLength(count)
     expect(nameInput().getAttribute("aria-invalid")).toBe("true")
+    expect(screen.getByText("Enter a project name.")).toBeDefined()
   })
+
+  it("keeps the name, without errors, while the dialog closes after Create", async () => {
+    stubExitAnimation()
+    // The refetch after Create waits until released.
+    let created = false
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const { state } = await openDialog({
+      wrapClient: (client) => ({
+        ...client,
+        projects: {
+          ...client.projects,
+          createProject: async (req) => {
+            const project = await client.projects.createProject(req)
+            created = true
+            return project
+          },
+          listProjects: async () => {
+            if (created) await held
+            return client.projects.listProjects()
+          },
+        },
+      }),
+    })
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/hello-world.git" } })
+    fireEvent.change(path(), { target: { value: "/home/eric/src/hello-world" } })
+    const input = nameInput()
+    await submit()
+    expect(state.projects.find((p) => p.name === "hello-world")).toBeDefined()
+    const dialog = screen.getByRole("dialog", { hidden: true })
+    expect(dialog.dataset.state).toBe("closed")
+    const check = () => {
+      expect(input.isConnected).toBe(true)
+      expect(input.value).toBe("hello-world")
+      expect(input.getAttribute("aria-invalid")).toBeNull()
+      expect(within(dialog).queryByText(/already exists|Enter a project name/)).toBeNull()
+      // Its own location isn't one another project shares.
+      expect(path().hasAttribute("aria-describedby")).toBe(false)
+    }
+    check()
+    release()
+    await advance(500)
+    check()
+  })
+
+  it("shows the server's refusal of a taken name", async () => {
+    // Another tab took the name after this one listed the projects.
+    const { queryClient } = await openDialog({
+      wrapClient: (client) => ({
+        ...client,
+        projects: {
+          ...client.projects,
+          createProject: async (req) => {
+            await client.projects.createProject({ ...req, name: "toolbox-other" })
+            return client.projects.createProject(req)
+          },
+        },
+      }),
+    })
+    fireEvent.change(repoUrl(), { target: { value: "https://github.com/owner/toolbox-other.git" } })
+    expect(nameInput().value).toBe("toolbox-other")
+    await submit()
+    expect(nameInput().getAttribute("aria-invalid")).toBe("true")
+    expect(screen.getByText(/toolbox-other.*already/i)).toBeDefined()
+    expect(nameInput().value).toBe("toolbox-other")
+
+    // After the refusal the form uses the projects as listed again.
+    act(() => void queryClient.invalidateQueries({ queryKey: queryKeys.projects }))
+    await advance(50)
+    act(() => nameInput().focus())
+    fireEvent.change(nameInput(), { target: { value: "" } })
+    act(() => nameInput().blur())
+    expect(nameInput().value).toBe("toolbox-other-2")
+  })
+
 })
 

@@ -11,6 +11,7 @@ import {
   DEFAULT_PATH_PREFIX,
   MAX_LOCATIONS,
   normalizePath,
+  PROJECT_NAME_MAX,
   sameProjectName,
   validateProjectName,
 } from "@/api/validation"
@@ -245,9 +246,11 @@ export function repoNameOf(repoUrl: string): string {
 }
 
 /**
- * The name a new project gets when none is typed: the last folder of the
- * first location with a path, or else the repository's name. Undefined when
- * there is no source, or when what it gives isn't a valid, unused name.
+ * The name a new project is given while none is typed: the last folder of
+ * the first location with a path, or else the repository's name. When that
+ * is taken, the first free "name-2", "name-3", … (shortened to fit the
+ * length limit). Undefined when there is no source, or when what it gives
+ * isn't a valid name.
  */
 export function derivedProjectName(
   form: Pick<FormValues, "rows" | "repoUrl">,
@@ -255,8 +258,47 @@ export function derivedProjectName(
 ): string | undefined {
   const located = form.rows.find((r) => r.path.trim() !== "")
   const name = (located ? pathBaseName(located.path) : repoNameOf(form.repoUrl)).trim()
-  if (name === "" || validateName(name, others) !== undefined) return undefined
-  return name
+  if (name === "" || validateProjectName(name) !== null) return undefined
+  return freeProjectName(name, others)
+}
+
+/**
+ * `name` if no other project has it (ignoring case), else the first free
+ * "name-2", "name-3", …, with `name` cut short so the suffix fits.
+ */
+export function freeProjectName(name: string, others: readonly { name: string }[]): string {
+  const taken = (candidate: string) => others.some((p) => sameProjectName(p.name, candidate))
+  if (!taken(name)) return name
+  const chars = Array.from(name)
+  // Each other project rules out at most one candidate.
+  for (let n = 2; ; n++) {
+    const suffix = `-${n}`
+    const candidate = chars.slice(0, PROJECT_NAME_MAX - suffix.length).join("").trimEnd() + suffix
+    if (!taken(candidate)) return candidate
+  }
+}
+
+/**
+ * The names of the other projects with a location on `device` at the same
+ * explicit path as `path`, compared the way the server stores paths
+ * (normalized for the device's OS, case kept). A default location (empty
+ * path) is each project's own directory: it never matches. Locations whose
+ * device was revoked are on a device that is gone. `os` is the device's,
+ * if it is listed.
+ */
+export function projectsSharingLocation(
+  device: string,
+  path: string,
+  os: string | undefined,
+  others: readonly { name: string; locations: readonly ProjectLocation[] }[],
+): string[] {
+  if (path.trim() === "") return []
+  const normalized = normalizePath(path, os ?? "linux")
+  return others
+    .filter((p) =>
+      p.locations.some((l) => !l.deviceRevoked && l.path !== "" && l.device === device && l.path === normalized),
+    )
+    .map((p) => p.name)
 }
 
 export function validateRepoUrl(repoUrl: string): string | undefined {

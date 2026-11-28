@@ -7,6 +7,7 @@ import {
   addedRow,
   defaultDevice,
   derivedProjectName,
+  freeProjectName,
   hasEarlierDefault,
   isReplaced,
   formChanged,
@@ -16,6 +17,7 @@ import {
   pathBaseName,
   pickLocation,
   projectErrorMessage,
+  projectsSharingLocation,
   repoNameOf,
   rowsOf,
   shortDefaultPath,
@@ -324,10 +326,60 @@ describe("derived project names", () => {
     expect(derivedProjectName({ rows: rows(""), repoUrl: "" }, [])).toBeUndefined()
   })
 
-  it("derives nothing that isn't a valid, unused name", () => {
+  it("derives nothing that isn't a valid name", () => {
     expect(derivedProjectName({ rows: rows("/srv/" + "x".repeat(65)), repoUrl: "" }, [])).toBeUndefined()
-    expect(derivedProjectName({ rows: rows("/srv/Palace"), repoUrl: "" }, [{ name: "palace" }])).toBeUndefined()
     // A path's own name counts even when it gives none: no fallback to the URL.
     expect(derivedProjectName({ rows: rows("/"), repoUrl: "https://h/o/repo.git" }, [])).toBeUndefined()
+  })
+
+  it("numbers a taken name, ignoring case", () => {
+    expect(derivedProjectName({ rows: rows("/srv/Palace"), repoUrl: "" }, [{ name: "palace" }])).toBe("Palace-2")
+    expect(
+      derivedProjectName({ rows: rows("/srv/palace"), repoUrl: "" }, [{ name: "PALACE" }, { name: "Palace-2" }]),
+    ).toBe("palace-3")
+  })
+})
+
+describe("freeProjectName", () => {
+  it("keeps a free name", () => {
+    expect(freeProjectName("web", [{ name: "web-2" }])).toBe("web")
+  })
+
+  it("shortens a long name so the number fits the length limit", () => {
+    const long = "x".repeat(64)
+    expect(freeProjectName(long, [{ name: long }])).toBe("x".repeat(62) + "-2")
+    const taken = [{ name: long }, ...Array.from({ length: 8 }, (_, i) => ({ name: "x".repeat(62) + `-${i + 2}` }))]
+    expect(freeProjectName(long, taken)).toBe("x".repeat(61) + "-10")
+    // Counted in characters, as the limit is; no space left before the number.
+    const spaced = "é".repeat(61) + " ab"
+    expect(freeProjectName(spaced, [{ name: spaced }])).toBe("é".repeat(61) + "-2")
+  })
+})
+
+describe("projectsSharingLocation", () => {
+  const project = (name: string, ...locations: ProjectLocation[]) => ({ name, locations })
+  const others = [
+    project("web", loc("box", "/src/app"), loc("box", "")),
+    project("api", loc("box", "/src/app"), loc("mac", "/src/app")),
+    project("old", loc("box", "/src/app", true)),
+    project("docs", loc("box", "/src/App")),
+  ]
+
+  it("names the projects using the same device and path, as the server stores it", () => {
+    expect(projectsSharingLocation("box", "/src/app", "linux", others)).toEqual(["web", "api"])
+    expect(projectsSharingLocation("box", " /src//app/ ", "linux", others)).toEqual(["web", "api"])
+    expect(projectsSharingLocation("mac", "/src/app", "darwin", others)).toEqual(["api"])
+    expect(projectsSharingLocation("win", "c:/src/app/", "windows", [project("w", loc("win", "C:\\src\\app"))])).toEqual(["w"])
+  })
+
+  it("matches nothing for another path, a case difference, or a revoked device", () => {
+    expect(projectsSharingLocation("box", "/src/other", "linux", others)).toEqual([])
+    expect(projectsSharingLocation("mac", "/src/App", "darwin", others)).toEqual([])
+    expect(projectsSharingLocation("box", "/src/app", "linux", [others[2]])).toEqual([])
+  })
+
+  it("never matches a default location", () => {
+    expect(projectsSharingLocation("box", "", "linux", others)).toEqual([])
+    expect(projectsSharingLocation("box", "  ", "linux", others)).toEqual([])
   })
 })

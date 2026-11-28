@@ -108,8 +108,12 @@ export function useProjectForm({
    */
   savedLocations?: readonly SavedLocation[]
   /**
-   * An empty name falls back to one derived from the locations or the
-   * repository URL (see `derivedProjectName`), when there is one.
+   * The name is filled with one derived from the locations or the
+   * repository URL (see `derivedProjectName`), following them as they
+   * change until the name is typed in. Clearing the name starts over:
+   * leaving the field, or the next change to the locations or the URL
+   * after that, fills it again. Nothing is filled in while the field has
+   * focus (see `nameEntered` and `nameLeft`).
    */
   deriveName?: boolean
 }) {
@@ -130,10 +134,17 @@ export function useProjectForm({
   const server = serverErrors(serverState, devices ?? [])
   const dismiss = (ids: readonly string[]) =>
     setServerState((s) => s && { ...s, dismissed: new Set([...s.dismissed, ...ids]) })
+  // Whether the name follows the locations and the repository URL: until
+  // it is typed in, and again once cleared.
+  const [autoName, setAutoName] = useState(deriveName)
+  // The name field has focus: what it holds stays under the user's cursor,
+  // even when a folder's repository URL arrives meanwhile.
+  const nameFocused = useRef(false)
 
-  const derivedName = deriveName ? derivedProjectName(values, otherProjects) : undefined
+  // What an empty name would be filled with now.
+  const derivedName = autoName ? derivedProjectName(values, otherProjects) : undefined
   const local = validateForm(values, devices ?? [], otherProjects, savedLocations)
-  // An empty name isn't missing while there is one to derive.
+  // An empty name isn't missing while there is one to fill in.
   if (derivedName !== undefined && name.trim() === "") local.name = undefined
   const shows = (id: string) => submitted || touched.has(id)
 
@@ -150,29 +161,54 @@ export function useProjectForm({
   }
 
   const change = (next: FormValues) => {
+    // Filled as the form changes, never as the other projects do: the name
+    // doesn't move under the user, or once the project it names was created.
+    if (
+      autoName &&
+      !nameFocused.current &&
+      (next.rows !== values.rows || next.repoUrl !== values.repoUrl)
+    ) {
+      next = { ...next, name: derivedProjectName(next, otherProjects) ?? "" }
+    }
     dismiss(changedFieldIds(values, next))
     setValues(next)
   }
+
+  const touch = (id: "name" | "repoUrl" | `${string}.${LocationField}`) =>
+    setTouched((t) => (t.has(id) ? t : new Set(t).add(id)))
 
   return {
     name,
     repoUrl,
     rows,
     values,
-    /** The name used when none is typed, if any (with `deriveName`). */
-    derivedName,
     errors: {
       name: (shows("name") ? local.name : undefined) ?? server.name,
       repoUrl: (shows("repoUrl") ? local.repoUrl : undefined) ?? server.repoUrl,
       rows: rowErrors,
       form: server.form,
     },
-    setName: (value: string) => change({ ...values, name: value }),
+    setName(value: string) {
+      if (deriveName) setAutoName(value.trim() === "")
+      change({ ...values, name: value })
+    },
+    /** The name field took focus. */
+    nameEntered() {
+      nameFocused.current = true
+    },
+    /**
+     * The name field was left. A name not typed in (with `deriveName`)
+     * catches up with the form, e.g. a cleared one is filled again.
+     */
+    nameLeft() {
+      nameFocused.current = false
+      const next = autoName ? (derivedName ?? "") : name
+      if (next !== name) change({ ...values, name: next })
+      if (next !== "") touch("name")
+    },
     setRepoUrl: (value: string) => change({ ...values, repoUrl: value }),
     setRows: (next: readonly LocationRow[]) => change({ ...values, rows: next }),
-    touch(id: "name" | "repoUrl" | `${string}.${LocationField}`) {
-      setTouched((t) => (t.has(id) ? t : new Set(t).add(id)))
-    },
+    touch,
     /** The request to send, or null when the form shows errors instead. */
     submit(): ProjectRequest | null {
       setSubmitted(true)

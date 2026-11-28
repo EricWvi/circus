@@ -450,8 +450,6 @@ export const en = {
     repoUrlReadFrom: "Read from <src>{{device}}:{{path}}</src>",
     repoUrlFolderUses: "<src>{{device}}:{{path}}</src> uses <url>{{url}}</url>",
     useRepoUrl: "Use this URL",
-    defaultPathCloned: "Cloned here the first time a session starts",
-    defaultPathEmpty: "An empty folder is created here",
     defaultPathMark: "default",
     defaultPathHint:
       "Leave the path empty to use the default folder, {{path}}. It's created on the device the first time a session starts here, with the repository cloned into it if the project has one.",
@@ -460,6 +458,9 @@ export const en = {
     removedMark: "removed",
     replacedMark: "replaced",
     replacedHint: "A new device took this name. Save to use the new device.",
+    locationSharedOne: "Also used by project <name>{{name}}</name>",
+    locationSharedTwo: "Also used by projects <name>{{first}}</name> and <name>{{second}}</name>",
+    locationSharedMany: "Also used by projects <name>{{first}}</name>, <name>{{second}}</name> and {{more}} more",
     noLocations: "No locations. Add one to start sessions on a device.",
     maxLocations: "A project has at most {{max}} locations",
     noDevicesToAdd: "No devices to add a location on",

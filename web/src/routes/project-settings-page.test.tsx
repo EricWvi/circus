@@ -169,6 +169,45 @@ describe("locations", () => {
   })
 })
 
+describe("a location another project uses", () => {
+  const noteOf = (n: number) => {
+    const path = screen.getByRole("textbox", { name: new RegExp(`^(Path for location ${n}|位置 ${n} 的路径)$`) })
+    const id = path.getAttribute("aria-describedby")
+    return id ? document.getElementById(id)?.textContent : undefined
+  }
+
+  /** The seed, with palace and toolbox also in circus's folder on devbox. */
+  function sharedState() {
+    const state = seedState()
+    for (const id of ["palace", "toolbox"]) {
+      state.projects.find((p) => p.projectId === id)!.locations.push(at("devbox", "/home/eric/src/circus"))
+    }
+    return state
+  }
+
+  it("names the other projects under the row, not the one being edited", async () => {
+    await renderSettings("circus", sharedState())
+    // eric-mbp:/Users/eric/src/circus is circus's own.
+    expect(noteOf(1)).toBeUndefined()
+    expect(noteOf(2)).toBe("Also used by projects palace and toolbox")
+    await i18n.changeLanguage("zh-CN")
+    await advance(0)
+    expect(noteOf(2)).toBe("项目 palace 和 toolbox 也使用这个位置")
+  })
+
+  it("follows the path as it is edited", async () => {
+    await renderSettings("palace", sharedState())
+    expect(noteOf(3)).toBe("Also used by projects circus and toolbox")
+    const path = screen.getByRole("textbox", { name: "Path for location 2" })
+    fireEvent.change(path, { target: { value: "/Users/eric/src/circus/" } })
+    expect(noteOf(2)).toBe("Also used by project circus")
+    fireEvent.change(path, { target: { value: "/Users/eric/src/Circus" } })
+    expect(noteOf(2)).toBeUndefined()
+    fireEvent.change(path, { target: { value: "" } })
+    expect(noteOf(2)).toBeUndefined()
+  })
+})
+
 describe("a removed device whose name is enrolled again", () => {
   it("is marked as replaced, and saving binds the new device", async () => {
     const state = seedState()

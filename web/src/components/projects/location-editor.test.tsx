@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { Device } from "@/api/types"
+import type { Device, ProjectLocation } from "@/api/types"
 import type { LocationRow } from "@/lib/location-form"
 import { advance, renderWithBackend } from "@/test/render"
 
@@ -23,7 +23,12 @@ const devices: Device[] = [
   { deviceId: "device-eric-win", name: "eric-win", online: false, lastSeenUnixMs: 0, os: "windows", arch: "amd64", version: "0.1.0", updateVersion: "", hostname: "", machineKey: "machine-eric-win" },
 ]
 
-async function renderEditor(rows: LocationRow[], { busy = false, framed = false } = {}) {
+type OtherProject = { name: string; locations: ProjectLocation[] }
+
+async function renderEditor(
+  rows: LocationRow[],
+  { busy = false, framed = false, otherProjects }: { busy?: boolean; framed?: boolean; otherProjects?: OtherProject[] } = {},
+) {
   const onChange = vi.fn()
   const onTouch = vi.fn()
   const frame = { current: framed ? document.body : null }
@@ -38,6 +43,7 @@ async function renderEditor(rows: LocationRow[], { busy = false, framed = false 
       defaultPathHint="hint"
       onChange={onChange}
       onTouch={onTouch}
+      otherProjects={otherProjects}
       />
     </PickerFrameContext.Provider>,
   )
@@ -116,5 +122,72 @@ describe("LocationEditor folder picker", () => {
     fireEvent.click(browse("devbox"))
     await advance(10)
     expect(screen.queryByRole("dialog")).toBeNull()
+  })
+})
+
+describe("LocationEditor shared locations", () => {
+  const loc = (device: string, path: string): ProjectLocation => ({ device, path, effectivePath: "", deviceRevoked: false })
+  const project = (name: string, ...locations: ProjectLocation[]) => ({ name, locations })
+  const pathField = (n: number) => screen.getByRole("textbox", { name: `Path for location ${n}` })
+  const note = (n: number) => {
+    const id = pathField(n).getAttribute("aria-describedby")
+    return id ? document.getElementById(id)?.textContent : undefined
+  }
+
+  it("names another project using a row's device and path, under that row", async () => {
+    await renderEditor(
+      [
+        { key: "a", device: "devbox", path: "/home/eric/src/app/" },
+        { key: "b", device: "devbox", path: "/home/eric/src/other" },
+        { key: "c", device: "eric-win", path: "/home/eric/src/app" },
+      ],
+      { otherProjects: [project("web", loc("devbox", "/home/eric/src/app"))] },
+    )
+    expect(note(1)).toBe("Also used by project web")
+    expect(note(2)).toBeUndefined()
+    expect(note(3)).toBeUndefined()
+  })
+
+  it("never says so for a default location", async () => {
+    await renderEditor([{ key: "a", device: "devbox", path: "" }], {
+      otherProjects: [project("web", loc("devbox", ""))],
+    })
+    expect(note(1)).toBeUndefined()
+  })
+
+  it("names two projects, or two and how many more", async () => {
+    const at = loc("devbox", "/srv/shared")
+    await renderEditor([{ key: "a", device: "devbox", path: "/srv/shared" }], {
+      otherProjects: [project("web", at), project("api", at)],
+    })
+    expect(note(1)).toBe("Also used by projects web and api")
+    cleanup()
+    await renderEditor([{ key: "a", device: "devbox", path: "/srv/shared" }], {
+      otherProjects: [project("web", at), project("api", at), project("docs", at), project("ops", at)],
+    })
+    expect(note(1)).toBe("Also used by projects web, api and 2 more")
+    // The names stand apart from the sentence around them.
+    const id = pathField(1).getAttribute("aria-describedby")!
+    const names = [...document.getElementById(id)!.querySelectorAll(".font-medium")].map((e) => e.textContent)
+    expect(names).toEqual(["web", "api"])
+  })
+
+  it("gives way to the path's error", async () => {
+    // The row shows its error instead, until it is fixed.
+    const rows = [{ key: "a", device: "devbox", path: "/srv/shared" }]
+    const onChange = vi.fn()
+    await renderWithBackend(
+      <LocationEditor
+        rows={rows}
+        devices={devices}
+        errors={{ a: { path: "Something is wrong" } }}
+        defaultPath="~/circus/projects/…"
+        defaultPathHint="hint"
+        onChange={onChange}
+        onTouch={vi.fn()}
+        otherProjects={[project("web", loc("devbox", "/srv/shared"))]}
+      />,
+    )
+    expect(screen.queryByText("Also used by project web")).toBeNull()
   })
 })

@@ -321,6 +321,7 @@ export function ProjectForm({
           onTouch={(key, field) => form.touch(`${key}.${field}`)}
           onPathCommit={remote.pathCommitted}
           workspaces={workspacesOf(project)}
+          otherProjects={otherProjects}
         />
       </section>
 

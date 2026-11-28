@@ -1,8 +1,8 @@
 import { InfoIcon, PlusIcon, XIcon } from "lucide-react"
 import { useId, useRef, useState } from "react"
-import { useTranslation } from "react-i18next"
+import { Trans, useTranslation } from "react-i18next"
 
-import type { Device, WorkspaceStatus } from "@/api/types"
+import type { Device, ProjectLocation, WorkspaceStatus } from "@/api/types"
 import { MAX_LOCATIONS } from "@/api/validation"
 import { DisabledReason } from "@/components/disabled-reason"
 import { InfoTip } from "@/components/info-tip"
@@ -26,6 +26,7 @@ import {
   isReplaced,
   osLabel,
   pathPlaceholder,
+  projectsSharingLocation,
   shortDefaultPath,
   sortDevices,
   type LocationField,
@@ -56,8 +57,8 @@ export function LocationEditor({
   onChange,
   onTouch,
   onPathCommit,
-  defaultPathNote,
   workspaces,
+  otherProjects,
   firstPathFocus,
 }: {
   rows: readonly LocationRow[]
@@ -85,13 +86,16 @@ export function LocationEditor({
     how: PathCommit,
     leavingToSubmit?: boolean,
   ) => void
-  /** What happens in the default directory, on a line under each row that uses it. */
-  defaultPathNote?: string
   /**
    * The default directory's state by device name, on a line under a row
-   * that uses it there (in place of `defaultPathNote`).
+   * that uses it there.
    */
   workspaces?: ReadonlyMap<string, WorkspaceStatus>
+  /**
+   * The user's other projects: a row with an explicit path one of them
+   * also uses says so on a line under it.
+   */
+  otherProjects?: readonly { name: string; locations: readonly ProjectLocation[] }[]
   /** Initial focus for the first row's path field (see `useQuietAutoFocus`). */
   firstPathFocus?: { autoFocus: boolean; "data-quiet-focus"?: string; onBlur: () => void }
 }) {
@@ -142,11 +146,17 @@ export function LocationEditor({
             const explicit = hasEarlierDefault(rows, i)
             const isDefault = row.path === "" && !explicit
             const replaced = isReplaced(row, sorted)
+            // A default directory is the project's own, so only it has a
+            // workspace and only an explicit path can be shared.
             const workspace = isDefault && !rowErrors.path ? workspaces?.get(row.device) : undefined
+            const sharedWith =
+              rowErrors.path || !otherProjects
+                ? []
+                : projectsSharingLocation(row.device, row.path, device?.os, otherProjects)
             const note = workspace ? (
               <WorkspaceLocationStatus workspace={workspace} />
-            ) : isDefault && defaultPathNote && !rowErrors.path ? (
-              defaultPathNote
+            ) : sharedWith.length > 0 ? (
+              <SharedLocationNote names={sharedWith} />
             ) : null
             const noteId = noteIdPrefix + row.key
             const focusProps = i === 0 ? firstPathFocus : undefined
@@ -249,7 +259,7 @@ export function LocationEditor({
                   </FolderPickerField>
                   {rowErrors.path && <FieldError>{rowErrors.path}</FieldError>}
                   {note && (
-                    <div id={noteId} className="text-xs text-muted-foreground">
+                    <div id={noteId} className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
                       {note}
                     </div>
                   )}
@@ -289,6 +299,24 @@ export function LocationEditor({
         </Button>
       </DisabledReason>
     </div>
+  )
+}
+
+/** Names the other projects that use a row's location: up to two, then how many more. */
+function SharedLocationNote({ names }: { names: readonly string[] }) {
+  const [first, second] = names
+  const key =
+    names.length === 1
+      ? "projects.locationSharedOne"
+      : names.length === 2
+        ? "projects.locationSharedTwo"
+        : "projects.locationSharedMany"
+  return (
+    <Trans
+      i18nKey={key}
+      values={{ name: first, first, second, more: names.length - 2 }}
+      components={{ name: <span className="font-medium" /> }}
+    />
   )
 }
 

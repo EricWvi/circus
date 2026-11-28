@@ -31,12 +31,16 @@ import { useProjectForm } from "./use-project-form"
 /** Provides the new-project dialog to everything below it. */
 export function NewProjectDialogProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
+  // Each opening gets a form of its own, even one that comes while the
+  // last one is still animating out after Create.
+  const [opening, setOpening] = useState(0)
   const focus = useOverlayFocus()
   // Folder pickers center on the dialog rather than on their path field.
   const panel = useRef<HTMLDivElement>(null)
 
   const change = (next: boolean) => {
     focus.onOpenChange(next)
+    if (next) setOpening((n) => n + 1)
     setOpen(next)
   }
 
@@ -46,7 +50,7 @@ export function NewProjectDialogProvider({ children }: { children: ReactNode }) 
       <Dialog open={open} onOpenChange={change}>
         <DialogContent ref={panel} className="gap-5 sm:max-w-xl" onCloseAutoFocus={focus.onCloseAutoFocus}>
           <PickerFrameContext.Provider value={panel}>
-            <NewProjectForm onDone={() => change(false)} />
+            <NewProjectForm key={opening} onDone={() => change(false)} />
           </PickerFrameContext.Provider>
         </DialogContent>
       </Dialog>
@@ -54,7 +58,7 @@ export function NewProjectDialogProvider({ children }: { children: ReactNode }) 
   )
 }
 
-// Mounted with the dialog content, so every opening starts empty.
+// Keyed by opening, so every opening starts empty.
 function NewProjectForm({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -62,10 +66,15 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   const projects = useProjects()
   const create = useCreateProject()
   const quietAutoFocus = useQuietAutoFocus()
+  // The projects as they were before Create: once created, the new project
+  // joins the list while the dialog closes, and must not show its name as
+  // taken or its locations as shared.
+  const [others, setOthers] = useState(projects.data)
+  if (!create.isPending && !create.isSuccess && others !== projects.data) setOthers(projects.data)
   const form = useProjectForm({
     initial: () => ({ name: "", repoUrl: "", rows: [newRow(devices.data ?? [])] }),
     devices: devices.data,
-    otherProjects: projects.data ?? [],
+    otherProjects: others ?? [],
     deriveName: true,
   })
   const remote = useFolderRemote({
@@ -126,7 +135,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
           onChange={form.setRows}
           onTouch={(key, field) => form.touch(`${key}.${field}`)}
           onPathCommit={remote.pathCommitted}
-          defaultPathNote={t(form.repoUrl.trim() === "" ? "projects.defaultPathEmpty" : "projects.defaultPathCloned")}
+          otherProjects={others}
           firstPathFocus={quietAutoFocus}
         />
       </FieldSet>
@@ -148,13 +157,10 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
           id="new-project-name"
           autoComplete="off"
           value={form.name}
-          // Used when the name is left empty.
-          placeholder={form.derivedName}
           aria-invalid={form.errors.name ? true : undefined}
           onChange={(e) => form.setName(e.target.value)}
-          onBlur={(e) => {
-            if (e.target.value !== "") form.touch("name")
-          }}
+          onFocus={form.nameEntered}
+          onBlur={form.nameLeft}
         />
         {form.errors.name && <FieldError>{form.errors.name}</FieldError>}
       </Field>
