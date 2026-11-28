@@ -6,6 +6,7 @@ import { i18n } from "@/i18n/i18n"
 import {
   agentActions,
   agentBusy,
+  agentDialog,
   agentOf,
   formatBytes,
   installProgress,
@@ -95,6 +96,22 @@ describe("a worker's agent", () => {
     ["uninstalling", { state: "uninstalling", ...notWanted }, online, []],
   ])("offers what can be done when %s", (_, fields, ctx, actions) => {
     expect(agentActions(agent(fields), ctx)).toEqual(actions)
+  })
+
+  it.each<[string, Partial<WorkerAgent>, AgentContext, "install" | "failed" | null]>([
+    ["not installed", { state: "not_installed", installedVersion: "", ...notWanted }, online, "install"],
+    ["in an unknown state", { state: "unknown" }, online, "install"],
+    ["given up after a failure", { state: "failed", ...notWanted }, online, "install"],
+    ["failed, still wanted", { state: "failed" }, online, "failed"],
+    // The retry the worker will make once it connects: still the failure to read.
+    ["failed, wanted again, offline", { state: "failed" }, offline, "failed"],
+    // Its action is to take the wish back, beside the chip.
+    ["not installed, waiting for the worker", { state: "not_installed", installedVersion: "" }, online, null],
+    ["installed", {}, online, null],
+    ["outdated", { state: "outdated", installedVersion: "2.0.9", wantedVersion: "2.0.9" }, online, null],
+    ["installing", { state: "installing", installedVersion: "" }, online, null],
+  ])("picks the dialog the chip opens when %s", (_, fields, ctx, dialog) => {
+    expect(agentDialog(agent(fields), ctx)).toBe(dialog)
   })
 
   it("installs for install, update, retry and keep, and not for uninstall, cancel and dismiss", () => {

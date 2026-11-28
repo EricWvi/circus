@@ -8,6 +8,12 @@ import { currentLanguage } from "@/i18n/i18n"
 /** The agents this client knows, in the order the UI lists them. */
 export const AGENT_KINDS: readonly AgentKind[] = ["claude_code"]
 
+/**
+ * Agents shown after those, as coming: no worker reports them yet, and the
+ * server refuses to install them.
+ */
+export const LATER_AGENTS = ["codex", "opencode"] as const
+
 /** The agent a session runs when it names none: the only one so far. */
 export const DEFAULT_AGENT: AgentKind = "claude_code"
 
@@ -106,6 +112,17 @@ export function agentActions(a: WorkerAgent, ctx: AgentContext): AgentAction[] {
     case "uninstalling":
       return []
   }
+}
+
+/**
+ * The dialog the agent's chip opens when pressed: an install to confirm
+ * (also over a state this client doesn't know), or a failed install to
+ * read and retry or give up. None when the chip's actions sit beside it
+ * instead (uninstall, update, taking back a wish), or there are none.
+ */
+export function agentDialog(a: WorkerAgent, ctx: AgentContext): "install" | "failed" | null {
+  if (shownState(a) === "failed") return "failed"
+  return agentActions(a, ctx).includes("install") ? "install" : null
 }
 
 /**

@@ -26,7 +26,8 @@ const MARKS: Record<ProviderAgent, { src: string; color: string }> = {
 /**
  * An agent's mark, decorative: the name next to it carries the meaning.
  * `muted` paints it in the muted grey at 70% opacity (the same for every
- * mark), back to its own colour while its `group` is hovered or focused.
+ * mark), back to its own colour while its `group` is hovered or focused;
+ * `"always"` keeps it grey (an agent that can't be chosen).
  * In forced colours a mask's background would be forced to Canvas and
  * vanish, so the mark paints itself in a system colour: Highlight when
  * `selected`, else CanvasText.
@@ -38,7 +39,7 @@ export function AgentMark({
   className,
 }: {
   agent: ProviderAgent
-  muted?: boolean
+  muted?: boolean | "always"
   selected?: boolean
   className?: string
 }) {
@@ -62,8 +63,9 @@ export function AgentMark({
       data-agent-mark={agent}
       className={cn(
         "size-5 shrink-0 bg-(--mark) transition-[background-color,opacity]",
-        muted &&
-          "bg-muted-foreground opacity-70 group-hover:bg-(--mark) group-hover:opacity-100 group-focus-visible:bg-(--mark) group-focus-visible:opacity-100",
+        muted && "bg-muted-foreground opacity-70",
+        muted === true &&
+          "group-hover:bg-(--mark) group-hover:opacity-100 group-focus-visible:bg-(--mark) group-focus-visible:opacity-100",
         "forced-colors:opacity-100 forced-colors:[forced-color-adjust:none]",
         selected ? "forced-colors:bg-[Highlight]" : "forced-colors:bg-[CanvasText]",
         className,
